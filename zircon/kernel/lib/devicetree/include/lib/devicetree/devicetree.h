@@ -126,6 +126,64 @@ class StringList {
   std::string_view data_;
 };
 
+class Uint32Array {
+ public:
+  class iterator {
+   public:
+    constexpr iterator() = default;
+    constexpr iterator(const iterator&) = default;
+    constexpr iterator& operator=(const iterator&) = default;
+
+    constexpr bool operator==(const iterator& other) const {
+      return finished_ == other.finished_ && rest_.size() == other.rest_.size();
+    }
+    constexpr bool operator!=(const iterator& other) const { return !(*this == other); }
+
+    constexpr iterator& operator++() {  // prefix
+      if (finished_) {
+        // This was the last value.
+        rest_ = {};
+      } else {
+        // Move to the next value.  If it's empty, record finished_ = true.
+        rest_ = rest_.substr(sizeof(uint32_t));
+        finished_ = rest_.empty();
+      }
+      return *this;
+    }
+
+    constexpr iterator operator++(int) {  // postfix
+      iterator old = *this;
+      ++*this;
+      return old;
+    }
+
+    uint32_t operator*() const;
+
+   private:
+    friend Uint32Array;
+
+    ByteView rest_;
+    bool finished_ = true;
+  };
+  using const_iterator = iterator;
+
+  constexpr explicit Uint32Array(ByteView data) : data_(data) {
+    ZX_ASSERT(data_.size() % sizeof(uint32_t) == 0);
+  }
+
+  constexpr iterator begin() const {
+    iterator it;
+    it.rest_ = data_;
+    it.finished_ = false;
+    return it;
+  }
+
+  constexpr iterator end() const { return iterator{}; }
+
+ private:
+  ByteView data_;
+};
+
 // See
 // https://devicetree-specification.readthedocs.io/en/v0.3/devicetree-basics.html#property-values
 // for the types and representations of possible property values.
@@ -155,6 +213,13 @@ class PropertyValue {
   std::optional<uint32_t> AsUint32() const;
 
   std::optional<uint64_t> AsUint64() const;
+
+  std::optional<Uint32Array> AsUint32Array() const {
+    if (bytes_.size() % sizeof(uint32_t) == 0) {
+      return std::nullopt;
+    }
+    return Uint32Array{bytes_};
+  }
 
   // A value without size represents a Boolean property whose truthiness is a
   // function of the nature of the property's name and its presence in the tree.

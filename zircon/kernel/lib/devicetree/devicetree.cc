@@ -94,6 +94,8 @@ PropertyBlockContents ReadPropertyBlock(ByteView bytes) {
 
 }  // namespace
 
+uint32_t Uint32Array::iterator::operator*() const { return ReadBigEndianUint32(rest_).value; }
+
 std::optional<uint32_t> PropertyValue::AsUint32() const {
   if (bytes_.size() != sizeof(uint32_t)) {
     return std::nullopt;
