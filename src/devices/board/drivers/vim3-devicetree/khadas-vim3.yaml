@@ -1,0 +1,31 @@
+# Copyright 2022 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+%YAML 1.2
+---
+$id: "http://devicetree.org/schemas/fuchsia/khadas-vim3.yaml#"
+$schema: "http://devicetree.org/meta-schemas/core.yaml#"
+title: Khadas vim3 board
+maintainers:
+  - Fuchsia
+
+description: Khadas vim3 board.
+
+allOf:
+  - $ref: "/schemas/root-node.yaml#"
+
+properties:
+  compatible:
+    oneOf:
+      - items:
+        - enum:
+          - "khadas,vim3"
+        - const: amlogic,a311d
+
+
+required:
+  - compatible
+
+additionalProperties: true
+
+

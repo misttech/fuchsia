@@ -22,6 +22,7 @@ group("drivers") {
     "drivers/sherlock:sherlock-dai-test",
     "drivers/sherlock:sherlock-factory",
     "drivers/vim3",
+    "drivers/vim3-devicetree",
   ]
 
   if (current_cpu == "x64") {

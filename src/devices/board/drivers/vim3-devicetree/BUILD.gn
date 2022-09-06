@@ -1,0 +1,68 @@
+# Copyright 2022 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/bind/bind.gni")
+import("//build/devicetree/devicetree.gni")
+import("//build/devicetree/devicetree_schema.gni")
+import("//build/drivers.gni")
+import("//build/zbi/zbi_input.gni")
+import("//src/devices/bus/drivers/pci/pci.gni")
+
+devicetree_fragment("amlogic-a311d") {
+  sources = [ "dts/amlogic-a311d.dtsi" ]
+  used_schemas = [ "//src/devices/clock/drivers/amlogic-clk:devicetree-schema" ]
+}
+
+devicetree_schema("vim3-schema") {
+  sources = [ "khadas-vim3.yaml" ]
+}
+
+devicetree("vim3") {
+  sources = [ "dts/khadas-vim3.dts" ]
+  deps = [ ":amlogic-a311d" ]
+
+  used_schemas = [ ":vim3-schema" ]
+
+  golden = "dts/khadas-vim3.golden.dts"
+}
+
+zbi_input("vim3-dtb-item") {
+  deps = [ ":vim3" ]
+  type = "devicetree"
+
+  dtb_file = get_target_outputs(":vim3_compiled_dtb")
+  sources = [ dtb_file[0] ]
+}
+
+driver_bind_rules("vim3-devicetree-bind") {
+  rules = "vim3-devicetree.bind"
+  header_output = "vim3-devicetree-bind.h"
+  deps = [
+    "//src/devices/bind/fuchsia.hardware.platform.bus",
+    "//src/devices/bind/fuchsia.khadas.platform",
+  ]
+}
+
+fuchsia_driver("vim3-devicetree-driver") {
+  output_name = "vim3-devicetree"
+  sources = [ "vim3.cc" ]
+  deps = [
+    ":vim3-devicetree-bind",
+    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
+    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp_driver",
+    "//sdk/lib/driver2:cpp",
+    "//sdk/lib/driver_runtime:driver_runtime_cpp",
+    "//src/devices/bin/driver_runtime",
+    "//src/devices/board/lib/devicetree",
+  ]
+}
+
+fuchsia_driver_component("vim3-devicetree") {
+  deps = [
+    ":vim3",
+    ":vim3-devicetree-driver",
+  ]
+  info = "vim3-devicetree-info.json"
+  manifest = "meta/vim3-devicetree.cml"
+}
