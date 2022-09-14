@@ -1,0 +1,57 @@
+# Copyright 2022 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/devicetree/devicetree_schema.gni")
+
+# This is the built-in meta-schema.
+devicetree_schema("core") {
+  meta_schema_base = "//third_party/dt-schema/vendor/lib/python3.8/site-packages/dtschema/meta-schemas/"
+  schema_base = "//third_party/dt-schema/vendor/lib/python3.8/site-packages/dtschema/schemas/"
+  meta_schemas = [
+    "base.yaml",
+    "boolean.yaml",
+    "cell.yaml",
+    "clocks.yaml",
+    "core.yaml",
+    "dma.yaml",
+    "gpios.yaml",
+    "hwlock.yaml",
+    "iio.yaml",
+    "interrupts.yaml",
+    "iommu.yaml",
+    "items.yaml",
+    "keywords.yaml",
+    "mailbox.yaml",
+    "nodes.yaml",
+    "nvmem.yaml",
+    "phy.yaml",
+    "power-domain.yaml",
+    "pwm.yaml",
+    "reset.yaml",
+    "string-array.yaml",
+    "vendor-props.yaml",
+  ]
+
+  # Note that we do not take all of the upstream schemas.
+  schemas = [
+    "aliases.yaml",
+
+    # TODO(simonshields): investigate excluding "status" property.
+    "dt-core.yaml",
+
+    "interrupt-controller.yaml",
+    "interrupts.yaml",
+    "reg.yaml",
+    "root-node.yaml",
+    "types.yaml",
+  ]
+
+  sources = []
+  foreach(schema, meta_schemas) {
+    sources += [ meta_schema_base + schema ]
+  }
+  foreach(schema, schemas) {
+    sources += [ schema_base + schema ]
+  }
+}

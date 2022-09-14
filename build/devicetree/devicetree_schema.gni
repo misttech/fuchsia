@@ -1,0 +1,28 @@
+# Copyright 2022 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Defines a devicetree schema for a driver.
+#
+# Parameters:
+#   sources (required)
+#     schema files to be used.
+#   headers (optional)
+#     array of header files that the driver provides to devicetrees.
+#   public_deps
+template("devicetree_schema") {
+  assert(!defined(invoker.deps),
+         "devicetree_schema() can only have public deps")
+
+  # This needs to be a target that has source files!
+  group(target_name) {
+    metadata = {
+      devicetree_schema = invoker.sources
+      if (defined(invoker.headers)) {
+        devicetree_headers = invoker.headers
+      }
+    }
+
+    forward_variables_from(invoker, [ "public_deps" ])
+  }
+}

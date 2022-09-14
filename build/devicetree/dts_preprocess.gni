@@ -1,0 +1,92 @@
+# Copyright 2022 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/config/clang/clang.gni")
+
+# Internal template used to preprocess a DTS file.
+# Parameters:
+#   used_schemas (optional)
+#     List of drivers used by this DTS file.
+#   sources (required)
+#     DTS file to preprocess. Must only have one entry.
+#   deps (optional)
+#     Other devicetree files this devicetree file depends on.
+template("dts_preprocess") {
+  if (defined(invoker.used_schemas)) {
+    used_schemas = invoker.used_schemas
+  } else {
+    used_schemas = []
+  }
+
+  header_files_target = target_name + "_headers"
+  header_files_filename = header_files_target + ".txt"
+
+  check_includes_target = target_name + "_check_includes"
+
+  raw_dts_dir = target_name + "_raw_dts"
+
+  # Generate a list of allowed header files based on the devicetree drivers we use.
+  generated_file(header_files_target) {
+    deps = used_schemas
+    data_keys = [ "devicetree_headers" ]
+    walk_keys = [ "devicetree_drivers" ]
+
+    output_conversion = "list lines"
+    outputs = [ "$target_gen_dir/$header_files_filename" ]
+    rebase = root_build_dir
+  }
+
+  # Check that all includes in the DTS are allowed.
+  action(check_includes_target) {
+    deps = [ ":$header_files_target" ]
+    script = "//build/devicetree/check_includes.py"
+
+    header_output = get_target_outputs(":$header_files_target")
+    sources = invoker.sources
+
+    output_file = "$target_gen_dir/$check_includes_target.txt"
+    outputs = [ output_file ]
+    args = [
+      rebase_path(header_output[0], root_build_dir),
+      rebase_path(sources[0], root_build_dir),
+      rebase_path("//", root_build_dir),
+      rebase_path(output_file, root_build_dir),
+    ]
+  }
+
+  # Actually run the DTS through the preprocessor.
+  action_foreach(target_name) {
+    deps = [ ":$check_includes_target" ]
+    deps += used_schemas
+
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
+    }
+
+    binary_path = clang_prefix + "/clang"
+    include_path = rebase_path("//", root_build_dir)
+    script = binary_path
+    sources = invoker.sources
+    outputs = [ "$target_gen_dir/$raw_dts_dir/{{source_root_relative_dir}}/{{source_file_part}}" ]
+
+    args = [
+      "-E",
+      "-iquote$include_path",
+      "-x",
+      "assembler-with-cpp",
+      "{{source}}",
+      "-o",
+      rebase_path(target_gen_dir, root_build_dir) +
+          "/$raw_dts_dir/{{source_root_relative_dir}}/{{source_file_part}}",
+    ]
+
+    metadata = {
+      # devicetree_drivers controls the metadata walk.
+      devicetree_drivers = used_schemas
+      devicetree_includes = [ "$target_gen_dir/$raw_dts_dir" ]
+    }
+
+    forward_variables_from(invoker, [ "public_deps" ])
+  }
+}
