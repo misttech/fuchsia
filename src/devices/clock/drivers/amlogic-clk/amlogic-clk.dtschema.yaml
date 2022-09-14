@@ -1,0 +1,30 @@
+# Copyright 2022 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+%YAML 1.2
+---
+
+$id: "http://devicetree.org/schemas/fuchsia/amlogic-clk.yaml#"
+$schema: "http://devicetree.org/meta-schemas/core.yaml#"
+title: AMLogic clock driver
+maintainers:
+  - Fuchsia
+
+description: |
+  Clock controller driver for AMLogic SoCs.
+
+properties:
+  compatible:
+    const: "amlogic,g12b-clk"
+
+  reg:
+    items:
+      - description: HIU registers
+      - description: DOS (video encoding/decoding) registers
+      - description: Clock measurement registers
+
+required:
+  - compatible
+  - reg
+
+additionalProperties: false
