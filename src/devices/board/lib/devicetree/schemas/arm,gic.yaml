@@ -1,0 +1,47 @@
+# Copyright 2022 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+%YAML 1.2
+---
+$id: "http://devicetree.org/schemas/fuchsia/arm,gic.yaml#"
+$schema: "http://devicetree.org/meta-schemas/core.yaml#"
+title: ARM Generic Interrupt Controller.
+maintainers:
+  - Fuchsia
+
+description: |+
+  Generic Interrupt Controller for ARM SoCs.
+
+  Note that this schema is not consumed by the actual GIC driver.
+  This is only used by the devicetree to represent a GIC.
+
+allOf:
+  - $ref: /schemas/interrupt-controller.yaml#
+
+properties:
+  compatible:
+    const: "arm,gic-400"
+
+  interrupt-controller: true
+
+  "#interrupt-cells":
+    const: 3
+    description: |
+      The first cell should be 0 for SPI interrupts. All other values are reserved.
+
+      The second cell is the interrupt number. Note that the interrupts are counted from
+      the first SPI interrupt (vector 32).
+
+      The third cell is the interrupt mode, as follows:
+        bits[3:0] is the trigger type and level flags.
+          1 = equivalent to ZX_INTERRUPT_MODE_EDGE_HIGH.
+          2 = reserved.
+          4 = equivalent to ZX_INTERRUPT_MODE_LEVEL_HIGH.
+          8 = reserved.
+        other bits are reserved.
+
+
+required:
+  - compatible
+
+additionalProperties: false
