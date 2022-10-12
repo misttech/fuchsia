@@ -30,6 +30,13 @@ if (current_cpu == "x64") {
   }
 }
 
+declare_args() {
+  # Path to a devicetree zbi_item() to be included in the ZBI.
+  # This should only be used during bringup, before the bootloader is
+  # able to pass a devicetree along to Fuchsia.
+  bringup_only_devicetree_label = ""
+}
+
 if (platform_enable_user_pci) {
   disable_kernel_pci = true
 }
@@ -668,6 +675,10 @@ if (is_kernel) {
       ":zircon",
       "phys:physboot",
     ]
+
+    if (bringup_only_devicetree_label != "") {
+      deps += [ bringup_only_devicetree_label ]
+    }
 
     output_dir = root_out_dir
     output_extension = "zbi"
