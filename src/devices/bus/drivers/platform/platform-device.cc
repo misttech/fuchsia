@@ -5,6 +5,7 @@
 #include "src/devices/bus/drivers/platform/platform-device.h"
 
 #include <assert.h>
+#include <fidl/fuchsia.driver.framework/cpp/natural_types.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/natural_types.h>
 #include <lib/ddk/binding.h>
 #include <lib/ddk/debug.h>
@@ -563,15 +564,83 @@ zx_status_t PlatformDevice::Start() {
     }
   }
 
-  zx_device_prop_t props[] = {
+  std::vector<zx_device_prop_t> dev_props{
       {BIND_PLATFORM_DEV_VID, 0, vid_},
       {BIND_PLATFORM_DEV_PID, 0, pid_},
       {BIND_PLATFORM_DEV_DID, 0, did_},
       {BIND_PLATFORM_DEV_INSTANCE_ID, 0, instance_id_},
   };
+  std::vector<zx_device_str_prop_t> dev_str_props;
+
+  if (node_.properties().has_value()) {
+    for (auto& prop : node_.properties().value()) {
+      if (prop.value() == std::nullopt || prop.key() == std::nullopt) {
+        zxlogf(WARNING, "Node '%s' has invalid property", name);
+        continue;
+      }
+
+      switch (prop.key()->Which()) {
+        using Tag = fuchsia_driver_framework::NodePropertyKey::Tag;
+        case Tag::kIntValue: {
+          if (!prop.value()->int_value().has_value()) {
+            zxlogf(WARNING, "Node '%s' has invalid int propery", name);
+            continue;
+          }
+          dev_props.emplace_back(
+              zx_device_prop_t{static_cast<uint16_t>(prop.key()->int_value().value()), 0,
+                               prop.value()->int_value().value()});
+          break;
+        }
+        case Tag::kStringValue: {
+          const char* key = prop.key()->string_value()->data();
+          switch (prop.value()->Which()) {
+            using ValueTag = fuchsia_driver_framework::NodePropertyValue::Tag;
+            case ValueTag::kBoolValue: {
+              dev_str_props.emplace_back(zx_device_str_prop_t{
+                  .key = key,
+                  .property_value = str_prop_bool_val(prop.value()->bool_value().value()),
+              });
+              break;
+            }
+            case ValueTag::kIntValue: {
+              dev_str_props.emplace_back(zx_device_str_prop_t{
+                  .key = key,
+                  .property_value = str_prop_int_val(prop.value()->int_value().value()),
+              });
+              break;
+            }
+            case ValueTag::kEnumValue: {
+              dev_str_props.emplace_back(zx_device_str_prop_t{
+                  .key = key,
+                  .property_value = str_prop_enum_val(prop.value()->enum_value()->data()),
+              });
+              break;
+            }
+            case ValueTag::kStringValue: {
+              dev_str_props.emplace_back(zx_device_str_prop_t{
+                  .key = key,
+                  .property_value = str_prop_str_val(prop.value()->string_value()->data()),
+              });
+              break;
+            }
+            default:
+              zxlogf(WARNING, "Node '%s' has unsupported property value type.", name);
+              continue;
+          }
+          break;
+        }
+
+        default:
+          zxlogf(WARNING, "Node '%s' has unsupported property key type.", name);
+          break;
+      }
+    }
+  }
 
   ddk::DeviceAddArgs args(name);
-  args.set_props(props).set_proto_id(ZX_PROTOCOL_PDEV);
+  args.set_props(dev_props)
+      .set_str_props(dev_str_props)
+  .set_proto_id(ZX_PROTOCOL_PDEV);
 
   if (type_ == Protocol) {
     auto protocol_handler =
