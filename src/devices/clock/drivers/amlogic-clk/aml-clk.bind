@@ -2,9 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-using fuchsia.platform;
-using fuchsia.amlogic.platform;
+composite amlogic_clk;
 
+using fuchsia.platform;
+//using fuchsia.amlogic.platform;
+using fuchsia.devicetree;
+
+primary node "pdev" {
+  fuchsia.devicetree.first_compatible == "amlogic,g12b-clk";
+  //fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
+}
+
+/*
 // Parent must publish the platform device protocol.
 fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
 
@@ -21,3 +30,4 @@ accept fuchsia.BIND_PLATFORM_DEV_DID {
   fuchsia.amlogic.platform.BIND_PLATFORM_DEV_DID.A5_CLK,
   fuchsia.amlogic.platform.BIND_PLATFORM_DEV_DID.A1_CLK,
 }
+*/

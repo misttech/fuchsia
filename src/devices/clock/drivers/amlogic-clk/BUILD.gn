@@ -21,10 +21,12 @@ driver_bind_rules("aml-clk-bind") {
   rules = "aml-clk.bind"
   header_output = "aml-clk-bind.h"
   bind_output = "amlogic-clk.bindbc"
+  disable_fragment_gen = true
 
   tests = "bind-tests.json"
   deps = [
-    "//src/devices/bind/fuchsia.amlogic.platform",
+    #"//src/devices/bind/fuchsia.amlogic.platform",
+    "//src/devices/bind/fuchsia.devicetree",
     "//src/devices/bind/fuchsia.platform",
   ]
 }
