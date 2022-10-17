@@ -305,6 +305,10 @@ template("bind_test") {
 #     TODO(fxbug.dev/43400): Eventually this option should be removed when we can define this
 #     configuration in the driver's component manifest.
 #
+#   disable_fragment_gen (optional)
+#     [bool]: For composite bind rules, don't output C header files containing fragment bytecode.
+#     Defaults to false.
+#
 #   generate_bytecode (optional)
 #     [bool]: Output a bytecode file, instead of a C header file.
 #
