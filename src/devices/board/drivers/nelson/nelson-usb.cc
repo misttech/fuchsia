@@ -17,7 +17,6 @@
 #include <soc/aml-s905d3/s905d3-hw.h>
 #include <usb/cdc.h>
 #include <usb/dwc2/metadata.h>
-#include <usb/peripheral-config.h>
 #include <usb/peripheral.h>
 #include <usb/usb.h>
 
@@ -49,6 +48,10 @@ static const std::vector<fpbus::Bti> dwc2_btis{
         .bti_id = BTI_USB,
     }},
 };
+
+static const char kManufacturer[] = "Zircon";
+static const char kProduct[] = "CDC-Ethernet";
+static const char kSerial[] = "0123456789ABCDEF";
 
 // Metadata for DWC2 driver.
 static const dwc2_metadata_t dwc2_metadata = {
@@ -208,16 +211,29 @@ zx_status_t Nelson::UsbInit() {
     }
   }
 
-  std::unique_ptr<usb::UsbPeripheralConfig> peripheral_config;
-  auto status = usb::UsbPeripheralConfig::CreateFromBootArgs(parent_, &peripheral_config);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Failed to get usb config from boot args - %d", status);
-    return status;
+  constexpr size_t alignment = alignof(UsbConfig) > __STDCPP_DEFAULT_NEW_ALIGNMENT__
+                                   ? alignof(UsbConfig)
+                                   : __STDCPP_DEFAULT_NEW_ALIGNMENT__;
+  constexpr size_t config_size = sizeof(UsbConfig) + 1 * sizeof(FunctionDescriptor);
+  UsbConfig* config =
+      reinterpret_cast<UsbConfig*>(aligned_alloc(alignment, ZX_ROUNDUP(config_size, alignment)));
+  if (!config) {
+    return ZX_ERR_NO_MEMORY;
   }
+
+  config->vid = GOOGLE_USB_VID;
+  config->pid = GOOGLE_USB_CDC_AND_FUNCTION_TEST_PID;
+  strcpy(config->manufacturer, kManufacturer);
+  strcpy(config->serial, kSerial);
+  strcpy(config->product, kProduct);
+  config->functions[0].interface_class = USB_CLASS_COMM;
+  config->functions[0].interface_subclass = USB_CDC_SUBCLASS_ETHERNET;
+  config->functions[0].interface_protocol = 0;
   const std::vector<fpbus::Metadata> usb_metadata{
       {{
           .type = DEVICE_METADATA_USB_CONFIG,
-          .data = peripheral_config->config_data(),
+          .data = std::vector<uint8_t>(reinterpret_cast<uint8_t*>(config),
+                                       reinterpret_cast<uint8_t*>(config) + config_size),
       }},
       {{
           .type = DEVICE_METADATA_PRIVATE,
@@ -258,6 +274,7 @@ zx_status_t Nelson::UsbInit() {
       return result->error_value();
     }
   }
+  free(config);
 
   return ZX_OK;
 }
