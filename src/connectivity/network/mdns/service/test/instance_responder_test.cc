@@ -23,6 +23,8 @@ constexpr char kHostName[] = "test2host";
 constexpr char kHostFullName[] = "test2host.local.";
 constexpr char kAltHostName[] = "123456789ABC";
 constexpr char kAltHostFullName[] = "123456789ABC.local.";
+constexpr char kLocalHostNameLong[] = "testhostnamethatislong";
+constexpr char kLocalHostFullNameLong[] = "testhostnamethatislong.local.";
 const std::vector<inet::IpAddress> kAddresses{inet::IpAddress(192, 168, 1, 200),
                                               inet::IpAddress(192, 168, 1, 201)};
 const std::vector<inet::SocketAddress> kSocketAddresses{
@@ -605,8 +607,8 @@ TEST_F(InstanceResponderTest, LocalServiceInstanceNotifications) {
   SetLocalHostAddresses(kHostAddresses);
 
   // Normal startup.
-  under_test.Start(kLocalHostFullName);
-  ExpectAnnouncements();
+  under_test.Start(kLocalHostFullNameLong);
+  ExpectAnnouncements(Media::kBoth, IpVersions::kBoth, kLocalHostFullNameLong);
 
   ReplyAddress sender_address(
       inet::SocketAddress(192, 168, 1, 1, inet::IpPort::From_uint16_t(5353)),
@@ -617,12 +619,12 @@ TEST_F(InstanceResponderTest, LocalServiceInstanceNotifications) {
                              sender_address);
   ExpectGetPublicationCall(PublicationCause::kQueryMulticastResponse, "",
                            {sender_address.socket_address()})(Mdns::Publication::Create(kPort));
-  ExpectPublication();
+  ExpectPublication(Media::kBoth, IpVersions::kBoth, kLocalHostFullNameLong);
   ExpectPostTaskForTime(zx::sec(60), zx::sec(60));  // idle cleanup
   ExpectNoOther();
 
   ExpectAddLocalServiceInstanceCall(
-      ServiceInstance(kServiceName, kInstanceName, kLocalHostFullName, kSocketAddresses), false);
+      ServiceInstance(kServiceName, kInstanceName, kLocalHostNameLong, kSocketAddresses), false);
 }
 
 // Tests the the responder works with an alternate host name.

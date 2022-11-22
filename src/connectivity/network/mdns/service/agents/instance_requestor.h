@@ -61,6 +61,9 @@ class InstanceRequestor : public MdnsAgent {
     uint16_t srv_weight_ = 0;
     bool new_ = true;
     bool dirty_ = true;
+    bool srv_queried_ = false;
+    bool txt_received_ = false;
+    bool txt_queried_ = false;
   };
 
   // Describes a target. We use |inet::SocketAddress| because it has scope_id. The port numbers
@@ -69,6 +72,7 @@ class InstanceRequestor : public MdnsAgent {
     std::unordered_set<inet::SocketAddress> addresses_;
     bool keep_ = false;
     bool dirty_ = false;
+    bool addresses_queried_ = false;
   };
 
   // Report all known instances to the indicated subscriber.
