@@ -232,6 +232,26 @@ int usb_device_removed(const char* dev_name, void* client_data) { return 0; }
 
 int usb_discovery_done(void* client_data) { return 0; }
 
+int send_intr_packet() {
+  // Send data to device via OUT control request.
+  int ret = usb_device_control_transfer(
+      dev, USB_DIR_OUT | USB_TYPE_VENDOR | USB_TYPE_VENDOR | USB_RECIP_INTERFACE,
+      USB_PERIPHERAL_TEST_NULL_REQUEST, 0, test_interface, nullptr, 0, TIMEOUT);
+
+  printf("usb_device_control_transfer = %d\n", ret);
+
+  // Queue a read of an interrupt packet and see what happens.
+  auto* req = usb_request_new(dev, bulk_in_ep);
+  uint8_t mybuffer[64] = {};
+  assert(req != nullptr);
+  req->buffer = mybuffer;
+  req->buffer_length = 64;
+  ret = usb_request_queue(req);
+  printf("usb_request_queue = %d\n", ret);
+
+  return 0;
+}
+
 }  // anonymous namespace
 
 int main(int argc, char** argv) {
@@ -253,7 +273,8 @@ int main(int argc, char** argv) {
     goto fail;
   }
 
-  ret = zxtest::RunAllTests(argc, argv) ? 0 : -1;
+  // ret = zxtest::RunAllTests(argc, argv) ? 0 : -1;
+  send_intr_packet();
 
 fail:
   if (dev) {

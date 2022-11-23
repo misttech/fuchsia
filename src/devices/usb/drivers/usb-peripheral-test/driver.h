@@ -23,7 +23,7 @@ static constexpr size_t BULK_MAX_PACKET = 512;  // FIXME(voydanoff) USB 3.0 supp
 // FIXME(voydanoff) Increase this when DCI drivers support
 // non-contiguous DMA buffers.
 static constexpr size_t BULK_REQ_SIZE = 4096;
-static constexpr size_t INTR_REQ_SIZE = 1024;
+static constexpr size_t INTR_REQ_SIZE = 64;
 static constexpr size_t INTR_MAX_PACKET = 64;
 
 namespace usb_function_test {
@@ -60,6 +60,7 @@ class UsbTest : public UsbTestType, public ddk::UsbFunctionInterfaceProtocol<Usb
   void TestIntrComplete(usb_request_t* req);
   void TestBulkOutComplete(usb_request_t* req);
   void TestBulkInComplete(usb_request_t* req);
+  void TestIntrOutComplete(usb_request_t* req);
   ddk::UsbFunctionProtocolClient function_;
 
   // These are lists of usb_request_t.

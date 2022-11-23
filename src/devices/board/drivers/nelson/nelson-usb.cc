@@ -222,12 +222,12 @@ zx_status_t Nelson::UsbInit() {
   }
 
   config->vid = GOOGLE_USB_VID;
-  config->pid = GOOGLE_USB_CDC_AND_FUNCTION_TEST_PID;
+  config->pid = GOOGLE_USB_FUNCTION_TEST_PID;
   strcpy(config->manufacturer, kManufacturer);
   strcpy(config->serial, kSerial);
   strcpy(config->product, kProduct);
-  config->functions[0].interface_class = USB_CLASS_COMM;
-  config->functions[0].interface_subclass = USB_CDC_SUBCLASS_ETHERNET;
+  config->functions[0].interface_class = USB_CLASS_VENDOR;
+  config->functions[0].interface_subclass = 0;
   config->functions[0].interface_protocol = 0;
   const std::vector<fpbus::Metadata> usb_metadata{
       {{

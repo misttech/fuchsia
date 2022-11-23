@@ -56,7 +56,7 @@ zx_status_t UsbTest::Init() {
     zxlogf(ERROR, "%s: usb_function_alloc_ep failed", __func__);
     return status;
   }
-  status = function_.AllocEp(USB_DIR_IN, &intr_addr_);
+  status = function_.AllocEp(USB_DIR_OUT, &intr_addr_);
   if (status != ZX_OK) {
     zxlogf(ERROR, "%s: usb_function_alloc_ep failed", __func__);
     return status;
@@ -117,6 +117,8 @@ void UsbTest::TestIntrComplete(usb_request_t* req) {
   fbl::AutoLock lock(&lock_);
   intr_reqs_.push(usb::Request<void>(req, parent_req_size_));
 }
+
+void UsbTest::TestIntrOutComplete(usb_request_t* req) { fprintf(stderr, "TestIntrOutComplete\n"); }
 
 void UsbTest::TestBulkOutComplete(usb_request_t* req) {
   zxlogf(SERIAL, "%s %d %ld", __func__, req->response.status, req->response.actual);
@@ -230,6 +232,30 @@ zx_status_t UsbTest::UsbFunctionInterfaceControl(const usb_setup_t* setup,
         .ctx = this,
     };
     function_.RequestQueue(req->take(), &complete);
+    return ZX_OK;
+  } else if (setup->bm_request_type == (USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_INTERFACE) &&
+             setup->b_request == USB_PERIPHERAL_TEST_NULL_REQUEST) {
+    fprintf(stderr, "gkalsi: queue interrupt out request\n");
+
+    // Queue up a single INTR OUT request and see if the host sends an IN packet
+    lock_.Acquire();
+    std::optional<usb::Request<void>> req = intr_reqs_.pop();
+    lock_.Release();
+
+    if (!req) {
+      zxlogf(ERROR, "%s: no interrupt request available", __func__);
+      return ZX_OK;
+    }
+
+    usb_request_complete_callback_t cb = {
+        .callback =
+            [](void* ctx, usb_request_t* req) {
+              static_cast<UsbTest*>(ctx)->TestIntrOutComplete(req);
+            },
+        .ctx = nullptr,
+    };
+
+    function_.RequestQueue(req->take(), &cb);
     return ZX_OK;
   } else {
     return ZX_ERR_NOT_SUPPORTED;

@@ -231,12 +231,12 @@ zx_status_t Buckeye::UsbInit() {
   }
 
   config->vid = GOOGLE_USB_VID;
-  config->pid = GOOGLE_USB_CDC_AND_FUNCTION_TEST_PID;
+  config->pid = GOOGLE_USB_FUNCTION_TEST_PID;
   std::strcpy(config->manufacturer, kManufacturer);
   std::strcpy(config->serial, kSerial);
   std::strcpy(config->product, kProduct);
-  config->functions[0].interface_class = USB_CLASS_COMM;
-  config->functions[0].interface_subclass = USB_CDC_SUBCLASS_ETHERNET;
+  config->functions[0].interface_class = USB_CLASS_VENDOR;
+  config->functions[0].interface_subclass = 0;
   config->functions[0].interface_protocol = 0;
   usb_metadata[0].data() = std::vector<uint8_t>(reinterpret_cast<uint8_t*>(config),
                                                 reinterpret_cast<uint8_t*>(config) + config_size);
