@@ -116,7 +116,7 @@ fn init_diagnostics(config: &Config) -> Result<(), Error> {
 }
 
 async fn async_main(config: Config) -> Result<(), Error> {
-    let mut archivist = Archivist::new(&config).await?;
+    let mut archivist = Archivist::new(&config)?;
     debug!("Archivist initialized from configuration.");
 
     archivist.install_log_services().await;

@@ -30,6 +30,9 @@ impl EventSource {
         // Connect to /events/event_stream which contains our newer FIDL protocol
         let event_streams = Some(vec![
             connect_to_protocol_at_path::<fsys::EventStream2Marker>(
+                "/events/lifecycle_event_stream",
+            )?,
+            connect_to_protocol_at_path::<fsys::EventStream2Marker>(
                 "/events/log_sink_requested_event_stream",
             )?,
             connect_to_protocol_at_path::<fsys::EventStream2Marker>(
@@ -169,8 +172,8 @@ pub mod tests {
     #[fuchsia::test]
     async fn event_stream() {
         let events = BTreeSet::from([
+            AnyEventType::General(EventType::ComponentStopped),
             AnyEventType::Singleton(SingletonEventType::DiagnosticsReady),
-            AnyEventType::Singleton(SingletonEventType::LogSinkRequested),
         ]);
         let (mut event_stream, dispatcher) = Dispatcher::new_for_test(events);
         let (stream_server, _server_task, sender) = spawn_fake_event_stream();
@@ -200,26 +203,20 @@ pub mod tests {
             })
             .expect("send diagnostics ready event ok");
 
-        // Send a `LogSinkRequested` event.
+        // Send a Stopped event.
         sender
             .unbounded_send(fsys::Event {
                 header: Some(fsys::EventHeader {
-                    event_type: Some(fsys::EventType::CapabilityRequested),
+                    event_type: Some(fsys::EventType::Stopped),
                     moniker: Some("./foo/bar".to_string()),
                     component_url: Some("fuchsia-pkg://fuchsia.com/foo#meta/bar.cmx".to_string()),
                     timestamp: Some(zx::Time::get_monotonic().into_nanos()),
                     ..fsys::EventHeader::EMPTY
                 }),
-                event_result: Some(fsys::EventResult::Payload(
-                    fsys::EventPayload::CapabilityRequested(fsys::CapabilityRequestedPayload {
-                        name: Some("fuchsia.logger.LogSink".to_string()),
-                        capability: Some(zx::Channel::create().unwrap().0),
-                        ..fsys::CapabilityRequestedPayload::EMPTY
-                    }),
-                )),
+
                 ..fsys::Event::EMPTY
             })
-            .expect("send diagnostics ready event ok");
+            .expect("send stopped event ok");
 
         let expected_component_id = ComponentIdentifier::parse_from_moniker("./foo/bar").unwrap();
         let expected_identity = ComponentIdentity::from_identifier_and_url(
@@ -237,13 +234,31 @@ pub mod tests {
             _ => assert!(false),
         }
 
-        // Assert the last received event was a LogSinkRequested event.
+        // Assert the last received event was a Stop event.
         let event = event_stream.next().await.unwrap();
-        match event.payload {
-            EventPayload::LogSinkRequested(LogSinkRequestedPayload { component, .. }) => {
-                assert_eq!(component, expected_identity)
+        compare_events_ignore_timestamp_and_payload(
+            event,
+            Event {
+                timestamp: zx::Time::get_monotonic(),
+                payload: EventPayload::ComponentStopped(ComponentStoppedPayload {
+                    component: expected_identity.clone(),
+                }),
+            },
+        );
+    }
+
+    pub fn compare_events_ignore_timestamp_and_payload(event1: Event, event2: Event) {
+        // Need to explicitly check every case despite the logic being the same since rust
+        // requires multi-case match arms to have variable bindings be the same type in every
+        // case. This isn't doable in our polymorphic event enums.
+        match (event1.payload, event2.payload) {
+            (
+                EventPayload::ComponentStopped(ComponentStoppedPayload { component: x, .. }),
+                EventPayload::ComponentStopped(ComponentStoppedPayload { component: y, .. }),
+            ) => {
+                assert_eq!(x, y);
             }
-            _ => assert!(false),
+            (a, b) => unreachable!("({:?}, {:?}) should never be compared here", a, b),
         }
     }
 
