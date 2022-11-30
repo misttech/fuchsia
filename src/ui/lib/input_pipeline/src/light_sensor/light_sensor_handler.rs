@@ -17,7 +17,7 @@ use fidl_fuchsia_lightsensor::{
 };
 use fidl_fuchsia_settings::LightProxy;
 use fidl_fuchsia_ui_brightness::ControlProxy as BrightnessControlProxy;
-use fuchsia_syslog::fx_log_warn;
+use fuchsia_syslog::{fx_log_info, fx_log_warn};
 use fuchsia_zircon as zx;
 use futures::channel::oneshot;
 use futures::TryStreamExt;
@@ -65,8 +65,6 @@ impl ActiveSetting {
         Self { settings, active_setting }
     }
 
-    // TODO(fxbug.dev/110275) Remove allow once all clients are transitioned.
-    #[cfg_attr(not(test), allow(dead_code))]
     async fn adjust(
         &mut self,
         reading: Rgbc<u16>,
@@ -125,7 +123,8 @@ impl ActiveSetting {
             .set_feature_report(FeatureReport {
                 sensor: Some(SensorFeatureReport {
                     sensitivity: Some(vec![active_setting.gain as i64]),
-                    sampling_rate: Some(active_setting.atime as i64),
+                    // Feature report expects sampling rate in microseconds.
+                    sampling_rate: Some(to_us(active_setting.atime) as i64),
                     ..(feature_report
                         .sensor
                         .ok_or_else(|| format_err!("missing sensor in feature_report"))?)
@@ -151,6 +150,7 @@ impl ActiveSetting {
         if self.active_setting == 0 {
             false
         } else {
+            fx_log_info!("adjusting down");
             self.active_setting -= 1;
             true
         }
@@ -173,6 +173,7 @@ impl ActiveSetting {
         if self.active_setting == self.settings.len() - 1 {
             false
         } else {
+            fx_log_info!("adjusting up");
             self.active_setting += 1;
             true
         }
@@ -183,8 +184,6 @@ impl ActiveSetting {
 pub struct LightSensorHandler<T> {
     hanging_get: Rc<RefCell<SensorHangingGet>>,
     calibrator: Option<T>,
-    // TODO(fxbug.dev/110275) Remove allow once all clients are transitioned.
-    #[cfg_attr(not(test), allow(dead_code))]
     active_setting: Rc<RefCell<ActiveSetting>>,
     rgbc_to_lux_coefs: Rgbc<f32>,
     si_scaling_factors: Rgbc<f32>,
@@ -308,22 +307,17 @@ where
         let rgbc = (self.si_scaling_factors * rgbc).map(|c| c / ADC_SCALING_FACTOR);
         let lux = self.calculate_lux(rgbc);
         let cct = correlated_color_temperature(rgbc);
-        // TODO(fxbug.dev/110275) Enable this code once all clients are using fuchsia.lightsensor.Sensor
-        // rather than fuchsia.settings.LightSensor. The latter does not account for adjustments
-        // and will return incorrect values to clients if any ajdustments occur.
         // Update the sensor after the active setting has been used for calculations, since it may
         // change after this call.
-        if false {
-            self.active_setting
-                .borrow_mut()
-                .adjust(reading, device_proxy)
-                .await
-                .context("updating active setting")?;
-        }
+        self.active_setting
+            .borrow_mut()
+            .adjust(reading, device_proxy)
+            .await
+            .context("updating active setting")?;
 
-        // TODO(fxbug.dev/110275) Use normalized/calibrated rgbc in SI units once all clients are
+        // TODO(fxbug.dev/110275) Use calibrated rgbc in SI units once all clients are
         // using lux and cct.
-        let rgbc = reading.map(|c| c as f32);
+        let rgbc = uncalibrated_rgbc.map(|c| c as f32);
         Ok(LightReading { rgbc, lux, cct })
     }
 }
