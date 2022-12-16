@@ -480,7 +480,7 @@ TEST_F(DeviceEnumerationTest, NelsonTest) {
       "brownout-protection/nelson-brownout-protection",
 
       "spi-0/aml-spi-0/spi/spi-0-0",
-      "nrf52811-radio",
+      "nrf52811-radio/ot-radio"
   };
 
   ASSERT_NO_FATAL_FAILURE(TestRunner(kDevicePaths, std::size(kDevicePaths)));
