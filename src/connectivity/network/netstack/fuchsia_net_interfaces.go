@@ -330,6 +330,23 @@ type fidlInterfaceWatcherStats struct {
 	count atomic.Int64
 }
 
+func addressesChangeType(previouslyKnown bool, prevProperties, nextProperties addressProperties) (interfaces.AddressPropertiesInterest, bool) {
+	nextVisible := isAddressVisible(nextProperties.state)
+	if !previouslyKnown {
+		return 0, nextVisible
+	}
+	if prevProperties == nextProperties {
+		return 0, false
+	}
+	if prevVisible := isAddressVisible(prevProperties.state); prevVisible != nextVisible {
+		return 0, true
+	}
+	if !nextVisible {
+		return 0, false
+	}
+	return diffAddressProperties(prevProperties, nextProperties), false
+}
+
 func interfaceWatcherEventLoop(
 	ctx context.Context,
 	eventChan <-chan interfaceEvent,
@@ -466,21 +483,7 @@ func interfaceWatcherEventLoop(
 				properties.SetAddresses(addresses)
 				propertiesMap[event.nicid] = properties
 
-				propertyChangedBitflag, addedOrRemoved := func() (interfaces.AddressPropertiesInterest, bool) {
-					nextVisible := isAddressVisible(event.state)
-					if found {
-						if prevProperties == nextProperties {
-							return interfaces.AddressPropertiesInterest(0), false
-						}
-						if prevVisible := isAddressVisible(prevProperties.state); prevVisible != nextVisible {
-							return interfaces.AddressPropertiesInterest(0), true
-						} else {
-							return diffAddressProperties(prevProperties, nextProperties), false
-						}
-					} else {
-						return interfaces.AddressPropertiesInterest(0), isAddressVisible(event.state)
-					}
-				}()
+				propertyChangedBitflag, addedOrRemoved := addressesChangeType(found, prevProperties, nextProperties)
 				if propertyChangedBitflag == 0 && !addedOrRemoved {
 					break
 				}
