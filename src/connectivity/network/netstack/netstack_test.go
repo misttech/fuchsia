@@ -38,7 +38,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"go.uber.org/goleak"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
@@ -46,6 +48,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	tcpipstack "gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -1728,5 +1731,190 @@ func TestInFlightPacketsConsumeUDPSendBuffer(t *testing.T) {
 	// Expect Write() succeeds now that the send buffer has space.
 	if err := validateWrite(int64(len(data)), nil); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type fillableLinkEndpoint struct {
+	noopEndpoint
+	full       bool
+	dispatcher tcpipstack.NetworkDispatcher
+}
+
+func (e *fillableLinkEndpoint) MTU() uint32 {
+	return header.IPv6MinimumMTU
+}
+
+func (e *fillableLinkEndpoint) Attach(dispatcher tcpipstack.NetworkDispatcher) {
+	e.dispatcher = dispatcher
+	e.noopEndpoint.Attach(dispatcher)
+}
+
+func (e *fillableLinkEndpoint) WritePackets(pkts tcpipstack.PacketBufferList) (int, tcpip.Error) {
+	if e.full {
+		return 0, &tcpip.ErrNoBufferSpace{}
+	}
+
+	return pkts.Len(), nil
+}
+
+func TestForwarding(t *testing.T) {
+	const (
+		nicID1 = 1
+		nicID2 = 2
+
+		ttl = 64
+	)
+
+	tests := []struct {
+		name             string
+		netProto         tcpip.NetworkProtocolNumber
+		srcAddr, dstAddr tcpip.Address
+		rx               func(tcpipstack.NetworkDispatcher, tcpip.Address, tcpip.Address)
+	}{
+		{
+			name:     "IPv4",
+			netProto: ipv4.ProtocolNumber,
+			srcAddr:  "\xaa\xa8\x2a\x10",
+			dstAddr:  "\xcc\xa8\x2a\x10",
+			rx: func(dispatcher tcpipstack.NetworkDispatcher, src, dst tcpip.Address) {
+				totalLen := header.IPv4MinimumSize + header.ICMPv4MinimumSize
+				hdr := make([]byte, totalLen)
+				pkt := header.ICMPv4(hdr[header.IPv4MinimumSize:])
+				pkt.SetType(header.ICMPv4Echo)
+				pkt.SetCode(header.ICMPv4UnusedCode)
+				pkt.SetChecksum(0)
+				pkt.SetChecksum(^checksum.Checksum(pkt, 0))
+				ip := header.IPv4(hdr[:header.IPv4MinimumSize])
+				ip.Encode(&header.IPv4Fields{
+					TotalLength: uint16(totalLen),
+					Protocol:    uint8(icmp.ProtocolNumber4),
+					TTL:         ttl,
+					SrcAddr:     src,
+					DstAddr:     dst,
+				})
+				ip.SetChecksum(^ip.CalculateChecksum())
+				newPkt := tcpipstack.NewPacketBuffer(tcpipstack.PacketBufferOptions{
+					Payload: bufferv2.MakeWithData(hdr),
+				})
+				defer newPkt.DecRef()
+				dispatcher.DeliverNetworkPacket(ipv4.ProtocolNumber, newPkt)
+			},
+		},
+		{
+			name:     "IPv6 non-link-local unicast",
+			netProto: ipv6.ProtocolNumber,
+			srcAddr:  "\xaa\xa8\x2a\x10\xc0\xa8\x2a\x10\xc0\xa8\x2a\x10\xc0\xa8\x2a\x10",
+			dstAddr:  "\xcc\xa8\x2a\x10\xc0\xa8\x2a\x10\xc0\xa8\x2a\x10\xc0\xa8\x2a\x10",
+			rx: func(dispatcher tcpipstack.NetworkDispatcher, src, dst tcpip.Address) {
+				totalLen := header.IPv6MinimumSize + header.ICMPv6MinimumSize
+				hdr := make([]byte, totalLen)
+				pkt := header.ICMPv6(hdr[header.IPv6MinimumSize:])
+				pkt.SetType(header.ICMPv6EchoRequest)
+				pkt.SetCode(header.ICMPv6UnusedCode)
+				pkt.SetChecksum(0)
+				pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+					Header: pkt,
+					Src:    src,
+					Dst:    dst,
+				}))
+				ip := header.IPv6(hdr[:header.IPv6MinimumSize])
+				ip.Encode(&header.IPv6Fields{
+					PayloadLength:     header.ICMPv6MinimumSize,
+					TransportProtocol: icmp.ProtocolNumber6,
+					HopLimit:          ttl,
+					SrcAddr:           src,
+					DstAddr:           dst,
+				})
+				newPkt := tcpipstack.NewPacketBuffer(tcpipstack.PacketBufferOptions{
+					Payload: bufferv2.MakeWithData(hdr),
+				})
+				defer newPkt.DecRef()
+				dispatcher.DeliverNetworkPacket(ipv6.ProtocolNumber, newPkt)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for _, full := range []bool{true, false} {
+				t.Run(fmt.Sprintf("Full=%t", full), func(t *testing.T) {
+					s := tcpipstack.New(tcpipstack.Options{
+						NetworkProtocols:   []tcpipstack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+						TransportProtocols: []tcpipstack.TransportProtocolFactory{udp.NewProtocol},
+					})
+
+					var e1 fillableLinkEndpoint
+					if err := s.CreateNIC(nicID1, &e1); err != nil {
+						t.Fatalf("s.CreateNIC(%d, _): %s", nicID1, err)
+					}
+
+					e2 := fillableLinkEndpoint{full: full}
+					if err := s.CreateNIC(nicID2, &e2); err != nil {
+						t.Fatalf("s.CreateNIC(%d, _): %s", nicID2, err)
+					}
+
+					protocolAddrV4 := tcpip.ProtocolAddress{
+						Protocol:          ipv4.ProtocolNumber,
+						AddressWithPrefix: testV4Address.WithPrefix(),
+					}
+					if err := s.AddProtocolAddress(nicID2, protocolAddrV4, tcpipstack.AddressProperties{}); err != nil {
+						t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID2, protocolAddrV4, err)
+					}
+					protocolAddrV6 := tcpip.ProtocolAddress{
+						Protocol:          ipv6.ProtocolNumber,
+						AddressWithPrefix: testV6Address.WithPrefix(),
+					}
+					if err := s.AddProtocolAddress(nicID2, protocolAddrV6, tcpipstack.AddressProperties{}); err != nil {
+						t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID2, protocolAddrV6, err)
+					}
+
+					if err := s.SetForwardingDefaultAndAllNICs(ipv4.ProtocolNumber, true); err != nil {
+						t.Fatalf("s.SetForwardingDefaultAndAllNICs(%d, true): %s", ipv4.ProtocolNumber, err)
+					}
+					if err := s.SetForwardingDefaultAndAllNICs(ipv6.ProtocolNumber, true); err != nil {
+						t.Fatalf("s.SetForwardingDefaultAndAllNICs(%d, true): %s", ipv6.ProtocolNumber, err)
+					}
+
+					s.SetRouteTable([]tcpip.Route{
+						{
+							Destination: header.IPv4EmptySubnet,
+							NIC:         nicID2,
+						},
+						{
+							Destination: header.IPv6EmptySubnet,
+							NIC:         nicID2,
+						},
+					})
+
+					test.rx(e1.dispatcher, test.srcAddr, test.dstAddr)
+
+					checkOutgoingDeviceNoBufferSpaceCounter := func(nicID tcpip.NICID, expectErr bool) {
+						t.Helper()
+
+						expectCounter := uint64(0)
+						if expectErr {
+							expectCounter = 1
+						}
+
+						netEP, err := s.GetNetworkEndpoint(nicID, test.netProto)
+						if err != nil {
+							t.Fatalf("s.GetNetworkEndpoint(%d, %d): %s", nicID, test.netProto, err)
+						}
+
+						stats := netEP.Stats()
+						ipStats, ok := stats.(tcpipstack.IPNetworkEndpointStats)
+						if !ok {
+							t.Fatalf("%#v is not a %T", stats, ipStats)
+						}
+
+						if got := ipStats.IPStats().Forwarding.OutgoingDeviceNoBufferSpace.Value(); got != expectCounter {
+							t.Errorf("got ipStats.IPStats().Forwarding.OutgoingDeviceNoBufferSpace.Value() = %d, want = %d", got, expectCounter)
+						}
+					}
+					checkOutgoingDeviceNoBufferSpaceCounter(nicID1, full)
+					checkOutgoingDeviceNoBufferSpaceCounter(nicID2, false)
+				})
+			}
+		})
 	}
 }

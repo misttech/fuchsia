@@ -845,6 +845,7 @@ async fn inspect_stat_counters() {
                 LinkLocalDestination: AnyProperty,
                 LinkLocalSource: AnyProperty,
                 NoMulticastPendingQueueBufferSpace: AnyProperty,
+                OutgoingDeviceNoBufferSpace: AnyProperty,
                 PacketTooBig: AnyProperty,
                 UnexpectedMulticastInputInterface: AnyProperty,
                 UnknownOutputEndpoint: AnyProperty,
