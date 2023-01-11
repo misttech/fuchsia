@@ -14,7 +14,7 @@ use fidl_fuchsia_diagnostics::{
 };
 use regex::Regex;
 use regex_syntax;
-use std::borrow::Borrow;
+use std::borrow::{Borrow, Cow};
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -38,9 +38,6 @@ pub(crate) static WILDCARD_SYMBOL_STR: &str = "*";
 static WILDCARD_SYMBOL_CHAR: char = '*';
 
 static RECURSIVE_WILDCARD_SYMBOL_STR: &str = "**";
-
-// Globs will match everything along a moniker, but won't match empty strings.
-static GLOB_REGEX_EQUIVALENT: &str = ".+";
 
 // Wildcards will match anything except for an unescaped slash, since their match
 // only extends to a single moniker "node".
@@ -352,25 +349,6 @@ pub fn convert_path_selector_to_regex(
     Ok(regex_string)
 }
 
-/// Converts a single StringSelectors into a string capable of constructing a regular
-/// expression which matches strings encoding a property name on a node.
-///
-/// NOTE: The resulting regular expression makes the assumption that the property names
-/// that it will match against have been sanitized by the  sanitize_string_for_selectors API in
-/// this crate.
-pub fn convert_property_selector_to_regex(selector: &StringSelector) -> Result<String, Error> {
-    let mut regex_string = "^".to_string();
-
-    // Property selectors replace wildcards with GLOB like behavior since there is no
-    // concept of levels/depth to properties.
-    let property_regex = convert_string_selector_to_regex(selector, GLOB_REGEX_EQUIVALENT, None)?;
-    regex_string.push_str(&property_regex);
-
-    regex_string.push_str("$");
-
-    Ok(regex_string)
-}
-
 /// Sanitizes raw strings from the system such that they align with the
 /// special-character and escaping semantics of the Selector format.
 ///
@@ -611,6 +589,147 @@ pub fn match_selector_against_single_node(
     Ok(regex.is_match(&sanitize_string_for_selectors(node.as_ref())))
 }
 
+/// Match a selector against a target string.
+pub fn match_string(selector: &StringSelector, target: impl AsRef<str>) -> bool {
+    match selector {
+        StringSelector::ExactMatch(s) => s == target.as_ref(),
+        StringSelector::StringPattern(pattern) => match_pattern(&pattern, &target.as_ref()),
+        _ => false,
+    }
+}
+
+fn match_pattern(pattern: &str, target: &str) -> bool {
+    // Tokenize the string. From: "a*bc*d" to "a, bc, d".
+    let mut pattern_tokens = vec![];
+    let mut token = TokenBuilder::new(pattern);
+    let mut chars = pattern.char_indices();
+
+    while let Some((index, curr_char)) = chars.next() {
+        token.maybe_init(index);
+
+        // If we find a backslash then push the next character directly to our new string.
+        match curr_char {
+            '\\' => {
+                match chars.next() {
+                    Some((i, c)) => {
+                        token.into_string();
+                        token.push(c, i);
+                    }
+                    // We found a backslash without a character to its right. Return false as this
+                    // isn't valid.
+                    None => return false,
+                }
+            }
+            '*' => {
+                if !token.is_empty() {
+                    pattern_tokens.push(token.take());
+                }
+                token = TokenBuilder::new(pattern);
+            }
+            c => {
+                token.push(c, index);
+            }
+        }
+    }
+
+    // Push the remaining token if there's any.
+    if !token.is_empty() {
+        pattern_tokens.push(token.take());
+    }
+
+    // Exit early. We only have *'s.
+    if pattern_tokens.is_empty() && !pattern.is_empty() {
+        return true;
+    }
+
+    // If the pattern doesn't begin with a * and the target string doesn't start with the first
+    // pattern token, we can exit.
+    if pattern.chars().nth(0) != Some('*') && !target.starts_with(pattern_tokens[0].as_ref()) {
+        return false;
+    }
+
+    // If the last character of the pattern is not an unescaped * and the target string doesn't end
+    // with the last token in the pattern, then we can exit.
+    if pattern.chars().rev().nth(0) != Some('*')
+        && pattern.chars().rev().nth(1) != Some('\\')
+        && !target.ends_with(pattern_tokens[pattern_tokens.len() - 1].as_ref())
+    {
+        return false;
+    }
+
+    // We must find all pattern tokens in the target string in order. If we don't find one then we
+    // fail.
+    let mut cur_string = target;
+    for pattern in pattern_tokens.iter() {
+        match cur_string.find(pattern.as_ref()) {
+            Some(i) => {
+                cur_string = &cur_string[i + pattern.len()..];
+            }
+            None => {
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
+// Utility to allow matching the string cloning only when necessary, this is when we run into a
+// escaped character.
+#[derive(Debug)]
+enum TokenBuilder<'a> {
+    Init(&'a str),
+    Slice { string: &'a str, start: usize, end: Option<usize> },
+    String(String),
+}
+
+impl<'a> TokenBuilder<'a> {
+    fn new(string: &'a str) -> Self {
+        Self::Init(string)
+    }
+
+    fn maybe_init(&mut self, start_index: usize) {
+        match self {
+            Self::Init(s) => *self = Self::Slice { string: s, start: start_index, end: None },
+            _ => {}
+        }
+    }
+
+    fn into_string(&mut self) {
+        if let Self::Slice { string, start, end: Some(end) } = self {
+            *self = Self::String(string[*start..=*end].to_string())
+        }
+    }
+
+    fn push(&mut self, c: char, index: usize) {
+        match self {
+            Self::Slice { end, .. } => {
+                *end = Some(index);
+            }
+            Self::String(s) => s.push(c),
+            Self::Init(_) => unreachable!(),
+        }
+    }
+
+    fn take(self) -> Cow<'a, str> {
+        match self {
+            Self::Slice { string, start, end: Some(end) } => Cow::Borrowed(&string[start..=end]),
+            Self::Slice { string, start, end: None } => Cow::Borrowed(&string[start..start]),
+            Self::String(s) => Cow::Owned(s),
+            Self::Init(_) => unreachable!(),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        match self {
+            Self::Slice { start, end: Some(end), .. } => start > end,
+            Self::Slice { end: None, .. } => true,
+            Self::String(s) => s.is_empty(),
+            Self::Init(_) => true,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -775,74 +894,6 @@ a:b:c
     }
 
     #[fuchsia::test]
-    fn canonical_property_regex_transpilation_test() {
-        // Note: We provide the full selector syntax but this test is only transpiling
-        // the property of the selector, and validating against that.
-        let test_cases = vec![
-            (r#"echo.cmx:a:*"#, r#"a"#),
-            (r#"echo.cmx:a:bob"#, r#"bob"#),
-            (r#"echo.cmx:a:b*"#, r#"bob"#),
-            (r#"echo.cmx:a:\*"#, r#"*"#),
-            (r#"echo.cmx:a:b\ c"#, r#"b c"#),
-        ];
-        for (selector, string_to_match) in test_cases {
-            let parsed_selector = parse_selector::<VerboseError>(selector).unwrap();
-            let tree_selector = parsed_selector.tree_selector.unwrap();
-            match tree_selector {
-                TreeSelector::SubtreeSelector(_) => {
-                    unreachable!("Subtree selectors don't test property selection.")
-                }
-                TreeSelector::PropertySelector(tree_selector) => {
-                    let property_selector = tree_selector.target_properties;
-                    let selector_regex = Regex::new(
-                        &convert_property_selector_to_regex(&property_selector).unwrap(),
-                    )
-                    .unwrap();
-                    assert!(
-                        selector_regex.is_match(&sanitize_string_for_selectors(string_to_match)),
-                        "{} failed for {} with regex={:?}",
-                        selector,
-                        string_to_match,
-                        selector_regex
-                    );
-                }
-                _ => unreachable!(),
-            }
-        }
-    }
-
-    #[fuchsia::test]
-    fn failing_property_regex_transpilation_test() {
-        // Note: We provide the full selector syntax but this test is only transpiling
-        // the node-path of the tree selector, and valdating against that.
-        let test_cases = vec![
-            (r#"echo.cmx:a:c"#, r#"d"#),
-            (r#"echo.cmx:a:bob"#, r#"thebob"#),
-            (r#"echo.cmx:a:c"#, r#"cdog"#),
-        ];
-        for (selector, string_to_match) in test_cases {
-            let parsed_selector = parse_selector::<VerboseError>(selector).unwrap();
-            let tree_selector = parsed_selector.tree_selector.unwrap();
-            match tree_selector {
-                TreeSelector::SubtreeSelector(_) => {
-                    unreachable!("Subtree selectors don't test property selection.")
-                }
-                TreeSelector::PropertySelector(tree_selector) => {
-                    let target_properties = tree_selector.target_properties;
-                    let selector_regex = Regex::new(
-                        &convert_property_selector_to_regex(&target_properties).unwrap(),
-                    )
-                    .unwrap();
-                    assert!(
-                        !selector_regex.is_match(&sanitize_string_for_selectors(string_to_match))
-                    );
-                }
-                _ => unreachable!(),
-            }
-        }
-    }
-
-    #[fuchsia::test]
     fn component_selector_match_test() {
         // Note: We provide the full selector syntax but this test is only validating it
         // against the provided moniker
@@ -997,5 +1048,36 @@ a:b:c
                 ..Selector::EMPTY
             }
         );
+    }
+
+    #[fuchsia::test]
+    fn match_string_test() {
+        // Exact match.
+        assert!(match_string(&StringSelector::ExactMatch("foo".into()), "foo"));
+
+        // Valid pattern matches.
+        assert!(match_string(&StringSelector::StringPattern("*foo*".into()), "hellofoobye"));
+        assert!(match_string(&StringSelector::StringPattern("bar*foo".into()), "barxfoo"));
+        assert!(match_string(&StringSelector::StringPattern("bar*foo".into()), "barfoo"));
+        assert!(match_string(&StringSelector::StringPattern("bar*foo".into()), "barxfoo"));
+        assert!(match_string(&StringSelector::StringPattern("foo*".into()), "foobar"));
+        assert!(match_string(&StringSelector::StringPattern("*".into()), "foo"));
+        assert!(match_string(&StringSelector::StringPattern("bar*baz*foo".into()), "barxzybazfoo"));
+        assert!(match_string(&StringSelector::StringPattern("foo*bar*baz".into()), "foobazbarbaz"));
+
+        // Escaped char.
+        assert!(match_string(&StringSelector::StringPattern("foo\\*".into()), "foo*"));
+
+        // Invalid cases.
+        assert!(!match_string(&StringSelector::StringPattern("foo\\".into()), "foo\\"));
+        assert!(!match_string(&StringSelector::StringPattern("bar*foo".into()), "barxfoox"));
+        assert!(!match_string(&StringSelector::StringPattern("m*".into()), "echo.csx"));
+        assert!(!match_string(&StringSelector::StringPattern("mx*".into()), "echo.cmx"));
+        assert!(!match_string(&StringSelector::StringPattern("m*x*".into()), "echo.cmx"));
+        assert!(!match_string(&StringSelector::StringPattern("*foo*".into()), "xbary"));
+        assert!(!match_string(
+            &StringSelector::StringPattern("foo*bar*baz*qux".into()),
+            "foobarbaazqux"
+        ));
     }
 }
