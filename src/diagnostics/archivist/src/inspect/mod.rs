@@ -145,13 +145,13 @@ impl ReaderServer {
                             node_hierarchy,
                             &static_matcher,
                         ) {
-                            Ok(Some(filtered_hierarchy)) => NodeHierarchyData {
+                            Some(filtered_hierarchy) => NodeHierarchyData {
                                 filename: node_hierarchy_data.filename,
                                 timestamp: node_hierarchy_data.timestamp,
                                 errors: node_hierarchy_data.errors,
                                 hierarchy: Some(filtered_hierarchy),
                             },
-                            Ok(None) => NodeHierarchyData {
+                            None => NodeHierarchyData {
                                 filename: node_hierarchy_data.filename,
                                 timestamp: node_hierarchy_data.timestamp,
                                 errors: vec![schema::InspectError {
@@ -163,17 +163,6 @@ impl ReaderServer {
                                 }],
                                 hierarchy: None,
                             },
-                            Err(e) => {
-                                error!(?e, "Failed to filter a node hierarchy");
-                                NodeHierarchyData {
-                                    filename: node_hierarchy_data.filename,
-                                    timestamp: node_hierarchy_data.timestamp,
-                                    errors: vec![schema::InspectError {
-                                        message: format!("{:?}", e),
-                                    }],
-                                    hierarchy: None,
-                                }
-                            }
                         }
                     }
                     None => NodeHierarchyData {
@@ -201,13 +190,13 @@ impl ReaderServer {
                 Some(node_hierarchy) => {
                     match diagnostics_hierarchy::filter_hierarchy(node_hierarchy, &dynamic_matcher)
                     {
-                        Ok(Some(filtered_hierarchy)) => NodeHierarchyData {
+                        Some(filtered_hierarchy) => NodeHierarchyData {
                             filename: node_hierarchy_data.filename,
                             timestamp: node_hierarchy_data.timestamp,
                             errors: node_hierarchy_data.errors,
                             hierarchy: Some(filtered_hierarchy),
                         },
-                        Ok(None) => NodeHierarchyData {
+                        None => NodeHierarchyData {
                             filename: node_hierarchy_data.filename,
                             timestamp: node_hierarchy_data.timestamp,
                             errors: vec![schema::InspectError {
@@ -217,12 +206,6 @@ impl ReaderServer {
                                 )
                                 .to_string(),
                             }],
-                            hierarchy: None,
-                        },
-                        Err(e) => NodeHierarchyData {
-                            filename: node_hierarchy_data.filename,
-                            timestamp: node_hierarchy_data.timestamp,
-                            errors: vec![schema::InspectError { message: format!("{:?}", e) }],
                             hierarchy: None,
                         },
                     }
