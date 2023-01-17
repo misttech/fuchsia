@@ -45,7 +45,8 @@ zx_status_t NetworkDevice::Create(void* ctx, zx_device_t* parent) {
     return ZX_ERR_NOT_FOUND;
   }
 
-  zx::status device = NetworkDeviceInterface::Create(netdev->loop_.dispatcher(), netdevice_impl);
+  zx::status device =
+      NetworkDeviceInterface::Create(netdev->loop_.dispatcher(), netdevice_impl, netdev.get());
   if (device.is_error()) {
     zxlogf(ERROR, "failed to create inner device %s", device.status_string());
     return device.status_value();
@@ -79,6 +80,24 @@ void NetworkDevice::DdkRelease() {
 void NetworkDevice::GetDevice(GetDeviceRequestView request, GetDeviceCompleter::Sync& _completer) {
   ZX_ASSERT_MSG(device_, "can't serve device if not bound to parent implementation");
   device_->Bind(std::move(request->device));
+}
+
+void NetworkDevice::NotifyThread(zx::unowned_thread thread, ThreadType type) {
+  const std::string_view role = [&type]() {
+    switch (type) {
+      case ThreadType::Tx:
+        return "fuchsia.devices.network.core.tx";
+      case ThreadType::Rx:
+        return "fuchsia.devices.network.core.rx";
+    }
+  }();
+
+  if (zx_status_t status =
+          device_set_profile_by_role(zxdev(), thread->get(), role.data(), role.size());
+      status != ZX_OK) {
+    zxlogf(ERROR, "failed to set thread profile '%.*s': %s", static_cast<int>(role.size()),
+           role.data(), zx_status_get_string(status));
+  }
 }
 
 static constexpr zx_driver_ops_t network_driver_ops = {

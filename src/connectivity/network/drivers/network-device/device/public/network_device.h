@@ -9,6 +9,7 @@
 #include <fuchsia/hardware/network/device/cpp/banjo.h>
 #include <lib/async/dispatcher.h>
 #include <lib/fit/function.h>
+#include <lib/zx/thread.h>
 
 #include <memory>
 
@@ -20,13 +21,25 @@ namespace netdev = fuchsia_hardware_network;
 
 class NetworkDeviceInterface {
  public:
+  // Abstracts system operations needed by the interface.
+  class Sys {
+   public:
+    enum class ThreadType { Tx, Rx };
+
+    // Notifies system of thread creation. Default implementation does nothing.
+    //
+    // Used to install profiles for created threads.
+    virtual void NotifyThread(zx::unowned_thread thread, ThreadType type) = 0;
+  };
+
   virtual ~NetworkDeviceInterface() = default;
-  // Creates a new NetworkDeviceInterface that will bind to the provided parent.
-  // The dispatcher is only used for slow path operations, NetworkDevice will create and manage its
-  // own threads for fast path operations.
-  // The parent_name argument is only used for diagnostic purposes.
+  // Creates a new NetworkDeviceInterface that will bind to the provided parent. The dispatcher is
+  // only used for slow path operations, NetworkDevice will create and manage its own threads for
+  // fast path operations. The parent_name argument is only used for diagnostic purposes.
+  //
+  // |sys| is an optional unowned pointer to an object providing system capabilities.
   static zx::status<std::unique_ptr<NetworkDeviceInterface>> Create(
-      async_dispatcher_t* dispatcher, ddk::NetworkDeviceImplProtocolClient parent);
+      async_dispatcher_t* dispatcher, ddk::NetworkDeviceImplProtocolClient parent, Sys* sys);
 
   // Tears down the NetworkDeviceInterface.
   // A NetworkDeviceInterface must not be destroyed until the callback provided to teardown is

@@ -4,8 +4,11 @@
   "profiles": {
     "fuchsia.scenic.main:hz=60": { "capacity": "16ms", "deadline": "16ms", "period": "16ms" },
     "fuchsia.netstack.go-worker": { "priority": 25 },
+    "fuchsia.devices.network.core.tx": { "capacity": "1200us", "deadline": "3ms", "period": "3ms" },
+    "fuchsia.devices.network.core.rx": { "capacity": "1200us", "deadline": "3ms", "period": "3ms" },
     "fuchsia.devices.usb.xhci.interrupter": { "capacity": "100us", "deadline": "125us", "period": "125us" },
     "fuchsia.devices.usb.audio": { "capacity": "250us", "deadline": "1ms", "period": "1ms" },
+    "fuchsia.devices.wlan.drivers.brcmf.sdio.oob-interrupt": { "capacity": "1200us", "deadline": "3ms", "period": "3ms" },
 
     // Msd Arm Mali / Vsi Vip profiles.
     "fuchsia.graphics.drivers.msd-arm-mali.gpu-interrupt": { "capacity": "60us", "deadline": "125us", "period": "125us" },
