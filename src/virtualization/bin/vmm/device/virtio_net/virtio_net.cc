@@ -269,8 +269,8 @@ class VirtioNetImpl : public DeviceBase<VirtioNetImpl>,
 
     // Set up the GuestEthernet device.
     zx::status<std::unique_ptr<network::NetworkDeviceInterface>> device_interface =
-        network::NetworkDeviceInterface::Create(dispatcher_,
-                                                guest_ethernet_.GetNetworkDeviceImplClient());
+        network::NetworkDeviceInterface::Create(
+            dispatcher_, guest_ethernet_.GetNetworkDeviceImplClient(), nullptr);
     if (device_interface.is_error()) {
       FX_PLOGS(WARNING, status) << "Failed to create guest interface";
       return status;
