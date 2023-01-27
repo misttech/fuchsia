@@ -8,7 +8,7 @@ use {
     crate::config::Config,
     crate::metadata::verify::VerifierProxy,
     commit::do_commit,
-    errors::MetadataError,
+    errors::{BootManagerError, MetadataError},
     fidl_fuchsia_paver as paver, fuchsia_inspect as finspect,
     fuchsia_zircon::{self as zx, EventPair, Peered},
     futures::channel::oneshot,
@@ -36,7 +36,7 @@ mod verify;
 /// it should be rebooted. Rebooting will hopefully either fix the issue or decrement the boot
 /// counter, eventually leading to a rollback.
 pub async fn put_metadata_in_happy_state(
-    boot_manager: &paver::BootManagerProxy,
+    paver: &paver::PaverProxy,
     p_internal: &EventPair,
     unblocker: oneshot::Sender<()>,
     verifiers: &[&dyn VerifierProxy],
@@ -45,7 +45,14 @@ pub async fn put_metadata_in_happy_state(
 ) -> Result<(), MetadataError> {
     let mut unblocker = Some(unblocker);
     if config.enable() {
-        let engine = PolicyEngine::build(boot_manager).await.map_err(MetadataError::Policy)?;
+        let (boot_manager, boot_manager_server_end) = ::fidl::endpoints::create_proxy()
+            .map_err(|e| BootManagerError::Fidl { error: e, method_name: "create_proxy" })
+            .map_err(MetadataError::Commit)?;
+        paver
+            .find_boot_manager(boot_manager_server_end)
+            .map_err(|e| BootManagerError::Fidl { error: e, method_name: "find_boot_manager" })
+            .map_err(MetadataError::Commit)?;
+        let engine = PolicyEngine::build(&boot_manager).await.map_err(MetadataError::Policy)?;
         if let Some(current_config) =
             engine.should_verify_and_commit().map_err(MetadataError::Policy)?
         {
@@ -55,7 +62,7 @@ pub async fn put_metadata_in_happy_state(
             let res = do_health_verification(verifiers, node).await;
             let () = PolicyEngine::apply_config(res, config).map_err(MetadataError::Verify)?;
             let () =
-                do_commit(boot_manager, current_config).await.map_err(MetadataError::Commit)?;
+                do_commit(&boot_manager, current_config).await.map_err(MetadataError::Commit)?;
         }
     }
 
@@ -142,7 +149,7 @@ mod tests {
             success_blobfs_verifier_and_call_count();
 
         put_metadata_in_happy_state(
-            &paver.spawn_boot_manager_service(),
+            &paver.spawn_paver_service(),
             &p_internal,
             unblocker,
             &[&blobfs_verifier],
@@ -177,7 +184,7 @@ mod tests {
             success_blobfs_verifier_and_call_count();
 
         put_metadata_in_happy_state(
-            &paver.spawn_boot_manager_service(),
+            &paver.spawn_paver_service(),
             &p_internal,
             unblocker,
             &[&blobfs_verifier],
@@ -202,15 +209,14 @@ mod tests {
     async fn test_does_not_change_metadata_when_disabled() {
         // We shouldn't even attempt to talk to the paver when disabled, so a proxy with the remote
         // end closed should work fine.
-        let boot_manager_proxy =
-            create_proxy::<paver::BootManagerMarker>().expect("Creating proxy succeeds").0;
-        let (p_internal, p_external) = EventPair::create().unwrap();
+        let paver_proxy = create_proxy::<paver::PaverMarker>().expect("Creating proxy succeeds").0;
+        let (p_internal, p_external) = EventPair::create();
         let (unblocker, unblocker_recv) = oneshot::channel();
         let (blobfs_verifier, blobfs_verifier_call_count) =
             success_blobfs_verifier_and_call_count();
 
         put_metadata_in_happy_state(
-            &boot_manager_proxy,
+            &paver_proxy,
             &p_internal,
             unblocker,
             &[&blobfs_verifier],
@@ -243,7 +249,7 @@ mod tests {
             success_blobfs_verifier_and_call_count();
 
         put_metadata_in_happy_state(
-            &paver.spawn_boot_manager_service(),
+            &paver.spawn_paver_service(),
             &p_internal,
             unblocker,
             &[&blobfs_verifier],
@@ -292,7 +298,7 @@ mod tests {
             success_blobfs_verifier_and_call_count();
 
         put_metadata_in_happy_state(
-            &paver.spawn_boot_manager_service(),
+            &paver.spawn_paver_service(),
             &p_internal,
             unblocker,
             &[&blobfs_verifier],
@@ -343,7 +349,7 @@ mod tests {
             failing_blobfs_verifier_and_call_count();
 
         put_metadata_in_happy_state(
-            &paver.spawn_boot_manager_service(),
+            &paver.spawn_paver_service(),
             &p_internal,
             unblocker,
             &[&blobfs_verifier],
@@ -394,7 +400,7 @@ mod tests {
             failing_blobfs_verifier_and_call_count();
 
         let res = put_metadata_in_happy_state(
-            &paver.spawn_boot_manager_service(),
+            &paver.spawn_paver_service(),
             &p_internal,
             unblocker,
             &[&blobfs_verifier],

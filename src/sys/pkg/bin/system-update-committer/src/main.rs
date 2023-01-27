@@ -64,12 +64,6 @@ async fn main_inner_async() -> Result<(), Error> {
     let reboot_deadline = Instant::now() + MINIMUM_REBOOT_WAIT;
 
     let paver = connect_to_protocol::<PaverMarker>().context("while connecting to paver")?;
-    let (boot_manager, boot_manager_server_end) =
-        ::fidl::endpoints::create_proxy().context("while creating BootManager endpoints")?;
-
-    paver
-        .find_boot_manager(boot_manager_server_end)
-        .context("transport error while calling find_boot_manager()")?;
 
     let reboot_proxy = connect_to_protocol::<PowerStateControlMarker>()
         .context("while connecting to power state control")?;
@@ -90,7 +84,7 @@ async fn main_inner_async() -> Result<(), Error> {
     futures.push(
         async move {
             if let Err(e) = put_metadata_in_happy_state(
-                &boot_manager,
+                &paver,
                 &p_internal,
                 unblocker,
                 &[&blobfs_verifier],
