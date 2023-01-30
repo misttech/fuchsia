@@ -457,6 +457,6 @@
             "selector": "bootstrap/archivist:root/archive_accessor_stats/legacy_metrics/inspect:schema_truncation_count"
         }
     ],
-    "poll_rate_sec": 1800,
+    "poll_rate_sec": 1821,
     "project_id": 5
 }
