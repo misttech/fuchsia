@@ -466,6 +466,6 @@
             "selector": "bootstrap/fshost:root/migration_status:other_error"
         }
     ],
-    "poll_rate_sec": 600,
+    "poll_rate_sec": 1174,
     "project_id": 3676913920
 }

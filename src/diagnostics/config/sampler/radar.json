@@ -19,6 +19,6 @@
             "selector": "bootstrap/driver_manager:root/selina:other_error_rate"
         }
     ],
-    "poll_rate_sec": 3600,
+    "poll_rate_sec": 3511,
     "project_id": 12
 }

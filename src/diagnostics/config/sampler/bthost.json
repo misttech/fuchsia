@@ -307,6 +307,6 @@
             "selector": "bootstrap/driver_manager:root/bt-host/adapter/bredr_connection_manager:disconnect_peer_disconnection_count"
         }
     ],
-    "poll_rate_sec": 1800,
+    "poll_rate_sec": 1200,
     "project_id": 2322225253
 }
