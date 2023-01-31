@@ -10,13 +10,10 @@
 #include <lib/affine/ratio.h>
 #include <platform.h>
 
-void TaskRuntimeStats::AccumulateRuntimeTo(zx_info_task_runtime_t* info) const {
-  info->cpu_time = zx_duration_add_duration(info->cpu_time, cpu_time);
-  info->queue_time = zx_duration_add_duration(info->queue_time, queue_time);
-
+TaskRuntimeStats::operator zx_info_task_runtime_t() const {
   const affine::Ratio& ticks_to_time = platform_get_ticks_to_time_ratio();
-  info->page_fault_time =
-      zx_duration_add_duration(info->page_fault_time, ticks_to_time.Scale(page_fault_ticks));
-  info->lock_contention_time = zx_duration_add_duration(info->lock_contention_time,
-                                                        ticks_to_time.Scale(lock_contention_ticks));
+  return {.cpu_time = cpu_time,
+          .queue_time = queue_time,
+          .page_fault_time = ticks_to_time.Scale(page_fault_ticks),
+          .lock_contention_time = ticks_to_time.Scale(lock_contention_ticks)};
 }

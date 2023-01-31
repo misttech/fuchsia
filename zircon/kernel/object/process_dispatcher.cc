@@ -468,11 +468,6 @@ void ProcessDispatcher::RemoveThread(ThreadDispatcher* t) {
       SetStateLocked(State::DEAD);
       became_dead = true;
     }
-
-    TaskRuntimeStats child_runtime;
-    if (t->GetRuntimeStats(&child_runtime) == ZX_OK) {
-      aggregated_runtime_stats_.Add(child_runtime);
-    }
   }
 
   if (became_dead)
@@ -644,19 +639,6 @@ zx_status_t ProcessDispatcher::GetStats(zx_info_task_stats_t* stats) const {
   stats->mem_private_bytes = usage.private_pages * PAGE_SIZE;
   stats->mem_shared_bytes = usage.shared_pages * PAGE_SIZE;
   stats->mem_scaled_shared_bytes = usage.scaled_shared_bytes;
-  return ZX_OK;
-}
-
-zx_status_t ProcessDispatcher::AccumulateRuntimeTo(zx_info_task_runtime_t* info) const {
-  Guard<CriticalMutex> guard{get_lock()};
-  aggregated_runtime_stats_.AccumulateRuntimeTo(info);
-  for (const auto& thread : thread_list_) {
-    zx_status_t err = thread.AccumulateRuntimeTo(info);
-    if (err != ZX_OK) {
-      return err;
-    }
-  }
-
   return ZX_OK;
 }
 
@@ -904,11 +886,6 @@ zx_status_t ProcessDispatcher::EnforceBasicPolicy(uint32_t condition) {
 }
 
 TimerSlack ProcessDispatcher::GetTimerSlackPolicy() const { return policy_.GetTimerSlack(); }
-
-TaskRuntimeStats ProcessDispatcher::GetAggregatedRuntime() const {
-  Guard<CriticalMutex> guard{get_lock()};
-  return aggregated_runtime_stats_;
-}
 
 uintptr_t ProcessDispatcher::cache_vdso_code_address() {
   Guard<CriticalMutex> guard{get_lock()};

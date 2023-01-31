@@ -190,9 +190,8 @@ class ProcessDispatcher final
   void GetInfo(zx_info_process_t* info) const;
   zx_status_t GetStats(zx_info_task_stats_t* stats) const;
 
-  // Accumulate the runtime of all threads that previously ran or are currently running under this
-  // process.
-  zx_status_t AccumulateRuntimeTo(zx_info_task_runtime_t* info) const;
+  // Get the runtime of all threads that previously ran or are currently running under this process.
+  TaskRuntimeStats GetTaskRuntimeStats() const { return runtime_stats_.GetTaskRuntimeStats(); }
 
   // NOTE: Code outside of the syscall layer should not typically know about
   // user_ptrs; do not use this pattern as an example.
@@ -260,9 +259,6 @@ class ProcessDispatcher final
     }
     return vdso_code_address_;
   }
-
-  // Retrieve the aggregated runtime of exited threads under this process.
-  TaskRuntimeStats GetAggregatedRuntime() const TA_EXCL(get_lock());
 
  private:
   // Restricted mode is allowed to know about the internals of the aspaces.
@@ -338,6 +334,10 @@ class ProcessDispatcher final
   // the enclosing job
   const fbl::RefPtr<JobDispatcher> job_;
 
+  // The runtime stats for this process. Placed near the front of the ProcessDispatcher due to
+  // frequent updates by the scheduler.
+  ProcessRuntimeStats runtime_stats_;
+
   // Job that this process is critical to.
   //
   // We require that the job is the parent of this process, or an ancestor.
@@ -392,9 +392,6 @@ class ProcessDispatcher final
   // The user-friendly process name. For debug purposes only. That
   // is, there is no mechanism to mint a handle to a process via this name.
   fbl::Name<ZX_MAX_NAME_LEN> name_;
-
-  // Aggregated runtime stats from exited threads.
-  TaskRuntimeStats aggregated_runtime_stats_ TA_GUARDED(get_lock());
 };
 
 const char* StateToString(ProcessDispatcher::State state);

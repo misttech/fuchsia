@@ -1035,9 +1035,10 @@ void Scheduler::RescheduleCommon(SchedTime now, EndTraceCallback end_outer_trace
   const SchedDuration actual_runtime_ns = now - current_state->last_started_running_;
   current_state->last_started_running_ = now;
   thread_lock.AssertHeld();  // TODO(eieio): HACK!
-  current_thread->UpdateSchedulerStats({.state = current_thread->state(),
-                                        .state_time = now.raw_value(),
-                                        .cpu_time = actual_runtime_ns.raw_value()});
+  current_thread->UpdateRuntimeStats({.state = current_thread->state(),
+                                      .state_time = now.raw_value(),
+                                      .cpu_time = actual_runtime_ns.raw_value()},
+                                     /* update_process_stats */ true);
 
   // Update the runtime accounting for the thread that just ran.
   current_state->runtime_ns_ += actual_runtime_ns;
@@ -1220,9 +1221,10 @@ void Scheduler::RescheduleCommon(SchedTime now, EndTraceCallback end_outer_trace
     // entered the run queue.
     const SchedDuration queue_time_ns = now - next_state->last_started_running_;
 
-    next_thread->UpdateSchedulerStats({.state = next_thread->state(),
-                                       .state_time = now.raw_value(),
-                                       .queue_time = queue_time_ns.raw_value()});
+    next_thread->UpdateRuntimeStats({.state = next_thread->state(),
+                                     .state_time = now.raw_value(),
+                                     .queue_time = queue_time_ns.raw_value()},
+                                    /* update_process_stats */ true);
 
     next_state->last_started_running_ = now;
     start_of_current_time_slice_ns_ = now;
@@ -1682,6 +1684,8 @@ void Scheduler::Unblock(Thread* thread) {
   Scheduler* const target = Get(target_cpu);
 
   thread->set_ready();
+  thread->UpdateRuntimeStats({.state = thread->state(), .state_time = now.raw_value()},
+                             /* update_process_stats */ false);
   {
     Guard<MonitoredSpinLock, NoIrqSave> queue_guard_{&target->queue_lock_, SOURCE_TAG};
     target->Insert(now, thread);
@@ -1706,6 +1710,8 @@ void Scheduler::Unblock(Thread::UnblockList list) {
     Scheduler* const target = Get(target_cpu);
 
     thread->set_ready();
+    thread->UpdateRuntimeStats({.state = thread->state(), .state_time = now.raw_value()},
+                               /* update_process_stats */ false);
     {
       Guard<MonitoredSpinLock, NoIrqSave> queue_guard_{&target->queue_lock_, SOURCE_TAG};
       target->Insert(now, thread);

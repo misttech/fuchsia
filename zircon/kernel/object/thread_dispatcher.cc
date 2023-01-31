@@ -564,32 +564,31 @@ zx_status_t ThreadDispatcher::GetStatsForUserspace(zx_info_thread_stats_t* info)
   return ZX_OK;
 }
 
-zx_status_t ThreadDispatcher::GetRuntimeStats(TaskRuntimeStats* out) const {
+TaskRuntimeStats ThreadDispatcher::GetCompensatedTaskRuntimeStats(zx_time_t now) const {
   canary_.Assert();
+  return runtime_stats_.GetCompensatedTaskRuntimeStats(now);
+}
 
-  *out = {};
-
-  // Repeatedly try to get a consistent snapshot out of runtime stats using the generation count.
-  //
-  // We attempt to get a snapshot forever, so it is theoretically possible for us to loop forever.
-  // In practice, our context switching overhead is significantly higher than the runtime of this
-  // loop, so it is unlikely to happen.
-  //
-  // If our context switch overhead drops very significantly, we may need to revisit this
-  // algorithm and return an error after some number of loops.
-  while (true) {
-    uint64_t start_count;
-    while ((start_count = stats_generation_count_.load(ktl::memory_order_acquire)) % 2) {
-      // Loop until no write is happening concurrently.
-    }
-
-    *out = runtime_stats_.TotalRuntime();
-
-    uint64_t end_count = stats_generation_count_.load(ktl::memory_order_acquire);
-    if (start_count == end_count) {
-      return ZX_OK;
-    }
+void ThreadDispatcher::UpdateRuntimeStats(const ThreadRuntimeStats::ThreadStats& delta,
+                                          bool update_process_stats) {
+  canary_.Assert();
+  runtime_stats_.Update(delta, ThreadRuntimeStats::NoIrqSave);
+  if (update_process_stats) {
+    process_->runtime_stats_.Update({.cpu_time = delta.cpu_time, .queue_time = delta.queue_time},
+                                    ProcessRuntimeStats::NoIrqSave);
   }
+}
+
+void ThreadDispatcher::AddPageFaultTicks(zx_ticks_t ticks) {
+  canary_.Assert();
+  runtime_stats_.AddPageFaultTicks(ticks);
+  process_->runtime_stats_.AddPageFaultTicks(ticks);
+}
+
+void ThreadDispatcher::AddLockContentionTicks(zx_ticks_t ticks) {
+  canary_.Assert();
+  runtime_stats_.AddLockContentionTicks(ticks);
+  process_->runtime_stats_.AddLockContentionTicks(ticks);
 }
 
 zx_status_t ThreadDispatcher::GetExceptionReport(zx_exception_report_t* report) {

@@ -503,13 +503,14 @@ bool migrate_unpinned_threads_test() {
 bool runtime_test() {
   BEGIN_TEST;
   const zx_duration_t kCpuTime = 10, kQueueTime = 20;
-  Thread::RuntimeStats stats;
-  EXPECT_EQ(thread_state::THREAD_INITIAL, stats.GetSchedulerStats().state);
-  EXPECT_EQ(0, stats.GetSchedulerStats().state_time);
-  EXPECT_EQ(0, stats.GetSchedulerStats().cpu_time);
-  EXPECT_EQ(0, stats.GetSchedulerStats().queue_time);
-  EXPECT_EQ(0, stats.TotalRuntime().page_fault_ticks);
-  EXPECT_EQ(0, stats.TotalRuntime().lock_contention_ticks);
+  ThreadRuntimeStats stats;
+  ThreadRuntimeStats::ThreadStats sched_stats = stats.Read();
+  EXPECT_EQ(thread_state::THREAD_INITIAL, sched_stats.state);
+  EXPECT_EQ(0, sched_stats.state_time);
+  EXPECT_EQ(0, sched_stats.cpu_time);
+  EXPECT_EQ(0, sched_stats.queue_time);
+  EXPECT_EQ(0, stats.GetCompensatedTaskRuntimeStats(current_time()).page_fault_ticks);
+  EXPECT_EQ(0, stats.GetCompensatedTaskRuntimeStats(current_time()).lock_contention_ticks);
 
   // Test that runtime is calculated as a function of the stats and the current time spent queued.
   // When the state is set to THREAD_READY, TotalRuntime calculates queue_time as:
@@ -517,17 +518,20 @@ bool runtime_test() {
   //
   // We subtract 1 from current time to ensure that the difference between the actual current_time
   // and state_time is nonzero.
-  stats.UpdateSchedulerStats({
-      .state = thread_state::THREAD_READY,
-      .state_time = current_time() - 1,
-      .cpu_time = kCpuTime,
-  });
-  EXPECT_EQ(thread_state::THREAD_READY, stats.GetSchedulerStats().state);
-  EXPECT_NE(0, stats.GetSchedulerStats().state_time);
-  EXPECT_EQ(kCpuTime, stats.GetSchedulerStats().cpu_time);
-  EXPECT_EQ(0, stats.GetSchedulerStats().queue_time);
+  stats.Update(
+      {
+          .state = thread_state::THREAD_READY,
+          .state_time = current_time() - 1,
+          .cpu_time = kCpuTime,
+      },
+      ThreadRuntimeStats::IrqSave);
+  sched_stats = stats.Read();
+  EXPECT_EQ(thread_state::THREAD_READY, sched_stats.state);
+  EXPECT_NE(0, sched_stats.state_time);
+  EXPECT_EQ(kCpuTime, sched_stats.cpu_time);
+  EXPECT_EQ(0, sched_stats.queue_time);
   // Ensure queue time includes current time spent in queue, and cpu time does not.
-  TaskRuntimeStats runtime = stats.TotalRuntime();
+  TaskRuntimeStats runtime = stats.GetCompensatedTaskRuntimeStats(current_time());
   EXPECT_NE(0, runtime.queue_time);
   EXPECT_EQ(kCpuTime, runtime.cpu_time);
   EXPECT_EQ(0, runtime.page_fault_ticks);
@@ -539,17 +543,20 @@ bool runtime_test() {
   //
   // We subtract 1 from current time to ensure that the difference between the actual current_time
   // and state_time is nonzero.
-  stats.UpdateSchedulerStats({
-      .state = thread_state::THREAD_RUNNING,
-      .state_time = current_time() - 1,
-      .queue_time = kQueueTime,
-  });
-  EXPECT_EQ(thread_state::THREAD_RUNNING, stats.GetSchedulerStats().state);
-  EXPECT_NE(0, stats.GetSchedulerStats().state_time);
-  EXPECT_EQ(kCpuTime, stats.GetSchedulerStats().cpu_time);
-  EXPECT_EQ(kQueueTime, stats.GetSchedulerStats().queue_time);
+  stats.Update(
+      {
+          .state = thread_state::THREAD_RUNNING,
+          .state_time = current_time() - 1,
+          .queue_time = kQueueTime,
+      },
+      ThreadRuntimeStats::IrqSave);
+  sched_stats = stats.Read();
+  EXPECT_EQ(thread_state::THREAD_RUNNING, sched_stats.state);
+  EXPECT_NE(0, sched_stats.state_time);
+  EXPECT_EQ(kCpuTime, sched_stats.cpu_time);
+  EXPECT_EQ(kQueueTime, sched_stats.queue_time);
   // Ensure cpu time includes current time, and queue time does not.
-  runtime = stats.TotalRuntime();
+  runtime = stats.GetCompensatedTaskRuntimeStats(current_time());
   EXPECT_NE(kCpuTime, runtime.cpu_time);
   EXPECT_EQ(kQueueTime, runtime.queue_time);
   EXPECT_EQ(0, runtime.page_fault_ticks);
@@ -560,14 +567,14 @@ bool runtime_test() {
   const zx_ticks_t kLockContentionTicks = 40;
 
   stats.AddPageFaultTicks(kPageFaultTicks);
-  runtime = stats.TotalRuntime();
+  runtime = stats.GetCompensatedTaskRuntimeStats(current_time());
   EXPECT_NE(kCpuTime, runtime.cpu_time);
   EXPECT_EQ(kQueueTime, runtime.queue_time);
   EXPECT_EQ(kPageFaultTicks, runtime.page_fault_ticks);
   EXPECT_EQ(0, runtime.lock_contention_ticks);
 
   stats.AddLockContentionTicks(kLockContentionTicks);
-  runtime = stats.TotalRuntime();
+  runtime = stats.GetCompensatedTaskRuntimeStats(current_time());
   EXPECT_NE(kCpuTime, runtime.cpu_time);
   EXPECT_EQ(kQueueTime, runtime.queue_time);
   EXPECT_EQ(kPageFaultTicks, runtime.page_fault_ticks);

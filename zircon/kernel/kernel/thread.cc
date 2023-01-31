@@ -1622,9 +1622,12 @@ void ktrace_report_live_threads() {
   }
 }
 
-void Thread::UpdateSchedulerStats(const RuntimeStats::SchedulerStats& stats) {
-  if (user_thread_) {
-    user_thread_->UpdateSchedulerStats(stats);
+void Thread::UpdateRuntimeStats(const ThreadRuntimeStats::ThreadStats& stats,
+                                bool update_process_stats) {
+  // Don't update the runtime stats during teardown to keep the process runtime stable after death
+  // as the constituent threads clean themselves up.
+  if (user_thread_ && state() != thread_state::THREAD_DEATH) {
+    user_thread_->UpdateRuntimeStats(stats, update_process_stats);
   }
 }
 
