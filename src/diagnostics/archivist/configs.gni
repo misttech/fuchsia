@@ -4,7 +4,8 @@
 
 default_config = {
   bind_services = [
-    "fuchsia.component.DetectBinder",
+    # Removed due to CPU usage on debug builds.
+    # "fuchsia.component.DetectBinder",
     "fuchsia.component.KcounterBinder",
     "fuchsia.component.LogStatsBinder",
     "fuchsia.component.PersistenceBinder",
@@ -43,8 +44,8 @@ without_attribution_config = {
 
 no_detect_config = {
   forward_variables_from(default_config, "*")
-
-  bind_services -= [ "fuchsia.component.DetectBinder" ]
+  # Not needed, since this is already removed above for this branch.
+  # bind_services -= [ "fuchsia.component.DetectBinder" ]
 }
 
 no_service_config = {
