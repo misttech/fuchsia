@@ -13,6 +13,6 @@
             "selector": "bootstrap/driver_manager:root/amlogic-display/osd:rdma_stalls"
         }
     ],
-    "poll_rate_sec": 1253,
+    "poll_rate_sec": 600,
     "project_id": 10
 }

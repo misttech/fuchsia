@@ -88,6 +88,6 @@
             "upload_once": true
         }
     ],
-    "poll_rate_sec": 3611,
+    "poll_rate_sec": 3600,
     "project_id": 4247972873
 }

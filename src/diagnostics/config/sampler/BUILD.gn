@@ -8,24 +8,22 @@ import("//build/config.gni")
 # are used to configure data to be sent to Cobalt. Files that are not listed
 # in this variable will be ignored.
 sampler_files = [
-  # NOTE: The following configs are disabled for performance reasons on this branch.
-  #"audio-drivers.json",
-  #"avrcp.json",
-  #"file-usage-metrics.json",
-  #"ftl.json",
-  #"netstack.json",
-  #"sysmem.json",
-  #"connectivity-wlan.json",
-
+  "audio-drivers.json",
   "archivist.json",
+  "avrcp.json",
   "bthost.json",
   "display.json",
+  "file-usage-metrics.json",
+  "ftl.json",
   "fshost.json",
   "fvm.json",
+  "netstack.json",
   "radar.json",
   "sdmmc.json",
   "setui.json",
+  "sysmem.json",
   "system-update-committer.json",
+  "connectivity-wlan.json",
 ]
 
 # Install Sampler and FIRE config into the "sampler" package
