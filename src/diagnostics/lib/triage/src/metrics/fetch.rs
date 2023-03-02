@@ -376,7 +376,7 @@ impl InspectFetcher {
 
     fn try_fetch(&self, selector_string: &SelectorString) -> Result<Vec<MetricValue>, Error> {
         let arc_selector = Arc::new(selector_string.parsed_selector.clone());
-        let mut properties = Vec::new();
+        let mut values = Vec::new();
         let mut found_component = false;
         for component in self.components.iter() {
             if !selectors::match_component_moniker_against_selector(
@@ -387,11 +387,13 @@ impl InspectFetcher {
             }
             found_component = true;
             let selector = selector_string.parsed_selector.clone();
-            for property in
-                diagnostics_hierarchy::select_from_hierarchy(&component.processed_data, &selector)?
-                    .into_iter()
+            for value in diagnostics_hierarchy::select_from_hierarchy(
+                component.processed_data.clone(),
+                selector,
+            )?
+            .into_iter()
             {
-                properties.push(property.clone())
+                values.push(value)
             }
         }
         if !found_component {
@@ -400,7 +402,10 @@ impl InspectFetcher {
                 selector_string.body.to_string()
             ))]);
         }
-        Ok(properties.into_iter().map(|property| MetricValue::from(property)).collect())
+        if values.is_empty() {
+            return Ok(Vec::new());
+        }
+        Ok(values.into_iter().map(|value| MetricValue::from(value.property)).collect())
     }
 
     pub fn fetch(&self, selector: &SelectorString) -> Vec<MetricValue> {
