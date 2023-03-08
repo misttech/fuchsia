@@ -122,6 +122,7 @@ source_set("interrupt") {
   sources = [ "zircon_platform_interrupt.h" ]
 
   public_deps = [
+    ":port",
     "..:interrupt_header",
     "//zircon/system/ulib/zx",
   ]
