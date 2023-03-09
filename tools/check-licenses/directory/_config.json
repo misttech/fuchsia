@@ -50,6 +50,7 @@
       {
         "paths": [
           "prebuilt/go.mod",
+          "build/checkout.gni",
           "build/cipd.gni"
         ],
         "notes": [
