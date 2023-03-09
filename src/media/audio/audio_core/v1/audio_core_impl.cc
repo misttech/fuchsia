@@ -26,15 +26,11 @@ AudioCoreImpl::AudioCoreImpl(Context* context) : context_(*context) {
   // has real time requirements just like mixing threads. Ideally, this task would not run on the
   // same thread that processes *all* non-mix audio service jobs (even non-realtime ones), but that
   // will take more significant restructuring, when we can deal with realtime requirements in place.
-  AcquireAudioCoreImplProfile(&context_.component_context(),
-                              [](zx_status_t status, zx::profile profile) {
-                                FX_DCHECK(profile);
-                                FX_DCHECK(status == ZX_OK);
-                                if (status == ZX_OK && profile) {
-                                  status = zx::thread::self()->set_profile(profile, 0);
-                                  FX_DCHECK(status == ZX_OK);
-                                }
-                              });
+  auto result = AcquireSchedulerRole(zx::thread::self(), "fuchsia.media.audio.core.dispatch");
+  if (result.is_error()) {
+    FX_PLOGS(ERROR, result.status_value())
+        << "Unable to set scheduler role for the audio_core FIDL thread";
+  }
 
   // Set up our audio policy.
   LoadDefaults();

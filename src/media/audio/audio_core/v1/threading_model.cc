@@ -25,17 +25,13 @@ namespace {
 
 void SetMixDispatcherThreadProfile(const MixProfileConfig& mix_profile_config,
                                    async_dispatcher_t* dispatcher) {
-  zx::profile profile;
-  zx_status_t status = AcquireHighPriorityProfile(mix_profile_config, &profile);
-  if (status != ZX_OK) {
-    FX_LOGS(ERROR)
-        << "Unable to acquire high priority profile; mix threads will run at normal priority";
-    return;
-  }
-  FX_DCHECK(profile);
-  async::PostTask(dispatcher, [profile = std::move(profile)] {
-    zx_status_t status = zx::thread::self()->set_profile(profile, 0);
-    FX_DCHECK(status == ZX_OK);
+  async::PostTask(dispatcher, [] {
+    // TODO(fxbug.dev/40858): Pass mix profile config params when the role API supports arguments.
+    auto result = AcquireSchedulerRole(zx::thread::self(), "fuchsia.media.audio.core.mixer");
+    if (result.is_error()) {
+      FX_PLOGS(ERROR, result.status_value())
+          << "Unable to set scheduler role; mix threads will run at normal priority";
+    }
   });
 }
 

@@ -144,7 +144,6 @@ executable("unittest_bin") {
     "policy_loader_unittest_data.h",
     "process_config_loader_unittest.cc",
     "process_config_unittest.cc",
-    "profile_acquirer_unittest.cc",
     "profile_provider_unittest.cc",
     "reporter_unittest.cc",
     "stream_usage_unittest.cc",
