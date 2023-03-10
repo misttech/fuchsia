@@ -165,8 +165,14 @@
         {
             directory: "config-data",
             from: "parent",
-            to: [ "#netcfg" ],
+            to: "#netcfg",
             subdir: "netcfg",
+        },
+        {
+            directory: "config-data",
+            from: "parent",
+            to: "#netstack",
+            subdir: "netstack",
         },
         {
             directory: "root-ssl-certificates",

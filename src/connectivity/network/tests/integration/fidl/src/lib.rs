@@ -161,10 +161,9 @@ async fn test_log_packets() {
         let mut netstack =
             fnetemul::ChildDef::from(&KnownServiceProvider::Netstack(Netstack2::VERSION));
         let fnetemul::ChildDef { program_args, .. } = &mut netstack;
-        assert_eq!(
-            std::mem::replace(program_args, Some(vec!["--verbosity=debug".to_string()])),
-            None,
-        );
+        if let Some(program_args) = program_args {
+            program_args.retain(|arg| arg != "--log-packets");
+        }
         let realm = sandbox.create_realm(name, [netstack]).expect("create realm");
 
         let netstack_proxy =
