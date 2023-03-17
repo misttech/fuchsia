@@ -4,5 +4,9 @@
   "profiles": {
     "fuchsia.async.loop": { "priority": 16 },
     "fuchsia.system.profile-provider.dispatch": { "capacity": "500us", "deadline": "1ms", "period": "1ms" },
+
+    // Fuchsia driver profiles.
+    "fuchsia.devices.network.core.tx": { "capacity": "400us", "deadline": "1ms", "period": "1ms" },
+    "fuchsia.devices.network.core.rx": { "capacity": "400us", "deadline": "1ms", "period": "1ms" },
   },
 }

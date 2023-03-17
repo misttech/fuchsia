@@ -7,6 +7,10 @@
     "fuchsia.devices.usb.xhci.interrupter": { "capacity": "100us", "deadline": "125us", "period": "125us" },
     "fuchsia.devices.usb.audio": { "capacity": "250us", "deadline": "1ms", "period": "1ms" },
 
+    // Fuchsia driver profiles.
+    "fuchsia.devices.wlan.drivers.brcmf.sdio.oob-interrupt": { "capacity": "400us", "deadline": "1ms", "period": "1ms" },
+    "fuchsia.devices.wlan.drivers.brcmf.workqueue.runner": { "capacity": "400us", "deadline": "1ms", "period": "1ms" },
+
     // Msd Arm Mali / Vsi Vip profiles.
     "fuchsia.graphics.drivers.msd-arm-mali.gpu-interrupt": { "capacity": "60us", "deadline": "125us", "period": "125us" },
     "fuchsia.graphics.drivers.msd-arm-mali.job-interrupt": { "capacity": "60us", "deadline": "125us", "period": "125us" },
