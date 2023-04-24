@@ -40,6 +40,8 @@ class SmartTask {
 
   bool is_pending() const { return pending_; }
 
+  pw::async::Dispatcher& dispatcher() const { return dispatcher_; }
+
  private:
   pw::async::Dispatcher& dispatcher_;
   pw::async::Task task_;
