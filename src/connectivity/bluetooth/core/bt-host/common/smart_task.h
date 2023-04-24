@@ -10,29 +10,35 @@
 namespace bt {
 
 // SmartTask is a utility that wraps a pw::async::Task and adds features like
-// cancelation upon destruction and state tracking.
+// cancelation upon destruction and state tracking. It is not thread safe, and
+// should only be used on the same thread that the dispatcher is running on.
 class SmartTask {
  public:
-  SmartTask(pw::async::Dispatcher& dispatcher)
-      : dispatcher_(dispatcher), task_([this](pw::async::Context& ctx, pw::async::Status status) {
-          pending_ = false;
-          func_(ctx, status);
-        }) {}
+  SmartTask(pw::async::Dispatcher& dispatcher) : dispatcher_(dispatcher) {
+    task_.set_function([this](pw::async::Context& ctx, pw::Status status) {
+      pending_ = false;
+      if (func_) {
+        func_(ctx, status);
+      }
+    });
+  }
   ~SmartTask() {
     if (pending_) {
       BT_ASSERT(Cancel());
     }
   }
-  void PostAfter(chrono::SystemClock::duration delay) {
+  void PostAfter(pw::chrono::SystemClock::duration delay) {
     pending_ = true;
     dispatcher_.PostAfter(task_, delay);
   }
   bool Cancel() {
     pending_ = false;
-    dispatcher_.Cancel(task_);
+    return dispatcher_.Cancel(task_);
   }
 
   void set_function(pw::async::TaskFunction&& func) { func_ = std::move(func); }
+
+  bool is_pending() const { return pending_; }
 
  private:
   pw::async::Dispatcher& dispatcher_;
