@@ -6,6 +6,9 @@
 #define SRC_CONNECTIVITY_BLUETOOTH_CORE_BT_HOST_COMMON_SMART_TASK_H_
 
 #include <pw_async/dispatcher.h>
+#include <pw_async/task.h>
+
+#include "src/connectivity/bluetooth/core/bt-host/common/assert.h"
 
 namespace bt {
 
