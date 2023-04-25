@@ -14,7 +14,8 @@ namespace bt {
 // should only be used on the same thread that the dispatcher is running on.
 class SmartTask {
  public:
-  SmartTask(pw::async::Dispatcher& dispatcher) : dispatcher_(dispatcher) {
+  SmartTask(pw::async::Dispatcher& dispatcher, pw::async::TaskFunction&& func = nullptr)
+      : dispatcher_(dispatcher), func_(std::move(func)) {
     task_.set_function([this](pw::async::Context& ctx, pw::Status status) {
       pending_ = false;
       if (func_) {
@@ -22,6 +23,7 @@ class SmartTask {
       }
     });
   }
+
   ~SmartTask() {
     if (pending_) {
       BT_ASSERT(Cancel());
