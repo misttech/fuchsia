@@ -10,6 +10,7 @@
 #include "pw_async/dispatcher.h"
 #include "pw_async/task.h"
 
+// TODO: move to pw_async_fuchsia namespace
 namespace pw::async::fuchsia {
 
 class FuchsiaDispatcher final : public Dispatcher {
