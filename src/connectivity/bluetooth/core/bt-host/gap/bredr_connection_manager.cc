@@ -334,7 +334,7 @@ BrEdrConnectionManager::SearchId BrEdrConnectionManager::AddServiceSearch(
             self->discoverer_.SingleSearch(search_id, peer_id, nullptr);
             return;
           }
-          auto client = sdp::Client::Create(std::move(channel));
+          auto client = sdp::Client::Create(std::move(channel), self->pw_dispatcher_);
           self->discoverer_.SingleSearch(search_id, peer_id, std::move(client));
         });
   }
@@ -677,7 +677,7 @@ void BrEdrConnectionManager::CompleteConnectionSetup(Peer::WeakPtr peer,
                    bt_str(peer_id));
             return;
           }
-          auto client = sdp::Client::Create(std::move(channel));
+          auto client = sdp::Client::Create(std::move(channel), self->pw_dispatcher_);
           self->discoverer_.StartServiceDiscovery(peer_id, std::move(client));
         });
   }
