@@ -1538,13 +1538,12 @@ TEST_F(BrEdrConnectionManagerTest, PeerServicesAddedBySearchAndRetainedIfNotSear
   l2cap::testing::FakeChannel::WeakPtr sdp_chan;
   std::optional<uint32_t> sdp_request_tid;
 
-  l2cap()->set_channel_callback(
-      [&sdp_chan, &sdp_request_tid, dispatcher = dispatcher()](auto new_chan) {
-        new_chan->SetSendCallback(
-            [&sdp_request_tid](auto packet) { sdp_request_tid = tid_from_sdp_packet(packet); },
-            dispatcher);
-        sdp_chan = std::move(new_chan);
-      });
+  l2cap()->set_channel_callback([&sdp_chan, &sdp_request_tid, this](auto new_chan) {
+    new_chan->SetSendCallback(
+        [&sdp_request_tid](auto packet) { sdp_request_tid = tid_from_sdp_packet(packet); },
+        pw_dispatcher());
+    sdp_chan = std::move(new_chan);
+  });
 
   // No searches in this connection.
   QueueSuccessfulIncomingConn();
@@ -1588,13 +1587,12 @@ TEST_F(BrEdrConnectionManagerTest, PeerServiceNotErasedByEmptyResultsForSearchOf
   l2cap::testing::FakeChannel::WeakPtr sdp_chan;
   std::optional<uint32_t> sdp_request_tid;
 
-  l2cap()->set_channel_callback(
-      [&sdp_chan, &sdp_request_tid, dispatcher = dispatcher()](auto new_chan) {
-        new_chan->SetSendCallback(
-            [&sdp_request_tid](auto packet) { sdp_request_tid = tid_from_sdp_packet(packet); },
-            dispatcher);
-        sdp_chan = std::move(new_chan);
-      });
+  l2cap()->set_channel_callback([&sdp_chan, &sdp_request_tid, this](auto new_chan) {
+    new_chan->SetSendCallback(
+        [&sdp_request_tid](auto packet) { sdp_request_tid = tid_from_sdp_packet(packet); },
+        pw_dispatcher());
+    sdp_chan = std::move(new_chan);
+  });
 
   QueueSuccessfulIncomingConn();
   l2cap()->ExpectOutboundL2capChannel(kConnectionHandle, l2cap::kSDP, 0x40, 0x41, kChannelParams);
@@ -1662,8 +1660,8 @@ TEST_F(BrEdrConnectionManagerTest, ServiceSearch) {
   std::optional<uint16_t> sdp_request_tid;
 
   l2cap()->set_channel_callback(
-      [&sdp_chan, &sdp_request_tid, dispatcher = dispatcher()](auto new_chan) {
-        new_chan->SetSendCallback(MakeAudioSinkSearchExpected(&sdp_request_tid), dispatcher);
+      [&sdp_chan, &sdp_request_tid, dispatcher = dispatcher(), this](auto new_chan) {
+        new_chan->SetSendCallback(MakeAudioSinkSearchExpected(&sdp_request_tid), pw_dispatcher());
         sdp_chan = std::move(new_chan);
       });
 
@@ -1737,11 +1735,10 @@ TEST_F(BrEdrConnectionManagerTest, SearchAfterConnected) {
   l2cap::testing::FakeChannel::WeakPtr sdp_chan;
   std::optional<uint16_t> sdp_request_tid;
 
-  l2cap()->set_channel_callback(
-      [&sdp_chan, &sdp_request_tid, dispatcher = dispatcher()](auto new_chan) {
-        new_chan->SetSendCallback(MakeAudioSinkSearchExpected(&sdp_request_tid), dispatcher);
-        sdp_chan = std::move(new_chan);
-      });
+  l2cap()->set_channel_callback([&sdp_chan, &sdp_request_tid, this](auto new_chan) {
+    new_chan->SetSendCallback(MakeAudioSinkSearchExpected(&sdp_request_tid), pw_dispatcher());
+    sdp_chan = std::move(new_chan);
+  });
 
   l2cap()->ExpectOutboundL2capChannel(kConnectionHandle, l2cap::kSDP, 0x40, 0x41, kChannelParams);
 
@@ -1821,11 +1818,10 @@ TEST_F(BrEdrConnectionManagerTest, SearchOnReconnect) {
   l2cap::testing::FakeChannel::WeakPtr sdp_chan;
   std::optional<uint16_t> sdp_request_tid;
 
-  l2cap()->set_channel_callback(
-      [&sdp_chan, &sdp_request_tid, dispatcher = dispatcher()](auto new_chan) {
-        new_chan->SetSendCallback(MakeAudioSinkSearchExpected(&sdp_request_tid), dispatcher);
-        sdp_chan = std::move(new_chan);
-      });
+  l2cap()->set_channel_callback([&sdp_chan, &sdp_request_tid, this](auto new_chan) {
+    new_chan->SetSendCallback(MakeAudioSinkSearchExpected(&sdp_request_tid), pw_dispatcher());
+    sdp_chan = std::move(new_chan);
+  });
 
   // This test uses a modified peer and interrogation which doesn't use
   // extended pages.
@@ -2473,29 +2469,28 @@ TEST_F(BrEdrConnectionManagerTest, AddServiceSearchAll) {
   l2cap::testing::FakeChannel::WeakPtr sdp_chan;
   std::optional<uint32_t> sdp_request_tid;
 
-  l2cap()->set_channel_callback(
-      [&sdp_chan, &sdp_request_tid, dispatcher = dispatcher()](auto new_chan) {
-        new_chan->SetSendCallback(
-            [&sdp_request_tid](auto packet) {
-              const StaticByteBuffer kSearchExpectedParams(
-                  // ServiceSearchPattern
-                  0x35, 0x03,        // Sequence uint8 3 bytes
-                  0x19, 0x11, 0x0B,  // UUID (kAudioSink)
-                  0xFF, 0xFF,        // MaxAttributeByteCount (none)
-                  // Attribute ID list
-                  0x35, 0x05,                    // Sequence uint8 5 bytes
-                  0x0A, 0x00, 0x00, 0xFF, 0xFF,  // uint32_t (all attributes)
-                  0x00                           // No continuation state
-              );
-              // First byte should be type.
-              ASSERT_LE(3u, packet->size());
-              ASSERT_EQ(sdp::kServiceSearchAttributeRequest, (*packet)[0]);
-              ASSERT_EQ(kSearchExpectedParams, packet->view(sizeof(bt::sdp::Header)));
-              sdp_request_tid = tid_from_sdp_packet(packet);
-            },
-            dispatcher);
-        sdp_chan = std::move(new_chan);
-      });
+  l2cap()->set_channel_callback([&sdp_chan, &sdp_request_tid, this](auto new_chan) {
+    new_chan->SetSendCallback(
+        [&sdp_request_tid](auto packet) {
+          const StaticByteBuffer kSearchExpectedParams(
+              // ServiceSearchPattern
+              0x35, 0x03,        // Sequence uint8 3 bytes
+              0x19, 0x11, 0x0B,  // UUID (kAudioSink)
+              0xFF, 0xFF,        // MaxAttributeByteCount (none)
+              // Attribute ID list
+              0x35, 0x05,                    // Sequence uint8 5 bytes
+              0x0A, 0x00, 0x00, 0xFF, 0xFF,  // uint32_t (all attributes)
+              0x00                           // No continuation state
+          );
+          // First byte should be type.
+          ASSERT_LE(3u, packet->size());
+          ASSERT_EQ(sdp::kServiceSearchAttributeRequest, (*packet)[0]);
+          ASSERT_EQ(kSearchExpectedParams, packet->view(sizeof(bt::sdp::Header)));
+          sdp_request_tid = tid_from_sdp_packet(packet);
+        },
+        pw_dispatcher());
+    sdp_chan = std::move(new_chan);
+  });
 
   QueueSuccessfulIncomingConn();
   l2cap()->ExpectOutboundL2capChannel(kConnectionHandle, l2cap::kSDP, 0x40, 0x41, kChannelParams);
