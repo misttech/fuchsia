@@ -36,6 +36,10 @@ class SmartTask {
     pending_ = true;
     dispatcher_.PostAfter(task_, delay);
   }
+  void Post() {
+    pending_ = true;
+    dispatcher_.Post(task_);
+  }
   bool Cancel() {
     pending_ = false;
     return dispatcher_.Cancel(task_);
