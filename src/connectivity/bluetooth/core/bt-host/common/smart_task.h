@@ -32,6 +32,10 @@ class SmartTask {
       BT_ASSERT(Cancel());
     }
   }
+  void PostAt(pw::chrono::SystemClock::time_point time) {
+    pending_ = true;
+    dispatcher_.PostAt(task_, time);
+  }
   void PostAfter(pw::chrono::SystemClock::duration delay) {
     pending_ = true;
     dispatcher_.PostAfter(task_, delay);
