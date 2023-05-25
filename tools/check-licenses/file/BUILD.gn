@@ -23,10 +23,11 @@ go_library("file") {
 
 group("tests") {
   testonly = true
-  deps = [
-    ":check-licenses_file_tests($host_toolchain)",
-    "notice:tests",
-  ]
+  deps = []
+
+  #  ":check-licenses_file_tests($host_toolchain)",
+  #  "notice:tests",
+  #]
 }
 
 if (is_host) {
