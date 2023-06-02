@@ -264,7 +264,7 @@ async_dispatcher_t* MagmaSystemConnection::GetAsyncDispatcher() {
   return notification_handler_->GetAsyncDispatcher();
 }
 
-magma::Status MagmaSystemConnection::ImportObject(zx::handle handle,
+magma::Status MagmaSystemConnection::ImportObject(zx::handle handle, uint64_t flags,
                                                   fuchsia_gpu_magma::wire::ObjectType object_type,
                                                   uint64_t client_id) {
   if (!client_id)
@@ -284,6 +284,9 @@ magma::Status MagmaSystemConnection::ImportObject(zx::handle handle,
         return MAGMA_DRET_MSG(MAGMA_STATUS_INVALID_ARGS, "failed to import platform semaphore");
 
       platform_sem->set_local_id(client_id);
+      if (flags & MAGMA_IMPORT_SEMAPHORE_ONE_SHOT) {
+        platform_sem->SetOneShot();
+      }
 
       auto iter = semaphore_map_.find(client_id);
       if (iter != semaphore_map_.end())

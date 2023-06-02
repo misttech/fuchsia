@@ -228,10 +228,10 @@ class CommandBufferHelper {
       success = semaphore->duplicate_handle(&duplicate_handle);
       MAGMA_DASSERT(success);
       wait_semaphores_.push_back(semaphore);
-      success =
-          connection_
-              ->ImportObject(duplicate_handle, magma::PlatformObject::SEMAPHORE, semaphore->id())
-              .ok();
+      success = connection_
+                    ->ImportObject(duplicate_handle, /*flags=*/0, magma::PlatformObject::SEMAPHORE,
+                                   semaphore->id())
+                    .ok();
       MAGMA_DASSERT(success);
       abi_wait_semaphore_ids()[i] = semaphore->id();
       msd_wait_semaphores_.push_back(
@@ -247,10 +247,10 @@ class CommandBufferHelper {
       success = semaphore->duplicate_handle(&duplicate_handle);
       MAGMA_DASSERT(success);
       signal_semaphores_.push_back(semaphore);
-      success =
-          connection_
-              ->ImportObject(duplicate_handle, magma::PlatformObject::SEMAPHORE, semaphore->id())
-              .ok();
+      success = connection_
+                    ->ImportObject(duplicate_handle, /*flags=*/0, magma::PlatformObject::SEMAPHORE,
+                                   semaphore->id())
+                    .ok();
       MAGMA_DASSERT(success);
       abi_signal_semaphore_ids()[i] = semaphore->id();
       msd_signal_semaphores_.push_back(

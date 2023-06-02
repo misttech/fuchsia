@@ -144,8 +144,8 @@ TEST(MagmaSystemConnection, Semaphores) {
   uint32_t duplicate_handle1;
   ASSERT_TRUE(semaphore->duplicate_handle(&duplicate_handle1));
 
-  EXPECT_TRUE(connection.ImportObject(duplicate_handle1, magma::PlatformObject::SEMAPHORE,
-                                      semaphore->id()));
+  EXPECT_TRUE(connection.ImportObject(duplicate_handle1, /*flags=*/0,
+                                      magma::PlatformObject::SEMAPHORE, semaphore->id()));
 
   auto system_semaphore = connection.LookupSemaphore(semaphore->id());
   EXPECT_TRUE(system_semaphore);
@@ -155,8 +155,8 @@ TEST(MagmaSystemConnection, Semaphores) {
   ASSERT_TRUE(semaphore->duplicate_handle(&duplicate_handle2));
 
   // Can't import the same id twice
-  EXPECT_FALSE(connection.ImportObject(duplicate_handle2, magma::PlatformObject::SEMAPHORE,
-                                       semaphore->id()));
+  EXPECT_FALSE(connection.ImportObject(duplicate_handle2, /*flags=*/0,
+                                       magma::PlatformObject::SEMAPHORE, semaphore->id()));
 
   EXPECT_TRUE(connection.ReleaseObject(semaphore->id(), magma::PlatformObject::SEMAPHORE));
 
@@ -178,7 +178,8 @@ TEST(MagmaSystemConnection, BadSemaphoreImport) {
   MagmaSystemConnection connection(dev, MsdConnectionUniquePtr(msd_connection));
 
   constexpr uint32_t kBogusHandle = 0xabcd1234;
-  EXPECT_FALSE(connection.ImportObject(kBogusHandle, magma::PlatformObject::SEMAPHORE, 0));
+  EXPECT_FALSE(
+      connection.ImportObject(kBogusHandle, /*flags=*/0, magma::PlatformObject::SEMAPHORE, 0));
 
   auto buffer = magma::PlatformBuffer::Create(4096, "test");
   ASSERT_TRUE(buffer);
@@ -186,8 +187,8 @@ TEST(MagmaSystemConnection, BadSemaphoreImport) {
   uint32_t buffer_handle;
   ASSERT_TRUE(buffer->duplicate_handle(&buffer_handle));
 
-  EXPECT_FALSE(
-      connection.ImportObject(buffer_handle, magma::PlatformObject::SEMAPHORE, buffer->id()));
+  EXPECT_FALSE(connection.ImportObject(buffer_handle, /*flags=*/0, magma::PlatformObject::SEMAPHORE,
+                                       buffer->id()));
 }
 
 TEST(MagmaSystemConnection, BufferSharing) {

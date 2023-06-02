@@ -148,8 +148,9 @@ TEST(MagmaSystemConnection, Semaphores) {
   zx::handle duplicate_handle1;
   ASSERT_TRUE(semaphore->duplicate_handle(&duplicate_handle1));
 
-  EXPECT_TRUE(connection.ImportObject(
-      std::move(duplicate_handle1), fuchsia_gpu_magma::wire::ObjectType::kEvent, semaphore->id()));
+  EXPECT_TRUE(connection.ImportObject(std::move(duplicate_handle1), /*flags=*/0,
+                                      fuchsia_gpu_magma::wire::ObjectType::kEvent,
+                                      semaphore->id()));
 
   auto system_semaphore = connection.LookupSemaphore(semaphore->id());
   EXPECT_TRUE(system_semaphore);
@@ -160,8 +161,9 @@ TEST(MagmaSystemConnection, Semaphores) {
   ASSERT_TRUE(semaphore->duplicate_handle(&duplicate_handle2));
 
   // Can't import the same id twice
-  EXPECT_FALSE(connection.ImportObject(
-      std::move(duplicate_handle2), fuchsia_gpu_magma::wire::ObjectType::kEvent, semaphore->id()));
+  EXPECT_FALSE(connection.ImportObject(std::move(duplicate_handle2), /*flags=*/0,
+                                       fuchsia_gpu_magma::wire::ObjectType::kEvent,
+                                       semaphore->id()));
 
   EXPECT_TRUE(
       connection.ReleaseObject(semaphore->id(), fuchsia_gpu_magma::wire::ObjectType::kEvent));
@@ -184,7 +186,7 @@ TEST(MagmaSystemConnection, BadSemaphoreImport) {
   MagmaSystemConnection connection(dev, std::move(msd_connection));
 
   constexpr uint32_t kBogusHandle = 0xabcd1234;
-  EXPECT_FALSE(connection.ImportObject(zx::handle(kBogusHandle),
+  EXPECT_FALSE(connection.ImportObject(zx::handle(kBogusHandle), /*flags=*/0,
                                        fuchsia_gpu_magma::wire::ObjectType::kEvent, 0));
 
   auto buffer = magma::PlatformBuffer::Create(4096, "test");
@@ -193,7 +195,7 @@ TEST(MagmaSystemConnection, BadSemaphoreImport) {
   zx::handle buffer_handle;
   ASSERT_TRUE(buffer->duplicate_handle(&buffer_handle));
 
-  EXPECT_FALSE(connection.ImportObject(std::move(buffer_handle),
+  EXPECT_FALSE(connection.ImportObject(std::move(buffer_handle), /*flags=*/0,
                                        fuchsia_gpu_magma::wire::ObjectType::kEvent, buffer->id()));
 }
 

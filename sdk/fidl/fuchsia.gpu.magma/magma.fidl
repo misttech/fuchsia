@@ -131,6 +131,11 @@ type ObjectType = flexible enum : uint32 {
     BUFFER = 11;
 };
 
+@available(added=13)
+type ImportFlags = flexible bits : uint64 {
+    EVENT_ONE_SHOT = 0x1;
+};
+
 type BufferOp = flexible enum : uint32 {
     /// Populate the hardware page tables with the pages mapped in this range, committing pages
     /// as needed. This is not needed for allocations mapped GROWABLE, since the page tables will
@@ -202,9 +207,18 @@ alias PerformanceCounterSet = vector<uint64>:64;
 /// If a system driver error occurs, or if the client sends a message that the client should have
 /// known is invalid, the connection will be closed and a zx.Status sent via epitaph.
 protocol Primary {
-    /// Imports an object for use in the system driver.
+    /// DEPRECATED: use ImportObject.
     ImportObject2(resource struct {
         object zx.Handle;
+        object_type ObjectType;
+        object_id ObjectId;
+    });
+
+    /// Imports an object for use in the system driver.
+    @available(added=13)
+    ImportObject(resource struct {
+        object zx.Handle;
+        flags ImportFlags;
         object_type ObjectType;
         object_id ObjectId;
     });

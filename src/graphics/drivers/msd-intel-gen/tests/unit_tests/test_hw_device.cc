@@ -518,6 +518,8 @@ class TestMsdIntelDevice : public testing::Test {
 
     bool WaitAsync(magma::PlatformPort* port, uint64_t key) override { return false; }
 
+    void SetOneShot() override {}
+
     std::unique_ptr<magma::PlatformSemaphore> sem_ = magma::PlatformSemaphore::Create();
     std::unique_ptr<magma::PlatformSemaphore> signal_sem_ = magma::PlatformSemaphore::Create();
     std::unique_ptr<magma::PlatformSemaphore> wait_sem_ = magma::PlatformSemaphore::Create();

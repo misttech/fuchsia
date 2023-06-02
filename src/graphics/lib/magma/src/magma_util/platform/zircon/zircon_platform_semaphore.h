@@ -32,10 +32,12 @@ class ZirconPlatformSemaphore : public PlatformSemaphore {
   bool duplicate_handle(zx::handle* handle_out) const override;
 
   void Reset() override {
-    event_.signal(zx_signal(), 0);
-    TRACE_DURATION("magma:sync", "semaphore reset", "id", koid_);
+    TRACE_DURATION("magma:sync", "semaphore reset", "id", koid_, "oneshot", is_one_shot_);
     TRACE_FLOW_END("magma:sync", "semaphore signal", koid_);
     TRACE_FLOW_END("magma:sync", "semaphore wait async", koid_);
+    if (!is_one_shot_) {
+      event_.signal(zx_signal(), 0);
+    }
   }
 
   void Signal() override {
@@ -51,6 +53,8 @@ class ZirconPlatformSemaphore : public PlatformSemaphore {
 
   bool WaitAsync(PlatformPort* port, uint64_t key) override;
 
+  void SetOneShot() override { is_one_shot_ = true; }
+
   zx_handle_t zx_handle() const { return event_.get(); }
 
   zx_signals_t zx_signal() const { return ZX_EVENT_SIGNALED; }
@@ -59,6 +63,7 @@ class ZirconPlatformSemaphore : public PlatformSemaphore {
   zx::event event_;
   uint64_t koid_;
   uint64_t local_id_ = 0;
+  bool is_one_shot_ = false;
 };
 
 }  // namespace magma

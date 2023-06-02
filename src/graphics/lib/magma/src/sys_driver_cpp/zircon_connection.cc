@@ -200,7 +200,38 @@ void ZirconConnection::ImportObject2(ImportObject2RequestView request,
   }
   FlowControl(size);
 
-  if (!delegate_->ImportObject(std::move(request->object), *object_type, request->object_id))
+  if (!delegate_->ImportObject(std::move(request->object), /*flags=*/0, *object_type,
+                               request->object_id))
+    SetError(&completer, MAGMA_STATUS_INVALID_ARGS);
+}
+
+void ZirconConnection::ImportObject(ImportObjectRequestView request,
+                                    ImportObjectCompleter::Sync& completer) {
+  TRACE_DURATION("magma", "ZirconConnection::ImportObject", "type",
+                 static_cast<uint32_t>(request->object_type));
+  MAGMA_DLOG("ZirconConnection: ImportObject");
+
+  auto object_type = ValidateObjectType(request->object_type);
+  if (!object_type) {
+    SetError(&completer, MAGMA_STATUS_INVALID_ARGS);
+    return;
+  }
+
+  auto flags = static_cast<uint64_t>(request->flags);
+
+  uint64_t size = 0;
+
+  if (object_type == fuchsia_gpu_magma::wire::ObjectType::kBuffer) {
+    zx::unowned_vmo vmo(request->object.get());
+    zx_status_t status = vmo->get_size(&size);
+    if (status != ZX_OK) {
+      SetError(&completer, MAGMA_STATUS_INVALID_ARGS);
+      return;
+    }
+  }
+  FlowControl(size);
+
+  if (!delegate_->ImportObject(std::move(request->object), flags, *object_type, request->object_id))
     SetError(&completer, MAGMA_STATUS_INVALID_ARGS);
 }
 

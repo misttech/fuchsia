@@ -33,8 +33,8 @@ class MagmaSystemConnection : private MagmaSystemContext::Owner,
 
   ~MagmaSystemConnection() override;
 
-  magma::Status ImportObject(uint32_t handle, magma::PlatformObject::Type object_type,
-                             uint64_t client_id) override;
+  magma::Status ImportObject(uint32_t handle, uint64_t flags,
+                             magma::PlatformObject::Type object_type, uint64_t client_id) override;
   magma::Status ReleaseObject(uint64_t object_id, magma::PlatformObject::Type object_type) override;
   magma::Status CreateContext(uint32_t context_id) override;
   magma::Status DestroyContext(uint32_t context_id) override;

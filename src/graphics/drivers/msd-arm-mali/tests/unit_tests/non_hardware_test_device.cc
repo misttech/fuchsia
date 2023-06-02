@@ -292,6 +292,7 @@ class TestNonHardwareMsdArmDevice {
 
       uint64_t id() const override { return real_semaphore_->id(); }
       uint64_t global_id() const override { return real_semaphore_->global_id(); }
+      void SetOneShot() override {}
 
       bool duplicate_handle(uint32_t* handle_out) const override {
         return real_semaphore_->duplicate_handle(handle_out);

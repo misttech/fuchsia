@@ -66,9 +66,9 @@ class PlatformSemaphore : public PlatformObject {
   // Returns MAGMA_STATUS_OK if the event is signaled before the timeout expires.
   virtual magma::Status WaitNoReset(uint64_t timeout_ms) = 0;
 
-  // If the event is signaled before the timeout expires resets the state to
-  // unsignalled and returns MAGMA_STATUS_OK.  Only one thread should ever wait on
-  // a given semaphore.
+  // If the event is signaled before the timeout expires, resets the state to
+  // unsignalled (if not one shot) and returns MAGMA_STATUS_OK.  Only one thread
+  // should ever wait on a given semaphore.
   virtual magma::Status Wait(uint64_t timeout_ms) = 0;
 
   magma::Status Wait() { return Wait(UINT64_MAX); }
@@ -77,6 +77,9 @@ class PlatformSemaphore : public PlatformObject {
   // Note that a port wait completion will not autoreset the semaphore.
   // On success returns true.
   virtual bool WaitAsync(PlatformPort* port, uint64_t key) = 0;
+
+  // Set one shot to prevent reset of the semaphore.
+  virtual void SetOneShot() = 0;
 };
 
 }  // namespace magma
