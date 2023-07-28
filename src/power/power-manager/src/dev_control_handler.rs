@@ -236,8 +236,7 @@ impl Node for DeviceControlHandler {
         let mut option = self.driver_proxy.borrow_mut();
         if option.is_none() {
             // TODO(https://fxbug.dev/107961): Avoid relying on dev-topological access.
-            // TODO(https://fxbug.dev/119543): Get the class path from the driver specification.
-            const DEV: &str = "/dev/class/cpu-ctrl/";
+            const DEV: &str = "/dev/";
 
             let dir =
                 fuchsia_fs::directory::open_in_namespace(DEV, fio::OpenFlags::RIGHT_READABLE)?;
@@ -245,13 +244,12 @@ impl Node for DeviceControlHandler {
             let path = self.driver_path.strip_prefix(DEV).ok_or_else(|| {
                 anyhow::anyhow!("driver_path={} not in {}", self.driver_path, DEV)
             })?;
-            let controller_path = path.to_owned() + "/device_controller";
 
             let proxy = device_watcher::wait_for_device_with(&dir, |info| {
                 (path == info.filename).then(|| {
                     fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
                         fdev::ControllerMarker,
-                    >(&dir, &controller_path)
+                    >(&dir, path)
                 })
             })
             .await??;
