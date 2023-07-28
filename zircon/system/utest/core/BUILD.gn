@@ -32,6 +32,7 @@ core_tests = [
   "handle-transfer",
   "handle-wait",
   "iob",
+  "mbmq",
   "object-child",
   "object-wait",
   "page-size",

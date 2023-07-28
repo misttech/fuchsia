@@ -8,4 +8,4 @@
 #include <lib/syscalls/forward.h>
 #include <zircon/errors.h>
 
-zx_status_t sys_mbo_create(uint32_t options, user_out_handle* out0) { return ZX_OK; }
+zx_status_t sys_mbo_create(uint32_t options, user_out_handle* out0) { return ZX_ERR_NOT_SUPPORTED; }

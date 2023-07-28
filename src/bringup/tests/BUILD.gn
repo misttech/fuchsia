@@ -64,6 +64,7 @@ group("bootfs-tests") {
     "//zircon/system/utest/core:core-handle-transfer-bootfs-test",
     "//zircon/system/utest/core:core-handle-wait-bootfs-test",
     "//zircon/system/utest/core:core-job-bootfs-test",
+    "//zircon/system/utest/core:core-mbmq-bootfs-test",
     "//zircon/system/utest/core:core-memory-mapping-bootfs-test",
     "//zircon/system/utest/core:core-object-child-bootfs-test",
     "//zircon/system/utest/core:core-object-info-bootfs-test",
