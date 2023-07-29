@@ -47,6 +47,10 @@ struct CanaryTag;
     static constexpr uint32_t magic = fbl::magic(M); \
   };
 
+// These really belong in zircon/system/public/zircon/types.h, but I'm
+// putting them here to avoid recompiles of most of userland.
+#define ZX_OBJ_TYPE_MBO ((zx_obj_type_t)50u)
+
 DECLARE_DISPTAG(ProcessDispatcher, ZX_OBJ_TYPE_PROCESS, "PROC")
 DECLARE_DISPTAG(ThreadDispatcher, ZX_OBJ_TYPE_THREAD, "THRD")
 DECLARE_DISPTAG(VmObjectDispatcher, ZX_OBJ_TYPE_VMO, "VMOD")
@@ -76,6 +80,8 @@ DECLARE_DISPTAG(ClockDispatcher, ZX_OBJ_TYPE_CLOCK, "CLOK")
 DECLARE_DISPTAG(StreamDispatcher, ZX_OBJ_TYPE_STREAM, "STRM")
 DECLARE_DISPTAG(MsiDispatcher, ZX_OBJ_TYPE_MSI, "MSID")
 DECLARE_DISPTAG(IoBufferDispatcher, ZX_OBJ_TYPE_IOB, "IOBD")
+
+DECLARE_DISPTAG(MBODispatcher, ZX_OBJ_TYPE_MBO, "MBOD")
 
 #undef DECLARE_DISPTAG
 

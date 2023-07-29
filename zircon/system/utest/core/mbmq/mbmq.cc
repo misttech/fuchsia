@@ -9,9 +9,9 @@
 namespace {
 
 TEST(MBMQTest, MBOCreate) {
-  zx_handle_t handle = 0;
-  ASSERT_EQ(zx_mbo_create(0, &handle), ZX_ERR_NOT_SUPPORTED);
-  ASSERT_EQ(handle, 0);
+  zx::handle handle;
+  ASSERT_OK(zx_mbo_create(0, handle.reset_and_get_address()));
+  ASSERT_NE(handle.get(), 0);
 }
 
 }  // namespace

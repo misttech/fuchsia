@@ -32,6 +32,7 @@ zx_library("object") {
     "job_dispatcher.cc",
     "job_policy.cc",
     "log_dispatcher.cc",
+    "mbo_dispatcher.cc",
     "mbuf.cc",
     "memory_watchdog.cc",
     "message_packet.cc",
