@@ -26,6 +26,15 @@ class MBODispatcher final : public SoloDispatcher<MBODispatcher, ZX_RIGHTS_BASIC
   static zx_status_t Create(KernelHandle<MBODispatcher>* handle, zx_rights_t* rights);
 
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_MBO; }
+
+  zx_status_t Set(MessagePacketPtr msg);
+  zx_status_t Read(uint32_t* msg_size, uint32_t* msg_handle_count, MessagePacketPtr* msg,
+                   bool may_discard);
+
+ private:
+  MBODispatcher() = default;
+
+  MessagePacketPtr message_ TA_GUARDED(get_lock());
 };
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_MBO_DISPATCHER_H_

@@ -11,4 +11,33 @@ closed protocol MBO {
     }) -> (resource struct {
         out Handle;
     }) error Status;
+
+    @testonly
+    strict Write(resource struct {
+        handle Handle;
+        options uint32;
+        @voidptr
+        @size32
+        bytes vector<byte>:CHANNEL_MAX_MSG_BYTES;
+        @release
+        @size32
+        handles vector<Handle>:CHANNEL_MAX_MSG_HANDLES;
+    }) -> () error Status;
+
+    @testonly
+    @handle_unchecked
+    strict Read(resource struct {
+        handle Handle:CHANNEL;
+        options uint32;
+        @out
+        @voidptr
+        bytes experimental_pointer<byte>;
+        @out
+        handles experimental_pointer<Handle>;
+        num_bytes uint32;
+        num_handles uint32;
+    }) -> (resource struct {
+        actual_bytes uint32;
+        actual_handles uint32;
+    }) error Status;
 };

@@ -19,6 +19,7 @@
 #include <ktl/type_traits.h>
 #include <object/channel_dispatcher.h>
 #include <object/handle.h>
+#include <object/mbo_dispatcher.h>
 #include <object/message_packet.h>
 #include <object/process_dispatcher.h>
 #include <object/user_handles.h>
@@ -503,4 +504,114 @@ zx_status_t sys_channel_call_etc_finish(zx_time_t deadline,
                                         user_out_ptr<uint32_t> actual_handles) {
   return channel_call_finish<user_inout_ptr, zx_channel_call_etc_args_t>(
       deadline, user_args, actual_bytes, actual_handles);
+}
+
+static zx_status_t MboWrite(ProcessDispatcher* up, fbl::RefPtr<Dispatcher>&& obj,
+                            user_in_ptr<const void> user_bytes, uint32_t num_bytes,
+                            user_in_ptr<const zx_handle_t> user_handles, uint32_t num_handles) {
+  auto cleanup = fit::defer([&]() { RemoveUserHandles(user_handles, num_handles, up); });
+
+  MessagePacketPtr msg;
+  zx_status_t status =
+      MessagePacket::Create(user_bytes.reinterpret<const char>(), num_bytes, num_handles, &msg);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  if (num_handles > 0u) {
+    // This is only used for checking whether a channel is being written to
+    // itself.  We don't bother with that check for MBOs.
+    Dispatcher* null_channel = nullptr;
+
+    status = msg_put_handles(up, msg.get(), user_handles, num_handles, null_channel);
+    if (status != ZX_OK)
+      return status;
+  }
+
+  cleanup.cancel();
+
+  // TODO: Reorder so that we check the handle type before reading the
+  // message in.
+
+  // Note that we currently read the message in before verifying that the
+  // MBO or CMH is in a writable state, which the following Set() calls
+  // check.  This ordering could change when we switch MBOs to managing
+  // their own buffers instead of reusing the existing MessagePacket code.
+  if (auto mbo = DownCastDispatcher<MBODispatcher>(&obj)) {
+    return mbo->Set(ktl::move(msg));
+  }
+  // if (auto cmh = DownCastDispatcher<CMHDispatcher>(&obj)) {
+  //   return cmh->Set(ktl::move(msg));
+  // }
+  return ZX_ERR_WRONG_TYPE;
+}
+
+// zx_status_t zx_mbo_write
+zx_status_t sys_mbo_write(zx_handle_t handle_value, uint32_t options,
+                          user_in_ptr<const void> user_bytes, uint32_t num_bytes,
+                          user_in_ptr<const zx_handle_t> user_handles, uint32_t num_handles) {
+  auto up = ProcessDispatcher::GetCurrent();
+
+  fbl::RefPtr<Dispatcher> obj;
+  zx_status_t status = up->handle_table().GetDispatcher(*up, handle_value, &obj);
+  if (status != ZX_OK)
+    return status;
+
+  return MboWrite(up, ktl::move(obj), user_bytes, num_bytes, user_handles, num_handles);
+}
+
+// zx_status_t zx_mbo_read
+zx_status_t sys_mbo_read(zx_handle_t handle_value, uint32_t options, user_out_ptr<void> bytes,
+                         user_out_ptr<zx_handle_t> handles, uint32_t num_bytes,
+                         uint32_t num_handles, user_out_ptr<uint32_t> actual_bytes,
+                         user_out_ptr<uint32_t> actual_handles) {
+  auto up = ProcessDispatcher::GetCurrent();
+
+  MessagePacketPtr msg;
+  fbl::RefPtr<Dispatcher> obj;
+  zx_status_t result = up->handle_table().GetDispatcher(*up, handle_value, &obj);
+  if (result != ZX_OK)
+    return result;
+  if (auto mbo = DownCastDispatcher<MBODispatcher>(&obj)) {
+    result = mbo->Read(&num_bytes, &num_handles, &msg, options & ZX_CHANNEL_READ_MAY_DISCARD);
+    // } else if (auto cmh = DownCastDispatcher<CMHDispatcher>(&obj)) {
+    //   result = cmh->Read(&num_bytes, &num_handles, &msg,
+    //                      options & ZX_CHANNEL_READ_MAY_DISCARD);
+  } else {
+    return ZX_ERR_WRONG_TYPE;
+  }
+  if (result != ZX_OK && result != ZX_ERR_BUFFER_TOO_SMALL)
+    return result;
+
+  // On ZX_ERR_BUFFER_TOO_SMALL, Read() gives us the size of the next message (which remains
+  // unconsumed, unless |options| has ZX_CHANNEL_READ_MAY_DISCARD set).
+  if (actual_bytes) {
+    zx_status_t status = actual_bytes.copy_to_user(num_bytes);
+    if (status != ZX_OK)
+      return status;
+  }
+
+  if (actual_handles) {
+    zx_status_t status = actual_handles.copy_to_user(num_handles);
+    if (status != ZX_OK)
+      return status;
+  }
+  if (result == ZX_ERR_BUFFER_TOO_SMALL)
+    return result;
+
+  if (num_bytes > 0u) {
+    if (msg->CopyDataTo(bytes.reinterpret<char>()) != ZX_OK)
+      return ZX_ERR_INVALID_ARGS;
+  }
+
+  // The documented public API states that that writing to the handles buffer
+  // must happen after writing to the data buffer.
+  if (num_handles > 0u) {
+    zx_status_t status = msg_get_handles(up, msg.get(), handles, num_handles);
+    if (status != ZX_OK) {
+      return status;
+    }
+  }
+
+  return result;
 }
