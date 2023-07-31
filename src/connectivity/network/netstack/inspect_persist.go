@@ -89,6 +89,7 @@ func makePersistenceRequest(persistClientEnd *persist.DataPersistenceWithCtxInte
 		if want := persist.PersistResultQueued; result != want {
 			_ = syslog.WarnTf(persistenceTagName, "unexpected persist result; expected %s got %s", want, result)
 		}
+		time.Sleep(5 * time.Second)
 	}
 
 	return nil
