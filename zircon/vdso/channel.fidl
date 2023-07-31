@@ -1069,4 +1069,10 @@ closed protocol Channel {
         actual_bytes uint32;
         actual_handles uint32;
     }) error Status;
+
+    @testonly
+    strict WriteMbo(resource struct {
+        channel Handle:CHANNEL;
+        mbo Handle;
+    }) -> () error Status;
 };

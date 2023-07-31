@@ -6,6 +6,8 @@ Symbols:
   - { Name: _zx_bti_pin, Type: Func }
   - { Name: _zx_bti_release_quarantine, Type: Func }
   - { Name: _zx_cache_flush, Type: Func }
+  - { Name: _zx_calleesref_create, Type: Func }
+  - { Name: _zx_calleesref_send_reply, Type: Func }
   - { Name: _zx_channel_call, Type: Func }
   - { Name: _zx_channel_call_etc, Type: Func }
   - { Name: _zx_channel_create, Type: Func }
@@ -13,6 +15,7 @@ Symbols:
   - { Name: _zx_channel_read_etc, Type: Func }
   - { Name: _zx_channel_write, Type: Func }
   - { Name: _zx_channel_write_etc, Type: Func }
+  - { Name: _zx_channel_write_mbo, Type: Func }
   - { Name: _zx_clock_create, Type: Func }
   - { Name: _zx_clock_get_details, Type: Func }
   - { Name: _zx_clock_get_monotonic, Type: Func }
@@ -69,6 +72,9 @@ Symbols:
   - { Name: _zx_mbo_create, Type: Func }
   - { Name: _zx_mbo_read, Type: Func }
   - { Name: _zx_mbo_write, Type: Func }
+  - { Name: _zx_msgqueue_create, Type: Func }
+  - { Name: _zx_msgqueue_create_channel, Type: Func }
+  - { Name: _zx_msgqueue_wait, Type: Func }
   - { Name: _zx_msi_allocate, Type: Func }
   - { Name: _zx_msi_create, Type: Func }
   - { Name: _zx_mtrace_control, Type: Func }
@@ -204,6 +210,8 @@ Symbols:
   - { Name: zx_bti_pin, Type: Func, Weak: true }
   - { Name: zx_bti_release_quarantine, Type: Func, Weak: true }
   - { Name: zx_cache_flush, Type: Func, Weak: true }
+  - { Name: zx_calleesref_create, Type: Func, Weak: true }
+  - { Name: zx_calleesref_send_reply, Type: Func, Weak: true }
   - { Name: zx_channel_call, Type: Func, Weak: true }
   - { Name: zx_channel_call_etc, Type: Func, Weak: true }
   - { Name: zx_channel_create, Type: Func, Weak: true }
@@ -211,6 +219,7 @@ Symbols:
   - { Name: zx_channel_read_etc, Type: Func, Weak: true }
   - { Name: zx_channel_write, Type: Func, Weak: true }
   - { Name: zx_channel_write_etc, Type: Func, Weak: true }
+  - { Name: zx_channel_write_mbo, Type: Func, Weak: true }
   - { Name: zx_clock_create, Type: Func, Weak: true }
   - { Name: zx_clock_get_details, Type: Func, Weak: true }
   - { Name: zx_clock_get_monotonic, Type: Func, Weak: true }
@@ -267,6 +276,9 @@ Symbols:
   - { Name: zx_mbo_create, Type: Func, Weak: true }
   - { Name: zx_mbo_read, Type: Func, Weak: true }
   - { Name: zx_mbo_write, Type: Func, Weak: true }
+  - { Name: zx_msgqueue_create, Type: Func, Weak: true }
+  - { Name: zx_msgqueue_create_channel, Type: Func, Weak: true }
+  - { Name: zx_msgqueue_wait, Type: Func, Weak: true }
   - { Name: zx_msi_allocate, Type: Func, Weak: true }
   - { Name: zx_msi_create, Type: Func, Weak: true }
   - { Name: zx_mtrace_control, Type: Func, Weak: true }

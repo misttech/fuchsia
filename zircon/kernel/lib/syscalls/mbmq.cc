@@ -23,3 +23,19 @@ zx_status_t sys_mbo_create(uint32_t options, user_out_handle* out) {
     return result;
   return out->make(ktl::move(handle), rights);
 }
+
+zx_status_t sys_channel_write_mbo(zx_handle_t channel_handle, zx_handle_t mbo_handle) {
+  return ZX_OK;
+}
+
+zx_status_t sys_msgqueue_create(uint32_t options, user_out_handle* out) { return ZX_OK; }
+
+zx_status_t sys_msgqueue_create_channel(zx_handle_t msgqueue, uint64_t key, user_out_handle* out) {
+  return ZX_OK;
+}
+
+zx_status_t sys_msgqueue_wait(zx_handle_t channel_handle, zx_handle_t cmh_handle) { return ZX_OK; }
+
+zx_status_t sys_calleesref_create(uint32_t options, user_out_handle* out) { return ZX_OK; }
+
+zx_status_t sys_calleesref_send_reply(zx_handle_t cmh_handle) { return ZX_OK; }

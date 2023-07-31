@@ -41,3 +41,43 @@ closed protocol MBO {
         actual_handles uint32;
     }) error Status;
 };
+
+@transport("Syscall")
+closed protocol Msgqueue {
+    @testonly
+    strict Create(struct {
+        options uint32;
+    }) -> (resource struct {
+        out Handle;
+    }) error Status;
+
+    @testonly
+    strict CreateChannel(resource struct {
+        msgqueue Handle;
+        key uint64;
+    }) -> (resource struct {
+        out Handle;
+    }) error Status;
+
+    // TODO: Add "key" output argument.
+    @testonly
+    strict Wait(resource struct {
+        msgqueue Handle;
+        calleesref Handle;
+    }) -> () error Status;
+};
+
+@transport("Syscall")
+closed protocol Calleesref {
+    @testonly
+    strict Create(struct {
+        options uint32;
+    }) -> (resource struct {
+        out Handle;
+    }) error Status;
+
+    @testonly
+    strict SendReply(resource struct {
+        calleesref Handle;
+    }) -> () error Status;
+};
