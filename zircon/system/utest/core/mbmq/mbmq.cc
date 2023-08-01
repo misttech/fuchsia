@@ -237,4 +237,28 @@ TEST(MbmqTest, SuspendMsgQueueWait) {
   thread.join();
 }
 
+TEST(MbmqTest, UnconnectedCalleesRef) {
+  zx::handle calleesref;
+  ASSERT_OK(calleesref_create(0, &calleesref));
+
+  // When a CalleesRef is unconnected, zx_calleesref_send_reply() should
+  // return an error.
+  ASSERT_EQ(zx_calleesref_send_reply(calleesref.get()), ZX_ERR_NOT_CONNECTED);
+
+  // When a CalleesRef is unconnected, you should not be able to write to
+  // it.
+  static const char kReply[] = "example reply";
+  ASSERT_EQ(zx_mbo_write(calleesref.get(), 0, kReply, sizeof(kReply), nullptr, 0),
+            ZX_ERR_NOT_CONNECTED);
+
+  // When a CalleesRef is unconnected, you should not be able to read from
+  // it.
+  char buffer[100] = {};
+  uint32_t actual_bytes = 999;
+  uint32_t actual_handles = 999;
+  ASSERT_EQ(zx_mbo_read(calleesref.get(), 0, buffer, nullptr, sizeof(buffer), 0, &actual_bytes,
+                        &actual_handles),
+            ZX_ERR_NOT_CONNECTED);
+}
+
 }  // namespace
