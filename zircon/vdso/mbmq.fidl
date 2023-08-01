@@ -6,8 +6,10 @@ library zx;
 @transport("Syscall")
 closed protocol MBO {
     @testonly
-    strict Create(struct {
+    strict Create(resource struct {
         options uint32;
+        msgqueue Handle;
+        reply_key uint64;
     }) -> (resource struct {
         out Handle;
     }) error Status;

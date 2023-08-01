@@ -11,14 +11,23 @@
 #include <object/mbo_dispatcher.h>
 
 // zx_status_t zx_mbo_create
-zx_status_t sys_mbo_create(uint32_t options, user_out_handle* out) {
+zx_status_t sys_mbo_create(uint32_t options, zx_handle_t msgqueue_handle, uint64_t reply_key,
+                           user_out_handle* out) {
   if (options != 0u)
     return ZX_ERR_INVALID_ARGS;
+
+  auto up = ProcessDispatcher::GetCurrent();
+
+  fbl::RefPtr<MsgQueueDispatcher> msgqueue;
+  zx_status_t status = up->handle_table().GetDispatcher(*up, msgqueue_handle, &msgqueue);
+  if (status != ZX_OK) {
+    return status;
+  }
 
   KernelHandle<MBODispatcher> handle;
   zx_rights_t rights;
 
-  zx_status_t result = MBODispatcher::Create(&handle, &rights);
+  zx_status_t result = MBODispatcher::Create(ktl::move(msgqueue), reply_key, &handle, &rights);
   if (result != ZX_OK)
     return result;
   return out->make(ktl::move(handle), rights);
@@ -113,4 +122,14 @@ zx_status_t sys_msgqueue_wait(zx_handle_t channel_handle, zx_handle_t calleesref
 }
 
 // zx_status_t zx_calleesref_send_reply
-zx_status_t sys_calleesref_send_reply(zx_handle_t cmh_handle) { return ZX_OK; }
+zx_status_t sys_calleesref_send_reply(zx_handle_t calleesref_handle) {
+  auto up = ProcessDispatcher::GetCurrent();
+
+  fbl::RefPtr<CalleesRefDispatcher> calleesref;
+  zx_status_t status = up->handle_table().GetDispatcher(*up, calleesref_handle, &calleesref);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  return calleesref->SendReply();
+}

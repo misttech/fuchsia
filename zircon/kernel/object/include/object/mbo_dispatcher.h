@@ -23,11 +23,14 @@
 
 class MBODispatcher final : public SoloDispatcher<MBODispatcher, ZX_RIGHTS_BASIC | ZX_RIGHTS_IO> {
  public:
-  static zx_status_t Create(KernelHandle<MBODispatcher>* handle, zx_rights_t* rights);
+  static zx_status_t Create(fbl::RefPtr<MsgQueueDispatcher> msgqueue, uint64_t reply_key,
+                            KernelHandle<MBODispatcher>* handle, zx_rights_t* rights);
 
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_MBO; }
 
   zx_status_t Set(MessagePacketPtr msg);
+  void EnqueueReply(MessagePacketPtr msg);
+  void SetDequeuedReply(MessagePacketPtr msg);
   zx_status_t Read(uint32_t* msg_size, uint32_t* msg_handle_count, MessagePacketPtr* msg,
                    bool may_discard);
 
@@ -48,8 +51,8 @@ class MBODispatcher final : public SoloDispatcher<MBODispatcher, ZX_RIGHTS_BASIC
 
   // These are currently set on creation and don't need locking.
   // TODO: Could make them const.
-  fbl::RefPtr<MsgQueueDispatcher> dest_queue_;
-  // uint64_t key_;
+  fbl::RefPtr<MsgQueueDispatcher> reply_queue_;
+  uint64_t reply_key_;
 };
 
 class MsgQueueDispatcher final
@@ -82,6 +85,7 @@ class CalleesRefDispatcher final
 
   zx_status_t ReadFromMsgQueue(const fbl::RefPtr<MsgQueueDispatcher> channel);
   zx_status_t Populate(MessagePacketPtr msg);
+  zx_status_t SendReply();
 
  private:
   CalleesRefDispatcher() = default;

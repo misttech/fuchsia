@@ -6,11 +6,16 @@
 
 #include "object/mbo_dispatcher.h"
 
-zx_status_t MBODispatcher::Create(KernelHandle<MBODispatcher>* handle, zx_rights_t* rights) {
+zx_status_t MBODispatcher::Create(fbl::RefPtr<MsgQueueDispatcher> msgqueue, uint64_t reply_key,
+                                  KernelHandle<MBODispatcher>* handle, zx_rights_t* rights) {
   fbl::AllocChecker ac;
   KernelHandle mbo(fbl::AdoptRef(new (&ac) MBODispatcher()));
   if (!ac.check())
     return ZX_ERR_NO_MEMORY;
+
+  // XXX: We could pass these via the constructor instead.
+  mbo.dispatcher()->reply_queue_ = msgqueue;
+  mbo.dispatcher()->reply_key_ = reply_key;
 
   *rights = default_rights();
   *handle = ktl::move(mbo);
@@ -23,6 +28,22 @@ zx_status_t MBODispatcher::Set(MessagePacketPtr msg) {
     return ZX_ERR_BAD_STATE;
   message_ = ktl::move(msg);
   return ZX_OK;
+}
+
+void MBODispatcher::EnqueueReply(MessagePacketPtr msg) {
+  // This increments the MBO's reference count.  Note that we could avoid
+  // this atomic increment if WriteToChannel() instead took ownership of
+  // the RefPtr held by the caller.
+  msg->mbo_ = fbl::RefPtr<MBODispatcher>(this);
+
+  msg->is_reply = true;
+  reply_queue_->Write(ktl::move(msg));
+}
+
+void MBODispatcher::SetDequeuedReply(MessagePacketPtr msg) {
+  Guard<CriticalMutex> guard{get_lock()};
+  message_ = ktl::move(msg);
+  is_sent_ = false;
 }
 
 zx_status_t CalleesRefDispatcher::Set(MessagePacketPtr msg) {
@@ -173,12 +194,12 @@ zx_status_t CalleesRefDispatcher::ReadFromMsgQueue(const fbl::RefPtr<MsgQueueDis
 }
 
 zx_status_t CalleesRefDispatcher::Populate(MessagePacketPtr msg) {
-  // if (msg->is_reply) {
-  //   msg->is_reply = false;
-  //   fbl::RefPtr<MBODispatcher> mbo = ktl::move(msg->mbo_);
-  //   mbo->SetDequeuedReply(ktl::move(msg));
-  //   return ZX_OK;
-  // }
+  if (msg->is_reply) {
+    msg->is_reply = false;
+    fbl::RefPtr<MBODispatcher> mbo = ktl::move(msg->mbo_);
+    mbo->SetDequeuedReply(ktl::move(msg));
+    return ZX_OK;
+  }
 
   Guard<CriticalMutex> guard{get_lock()};
   if (mbo_) {
@@ -200,6 +221,26 @@ zx_status_t CalleesRefDispatcher::Populate(MessagePacketPtr msg) {
   }
   mbo_ = ktl::move(msg->mbo_);
   message_ = ktl::move(msg);
+  return ZX_OK;
+}
+
+zx_status_t CalleesRefDispatcher::SendReply() {
+  // Note that this avoids holding both the CalleesRef's lock and the MBO's
+  // lock at the same time.
+  fbl::RefPtr<MBODispatcher> mbo;
+  MessagePacketPtr msg;
+  {
+    Guard<CriticalMutex> guard{get_lock()};
+    if (!mbo_) {
+      return ZX_ERR_NOT_CONNECTED;
+    }
+    if (!message_) {
+      return ZX_ERR_BAD_STATE;
+    }
+    mbo = ktl::move(mbo_);
+    msg = ktl::move(message_);
+  }
+  mbo->EnqueueReply(ktl::move(msg));
   return ZX_OK;
 }
 

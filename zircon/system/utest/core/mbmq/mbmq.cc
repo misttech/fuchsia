@@ -6,14 +6,30 @@
 
 #include <zxtest/zxtest.h>
 
+// XXX: This hack overrides zxtest.h.  It allows ASSERT_OK() to be used
+// from functions with non-void return types.
+#undef LIB_ZXTEST_RETURN_IF_FATAL_true
+#define LIB_ZXTEST_RETURN_IF_FATAL_true \
+  do {                                  \
+    abort();                            \
+  } while (0)
+
 namespace {
 
 zx_status_t msgqueue_create(uint32_t options, zx::handle* out) {
   return zx_msgqueue_create(options, out->reset_and_get_address());
 }
 
+zx_status_t mbo_create(uint32_t options, zx_handle_t msgqueue, zx::handle* out) {
+  uint64_t key = 123;
+  return zx_mbo_create(options, msgqueue, key, out->reset_and_get_address());
+}
+
 zx_status_t mbo_create(uint32_t options, zx::handle* out) {
-  return zx_mbo_create(options, out->reset_and_get_address());
+  zx::handle msgqueue;
+  ASSERT_OK(msgqueue_create(0, &msgqueue));
+  uint64_t key = 123;
+  return zx_mbo_create(options, msgqueue.get(), key, out->reset_and_get_address());
 }
 
 zx_status_t calleesref_create(uint32_t options, zx::handle* out) {
@@ -39,6 +55,16 @@ struct Channel {
 
   zx::handle ch1;
   zx::handle ch2;
+};
+
+struct MboAndQueue {
+  MboAndQueue() {
+    ASSERT_OK(msgqueue_create(0, &msgqueue));
+    ASSERT_OK(mbo_create(0, msgqueue.get(), &mbo));
+  }
+
+  zx::handle msgqueue;
+  zx::handle mbo;
 };
 
 void AssertMBONotAccessible(const zx::handle& mbo) {
@@ -78,11 +104,8 @@ TEST(MbmqTest, MboWriteAndRead) {
 }
 
 TEST(MbmqTest, MboSend) {
-  // MboAndQueue mboq;
-  // zx::handle& mbo = mboq.mbo;
-  zx::handle mbo;
-  ASSERT_OK(mbo_create(0, &mbo));
-
+  MboAndQueue mboq;
+  zx::handle& mbo = mboq.mbo;
   Channel channel;
   zx::handle calleesref;
   ASSERT_OK(calleesref_create(0, &calleesref));
@@ -114,32 +137,32 @@ TEST(MbmqTest, MboSend) {
   ASSERT_EQ(actual_handles, 0);
   ASSERT_EQ(memcmp(buffer, kRequest, actual_bytes), 0);
 
-  // // Write the reply message.
-  // static const char kReply[] = "example reply";
-  // ASSERT_OK(zx_mbo_write(calleesref.get(), 0, kReply, sizeof(kReply), nullptr, 0));
+  // Write the reply message.
+  static const char kReply[] = "example reply";
+  ASSERT_OK(zx_mbo_write(calleesref.get(), 0, kReply, sizeof(kReply), nullptr, 0));
 
-  // // Before the reply is sent, the MBO should not be readable.
-  // AssertMBONotAccessible(mbo);
+  // Before the reply is sent, the MBO should not be readable.
+  AssertMBONotAccessible(mbo);
 
-  // // Send the reply message.
-  // ASSERT_OK(zx_calleesref_send_reply(calleesref.get()));
-  // // The CalleesRef no longer holds a reference to the MBO, so we can't call
-  // // send_reply() on it again.
-  // ASSERT_EQ(zx_calleesref_send_reply(calleesref.get()), ZX_ERR_NOT_CONNECTED);
+  // Send the reply message.
+  ASSERT_OK(zx_calleesref_send_reply(calleesref.get()));
+  // The CalleesRef no longer holds a reference to the MBO, so we can't call
+  // send_reply() on it again.
+  ASSERT_EQ(zx_calleesref_send_reply(calleesref.get()), ZX_ERR_NOT_CONNECTED);
 
-  // // The MBO is still not accessible until it is dequeued.
-  // AssertMBONotAccessible(mbo);
+  // The MBO is still not accessible until it is dequeued.
+  AssertMBONotAccessible(mbo);
 
-  // ASSERT_OK(zx_channel_read_mbo(mboq.msgqueue.get(), calleesref.get()));
+  ASSERT_OK(zx_msgqueue_wait(mboq.msgqueue.get(), calleesref.get()));
 
-  // // Read the reply message.
-  // actual_bytes = 999;
-  // actual_handles = 999;
-  // ASSERT_OK(zx_mbo_read(mbo.get(), 0, buffer, nullptr, sizeof(buffer), 0,
-  //                       &actual_bytes, &actual_handles));
-  // ASSERT_EQ(actual_bytes, sizeof(kReply));
-  // ASSERT_EQ(actual_handles, 0);
-  // ASSERT_EQ(memcmp(buffer, kReply, actual_bytes), 0);
+  // Read the reply message.
+  actual_bytes = 999;
+  actual_handles = 999;
+  ASSERT_OK(zx_mbo_read(mbo.get(), 0, buffer, nullptr, sizeof(buffer), 0, &actual_bytes,
+                        &actual_handles));
+  ASSERT_EQ(actual_bytes, sizeof(kReply));
+  ASSERT_EQ(actual_handles, 0);
+  ASSERT_EQ(memcmp(buffer, kReply, actual_bytes), 0);
 
   // }
 }
