@@ -261,4 +261,37 @@ TEST(MbmqTest, UnconnectedCalleesRef) {
             ZX_ERR_NOT_CONNECTED);
 }
 
+TEST(MbmqTest, SendEmptyMbo) {
+  zx::handle mbo;
+  ASSERT_OK(mbo_create(0, &mbo));
+  Channel channel;
+
+  ASSERT_EQ(zx_channel_write_mbo(channel.ch1.get(), mbo.get()), ZX_ERR_BAD_STATE);
+}
+
+TEST(MbmqTest, SendEmptyCalleesRef) {
+  zx::handle mbo;
+  ASSERT_OK(mbo_create(0, &mbo));
+  Channel channel;
+  zx::handle calleesref;
+  ASSERT_OK(calleesref_create(0, &calleesref));
+
+  // Send request message.
+  static const char kRequest[] = "example request";
+  ASSERT_OK(zx_mbo_write(mbo.get(), 0, kRequest, sizeof(kRequest), nullptr, 0));
+  ASSERT_OK(zx_channel_write_mbo(channel.ch1.get(), mbo.get()));
+  // Read the request message.
+  ASSERT_OK(zx_msgqueue_wait(channel.ch2.get(), calleesref.get()));
+  char buffer[100] = {};
+  uint32_t actual_bytes = 999;
+  uint32_t actual_handles = 999;
+  ASSERT_OK(zx_mbo_read(calleesref.get(), 0, buffer, nullptr, sizeof(buffer), 0, &actual_bytes,
+                        &actual_handles));
+
+  // zx_mbo_read() cleared the message from the CalleesRef.  That means
+  // that if we try to send a reply from the CalleesRef now, we should get
+  // an error.
+  ASSERT_EQ(zx_calleesref_send_reply(calleesref.get()), ZX_ERR_BAD_STATE);
+}
+
 }  // namespace
