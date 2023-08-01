@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/zx/thread.h>
+#include <zircon/process.h>
 #include <zircon/testonly-syscalls.h>
 
 #include <thread>
@@ -199,6 +201,40 @@ TEST(MbmqTest, WaitWakeup) {
   ASSERT_EQ(actual_bytes, sizeof(kRequest));
   ASSERT_EQ(actual_handles, 0);
   ASSERT_EQ(memcmp(buffer, kRequest, actual_bytes), 0);
+}
+
+// Test suspending a thread that is blocked in zx_msgqueue_wait().
+TEST(MbmqTest, SuspendMsgQueueWait) {
+  Channel channel;
+  zx::handle calleesref;
+  ASSERT_OK(calleesref_create(0, &calleesref));
+
+  std::atomic<zx_handle_t> thread_handle(ZX_HANDLE_INVALID);
+  std::thread thread([&] {
+    // We can get a pthread_t from a std::thread using native_handle(), and
+    // we can get a thread zx_handle_t from a thrd_t using
+    // thrd_get_zx_handle(), but we can't get a thrd_t from a pthread_t.
+    // So instead we resort to having the child thread provide its own
+    // thread zx_handle_t to the parent as follows.
+    thread_handle.store(_zx_thread_self());
+
+    // TODO: We should mark the syscall as "[blocking]" so that the VDSO
+    // wrapper retries instead of getting ZX_ERR_INTERNAL_INTR_RETRY
+    // returned here.
+    ASSERT_EQ(zx_msgqueue_wait(channel.ch2.get(), calleesref.get()), ZX_ERR_INTERNAL_INTR_RETRY);
+  });
+  // Sleep to give the thread time to block.
+  // TODO: Change to poll until we confirm the thread has blocked.
+  ASSERT_OK(zx_nanosleep(zx_deadline_after(ZX_MSEC(10))));
+
+  zx::unowned_thread thread_h(thread_handle.load());
+  zx::suspend_token suspend_token;
+  ASSERT_OK(thread_h->suspend(&suspend_token));
+  // Wait for the thread to suspend.
+  ASSERT_OK(thread_h->wait_one(ZX_THREAD_SUSPENDED, zx::time::infinite(), nullptr));
+  // Resume the thread.
+  suspend_token.reset();
+  thread.join();
 }
 
 }  // namespace
