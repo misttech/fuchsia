@@ -338,4 +338,27 @@ TEST(MbmqTest, AutoReplyWhenMessageDropped) {
   AssertMBOReceivedAutoReply(&mboq);
 }
 
+TEST(MbmqTest, AutoReplyWhenCalleesRefDropped) {
+  MboAndQueue mboq;
+  zx::handle& mbo = mboq.mbo;
+  Channel channel;
+  zx::handle calleesref;
+  ASSERT_OK(calleesref_create(0, &calleesref));
+
+  // Send request message.
+  static const char kRequest[] = "example request";
+  ASSERT_OK(zx_mbo_write(mbo.get(), 0, kRequest, sizeof(kRequest), nullptr, 0));
+  ASSERT_OK(zx_channel_write_mbo(channel.ch1.get(), mbo.get()));
+  // Read the request message into a CalleesRef.
+  ASSERT_OK(zx_msgqueue_wait(channel.ch2.get(), calleesref.get()));
+
+  // MBO should not be readable.
+  AssertMBONotAccessible(mbo);
+
+  // Drop the CalleesRef and hence its reference to the MBO.
+  calleesref.reset();
+
+  AssertMBOReceivedAutoReply(&mboq);
+}
+
 }  // namespace
