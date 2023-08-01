@@ -110,61 +110,59 @@ TEST(MbmqTest, MboSend) {
   zx::handle calleesref;
   ASSERT_OK(calleesref_create(0, &calleesref));
 
-  // for (int i = 0; i < 2; ++i) {
+  for (int i = 0; i < 2; ++i) {
+    // Send request message.
+    static const char kRequest[] = "example request";
+    ASSERT_OK(zx_mbo_write(mbo.get(), 0, kRequest, sizeof(kRequest), nullptr, 0));
+    ASSERT_OK(zx_channel_write_mbo(channel.ch1.get(), mbo.get()));
 
-  // Send request message.
-  static const char kRequest[] = "example request";
-  ASSERT_OK(zx_mbo_write(mbo.get(), 0, kRequest, sizeof(kRequest), nullptr, 0));
-  ASSERT_OK(zx_channel_write_mbo(channel.ch1.get(), mbo.get()));
+    // TODO: Test that zx_channel_write_mbo() and zx_msgqueue_wait()
+    // check handle permissions.
 
-  // TODO: Test that zx_channel_write_mbo() and zx_msgqueue_wait()
-  // check handle permissions.
+    // Now that the MBO is in a "sent" state, it cannot be written to
+    // or read from.
+    AssertMBONotAccessible(mbo);
 
-  // Now that the MBO is in a "sent" state, it cannot be written to or
-  // read from.
-  AssertMBONotAccessible(mbo);
+    // TODO: test that the MBO cannot be re-sent on a channel now
 
-  // TODO: test that the MBO cannot be re-sent on a channel now
+    // Read the request message.
+    ASSERT_OK(zx_msgqueue_wait(channel.ch2.get(), calleesref.get()));
+    char buffer[100] = {};
+    uint32_t actual_bytes = 999;
+    uint32_t actual_handles = 999;
+    ASSERT_OK(zx_mbo_read(calleesref.get(), 0, buffer, nullptr, sizeof(buffer), 0, &actual_bytes,
+                          &actual_handles));
+    ASSERT_EQ(actual_bytes, sizeof(kRequest));
+    ASSERT_EQ(actual_handles, 0);
+    ASSERT_EQ(memcmp(buffer, kRequest, actual_bytes), 0);
 
-  // Read the request message.
-  ASSERT_OK(zx_msgqueue_wait(channel.ch2.get(), calleesref.get()));
-  char buffer[100] = {};
-  uint32_t actual_bytes = 999;
-  uint32_t actual_handles = 999;
-  ASSERT_OK(zx_mbo_read(calleesref.get(), 0, buffer, nullptr, sizeof(buffer), 0, &actual_bytes,
-                        &actual_handles));
-  ASSERT_EQ(actual_bytes, sizeof(kRequest));
-  ASSERT_EQ(actual_handles, 0);
-  ASSERT_EQ(memcmp(buffer, kRequest, actual_bytes), 0);
+    // Write the reply message.
+    static const char kReply[] = "example reply";
+    ASSERT_OK(zx_mbo_write(calleesref.get(), 0, kReply, sizeof(kReply), nullptr, 0));
 
-  // Write the reply message.
-  static const char kReply[] = "example reply";
-  ASSERT_OK(zx_mbo_write(calleesref.get(), 0, kReply, sizeof(kReply), nullptr, 0));
+    // Before the reply is sent, the MBO should not be readable.
+    AssertMBONotAccessible(mbo);
 
-  // Before the reply is sent, the MBO should not be readable.
-  AssertMBONotAccessible(mbo);
+    // Send the reply message.
+    ASSERT_OK(zx_calleesref_send_reply(calleesref.get()));
+    // The CalleesRef no longer holds a reference to the MBO, so we
+    // can't call send_reply() on it again.
+    ASSERT_EQ(zx_calleesref_send_reply(calleesref.get()), ZX_ERR_NOT_CONNECTED);
 
-  // Send the reply message.
-  ASSERT_OK(zx_calleesref_send_reply(calleesref.get()));
-  // The CalleesRef no longer holds a reference to the MBO, so we can't call
-  // send_reply() on it again.
-  ASSERT_EQ(zx_calleesref_send_reply(calleesref.get()), ZX_ERR_NOT_CONNECTED);
+    // The MBO is still not accessible until it is dequeued.
+    AssertMBONotAccessible(mbo);
 
-  // The MBO is still not accessible until it is dequeued.
-  AssertMBONotAccessible(mbo);
+    ASSERT_OK(zx_msgqueue_wait(mboq.msgqueue.get(), calleesref.get()));
 
-  ASSERT_OK(zx_msgqueue_wait(mboq.msgqueue.get(), calleesref.get()));
-
-  // Read the reply message.
-  actual_bytes = 999;
-  actual_handles = 999;
-  ASSERT_OK(zx_mbo_read(mbo.get(), 0, buffer, nullptr, sizeof(buffer), 0, &actual_bytes,
-                        &actual_handles));
-  ASSERT_EQ(actual_bytes, sizeof(kReply));
-  ASSERT_EQ(actual_handles, 0);
-  ASSERT_EQ(memcmp(buffer, kReply, actual_bytes), 0);
-
-  // }
+    // Read the reply message.
+    actual_bytes = 999;
+    actual_handles = 999;
+    ASSERT_OK(zx_mbo_read(mbo.get(), 0, buffer, nullptr, sizeof(buffer), 0, &actual_bytes,
+                          &actual_handles));
+    ASSERT_EQ(actual_bytes, sizeof(kReply));
+    ASSERT_EQ(actual_handles, 0);
+    ASSERT_EQ(memcmp(buffer, kReply, actual_bytes), 0);
+  }
 }
 
 }  // namespace
