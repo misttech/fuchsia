@@ -4,6 +4,8 @@
 
 #include <zircon/testonly-syscalls.h>
 
+#include <thread>
+
 #include <zxtest/zxtest.h>
 
 // XXX: This hack overrides zxtest.h.  It allows ASSERT_OK() to be used
@@ -163,6 +165,40 @@ TEST(MbmqTest, MboSend) {
     ASSERT_EQ(actual_handles, 0);
     ASSERT_EQ(memcmp(buffer, kReply, actual_bytes), 0);
   }
+}
+
+TEST(MbmqTest, WaitWakeup) {
+  zx::handle mbo;
+  ASSERT_OK(mbo_create(0, &mbo));
+  Channel channel;
+  zx::handle calleesref;
+  ASSERT_OK(calleesref_create(0, &calleesref));
+
+  std::thread thread([&] {
+    // Wait for and read the request message.
+    ASSERT_OK(zx_msgqueue_wait(channel.ch2.get(), calleesref.get()));
+  });
+  // Sleep to give the thread time to block.
+  // TODO: Change to poll until we confirm the thread has blocked.
+  ASSERT_OK(zx_nanosleep(zx_deadline_after(ZX_MSEC(10))));
+
+  // Send request message.
+  static const char kRequest[] = "example request";
+  ASSERT_OK(zx_mbo_write(mbo.get(), 0, kRequest, sizeof(kRequest), nullptr, 0));
+  ASSERT_OK(zx_channel_write_mbo(channel.ch1.get(), mbo.get()));
+
+  // Wait for the request to be received by the other thread.
+  thread.join();
+
+  // Read the request message from the CalleesRef.
+  char buffer[100] = {};
+  uint32_t actual_bytes = 999;
+  uint32_t actual_handles = 999;
+  ASSERT_OK(zx_mbo_read(calleesref.get(), 0, buffer, nullptr, sizeof(buffer), 0, &actual_bytes,
+                        &actual_handles));
+  ASSERT_EQ(actual_bytes, sizeof(kRequest));
+  ASSERT_EQ(actual_handles, 0);
+  ASSERT_EQ(memcmp(buffer, kRequest, actual_bytes), 0);
 }
 
 }  // namespace

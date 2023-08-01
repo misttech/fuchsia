@@ -55,6 +55,12 @@ class MBODispatcher final : public SoloDispatcher<MBODispatcher, ZX_RIGHTS_BASIC
   uint64_t reply_key_;
 };
 
+// A MsgQueueWaiter represents a thread waiting on a MsgQueueDispatcher.
+struct MsgQueueWaiter final : public fbl::DoublyLinkedListable<MsgQueueWaiter*> {
+  WaitQueue wait_queue;
+  MessagePacketPtr result_msg;
+};
+
 class MsgQueueDispatcher final
     : public SoloDispatcher<MsgQueueDispatcher, ZX_RIGHTS_BASIC | ZX_RIGHTS_IO> {
  public:
@@ -69,7 +75,7 @@ class MsgQueueDispatcher final
   MsgQueueDispatcher() = default;
 
   fbl::DoublyLinkedList<MessagePacketPtr> messages_ TA_GUARDED(thread_lock);
-  // fbl::DoublyLinkedList<MsgQueueWaiter*> waiters_ TA_GUARDED(thread_lock);
+  fbl::DoublyLinkedList<MsgQueueWaiter*> waiters_ TA_GUARDED(thread_lock);
 };
 
 class CalleesRefDispatcher final

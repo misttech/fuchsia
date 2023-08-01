@@ -137,13 +137,13 @@ zx_status_t MsgQueueDispatcher::Create(KernelHandle<MsgQueueDispatcher>* handle,
 
 void MsgQueueDispatcher::Write(MessagePacketPtr msg) {
   Guard<MonitoredSpinLock, IrqSave> guard{ThreadLock::Get(), SOURCE_TAG};
-  // MsgQueueWaiter* waiter = waiters_.pop_front();
-  // if (waiter) {
-  //   waiter->result_msg = ktl::move(msg);
-  //   waiter->wait_queue.WakeOne(/* reschedule= */ false, ZX_OK);
-  // } else {
-  messages_.push_back(ktl::move(msg));
-  // }
+  MsgQueueWaiter* waiter = waiters_.pop_front();
+  if (waiter) {
+    waiter->result_msg = ktl::move(msg);
+    waiter->wait_queue.WakeOne(ZX_OK);
+  } else {
+    messages_.push_back(ktl::move(msg));
+  }
 }
 
 zx_status_t MsgQueueDispatcher::Read(MessagePacketPtr* msg) {
@@ -153,22 +153,18 @@ zx_status_t MsgQueueDispatcher::Read(MessagePacketPtr* msg) {
     return ZX_OK;
   }
 
-  // MsgQueueWaiter waiter;
-  // waiters_.push_back(&waiter);
+  MsgQueueWaiter waiter;
+  waiters_.push_back(&waiter);
 
-  // auto current_thread = ThreadDispatcher::GetCurrent();
-  // current_thread->core_thread_->interruptable_ = true;
-  // zx_status_t status = waiter.wait_queue.Block(Deadline::infinite());
-  // current_thread->core_thread_->interruptable_ = false;
+  zx_status_t status = waiter.wait_queue.Block(Deadline::infinite(), Interruptible::Yes);
+  if (status != ZX_OK) {
+    // The thread was interrupted (killed or suspended).  No-one else
+    // removed the waiter from the list, so we must do that here.
+    waiters_.erase(waiter);
+    return status;
+  }
 
-  // if (status != ZX_OK) {
-  //   // The thread was interrupted (killed or suspended).  No-one else
-  //   // removed the waiter from the list, so we must do that here.
-  //   waiters_.erase(waiter);
-  //   return status;
-  // }
-
-  // *msg = ktl::move(waiter.result_msg);
+  *msg = ktl::move(waiter.result_msg);
   return ZX_OK;
 }
 
