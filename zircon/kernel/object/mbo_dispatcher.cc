@@ -19,8 +19,16 @@ zx_status_t MBODispatcher::Create(KernelHandle<MBODispatcher>* handle, zx_rights
 
 zx_status_t MBODispatcher::Set(MessagePacketPtr msg) {
   Guard<CriticalMutex> guard{get_lock()};
-  // if (is_sent_)
-  //   return ZX_ERR_BAD_STATE;
+  if (is_sent_)
+    return ZX_ERR_BAD_STATE;
+  message_ = ktl::move(msg);
+  return ZX_OK;
+}
+
+zx_status_t CalleesRefDispatcher::Set(MessagePacketPtr msg) {
+  Guard<CriticalMutex> guard{get_lock()};
+  if (!mbo_)
+    return ZX_ERR_NOT_CONNECTED;
   message_ = ktl::move(msg);
   return ZX_OK;
 }
@@ -58,9 +66,40 @@ zx_status_t MBODispatcher::Read(uint32_t* msg_size, uint32_t* msg_handle_count,
   canary_.Assert();
 
   Guard<CriticalMutex> guard{get_lock()};
-  // if (is_sent_)
-  //   return ZX_ERR_BAD_STATE;
+  if (is_sent_)
+    return ZX_ERR_BAD_STATE;
   return MessageRead(&message_, msg_size, msg_handle_count, msg, may_discard);
+}
+
+zx_status_t CalleesRefDispatcher::Read(uint32_t* msg_size, uint32_t* msg_handle_count,
+                                       MessagePacketPtr* msg, bool may_discard) {
+  canary_.Assert();
+
+  Guard<CriticalMutex> guard{get_lock()};
+  if (!mbo_)
+    return ZX_ERR_NOT_CONNECTED;
+  return MessageRead(&message_, msg_size, msg_handle_count, msg, may_discard);
+}
+
+zx_status_t MBODispatcher::WriteToChannel(const fbl::RefPtr<NewChannelDispatcher> channel) {
+  MessagePacketPtr msg;
+  {
+    Guard<CriticalMutex> guard{get_lock()};
+    if (!message_) {
+      // TODO: We should treat this as an empty message instead.
+      return ZX_ERR_BAD_STATE;
+    }
+    msg = ktl::move(message_);
+    is_sent_ = true;
+  }
+
+  // This increments the MBO's reference count.  Note that we could avoid
+  // this atomic increment if WriteToChannel() instead took ownership of
+  // the RefPtr held by the caller.
+  msg->mbo_ = fbl::RefPtr<MBODispatcher>(this);
+
+  channel->Write(ktl::move(msg));
+  return ZX_OK;
 }
 
 zx_status_t MsgQueueDispatcher::Create(KernelHandle<MsgQueueDispatcher>* handle,
@@ -75,6 +114,43 @@ zx_status_t MsgQueueDispatcher::Create(KernelHandle<MsgQueueDispatcher>* handle,
   return ZX_OK;
 }
 
+void MsgQueueDispatcher::Write(MessagePacketPtr msg) {
+  Guard<MonitoredSpinLock, IrqSave> guard{ThreadLock::Get(), SOURCE_TAG};
+  // MsgQueueWaiter* waiter = waiters_.pop_front();
+  // if (waiter) {
+  //   waiter->result_msg = ktl::move(msg);
+  //   waiter->wait_queue.WakeOne(/* reschedule= */ false, ZX_OK);
+  // } else {
+  messages_.push_back(ktl::move(msg));
+  // }
+}
+
+zx_status_t MsgQueueDispatcher::Read(MessagePacketPtr* msg) {
+  Guard<MonitoredSpinLock, IrqSave> guard{ThreadLock::Get(), SOURCE_TAG};
+  *msg = messages_.pop_front();
+  if (*msg) {
+    return ZX_OK;
+  }
+
+  // MsgQueueWaiter waiter;
+  // waiters_.push_back(&waiter);
+
+  // auto current_thread = ThreadDispatcher::GetCurrent();
+  // current_thread->core_thread_->interruptable_ = true;
+  // zx_status_t status = waiter.wait_queue.Block(Deadline::infinite());
+  // current_thread->core_thread_->interruptable_ = false;
+
+  // if (status != ZX_OK) {
+  //   // The thread was interrupted (killed or suspended).  No-one else
+  //   // removed the waiter from the list, so we must do that here.
+  //   waiters_.erase(waiter);
+  //   return status;
+  // }
+
+  // *msg = ktl::move(waiter.result_msg);
+  return ZX_OK;
+}
+
 zx_status_t CalleesRefDispatcher::Create(KernelHandle<CalleesRefDispatcher>* handle,
                                          zx_rights_t* rights) {
   fbl::AllocChecker ac;
@@ -84,5 +160,62 @@ zx_status_t CalleesRefDispatcher::Create(KernelHandle<CalleesRefDispatcher>* han
 
   *rights = default_rights();
   *handle = ktl::move(mbo);
+  return ZX_OK;
+}
+
+zx_status_t CalleesRefDispatcher::ReadFromMsgQueue(const fbl::RefPtr<MsgQueueDispatcher> msgqueue) {
+  MessagePacketPtr msg;
+  zx_status_t status = msgqueue->Read(&msg);
+  if (status != ZX_OK) {
+    return status;
+  }
+  return Populate(ktl::move(msg));
+}
+
+zx_status_t CalleesRefDispatcher::Populate(MessagePacketPtr msg) {
+  // if (msg->is_reply) {
+  //   msg->is_reply = false;
+  //   fbl::RefPtr<MBODispatcher> mbo = ktl::move(msg->mbo_);
+  //   mbo->SetDequeuedReply(ktl::move(msg));
+  //   return ZX_OK;
+  // }
+
+  Guard<CriticalMutex> guard{get_lock()};
+  if (mbo_) {
+    // The CalleesRef is already in use.  We treat this as an error.  The
+    // newly dequeued message is dropped, and its MBO will receive an
+    // auto-reply.  The CalleesRef remains in the same state.
+    //
+    // Some alternatives would be:
+    //  * Don't dequeue the message from the channel if the CalleesRef is
+    //    already in use.  This is hard to implement without race
+    //    conditions because the channel and the CalleesRef have separate
+    //    locks, and we want to avoid claiming their locks at the same
+    //    time.
+    //  * Drop the CalleesRef's current message (and send an auto-reply for
+    //    that) rather than dropping the newly dequeued message.  We don't
+    //    do this because it might mask mistakes where programs fail to
+    //    send replies explicitly.
+    return ZX_ERR_BAD_STATE;
+  }
+  mbo_ = ktl::move(msg->mbo_);
+  message_ = ktl::move(msg);
+  return ZX_OK;
+}
+
+zx_status_t NewChannelDispatcher::Create(fbl::RefPtr<MsgQueueDispatcher> msgqueue, uint64_t key,
+                                         KernelHandle<NewChannelDispatcher>* handle,
+                                         zx_rights_t* rights) {
+  fbl::AllocChecker ac;
+  KernelHandle channel(fbl::AdoptRef(new (&ac) NewChannelDispatcher()));
+  if (!ac.check())
+    return ZX_ERR_NO_MEMORY;
+
+  // XXX: We could pass these via the constructor instead.
+  channel.dispatcher()->dest_queue_ = msgqueue;
+  channel.dispatcher()->key_ = key;
+
+  *rights = default_rights();
+  *handle = ktl::move(channel);
   return ZX_OK;
 }

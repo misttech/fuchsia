@@ -24,6 +24,7 @@ zx_status_t sys_mbo_create(uint32_t options, user_out_handle* out) {
   return out->make(ktl::move(handle), rights);
 }
 
+// zx_status_t zx_msgqueue_create
 zx_status_t sys_msgqueue_create(uint32_t options, user_out_handle* out) {
   if (options != 0u)
     return ZX_ERR_INVALID_ARGS;
@@ -37,6 +38,7 @@ zx_status_t sys_msgqueue_create(uint32_t options, user_out_handle* out) {
   return out->make(ktl::move(handle), rights);
 }
 
+// zx_status_t zx_calleesref_create
 zx_status_t sys_calleesref_create(uint32_t options, user_out_handle* out) {
   if (options != 0u)
     return ZX_ERR_INVALID_ARGS;
@@ -50,14 +52,65 @@ zx_status_t sys_calleesref_create(uint32_t options, user_out_handle* out) {
   return out->make(ktl::move(handle), rights);
 }
 
+// zx_status_t zx_channel_write_mbo
 zx_status_t sys_channel_write_mbo(zx_handle_t channel_handle, zx_handle_t mbo_handle) {
-  return ZX_OK;
+  auto up = ProcessDispatcher::GetCurrent();
+
+  fbl::RefPtr<NewChannelDispatcher> channel;
+  zx_status_t status =
+      up->handle_table().GetDispatcherWithRights(*up, channel_handle, ZX_RIGHT_WRITE, &channel);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  fbl::RefPtr<MBODispatcher> mbo;
+  status = up->handle_table().GetDispatcher(*up, mbo_handle, &mbo);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  return mbo->WriteToChannel(channel);
 }
 
-zx_status_t sys_msgqueue_create_channel(zx_handle_t msgqueue, uint64_t key, user_out_handle* out) {
-  return ZX_OK;
+// zx_status_t zx_msgqueue_create_channel
+zx_status_t sys_msgqueue_create_channel(zx_handle_t msgqueue_handle, uint64_t key,
+                                        user_out_handle* out) {
+  auto up = ProcessDispatcher::GetCurrent();
+
+  fbl::RefPtr<MsgQueueDispatcher> msgqueue;
+  zx_status_t status = up->handle_table().GetDispatcher(*up, msgqueue_handle, &msgqueue);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  KernelHandle<NewChannelDispatcher> handle;
+  zx_rights_t rights;
+
+  zx_status_t result = NewChannelDispatcher::Create(ktl::move(msgqueue), key, &handle, &rights);
+  if (result != ZX_OK)
+    return result;
+  return out->make(ktl::move(handle), rights);
 }
 
-zx_status_t sys_msgqueue_wait(zx_handle_t channel_handle, zx_handle_t cmh_handle) { return ZX_OK; }
+// zx_status_t zx_msgqueue_wait
+zx_status_t sys_msgqueue_wait(zx_handle_t channel_handle, zx_handle_t calleesref_handle) {
+  auto up = ProcessDispatcher::GetCurrent();
 
+  fbl::RefPtr<MsgQueueDispatcher> channel;
+  zx_status_t status =
+      up->handle_table().GetDispatcherWithRights(*up, channel_handle, ZX_RIGHT_READ, &channel);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  fbl::RefPtr<CalleesRefDispatcher> calleesref;
+  status = up->handle_table().GetDispatcher(*up, calleesref_handle, &calleesref);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  return calleesref->ReadFromMsgQueue(channel);
+}
+
+// zx_status_t zx_calleesref_send_reply
 zx_status_t sys_calleesref_send_reply(zx_handle_t cmh_handle) { return ZX_OK; }

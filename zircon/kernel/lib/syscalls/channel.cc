@@ -534,15 +534,16 @@ static zx_status_t MboWrite(ProcessDispatcher* up, fbl::RefPtr<Dispatcher>&& obj
   // message in.
 
   // Note that we currently read the message in before verifying that the
-  // MBO or CMH is in a writable state, which the following Set() calls
-  // check.  This ordering could change when we switch MBOs to managing
-  // their own buffers instead of reusing the existing MessagePacket code.
+  // MBO or CalleesRef is in a writable state, which the following Set()
+  // calls check.  This ordering could change when we switch MBOs to
+  // managing their own buffers instead of reusing the existing
+  // MessagePacket code.
   if (auto mbo = DownCastDispatcher<MBODispatcher>(&obj)) {
     return mbo->Set(ktl::move(msg));
   }
-  // if (auto cmh = DownCastDispatcher<CMHDispatcher>(&obj)) {
-  //   return cmh->Set(ktl::move(msg));
-  // }
+  if (auto calleesref = DownCastDispatcher<CalleesRefDispatcher>(&obj)) {
+    return calleesref->Set(ktl::move(msg));
+  }
   return ZX_ERR_WRONG_TYPE;
 }
 
@@ -574,9 +575,9 @@ zx_status_t sys_mbo_read(zx_handle_t handle_value, uint32_t options, user_out_pt
     return result;
   if (auto mbo = DownCastDispatcher<MBODispatcher>(&obj)) {
     result = mbo->Read(&num_bytes, &num_handles, &msg, options & ZX_CHANNEL_READ_MAY_DISCARD);
-    // } else if (auto cmh = DownCastDispatcher<CMHDispatcher>(&obj)) {
-    //   result = cmh->Read(&num_bytes, &num_handles, &msg,
-    //                      options & ZX_CHANNEL_READ_MAY_DISCARD);
+  } else if (auto calleesref = DownCastDispatcher<CalleesRefDispatcher>(&obj)) {
+    result =
+        calleesref->Read(&num_bytes, &num_handles, &msg, options & ZX_CHANNEL_READ_MAY_DISCARD);
   } else {
     return ZX_ERR_WRONG_TYPE;
   }

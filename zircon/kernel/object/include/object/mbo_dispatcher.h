@@ -31,10 +31,25 @@ class MBODispatcher final : public SoloDispatcher<MBODispatcher, ZX_RIGHTS_BASIC
   zx_status_t Read(uint32_t* msg_size, uint32_t* msg_handle_count, MessagePacketPtr* msg,
                    bool may_discard);
 
+  zx_status_t WriteToChannel(const fbl::RefPtr<NewChannelDispatcher> channel);
+
  private:
   MBODispatcher() = default;
 
+  // While is_sent_ is true:
+  //  * There is a reference to the MBODispatcher, either from a
+  //    MessagePacket that is enqueued on a channel, or from a
+  //    CalleesRefDispatcher.
+  //  * The MBO cannot be written, read, or sent on a channel.
+  // While is_sent_ is false, the opposite is true.
+  bool is_sent_ TA_GUARDED(get_lock()) = false;
+
   MessagePacketPtr message_ TA_GUARDED(get_lock());
+
+  // These are currently set on creation and don't need locking.
+  // TODO: Could make them const.
+  fbl::RefPtr<MsgQueueDispatcher> dest_queue_;
+  // uint64_t key_;
 };
 
 class MsgQueueDispatcher final
@@ -44,8 +59,14 @@ class MsgQueueDispatcher final
 
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_MSGQUEUE; }
 
+  void Write(MessagePacketPtr msg);
+  zx_status_t Read(MessagePacketPtr* msg);
+
  private:
   MsgQueueDispatcher() = default;
+
+  fbl::DoublyLinkedList<MessagePacketPtr> messages_ TA_GUARDED(thread_lock);
+  // fbl::DoublyLinkedList<MsgQueueWaiter*> waiters_ TA_GUARDED(thread_lock);
 };
 
 class CalleesRefDispatcher final
@@ -55,19 +76,37 @@ class CalleesRefDispatcher final
 
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_CALLEESREF; }
 
+  zx_status_t Set(MessagePacketPtr msg);
+  zx_status_t Read(uint32_t* msg_size, uint32_t* msg_handle_count, MessagePacketPtr* msg,
+                   bool may_discard);
+
+  zx_status_t ReadFromMsgQueue(const fbl::RefPtr<MsgQueueDispatcher> channel);
+  zx_status_t Populate(MessagePacketPtr msg);
+
  private:
   CalleesRefDispatcher() = default;
+
+  MessagePacketPtr message_ TA_GUARDED(get_lock());
+  fbl::RefPtr<MBODispatcher> mbo_ TA_GUARDED(get_lock());
 };
 
 class NewChannelDispatcher final
     : public SoloDispatcher<NewChannelDispatcher, ZX_RIGHTS_BASIC | ZX_RIGHTS_IO> {
  public:
-  static zx_status_t Create(KernelHandle<NewChannelDispatcher>* handle, zx_rights_t* rights);
+  static zx_status_t Create(fbl::RefPtr<MsgQueueDispatcher> msgqueue, uint64_t key,
+                            KernelHandle<NewChannelDispatcher>* handle, zx_rights_t* rights);
 
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_NEWCHANNEL; }
 
+  void Write(MessagePacketPtr msg) { dest_queue_->Write(ktl::move(msg)); }
+
  private:
   NewChannelDispatcher() = default;
+
+  // These are currently set on creation and don't need locking.
+  // TODO: Could make them const.
+  fbl::RefPtr<MsgQueueDispatcher> dest_queue_;
+  uint64_t key_;
 };
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_MBO_DISPATCHER_H_

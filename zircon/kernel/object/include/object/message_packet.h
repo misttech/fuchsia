@@ -17,6 +17,7 @@
 #include <fbl/intrusive_single_list.h>
 #include <ktl/unique_ptr.h>
 #include <object/buffer_chain.h>
+#include <object/dispatcher.h>
 #include <object/handle.h>
 
 constexpr uint32_t kMaxMessageSize = 65536u;
@@ -135,6 +136,19 @@ class MessagePacket final : public fbl::DoublyLinkedListable<MessagePacketPtr> {
   const uint32_t payload_offset_;
   const uint16_t num_handles_;
   bool owns_handles_;
+
+ public:
+  // TODO: Make this non-public.
+  fbl::RefPtr<MBODispatcher> mbo_;
+
+  // This field has the following meanings when the MessagePacket is
+  // enqueued on a MsgQueue (and it is false otherwise):
+  //
+  //  * false means this is enqueued as a request, so reading it from
+  //    the queue will make it accessible via the CalleesRef.
+  //  * true means this is enqueued as a reply, so reading it from the
+  //    queue will restore access through the MBODispatcher.
+  bool is_reply = false;
 };
 
 namespace internal {
@@ -142,5 +156,7 @@ struct MessagePacketDeleter {
   void operator()(MessagePacket* packet) const noexcept { MessagePacket::recycle(packet); }
 };
 }  // namespace internal
+
+#include <object/mbo_dispatcher.h>
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_MESSAGE_PACKET_H_
