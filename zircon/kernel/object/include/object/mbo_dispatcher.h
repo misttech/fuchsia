@@ -30,6 +30,7 @@ class MBODispatcher final : public SoloDispatcher<MBODispatcher, ZX_RIGHTS_BASIC
 
   zx_status_t Set(MessagePacketPtr msg);
   void EnqueueReply(MessagePacketPtr msg);
+  void EnqueueAutoReply();
   void SetDequeuedReply(MessagePacketPtr msg);
   zx_status_t Read(uint32_t* msg_size, uint32_t* msg_handle_count, MessagePacketPtr* msg,
                    bool may_discard);
@@ -81,6 +82,8 @@ class MsgQueueDispatcher final
 class CalleesRefDispatcher final
     : public SoloDispatcher<CalleesRefDispatcher, ZX_RIGHTS_BASIC | ZX_RIGHTS_IO> {
  public:
+  ~CalleesRefDispatcher() final;
+
   static zx_status_t Create(KernelHandle<CalleesRefDispatcher>* handle, zx_rights_t* rights);
 
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_CALLEESREF; }

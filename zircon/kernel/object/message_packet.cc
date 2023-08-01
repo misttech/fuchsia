@@ -224,3 +224,9 @@ void MessagePacket::recycle(MessagePacket* packet) {
   // Now return the buffer chain to where it came from.
   BufferChain::Free(chain);
 }
+
+void MessagePacket::MboAutoReply() {
+  if (mbo_) {
+    mbo_->EnqueueAutoReply();
+  }
+}

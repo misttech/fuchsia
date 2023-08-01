@@ -115,6 +115,12 @@ class MessagePacket final : public fbl::DoublyLinkedListable<MessagePacketPtr> {
         HandleOwner ho(handles_[ix]);
       }
     }
+
+    // The code in MboAutoReply() should be moved into ~MessagePacket(),
+    // but that requires moving ~MessagePacket() to be a non-inlined
+    // function.  We're avoiding that for now to reduce merge conflicts by
+    // reducing the patch size.
+    MboAutoReply();
   }
 
   friend struct internal::MessagePacketDeleter;
@@ -129,6 +135,8 @@ class MessagePacket final : public fbl::DoublyLinkedListable<MessagePacketPtr> {
   static zx_status_t CreateCommon(size_t data_size, size_t num_handles, MessagePacketPtr* msg);
 
   void set_data_size(uint32_t data_size) { data_size_ = data_size; }
+
+  void MboAutoReply();
 
   BufferChain* buffer_chain_;
   Handle** const handles_;

@@ -40,6 +40,13 @@ void MBODispatcher::EnqueueReply(MessagePacketPtr msg) {
   reply_queue_->Write(ktl::move(msg));
 }
 
+void MBODispatcher::EnqueueAutoReply() {
+  MessagePacketPtr msg;
+  zx_status_t status = MessagePacket::Create(nullptr, 0, 0, &msg);
+  ASSERT(status == ZX_OK);
+  EnqueueReply(ktl::move(msg));
+}
+
 void MBODispatcher::SetDequeuedReply(MessagePacketPtr msg) {
   Guard<CriticalMutex> guard{get_lock()};
   message_ = ktl::move(msg);
@@ -166,6 +173,12 @@ zx_status_t MsgQueueDispatcher::Read(MessagePacketPtr* msg) {
 
   *msg = ktl::move(waiter.result_msg);
   return ZX_OK;
+}
+
+CalleesRefDispatcher::~CalleesRefDispatcher() {
+  if (mbo_) {
+    mbo_->EnqueueAutoReply();
+  }
 }
 
 zx_status_t CalleesRefDispatcher::Create(KernelHandle<CalleesRefDispatcher>* handle,

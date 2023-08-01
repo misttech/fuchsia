@@ -294,4 +294,48 @@ TEST(MbmqTest, SendEmptyCalleesRef) {
   ASSERT_EQ(zx_calleesref_send_reply(calleesref.get()), ZX_ERR_BAD_STATE);
 }
 
+// Check that the given MBO was sent an empty reply message, which is what
+// is expected when the MBO is sent an auto-reply.
+void AssertMBOReceivedAutoReply(MboAndQueue* mboq) {
+  zx::handle calleesref;
+  ASSERT_OK(calleesref_create(0, &calleesref));
+
+  // The MBO should be enqueued on the MsgQueue now.
+  ASSERT_OK(zx_msgqueue_wait(mboq->msgqueue.get(), calleesref.get()));
+
+  // Check the message that was returned.
+  char buffer[100] = {};
+  uint32_t actual_bytes = 999;
+  uint32_t actual_handles = 999;
+  ASSERT_OK(zx_mbo_read(mboq->mbo.get(), 0, buffer, nullptr, sizeof(buffer), 0, &actual_bytes,
+                        &actual_handles));
+  ASSERT_EQ(actual_bytes, 0);
+  ASSERT_EQ(actual_handles, 0);
+}
+
+TEST(MbmqTest, AutoReplyWhenMessageDropped) {
+  MboAndQueue mboq;
+  zx::handle& mbo = mboq.mbo;
+  Channel channel;
+
+  // Send request message.
+  static const char kRequest[] = "example request";
+  ASSERT_OK(zx_mbo_write(mbo.get(), 0, kRequest, sizeof(kRequest), nullptr, 0));
+  ASSERT_OK(zx_channel_write_mbo(channel.ch1.get(), mbo.get()));
+
+  // MBO should not be readable.
+  AssertMBONotAccessible(mbo);
+
+  // Drop the channel and hence the message contained in its queue.
+  channel.ch2.reset();
+
+  // Currently channel.ch1 keeps channel.ch2's message queue alive, so we
+  // have to also drop the former to drop the latter.
+  // TODO: Implement an on_zero_handles() handler so that this is not
+  // necessary.
+  channel.ch1.reset();
+
+  AssertMBOReceivedAutoReply(&mboq);
+}
+
 }  // namespace
