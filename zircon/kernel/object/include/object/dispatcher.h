@@ -50,6 +50,9 @@ struct CanaryTag;
 // These really belong in zircon/system/public/zircon/types.h, but I'm
 // putting them here to avoid recompiles of most of userland.
 #define ZX_OBJ_TYPE_MBO ((zx_obj_type_t)50u)
+#define ZX_OBJ_TYPE_MSGQUEUE ((zx_obj_type_t)51u)
+#define ZX_OBJ_TYPE_CALLEESREF ((zx_obj_type_t)52u)
+#define ZX_OBJ_TYPE_NEWCHANNEL ((zx_obj_type_t)53u)
 
 DECLARE_DISPTAG(ProcessDispatcher, ZX_OBJ_TYPE_PROCESS, "PROC")
 DECLARE_DISPTAG(ThreadDispatcher, ZX_OBJ_TYPE_THREAD, "THRD")
@@ -82,6 +85,9 @@ DECLARE_DISPTAG(MsiDispatcher, ZX_OBJ_TYPE_MSI, "MSID")
 DECLARE_DISPTAG(IoBufferDispatcher, ZX_OBJ_TYPE_IOB, "IOBD")
 
 DECLARE_DISPTAG(MBODispatcher, ZX_OBJ_TYPE_MBO, "MBOD")
+DECLARE_DISPTAG(MsgQueueDispatcher, ZX_OBJ_TYPE_MBO, "MSGQ")
+DECLARE_DISPTAG(CalleesRefDispatcher, ZX_OBJ_TYPE_MBO, "CLRF")
+DECLARE_DISPTAG(NewChannelDispatcher, ZX_OBJ_TYPE_MBO, "NCHN")
 
 #undef DECLARE_DISPTAG
 

@@ -62,3 +62,27 @@ zx_status_t MBODispatcher::Read(uint32_t* msg_size, uint32_t* msg_handle_count,
   //   return ZX_ERR_BAD_STATE;
   return MessageRead(&message_, msg_size, msg_handle_count, msg, may_discard);
 }
+
+zx_status_t MsgQueueDispatcher::Create(KernelHandle<MsgQueueDispatcher>* handle,
+                                       zx_rights_t* rights) {
+  fbl::AllocChecker ac;
+  KernelHandle mbo(fbl::AdoptRef(new (&ac) MsgQueueDispatcher()));
+  if (!ac.check())
+    return ZX_ERR_NO_MEMORY;
+
+  *rights = default_rights();
+  *handle = ktl::move(mbo);
+  return ZX_OK;
+}
+
+zx_status_t CalleesRefDispatcher::Create(KernelHandle<CalleesRefDispatcher>* handle,
+                                         zx_rights_t* rights) {
+  fbl::AllocChecker ac;
+  KernelHandle mbo(fbl::AdoptRef(new (&ac) CalleesRefDispatcher()));
+  if (!ac.check())
+    return ZX_ERR_NO_MEMORY;
+
+  *rights = default_rights();
+  *handle = ktl::move(mbo);
+  return ZX_OK;
+}

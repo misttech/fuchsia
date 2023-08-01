@@ -37,4 +37,37 @@ class MBODispatcher final : public SoloDispatcher<MBODispatcher, ZX_RIGHTS_BASIC
   MessagePacketPtr message_ TA_GUARDED(get_lock());
 };
 
+class MsgQueueDispatcher final
+    : public SoloDispatcher<MsgQueueDispatcher, ZX_RIGHTS_BASIC | ZX_RIGHTS_IO> {
+ public:
+  static zx_status_t Create(KernelHandle<MsgQueueDispatcher>* handle, zx_rights_t* rights);
+
+  zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_MSGQUEUE; }
+
+ private:
+  MsgQueueDispatcher() = default;
+};
+
+class CalleesRefDispatcher final
+    : public SoloDispatcher<CalleesRefDispatcher, ZX_RIGHTS_BASIC | ZX_RIGHTS_IO> {
+ public:
+  static zx_status_t Create(KernelHandle<CalleesRefDispatcher>* handle, zx_rights_t* rights);
+
+  zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_CALLEESREF; }
+
+ private:
+  CalleesRefDispatcher() = default;
+};
+
+class NewChannelDispatcher final
+    : public SoloDispatcher<NewChannelDispatcher, ZX_RIGHTS_BASIC | ZX_RIGHTS_IO> {
+ public:
+  static zx_status_t Create(KernelHandle<NewChannelDispatcher>* handle, zx_rights_t* rights);
+
+  zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_NEWCHANNEL; }
+
+ private:
+  NewChannelDispatcher() = default;
+};
+
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_MBO_DISPATCHER_H_
