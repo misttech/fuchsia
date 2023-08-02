@@ -361,4 +361,39 @@ TEST(MbmqTest, AutoReplyWhenCalleesRefDropped) {
   AssertMBOReceivedAutoReply(&mboq);
 }
 
+// Test the case of reading a message into a CalleesRef that is already in
+// use (i.e. already contains a reference to an MBO).
+TEST(MbmqTest, ReadingIntoCalleesRefAlreadyInUse) {
+  zx::handle mbo1;
+  ASSERT_OK(mbo_create(0, &mbo1));
+
+  MboAndQueue mboq2;
+  zx::handle& mbo2 = mboq2.mbo;
+
+  Channel channel;
+  zx::handle calleesref;
+  ASSERT_OK(calleesref_create(0, &calleesref));
+
+  // Send two request messages.
+  static const char kRequest[] = "example request";
+  ASSERT_OK(zx_mbo_write(mbo1.get(), 0, kRequest, sizeof(kRequest), nullptr, 0));
+  ASSERT_OK(zx_channel_write_mbo(channel.ch1.get(), mbo1.get()));
+  ASSERT_OK(zx_mbo_write(mbo2.get(), 0, kRequest, sizeof(kRequest), nullptr, 0));
+  ASSERT_OK(zx_channel_write_mbo(channel.ch1.get(), mbo2.get()));
+
+  // Attempt to read both messages using the same CalleesRef.  The first
+  // read should succeed.
+  ASSERT_OK(zx_msgqueue_wait(channel.ch2.get(), calleesref.get()));
+  // The second read should fail because the CalleesRef is in use.
+  ASSERT_EQ(zx_msgqueue_wait(channel.ch2.get(), calleesref.get()), ZX_ERR_BAD_STATE);
+
+  // The first request is still outstanding.  The CalleesRef still points
+  // to it.  So its MBO is not marked as readable yet.
+  AssertMBONotAccessible(mbo1);
+
+  // The second request message was just dropped.  So its MBO should have
+  // got an auto-reply and should now be readable.
+  AssertMBOReceivedAutoReply(&mboq2);
+}
+
 }  // namespace
