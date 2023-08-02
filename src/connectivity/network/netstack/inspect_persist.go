@@ -89,8 +89,6 @@ func makePersistenceRequest(persistClientEnd *persist.DataPersistenceWithCtxInte
 		if want := persist.PersistResultQueued; result != want {
 			_ = syslog.WarnTf(persistenceTagName, "unexpected persist result; expected %s got %s", want, result)
 		}
-		// TODO(fxbug.dev/130139): Remove once multi-tag persistence is working
-		time.Sleep(5 * time.Second)
 	}
 
 	return nil
