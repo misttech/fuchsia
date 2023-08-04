@@ -7,7 +7,7 @@ library zx;
 type MbmqMultiop = struct {};
 
 @transport("Syscall")
-closed protocol MBO {
+closed protocol Mbo {
     @testonly
     strict Create(resource struct {
         options uint32;
