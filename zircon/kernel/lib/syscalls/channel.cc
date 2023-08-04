@@ -618,6 +618,23 @@ zx_status_t sys_mbo_read(zx_handle_t handle_value, uint32_t options, user_out_pt
   return result;
 }
 
+template <typename Type>
+static zx_status_t GetHandleLocked(HandleTable* handle_table, ProcessDispatcher* up,
+                                   zx_handle_t handle_value, fbl::RefPtr<Type>* out_dispatcher)
+    TA_REQ_SHARED(handle_table->get_lock()) {
+  Handle* handle = handle_table->GetHandleLocked(*up, handle_value);
+  if (!handle) {
+    return ZX_ERR_BAD_HANDLE;
+  }
+  fbl::RefPtr<Dispatcher> generic_dispatcher = handle->dispatcher();
+  fbl::RefPtr<Type> dispatcher = DownCastDispatcher<Type>(&generic_dispatcher);
+  if (!dispatcher) {
+    return ZX_ERR_WRONG_TYPE;
+  }
+  *out_dispatcher = ktl::move(dispatcher);
+  return ZX_OK;
+}
+
 // zx_status_t zx_mbo_multiop
 zx_status_t sys_mbo_multiop(user_in_ptr<const zx_mbmq_multiop_t> user_args) {
   auto up = ProcessDispatcher::GetCurrent();
@@ -627,41 +644,45 @@ zx_status_t sys_mbo_multiop(user_in_ptr<const zx_mbmq_multiop_t> user_args) {
   if (status != ZX_OK)
     return status;
 
-  // Get the handles.
-
   fbl::RefPtr<CalleesRefDispatcher> send_calleesref;
   fbl::RefPtr<NewChannelDispatcher> channel;
   fbl::RefPtr<MBODispatcher> mbo;
   fbl::RefPtr<MsgQueueDispatcher> msgqueue;
   fbl::RefPtr<CalleesRefDispatcher> receive_calleesref;
 
-  if (args.send_reply) {
-    status = up->handle_table().GetDispatcher(*up, args.mbo, &send_calleesref);
-    if (status != ZX_OK) {
-      return status;
-    }
-  } else {
-    // TODO: Check ZX_RIGHT_WRITE, or drop the rights check from the other
-    // syscall.
-    status = up->handle_table().GetDispatcher(*up, args.channel, &channel);
-    if (status != ZX_OK) {
-      return status;
-    }
-    status = up->handle_table().GetDispatcher(*up, args.mbo, &mbo);
-    if (status != ZX_OK) {
-      return status;
-    }
-  }
+  // Get the handles.  Acquire the handle table lock only once for that.
+  {
+    HandleTable* handle_table = &up->handle_table();
+    Guard<BrwLockPi, BrwLockPi::Reader> guard{handle_table->get_lock()};
 
-  // TODO: Check ZX_RIGHT_READ, or drop the rights check from the other
-  // syscall.
-  status = up->handle_table().GetDispatcher(*up, args.msgqueue, &msgqueue);
-  if (status != ZX_OK) {
-    return status;
-  }
-  status = up->handle_table().GetDispatcher(*up, args.calleesref, &receive_calleesref);
-  if (status != ZX_OK) {
-    return status;
+    if (args.send_reply) {
+      status = GetHandleLocked(handle_table, up, args.mbo, &send_calleesref);
+      if (status != ZX_OK) {
+        return status;
+      }
+    } else {
+      // TODO: Check ZX_RIGHT_WRITE, or drop the rights check from the other
+      // syscall.
+      status = GetHandleLocked(handle_table, up, args.channel, &channel);
+      if (status != ZX_OK) {
+        return status;
+      }
+      status = GetHandleLocked(handle_table, up, args.mbo, &mbo);
+      if (status != ZX_OK) {
+        return status;
+      }
+    }
+
+    // TODO: Check ZX_RIGHT_READ, or drop the rights check from the other
+    // syscall.
+    status = GetHandleLocked(handle_table, up, args.msgqueue, &msgqueue);
+    if (status != ZX_OK) {
+      return status;
+    }
+    status = GetHandleLocked(handle_table, up, args.calleesref, &receive_calleesref);
+    if (status != ZX_OK) {
+      return status;
+    }
   }
 
   // Write message contents and send the message.
