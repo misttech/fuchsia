@@ -397,9 +397,79 @@ TEST(MbmqTest, ReadingIntoCalleesRefAlreadyInUse) {
   AssertMBOReceivedAutoReply(&mboq2);
 }
 
-TEST(MbmqTest, Multiop) {
-  zx_mbmq_multiop_t args;
-  ASSERT_OK(zx_mbo_multiop(&args));
+void MboReadSimple(zx_handle_t mbo, uint32_t* message) {
+  uint32_t actual_bytes;
+  uint32_t actual_handles;
+  ASSERT_OK(
+      zx_mbo_read(mbo, 0, message, nullptr, sizeof(*message), 0, &actual_bytes, &actual_handles));
+  ASSERT_EQ(actual_bytes, sizeof(*message));
+  ASSERT_EQ(actual_handles, 0);
+}
+
+void SimpleServer(zx::handle msgqueue) {
+  zx::handle calleesref;
+  ASSERT_OK(calleesref_create(0, &calleesref));
+
+  // Read request.
+  ASSERT_OK(zx_msgqueue_wait(msgqueue.get(), calleesref.get()));
+  uint32_t message;
+  MboReadSimple(calleesref.get(), &message);
+
+  // Send reply.
+  message += 10;
+  ASSERT_OK(zx_mbo_write(calleesref.get(), 0, &message, sizeof(message), nullptr, 0));
+  ASSERT_OK(zx_calleesref_send_reply(calleesref.get()));
+}
+
+// Test IPC round trip to a server thread.
+TEST(MbmqTest, ClientServer) {
+  Channel channel;
+  std::thread thread(SimpleServer, std::move(channel.ch2));
+
+  zx::handle boring_calleesref;
+  ASSERT_OK(calleesref_create(0, &boring_calleesref));
+
+  MboAndQueue mboq;
+  uint32_t message = 2000;
+  ASSERT_OK(zx_mbo_write(mboq.mbo.get(), 0, &message, sizeof(message), nullptr, 0));
+  // Send the request.
+  ASSERT_OK(zx_channel_write_mbo(channel.ch1.get(), mboq.mbo.get()));
+  // Wait for and dequeue the reply.
+  ASSERT_OK(zx_msgqueue_wait(mboq.msgqueue.get(), boring_calleesref.get()));
+  MboReadSimple(mboq.mbo.get(), &message);
+  ASSERT_EQ(message, 2010);
+
+  thread.join();
+}
+
+void ClientRequest(const zx::handle& channel) {
+  zx::handle boring_calleesref;
+  ASSERT_OK(calleesref_create(0, &boring_calleesref));
+
+  MboAndQueue mboq;
+  uint32_t request = 2000;
+  uint32_t reply = 0;
+  zx_mbmq_multiop_t multiop = {};
+  multiop.mbo = mboq.mbo.get();
+  multiop.channel = channel.get();
+  multiop.msgqueue = mboq.msgqueue.get();
+  multiop.calleesref = boring_calleesref.get();
+  multiop.messages.wr_bytes = &request;
+  multiop.messages.wr_num_bytes = sizeof(request);
+  multiop.messages.rd_bytes = &reply;
+  multiop.messages.rd_num_bytes = sizeof(reply);
+  ASSERT_OK(zx_mbo_multiop(&multiop));
+  ASSERT_EQ(reply, 2010);
+  ASSERT_EQ(multiop.results.actual_bytes, sizeof(reply));
+  ASSERT_EQ(multiop.results.actual_handles, 0);
+}
+
+// Like ClientServer but use multiop() on the client side.
+TEST(MbmqTest, MultiopClientServer) {
+  Channel channel;
+  std::thread thread(SimpleServer, std::move(channel.ch2));
+  ClientRequest(channel.ch1);
+  thread.join();
 }
 
 }  // namespace

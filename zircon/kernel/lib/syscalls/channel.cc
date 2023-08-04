@@ -11,6 +11,7 @@
 #include <lib/syscalls/forward.h>
 #include <trace.h>
 #include <zircon/errors.h>
+#include <zircon/syscalls/multiop.h>
 #include <zircon/syscalls/policy.h>
 #include <zircon/types.h>
 
@@ -615,4 +616,123 @@ zx_status_t sys_mbo_read(zx_handle_t handle_value, uint32_t options, user_out_pt
   }
 
   return result;
+}
+
+// zx_status_t zx_mbo_multiop
+zx_status_t sys_mbo_multiop(user_in_ptr<const zx_mbmq_multiop_t> user_args) {
+  auto up = ProcessDispatcher::GetCurrent();
+
+  zx_mbmq_multiop_t args;
+  zx_status_t status = user_args.copy_from_user(&args);
+  if (status != ZX_OK)
+    return status;
+
+  // Get the handles.
+
+  fbl::RefPtr<CalleesRefDispatcher> send_calleesref;
+  fbl::RefPtr<NewChannelDispatcher> channel;
+  fbl::RefPtr<MBODispatcher> mbo;
+  fbl::RefPtr<MsgQueueDispatcher> msgqueue;
+  fbl::RefPtr<CalleesRefDispatcher> receive_calleesref;
+
+  if (args.send_reply) {
+    status = up->handle_table().GetDispatcher(*up, args.mbo, &send_calleesref);
+    if (status != ZX_OK) {
+      return status;
+    }
+  } else {
+    // TODO: Check ZX_RIGHT_WRITE, or drop the rights check from the other
+    // syscall.
+    status = up->handle_table().GetDispatcher(*up, args.channel, &channel);
+    if (status != ZX_OK) {
+      return status;
+    }
+    status = up->handle_table().GetDispatcher(*up, args.mbo, &mbo);
+    if (status != ZX_OK) {
+      return status;
+    }
+  }
+
+  // TODO: Check ZX_RIGHT_READ, or drop the rights check from the other
+  // syscall.
+  status = up->handle_table().GetDispatcher(*up, args.msgqueue, &msgqueue);
+  if (status != ZX_OK) {
+    return status;
+  }
+  status = up->handle_table().GetDispatcher(*up, args.calleesref, &receive_calleesref);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  // Write message contents and send the message.
+
+  user_in_ptr<const void> user_bytes =
+      make_user_in_ptr(static_cast<const void*>(args.messages.wr_bytes));
+  user_in_ptr<const zx_handle_t> user_handles = make_user_in_ptr(args.messages.wr_handles);
+
+  if (args.send_reply) {
+    // TODO: This does a ref count inc+dec on send_calleesref that we'd
+    // like to avoid.
+    status = MboWrite(up, send_calleesref, user_bytes, args.messages.wr_num_bytes, user_handles,
+                      args.messages.wr_num_handles);
+    if (status != ZX_OK) {
+      return status;
+    }
+
+    status = send_calleesref->SendReply();
+    if (status != ZX_OK) {
+      return status;
+    }
+  } else {
+    // TODO: This does a ref count inc+dec on mbo that we'd like to avoid.
+    status = MboWrite(up, mbo, user_bytes, args.messages.wr_num_bytes, user_handles,
+                      args.messages.wr_num_handles);
+    if (status != ZX_OK) {
+      return status;
+    }
+
+    status = mbo->WriteToChannel(channel);
+    if (status != ZX_OK) {
+      return status;
+    }
+  }
+
+  // Wait for message and read its contents.
+
+  MessagePacketPtr msg;
+  status = msgqueue->Read(&msg);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  // TODO: Check that any errors from here destruct msg properly.
+
+  zx_mbmq_read_results_t results = {};
+  results.actual_bytes = msg->data_size();
+  results.actual_handles = msg->num_handles();
+  if (msg->data_size() > args.messages.rd_num_bytes ||
+      msg->num_handles() > args.messages.rd_num_handles) {
+    // TODO: Should not abort the syscall in this case.  Should populate
+    // the CalleesRef (for requests).
+    return ZX_ERR_BUFFER_TOO_SMALL;
+  }
+  status = msg->CopyDataTo(make_user_out_ptr(static_cast<char*>(args.messages.rd_bytes)));
+  if (status != ZX_OK) {
+    return status;
+  }
+  if (msg->num_handles() > 0) {
+    status = msg_get_handles(up, msg.get(), make_user_out_ptr(args.messages.rd_handles),
+                             msg->num_handles());
+    if (status != ZX_OK) {
+      return status;
+    }
+  }
+  auto results_ptr =
+      make_user_out_ptr(const_cast<zx_mbmq_read_results_t*>(&user_args.get()->results));
+  status = results_ptr.copy_to_user(results);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  return receive_calleesref->Populate(ktl::move(msg));
 }
