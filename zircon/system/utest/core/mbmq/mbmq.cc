@@ -421,6 +421,43 @@ void SimpleServer(zx::handle msgqueue) {
   ASSERT_OK(zx_calleesref_send_reply(calleesref.get()));
 }
 
+// Like SimpleServer(), but uses multiop() and handles |request_count|
+// requests.
+void MultiopServer(zx::handle msgqueue, int request_count) {
+  zx::handle calleesref;
+  ASSERT_OK(calleesref_create(0, &calleesref));
+
+  zx_mbmq_multiop_t multiop = {};
+  multiop.send_reply = true;
+  multiop.mbo = calleesref.get();
+  multiop.msgqueue = msgqueue.get();
+  multiop.calleesref = calleesref.get();
+  uint32_t request;
+  uint32_t reply;
+  multiop.messages.rd_bytes = &request;
+  multiop.messages.rd_num_bytes = sizeof(request);
+  multiop.messages.wr_bytes = &reply;
+  multiop.messages.wr_num_bytes = sizeof(reply);
+
+  // Wait for the first request.
+  ASSERT_OK(zx_msgqueue_wait(msgqueue.get(), calleesref.get()));
+  MboReadSimple(calleesref.get(), &request);
+  int count = 0;
+  for (;;) {
+    // Write reply.
+    reply = request + 10;
+    if (++count == request_count) {
+      ASSERT_OK(zx_mbo_write(calleesref.get(), 0, &reply, sizeof(reply), nullptr, 0));
+      ASSERT_OK(zx_calleesref_send_reply(calleesref.get()));
+      break;
+    }
+    // Send reply and wait for next request.
+    ASSERT_OK(zx_mbo_multiop(&multiop));
+    ASSERT_EQ(multiop.results.actual_bytes, sizeof(request));
+    ASSERT_EQ(multiop.results.actual_handles, 0);
+  }
+}
+
 // Test IPC round trip to a server thread.
 TEST(MbmqTest, ClientServer) {
   Channel channel;
@@ -469,6 +506,16 @@ TEST(MbmqTest, MultiopClientServer) {
   Channel channel;
   std::thread thread(SimpleServer, std::move(channel.ch2));
   ClientRequest(channel.ch1);
+  thread.join();
+}
+
+// Like ClientServer but use multiop() on both the client and server sides.
+TEST(MbmqTest, MultiopClientMultiopServer) {
+  Channel channel;
+  std::thread thread(MultiopServer, std::move(channel.ch2), 5);
+  for (int i = 0; i < 5; ++i) {
+    ClientRequest(channel.ch1);
+  }
   thread.join();
 }
 
