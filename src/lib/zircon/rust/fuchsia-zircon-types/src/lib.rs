@@ -2064,6 +2064,14 @@ multiconst!(u32, [
     ZX_IOMMU_TYPE_INTEL = 1;
 ]);
 
+// Placeholder definition for now.
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+pub struct zx_mbmq_multiop_t {
+    // Placeholder field to keep the compiler happy.
+    pub placeholder_field: u64,
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

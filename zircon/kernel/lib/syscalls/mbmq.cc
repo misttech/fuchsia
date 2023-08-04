@@ -133,3 +133,6 @@ zx_status_t sys_calleesref_send_reply(zx_handle_t calleesref_handle) {
 
   return calleesref->SendReply();
 }
+
+// zx_status_t zx_mbo_multiop
+zx_status_t sys_mbo_multiop(user_in_ptr<const zx_mbmq_multiop_t> user_args) { return ZX_OK; }

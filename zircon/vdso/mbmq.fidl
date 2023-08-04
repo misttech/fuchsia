@@ -3,6 +3,9 @@
 // found in the LICENSE file.
 library zx;
 
+// Placeholder definition.  The actual definition is in syscalls/multiop.h.
+type MbmqMultiop = struct {};
+
 @transport("Syscall")
 closed protocol MBO {
     @testonly
@@ -42,6 +45,11 @@ closed protocol MBO {
         actual_bytes uint32;
         actual_handles uint32;
     }) error Status;
+
+    @testonly
+    strict Multiop(struct {
+        args MbmqMultiop;
+    }) -> () error Status;
 };
 
 @transport("Syscall")

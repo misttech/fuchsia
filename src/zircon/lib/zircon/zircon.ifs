@@ -70,6 +70,7 @@ Symbols:
   - { Name: _zx_ktrace_read, Type: Func }
   - { Name: _zx_ktrace_write, Type: Func }
   - { Name: _zx_mbo_create, Type: Func }
+  - { Name: _zx_mbo_multiop, Type: Func }
   - { Name: _zx_mbo_read, Type: Func }
   - { Name: _zx_mbo_write, Type: Func }
   - { Name: _zx_msgqueue_create, Type: Func }
@@ -274,6 +275,7 @@ Symbols:
   - { Name: zx_ktrace_read, Type: Func, Weak: true }
   - { Name: zx_ktrace_write, Type: Func, Weak: true }
   - { Name: zx_mbo_create, Type: Func, Weak: true }
+  - { Name: zx_mbo_multiop, Type: Func, Weak: true }
   - { Name: zx_mbo_read, Type: Func, Weak: true }
   - { Name: zx_mbo_write, Type: Func, Weak: true }
   - { Name: zx_msgqueue_create, Type: Func, Weak: true }

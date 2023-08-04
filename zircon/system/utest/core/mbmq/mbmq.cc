@@ -4,6 +4,7 @@
 
 #include <lib/zx/thread.h>
 #include <zircon/process.h>
+#include <zircon/syscalls/multiop.h>
 #include <zircon/testonly-syscalls.h>
 
 #include <thread>
@@ -394,6 +395,11 @@ TEST(MbmqTest, ReadingIntoCalleesRefAlreadyInUse) {
   // The second request message was just dropped.  So its MBO should have
   // got an auto-reply and should now be readable.
   AssertMBOReceivedAutoReply(&mboq2);
+}
+
+TEST(MbmqTest, Multiop) {
+  zx_mbmq_multiop_t args;
+  ASSERT_OK(zx_mbo_multiop(&args));
 }
 
 }  // namespace

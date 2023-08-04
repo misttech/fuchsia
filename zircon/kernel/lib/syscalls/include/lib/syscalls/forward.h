@@ -8,6 +8,7 @@
 #define ZIRCON_KERNEL_LIB_SYSCALLS_INCLUDE_LIB_SYSCALLS_FORWARD_H_
 
 #include <lib/user_copy/user_ptr.h>
+#include <zircon/syscalls/testonly-types.h>
 #include <zircon/syscalls/types.h>
 #include <zircon/types.h>
 

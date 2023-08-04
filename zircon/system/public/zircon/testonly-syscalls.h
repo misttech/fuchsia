@@ -6,6 +6,7 @@
 #define ZIRCON_TESTONLY_SYSCALLS_H_
 
 #include <zircon/syscalls.h>
+#include <zircon/syscalls/testonly-types.h>
 
 __BEGIN_CDECLS
 

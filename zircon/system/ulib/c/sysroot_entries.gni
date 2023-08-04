@@ -72,6 +72,7 @@ sysroot_uninstrumented_libc_entries = [
         "zircon/syscalls/hypervisor.h",
         "zircon/syscalls/iommu.h",
         "zircon/syscalls/log.h",
+        "zircon/syscalls/multiop.h",
         "zircon/syscalls/object.h",
         "zircon/syscalls/pci.h",
         "zircon/syscalls/policy.h",
@@ -92,7 +93,10 @@ sysroot_uninstrumented_libc_entries = [
       ]
 
       if (!exclude_testonly_syscalls) {
-        headers += [ "zircon/testonly-syscalls.h" ]
+        headers += [
+          "zircon/syscalls/testonly-types.h",
+          "zircon/testonly-syscalls.h",
+        ]
       }
     }
   },
