@@ -10,6 +10,7 @@
 #include <lib/async-loop/default.h>
 #include <lib/fdio/directory.h>
 #include <lib/fdio/spawn.h>
+#include <lib/fzl/vmo-mapper.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/handle.h>
@@ -17,7 +18,9 @@
 #include <zircon/process.h>
 #include <zircon/processargs.h>
 #include <zircon/syscalls.h>
+#include <zircon/syscalls/multiop.h>
 #include <zircon/syscalls/port.h>
+#include <zircon/testonly-syscalls.h>
 
 #include <functional>
 #include <iterator>
@@ -86,7 +89,7 @@ bool ChannelRead(const zx::channel& channel, std::vector<uint8_t>* msg) {
   zx_signals_t observed;
   ASSERT_OK(channel.wait_one(ZX_CHANNEL_READABLE | ZX_CHANNEL_PEER_CLOSED, zx::time::infinite(),
                              &observed));
-  if (observed & ZX_CHANNEL_PEER_CLOSED)
+  if (!(observed & ZX_CHANNEL_READABLE))
     return false;
 
   uint32_t bytes_read;
@@ -603,6 +606,230 @@ class FidlTest {
   fuchsia::zircon::benchmarks::RoundTripperSyncPtr service_ptr_;
 };
 
+zx_status_t msgqueue_create(uint32_t options, zx::handle* out) {
+  return zx_msgqueue_create(options, out->reset_and_get_address());
+}
+
+zx_status_t mbo_create(uint32_t options, zx_handle_t msgqueue, zx::handle* out) {
+  uint64_t key = 123;
+  return zx_mbo_create(options, msgqueue, key, out->reset_and_get_address());
+}
+
+zx_status_t calleesref_create(uint32_t options, zx::handle* out) {
+  return zx_calleesref_create(options, out->reset_and_get_address());
+}
+
+zx_status_t msgqueue_create_channel(zx_handle_t msgqueue, uint64_t key, zx::handle* out) {
+  return zx_msgqueue_create_channel(msgqueue, key, out->reset_and_get_address());
+}
+
+// Helper for creating a pair of channel endpoints.
+struct Channel {
+  Channel() {
+    zx::handle msgqueue;
+    ASSERT_OK(msgqueue_create(0, &msgqueue));
+    zx::handle channel;
+    uint64_t key = 123;
+    ASSERT_OK(msgqueue_create_channel(msgqueue.get(), key, &channel));
+
+    ch1 = std::move(channel);
+    ch2 = std::move(msgqueue);
+  }
+
+  zx::handle ch1;
+  zx::handle ch2;
+};
+
+struct MboAndQueue {
+  MboAndQueue() {
+    ASSERT_OK(msgqueue_create(0, &msgqueue));
+    ASSERT_OK(mbo_create(0, msgqueue.get(), &mbo));
+  }
+
+  zx::handle msgqueue;
+  zx::handle mbo;
+};
+
+// Bundles test arguments into a handle, which is returned.
+template <typename Args>
+zx::handle SendArgs(const Args* args) {
+  zx::channel ch1;
+  zx::channel ch2;
+  ASSERT_OK(zx::channel::create(0, &ch1, &ch2));
+  ASSERT_OK(ch1.write(0, args, sizeof(*args), nullptr, 0));
+  return zx::handle(ch2.release());
+}
+
+// Reads test arguments from |handle| and stores them in |args|.
+template <typename Args>
+void ReadArgs(zx::handle&& handle, Args* args) {
+  zx::channel channel(handle.release());
+  std::vector<uint8_t> msg(sizeof(*args));
+  FX_CHECK(ChannelRead(channel, &msg));
+  *args = *reinterpret_cast<Args*>(msg.data());
+}
+
+class MbmqTest {
+ public:
+  MbmqTest(ThreadOrProcessParams params, bool use_multiop) : use_multiop_(use_multiop) {
+    Args args;
+    args.use_multiop = use_multiop;
+
+    zx::vmo shm_vmo;
+    ASSERT_OK(zx::vmo::create(kVmoSize, 0, &shm_vmo));
+    ASSERT_OK(vmo_mapper_.Map(shm_vmo, 0, kVmoSize, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE));
+
+    auto handles = MakeHandleVector(channel_.ch2.release());
+    handles.push_back(SendArgs(&args));
+    handles.push_back(zx::handle(shm_vmo.release()));
+
+    thread_or_process_.Launch("MbmqTest::ThreadFunc", std::move(handles), params);
+
+    ASSERT_OK(calleesref_create(0, &boring_calleesref_));
+
+    if (use_multiop) {
+      multiop_.mbo = mboq_.mbo.get();
+      multiop_.channel = channel_.ch1.get();
+      multiop_.msgqueue = mboq_.msgqueue.get();
+      multiop_.calleesref = boring_calleesref_.get();
+      multiop_.messages.wr_bytes = &request_message_;
+      multiop_.messages.wr_num_bytes = sizeof(request_message_);
+      multiop_.messages.rd_bytes = &reply_message_;
+      multiop_.messages.rd_num_bytes = sizeof(reply_message_);
+    }
+  }
+
+  ~MbmqTest() {
+    // Send request to tell the server thread to exit.
+    // TODO: Could replace with EOF/peer-closed event handling.
+    auto shutdown_val = reinterpret_cast<volatile int*>(vmo_mapper_.start());
+    *shutdown_val = 1;
+    Run();
+  }
+
+  static void ThreadFunc(std::vector<zx::handle>&& handles) {
+    FX_CHECK(handles.size() == 3);
+    zx::handle msgqueue(std::move(handles[0]));
+    Args args;
+    ReadArgs(std::move(handles[1]), &args);
+    zx::vmo shm_vmo(std::move(handles[2]));
+
+    fzl::VmoMapper vmo_mapper;
+    ASSERT_OK(vmo_mapper.Map(shm_vmo, 0, kVmoSize, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE));
+    auto shutdown_val = reinterpret_cast<volatile int*>(vmo_mapper.start());
+
+    zx::handle calleesref;
+    ASSERT_OK(calleesref_create(0, &calleesref));
+
+    uint32_t reply = kReplyVal;
+
+    if (args.use_multiop) {
+      zx_mbmq_multiop_t multiop = {};
+      multiop.send_reply = true;
+      multiop.mbo = calleesref.get();
+      multiop.msgqueue = msgqueue.get();
+      multiop.calleesref = calleesref.get();
+      uint32_t request = 0;
+      multiop.messages.rd_bytes = &request;
+      multiop.messages.rd_num_bytes = sizeof(request);
+      multiop.messages.wr_bytes = &reply;
+      multiop.messages.wr_num_bytes = sizeof(reply);
+
+      // Read the first request.
+      ASSERT_OK(zx_msgqueue_wait(msgqueue.get(), calleesref.get()));
+      uint32_t actual_bytes;
+      uint32_t actual_handles;
+      ASSERT_OK(zx_mbo_read(calleesref.get(), 0, &request, nullptr, sizeof(request), 0,
+                            &actual_bytes, &actual_handles));
+      FX_CHECK(actual_bytes == sizeof(request));
+      FX_CHECK(actual_handles == 0);
+      for (;;) {
+        FX_CHECK(request == kRequestVal);
+
+        // Send reply.
+        if (*shutdown_val) {
+          ASSERT_OK(zx_mbo_write(calleesref.get(), 0, &reply, sizeof(reply), nullptr, 0));
+          ASSERT_OK(zx_calleesref_send_reply(calleesref.get()));
+          break;
+        }
+        ASSERT_OK(zx_mbo_multiop(&multiop));
+        FX_CHECK(multiop.results.actual_bytes == sizeof(request));
+        FX_CHECK(multiop.results.actual_handles == 0);
+      }
+    } else {
+      for (;;) {
+        // Read request.
+        ASSERT_OK(zx_msgqueue_wait(msgqueue.get(), calleesref.get()));
+        uint32_t request = 0;
+        uint32_t actual_bytes;
+        uint32_t actual_handles;
+        ASSERT_OK(zx_mbo_read(calleesref.get(), 0, &request, nullptr, sizeof(request), 0,
+                              &actual_bytes, &actual_handles));
+        FX_CHECK(actual_bytes == sizeof(request));
+        FX_CHECK(actual_handles == 0);
+        FX_CHECK(request == kRequestVal);
+
+        // Send reply.
+        ASSERT_OK(zx_mbo_write(calleesref.get(), 0, &reply, sizeof(reply), nullptr, 0));
+        ASSERT_OK(zx_calleesref_send_reply(calleesref.get()));
+
+        if (*shutdown_val)
+          break;
+      }
+    }
+  }
+
+  void Run() {
+    if (use_multiop_) {
+      ASSERT_OK(zx_mbo_multiop(&multiop_));
+      // Check the reply.
+      FX_CHECK(multiop_.results.actual_bytes == sizeof(reply_message_));
+      FX_CHECK(multiop_.results.actual_handles == 0);
+      FX_CHECK(reply_message_ == kReplyVal);
+    } else {
+      // Send the request.
+      ASSERT_OK(zx_mbo_write(mboq_.mbo.get(), 0, &request_message_, sizeof(request_message_),
+                             nullptr, 0));
+      ASSERT_OK(zx_channel_write_mbo(channel_.ch1.get(), mboq_.mbo.get()));
+      // Wait for and dequeue the reply.
+      ASSERT_OK(zx_msgqueue_wait(mboq_.msgqueue.get(), boring_calleesref_.get()));
+      // Read and check the reply.
+      uint32_t reply = 0;
+      uint32_t actual_bytes;
+      uint32_t actual_handles;
+      ASSERT_OK(zx_mbo_read(mboq_.mbo.get(), 0, &reply, nullptr, sizeof(reply), 0, &actual_bytes,
+                            &actual_handles));
+      FX_CHECK(actual_bytes == sizeof(reply));
+      FX_CHECK(actual_handles == 0);
+      FX_CHECK(reply == kReplyVal);
+    }
+  }
+
+ private:
+  struct Args {
+    bool use_multiop;
+  };
+
+  static const size_t kVmoSize = sizeof(int);
+  static const uint32_t kRequestVal = 100;
+  static const uint32_t kReplyVal = 200;
+
+  bool use_multiop_;
+  // MBO for request+reply, plus queue for receiving the reply.
+  MboAndQueue mboq_;
+  // Channel for sending request on.
+  Channel channel_;
+  // A CalleesRef is currently required for reading from a MsgQueue, but
+  // this one never gets populated because we only ever use it when reading
+  // replies, not requests.
+  zx::handle boring_calleesref_;
+  zx_mbmq_multiop_t multiop_ = {};
+  uint32_t request_message_ = kRequestVal;
+  uint32_t reply_message_ = 0;
+  ThreadOrProcess thread_or_process_;
+  fzl::VmoMapper vmo_mapper_;
+};
+
 struct ThreadFuncEntry {
   const char* name;
   ThreadFunc func;
@@ -618,6 +845,7 @@ const ThreadFuncEntry thread_funcs[] = {
   DEF_FUNC(EventPortTest::ThreadFunc)
   DEF_FUNC(SocketPortTest::ThreadFunc)
   DEF_FUNC(FidlTest::ThreadFunc)
+  DEF_FUNC(MbmqTest::ThreadFunc)
 #undef DEF_FUNC
 };
 // clang-format on
@@ -680,8 +908,8 @@ void RegisterTestWithCpuAffinity(const char* test_name, uint32_t cpu_mask, Args.
 // Register a test with instantiations covering the same-CPU and
 // different-CPU cases as well as the single-process and multi-process
 // cases.
-template <class TestClass>
-void RegisterTestMultiProcSameDiffCpu(const char* base_name) {
+template <class TestClass, typename... Args>
+void RegisterTestMultiProcSameDiffCpu(const char* base_name, Args... args) {
   struct MultiProcParam {
     const char* suffix;
     MultiProc value;
@@ -711,7 +939,7 @@ void RegisterTestMultiProcSameDiffCpu(const char* base_name) {
       RegisterTestWithCpuAffinity<TestClass>(
           (std::string(base_name) + multi_proc_param.suffix + cpu_param.suffix).c_str(),
           cpu_param.parent_thread_cpu_mask,
-          ThreadOrProcessParams{multi_proc_param.value, cpu_param.child_thread_cpu_mask});
+          ThreadOrProcessParams{multi_proc_param.value, cpu_param.child_thread_cpu_mask}, args...);
     }
   };
 }
@@ -736,11 +964,16 @@ void RegisterTests() {
   RegisterTestMultiProc<EventPortTest>("RoundTrip_EventPort");
   RegisterTestMultiProc<SocketPortTest>("RoundTrip_SocketPort");
   RegisterTestMultiProc<FidlTest>("RoundTrip_Fidl");
+  RegisterTestMultiProc<MbmqTest>("RoundTrip_Mbmq_SeparateSyscalls", false);
+  RegisterTestMultiProc<MbmqTest>("RoundTrip_Mbmq_MultiopSyscall", true);
 
   // To avoid creating too many test instantiations and metrics, we
   // only instantiate one of these tests for the same-CPU and
   // different-CPU cases.
   RegisterTestMultiProcSameDiffCpu<ChannelPortTest>("RoundTrip_ChannelPort");
+
+  RegisterTestMultiProcSameDiffCpu<MbmqTest>("RoundTrip_Mbmq_SeparateSyscalls", false);
+  RegisterTestMultiProcSameDiffCpu<MbmqTest>("RoundTrip_Mbmq_MultiopSyscall", true);
 }
 PERFTEST_CTOR(RegisterTests)
 

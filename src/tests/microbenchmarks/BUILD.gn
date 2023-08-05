@@ -163,19 +163,7 @@ if (is_fuchsia) {
       "main.cc",
       "round_trips.cc",
     ]
-    deps = [
-      ":fuchsia.zircon.benchmarks_hlcpp",
-      "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_cpp_wire",
-      "//sdk/lib/fdio",
-      "//src/lib/fxl",
-      "//src/lib/storage/vfs/cpp",
-      "//src/zircon/lib/zircon",
-      "//zircon/system/ulib/async-loop:async-loop-cpp",
-      "//zircon/system/ulib/async-loop:async-loop-default",
-      "//zircon/system/ulib/inspect",
-      "//zircon/system/ulib/perftest",
-      "//zircon/system/ulib/zx",
-    ]
+    deps = fuchsia_microbenchmark_deps
   }
 }
 
