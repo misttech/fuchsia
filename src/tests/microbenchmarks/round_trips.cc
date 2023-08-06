@@ -10,7 +10,6 @@
 #include <lib/async-loop/default.h>
 #include <lib/fdio/directory.h>
 #include <lib/fdio/spawn.h>
-#include <lib/fzl/vmo-mapper.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/handle.h>
@@ -675,13 +674,8 @@ class MbmqTest {
     Args args;
     args.use_multiop = use_multiop;
 
-    zx::vmo shm_vmo;
-    ASSERT_OK(zx::vmo::create(kVmoSize, 0, &shm_vmo));
-    ASSERT_OK(vmo_mapper_.Map(shm_vmo, 0, kVmoSize, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE));
-
     auto handles = MakeHandleVector(channel_.ch2.release());
     handles.push_back(SendArgs(&args));
-    handles.push_back(zx::handle(shm_vmo.release()));
 
     thread_or_process_.Launch("MbmqTest::ThreadFunc", std::move(handles), params);
 
@@ -702,21 +696,15 @@ class MbmqTest {
   ~MbmqTest() {
     // Send request to tell the server thread to exit.
     // TODO: Could replace with EOF/peer-closed event handling.
-    auto shutdown_val = reinterpret_cast<volatile int*>(vmo_mapper_.start());
-    *shutdown_val = 1;
+    request_message_ = kShutdownRequestVal;
     Run();
   }
 
   static void ThreadFunc(std::vector<zx::handle>&& handles) {
-    FX_CHECK(handles.size() == 3);
+    FX_CHECK(handles.size() == 2);
     zx::handle msgqueue(std::move(handles[0]));
     Args args;
     ReadArgs(std::move(handles[1]), &args);
-    zx::vmo shm_vmo(std::move(handles[2]));
-
-    fzl::VmoMapper vmo_mapper;
-    ASSERT_OK(vmo_mapper.Map(shm_vmo, 0, kVmoSize, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE));
-    auto shutdown_val = reinterpret_cast<volatile int*>(vmo_mapper.start());
 
     zx::handle calleesref;
     ASSERT_OK(calleesref_create(0, &calleesref));
@@ -744,14 +732,13 @@ class MbmqTest {
       FX_CHECK(actual_bytes == sizeof(request));
       FX_CHECK(actual_handles == 0);
       for (;;) {
-        FX_CHECK(request == kRequestVal);
-
-        // Send reply.
-        if (*shutdown_val) {
+        if (request == kShutdownRequestVal) {
           ASSERT_OK(zx_mbo_write(calleesref.get(), 0, &reply, sizeof(reply), nullptr, 0));
           ASSERT_OK(zx_calleesref_send_reply(calleesref.get()));
           break;
         }
+        FX_CHECK(request == kRequestVal);
+
         ASSERT_OK(zx_mbo_multiop(&multiop));
         FX_CHECK(multiop.results.actual_bytes == sizeof(request));
         FX_CHECK(multiop.results.actual_handles == 0);
@@ -767,13 +754,13 @@ class MbmqTest {
                               &actual_bytes, &actual_handles));
         FX_CHECK(actual_bytes == sizeof(request));
         FX_CHECK(actual_handles == 0);
-        FX_CHECK(request == kRequestVal);
+        FX_CHECK(request == kRequestVal || request == kShutdownRequestVal);
 
         // Send reply.
         ASSERT_OK(zx_mbo_write(calleesref.get(), 0, &reply, sizeof(reply), nullptr, 0));
         ASSERT_OK(zx_calleesref_send_reply(calleesref.get()));
 
-        if (*shutdown_val)
+        if (request == kShutdownRequestVal)
           break;
       }
     }
@@ -810,9 +797,9 @@ class MbmqTest {
     bool use_multiop;
   };
 
-  static const size_t kVmoSize = sizeof(int);
   static const uint32_t kRequestVal = 100;
-  static const uint32_t kReplyVal = 200;
+  static const uint32_t kShutdownRequestVal = 200;
+  static const uint32_t kReplyVal = 300;
 
   bool use_multiop_;
   // MBO for request+reply, plus queue for receiving the reply.
@@ -827,7 +814,6 @@ class MbmqTest {
   uint32_t request_message_ = kRequestVal;
   uint32_t reply_message_ = 0;
   ThreadOrProcess thread_or_process_;
-  fzl::VmoMapper vmo_mapper_;
 };
 
 struct ThreadFuncEntry {
