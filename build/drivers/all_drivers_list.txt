@@ -56,7 +56,6 @@
 //src/connectivity/telephony/tests/fake-drivers/at-fake-transport:fake_at_driver-driver
 //src/connectivity/telephony/tests/fake-drivers/usb-qmi-function:qmi_function-driver
 //src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac:fuchsia_driver-driver
-//src/connectivity/wlan/drivers/third_party/intel/iwlwifi:iwlwifi_driver-driver
 //src/connectivity/wlan/drivers/third_party/nxp/nxpfmac:nxpfmac_sdio-driver
 //src/connectivity/wlan/drivers/wlanif:wlanif_driver-driver
 //src/connectivity/wlan/drivers/wlanphy:wlanphy_driver-driver
@@ -226,7 +225,6 @@
 //src/devices/tests/ddk-power:ddk-power-test-child-driver
 //src/devices/tests/ddk-power:ddk-power-test-driver
 //src/devices/tests/ddk-topology-test:ddk-topology-test
-//src/devices/tests/device-watcher:test-driver-driver
 //src/devices/tests/driver-inspect-test:fuchsia_driver
 //src/devices/tests/driver-multiname-test:parent_device
 //src/devices/tests/driver-runtime:child-driver
@@ -343,7 +341,7 @@
 //src/graphics/drivers/msd-intel-gen:msd_intel_test-driver
 //src/graphics/drivers/msd-vsi-vip:msd_vsi-driver
 //src/graphics/drivers/msd-vsi-vip:msd_vsi_test-driver
-//src/graphics/display/drivers/virtio-guest:virtio_gpu-driver
+//src/graphics/display/drivers/virtio-guest/v1:virtio_gpu-driver
 //src/media/audio/drivers/aml-dsp/aml-g12-pdm-dsp:aml-g12-pdm-dsp-driver
 //src/media/audio/drivers/aml-dsp/aml-g12-tdm-dsp:aml-g12-tdm-dsp-driver
 //src/media/audio/drivers/aml-dsp:aml-dsp-driver

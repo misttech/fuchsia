@@ -2,7 +2,6 @@
 
 // fidl_experiment = no_optional_structs
 // fidl_experiment = output_index_json
-// fidl_experiment = simple_empty_response_syntax
 // fidl_experiment = unknown_interactions
 // fidl_experiment = unknown_interactions_mandate
 
@@ -270,10 +269,10 @@ impl ExampleUseOfErrorSyntaxEvent {
     fn decode(mut buf: fidl::MessageBufEtc) -> Result<ExampleUseOfErrorSyntaxEvent, fidl::Error> {
         let (bytes, _handles) = buf.split_mut();
         let (tx_header, _body_bytes) = fidl::encoding::decode_transaction_header(bytes)?;
-        debug_assert_eq!(tx_header.tx_id(), 0);
-        match tx_header.ordinal() {
+        debug_assert_eq!(tx_header.tx_id, 0);
+        match tx_header.ordinal {
             _ => Err(fidl::Error::UnknownOrdinal {
-                ordinal: tx_header.ordinal(),
+                ordinal: tx_header.ordinal,
                 protocol_name:
                     <ExampleUseOfErrorSyntaxMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME,
             }),
@@ -347,8 +346,9 @@ impl futures::Stream for ExampleUseOfErrorSyntaxRequestStream {
             // A message has been received from the channel
             let (header, _body_bytes) = fidl::encoding::decode_transaction_header(bytes)?;
 
-            std::task::Poll::Ready(Some(match header.ordinal() {
+            std::task::Poll::Ready(Some(match header.ordinal {
                 0x3179cf8f46814221 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl_test_errorsyntax_parent::ParentUsesErrorSyntaxComposedCallWhichMayFailRequest);
                     fidl::encoding::Decoder::decode_into::<fidl_test_errorsyntax_parent::ParentUsesErrorSyntaxComposedCallWhichMayFailRequest>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = ExampleUseOfErrorSyntaxControlHandle {
@@ -358,12 +358,12 @@ impl futures::Stream for ExampleUseOfErrorSyntaxRequestStream {
 
                         responder: ExampleUseOfErrorSyntaxComposedCallWhichMayFailResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x3424ff83ce3004a2 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(ExampleUseOfErrorSyntaxCallWhichMayFailRequest);
                     fidl::encoding::Decoder::decode_into::<ExampleUseOfErrorSyntaxCallWhichMayFailRequest>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = ExampleUseOfErrorSyntaxControlHandle {
@@ -373,13 +373,12 @@ impl futures::Stream for ExampleUseOfErrorSyntaxRequestStream {
 
                         responder: ExampleUseOfErrorSyntaxCallWhichMayFailResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 _ => Err(fidl::Error::UnknownOrdinal {
-                    ordinal: header.ordinal(),
+                    ordinal: header.ordinal,
                     protocol_name: <ExampleUseOfErrorSyntaxMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME,
                 }),
             }))
@@ -463,7 +462,6 @@ impl ExampleUseOfErrorSyntaxControlHandle {}
 pub struct ExampleUseOfErrorSyntaxComposedCallWhichMayFailResponder {
     control_handle: std::mem::ManuallyDrop<ExampleUseOfErrorSyntaxControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`ExampleUseOfErrorSyntaxControlHandle::shutdown`])
@@ -519,7 +517,7 @@ impl ExampleUseOfErrorSyntaxComposedCallWhichMayFailResponder {
         >>(
             result.map(|value| (value,)),
             self.tx_id,
-            self.ordinal,
+            0x3179cf8f46814221,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -530,7 +528,6 @@ impl ExampleUseOfErrorSyntaxComposedCallWhichMayFailResponder {
 pub struct ExampleUseOfErrorSyntaxCallWhichMayFailResponder {
     control_handle: std::mem::ManuallyDrop<ExampleUseOfErrorSyntaxControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`ExampleUseOfErrorSyntaxControlHandle::shutdown`])
@@ -586,7 +583,7 @@ impl ExampleUseOfErrorSyntaxCallWhichMayFailResponder {
         >>(
             result.map(|value| (value,)),
             self.tx_id,
-            self.ordinal,
+            0x3424ff83ce3004a2,
             fidl::encoding::DynamicFlags::empty(),
         )
     }

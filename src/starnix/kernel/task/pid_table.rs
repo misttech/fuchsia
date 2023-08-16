@@ -12,7 +12,7 @@ use crate::{task::*, types::*};
 /// Entities identified by a pid.
 #[derive(Default)]
 struct PidEntry {
-    task: Option<Weak<Task>>,
+    task: Option<WeakRef<Task>>,
     group: Option<Weak<ThreadGroup>>,
     process_group: Option<Weak<ProcessGroup>>,
 }
@@ -34,30 +34,45 @@ impl PidTable {
     fn get_entry(&self, pid: pid_t) -> Option<&PidEntry> {
         self.table.get(&pid)
     }
+
     fn get_entry_mut(&mut self, pid: pid_t) -> &mut PidEntry {
         self.table.entry(pid).or_insert_with(Default::default)
     }
 
+    fn remove_item<F>(&mut self, pid: pid_t, do_remove: F)
+    where
+        F: FnOnce(&mut PidEntry),
+    {
+        let entry = self.get_entry_mut(pid);
+        do_remove(entry);
+        if entry.task.is_none() && entry.group.is_none() && entry.process_group.is_none() {
+            self.table.remove(&pid);
+        }
+    }
+
     pub fn allocate_pid(&mut self) -> pid_t {
         // TODO: wrap the pid number and check for collisions
+        // If/when we re-use pids, we need to check that PidFdFileObject is holding onto the task
+        // correctly.
         self.last_pid += 1;
         self.last_pid
     }
 
-    pub fn get_task(&self, pid: pid_t) -> Option<Arc<Task>> {
-        self.get_entry(pid).and_then(|entry| entry.task.as_ref()).and_then(|task| task.upgrade())
+    pub fn get_task(&self, pid: pid_t) -> WeakRef<Task> {
+        self.get_entry(pid).and_then(|entry| entry.task.clone()).unwrap_or_else(WeakRef::new)
     }
 
-    pub fn add_task(&mut self, task: &Arc<Task>) {
+    pub fn add_task(&mut self, task: &TempRef<'_, Task>) {
         let entry = self.get_entry_mut(task.id);
         assert!(entry.task.is_none());
-        self.get_entry_mut(task.id).task = Some(Arc::downgrade(task));
+        self.get_entry_mut(task.id).task = Some(WeakRef::from(task));
     }
 
     pub fn remove_task(&mut self, pid: pid_t) {
-        let entry = self.get_entry_mut(pid);
-        assert!(entry.task.is_some());
-        entry.task = None;
+        self.remove_item(pid, |entry| {
+            let removed = entry.task.take();
+            assert!(removed.is_some())
+        });
     }
 
     pub fn get_thread_group(&self, pid: pid_t) -> Option<Arc<ThreadGroup>> {
@@ -78,9 +93,10 @@ impl PidTable {
     }
 
     pub fn remove_thread_group(&mut self, pid: pid_t) {
-        let entry = self.get_entry_mut(pid);
-        assert!(entry.group.is_some());
-        entry.group = None;
+        self.remove_item(pid, |entry| {
+            let removed = entry.group.take();
+            assert!(removed.is_some())
+        });
     }
 
     pub fn get_process_group(&self, pid: pid_t) -> Option<Arc<ProcessGroup>> {
@@ -96,9 +112,10 @@ impl PidTable {
     }
 
     pub fn remove_process_group(&mut self, pid: pid_t) {
-        let entry = self.get_entry_mut(pid);
-        assert!(entry.process_group.is_some());
-        entry.process_group = None;
+        self.remove_item(pid, |entry| {
+            let removed = entry.process_group.take();
+            assert!(removed.is_some())
+        });
     }
 
     /// Returns the process ids for all the currently running processes.

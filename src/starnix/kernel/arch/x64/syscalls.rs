@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use fuchsia_zircon as zx;
+use starnix_sync::{InterruptibleEvent, WakeReason};
 
 use crate::{
     arch::uapi::epoll_event,
@@ -13,12 +14,12 @@ use crate::{
             sys_newfstatat, sys_openat, sys_pipe2, sys_readlinkat, sys_renameat2, sys_symlinkat,
             sys_unlinkat,
         },
-        DirentSink, DirentSink32, FdNumber,
+        DirentSink32, FdNumber,
     },
     mm::MemoryAccessorExt,
-    signals::syscalls::sys_signalfd4,
+    signals::{syscalls::sys_signalfd4, RunState},
     syscalls::not_implemented,
-    task::{syscalls::do_clone, CurrentTask, Waiter},
+    task::{syscalls::do_clone, CurrentTask},
     time::*,
     types::*,
 };
@@ -176,8 +177,8 @@ pub fn sys_getdents(
     let file = current_task.files.get(fd)?;
     let mut offset = file.offset.lock();
     let mut sink = DirentSink32::new(current_task, &mut offset, user_buffer, user_capacity);
-    file.readdir(current_task, &mut sink)?;
-    Ok(sink.actual())
+    let result = file.readdir(current_task, &mut sink);
+    sink.map_result_with_actual(result)
 }
 
 pub fn sys_getpgrp(current_task: &CurrentTask) -> Result<pid_t, Errno> {
@@ -249,10 +250,15 @@ pub fn sys_open(
 }
 
 pub fn sys_pause(current_task: &CurrentTask) -> Result<(), Errno> {
-    let waiter = Waiter::new();
-    waiter.wait(current_task)?;
-
-    Ok(())
+    let event = InterruptibleEvent::new();
+    let guard = event.begin_wait();
+    current_task.run_in_state(RunState::Event(event.clone()), || {
+        match guard.block_until(zx::Time::INFINITE) {
+            Err(WakeReason::Interrupted) => error!(EINTR),
+            Err(WakeReason::DeadlineExpired) => panic!("blocking forever cannot time out"),
+            Ok(()) => Ok(()),
+        }
+    })
 }
 
 pub fn sys_pipe(current_task: &CurrentTask, user_pipe: UserRef<FdNumber>) -> Result<(), Errno> {

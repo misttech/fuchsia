@@ -17,6 +17,7 @@ use futures::{
 };
 use parking_lot::Mutex;
 use std::{
+    any::Any,
     cell::RefCell,
     collections::HashMap,
     fmt,
@@ -27,7 +28,6 @@ use std::{
     u64, usize,
 };
 
-pub(crate) const EMPTY_WAKEUP_ID: u64 = u64::MAX;
 pub(crate) const TASK_READY_WAKEUP_ID: u64 = u64::MAX - 1;
 
 /// The id of the main task, which is a virtual task that lives from construction
@@ -93,6 +93,9 @@ pub(super) struct Inner {
     pub(super) threads_state: AtomicU16,
     pub(super) num_threads: u8,
     pub(super) polled: AtomicU64,
+    // Data that belongs to the user that can be accessed via EHandle::local(). See
+    // `TestExecutor::poll_until_stalled`.
+    pub(super) owner_data: Mutex<Option<Box<dyn Any + Send>>>,
 }
 
 impl Inner {
@@ -118,6 +121,7 @@ impl Inner {
             threads_state: AtomicU16::new(0),
             num_threads,
             polled: AtomicU64::new(0),
+            owner_data: Mutex::new(None),
         }
     }
 
@@ -127,17 +131,6 @@ impl Inner {
             assert!(e.is_none(), "Cannot create multiple Fuchsia Executors");
             *e = Some((self, timers));
         });
-    }
-
-    pub fn poll_one_ready_task(&self, local_collector: &mut LocalCollector<'_>) {
-        if let Some(task) = self.ready_tasks.pop() {
-            let complete = task.try_poll();
-            local_collector.task_polled(task.id, task.source, complete, self.ready_tasks.len());
-            if complete {
-                // Completed
-                self.active_tasks.lock().remove(&task.id);
-            }
-        }
     }
 
     fn poll_ready_tasks(&self, local_collector: &mut LocalCollector<'_>) -> PollReadyTasksResult {
@@ -201,7 +194,7 @@ impl Inner {
         }
         Inner::spawn(
             self,
-            // Unsafety: we've confirmed that the boxed futures here will never be used
+            // SAFETY: We've confirmed that the boxed futures here will never be used
             // across multiple threads, so we can safely convert from a non-`Send`able
             // future to a `Send`able one.
             unsafe { future.into_future_obj() },
@@ -218,31 +211,22 @@ impl Inner {
     }
 
     pub fn notify_task_ready(&self) {
-        if self.is_local {
-            self.notify_id(TASK_READY_WAKEUP_ID);
-        } else {
-            // Only post if there's no thread running (or soon to be running). If we happen to be
-            // running on a thread for this executor, then threads_state won't be equal to
-            // num_threads, which means notifications only get fired if this is from a non-async
-            // thread, or a thread that belongs to a different executor. We use SeqCst ordering here
-            // to make sure this load happens *after* the change to ready_tasks and to synchronize
-            // with worker_lifecycle.
-            let mut threads_state = self.threads_state.load(Ordering::SeqCst);
+        // Only post if there's no thread running (or soon to be running). If we happen to be
+        // running on a thread for this executor, then threads_state won't be equal to num_threads,
+        // which means notifications only get fired if this is from a non-async thread, or a thread
+        // that belongs to a different executor. We use SeqCst ordering here to make sure this load
+        // happens *after* the change to ready_tasks and to synchronize with worker_lifecycle.
+        let mut threads_state = self.threads_state.load(Ordering::SeqCst);
 
-            // We compare threads_state directly against self.num_threads (which means that
-            // notifications must be zero) because we only want to notify if there are no pending
-            // notifications and *all* threads are currently asleep.
-            while threads_state == self.num_threads as u16 {
-                match self.try_notify(threads_state) {
-                    Ok(()) => break,
-                    Err(s) => threads_state = s,
-                }
+        // We compare threads_state directly against self.num_threads (which means that
+        // notifications must be zero) because we only want to notify if there are no pending
+        // notifications and *all* threads are currently asleep.
+        while threads_state == self.num_threads as u16 {
+            match self.try_notify(threads_state) {
+                Ok(()) => break,
+                Err(s) => threads_state = s,
             }
         }
-    }
-
-    pub fn notify_empty(&self) {
-        self.notify_id(EMPTY_WAKEUP_ID);
     }
 
     /// Tries to notify a thread to wake up. Returns threads_state if it fails.
@@ -392,7 +376,17 @@ impl Inner {
     /// https://github.com/tokio-rs/tokio/blob/b42f21ec3e212ace25331d0c13889a45769e6006/tokio/src/io/driver/mod.rs#L297
     pub fn on_parent_drop(&self) {
         // Drop all tasks
-        self.active_tasks.lock().clear();
+        let active_tasks = std::mem::take(&mut *self.active_tasks.lock());
+
+        // Any use of fasync::unblock can involve a waker. Wakers hold weak references to tasks, but
+        // as part of waking, there's an upgrade to a strong reference, so for a small amount of
+        // time `fasync::unblock` can hold a strong reference to a task which in turn holds the
+        // future for the task which in turn could hold references to receivers, which, if we did
+        // nothing about it, would trip the assertion below. For that reason, we forcibly drop the
+        // task futures here.
+        for (_, task) in active_tasks {
+            task.future.try_drop().expect("Failed to drop task");
+        }
 
         // Drop all of the uncompleted tasks
         while let Some(_) = self.ready_tasks.pop() {}
@@ -539,6 +533,21 @@ impl Inner {
                 Work::None => {}
                 Work::Stalled => return,
             }
+        }
+    }
+
+    /// Drops the main task.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee that the executor isn't running.
+    pub(super) unsafe fn drop_main_task(&self) {
+        if let Some(task) = self.active_tasks.lock().remove(&MAIN_TASK_ID) {
+            // Even though we've removed the task from active tasks, it could still be in
+            // pending_tasks, so we have to drop the future here. At time of writing, this is only
+            // used by the local executor and there could only be something in ready_tasks if
+            // there's a panic.
+            task.future.drop_future_unchecked();
         }
     }
 }

@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/assembly/assembled_system.gni")
-import("//build/assembly/generated_images_config.gni")
 import("//build/assembly/generated_partitions_config.gni")
 import("//build/assembly/product_assembly_configuration.gni")
 import("//build/assembly/update_package.gni")
@@ -43,7 +42,7 @@ if (is_fuchsia) {
   }
 
   files = {
-    images_config = "$target_out_dir/fuchsia.images_config.json"
+    board_config = "$target_out_dir/fuchsia.board_config.json"
     partitions_config = "$target_out_dir/partitions_config.json"
 
     outdir = target_out_dir + "/assembly"
@@ -60,14 +59,16 @@ if (is_fuchsia) {
     product_bundle = target_out_dir + "/product_bundle"
   }
 
-  generated_images_config("images_config") {
-    zbi = {
-      name = "assembly"
-    }
-    fvm = {
-      slice_size = 8388608
-      blobfs = {
-        layout = "compact"
+  generated_file("board_config") {
+    outputs = [ files.board_config ]
+    output_conversion = "json"
+    contents = {
+      name = "test"
+      filesystems = {
+        fvm = {
+          sparse_output = {
+          }
+        }
       }
     }
   }
@@ -76,6 +77,20 @@ if (is_fuchsia) {
     platform = {
       build_type = "user"
       feature_set_level = "utility"
+      storage = {
+        configure_fshost = true
+        filesystems = {
+          image_name = "assembly"
+          volume = {
+            fvm = {
+              data = {
+              }
+              blob = {
+              }
+            }
+          }
+        }
+      }
     }
   }
 
@@ -84,9 +99,15 @@ if (is_fuchsia) {
     generate_fvm = true
     generate_fvm_fastboot = false
     generate_vbmeta = false
+    use_assembly_fshost = true
 
-    assembly_images_config_label = ":images_config"
+    # This test uses an explicit board, therefore the arguments should not be
+    # compared with the arguments from the global GN args.
+    skip_fshost_validator = true
+
     product_assembly_config_label = ":product_assembly_config"
+    board_config = files.board_config
+    deps = [ ":board_config" ]
 
     # Needed for scrutiny to find root.cm and other component config.
     bootfs_labels = [ "//build/input:bootfs" ]

@@ -113,20 +113,15 @@ class FuchsiaDeviceFCTests(unittest.TestCase):
         self.assertIsInstance(
             self.fd_obj, affordances_capable.BluetoothGapCapableDevice)
 
-    def test_fuchsia_device_is_component_capable(self) -> None:
-        """Test case to make sure fuchsia device is component capable"""
-        self.assertIsInstance(
-            self.fd_obj, affordances_capable.ComponentCapableDevice)
-
     def test_fuchsia_device_is_reboot_capable(self) -> None:
         """Test case to make sure fuchsia device is reboot capable"""
         self.assertIsInstance(
             self.fd_obj, affordances_capable.RebootCapableDevice)
 
-    def test_fuchsia_device_is_tile_capable(self) -> None:
-        """Test case to make sure fuchsia device is tile capable"""
+    def test_fuchsia_device_is_session_capable(self) -> None:
+        """Test case to make sure fuchsia device is session capable"""
         self.assertIsInstance(
-            self.fd_obj, affordances_capable.TileCapableDevice)
+            self.fd_obj, affordances_capable.SessionCapableDevice)
 
     def test_fuchsia_device_is_tracing_capable(self) -> None:
         """Test case to make sure fuchsia device is tracing capable"""

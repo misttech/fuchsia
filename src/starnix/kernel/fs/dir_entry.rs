@@ -19,8 +19,14 @@ use crate::{
 
 bitflags! {
     pub struct RenameFlags: u32 {
+        // Exchange the entries.
+        const EXCHANGE = RENAME_EXCHANGE;
+
         // Don't overwrite an existing DirEntry.
         const NOREPLACE = RENAME_NOREPLACE;
+
+        // Create a "whiteout" object to replace the file.
+        const WHITEOUT = RENAME_WHITEOUT;
     }
 }
 
@@ -244,7 +250,8 @@ impl DirEntry {
             }
         } else {
             // An entry was created. Update the ctime and mtime of this directory.
-            self.node.update_ctime_mtime()?;
+            self.node.update_ctime_mtime();
+            entry.notify_creation();
             Ok(entry)
         }
     }
@@ -335,14 +342,48 @@ impl DirEntry {
         })
     }
 
-    fn create_node_fn(
+    /// Creates an anonymous file.
+    ///
+    /// The FileMode::IFMT of the FileMode is always FileMode::IFREG.
+    ///
+    /// Used by O_TMPFILE.
+    pub fn create_tmpfile(
         self: &DirEntryHandle,
         current_task: &CurrentTask,
-        name: &FsStr,
         mut mode: FileMode,
-        dev: DeviceType,
         mut owner: FsCred,
-    ) -> Result<FsNodeHandle, Errno> {
+        flags: OpenFlags,
+    ) -> Result<DirEntryHandle, Errno> {
+        // Only directories can have children.
+        if !self.node.is_dir() {
+            return error!(ENOTDIR);
+        }
+        assert!(mode.is_reg());
+        self.update_metadata_for_child(current_task, &mut mode, &mut owner);
+
+        // From <https://man7.org/linux/man-pages/man2/open.2.html>:
+        //
+        //   Specifying O_EXCL in conjunction with O_TMPFILE prevents a
+        //   temporary file from being linked into the filesystem in
+        //   the above manner.  (Note that the meaning of O_EXCL in
+        //   this case is different from the meaning of O_EXCL
+        //   otherwise.)
+        let link_behavior = if flags.contains(OpenFlags::EXCL) {
+            FsNodeLinkBehavior::Disallowed
+        } else {
+            FsNodeLinkBehavior::Allowed
+        };
+
+        let node = self.node.create_tmpfile(current_task, mode, owner, link_behavior)?;
+        Ok(DirEntry::new_unrooted(node))
+    }
+
+    fn update_metadata_for_child(
+        &self,
+        current_task: &CurrentTask,
+        mode: &mut FileMode,
+        owner: &mut FsCred,
+    ) {
         // The setgid bit on a directory causes the gid to be inherited by new children and the
         // setgid bit to be inherited by new child directories. See SetgidDirTest in gvisor.
         {
@@ -350,14 +391,12 @@ impl DirEntry {
             if self_info.mode.contains(FileMode::ISGID) {
                 owner.gid = self_info.gid;
                 if mode.is_dir() {
-                    mode |= FileMode::ISGID;
+                    *mode |= FileMode::ISGID;
                 }
             }
         }
 
-        if mode.is_dir() {
-            self.node.mkdir(current_task, name, mode, owner)
-        } else {
+        if !mode.is_dir() {
             // https://man7.org/linux/man-pages/man7/inode.7.html says:
             //
             //   For an executable file, the set-group-ID bit causes the
@@ -368,13 +407,44 @@ impl DirEntry {
             // See a similar check in `FsNode::chmod`.
             let creds = current_task.creds();
             if !creds.has_capability(CAP_FOWNER)
-                && owner.gid != creds.egid
+                && owner.gid != creds.fsgid
                 && !creds.is_in_group(owner.gid)
             {
-                mode &= !FileMode::ISGID;
+                *mode &= !FileMode::ISGID;
+            }
+        }
+    }
+
+    fn create_node_fn(
+        self: &DirEntryHandle,
+        current_task: &CurrentTask,
+        name: &FsStr,
+        mut mode: FileMode,
+        dev: DeviceType,
+        mut owner: FsCred,
+    ) -> Result<FsNodeHandle, Errno> {
+        self.update_metadata_for_child(current_task, &mut mode, &mut owner);
+
+        if mode.is_dir() {
+            self.node.mkdir(current_task, name, mode, owner)
+        } else {
+            // https://man7.org/linux/man-pages/man2/mknod.2.html says:
+            //
+            //   mode requested creation of something other than a regular
+            //   file, FIFO (named pipe), or UNIX domain socket, and the
+            //   caller is not privileged (Linux: does not have the
+            //   CAP_MKNOD capability); also returned if the filesystem
+            //   containing pathname does not support the type of node
+            //   requested.
+            let creds = current_task.creds();
+            if !creds.has_capability(CAP_MKNOD) {
+                if !matches!(mode.fmt(), FileMode::IFREG | FileMode::IFIFO | FileMode::IFSOCK) {
+                    return error!(EPERM);
+                }
             }
 
             let node = self.node.mknod(current_task, name, mode, dev, owner)?;
+
             if mode.is_sock() {
                 node.set_socket(Socket::new(
                     current_task,
@@ -450,8 +520,12 @@ impl DirEntry {
         // The user must be able to search the directory (requires the EXEC permission)
         self.node.check_access(current_task, Access::EXEC)?;
 
+        // child *must* be dropped after self_children and child_children below (even in the error
+        // paths).
+        let child;
+
         let mut self_children = self.lock_children();
-        let child = self_children.component_lookup(current_task, name)?;
+        child = self_children.component_lookup(current_task, name)?;
         let child_children = child.children.read();
 
         if child.state.read().mount_count > 0 {
@@ -504,6 +578,7 @@ impl DirEntry {
     fn destroy(self: DirEntryHandle) {
         self.node.fs().will_destroy_dir_entry(&self);
         self.state.write().is_dead = true;
+        self.notify_deletion();
     }
 
     /// Returns whether this entry is a descendant of |other|.
@@ -529,9 +604,9 @@ impl DirEntry {
     /// old_parent and new_parent must belong to the same file system.
     pub fn rename(
         current_task: &CurrentTask,
-        old_parent_name: &NamespaceNode,
+        old_parent: &DirEntryHandle,
         old_basename: &FsStr,
-        new_parent_name: &NamespaceNode,
+        new_parent: &DirEntryHandle,
         new_basename: &FsStr,
         flags: RenameFlags,
     ) -> Result<(), Errno> {
@@ -544,19 +619,14 @@ impl DirEntry {
             return error!(EBUSY);
         }
 
-        let old_parent = &old_parent_name.entry;
-        let new_parent = &new_parent_name.entry;
-
         // If the names and parents are the same, then there's nothing to do
         // and we can report success.
-        if Arc::ptr_eq(old_parent, new_parent) && old_basename == new_basename {
+        if Arc::ptr_eq(&old_parent.node, &new_parent.node) && old_basename == new_basename {
             return Ok(());
         }
 
         // This task must have write access to the old and new parent nodes.
-        old_parent_name.check_readonly_filesystem()?;
         old_parent.node.check_access(current_task, Access::WRITE)?;
-        new_parent_name.check_readonly_filesystem()?;
         new_parent.node.check_access(current_task, Access::WRITE)?;
 
         // The mount_eq check in sys_renameat ensures that the nodes we're touching are part of the
@@ -565,7 +635,10 @@ impl DirEntry {
 
         // We need to hold these DirEntryHandles until after we drop all the
         // locks so that we do not deadlock when we drop them.
-        let (renamed, maybe_replaced) = {
+        let renamed;
+        let mut maybe_replaced = None;
+
+        {
             // Before we take any locks, we need to take the rename mutex on
             // the file system. This lock ensures that no other rename
             // operations are happening in this file system while we're
@@ -597,7 +670,7 @@ impl DirEntry {
 
             // Now that we know the old_parent child list cannot change, we
             // establish the DirEntry that we are going to try to rename.
-            let renamed = state.old_parent().component_lookup(current_task, old_basename)?;
+            renamed = state.old_parent().component_lookup(current_task, old_basename)?;
 
             // Check whether the sticky bit on the old parent prevents us from
             // removing this child.
@@ -620,58 +693,74 @@ impl DirEntry {
             // We need to check if there is already a DirEntry with
             // new_basename in new_parent. If so, there are additional checks
             // we need to perform.
-            let maybe_replaced =
-                match state.new_parent().component_lookup(current_task, new_basename) {
-                    Ok(replaced) => {
-                        if flags.contains(RenameFlags::NOREPLACE) {
-                            return error!(EEXIST);
-                        }
+            match state.new_parent().component_lookup(current_task, new_basename) {
+                Ok(replaced) => {
+                    // Set `maybe_replaced` now to ensure it gets dropped in the right order.
+                    let replaced = maybe_replaced.insert(replaced);
 
-                        // Sayeth https://man7.org/linux/man-pages/man2/rename.2.html:
-                        //
-                        // "If oldpath and newpath are existing hard links referring to the
-                        // same file, then rename() does nothing, and returns a success
-                        // status."
-                        if Arc::ptr_eq(&renamed.node, &replaced.node) {
-                            return Ok(());
-                        }
-
-                        // Sayeth https://man7.org/linux/man-pages/man2/rename.2.html:
-                        //
-                        // "oldpath can specify a directory.  In this case, newpath must"
-                        // either not exist, or it must specify an empty directory."
-                        if replaced.node.is_dir() {
-                            // Check whether the replaced entry is a mountpoint.
-                            // TODO: We should hold a read lock on the mount points for this
-                            //       namespace to prevent the child from becoming a mount point
-                            //       while this function is executing.
-                            if replaced.state.read().mount_count > 0 {
-                                return error!(EBUSY);
-                            }
-                        } else if renamed.node.is_dir() {
-                            return error!(ENOTDIR);
-                        }
-                        Some(replaced)
+                    if flags.contains(RenameFlags::NOREPLACE) {
+                        return error!(EEXIST);
                     }
-                    // It's fine for the lookup to fail to find a child.
-                    Err(errno) if errno == ENOENT => None,
-                    // However, other errors are fatal.
-                    Err(e) => return Err(e),
-                };
+
+                    // Sayeth https://man7.org/linux/man-pages/man2/rename.2.html:
+                    //
+                    // "If oldpath and newpath are existing hard links referring to the
+                    // same file, then rename() does nothing, and returns a success
+                    // status."
+                    if Arc::ptr_eq(&renamed.node, &replaced.node) {
+                        return Ok(());
+                    }
+
+                    // Sayeth https://man7.org/linux/man-pages/man2/rename.2.html:
+                    //
+                    // "oldpath can specify a directory.  In this case, newpath must"
+                    // either not exist, or it must specify an empty directory."
+                    if replaced.node.is_dir() {
+                        // Check whether the replaced entry is a mountpoint.
+                        // TODO: We should hold a read lock on the mount points for this
+                        //       namespace to prevent the child from becoming a mount point
+                        //       while this function is executing.
+                        if replaced.state.read().mount_count > 0 {
+                            return error!(EBUSY);
+                        }
+                    } else if renamed.node.is_dir() && !flags.contains(RenameFlags::EXCHANGE) {
+                        return error!(ENOTDIR);
+                    }
+                }
+                // It's fine for the lookup to fail to find a child.
+                Err(errno) if errno == ENOENT => {}
+                // However, other errors are fatal.
+                Err(e) => return Err(e),
+            }
 
             // We've found all the errors that we know how to find. Ask the
             // file system to actually execute the rename operation. Once the
             // file system has executed the rename, we are no longer allowed to
             // fail because we will not be able to return the system to a
             // consistent state.
-            fs.rename(
-                &old_parent.node,
-                old_basename,
-                &new_parent.node,
-                new_basename,
-                &renamed.node,
-                maybe_replaced.as_ref().map(|replaced| &replaced.node),
-            )?;
+
+            if flags.contains(RenameFlags::EXCHANGE) {
+                let replaced = maybe_replaced.as_ref().ok_or_else(|| errno!(ENOENT))?;
+                fs.exchange(
+                    current_task,
+                    &renamed.node,
+                    &old_parent.node,
+                    old_basename,
+                    &replaced.node,
+                    &new_parent.node,
+                    new_basename,
+                )?;
+            } else {
+                fs.rename(
+                    current_task,
+                    &old_parent.node,
+                    old_basename,
+                    &new_parent.node,
+                    new_basename,
+                    &renamed.node,
+                    maybe_replaced.as_ref().map(|replaced| &replaced.node),
+                )?;
+            }
 
             {
                 // We need to update the parent and local name for the DirEntry
@@ -685,21 +774,32 @@ impl DirEntry {
             // from the child list.
             state.new_parent().children.insert(new_basename.to_owned(), Arc::downgrade(&renamed));
 
-            // Finally, remove the renamed child from the old_parent's child
-            // list.
-            state.old_parent().children.remove(old_basename);
-
-            (renamed, maybe_replaced)
+            if flags.contains(RenameFlags::EXCHANGE) {
+                // Reparent `replaced` when exchanging.
+                let replaced =
+                    maybe_replaced.as_ref().expect("replaced expected with RENAME_EXCHANGE");
+                {
+                    let mut replaced_state = replaced.state.write();
+                    replaced_state.parent = Some(old_parent.clone());
+                    replaced_state.local_name = old_basename.to_owned();
+                }
+                state.old_parent().children.insert(old_basename.to_vec(), Arc::downgrade(replaced));
+            } else {
+                // Remove the renamed child from the old_parent's child list.
+                state.old_parent().children.remove(old_basename);
+            }
         };
 
         fs.purge_old_entries();
 
         if let Some(replaced) = maybe_replaced {
-            replaced.destroy();
+            if !flags.contains(RenameFlags::EXCHANGE) {
+                replaced.destroy();
+            }
         }
 
         // Renaming a file updates its ctime.
-        renamed.node.update_ctime()?;
+        renamed.node.update_ctime();
 
         Ok(())
     }
@@ -748,7 +848,8 @@ impl DirEntry {
             return Ok((child, true));
         }
 
-        let (child, exists) = self.lock_children().get_or_create_child(name, create_fn)?;
+        let (child, exists) =
+            self.lock_children().get_or_create_child(current_task, name, create_fn)?;
         child.node.fs().purge_old_entries();
         Ok((child, exists))
     }
@@ -782,12 +883,43 @@ impl DirEntry {
         }
     }
 
-    // Notifies watchers on the current node and its parent about an event.
+    /// Notifies watchers on the current node and its parent about an event.
     pub fn notify(&self, event_mask: InotifyMask) {
         if let Some(parent) = self.parent() {
-            parent.node.watchers.notify(event_mask, &self.local_name());
+            parent.node.watchers.notify(event_mask, &self.local_name(), self.node.info().mode);
         }
-        self.node.watchers.notify(event_mask, &FsString::default());
+        self.node.watchers.notify(event_mask, &FsString::default(), self.node.info().mode);
+    }
+
+    /// Notifies parents about creation, and notifies current node about link_count change.
+    pub fn notify_creation(&self) {
+        let mode = self.node.info().mode;
+        if Arc::strong_count(&self.node) > 1 {
+            // Notify about link change only if there is already a hardlink.
+            self.node.watchers.notify(InotifyMask::ATTRIB, &FsString::default(), mode);
+        }
+        if let Some(parent) = self.parent() {
+            parent.node.watchers.notify(InotifyMask::CREATE, &self.local_name(), mode);
+        }
+    }
+
+    /// Notifies watchers on the current node about deletion if this is the
+    /// last hardlink, and drops the DirEntryHandle kept by Inotify.
+    /// Parent is also notified about deletion.
+    pub fn notify_deletion(&self) {
+        let mode = self.node.info().mode;
+        if !mode.is_dir() {
+            // Linux notifies link count change for non-directories.
+            self.node.watchers.notify(InotifyMask::ATTRIB, &FsString::default(), mode);
+        }
+
+        if let Some(parent) = self.parent() {
+            parent.node.watchers.notify(InotifyMask::DELETE, &self.local_name(), mode);
+        }
+
+        if Arc::strong_count(&self.node) == 1 {
+            self.node.watchers.notify(InotifyMask::DELETE_SELF, &FsString::default(), mode);
+        }
     }
 }
 
@@ -803,13 +935,13 @@ impl<'a> DirEntryLockedChildren<'a> {
         name: &FsStr,
     ) -> Result<DirEntryHandle, Errno> {
         assert!(!DirEntry::is_reserved_name(name));
-        let (node, _) =
-            self.get_or_create_child(name, || self.entry.node.lookup(current_task, name))?;
+        let (node, _) = self.get_or_create_child(current_task, name, || error!(ENOENT))?;
         Ok(node)
     }
 
     fn get_or_create_child<F>(
         &mut self,
+        current_task: &CurrentTask,
         name: &FsStr,
         create_fn: F,
     ) -> Result<(DirEntryHandle, bool), Errno>
@@ -817,11 +949,18 @@ impl<'a> DirEntryLockedChildren<'a> {
         F: FnOnce() -> Result<FsNodeHandle, Errno>,
     {
         let create_child = || {
-            let node = create_fn()?;
+            // Before creating the child, check for existence.
+            let (node, exists) = match self.entry.node.lookup(current_task, name) {
+                Ok(node) => (node, true),
+                Err(e) if e == ENOENT => (create_fn()?, false),
+                Err(e) => return Err(e),
+            };
+
             assert!(
                 node.info().mode & FileMode::IFMT != FileMode::EMPTY,
                 "FsNode initialization did not populate the FileMode in FsNodeInfo."
             );
+
             let entry = DirEntry::new(node, Some(self.entry.clone()), name.to_vec());
             #[cfg(any(test, debug_assertions))]
             {
@@ -829,14 +968,14 @@ impl<'a> DirEntryLockedChildren<'a> {
                 // ordering will trigger the tracing-mutex at the right call site.
                 let _l1 = entry.state.read();
             }
-            Ok(entry)
+            Ok((entry, exists))
         };
 
-        let child = match self.children.entry(name.to_vec()) {
+        let (child, exists) = match self.children.entry(name.to_vec()) {
             Entry::Vacant(entry) => {
-                let child = create_child()?;
+                let (child, exists) = create_child()?;
                 entry.insert(Arc::downgrade(&child));
-                child
+                (child, exists)
             }
             Entry::Occupied(mut entry) => {
                 // It's possible that the upgrade will succeed this time around because we dropped
@@ -846,13 +985,13 @@ impl<'a> DirEntryLockedChildren<'a> {
                     child.node.fs().did_access_dir_entry(&child);
                     return Ok((child, true));
                 }
-                let child = create_child()?;
+                let (child, exists) = create_child()?;
                 entry.insert(Arc::downgrade(&child));
-                child
+                (child, exists)
             }
         };
         child.node.fs().did_create_dir_entry(&child);
-        Ok((child, false))
+        Ok((child, exists))
     }
 }
 

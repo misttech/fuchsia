@@ -8,13 +8,11 @@ fidl("fuchsia.device.manager") {
   sources = [
     "administrator.fidl",
     "coordinator.fidl",
-    "device-watcher.fidl",
     "system-state-transition.fidl",
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.device",
     "//sdk/fidl/fuchsia.driver.framework",
-    "//sdk/fidl/fuchsia.driver.host",
     "//sdk/fidl/fuchsia.io",
     "//zircon/vdso/zx",
   ]

@@ -7,6 +7,7 @@ import("//build/assembly/product_assembly_configuration.gni")
 import("//build/board.gni")
 import("//build/images/args.gni")
 import("//build/images/paths.gni")
+import("//build/product.gni")
 import("//src/storage/fshost/generated_fshost_config.gni")
 import("//src/sys/core/build/core.gni")
 
@@ -57,9 +58,8 @@ if (labels.images == "//build/images/bringup") {
   # In all other builds, define the guest assembly.
 
   if (has_board) {
-    assert(images_config_label != false, "Need to define images_config_label")
-  } else {
-    images_config_label = "//boards/images:default"
+    assert(board_information_for_assembly != false,
+           "Need to define board_information_for_assembly for cuckoo tests")
   }
 
   # Guest's specific core realm (not based on core_realm_shards).
@@ -73,6 +73,20 @@ if (labels.images == "//build/images/bringup") {
     platform = {
       build_type = "eng"
       feature_set_level = "utility"
+      storage = {
+        configure_fshost = true
+        filesystems = {
+          no_zxcrypt = true
+          volume = {
+            fvm = {
+              data = {
+              }
+              blob = {
+              }
+            }
+          }
+        }
+      }
     }
   }
 
@@ -80,17 +94,16 @@ if (labels.images == "//build/images/bringup") {
   assembled_system("guest") {
     testonly = true
 
-    # The guest image always needs to have either an FVM or Fxfs, because it has base packages.
-    generate_fvm = !fxfs_blob
-    generate_fxfs = fxfs_blob
-    generate_fvm_fastboot = !fxfs_blob && assembly_generate_fvm_fastboot
-    generate_fvm_nand = !fxfs_blob && assembly_generate_fvm_nand
+    generate_fvm = true
+    generate_fvm_fastboot = assembly_generate_fvm_fastboot
+    generate_fvm_nand = assembly_generate_fvm_nand
     generate_vbmeta = use_vbmeta
 
     namespace = "guest"
     image_name = "fuchsia"
-    assembly_images_config_label = images_config_label
     product_assembly_config_label = ":product_assembly_config"
+    board_config = board_information_for_assembly
+    use_assembly_fshost = true
 
     # As `:product_assembly_config` specifies an `eng` build-type, the assembly
     # needs to be allowed to use the "eng" platform bundles as deps / inputs.
@@ -131,6 +144,7 @@ if (labels.images == "//build/images/bringup") {
     ]
 
     fshost_config = {
+      forward_variables_from(board_fshost_config, "*")
       no_zxcrypt = true
     }
 

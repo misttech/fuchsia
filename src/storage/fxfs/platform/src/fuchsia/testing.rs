@@ -4,9 +4,8 @@
 
 use {
     crate::fuchsia::{
-        component::spawn_on_pager_executor, directory::FxDirectory, file::FxFile,
-        fxblob::BlobDirectory, pager::PagerBackedVmo, volume::FxVolumeAndRoot,
-        volumes_directory::VolumesDirectory,
+        directory::FxDirectory, file::FxFile, fxblob::BlobDirectory, pager::PagerBackedVmo,
+        volume::FxVolumeAndRoot, volumes_directory::VolumesDirectory,
     },
     anyhow::Context,
     anyhow::Error,
@@ -21,12 +20,13 @@ use {
     fxfs_insecure_crypto::InsecureCrypt,
     std::sync::{Arc, Weak},
     storage_device::{fake_device::FakeDevice, DeviceHolder},
-    vfs::path::Path,
+    vfs::{path::Path, temp_clone::unblock},
 };
 
 struct State {
     filesystem: OpenFxFilesystem,
     volume: FxVolumeAndRoot,
+    volume_out_dir: Option<fio::DirectoryProxy>,
     root: fio::DirectoryProxy,
     volumes_directory: Arc<VolumesDirectory>,
 }
@@ -40,13 +40,19 @@ pub struct TestFixtureOptions {
     pub encrypted: bool,
     pub as_blob: bool,
     pub format: bool,
+    pub serve_volume: bool,
 }
 
 impl TestFixture {
     pub async fn new() -> Self {
         Self::open(
             DeviceHolder::new(FakeDevice::new(16384, 512)),
-            TestFixtureOptions { encrypted: true, as_blob: false, format: true },
+            TestFixtureOptions {
+                encrypted: true,
+                as_blob: false,
+                format: true,
+                serve_volume: false,
+            },
         )
         .await
     }
@@ -54,19 +60,19 @@ impl TestFixture {
     pub async fn new_unencrypted() -> Self {
         Self::open(
             DeviceHolder::new(FakeDevice::new(16384, 512)),
-            TestFixtureOptions { encrypted: false, as_blob: false, format: true },
+            TestFixtureOptions {
+                encrypted: false,
+                as_blob: false,
+                format: true,
+                serve_volume: false,
+            },
         )
         .await
     }
 
     pub async fn open(device: DeviceHolder, options: TestFixtureOptions) -> Self {
         let (filesystem, volume, volumes_directory) = if options.format {
-            let filesystem = FxFilesystemBuilder::new()
-                .background_task_spawner(spawn_on_pager_executor)
-                .format(true)
-                .open(device)
-                .await
-                .unwrap();
+            let filesystem = FxFilesystemBuilder::new().format(true).open(device).await.unwrap();
             let root_volume = root_volume(filesystem.clone()).await.unwrap();
             let store = root_volume
                 .new_volume(
@@ -89,11 +95,7 @@ impl TestFixture {
             };
             (filesystem, vol, volumes_directory)
         } else {
-            let filesystem = FxFilesystemBuilder::new()
-                .background_task_spawner(spawn_on_pager_executor)
-                .open(device)
-                .await
-                .unwrap();
+            let filesystem = FxFilesystemBuilder::new().open(device).await.unwrap();
             let root_volume = root_volume(filesystem.clone()).await.unwrap();
             let store = root_volume
                 .volume(
@@ -127,8 +129,19 @@ impl TestFixture {
             Path::dot(),
             ServerEnd::new(server_end.into_channel()),
         );
+
+        let volume_out_dir = if options.serve_volume {
+            let (out_dir, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>()
+                .expect("create_proxy failed");
+            volumes_directory
+                .serve_volume(&volume, server_end, options.as_blob)
+                .expect("serve_volume failed");
+            Some(out_dir)
+        } else {
+            None
+        };
         Self {
-            state: Some(State { filesystem, volume, root, volumes_directory }),
+            state: Some(State { filesystem, volume, volume_out_dir, root, volumes_directory }),
             encrypted: options.encrypted,
         }
     }
@@ -141,8 +154,16 @@ impl TestFixture {
     ///   * fsck passes.
     ///   * There are no dangling references to the device or the volume.
     pub async fn close(mut self) -> DeviceHolder {
-        let State { filesystem, volume, root, volumes_directory } =
+        let State { filesystem, volume, volume_out_dir, root, volumes_directory } =
             std::mem::take(&mut self.state).unwrap();
+        if let Some(out_dir) = volume_out_dir {
+            out_dir
+                .close()
+                .await
+                .expect("FIDL call failed")
+                .map_err(Status::from_raw)
+                .expect("close out_dir failed");
+        }
         // Close the root node and ensure that there's no remaining references to |vol|, which would
         // indicate a reference cycle or other leak.
         root.close()
@@ -211,6 +232,15 @@ impl TestFixture {
     pub fn volumes_directory(&self) -> &Arc<VolumesDirectory> {
         &self.state.as_ref().unwrap().volumes_directory
     }
+
+    pub fn volume_out_dir(&self) -> &fio::DirectoryProxy {
+        self.state
+            .as_ref()
+            .unwrap()
+            .volume_out_dir
+            .as_ref()
+            .expect("Did you forget to set `serve_volume` in TestFixtureOptions?")
+    }
 }
 
 impl Drop for TestFixture {
@@ -271,10 +301,14 @@ pub async fn open_dir_checked(
 }
 
 /// Utility function to write to an `FxFile`.
-pub fn write_at(file: &FxFile, offset: u64, content: &[u8]) -> Result<usize, Error> {
+pub async fn write_at(file: &FxFile, offset: u64, content: &[u8]) -> Result<usize, Error> {
     let stream = zx::Stream::create(zx::StreamOptions::MODE_WRITE, file.vmo(), 0)
         .context("stream create failed")?;
-    stream
-        .writev_at(zx::StreamWriteOptions::empty(), offset, &[content])
-        .context("stream write failed")
+    let content = content.to_vec();
+    unblock(move || {
+        stream
+            .writev_at(zx::StreamWriteOptions::empty(), offset, &[&content])
+            .context("stream write failed")
+    })
+    .await
 }

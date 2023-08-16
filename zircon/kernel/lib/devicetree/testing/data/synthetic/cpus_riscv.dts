@@ -97,7 +97,7 @@
 						cpu = <0x05>;
 					};
 				};
-				cluster2 {
+				cluster1 {
 					core0 {
 						cpu = <0x03>;
 					};

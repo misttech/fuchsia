@@ -49,8 +49,8 @@ import("//src/developer/ffx/build/ffx_action.gni")
 #
 # Product Assembly parameters:
 #
-#   assembly_images_config_label (required)
-#     [label] A label for the above images config file.
+#   board_config (required)
+#     [label] A board config file.
 #
 #   product_assembly_config_label (required)
 #     [label] A label for the product assembly config, should be a
@@ -115,6 +115,10 @@ import("//src/developer/ffx/build/ffx_action.gni")
 #   use_assembly_fshost (default: false)
 #     [boolean] Whether to build the fshost component
 #
+#   skip_fshost_validator (default: false)
+#     [boolean] Whether to skip the comparison of the GN fshost to the assembly
+#     fshost. This is only valid when use_assembly_fshost=true.
+#
 #   cmdline (optional)
 #     [list of strings] Kernel command line text.
 #
@@ -174,7 +178,7 @@ import("//src/developer/ffx/build/ffx_action.gni")
 #
 #   These arguments help inform GN what to put in `outputs = []`.
 #   These do not actually cause the images to get generated.
-#   `assembly_images_config_label` is the config that declares what images to
+#   `product_assembly_config_label` is the config that declares what images to
 #   generate.
 #
 #   image_name (optional; default: target_name)
@@ -216,8 +220,7 @@ template("assembled_system") {
   assert(defined(invoker.bootfs_labels), "Need to define bootfs_labels")
   assert(defined(invoker.product_assembly_config_label),
          "Need to define product_assembly_config_label")
-  assert(defined(invoker.assembly_images_config_label),
-         "Need to define assembly_images_config_label")
+  assert(defined(invoker.board_config), "Need to define board_config")
 
   _generate_fvm = false
   if (defined(invoker.generate_fvm)) {
@@ -339,7 +342,6 @@ template("assembled_system") {
     assembly_generated_packages = "${_namespace}.assembly_generated_packages"
     compare_command_logs = "${_namespace}.compare_command_logs"
     compare_images_manifests = "${_namespace}.compare_images_manifests"
-    images_config = invoker.assembly_images_config_label
 
     # *_platform_aib_labels come from //bundles/assembly/platform_aibs.gni
     if (defined(invoker.use_bringup_platform_bundles_only) &&
@@ -375,12 +377,7 @@ template("assembled_system") {
     image_assembly_inputs =
         "$target_out_dir/${_namespace}.image_assembly_inputs"
 
-    gn_images_config = "$target_out_dir/${_namespace}.images_config.json"
-
-    images_config =
-        get_label_info(invoker.assembly_images_config_label, "target_out_dir") +
-        "/" + get_label_info(invoker.assembly_images_config_label, "name") +
-        ".json"
+    board_config = invoker.board_config
 
     outdir = "$target_out_dir/$_namespace"
     gendir = "$outdir/gen"
@@ -513,6 +510,11 @@ template("assembled_system") {
   _use_assembly_fshost =
       defined(invoker.use_assembly_fshost) && invoker.use_assembly_fshost
 
+  _skip_fshost_validator = !_use_assembly_fshost
+  if (_use_assembly_fshost && defined(invoker.skip_fshost_validator)) {
+    _skip_fshost_validator = invoker.skip_fshost_validator
+  }
+
   # Defaults to true if the invoker doesn't pass "include_shell_commands"
   _include_shell_commands = _supports_blobs
   if (defined(invoker.include_shell_commands)) {
@@ -641,9 +643,13 @@ template("assembled_system") {
   ffx_action(labels.product_assembler) {
     forward_variables_from(invoker,
                            [
+                             "deps",
                              "testonly",
                              "visibility",
                            ])
+    if (!defined(deps)) {
+      deps = []
+    }
 
     # This will not be resolved except by moving to Bazel.
     hermetic_deps = false
@@ -660,14 +666,6 @@ template("assembled_system") {
       rebase_path(files.product_assembly_config, root_build_dir),
     ]
 
-    # If it's not set, assembly will fail, but this will at least allow GN to
-    # complete in situations where assembly won't be run.
-    if (board_information_for_assembly != false) {
-      args += [
-        "--board-info",
-        rebase_path(board_information_for_assembly, root_build_dir),
-      ]
-    }
     args += [
       "--input-bundles-dir",
       rebase_path(files.platform_common_aibs_dir, root_build_dir),
@@ -677,15 +675,24 @@ template("assembled_system") {
       rebase_path(files.outdir, root_build_dir),
     ]
 
-    deps = [
-             ":${labels.legacy_assembly_input_bundle}",
-             labels.product_assembly_config,
-           ] + labels.platform_common_aibs
+    deps += [
+              ":${labels.legacy_assembly_input_bundle}",
+              labels.product_assembly_config,
+            ] + labels.platform_common_aibs
 
     inputs = [
                files.legacy_assembly_input_bundle_manifest,
                files.product_assembly_config,
              ] + files.platform_common_aibs
+
+    # _board_config can be false for builds without a board (sdk builds).
+    if (files.board_config != false) {
+      args += [
+        "--board-info",
+        rebase_path(files.board_config, root_build_dir),
+      ]
+      inputs += [ files.board_config ]
+    }
 
     outputs = [ files.regenerated_image_assembly_config ]
 
@@ -703,17 +710,13 @@ template("assembled_system") {
                              "testonly",
                              "visibility",
                            ])
-    deps = [
-      ":${labels.product_assembler}",
-      labels.images_config,
-    ]
+    deps = [ ":${labels.product_assembler}" ]
 
     image_assembly_config = files.regenerated_image_assembly_config
-    images_config = files.images_config
     output = files.image_assembly_inputs
   }
 
-  if (_use_assembly_fshost) {
+  if (!_skip_fshost_validator) {
     python_action("${labels.fshost_validator}") {
       forward_variables_from(invoker,
                              [
@@ -786,8 +789,6 @@ template("assembled_system") {
       "create-system",
       "--image-assembly-config",
       rebase_path(files.regenerated_image_assembly_config, root_build_dir),
-      "--images",
-      rebase_path(files.images_config, root_build_dir),
       "--gendir",
       rebase_path(files.gendir, root_build_dir),
       "--outdir",
@@ -815,21 +816,15 @@ template("assembled_system") {
     if (defined(invoker.deps)) {
       deps += invoker.deps
     }
-    deps += [
-      ":${labels.product_assembler}",
-      labels.images_config,
-    ]
+    deps += [ ":${labels.product_assembler}" ]
 
     # Validate that the Assembly-built fshost is identical to the GN-built
     # fshost until the latter is removed.
-    if (_use_assembly_fshost) {
+    if (!_skip_fshost_validator) {
       deps += [ ":${labels.fshost_validator}" ]
     }
 
-    inputs = [
-      files.images_config,
-      files.regenerated_image_assembly_config,
-    ]
+    inputs = [ files.regenerated_image_assembly_config ]
     if (defined(invoker.inputs)) {
       inputs += invoker.inputs
     }
@@ -1179,7 +1174,7 @@ template("assembled_system") {
     dest_dir = rebase_path("${files.outdir}/${labels.bazel_legacy_aib}",
                            root_build_dir)
     deps = [ ":${labels.legacy_assembly_input_bundle}" ]
-    if (_use_assembly_fshost) {
+    if (!_skip_fshost_validator && use_bazel_images_only) {
       # TODO(b/287558873) Remove once fshost is migrated
       deps += [ ":${labels.fshost_validator}" ]
     }
@@ -1194,10 +1189,7 @@ template("assembled_system") {
 
     # public_deps is used, so that the outputs of these dependencies are
     # available to external targets.
-    public_deps = [
-      ":${labels.image_assembler}",
-      labels.images_config,
-    ]
+    public_deps = [ ":${labels.image_assembler}" ]
     if (defined(invoker.output_dir)) {
       public_deps += [ ":${labels.copy_images}" ]
     }

@@ -125,22 +125,26 @@ func serialize(e []element) []ElementStr {
 	return ret
 }
 
-// filterStructs takes the list of structs, and excludes all structs that are
-// used as anonymous transactional message bodies, as those are explicitly
-// disregarded by the summarizer. All structs used as payloads are added to the
-// payload map.
-func filterStructs(structs []fidlgen.Struct, mtum fidlgen.MethodTypeUsageMap) []fidlgen.Struct {
+// filterStructs filters out structs that should not be included in API summaries.
+func filterStructs(structs []fidlgen.Struct) []fidlgen.Struct {
 	var out []fidlgen.Struct
 	for _, s := range structs {
-		if k, ok := mtum[s.Name]; ok {
-			if s.IsAnonymous() && k != fidlgen.UsedOnlyAsPayload {
-				// Structs that are only used as anonymous message bodies are not
-				// included in the summary output because their arguments are flattened
-				// into the method signature instead.
-				continue
-			}
+		if s.IsEmptySuccessStruct {
+			continue
 		}
 		out = append(out, s)
+	}
+	return out
+}
+
+// filterUnions filters out unions that should not be included in API summaries.
+func filterUnions(unions []fidlgen.Union) []fidlgen.Union {
+	var out []fidlgen.Union
+	for _, u := range unions {
+		if u.IsResult {
+			continue
+		}
+		out = append(out, u)
 	}
 	return out
 }
@@ -149,11 +153,6 @@ func filterStructs(structs []fidlgen.Struct, mtum fidlgen.MethodTypeUsageMap) []
 func Summarize(root fidlgen.Root) summary {
 	var s summarizer
 
-	// Do a first pass of the protocols, creating a map of all names of types that
-	// are used as a transactional message bodies or payloads to the kind of
-	// usage (message body, payload, or both).
-	mtum := root.MethodTypeUsageMap()
-
 	s.registerStructs(root.Structs)
 	s.registerStructs(root.ExternalStructs)
 	s.registerProtocolNames(root.Protocols)
@@ -161,9 +160,9 @@ func Summarize(root fidlgen.Root) summary {
 	s.addConsts(root.Consts)
 	s.addBits(root.Bits)
 	s.addEnums(root.Enums)
-	s.addStructs(filterStructs(root.Structs, mtum))
+	s.addStructs(filterStructs(root.Structs))
 	s.addTables(root.Tables)
-	s.addUnions(root.Unions)
+	s.addUnions(filterUnions(root.Unions))
 	s.addProtocols(root.Protocols)
 	s.addElement(&library{r: root})
 

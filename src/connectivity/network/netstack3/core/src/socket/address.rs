@@ -8,11 +8,11 @@ use core::num::NonZeroU16;
 
 use derivative::Derivative;
 use net_types::{
-    ip::{Ip, IpAddress},
+    ip::{GenericOverIp, Ip, IpAddress},
     SpecifiedAddr,
 };
 
-use crate::socket::{AddrVec, SocketMapAddrSpec};
+use crate::socket::{datagram::DualStackIpExt, AddrVec, SocketMapAddrSpec};
 
 /// The IP address and identifier (port) of a listening socket.
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
@@ -25,8 +25,8 @@ pub(crate) struct ListenerIpAddr<A: IpAddress, LI> {
 
 /// The address of a listening socket.
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub(crate) struct ListenerAddr<A: IpAddress, D, P> {
-    pub(crate) ip: ListenerIpAddr<A, P>,
+pub(crate) struct ListenerAddr<A, D> {
+    pub(crate) ip: A,
     pub(crate) device: Option<D>,
 }
 
@@ -38,10 +38,33 @@ pub(crate) struct ConnIpAddr<A: IpAddress, LI, RI> {
 }
 
 /// The address of a connected socket.
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, GenericOverIp, Hash, PartialEq)]
 pub(crate) struct ConnAddr<A: IpAddress, D, LI, RI> {
     pub(crate) ip: ConnIpAddr<A, LI, RI>,
     pub(crate) device: Option<D>,
+}
+
+/// The IP address and identifier (port) of a dual-stack listening socket.
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct DualStackListenerIpAddr<A: IpAddress, LI>
+where
+    A::Version: DualStackIpExt,
+{
+    /// The specific address being listened on.
+    pub(crate) addr: DualStackIpAddr<A>,
+    /// The local identifier (i.e. port for TCP/UDP).
+    pub(crate) identifier: LI,
+}
+
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum DualStackIpAddr<A: IpAddress>
+where
+    A::Version: DualStackIpExt,
+    // TODO(https://fxbug.dev/132092): Use a witness type for these addresses
+    // that asserts that they can't be IPv4-mapped-IPv6 addresses.
+{
+    ThisStack(Option<SpecifiedAddr<A>>),
+    OtherStack(Option<SpecifiedAddr<<<A::Version as DualStackIpExt>::OtherVersion as Ip>::Addr>>),
 }
 
 /// Uninstantiable type used to implement [`SocketMapAddrSpec`] for addresses
@@ -69,10 +92,10 @@ impl<I: Ip, A: SocketMapAddrSpec> From<ConnIpAddr<I::Addr, A::LocalIdentifier, A
     }
 }
 
-impl<I: Ip, D, A: SocketMapAddrSpec> From<ListenerAddr<I::Addr, D, A::LocalIdentifier>>
-    for AddrVec<I, D, A>
+impl<I: Ip, D, A: SocketMapAddrSpec>
+    From<ListenerAddr<ListenerIpAddr<I::Addr, A::LocalIdentifier>, D>> for AddrVec<I, D, A>
 {
-    fn from(listener: ListenerAddr<I::Addr, D, A::LocalIdentifier>) -> Self {
+    fn from(listener: ListenerAddr<ListenerIpAddr<I::Addr, A::LocalIdentifier>, D>) -> Self {
         AddrVec::Listen(listener)
     }
 }

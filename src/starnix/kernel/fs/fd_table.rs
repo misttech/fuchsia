@@ -3,9 +3,14 @@
 // found in the LICENSE file.
 
 use bitflags::bitflags;
-use std::{collections::HashMap, ops::DerefMut, sync::Arc};
+use std::{collections::HashMap, ops::DerefMut};
 
-use crate::{fs::*, lock::Mutex, task::Task, types::*};
+use crate::{
+    fs::*,
+    lock::Mutex,
+    task::{CurrentTask, Task},
+    types::*,
+};
 
 bitflags! {
     pub struct FdFlags: u32 {
@@ -13,12 +18,16 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FdTableId(usize);
 
 impl FdTableId {
     fn new(id: *const HashMap<FdNumber, FdTableEntry>) -> Self {
         Self(id as usize)
+    }
+
+    pub fn raw(&self) -> usize {
+        self.0
     }
 }
 
@@ -126,23 +135,28 @@ impl FdTableInner {
         FdTableId::new(&self.map_handle.lock().map as *const HashMap<FdNumber, FdTableEntry>)
     }
 
-    fn unshare(&self) -> FdTableInner {
+    fn unshare(&self) -> OwnedRef<FdTableInner> {
         let inner = {
             let new_fdmap = self.map_handle.lock().clone();
             FdTableInner { map_handle: Mutex::new(new_fdmap) }
         };
         let id = inner.id();
         inner.map_handle.lock().map.values_mut().for_each(|entry| entry.fd_table_id = id);
-        inner
+        OwnedRef::new(inner)
+    }
+}
+
+impl Releasable for FdTableInner {
+    type Context = CurrentTask;
+
+    fn release(&self, _current_task: &CurrentTask) {
+        *self.map_handle.lock() = FdMap::default();
     }
 }
 
 #[derive(Debug, Default)]
 pub struct FdTable {
-    // TODO(fxb/122600) The external mutex is only used to be able to drop the file descriptor
-    // while keeping the table itself. It will be unneeded once the live state of a task is deleted
-    // as soon as the task dies, instead of relying on Drop.
-    table: Mutex<Arc<FdTableInner>>,
+    table: Mutex<OwnedRef<FdTableInner>>,
 }
 
 pub enum TargetFdNumber {
@@ -162,20 +176,17 @@ impl FdTable {
     }
 
     pub fn fork(&self) -> FdTable {
-        let inner = self.table.lock().unshare();
-        FdTable { table: Mutex::new(Arc::new(inner)) }
+        let table = Mutex::new(self.table.lock().unshare());
+        FdTable { table }
     }
 
-    pub fn unshare(&self) {
-        let doomed_inner;
-        {
-            let mut inner = self.table.lock();
-            doomed_inner = inner.clone();
-            let unshared_inner = inner.unshare();
-            *inner = Arc::new(unshared_inner);
-        }
-        // Drop the doomed inner table after we release the table lock.
-        std::mem::drop(doomed_inner);
+    pub fn unshare(&self, current_task: &CurrentTask) {
+        let old_table = {
+            let mut table = self.table.lock();
+            let new_table = table.unshare();
+            std::mem::replace(table.deref_mut(), new_table)
+        };
+        old_table.release(current_task);
     }
 
     pub fn exec(&self) {
@@ -311,15 +322,6 @@ impl FdTable {
         }
     }
 
-    /// Drop the fd table, closing any files opened exclusively by this table.
-    // TODO(fxb/122600) This will be unneeded once the live state of a task is deleted as soon as
-    // the task dies, instead of relying on Drop.
-    pub fn drop_local(&self) {
-        // Replace the file table with an empty one. Extract it first so that the drop happens
-        // without the lock in case a file call back to the table when it is closed.
-        let _internal_state = { std::mem::take(self.table.lock().deref_mut()) };
-    }
-
     pub fn get_fd_flags(&self, fd: FdNumber) -> Result<FdFlags, Errno> {
         self.get_with_flags(fd).map(|(_file, flags)| flags)
     }
@@ -360,6 +362,17 @@ impl FdTable {
     }
 }
 
+impl Releasable for FdTable {
+    type Context = CurrentTask;
+    /// Drop the fd table, closing any files opened exclusively by this table.
+    fn release(&self, current_task: &CurrentTask) {
+        let table = OwnedRef::take(&self.table.lock());
+        if let Some(table) = table {
+            table.release(current_task);
+        }
+    }
+}
+
 impl Clone for FdTable {
     fn clone(&self) -> Self {
         FdTable { table: Mutex::new(self.table.lock().clone()) }
@@ -369,6 +382,7 @@ impl Clone for FdTable {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::sync::Arc;
 
     use crate::{fs::fuchsia::SyslogFile, task::*, testing::*};
 
@@ -394,6 +408,8 @@ mod test {
         assert!(Arc::ptr_eq(&files.get(fd0).unwrap(), &file));
         assert!(Arc::ptr_eq(&files.get(fd1).unwrap(), &file));
         assert_eq!(files.get(FdNumber::from_raw(fd1.raw() + 1)).map(|_| ()), error!(EBADF));
+
+        files.release(&current_task);
     }
 
     #[::fuchsia::test]
@@ -416,6 +432,9 @@ mod test {
         files.set_fd_flags(fd0, FdFlags::CLOEXEC).unwrap();
         assert_eq!(FdFlags::CLOEXEC, files.get_fd_flags(fd0).unwrap());
         assert_ne!(FdFlags::CLOEXEC, forked.get_fd_flags(fd0).unwrap());
+
+        forked.release(&current_task);
+        files.release(&current_task);
     }
 
     #[::fuchsia::test]
@@ -436,6 +455,8 @@ mod test {
 
         assert!(files.get(fd0).is_err());
         assert!(files.get(fd1).is_ok());
+
+        files.release(&current_task);
     }
 
     #[::fuchsia::test]
@@ -459,5 +480,7 @@ mod test {
         // The next FD we insert fills in the hole we created.
         let another_fd = add(&current_task, &files, file).unwrap();
         assert_eq!(another_fd.raw(), 0);
+
+        files.release(&current_task);
     }
 }

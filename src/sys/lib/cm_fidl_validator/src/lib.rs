@@ -860,10 +860,7 @@ impl<'a> ValidationContext<'a> {
             _ => false,
         };
         match (is_use_from_child, dependency_type) {
-            (
-                false,
-                Some(fdecl::DependencyType::Weak) | Some(fdecl::DependencyType::WeakForMigration),
-            ) => {
+            (false, Some(fdecl::DependencyType::Weak)) => {
                 self.errors.push(Error::invalid_field(decl, "dependency_type"));
             }
             _ => {}
@@ -2068,15 +2065,6 @@ impl<'a> ValidationContext<'a> {
             // Expose to framework from framework is never valid.
             self.errors.push(Error::invalid_field(DeclType::OfferEventStream, "target"));
         }
-        let source_name =
-            event_stream.source_name.as_ref().map(|value| value.as_str()).unwrap_or("");
-        match (&event_stream.filter, source_name, &event_stream.source) {
-            (Some(_), "capability_requested", _) | (Some(_), "directory_ready", _) => {}
-            (Some(_), _, Some(fdecl::Ref::Framework(_))) => {
-                self.errors.push(Error::invalid_field(decl, "filter"));
-            }
-            _ => {}
-        }
         if let Some(scope) = &event_stream.scope {
             if scope.is_empty() {
                 self.errors.push(Error::invalid_field(decl, "scope"));
@@ -2487,7 +2475,6 @@ mod tests {
         ) => {
             $(
                 #[test_case(fdecl::DependencyType::Weak)]
-                #[test_case(fdecl::DependencyType::WeakForMigration)]
                 fn $test_name(weak_dep: fdecl::DependencyType) {
                     let mut decl = new_component_decl();
                     let offers = vec![
@@ -3679,7 +3666,7 @@ mod tests {
                             ..Default::default()
                         }),
                         fdecl::Use::Directory(fdecl::UseDirectory {
-                            dependency_type: Some(fdecl::DependencyType::WeakForMigration),
+                            dependency_type: Some(fdecl::DependencyType::Weak),
                             source: Some(fdecl::Ref::Child(fdecl::ChildRef{ name: "child".to_string(), collection: None})),
                             source_name: Some("DirectoryName".to_string()),
                             target_path: Some("/data/DirectoryName".to_string()),
@@ -3960,7 +3947,6 @@ mod tests {
                 decl.offers = Some(vec![
                     fdecl::Offer::EventStream(fdecl::OfferEventStream {
                         source_name: Some("capability_requested".to_string()),
-                        filter: Some(fdata::Dictionary { entries: None, ..Default::default() }),
                         source: Some(fdecl::Ref::Parent(fdecl::ParentRef{})),
                         target: Some(fdecl::Ref::Child(fdecl::ChildRef{name: "test2".to_string(), collection: None})),
                         scope: Some(vec![fdecl::Ref::Child(fdecl::ChildRef{name: "test2".to_string(), collection: None})]),
@@ -3969,7 +3955,6 @@ mod tests {
                     }),
                     fdecl::Offer::EventStream(fdecl::OfferEventStream {
                         source_name: Some("directory_ready".to_string()),
-                        filter: Some(fdata::Dictionary { entries: None, ..Default::default() }),
                         source: Some(fdecl::Ref::Child(fdecl::ChildRef{name: "test".to_string(), collection: None})),
                         target: Some(fdecl::Ref::Child(fdecl::ChildRef{name: "test2".to_string(), collection: None})),
                         target_name: Some("diagnostics_ready".to_string()),
@@ -3996,51 +3981,6 @@ mod tests {
                 decl
             },
             result = Ok(()),
-        },
-        test_validate_event_stream_offer_to_scope_with_invalid_capability_name => {
-            input = {
-                let mut decl = new_component_decl();
-                decl.offers = Some(vec![
-                    fdecl::Offer::EventStream(fdecl::OfferEventStream {
-                        source_name: Some("some_invalid_capability".to_string()),
-                        filter: Some(fdata::Dictionary { entries: None, ..Default::default() }),
-                        source: Some(fdecl::Ref::Framework(fdecl::FrameworkRef{})),
-                        target: Some(fdecl::Ref::Child(fdecl::ChildRef{name: "test2".to_string(), collection: None})),
-                        scope: Some(vec![fdecl::Ref::Child(fdecl::ChildRef{name: "test2".to_string(), collection: None})]),
-                        target_name: Some("started".to_string()),
-                        ..Default::default()
-                    }),
-                    fdecl::Offer::EventStream(fdecl::OfferEventStream {
-                        source_name: Some("directory_ready".to_string()),
-                        filter: Some(fdata::Dictionary { entries: None, ..Default::default() }),
-                        source: Some(fdecl::Ref::Child(fdecl::ChildRef{name: "test".to_string(), collection: None})),
-                        target: Some(fdecl::Ref::Child(fdecl::ChildRef{name: "test2".to_string(), collection: None})),
-                        target_name: Some("diagnostics_ready".to_string()),
-                        ..Default::default()
-                    }),
-                ]);
-                decl.children = Some(vec![fdecl::Child{
-                    name: Some("test".to_string()),
-                    url: Some("fuchsia-pkg://fuchsia.com/logger#meta/logger.cm".to_string()),
-                    startup: Some(fdecl::StartupMode::Lazy),
-                    on_terminate: None,
-                    environment: None,
-                    ..Default::default()
-                },
-                fdecl::Child{
-                    name: Some("test2".to_string()),
-                    url: Some("fuchsia-pkg://fuchsia.com/fake_component#meta/fake_component.cm".to_string()),
-                    startup: Some(fdecl::StartupMode::Lazy),
-                    on_terminate: None,
-                    environment: None,
-                    ..Default::default()
-                }
-                ]);
-                decl
-            },
-            result = Err(ErrorList::new(vec![
-                Error::InvalidField(DeclField { decl: DeclType::OfferEventStream, field: "filter".to_string() }),
-            ])),
         },
         test_validate_event_stream_offer_with_no_source_name_invalid => {
             input = {

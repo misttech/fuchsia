@@ -14,7 +14,7 @@ use {
     anyhow::Error,
     async_trait::async_trait,
     fidl::endpoints::ServerEnd,
-    fidl_fuchsia_io as fio, fuchsia_async as fasync,
+    fidl_fuchsia_io as fio,
     fuchsia_zircon::{self as zx, HandleBased, Status},
     futures::{future::BoxFuture, join},
     fxfs::{
@@ -22,7 +22,10 @@ use {
         filesystem::SyncOptions,
         log::*,
         object_handle::{ObjectHandle, ObjectProperties, ReadObjectHandle},
-        object_store::{DataObjectHandle, Timestamp},
+        object_store::{
+            transaction::{LockKey, Options},
+            DataObjectHandle, ObjectDescriptor, Timestamp,
+        },
         round::{round_down, round_up},
     },
     once_cell::sync::Lazy,
@@ -36,9 +39,13 @@ use {
     vfs::{
         attributes,
         common::rights_to_posix_mode_bits,
-        directory::entry::{DirectoryEntry, EntryInfo},
+        directory::{
+            entry::{DirectoryEntry, EntryInfo},
+            entry_container::MutableDirectory,
+        },
         execution_scope::ExecutionScope,
         file::{File, FileOptions, GetVmo, StreamIoConnection, SyncMode},
+        name::Name,
         path::Path,
         ObjectRequestRef, ProtocolsExt, ToObjectRequest,
     },
@@ -153,14 +160,11 @@ impl FxFile {
                 assert!(old & !PURGED > 0);
                 if old == 1 && self.handle.needs_flush() {
                     // Spawn a task to do the flush.
-                    let guard = self.handle.owner().scope().active_guard();
-                    fasync::Task::spawn(async move {
+                    self.handle.owner().clone().spawn(async move {
                         // Avoid infinite loops for errors.
-                        let can_flush_again = matches!(self.handle.flush().await, Ok(()));
+                        let can_flush_again = self.handle.flush().await.is_ok();
                         self.open_count_sub_one_and_maybe_flush(can_flush_again);
-                        std::mem::drop(guard);
-                    })
-                    .detach();
+                    });
                     return;
                 }
                 match self.open_count.compare_exchange_weak(
@@ -295,6 +299,33 @@ impl vfs::node::Node for FxFile {
 
     fn close(self: Arc<Self>) {
         self.open_count_sub_one();
+    }
+
+    async fn link_into(
+        self: Arc<Self>,
+        destination_dir: Arc<dyn MutableDirectory>,
+        name: Name,
+    ) -> Result<(), zx::Status> {
+        let dir = destination_dir.into_any().downcast::<FxDirectory>().unwrap();
+        let store = self.handle.store();
+        let object_id = self.object_id();
+        let transaction = store
+            .filesystem()
+            .clone()
+            .new_transaction(
+                &[
+                    LockKey::object(store.store_object_id(), object_id),
+                    LockKey::object(store.store_object_id(), dir.object_id()),
+                ],
+                Options::default(),
+            )
+            .await
+            .map_err(map_to_status)?;
+        // Check that we're not unlinked.
+        if self.open_count.load(Ordering::Relaxed) & PURGED != 0 {
+            return Err(zx::Status::NOT_FOUND);
+        }
+        dir.link_object(transaction, &name, object_id, ObjectDescriptor::File).await
     }
 }
 
@@ -438,7 +469,6 @@ impl File for FxFile {
     }
 }
 
-#[async_trait]
 impl PagerBackedVmo for FxFile {
     fn pager_key(&self) -> u64 {
         self.object_id()
@@ -448,10 +478,12 @@ impl PagerBackedVmo for FxFile {
         self.handle.vmo()
     }
 
-    async fn page_in(self: Arc<Self>, mut range: Range<u64>) {
+    fn page_in(self: Arc<Self>, mut range: Range<u64>) {
         async_enter!("page_in");
         const ZERO_VMO_SIZE: u64 = TRANSFER_BUFFER_MAX_SIZE;
         static ZERO_VMO: Lazy<zx::Vmo> = Lazy::new(|| zx::Vmo::create(ZERO_VMO_SIZE).unwrap());
+
+        let volume = self.handle.owner();
 
         let vmo = self.vmo();
         let aligned_size =
@@ -459,7 +491,7 @@ impl PagerBackedVmo for FxFile {
         let mut offset = std::cmp::max(range.start, aligned_size);
         while offset < range.end {
             let end = std::cmp::min(range.end, offset + ZERO_VMO_SIZE);
-            self.handle.owner().pager().supply_pages(vmo, offset..end, &ZERO_VMO, 0);
+            volume.pager().supply_pages(vmo, offset..end, &ZERO_VMO, 0);
             offset = end;
         }
         if aligned_size < range.end {
@@ -475,61 +507,66 @@ impl PagerBackedVmo for FxFile {
         if range.end <= range.start {
             return;
         }
+
         range.start = round_down(range.start, self.handle.block_size());
 
-        static TRANSFER_BUFFERS: Lazy<TransferBuffers> = Lazy::new(|| TransferBuffers::new());
-        let (buffer_result, transfer_buffer) =
-            join!(async { self.handle.read_uncached(range.clone()).await }, async {
-                let buffer = TRANSFER_BUFFERS.get().await;
-                // Committing pages in the kernel is time consuming, so we do this in parallel
-                // to the read.  This assumes that the implementation of join! polls the other
-                // future first (which happens to be the case for now).
-                buffer.commit(range.end - range.start);
-                buffer
-            });
-        let buffer = match buffer_result {
-            Ok(buffer) => buffer,
-            Err(e) => {
-                error!(
-                    ?range,
-                    oid = self.handle.uncached_handle().object_id(),
-                    error = ?e,
-                    "Failed to page-in range"
-                );
-                self.handle.pager().report_failure(self.vmo(), range.clone(), zx::Status::IO);
-                return;
-            }
-        };
-        let mut buf = buffer.as_slice();
-        while !buf.is_empty() {
-            let (source, remainder) =
-                buf.split_at(std::cmp::min(buf.len(), TRANSFER_BUFFER_MAX_SIZE as usize));
-            buf = remainder;
-            let range_chunk = range.start..range.start + source.len() as u64;
-            match transfer_buffer.vmo().write(source, transfer_buffer.offset()) {
-                Ok(_) => self.handle.pager().supply_pages(
-                    self.vmo(),
-                    range_chunk,
-                    transfer_buffer.vmo(),
-                    transfer_buffer.offset(),
-                ),
+        volume.clone().spawn(async move {
+            static TRANSFER_BUFFERS: Lazy<TransferBuffers> = Lazy::new(|| TransferBuffers::new());
+            let (buffer_result, transfer_buffer) =
+                join!(async { self.handle.read_uncached(range.clone()).await }, async {
+                    let buffer = TRANSFER_BUFFERS.get().await;
+                    // Committing pages in the kernel is time consuming, so we do this in parallel
+                    // to the read.  This assumes that the implementation of join! polls the other
+                    // future first (which happens to be the case for now).
+                    buffer.commit(range.end - range.start);
+                    buffer
+                });
+            let buffer = match buffer_result {
+                Ok(buffer) => buffer,
                 Err(e) => {
-                    // Failures here due to OOM will get reported as IO errors, as those are
-                    // considered transient.
                     error!(
+                        ?range,
+                        oid = self.handle.uncached_handle().object_id(),
+                        error = ?e,
+                        "Failed to page-in range"
+                    );
+                    self.handle.pager().report_failure(self.vmo(), range.clone(), zx::Status::IO);
+                    return;
+                }
+            };
+            let mut buf = buffer.as_slice();
+            while !buf.is_empty() {
+                let (source, remainder) =
+                    buf.split_at(std::cmp::min(buf.len(), TRANSFER_BUFFER_MAX_SIZE as usize));
+                buf = remainder;
+                let range_chunk = range.start..range.start + source.len() as u64;
+                match transfer_buffer.vmo().write(source, transfer_buffer.offset()) {
+                    Ok(_) => self.handle.pager().supply_pages(
+                        self.vmo(),
+                        range_chunk,
+                        transfer_buffer.vmo(),
+                        transfer_buffer.offset(),
+                    ),
+                    Err(e) => {
+                        // Failures here due to OOM will get reported as IO errors, as those are
+                        // considered transient.
+                        error!(
                             range = ?range_chunk,
                             error = ?e,
                             "Failed to transfer range");
-                    self.handle.pager().report_failure(self.vmo(), range_chunk, zx::Status::IO);
+                        self.handle.pager().report_failure(self.vmo(), range_chunk, zx::Status::IO);
+                    }
                 }
+                range.start += source.len() as u64;
             }
-            range.start += source.len() as u64;
-        }
+        });
     }
 
-    async fn mark_dirty(self: Arc<Self>, range: Range<u64>) {
-        async_enter!("mark_dirty");
-        self.handle.mark_dirty(range).await;
+    fn mark_dirty(self: Arc<Self>, range: Range<u64>) {
+        self.handle.owner().clone().spawn(async move {
+            async_enter!("mark_dirty");
+            self.handle.mark_dirty(range).await;
+        });
     }
 
     fn on_zero_children(self: Arc<Self>) {
@@ -748,7 +785,12 @@ mod tests {
 
         let fixture = TestFixture::open(
             reused_device,
-            TestFixtureOptions { format: false, as_blob: false, encrypted: true },
+            TestFixtureOptions {
+                format: false,
+                as_blob: false,
+                encrypted: true,
+                serve_volume: false,
+            },
         )
         .await;
         let root = fixture.root();
@@ -787,7 +829,12 @@ mod tests {
         let reused_device = {
             let fixture = TestFixture::open(
                 DeviceHolder::new(device),
-                TestFixtureOptions { format: true, as_blob: false, encrypted: true },
+                TestFixtureOptions {
+                    format: true,
+                    as_blob: false,
+                    encrypted: true,
+                    serve_volume: false,
+                },
             )
             .await;
             let root = fixture.root();
@@ -816,7 +863,12 @@ mod tests {
 
         let fixture = TestFixture::open(
             reused_device,
-            TestFixtureOptions { format: false, as_blob: false, encrypted: true },
+            TestFixtureOptions {
+                format: false,
+                as_blob: false,
+                encrypted: true,
+                serve_volume: false,
+            },
         )
         .await;
         let root = fixture.root();
@@ -845,7 +897,12 @@ mod tests {
         for i in 0..2 {
             let fixture = TestFixture::open(
                 device,
-                TestFixtureOptions { format: i == 0, as_blob: false, encrypted: true },
+                TestFixtureOptions {
+                    format: i == 0,
+                    as_blob: false,
+                    encrypted: true,
+                    serve_volume: false,
+                },
             )
             .await;
             let root = fixture.root();
@@ -1593,6 +1650,39 @@ mod tests {
         );
 
         close_file_checked(file).await;
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_flush_when_closed_from_on_zero_children() {
+        let fixture = TestFixture::new().await;
+        let root = fixture.root();
+
+        let file = open_file_checked(
+            &root,
+            fio::OpenFlags::CREATE
+                | fio::OpenFlags::RIGHT_READABLE
+                | fio::OpenFlags::RIGHT_WRITABLE
+                | fio::OpenFlags::NOT_DIRECTORY,
+            "foo",
+        )
+        .await;
+
+        file.resize(50).await.expect("resize (FIDL) failed").expect("resize failed");
+
+        {
+            let vmo = file
+                .get_backing_memory(fio::VmoFlags::READ | fio::VmoFlags::WRITE)
+                .await
+                .expect("get_backing_memory (FIDL) failed")
+                .map_err(Status::from_raw)
+                .expect("get_backing_memory failed");
+
+            std::mem::drop(file);
+
+            fasync::unblock(move || vmo.write(b"hello", 0).expect("write failed")).await;
+        }
+
         fixture.close().await;
     }
 }

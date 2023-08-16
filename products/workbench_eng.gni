@@ -40,15 +40,11 @@ bazel_product_bundle_prefix = "//products/workbench:workbench_eng"
 # TODO(issuetracker.google.com/290788730): Remove the need to specify this
 # config as well as bazel_product_bundle_prefix
 fuchsia_product_assembly_config_label = "//products/minimal"
-
-# Package to be published to universe that do not go through assembly.
-discoverable_package_labels +=
-    [ "//src/developer/debug/debug_agent:for_transition" ]
+zedboot_product_assembly_config_label = "//products/zedboot"
 
 # Kernel command line arguments.
 product_bootfs_labels += [
   "//products/kernel_cmdline:oom.reboot-timeout--low",
-  "//bundles/drivers:usb-peripheral-stack",
   "//src/sys/component_manager:component_manager_bootfs_config",
 ]
 
@@ -81,4 +77,7 @@ legacy_base_package_labels += [
   "//src/connectivity:tools",
   "//src/diagnostics/log_listener:log_listener_shell",
 ]
+
+# Debugging support
+discoverable_package_labels += [ "//src/developer/debug/debug_agent" ]
 # END: Baseline eng support

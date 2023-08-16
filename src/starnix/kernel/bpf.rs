@@ -404,6 +404,7 @@ impl FileSystemOps for BpfFs {
     fn rename(
         &self,
         _fs: &FileSystem,
+        _current_task: &CurrentTask,
         _old_parent: &FsNodeHandle,
         _old_name: &FsStr,
         _new_parent: &FsNodeHandle,
@@ -439,15 +440,6 @@ impl FsNodeOps for BpfFsDir {
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
         Ok(Box::new(MemoryDirectoryFile::new()))
-    }
-
-    fn lookup(
-        &self,
-        _node: &FsNode,
-        _current_task: &CurrentTask,
-        _name: &FsStr,
-    ) -> Result<FsNodeHandle, Errno> {
-        error!(ENOENT)
     }
 
     fn mkdir(
@@ -525,6 +517,7 @@ impl BpfFsObject {
 }
 
 impl FsNodeOps for BpfFsObject {
+    fs_node_impl_not_dir!();
     fs_node_impl_xattr_delegate!(self, self.xattrs);
 
     fn create_file_ops(

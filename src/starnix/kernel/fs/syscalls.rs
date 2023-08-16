@@ -6,7 +6,7 @@ use std::{cmp::Ordering, convert::TryInto, sync::Arc, usize};
 
 use crate::{
     arch::uapi::epoll_event,
-    fs::{buffers::*, eventfd::*, fuchsia::*, inotify::*, pipe::*, *},
+    fs::{buffers::*, eventfd::*, fuchsia::*, inotify::*, pidfd::*, pipe::*, *},
     lock::Mutex,
     logging::*,
     mm::{MemoryAccessor, MemoryAccessorExt},
@@ -63,7 +63,7 @@ pub fn sys_close_range(
         return error!(EINVAL);
     }
     if flags & CLOSE_RANGE_UNSHARE != 0 {
-        current_task.files.unshare();
+        current_task.files.unshare(current_task);
     }
     let in_range = |fd: FdNumber| fd.raw() as u32 >= first && fd.raw() as u32 <= last;
     if flags & CLOSE_RANGE_CLOEXEC != 0 {
@@ -573,8 +573,8 @@ pub fn sys_getdents64(
     let file = current_task.files.get(fd)?;
     let mut offset = file.offset.lock();
     let mut sink = DirentSink64::new(current_task, &mut offset, user_buffer, user_capacity);
-    file.readdir(current_task, &mut sink)?;
-    Ok(sink.actual())
+    let result = file.readdir(current_task, &mut sink);
+    sink.map_result_with_actual(result)
 }
 
 pub fn sys_chroot(current_task: &CurrentTask, user_path: UserCString) -> Result<(), Errno> {
@@ -668,6 +668,9 @@ pub fn sys_readlinkat(
         SymlinkTarget::Node(node) => node.path(current_task),
     };
 
+    if buffer_size == 0 {
+        return error!(EINVAL);
+    }
     // Cap the returned length at buffer_size.
     let length = std::cmp::min(buffer_size, target.len());
     current_task.write_memory(buffer, &target[..length])?;
@@ -722,12 +725,12 @@ pub fn sys_mknodat(
     mode: FileMode,
     dev: DeviceType,
 ) -> Result<(), Errno> {
-    let file_type = match mode & FileMode::IFMT {
+    let file_type = match mode.fmt() {
         FileMode::IFREG
         | FileMode::IFCHR
         | FileMode::IFBLK
         | FileMode::IFIFO
-        | FileMode::IFSOCK => mode & FileMode::IFMT,
+        | FileMode::IFSOCK => mode.fmt(),
         FileMode::EMPTY => FileMode::IFREG,
         _ => return error!(EINVAL),
     };
@@ -750,7 +753,10 @@ pub fn sys_linkat(
         return error!(EINVAL);
     }
 
-    // TODO: AT_EMPTY_PATH requires CAP_DAC_READ_SEARCH.
+    if flags & AT_EMPTY_PATH != 0 && !current_task.creds().has_capability(CAP_DAC_READ_SEARCH) {
+        return error!(ENOENT);
+    }
+
     let flags = LookupFlags::from_bits(flags, AT_EMPTY_PATH | AT_SYMLINK_FOLLOW)?;
     let target = lookup_at(current_task, old_dir_fd, old_user_path, flags)?;
     lookup_parent_at(current_task, new_dir_fd, new_user_path, |context, parent, basename| {
@@ -794,10 +800,20 @@ pub fn sys_renameat2(
     new_user_path: UserCString,
     flags: u32,
 ) -> Result<(), Errno> {
-    if flags & !RENAME_NOREPLACE != 0 {
-        not_implemented!("renameat flags {:?}", flags);
+    let flags = RenameFlags::from_bits(flags).ok_or_else(|| errno!(EINVAL))?;
+
+    // RENAME_EXCHANGE cannot be combined with the other flags.
+    if flags.contains(RenameFlags::EXCHANGE)
+        && flags.intersects(RenameFlags::NOREPLACE | RenameFlags::WHITEOUT)
+    {
         return error!(EINVAL);
     }
+
+    // RENAME_WHITEOUT is not supported.
+    if flags.contains(RenameFlags::WHITEOUT) {
+        not_implemented!("RENAME_WHITEOUT is not implemented");
+        return error!(ENOSYS);
+    };
 
     let lookup = |dir_fd, user_path| {
         lookup_parent_at(current_task, dir_fd, user_path, |_, parent, basename| {
@@ -812,13 +828,14 @@ pub fn sys_renameat2(
         return error!(ENAMETOOLONG);
     }
 
-    if !NamespaceNode::mount_eq(&old_parent, &new_parent) {
-        return error!(EXDEV);
-    }
-
-    let flags = RenameFlags::from_bits_truncate(flags);
-    DirEntry::rename(current_task, &old_parent, &old_basename, &new_parent, &new_basename, flags)?;
-    Ok(())
+    NamespaceNode::rename(
+        current_task,
+        &old_parent,
+        &old_basename,
+        &new_parent,
+        &new_basename,
+        flags,
+    )
 }
 
 pub fn sys_fchmod(current_task: &CurrentTask, fd: FdNumber, mode: FileMode) -> Result<(), Errno> {
@@ -1049,9 +1066,6 @@ pub fn sys_lremovexattr(
     name_addr: UserCString,
 ) -> Result<(), Errno> {
     let node = lookup_at(current_task, FdNumber::AT_FDCWD, path_addr, LookupFlags::no_follow())?;
-    if node.entry.node.is_lnk() {
-        return error!(EPERM);
-    }
     do_removexattr(current_task, &node, name_addr)
 }
 
@@ -1466,6 +1480,45 @@ pub fn sys_eventfd2(current_task: &CurrentTask, value: u32, flags: u32) -> Resul
     Ok(fd)
 }
 
+pub fn sys_pidfd_open(
+    current_task: &CurrentTask,
+    pid: pid_t,
+    flags: u32,
+) -> Result<FdNumber, Errno> {
+    if flags & !PIDFD_NONBLOCK != 0 {
+        return error!(EINVAL);
+    }
+    if pid <= 0 {
+        return error!(EINVAL);
+    }
+    // Validate that the pid exists.
+    Task::from_weak(&current_task.get_task(pid))?;
+    let blocking = (flags & PIDFD_NONBLOCK) == 0;
+    let open_flags = if blocking { OpenFlags::empty() } else { OpenFlags::NONBLOCK };
+    let file = new_pidfd(current_task, pid, open_flags);
+    current_task.add_file(file, FdFlags::CLOEXEC)
+}
+
+pub fn sys_pidfd_getfd(
+    current_task: &CurrentTask,
+    pidfd: FdNumber,
+    targetfd: FdNumber,
+    flags: u32,
+) -> Result<FdNumber, Errno> {
+    if flags != 0 {
+        return error!(EINVAL);
+    }
+
+    let file = current_task.files.get(pidfd)?;
+    let task = current_task.get_task(file.as_pid()?);
+    let task = task.upgrade().ok_or_else(|| errno!(ESRCH))?;
+
+    current_task.check_ptrace_access_mode(PTRACE_MODE_ATTACH_REALCREDS, &task)?;
+
+    let target_file = task.files.get(targetfd)?;
+    current_task.add_file(target_file, FdFlags::CLOEXEC)
+}
+
 pub fn sys_timerfd_create(
     current_task: &CurrentTask,
     clock_id: u32,
@@ -1619,7 +1672,12 @@ fn select(
         if aggregated_events != 0 {
             let fd = FdNumber::from_raw(fd as i32);
             let file = current_task.files.get(fd)?;
-            waiter.add(current_task, fd, &file, FdEvents::from_bits_truncate(aggregated_events))?;
+            waiter.add(
+                current_task,
+                fd,
+                Some(&file),
+                FdEvents::from_bits_truncate(aggregated_events),
+            )?;
         }
     }
 
@@ -1889,20 +1947,24 @@ impl<Key: ReadItemKey> FileWaiter<Key> {
         &self,
         current_task: &CurrentTask,
         key: Key,
-        file: &FileHandle,
+        file: Option<&FileHandle>,
         requested_events: FdEvents,
     ) -> Result<(), Errno> {
-        let sought_events = requested_events | FdEvents::POLLERR | FdEvents::POLLHUP;
+        if let Some(file) = file {
+            let sought_events = requested_events | FdEvents::POLLERR | FdEvents::POLLHUP;
 
-        let ready_items = self.ready_items.clone();
-        let handler = Box::new(move |observed: FdEvents| {
-            ready_items.lock().push(ReadyItem::<Key> { key, events: observed });
-        });
+            let ready_items = self.ready_items.clone();
+            let handler = Box::new(move |observed: FdEvents| {
+                ready_items.lock().push(ReadyItem::<Key> { key, events: observed });
+            });
 
-        file.wait_async(current_task, &self.waiter, sought_events, handler);
-        let current_events = file.query_events(current_task)? & sought_events;
-        if !current_events.is_empty() {
-            self.ready_items.lock().push(ReadyItem::<Key> { key, events: current_events });
+            file.wait_async(current_task, &self.waiter, sought_events, handler);
+            let current_events = file.query_events(current_task)? & sought_events;
+            if !current_events.is_empty() {
+                self.ready_items.lock().push(ReadyItem::<Key> { key, events: current_events });
+            }
+        } else {
+            self.ready_items.lock().push(ReadyItem::<Key> { key, events: FdEvents::POLLNVAL });
         }
         Ok(())
     }
@@ -1946,11 +2008,11 @@ pub fn poll(
         if poll_descriptor.fd < 0 {
             continue;
         }
-        let file = current_task.files.get(FdNumber::from_raw(poll_descriptor.fd))?;
+        let file = current_task.files.get(FdNumber::from_raw(poll_descriptor.fd)).ok();
         waiter.add(
             current_task,
             index,
-            &file,
+            file.as_ref(),
             FdEvents::from_bits_truncate(poll_descriptor.events as u32),
         )?;
     }
@@ -1961,7 +2023,8 @@ pub fn poll(
     for ready_item in ready_items.iter() {
         let interested_events = FdEvents::from_bits_truncate(pollfds[ready_item.key].events as u32)
             | FdEvents::POLLERR
-            | FdEvents::POLLHUP;
+            | FdEvents::POLLHUP
+            | FdEvents::POLLNVAL;
         let return_events = (interested_events & ready_item.events).bits();
         pollfds[ready_item.key].revents = return_events as i16;
     }

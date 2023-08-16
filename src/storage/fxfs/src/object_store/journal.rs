@@ -1374,9 +1374,12 @@ impl Journal {
             checkpoint_after = {
                 let mut inner = self.inner.lock().unwrap();
                 if let Some(mutation) = maybe_mutation {
-                    inner.writer.write_record(&JournalRecord::Mutation { object_id: 0, mutation });
+                    inner
+                        .writer
+                        .write_record(&JournalRecord::Mutation { object_id: 0, mutation })
+                        .unwrap();
                 }
-                inner.writer.write_record(&JournalRecord::Commit);
+                inner.writer.write_record(&JournalRecord::Commit).unwrap();
 
                 inner.writer.journal_file_checkpoint()
             };
@@ -1554,7 +1557,7 @@ pub struct Writer<'a>(u64, &'a mut JournalWriter);
 
 impl Writer<'_> {
     pub fn write(&mut self, mutation: Mutation) {
-        self.1.write_record(&JournalRecord::Mutation { object_id: self.0, mutation });
+        self.1.write_record(&JournalRecord::Mutation { object_id: self.0, mutation }).unwrap();
     }
     pub fn journal_file_checkpoint(&self) -> JournalCheckpoint {
         self.1.journal_file_checkpoint()
@@ -1807,7 +1810,9 @@ mod fuzz {
             let device = fs.take_device().await;
             device.reopen(false);
             if let Ok(fs) = FxFilesystem::open(device).await {
-                fs.close().await.expect("close failed");
+                // `close()` can fail if there were objects to be tombstoned. If the said object is
+                // corrupted, there will be an error when we compact the journal.
+                let _ = fs.close().await;
             }
         });
     }
@@ -1826,14 +1831,16 @@ mod fuzz {
             {
                 let mut inner = fs.journal().inner.lock().unwrap();
                 for record in &input {
-                    inner.writer.write_record(record);
+                    let _ = inner.writer.write_record(record);
                 }
             }
             fs.close().await.expect("close failed");
             let device = fs.take_device().await;
             device.reopen(false);
             if let Ok(fs) = FxFilesystem::open(device).await {
-                fs.close().await.expect("close failed");
+                // `close()` can fail if there were objects to be tombstoned. If the said object is
+                // corrupted, there will be an error when we compact the journal.
+                let _ = fs.close().await;
             }
         });
     }

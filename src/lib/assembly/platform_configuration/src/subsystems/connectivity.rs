@@ -5,7 +5,7 @@
 use crate::subsystems::prelude::*;
 use anyhow::bail;
 use assembly_config_schema::platform_config::connectivity_config::{
-    NetworkingConfig, PlatformConnectivityConfig,
+    NetstackVersion, NetworkingConfig, PlatformConnectivityConfig,
 };
 
 pub(crate) struct ConnectivitySubsystemConfig;
@@ -63,9 +63,10 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
             (_, _, None) => Some(&NetworkingConfig::Standard),
         };
         if let Some(networking) = networking {
-            // The 'core_realm_networking' bundle is required if networking is
-            // enabled.
+            // The 'core_realm_networking' and 'network_realm' bundles are
+            // required if networking is enabled.
             builder.platform_bundle("core_realm_networking");
+            builder.platform_bundle("network_realm");
 
             // Which specific network package is selectable by the product.
             match networking {
@@ -79,12 +80,22 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
 
             // The use of netstack3 can be forcibly required by the board,
             // otherwise it's selectable by the product.
-            if context.board_info.provides_feature("fuchsia::network_require_netstack3")
-                || connectivity_config.network.force_netstack3
-            {
-                builder.platform_bundle("netstack3");
-            } else {
-                builder.platform_bundle("netstack2");
+            match (
+                context.board_info.provides_feature("fuchsia::network_require_netstack3"),
+                connectivity_config.network.netstack_version,
+            ) {
+                (true, _) | (false, NetstackVersion::Netstack3) => {
+                    builder.platform_bundle("netstack3")
+                }
+                (false, NetstackVersion::Netstack2) => builder.platform_bundle("netstack2"),
+            }
+
+            // Add the networking test collection on all eng builds. The test
+            // collection allows components to be launched inside the network
+            // realm with access to all networking related capabilities.
+            match context.build_type {
+                BuildType::Eng => builder.platform_bundle("networking_test_collection"),
+                _ => {}
             }
 
             let has_fullmac = context.board_info.provides_feature("fuchsia::wlan_fullmac");

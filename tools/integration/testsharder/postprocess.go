@@ -31,7 +31,7 @@ const (
 	multipliedTestMaxRuns = 1000
 
 	// The maximum total runs across all automatically multiplied tests.
-	maxMultipliedRunsPerShard = 2000
+	MaxMultipliedRunsPerShard = 1000
 
 	// The maximum number of tests that a multiplier can match. testsharder will
 	// fail if this is exceeded.
@@ -86,6 +86,14 @@ func extractDepsFromShard(shard *Shard, fuchsiaBuildDir string) error {
 		if test.OS != "fuchsia" && test.Path != "" {
 			deps = append(deps, test.Path)
 		}
+		for _, dep := range deps {
+			_, err := os.Stat(filepath.Join(fuchsiaBuildDir, dep))
+			if os.IsNotExist(err) {
+				return fmt.Errorf("dependency for test %q was not built: %s", test.Name, dep)
+			} else if err != nil {
+				return err
+			}
+		}
 		shardDeps = append(shardDeps, deps...)
 	}
 	shard.AddDeps(shardDeps)
@@ -125,6 +133,7 @@ func SplitOutMultipliers(
 	// WithTargetDuration instead of the original target duration.
 	targetDuration time.Duration,
 	targetTestCount int,
+	maxMultipliedRunsPerShard int,
 	prefix string,
 ) []*Shard {
 	shardIdxToMatches := make([]map[int]struct{}, len(shards))
@@ -704,15 +713,6 @@ func hash(s string) uint32 {
 func normalizeTestName(name string) string {
 	trimmedName := strings.TrimLeft(name, "/")
 	return strings.ReplaceAll(trimmedName, "/", "_")
-}
-
-// Applies the realm label to all tests on all shards provided.
-func ApplyRealmLabel(shards []*Shard, realmLabel string) {
-	for _, shard := range shards {
-		for i := range shard.Tests {
-			shard.Tests[i].RealmLabel = realmLabel
-		}
-	}
 }
 
 // ApplyTestTimeouts sets the timeout field on every test to the specified

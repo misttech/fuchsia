@@ -9,13 +9,18 @@
 #include <lib/stdcompat/algorithm.h>
 #include <lib/zbi-format/cpu.h>
 #include <zircon/assert.h>
+#include <zircon/compiler.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <optional>
+
+#include "lib/devicetree/devicetree.h"
 
 namespace boot_shim {
 
-devicetree::ScanState RiscvDevictreeCpuTopologyItem::OnNode(
-    const devicetree::NodePath& path, const devicetree::PropertyDecoder& decoder) {
+devicetree::ScanState DevictreeCpuTopologyItem::OnNode(const devicetree::NodePath& path,
+                                                       const devicetree::PropertyDecoder& decoder) {
   if (path == "/") {
     return devicetree::ScanState::kActive;
   }
@@ -56,18 +61,44 @@ devicetree::ScanState RiscvDevictreeCpuTopologyItem::OnNode(
                       : IncreaseEntryNodeCountFirstScan(path, decoder);
 }
 
-devicetree::ScanState RiscvDevictreeCpuTopologyItem::OnSubtree(const devicetree::NodePath& path) {
+devicetree::ScanState DevictreeCpuTopologyItem::OnSubtree(const devicetree::NodePath& path) {
+  // Clusters can contain other clusters, when exiting a cluster, restore the containing cluster
+  // to cluster containing the current cluster if any.
+  if (current_cluster_) {
+    if (path.IsDescendentOf("/cpus/cpu-map") && IsCpuMapNode(path.back(), "cluster")) {
+      // Restore the previous cluster.
+      if (map_entries_) {
+        current_cluster_ = map_entries_[*current_cluster_].cluster_index;
+      } else {
+        current_cluster_ = std::nullopt;
+      }
+    }
+  }
+
   // Allocated and filled up, means we are done going through the tree.
   if (cpu_entries_ && cpu_entry_index_ == cpu_entry_count_) {
     if (!has_cpu_map_) {
-      map_entry_count_ = cpu_entry_count_;
-      map_entries_ = Allocate<CpuMapEntry>(cpu_entry_count_);
-      for (uint32_t i = 0; i < map_entry_count_; ++i) {
+      topology_node_count_ = cpu_entry_count_;
+      map_entry_count_ = cpu_entry_count_ * 2;
+      map_entries_ = Allocate<CpuMapEntry>(map_entry_count_);
+      if (!map_entries_) {
+        return devicetree::ScanState::kDone;
+      }
+
+      for (size_t i = 0; i < cpu_entry_count_; ++i) {
         const auto& cpu = cpu_entries_[i];
-        map_entries_[i] = CpuMapEntry{
+        // Synthesize 1 core - 1 thread pair for every cpu entry if no
+        // cpu map is available.
+        size_t map_index = 2 * i;
+        map_entries_[map_index] = CpuMapEntry{
             .type = TopologyEntryType::kCore,
             // No parent.
-            .parent_index = i,
+            .parent_index = map_index,
+        };
+        map_entries_[map_index + 1] = CpuMapEntry{
+            .type = TopologyEntryType::kThread,
+            // No parent.
+            .parent_index = map_index,
             .cpu_phandle = cpu.phandle,
             .cpu_index = i,
         };
@@ -97,7 +128,7 @@ devicetree::ScanState RiscvDevictreeCpuTopologyItem::OnSubtree(const devicetree:
   return devicetree::ScanState::kActive;
 }
 
-devicetree::ScanState RiscvDevictreeCpuTopologyItem::IncreaseEntryNodeCountFirstScan(
+devicetree::ScanState DevictreeCpuTopologyItem::IncreaseEntryNodeCountFirstScan(
     const devicetree::NodePath& path, const devicetree::PropertyDecoder& decoder) {
   ZX_ASSERT(!map_entries_);
   std::string_view name = path.back();
@@ -107,17 +138,25 @@ devicetree::ScanState RiscvDevictreeCpuTopologyItem::IncreaseEntryNodeCountFirst
   // is not an address but just an arbitrary ID.
   if (IsCpuMapNode(name, "socket")) {
     map_entry_count_++;
+    topology_node_count_++;
     return devicetree::ScanState::kActive;
   }
 
   if (IsCpuMapNode(name, "cluster")) {
     map_entry_count_++;
     cluster_count_++;
+    topology_node_count_++;
     return devicetree::ScanState::kActive;
   }
 
   if (IsCpuMapNode(name, "core")) {
     map_entry_count_++;
+    topology_node_count_++;
+    if (decoder.FindProperty("cpu")) {
+      // Threads are omitted, need to generate a thread entry
+      // for every core that has cpu on it.
+      map_entry_count_++;
+    }
     return devicetree::ScanState::kActive;
   }
 
@@ -129,7 +168,7 @@ devicetree::ScanState RiscvDevictreeCpuTopologyItem::IncreaseEntryNodeCountFirst
   return devicetree::ScanState::kDoneWithSubtree;
 }
 
-devicetree::ScanState RiscvDevictreeCpuTopologyItem::AddEntryNodeSecondScan(
+devicetree::ScanState DevictreeCpuTopologyItem::AddEntryNodeSecondScan(
     const devicetree::NodePath& path, const devicetree::PropertyDecoder& decoder) {
   ZX_ASSERT(map_entries_);
   auto name = path.back().name();
@@ -148,7 +187,8 @@ devicetree::ScanState RiscvDevictreeCpuTopologyItem::AddEntryNodeSecondScan(
   if (IsCpuMapNode(name, "cluster")) {
     map_entries_[map_entry_index_] = CpuMapEntry{
         .type = TopologyEntryType::kCluster,
-        .parent_index = current_socket_.value_or(map_entry_index_),
+        .parent_index = current_cluster_.value_or(current_socket_.value_or(map_entry_index_)),
+        .cluster_index = current_cluster_,
     };
     current_cluster_ = map_entry_index_;
     map_entry_index_++;
@@ -168,10 +208,22 @@ devicetree::ScanState RiscvDevictreeCpuTopologyItem::AddEntryNodeSecondScan(
         .type = TopologyEntryType::kCore,
         .parent_index = current_cluster_.value_or(map_entry_index_),
         .cluster_index = current_cluster_,
-        .cpu_phandle = get_cpu(decoder),
     };
     current_core_ = map_entry_index_;
     map_entry_index_++;
+
+    // If 'core' entry has a 'cpu' phandle, then the 'thread' entry has been omitted,
+    // this means 1:1 between threads and cores. Let's synthesize the thread entry.
+    if (auto cpu_phandle = get_cpu(decoder)) {
+      map_entries_[map_entry_index_] = CpuMapEntry{
+          .type = TopologyEntryType::kThread,
+          .parent_index = *current_core_,
+          .cluster_index = current_cluster_,
+          .cpu_phandle = get_cpu(decoder),
+      };
+      map_entry_index_++;
+    }
+
     return devicetree::ScanState::kActive;
   }
 
@@ -190,14 +242,14 @@ devicetree::ScanState RiscvDevictreeCpuTopologyItem::AddEntryNodeSecondScan(
   return devicetree::ScanState::kDoneWithSubtree;
 }
 
-devicetree::ScanState RiscvDevictreeCpuTopologyItem::IncreaseCpuNodeCountFirstScan(
+devicetree::ScanState DevictreeCpuTopologyItem::IncreaseCpuNodeCountFirstScan(
     const devicetree::NodePath& path, const devicetree::PropertyDecoder& decoder) {
   ZX_ASSERT(!cpu_entries_);
   cpu_entry_count_++;
   return devicetree::ScanState::kActive;
 }
 
-devicetree::ScanState RiscvDevictreeCpuTopologyItem::AddCpuNodeSecondScan(
+devicetree::ScanState DevictreeCpuTopologyItem::AddCpuNodeSecondScan(
     const devicetree::NodePath& path, const devicetree::PropertyDecoder& decoder) {
   ZX_ASSERT(cpu_entries_ && (cpu_entry_index_ < cpu_entry_count_));
 
@@ -219,22 +271,16 @@ devicetree::ScanState RiscvDevictreeCpuTopologyItem::AddCpuNodeSecondScan(
     return devicetree::ScanState::kDone;
   }
 
-  auto hart_id = (*reg_val)[0].address();
-  if (!hart_id) {
-    OnError("Failed to decode CPU hart id.");
-    return devicetree::ScanState::kDone;
-  }
   // Properties are not copy or move assignable, so we must initialize in place.
   new (&cpu_entries_[cpu_entry_index_]) CpuEntry{
       .phandle = phandle_val,
       .properties = decoder.properties(),
-      .hart_id = *hart_id,
   };
   cpu_entry_index_++;
   return devicetree::ScanState::kActive;
 }
 
-fit::result<ItemBase::DataZbi::Error> RiscvDevictreeCpuTopologyItem::UpdateEntryCpuLinks() const {
+fit::result<ItemBase::DataZbi::Error> DevictreeCpuTopologyItem::UpdateEntryCpuLinks() const {
   ZX_ASSERT(cpu_entries_ && map_entries_);
 
   // Not every devicetree defines a CPU map. When this happens, the entry nodes have been
@@ -308,8 +354,7 @@ fit::result<ItemBase::DataZbi::Error> RiscvDevictreeCpuTopologyItem::UpdateEntry
   return fit::ok();
 }
 
-fit::result<ItemBase::DataZbi::Error>
-RiscvDevictreeCpuTopologyItem::CalculateClusterPerformanceClass(
+fit::result<ItemBase::DataZbi::Error> DevictreeCpuTopologyItem::CalculateClusterPerformanceClass(
     cpp20::span<zbi_topology_node_t> nodes) const {
   if (cluster_count_ <= 1) {
     return fit::ok();
@@ -319,7 +364,11 @@ RiscvDevictreeCpuTopologyItem::CalculateClusterPerformanceClass(
   cpp20::span entries(map_entries_, map_entry_count_);
 
   struct ClusterPerf {
-    uint32_t cluster_index = 0;
+    // Index of the node in |map_entries_| representing this cluster.
+    size_t cluster_index = 0;
+    // Index of the node in |map_entries_| representing this node's cluster, nested clusters.
+    size_t cluster_parent = 0;
+    // Performance class. Arbitrary number representing relative performance across cores.
     uint32_t perf = 1;
   };
 
@@ -336,32 +385,27 @@ RiscvDevictreeCpuTopologyItem::CalculateClusterPerformanceClass(
     if (entry.type == TopologyEntryType::kCluster) {
       perf[current_cluster].cluster_index = static_cast<uint32_t>(i);
       perf[current_cluster].perf = 1;
+      perf[current_cluster].cluster_parent = i;
+
+      if (entry.cluster_index) {
+        for (size_t j = current_cluster; j > 0; --j) {
+          if (perf[j - 1].cluster_index == *entry.cluster_index) {
+            perf[current_cluster].cluster_parent = j - 1;
+            break;
+          }
+        }
+      }
       current_cluster++;
+
       continue;
     }
-    // Core or Thread.
+    // Not a Thread.
     if (!entry.cpu_index) {
       continue;
     }
 
     // Self-referential.
     if (entry.parent_index == i) {
-      continue;
-    }
-
-    const auto* ancestor = &entries[entry.parent_index];
-    uint32_t ancestor_index = entry.parent_index;
-    while (ancestor && ancestor->type != TopologyEntryType::kSocket) {
-      // Self-referential.
-      if (ancestor->parent_index == ancestor_index) {
-        ancestor = nullptr;
-        break;
-      }
-      ancestor_index = ancestor->parent_index;
-      ancestor = &entries[ancestor_index];
-    }
-
-    if (!ancestor) {
       continue;
     }
 
@@ -372,15 +416,25 @@ RiscvDevictreeCpuTopologyItem::CalculateClusterPerformanceClass(
       continue;
     }
 
-    auto capcacity_value = capacity->AsUint32();
-    if (!capcacity_value) {
+    auto capacity_value = capacity->AsUint32();
+    if (!capacity_value) {
       continue;
     }
 
-    auto& cluster_perf = perf[current_cluster - 1];
-    if (cluster_perf.perf < *capcacity_value) {
-      cluster_perf.perf = *capcacity_value;
-      max_cap = std::max(cluster_perf.perf, max_cap);
+    auto* cluster_perf = &perf[current_cluster - 1];
+    size_t cluster_perf_index = current_cluster - 1;
+    if (cluster_perf->perf < *capacity_value) {
+      cluster_perf->perf = *capacity_value;
+      // Bubble the performance toward parent clusters.
+      while (cluster_perf->cluster_parent != perf[cluster_perf_index].cluster_index) {
+        cluster_perf_index = cluster_perf->cluster_parent;
+        cluster_perf = &perf[cluster_perf->cluster_parent];
+        if (cluster_perf->perf >= *capacity_value) {
+          break;
+        }
+        cluster_perf->perf = *capacity_value;
+      }
+      max_cap = std::max(cluster_perf->perf, max_cap);
     }
   }
 
@@ -392,17 +446,17 @@ RiscvDevictreeCpuTopologyItem::CalculateClusterPerformanceClass(
 
   // Normalize
   for (const auto& cluster_perf : perf) {
-    nodes[cluster_perf.cluster_index].entity.cluster.performance_class =
-        normalize_value(cluster_perf.perf, max_cap);
+    nodes[*entries[cluster_perf.cluster_index].topology_node_index]
+        .entity.cluster.performance_class = normalize_value(cluster_perf.perf, max_cap);
   }
 
   return fit::ok();
 }
 
-fit::result<ItemBase::DataZbi::Error> RiscvDevictreeCpuTopologyItem::AppendItems(
+fit::result<DevictreeCpuTopologyItem::DataZbi::Error> DevictreeCpuTopologyItem::AppendItems(
     DataZbi& zbi) const {
-  ZX_ASSERT(boot_hart_id_);
   ZX_ASSERT(cpu_entries_ && cpu_entry_count_);
+  ZX_DEBUG_ASSERT(arch_info_setter_);
   // Resolve reference to CPU nodes from the cpu map.
   cpp20::span cpus(cpu_entries_, cpu_entry_count_);
 
@@ -429,60 +483,76 @@ fit::result<ItemBase::DataZbi::Error> RiscvDevictreeCpuTopologyItem::AppendItems
 
   size_t current_node = 0;
   uint16_t logical_cpu_id = 0;
-  std::optional<size_t> boot_cpu_node_index;
   std::optional<size_t> cpu_zero_node_index;
-  for (const auto& entry : entries) {
-    auto& node = topology_nodes[current_node];
+  for (size_t entry_index = 0; entry_index < entries.size(); ++entry_index) {
+    auto& entry = entries[entry_index];
+
+    if (entry.type == TopologyEntryType::kThread) {
+      if (entry.cpu_index) {
+        size_t core_node_index = *entries[entry.parent_index].topology_node_index;
+        auto& core_node = topology_nodes[core_node_index].entity.processor;
+        if (logical_cpu_id == 0) {
+          cpu_zero_node_index = core_node_index;
+          core_node.flags |= ZBI_TOPOLOGY_PROCESSOR_FLAGS_PRIMARY;
+        }
+
+        core_node.logical_ids[core_node.logical_id_count] = logical_cpu_id++;
+        core_node.logical_id_count++;
+        arch_info_setter_(core_node, cpus[*entry.cpu_index]);
+
+        if (core_node.flags == ZBI_TOPOLOGY_PROCESSOR_FLAGS_PRIMARY) {
+          topology_nodes[*cpu_zero_node_index].entity.processor.logical_ids[0] = logical_cpu_id - 1;
+          core_node.logical_ids[core_node.logical_id_count - 1] = 0;
+        }
+      } else {
+        const_cast<DevictreeCpuTopologyItem*>(this)->OnError(
+            "'thread' entry without an associated 'cpu' entry.");
+      }
+      continue;
+    }
+
     // Self referencing nodes have no parent.
-    node.parent_index = entry.parent_index == current_node
-                            ? ZBI_TOPOLOGY_NO_PARENT
-                            : static_cast<uint16_t>(entry.parent_index);
+    auto& node = topology_nodes[current_node];
+    node.parent_index =
+        entry.parent_index == entry_index
+            ? ZBI_TOPOLOGY_NO_PARENT
+            : static_cast<uint16_t>(*entries[entry.parent_index].topology_node_index);
 
     switch (entry.type) {
       case TopologyEntryType::kSocket:
         node.entity.discriminant = ZBI_TOPOLOGY_ENTITY_SOCKET;
         node.entity.socket = {};
+        entry.topology_node_index = current_node;
         break;
 
       case TopologyEntryType::kCluster:
         node.entity.discriminant = ZBI_TOPOLOGY_ENTITY_CLUSTER;
         node.entity.cluster.performance_class = 1;
+        entry.topology_node_index = current_node;
         break;
 
       case TopologyEntryType::kCore:
-      case TopologyEntryType::kThread:
-        node.entity.discriminant = ZBI_TOPOLOGY_ENTITY_PROCESSOR;
-        if (entry.cpu_index && cpus[*entry.cpu_index].hart_id) {
-          const auto& cpu = cpus[*entry.cpu_index];
-          node.entity.processor.flags = 0;
-          node.entity.processor.architecture_info.discriminant =
-              ZBI_TOPOLOGY_ARCHITECTURE_INFO_RISCV64;
-          node.entity.processor.architecture_info.riscv64.hart_id = *cpu.hart_id;
+        // Add an empty entry for thread entries to fill up.
+        node.entity = {
+            .discriminant = ZBI_TOPOLOGY_ENTITY_PROCESSOR,
+            .processor =
+                {
+                    .flags = 0,
+                    .logical_ids = {},
+                    .logical_id_count = 0,
+                },
+        };
+        entry.topology_node_index = current_node;
+        break;
 
-          if (logical_cpu_id == 0) {
-            cpu_zero_node_index = current_node;
-          }
-          if (cpu.hart_id == *boot_hart_id_) {
-            node.entity.processor.flags = ZBI_TOPOLOGY_PROCESSOR_FLAGS_PRIMARY;
-            boot_cpu_node_index = current_node;
-          }
-        } else {
-          node.entity.processor.flags = 0;
-        }
-        node.entity.processor.logical_ids[0] = logical_cpu_id++;
-        node.entity.processor.logical_ids[1] = 0;
-        node.entity.processor.logical_ids[2] = 0;
-        node.entity.processor.logical_ids[3] = 0;
-        node.entity.processor.logical_id_count = 1;
+      // Thread entries are handled separately, because they update existing entries,
+      // and not generate a new one.
+      case TopologyEntryType::kThread:
+        __UNREACHABLE;
         break;
     };
     current_node++;
   }
-  ZX_ASSERT(boot_cpu_node_index && cpu_zero_node_index);
-  // Kernel expects boot cpu to be zero, so swap the ids.
-  topology_nodes[*cpu_zero_node_index].entity.processor.logical_ids[0] =
-      topology_nodes[*boot_cpu_node_index].entity.processor.logical_ids[0];
-  topology_nodes[*boot_cpu_node_index].entity.processor.logical_ids[0] = 0;
   return CalculateClusterPerformanceClass(topology_nodes);
 }
 

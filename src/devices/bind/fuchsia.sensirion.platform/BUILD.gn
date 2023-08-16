@@ -6,4 +6,5 @@ import("//build/bind/bind.gni")
 
 bind_library("fuchsia.sensirion.platform") {
   source = "fuchsia.sensirion.platform.bind"
+  sdk_category = "partner"
 }

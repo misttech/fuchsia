@@ -30,7 +30,7 @@ aes-gcm-siv = { version = "0.10.3", features = ["std"] }
 ansi_term = "0.12.0"
 anyhow = "1.0.57"
 arbitrary = { version = "1.0.3", features = ["derive"] }
-argh = "0.1.10"
+argh = "0.1.12"
 arrayvec = "0.7.1"
 ash = { version = "0.37.0", features = ["linked"], default-features = false }
 assert_matches = "1.5.0"
@@ -231,7 +231,8 @@ unicode-xid = "0.2.0"
 utf8parse = "0.1"
 vm-device = "0.1.0"
 walkdir = "2.2.7"
-zerocopy = { version = "0.7.0-alpha.4", features = ["default", "simd"] }
+which = "4.0.2"
+zerocopy = { version = "0.7.0-alpha.5", features = ["default", "simd"] }
 zstd = "0.11.2"
 
 [dependencies.tracing-subscriber]

@@ -34,6 +34,49 @@
 import("//build/config/fuchsia/platform_version.gni")
 import("//sdk/ctf/build/internal/fuchsia_package_with_test.gni")
 import("//sdk/ctf/build/internal/generate_ctf_packages.gni")
+import("//src/lib/vulkan/vulkan.gni")
+
+template("generate_vulkan-loader-tests") {
+  forward_variables_from(invoker, [ "test_info" ])
+  fuchsia_package_with_test(target_name) {
+    test_component_name = "vulkan-loader-test-root.cm"
+    subpackages = [
+      test_info.target_label,
+      # These tests do not currently use a test realm factory.
+    ]
+    test_component = "//sdk/ctf/tests/pkg/vulkan:vulkan-loader-test-root"
+    test_specs = {
+      environments = vulkan_envs
+      log_settings = {
+        max_severity = "WARN"
+      }
+    }
+  }
+}
+
+template("generate_fuchsia-intl-tests") {
+  forward_variables_from(invoker, [ "test_info" ])
+  fuchsia_package_with_test(target_name) {
+    test_component_name = "test-root.cm"
+    test_component = "//sdk/ctf/tests/fidl/fuchsia.intl:test-root"
+    subpackages = [
+      test_info.target_label,
+      # These tests do not currently use a test realm factory.
+    ]
+  }
+}
+
+template("generate_fdio-spawn-tests") {
+  forward_variables_from(invoker, [ "test_info" ])
+  fuchsia_package_with_test(target_name) {
+    test_component_name = "test-root.cm"
+    test_component = "//sdk/ctf/tests/pkg/fdio:test-root"
+    subpackages = [
+      test_info.target_label,
+      # These tests do not currently use a test realm factory.
+    ]
+  }
+}
 
 template("generate_fuchsia-driver-test_tests") {
   forward_variables_from(invoker, [ "test_info" ])
@@ -55,11 +98,11 @@ template("generate_fuchsia-settings-tests") {
   forward_variables_from(invoker, [ "test_info" ])
   fuchsia_package_with_test(target_name) {
     test_component_name = "test-root.cm"
+    test_component = "//sdk/ctf/tests/fidl/fuchsia.settings:test-root"
     subpackages = [
       test_info.target_label,
       # These tests do not currently use a test realm factory.
     ]
-    test_component = "//sdk/ctf/tests/fidl/fuchsia.settings:test-root"
   }
 }
 

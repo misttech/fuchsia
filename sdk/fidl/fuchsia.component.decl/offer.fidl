@@ -16,7 +16,7 @@ type Offer = flexible union {
     4: storage OfferStorage;
     5: runner OfferRunner;
     6: resolver OfferResolver;
-    @available(removed=HEAD)
+    @available(removed=14)
     7: event OfferEvent;
     8: event_stream OfferEventStream;
 };
@@ -29,14 +29,8 @@ type DependencyType = strict enum {
     /// a weak dependency must support the dependency being unavailable at
     /// arbitrary times.
     WEAK = 2;
-    /// A weak dependency specifically used to mark cyclic dependencies from
-    /// migrated v1 components.
-    ///
-    /// # Deprecation
-    ///
-    /// This is being removed as v1 components are gone. Components using this should try upgrading
-    /// to a STRONG dependency, or use WEAK if there is still a cyclic dependency.
-    @available(deprecated=14, removed=15, legacy=true)
+
+    @available(deprecated=14, removed=15)
     WEAK_FOR_MIGRATION = 3;
 };
 
@@ -111,13 +105,22 @@ type OfferService = table {
     /// (Required) The name under which the capability is being offered.
     4: target_name name;
 
-    /// (Optional) The list of allow listed instances to be offered. Instances
+    /// (Optional) The list of allowlisted instances to be offered. Instances
     /// of the service not in this list will not be accessible by the target
     /// component. If this is not set that means all instances from the source
     /// service are offered.
     5: source_instance_filter vector<string:MAX_NAME_LENGTH>:MAX;
 
-    /// (Optional) List of renamed service instances.
+    /// (Optional) The list of allowlisted instances to be offered, with
+    /// renames.
+    ///
+    /// If this is provided, the set of instances in the target service will be
+    /// restricted to the instances in this list, renaming `source_name` to
+    /// `target_name`.
+    ///
+    /// If set, `source_instance_filter`, will further restrict the set of
+    /// instances to those whose `target_name` appears in that list. There is
+    /// generally no reason to set both, but we support it for compatibility.
     6: renamed_instances vector<NameMapping>:MAX;
 
     /// (Optional, defaults to `REQUIRED`) The availability of this capability.
@@ -275,7 +278,7 @@ type OfferResolver = table {
 };
 
 /// Declares an event offered by a component.
-@available(removed=HEAD)
+@available(removed=14)
 type OfferEvent = table {
     /// (Required) The provider of the capability relative to the component
     /// itself. Must be `parent` or `void`. If set to `void`, then the target
@@ -331,6 +334,7 @@ type OfferEventStream = table {
 
     /// (Optional) Filter for the event stream. Only present for DirectoryReady
     /// events and CapabilityRequested events
+    @available(removed=14)
     6: filter fuchsia.data.Dictionary;
 
     /// (Optional, defaults to `REQUIRED`) The availability of this capability.

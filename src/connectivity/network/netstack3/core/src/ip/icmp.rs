@@ -53,8 +53,9 @@ use crate::{
     device::FrameDestination,
     ip::{
         device::{
-            nud::NudIpHandler, route_discovery::Ipv6DiscoveredRoute, IpAddressState,
-            IpDeviceHandler, Ipv6DeviceHandler,
+            nud::{ConfirmationFlags, NudIpHandler},
+            route_discovery::Ipv6DiscoveredRoute,
+            IpAddressState, IpDeviceHandler, Ipv6DeviceHandler,
         },
         path_mtu::PmtuHandler,
         socket::{
@@ -381,6 +382,7 @@ pub trait IcmpIpExt: packet_formats::ip::IpExt + packet_formats::icmp::IcmpIpExt
     /// [`Icmpv6ErrorCode`].
     type ErrorCode: Debug
         + Copy
+        + PartialEq
         + GenericOverIp<Self, Type = Self::ErrorCode>
         + GenericOverIp<Ipv4, Type = Icmpv4ErrorCode>
         + GenericOverIp<Ipv6, Type = Icmpv6ErrorCode>
@@ -1455,6 +1457,10 @@ fn receive_ndp_packet<
                 &device_id,
                 target_address.into_specified(),
                 link_addr,
+                ConfirmationFlags {
+                    solicited_flag: p.message().solicited_flag(),
+                    override_flag: p.message().override_flag(),
+                },
             );
         }
         NdpPacket::RouterAdvertisement(ref p) => {
@@ -4292,6 +4298,7 @@ mod tests {
             _device_id: &Self::DeviceId,
             _neighbor: SpecifiedAddr<Ipv6Addr>,
             _link_addr: &[u8],
+            _flags: ConfirmationFlags,
         ) {
             unimplemented!()
         }

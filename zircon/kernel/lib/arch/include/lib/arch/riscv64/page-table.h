@@ -182,6 +182,10 @@ struct RiscvPagingTraitsBase {
 
   static constexpr bool kNonTerminalAccessPermissions = false;
 
+  static constexpr std::optional<unsigned int> kVirtualAddressSizeOverride = std::nullopt;
+
+  static constexpr auto kVirtualAddressExtension = VirtualAddressExtension::kCanonical;
+
   static constexpr bool (*IsValidPageAccess)(const RiscvSystemPagingState&,
                                              const AccessPermissions&) = RiscvIsValidPageAccess;
 

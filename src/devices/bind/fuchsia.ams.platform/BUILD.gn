@@ -6,4 +6,5 @@ import("//build/bind/bind.gni")
 
 bind_library("fuchsia.ams.platform") {
   source = "fuchsia.ams.platform.bind"
+  sdk_category = "partner"
 }

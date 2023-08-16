@@ -102,9 +102,9 @@ Set up the VIM3 to communicate with your host:
 
    * GND to pin 17.
 
-   * RX (in to VIM3) to pin 18.
+   * TX (out from VIM3) to pin 18.
 
-   * TX (out from VIM3) to pin 19.
+   * RX (into VIM3) to pin 19.
 
    * Don't connect the power wire of your serial cable to any VIM3 GPIO.
      The VIM3 is getting power through the USB cable.
@@ -118,6 +118,8 @@ Set up the VIM3 to communicate with your host:
 
    See [Serial Debugging Tool] for an example image of how your serial wires
    should be connected to the VIM3.
+
+1. Connect the USB end of the serial cable to your host.
 
 #### Verify the serial connection {#serial}
 
@@ -391,12 +393,17 @@ Fuchsia currently supports these features of the VIM3:
 * NNA
 * USB-C in peripheral mode
 * USB-A
+* Audio[^1]
+
+[^1]: VIM3 does not include transducers like speakers and microphones, in
+addition to the transducers, external hardware including DACs/ADCs need to be
+added and integrated via the GPIO header to be able to playback and capture
+audio this way.
 
 These features are under development and may not be supported:
 
 * Video decoder
 * SPI
-* Audio
 
 The following features are not supported, but might be added by future
 contributions:

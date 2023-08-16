@@ -12,87 +12,8 @@
         {
             type: "expect_failure",
             matchers: [
-                // exec_test
-                "ExecTest.SymlinkLimitRefreshedForInterpreter",
-
                 // fallocate_test
                 "AllocateTest.Fallocate",
-
-                // link_test
-                "LinkTest.AbsPathsNonDirFDsWithOpath",
-                "LinkTest.AbsPathsWithNonDirFDs",
-                "LinkTest.CanCreateLinkFile",
-                "LinkTest.LinkDoesNotFollowSymlinks",
-                "LinkTest.LinkatDoesNotFollowSymlinkByDefault",
-                "LinkTest.LinkatWithSymlinkFollow",
-                "LinkTest.NewDirFDWithOpath",
-                "LinkTest.WithNewDirFD",
-                "LinkTest.WithOldDirFD",
-            ],
-        },
-        {
-            type: "skip",
-            matchers: [
-                // These tests pass and fail in different cases
-                // Skip these tests for now until it can pass in all cases
-                "Pwrite64.Overflow",
-                "ExecTest.InterpreterScriptNoPath",
-                "AbstractUnixSockets/UnixSocketPairTest.SendFromMmapBeyondEof/*",
-                "AllUnixDomainSockets/UnixSocketPairTest.SendFromMmapBeyondEof/*",
-                "Renameat2Test.NoReplaceSuccess",
-
-                // epoll_test - this test panics
-                "EpollTest.RegularFiles",
-
-                // inotify_test - these tests hang
-                "Inotify.SymlinkGeneratesCreateEvent",
-
-                // msync_test
-                // Test 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23 fails
-                // sometimes. Skip all tests for now.
-                "All/MsyncFullParamTest.InvalidateUnlockedSucceeds/*",
-                "All/MsyncFullParamTest.NormallySucceeds/*",
-                "All/MsyncFullParamTest.UnalignedAddressFails/*",
-                "All/MsyncFullParamTest.UnalignedLengthSucceeds/*",
-
-                // mmap_test - this test panics because of a "memory stomping bug"
-                "MMapFileTest.WriteSharedBeyondEnd",
-
-                // mount_test - these tests hang
-                "MountTest.UmountNoFollow",
-
-                // pty_test - flaky
-                // Specifically, the following tests were identified as flaky when running on Fxfs.
-                // Until we can find out why thse tests are flaky, skip all tests that are part of
-                // JobControlTest
-                //  * "JobControlTest.ReleaseTTY",
-                //  * "JobControlTest.SetForegroundProcessGroupDifferentSession",
-                //  * "JobControlTest.SetForegroundProcessGroupSIGTTOUBackground",
-                //  * "JobControlTest.SetForegroundProcessGroupSIGTTOUBlocked"
-                "JobControlTest.*",
-
-                // select_test - this test causes a starnix kernel panic because it uses an invalid
-                // watch handle and unwraps the result.
-                "SelectTest.SetrlimitCallNOFILE",
-
-                // sendfile_test - these tests hang
-                "SendFileTest.SendFileToPipe",
-
-                // socket_inet_loopback_isolated_test - these tests flake TODO(fxbug.dev/128640)
-                "All/SocketInetLoopbackIsolatedTest.TCPPassiveCloseNoTimeWaitReuseTest/*",
-                "AllFamilies/SocketMultiProtocolInetLoopbackIsolatedTest.V4MappedEphemeralPortReservedReuseAddr/TCP",
-
-                // stat_test - these tests hang
-                "StatTest.LstatELOOPPath",
-
-                // sticky_test - these tests hang
-                "StickyTest.StickyBitCapFOWNER",
-                "StickyTest.StickyBitPermDenied",
-                "StickyTest.StickyBitSameUID",
-
-                // xattr_test - these tests hang
-                "XattrTest.LXattrOnSymlink",
-                "XattrTest.XattrOnSymlink",
             ],
         },
     ],

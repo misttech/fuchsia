@@ -18,17 +18,13 @@ import fuchsia_controller_py as fuchsia_controller
 
 from honeydew import custom_types
 from honeydew import errors
-from honeydew.affordances.fuchsia_controller import component as component_fc
 from honeydew.affordances.fuchsia_controller import tracing as tracing_fc
 from honeydew.affordances.fuchsia_controller.bluetooth import \
     bluetooth_gap as bluetooth_gap_fc
-from honeydew.affordances.fuchsia_controller.ui import tile as tile_fc
 from honeydew.device_classes import base_fuchsia_device
-from honeydew.interfaces.affordances import component
 from honeydew.interfaces.affordances import tracing
 from honeydew.interfaces.affordances.bluetooth import \
     bluetooth_gap as bluetooth_gap_interface
-from honeydew.interfaces.affordances.ui import tile
 from honeydew.interfaces.device_classes import affordances_capable
 from honeydew.transports import ffx as ffx_transport
 from honeydew.utils import properties
@@ -62,7 +58,7 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 def _connect_device_proxy(
         ctx: fuchsia_controller.Context,
-        proxy_name: str) -> fuchsia_controller.FidlChannel:
+        proxy_name: str) -> fuchsia_controller.Channel:
     """Opens a proxy to the device, according to a lookup table of names.
 
     Args:
@@ -85,8 +81,6 @@ def _connect_device_proxy(
 
 class FuchsiaDevice(base_fuchsia_device.BaseFuchsiaDevice,
                     affordances_capable.BluetoothGapCapableDevice,
-                    affordances_capable.ComponentCapableDevice,
-                    affordances_capable.TileCapableDevice,
                     affordances_capable.TracingCapableDevice):
     """FuchsiaDevice abstract base class implementation using
     Fuchsia-Controller.
@@ -126,15 +120,6 @@ class FuchsiaDevice(base_fuchsia_device.BaseFuchsiaDevice,
         return bluetooth_gap_fc.BluetoothGap()
 
     @properties.Affordance
-    def component(self) -> component.Component:
-        """Returns a component affordance object.
-
-        Returns:
-            component.Component object
-        """
-        return component_fc.Component()
-
-    @properties.Affordance
     def tracing(self) -> tracing.Tracing:
         """Returns a tracing affordance object.
 
@@ -142,15 +127,6 @@ class FuchsiaDevice(base_fuchsia_device.BaseFuchsiaDevice,
             tracing.Tracing object
         """
         return tracing_fc.Tracing()
-
-    @properties.Affordance
-    def tile(self) -> tile.Tile:
-        """Returns a tile affordance object.
-
-        Returns:
-            tile.Tile object
-        """
-        return tile_fc.Tile()
 
     # List all the public methods in alphabetical order
     def close(self) -> None:

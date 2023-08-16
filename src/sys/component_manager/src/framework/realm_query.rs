@@ -10,7 +10,7 @@ use {
             error::{CapabilityProviderError, ModelError},
             hooks::{Event, EventPayload, EventType, Hook, HooksRegistration},
             model::Model,
-            namespace::populate_and_get_logsink_decl,
+            namespace::create_namespace,
             resolver::Resolver,
             storage::admin_protocol::StorageAdmin,
         },
@@ -427,7 +427,7 @@ async fn resolve_declaration(
         .map_err(|_| fsys::GetDeclarationError::InstanceNotResolved)?;
 
     trace!("encoding manifest as persistent FIDL bytes");
-    let bytes = fidl::encoding::persist(&resolved.decl.native_into_fidl()).map_err(|error| {
+    let bytes = fidl::persist(&resolved.decl.native_into_fidl()).map_err(|error| {
         warn!(parent=%parent_moniker, %error, "RealmQuery failed to encode manifest");
         fsys::GetDeclarationError::EncodeFailed
     })?;
@@ -489,10 +489,9 @@ async fn construct_namespace(
     let mut state = instance.lock_state().await;
     match &mut *state {
         InstanceState::Resolved(r) => {
-            let pkg_dir = r.package().map(|p| &p.package_dir);
-            let (ns_entries, _) =
-                populate_and_get_logsink_decl(pkg_dir, &instance, r.decl()).await.unwrap();
-            Ok(ns_entries)
+            let (namespace, _logger) =
+                create_namespace(r.package(), &instance, r.decl(), vec![]).await.unwrap();
+            Ok(namespace.into())
         }
         _ => Err(fsys::ConstructNamespaceError::InstanceNotResolved),
     }

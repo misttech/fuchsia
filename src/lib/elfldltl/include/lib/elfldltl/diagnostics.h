@@ -15,6 +15,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "field.h"
 #include "internal/const-string.h"
 #include "internal/diagnostics-printf.h"
 
@@ -118,18 +119,28 @@ namespace elfldltl {
 // This wraps an unsigned integral type to represent an offset in the ELF file.
 template <typename size_type>
 struct FileOffset {
+  static_assert(std::is_integral_v<size_type>);
+  static_assert(std::is_unsigned_v<size_type>);
+
   using value_type = size_type;
 
   constexpr value_type operator*() const { return offset; }
+
+  constexpr bool operator==(const FileOffset& other) const { return offset == other.offset; }
+  constexpr bool operator!=(const FileOffset& other) const { return offset != other.offset; }
 
   static constexpr std::string_view kDescription = "file offset";
 
   value_type offset;
 };
 
-// Deduction guide.
+// Deduction guides.
+
 template <typename size_type>
 FileOffset(size_type) -> FileOffset<size_type>;
+
+template <typename size_type, bool kSwap>
+FileOffset(UnsignedField<size_type, kSwap>) -> FileOffset<size_type>;
 
 // Helper to discover if T is a FileOffset type.
 template <typename T>
@@ -143,18 +154,27 @@ inline constexpr bool kIsFileOffset<FileOffset<size_type>> = true;
 // corresponds to that segment's p_offset in the file.
 template <typename size_type>
 struct FileAddress {
+  static_assert(std::is_integral_v<size_type>);
+  static_assert(std::is_unsigned_v<size_type>);
+
   using value_type = size_type;
 
   constexpr value_type operator*() const { return address; }
+
+  constexpr bool operator==(const FileAddress& other) const { return address == other.address; }
+  constexpr bool operator!=(const FileAddress& other) const { return address != other.address; }
 
   static constexpr std::string_view kDescription = "file-relative address";
 
   value_type address;
 };
 
-// Deduction guide.
+// Deduction guides.
 template <typename size_type>
 FileAddress(size_type) -> FileAddress<size_type>;
+
+template <typename size_type, bool kSwap>
+FileAddress(UnsignedField<size_type, kSwap>) -> FileAddress<size_type>;
 
 // Helper to discover if T is a FileAddress type.
 template <typename T>
@@ -397,45 +417,6 @@ constexpr auto CollectStringsDiagnostics(T& container, Flags&&... flags) {
     return true;
   };
   return Diagnostics(add_error, std::forward<Flags>(flags)...);
-}
-
-template <typename S, size_t N>
-constexpr decltype(auto) operator<<(S&& ostream, internal::ConstString<N> string) {
-  return std::forward<S>(ostream) << static_cast<std::string_view>(string);
-}
-
-// This returns a Diagnostics object that uses << on an ostream-style object.
-// Any additional arguments are passed via << as a prefix on each message.  The
-// ostream should probably be in << std::hex state for the output to look good.
-template <typename Ostream, class Flags = DiagnosticsFlags, typename... Args>
-constexpr auto OstreamDiagnostics(Ostream& ostream, Flags&& flags = {}, Args&&... prefix) {
-  auto output = [prefix = std::make_tuple(std::forward<Args>(prefix)...), &ostream](
-                    std::string_view error, auto&&... args) mutable -> bool {
-    std::apply([&](auto&&... prefix) { ((ostream << prefix), ...); }, prefix);
-    ostream << error;
-    ((ostream << args), ...);
-    ostream << "\n";
-    return true;
-  };
-  return Diagnostics(std::move(output), flags);
-}
-
-// These overloads let the object returned by OstreamDiagnostics format the
-// special argument types.
-
-template <typename S, typename T>
-constexpr decltype(auto) operator<<(S&& ostream, FileOffset<T> offset) {
-  return std::forward<S>(ostream) << " at file offset " << *offset;
-}
-
-template <typename S, typename T>
-constexpr decltype(auto) operator<<(S&& ostream, FileAddress<T> address) {
-  return std::forward<S>(ostream) << " at relative address " << *address;
-}
-
-template <typename S, typename T, typename = decltype(std::declval<T>().str())>
-constexpr decltype(auto) operator<<(S&& ostream, T&& t) {
-  return std::forward<S>(ostream) << t.str();
 }
 
 }  // namespace elfldltl

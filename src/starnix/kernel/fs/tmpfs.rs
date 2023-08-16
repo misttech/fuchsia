@@ -33,6 +33,7 @@ impl FileSystemOps for Arc<TmpFs> {
     fn rename(
         &self,
         _fs: &FileSystem,
+        _current_task: &CurrentTask,
         old_parent: &FsNodeHandle,
         _old_name: &FsStr,
         new_parent: &FsNodeHandle,
@@ -63,12 +64,10 @@ impl FileSystemOps for Arc<TmpFs> {
         if renamed.is_dir() {
             old_parent.update_info(|info| {
                 info.link_count -= 1;
-                Ok(())
-            })?;
+            });
             new_parent.update_info(|info| {
                 info.link_count += 1;
-                Ok(())
-            })?;
+            });
         }
         // Fix the wrong changes to new_parent due to the fact that the target element has
         // been replaced instead of added.
@@ -76,11 +75,42 @@ impl FileSystemOps for Arc<TmpFs> {
             if replaced.is_dir() {
                 new_parent.update_info(|info| {
                     info.link_count -= 1;
-                    Ok(())
-                })?;
+                });
             }
             *child_count(new_parent) -= 1;
         }
+        Ok(())
+    }
+
+    fn exchange(
+        &self,
+        _fs: &FileSystem,
+        _current_task: &CurrentTask,
+        node1: &FsNodeHandle,
+        parent1: &FsNodeHandle,
+        _name1: &FsStr,
+        node2: &FsNodeHandle,
+        parent2: &FsNodeHandle,
+        _name2: &FsStr,
+    ) -> Result<(), Errno> {
+        if node1.is_dir() {
+            parent1.update_info(|info| {
+                info.link_count -= 1;
+            });
+            parent2.update_info(|info| {
+                info.link_count += 1;
+            });
+        }
+
+        if node2.is_dir() {
+            parent1.update_info(|info| {
+                info.link_count += 1;
+            });
+            parent2.update_info(|info| {
+                info.link_count -= 1;
+            });
+        }
+
         Ok(())
     }
 }
@@ -147,6 +177,33 @@ impl TmpfsDirectory {
     }
 }
 
+fn create_child_node(
+    parent: &FsNode,
+    mode: FileMode,
+    dev: DeviceType,
+    owner: FsCred,
+) -> Result<FsNodeHandle, Errno> {
+    let ops: Box<dyn FsNodeOps> = match mode.fmt() {
+        FileMode::IFREG => Box::new(VmoFileNode::new()?),
+        FileMode::IFIFO | FileMode::IFBLK | FileMode::IFCHR | FileMode::IFSOCK => {
+            Box::new(TmpfsSpecialNode::new())
+        }
+        _ => return error!(EACCES),
+    };
+    let child = parent.fs().create_node_box(ops, move |id| {
+        let mut info = FsNodeInfo::new(id, mode, owner);
+        info.rdev = dev;
+        // blksize is PAGE_SIZE for in memory node.
+        info.blksize = *PAGE_SIZE as usize;
+        info
+    });
+    if mode.fmt() == FileMode::IFREG {
+        // For files created in tmpfs, forbid sealing, by sealing the seal operation.
+        child.write_guard_state.lock().enable_sealing(SealFlags::SEAL);
+    }
+    Ok(child)
+}
+
 impl FsNodeOps for TmpfsDirectory {
     fs_node_impl_xattr_delegate!(self, self.xattrs);
 
@@ -159,17 +216,6 @@ impl FsNodeOps for TmpfsDirectory {
         Ok(Box::new(MemoryDirectoryFile::new()))
     }
 
-    fn lookup(
-        &self,
-        _node: &FsNode,
-        _current_task: &CurrentTask,
-        name: &FsStr,
-    ) -> Result<FsNodeHandle, Errno> {
-        // Lookups for tmpfs should terminate in the DirEntry layer if they're going to succeed. If
-        // a lookup gets this far we know it was a failure.
-        error!(ENOENT, format!("looking for {:?}", String::from_utf8_lossy(name)))
-    }
-
     fn mkdir(
         &self,
         node: &FsNode,
@@ -180,8 +226,7 @@ impl FsNodeOps for TmpfsDirectory {
     ) -> Result<FsNodeHandle, Errno> {
         node.update_info(|info| {
             info.link_count += 1;
-            Ok(())
-        })?;
+        });
         *self.child_count.lock() += 1;
         Ok(node.fs().create_node(TmpfsDirectory::new(), FsNodeInfo::new_factory(mode, owner)))
     }
@@ -195,28 +240,9 @@ impl FsNodeOps for TmpfsDirectory {
         dev: DeviceType,
         owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
-        let ops: Box<dyn FsNodeOps> = match mode.fmt() {
-            FileMode::IFREG => Box::new(VmoFileNode::new()?),
-            FileMode::IFIFO | FileMode::IFBLK | FileMode::IFCHR | FileMode::IFSOCK => {
-                Box::new(TmpfsSpecialNode::new())
-            }
-            _ => return error!(EACCES),
-        };
+        let child = create_child_node(node, mode, dev, owner)?;
         *self.child_count.lock() += 1;
-        let node = node.fs().create_node_box(ops, move |id| {
-            let mut info = FsNodeInfo::new(id, mode, owner);
-            info.rdev = dev;
-            // blksize is PAGE_SIZE for in memory node.
-            info.blksize = *PAGE_SIZE as usize;
-            info
-        });
-
-        if mode.fmt() == FileMode::IFREG {
-            // For files created in tmpfs, forbid sealing, by sealing the seal operation.
-            node.write_guard_state.lock().enable_sealing(SealFlags::SEAL);
-        }
-
-        Ok(node)
+        Ok(child)
     }
 
     fn create_symlink(
@@ -234,6 +260,17 @@ impl FsNodeOps for TmpfsDirectory {
         ))
     }
 
+    fn create_tmpfile(
+        &self,
+        node: &FsNode,
+        _current_task: &CurrentTask,
+        mode: FileMode,
+        owner: FsCred,
+    ) -> Result<FsNodeHandle, Errno> {
+        assert!(mode.is_reg());
+        create_child_node(node, mode, DeviceType::NONE, owner)
+    }
+
     fn link(
         &self,
         _node: &FsNode,
@@ -243,8 +280,7 @@ impl FsNodeOps for TmpfsDirectory {
     ) -> Result<(), Errno> {
         child.update_info(|info| {
             info.link_count += 1;
-            Ok(())
-        })?;
+        });
         *self.child_count.lock() += 1;
         Ok(())
     }
@@ -259,13 +295,11 @@ impl FsNodeOps for TmpfsDirectory {
         if child.is_dir() {
             node.update_info(|info| {
                 info.link_count -= 1;
-                Ok(())
-            })?;
+            });
         }
         child.update_info(|info| {
             info.link_count -= 1;
-            Ok(())
-        })?;
+        });
         *self.child_count.lock() -= 1;
         Ok(())
     }
@@ -282,6 +316,7 @@ impl TmpfsSpecialNode {
 }
 
 impl FsNodeOps for TmpfsSpecialNode {
+    fs_node_impl_not_dir!();
     fs_node_impl_xattr_delegate!(self, self.xattrs);
 
     fn create_file_ops(

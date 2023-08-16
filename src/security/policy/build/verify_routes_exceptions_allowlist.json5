@@ -401,23 +401,6 @@
                     },
                 },
                 {
-                    using_node: "/core/feedback",
-                    capability: "fuchsia.feedback.DeviceIdProvider",
-                    error: {
-                        error: {
-                            analyzer_model_error: {
-                                routing_error: {
-                                    use_from_parent_not_found: {
-                                        moniker: "/core/feedback",
-                                        capability_id: "fuchsia.feedback.DeviceIdProvider",
-                                    },
-                                },
-                            },
-                        },
-                        message: "`/core/feedback` tried to use `fuchsia.feedback.DeviceIdProvider` from its parent, but the parent does not offer that capability. Note, use clauses in CML default to using from parent.",
-                    },
-                },
-                {
                     using_node: "/bootstrap/archivist",
                     capability: "fuchsia.tracing.provider.Registry",
                     error: {
@@ -670,98 +653,6 @@
                     },
                 },
 
-                // TODO(fxbug.dev/104942): once fixed, delete the suppressions below.
-                {
-                    using_node: "/bootstrap/power_manager",
-                    capability: "fuchsia.settings.Input",
-                    error: {
-                        error: {
-                            analyzer_model_error: {
-                                routing_error: {
-                                    offer_from_child_expose_not_found: {
-                                        child_moniker: "core",
-                                        moniker: "/",
-                                        capability_id: "fuchsia.settings.Input",
-                                    },
-                                },
-                            },
-                        },
-                        message: "`/` tried to offer `fuchsia.settings.Input` from its child `#core`, but `#core` does not expose `fuchsia.settings.Input`.",
-                    },
-                },
-                {
-                    using_node: "/bootstrap/console-launcher",
-                    capability: "fuchsia.virtualization.DebianGuestManager",
-                    error: {
-                        error: {
-                            analyzer_model_error: {
-                                routing_error: {
-                                    offer_from_child_expose_not_found: {
-                                        child_moniker: "core",
-                                        moniker: "/",
-                                        capability_id: "fuchsia.virtualization.DebianGuestManager",
-                                    },
-                                },
-                            },
-                        },
-                        message: "`/` tried to offer `fuchsia.virtualization.DebianGuestManager` from its child `#core`, but `#core` does not expose `fuchsia.virtualization.DebianGuestManager`.",
-                    },
-                },
-                {
-                    using_node: "/bootstrap/console-launcher",
-                    capability: "fuchsia.virtualization.LinuxManager",
-                    error: {
-                        error: {
-                            analyzer_model_error: {
-                                routing_error: {
-                                    offer_from_child_expose_not_found: {
-                                        child_moniker: "core",
-                                        moniker: "/",
-                                        capability_id: "fuchsia.virtualization.LinuxManager",
-                                    },
-                                },
-                            },
-                        },
-                        message: "`/` tried to offer `fuchsia.virtualization.LinuxManager` from its child `#core`, but `#core` does not expose `fuchsia.virtualization.LinuxManager`.",
-                    },
-                },
-                {
-                    using_node: "/bootstrap/console-launcher",
-                    capability: "fuchsia.virtualization.TerminaGuestManager",
-                    error: {
-                        error: {
-                            analyzer_model_error: {
-                                routing_error: {
-                                    offer_from_child_expose_not_found: {
-                                        child_moniker: "core",
-                                        moniker: "/",
-                                        capability_id: "fuchsia.virtualization.TerminaGuestManager",
-                                    },
-                                },
-                            },
-                        },
-                        message: "`/` tried to offer `fuchsia.virtualization.TerminaGuestManager` from its child `#core`, but `#core` does not expose `fuchsia.virtualization.TerminaGuestManager`.",
-                    },
-                },
-                {
-                    using_node: "/bootstrap/console-launcher",
-                    capability: "fuchsia.virtualization.ZirconGuestManager",
-                    error: {
-                        error: {
-                            analyzer_model_error: {
-                                routing_error: {
-                                    offer_from_child_expose_not_found: {
-                                        child_moniker: "core",
-                                        moniker: "/",
-                                        capability_id: "fuchsia.virtualization.ZirconGuestManager",
-                                    },
-                                },
-                            },
-                        },
-                        message: "`/` tried to offer `fuchsia.virtualization.ZirconGuestManager` from its child `#core`, but `#core` does not expose `fuchsia.virtualization.ZirconGuestManager`.",
-                    },
-                },
-
                 // TODO(https://fxbug.dev/115635): Find a way to remove this exception.
                 {
                     using_node: "/bootstrap",
@@ -785,54 +676,6 @@
                 // ################################################################################
                 // START: TODO(https://fxbug.dev/115632): Fix broken routes in /core/test_manager/*
                 // ################################################################################
-                {
-                    using_node: "/core/test_manager",
-                    capability: "fuchsia.mediacodec.CodecFactory",
-                    error: {
-                        error: {
-                            analyzer_model_error: {
-                                routing_error: {
-                                    offer_from_parent_not_found: {
-                                        moniker: "/core/test_manager",
-                                        capability_id: "fuchsia.mediacodec.CodecFactory",
-                                    },
-                                },
-                            },
-                        },
-                        message: "`/core/test_manager` tried to offer `fuchsia.mediacodec.CodecFactory` from its parent, but the parent does not offer that capability.",
-                    },
-                },
-                {
-                    using_node: "/core/test_manager",
-                    capability: "fuchsia.ui.scenic.Scenic",
-                    error: {
-                        error: {
-                            analyzer_model_error: {
-                                routing_error: {
-                                    availability_routing_error: "offer_from_void_to_required_target",
-                                },
-                            },
-                        },
-                        message: "Offer uses void source, but target requires the capability",
-                    },
-                },
-                {
-                    using_node: "/core/test_manager",
-                    capability: "fuchsia.sys2.SystemController",
-                    error: {
-                        error: {
-                            analyzer_model_error: {
-                                routing_error: {
-                                    offer_from_parent_not_found: {
-                                        moniker: "/core",
-                                        capability_id: "fuchsia.sys2.SystemController",
-                                    },
-                                },
-                            },
-                        },
-                        message: "`/core` tried to offer `fuchsia.sys2.SystemController` from its parent, but the parent does not offer that capability.",
-                    },
-                },
                 {
                     using_node: "/core/test_manager",
                     capability: "fuchsia.accessibility.semantics.SemanticsManager",
@@ -859,23 +702,6 @@
                             },
                         },
                         message: "Offer uses void source, but target requires the capability",
-                    },
-                },
-                {
-                    using_node: "/core/test_manager",
-                    capability: "fuchsia.mediacodec.CodecFactory",
-                    error: {
-                        error: {
-                            analyzer_model_error: {
-                                routing_error: {
-                                    offer_from_parent_not_found: {
-                                        moniker: "/core/test_manager",
-                                        capability_id: "fuchsia.mediacodec.CodecFactory",
-                                    },
-                                },
-                            },
-                        },
-                        message: "`/core/test_manager` tried to offer `fuchsia.mediacodec.CodecFactory` from its parent, but the parent does not offer that capability.",
                     },
                 },
                 {
@@ -939,20 +765,6 @@
                 },
                 {
                     using_node: "/core/test_manager",
-                    capability: "fuchsia.ui.scenic.Scenic",
-                    error: {
-                        error: {
-                            analyzer_model_error: {
-                                routing_error: {
-                                    availability_routing_error: "offer_from_void_to_required_target",
-                                },
-                            },
-                        },
-                        message: "Offer uses void source, but target requires the capability",
-                    },
-                },
-                {
-                    using_node: "/core/test_manager",
                     capability: "fuchsia.ui.composition.Allocator",
                     error: {
                         error: {
@@ -995,20 +807,6 @@
                 },
                 {
                     using_node: "/core/test_manager",
-                    capability: "fuchsia.ui.scenic.Scenic",
-                    error: {
-                        error: {
-                            analyzer_model_error: {
-                                routing_error: {
-                                    availability_routing_error: "offer_from_void_to_required_target",
-                                },
-                            },
-                        },
-                        message: "Offer uses void source, but target requires the capability",
-                    },
-                },
-                {
-                    using_node: "/core/test_manager",
                     capability: "fuchsia.factory.WeaveFactoryStoreProvider",
                     error: {
                         error: {
@@ -1033,68 +831,6 @@
                             },
                         },
                         message: "Offer uses void source, but target requires the capability",
-                    },
-                },
-                {
-                    using_node: "/core/test_manager",
-                    capability: "fuchsia.ui.scenic.Scenic",
-                    error: {
-                        error: {
-                            analyzer_model_error: {
-                                routing_error: {
-                                    availability_routing_error: "offer_from_void_to_required_target",
-                                },
-                            },
-                        },
-                        message: "Offer uses void source, but target requires the capability",
-                    },
-                },
-                {
-                    using_node: "/core/test_manager",
-                    capability: "fuchsia.mediacodec.CodecFactory",
-                    error: {
-                        error: {
-                            analyzer_model_error: {
-                                routing_error: {
-                                    offer_from_parent_not_found: {
-                                        moniker: "/core/test_manager",
-                                        capability_id: "fuchsia.mediacodec.CodecFactory",
-                                    },
-                                },
-                            },
-                        },
-                        message: "`/core/test_manager` tried to offer `fuchsia.mediacodec.CodecFactory` from its parent, but the parent does not offer that capability.",
-                    },
-                },
-                {
-                    using_node: "/core/test_manager",
-                    capability: "fuchsia.ui.scenic.Scenic",
-                    error: {
-                        error: {
-                            analyzer_model_error: {
-                                routing_error: {
-                                    availability_routing_error: "offer_from_void_to_required_target",
-                                },
-                            },
-                        },
-                        message: "Offer uses void source, but target requires the capability",
-                    },
-                },
-                {
-                    using_node: "/core/test_manager",
-                    capability: "fuchsia.mediacodec.CodecFactory",
-                    error: {
-                        error: {
-                            analyzer_model_error: {
-                                routing_error: {
-                                    offer_from_parent_not_found: {
-                                        moniker: "/core/test_manager",
-                                        capability_id: "fuchsia.mediacodec.CodecFactory",
-                                    },
-                                },
-                            },
-                        },
-                        message: "`/core/test_manager` tried to offer `fuchsia.mediacodec.CodecFactory` from its parent, but the parent does not offer that capability.",
                     },
                 },
                 {
@@ -1200,20 +936,6 @@
                             },
                         },
                         message: "`/core/test_manager` tried to offer `fuchsia.media.SessionAudioConsumerFactory` from its parent, but the parent does not offer that capability.",
-                    },
-                },
-                {
-                    using_node: "/core/test_manager",
-                    capability: "fuchsia.ui.scenic.Scenic",
-                    error: {
-                        error: {
-                            analyzer_model_error: {
-                                routing_error: {
-                                    availability_routing_error: "offer_from_void_to_required_target",
-                                },
-                            },
-                        },
-                        message: "Offer uses void source, but target requires the capability",
                     },
                 },
                 {

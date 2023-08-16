@@ -32,6 +32,19 @@ use crate::{
     socket::address::{AddrVecIter, ConnAddr, ListenerAddr, ListenerIpAddr},
 };
 
+/// Describes which direction(s) of the data path should be shut down.
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub struct Shutdown {
+    /// True if the send path is shut down for the owning socket.
+    ///
+    /// If this is true, the socket should not be able to send packets.
+    pub send: bool,
+    /// True if the receive path is shut down for the owning socket.
+    ///
+    /// If this is true, the socket should not be able to receive packets.
+    pub receive: bool,
+}
+
 /// Determines whether the provided address is underspecified by itself.
 ///
 /// Some addresses are ambiguous and so must have a zone identifier in order
@@ -122,9 +135,21 @@ impl<A: Eq + Hash, S> Default for ConnSocketMap<A, S> {
 /// identifiers for a protocol.
 pub(crate) trait SocketMapAddrSpec {
     /// The local identifier portion of a socket address.
-    type LocalIdentifier: Clone + Debug + Hash + Eq;
+    type LocalIdentifier: Copy + Clone + Debug + Hash + Eq;
     /// The remote identifier portion of a socket address.
-    type RemoteIdentifier: Clone + Debug + Hash + Eq;
+    type RemoteIdentifier: Copy + Clone + Debug + Hash + Eq;
+}
+
+pub(crate) struct ListenerAddrInfo {
+    pub(crate) has_device: bool,
+    pub(crate) specified_addr: bool,
+}
+
+impl<A: IpAddress, D: Id, LI> ListenerAddr<ListenerIpAddr<A, LI>, D> {
+    pub(crate) fn info(&self) -> ListenerAddrInfo {
+        let Self { device, ip: ListenerIpAddr { addr, identifier: _ } } = self;
+        ListenerAddrInfo { has_device: device.is_some(), specified_addr: addr.is_some() }
+    }
 }
 
 /// Specifies the types parameters for [`BoundSocketMap`] state as a single bundle.
@@ -134,6 +159,10 @@ pub(crate) trait SocketMapStateSpec {
     /// These values are derived from [`Self::ListenerAddrState`] and
     /// [`Self::ConnAddrState`].
     type AddrVecTag: Eq + Copy + Debug + 'static;
+
+    fn listener_tag(info: ListenerAddrInfo, state: &Self::ListenerAddrState) -> Self::AddrVecTag;
+
+    fn connected_tag(has_device: bool, state: &Self::ConnAddrState) -> Self::AddrVecTag;
 
     /// An identifier for a listening socket.
     type ListenerId: Clone + Debug;
@@ -155,13 +184,6 @@ pub(crate) trait SocketMapStateSpec {
     /// The state stored for a connected socket address.
     type ConnAddrState: SocketMapAddrStateSpec<Id = Self::ConnId, SharingState = Self::ConnSharingState>
         + Debug;
-}
-
-pub(crate) trait SocketStateSpec: SocketMapStateSpec {
-    /// The state stored for a listening socket.
-    type ListenerState: Debug;
-    /// The state stored for a connected socket.
-    type ConnState: Debug;
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -261,9 +283,7 @@ pub(crate) trait SocketMapConflictPolicy<Addr, SharingState, I: Ip, D: Id, A: So
         new_sharing_state: &SharingState,
         addr: &Addr,
         socketmap: &SocketMap<AddrVec<I, D, A>, Bound<Self>>,
-    ) -> Result<(), InsertError>
-    where
-        Bound<Self>: Tagged<AddrVec<I, D, A>>;
+    ) -> Result<(), InsertError>;
 }
 
 pub(crate) trait SocketMapUpdateSharingPolicy<Addr, SharingState, I: Ip, D: Id, A>:
@@ -276,9 +296,7 @@ where
         addr: &Addr,
         old_sharing: &SharingState,
         new_sharing_state: &SharingState,
-    ) -> Result<(), UpdateSharingError>
-    where
-        Bound<Self>: Tagged<AddrVec<I, D, A>>;
+    ) -> Result<(), UpdateSharingError>;
 }
 
 #[derive(Derivative)]
@@ -286,21 +304,6 @@ where
 pub(crate) enum Bound<S: SocketMapStateSpec + ?Sized> {
     Listen(S::ListenerAddrState),
     Conn(S::ConnAddrState),
-}
-
-#[derive(Derivative)]
-#[derivative(Debug(bound = "D: Debug"))]
-pub(crate) enum SocketState<I: Ip, D, A: SocketMapAddrSpec, S: SocketStateSpec> {
-    Listener(
-        (S::ListenerState, S::ListenerSharingState, ListenerAddr<I::Addr, D, A::LocalIdentifier>),
-    ),
-    Connected(
-        (
-            S::ConnState,
-            S::ConnSharingState,
-            ConnAddr<I::Addr, D, A::LocalIdentifier, A::RemoteIdentifier>,
-        ),
-    ),
 }
 
 /// An "address vector" type that can hold any address in a [`SocketMap`].
@@ -326,22 +329,20 @@ pub(crate) enum SocketState<I: Ip, D, A: SocketMapAddrSpec, S: SocketStateSpec> 
     Hash(bound = "D: Hash")
 )]
 pub(crate) enum AddrVec<I: Ip, D, A: SocketMapAddrSpec + ?Sized> {
-    Listen(ListenerAddr<I::Addr, D, A::LocalIdentifier>),
+    Listen(ListenerAddr<ListenerIpAddr<I::Addr, A::LocalIdentifier>, D>),
     Conn(ConnAddr<I::Addr, D, A::LocalIdentifier, A::RemoteIdentifier>),
 }
 
-impl<I: Ip, D, A: SocketMapAddrSpec, S: SocketMapStateSpec> Tagged<AddrVec<I, D, A>> for Bound<S>
-where
-    S::ListenerAddrState: Tagged<ListenerAddr<I::Addr, D, A::LocalIdentifier>, Tag = S::AddrVecTag>,
-    S::ConnAddrState:
-        Tagged<ConnAddr<I::Addr, D, A::LocalIdentifier, A::RemoteIdentifier>, Tag = S::AddrVecTag>,
+impl<I: Ip, D: Id, A: SocketMapAddrSpec, S: SocketMapStateSpec + ?Sized> Tagged<AddrVec<I, D, A>>
+    for Bound<S>
 {
     type Tag = S::AddrVecTag;
-
     fn tag(&self, address: &AddrVec<I, D, A>) -> Self::Tag {
         match (self, address) {
-            (Bound::Listen(l), AddrVec::Listen(addr)) => l.tag(addr),
-            (Bound::Conn(c), AddrVec::Conn(addr)) => c.tag(addr),
+            (Bound::Listen(l), AddrVec::Listen(addr)) => S::listener_tag(addr.info(), l),
+            (Bound::Conn(c), AddrVec::Conn(ConnAddr { device, ip: _ })) => {
+                S::connected_tag(device.is_some(), c)
+            }
             (Bound::Listen(_), AddrVec::Conn(_)) => {
                 unreachable!("found listen state for conn addr")
             }
@@ -384,8 +385,10 @@ pub(crate) struct SocketAddrTypeTag<S> {
     pub(crate) sharing: S,
 }
 
-impl<'a, A: IpAddress, D, LI, S> From<(&'a ListenerAddr<A, D, LI>, S)> for SocketAddrTypeTag<S> {
-    fn from((addr, sharing): (&'a ListenerAddr<A, D, LI>, S)) -> Self {
+impl<'a, A: IpAddress, D, LI, S> From<(&'a ListenerAddr<ListenerIpAddr<A, LI>, D>, S)>
+    for SocketAddrTypeTag<S>
+{
+    fn from((addr, sharing): (&'a ListenerAddr<ListenerIpAddr<A, LI>, D>, S)) -> Self {
         let ListenerAddr { ip: ListenerIpAddr { addr, identifier: _ }, device } = addr;
         SocketAddrTypeTag {
             has_device: device.is_some(),
@@ -455,20 +458,22 @@ where
     }
 }
 
-/// A bidirectional map between sockets and their state, keyed in one direction
-/// by socket IDs, and in the other by socket addresses.
+/// A map from socket addresses to sockets.
 ///
 /// The types of keys and IDs is determined by the [`SocketMapStateSpec`]
 /// parameter. Each listener and connected socket stores additional state.
 /// Listener and connected sockets are keyed independently, but share the same
 /// address vector space. Conflicts are detected on attempted insertion of new
 /// sockets.
+///
+/// Listener addresses map to listener-address-specific state, and likewise
+/// with connected addresses. Depending on protocol (determined by the
+/// `SocketMapStateSpec` protocol), these address states can hold one or more
+/// socket identifiers (e.g. UDP sockets with `SO_REUSEPORT` set can share an
+/// address).
 #[derive(Derivative)]
 #[derivative(Default(bound = ""))]
-pub(crate) struct BoundSocketMap<I: Ip, D: Id, A: SocketMapAddrSpec, S: SocketMapStateSpec>
-where
-    Bound<S>: Tagged<AddrVec<I, D, A>>,
-{
+pub(crate) struct BoundSocketMap<I: Ip, D: Id, A: SocketMapAddrSpec, S: SocketMapStateSpec> {
     addr_to_state: SocketMap<AddrVec<I, D, A>, Bound<S>>,
 }
 
@@ -489,7 +494,6 @@ impl<
         S: SocketMapStateSpec,
     > Sockets<&'a SocketMap<AddrVec<I, D, A>, Bound<S>>, SocketType>
 where
-    Bound<S>: Tagged<AddrVec<I, D, A>>,
     S: SocketMapConflictPolicy<SocketType::Addr, SocketType::SharingState, I, D, A>,
 {
     /// Returns the state at an address, if there is any.
@@ -530,9 +534,7 @@ pub(crate) struct SocketStateEntry<
     A: SocketMapAddrSpec,
     S: SocketMapStateSpec,
     SocketType,
-> where
-    Bound<S>: Tagged<AddrVec<I, D, A>>,
-{
+> {
     id: SocketId<S>,
     addr_entry: SocketMapOccupiedEntry<'a, AddrVec<I, D, A>, Bound<S>>,
     _marker: PhantomData<SocketType>,
@@ -548,11 +550,23 @@ impl<
             + SocketMapConflictPolicy<SocketType::Addr, SocketType::SharingState, I, D, A>,
     > Sockets<&'a mut SocketMap<AddrVec<I, D, A>, Bound<S>>, SocketType>
 where
-    Bound<S>: Tagged<AddrVec<I, D, A>>,
     SocketType::SharingState: Clone,
     SocketType::Id: Clone,
 {
     pub(crate) fn try_insert(
+        self,
+        socket_addr: SocketType::Addr,
+        tag_state: SocketType::SharingState,
+        id: SocketType::Id,
+    ) -> Result<SocketStateEntry<'a, I, D, A, S, SocketType>, (InsertError, SocketType::SharingState)>
+    {
+        self.try_insert_with(socket_addr, tag_state, |_addr, _sharing| id)
+    }
+
+    // TODO(https://fxbug.dev/126141): remove this and inline its contents into
+    // try_insert once TCP socket IDs are not being constructed inside the
+    // make_id callback.
+    pub(crate) fn try_insert_with(
         self,
         socket_addr: SocketType::Addr,
         tag_state: SocketType::SharingState,
@@ -643,7 +657,6 @@ impl<
         S: SocketMapStateSpec,
     > SocketStateEntry<'a, I, D, A, S, SocketType>
 where
-    Bound<S>: Tagged<AddrVec<I, D, A>>,
     SocketType::Id: Clone,
 {
     pub(crate) fn get_addr(&self) -> &SocketType::Addr {
@@ -651,6 +664,7 @@ where
         SocketType::from_addr_vec_ref(addr_entry.key())
     }
 
+    #[cfg(test)]
     pub(crate) fn id(&self) -> SocketType::Id {
         let Self { id, addr_entry: _, _marker } = self;
         SocketType::from_socket_id_ref(id).clone()
@@ -742,14 +756,13 @@ where
 
 impl<I: Ip, D: Id, A: SocketMapAddrSpec, S> BoundSocketMap<I, D, A, S>
 where
-    Bound<S>: Tagged<AddrVec<I, D, A>>,
     AddrVec<I, D, A>: IterShadows,
     S: SocketMapStateSpec,
 {
     pub(crate) fn listeners(&self) -> Sockets<&SocketMap<AddrVec<I, D, A>, Bound<S>>, Listener>
     where
         S: SocketMapConflictPolicy<
-            ListenerAddr<I::Addr, D, A::LocalIdentifier>,
+            ListenerAddr<ListenerIpAddr<I::Addr, A::LocalIdentifier>, D>,
             <S as SocketMapStateSpec>::ListenerSharingState,
             I,
             D,
@@ -767,7 +780,7 @@ where
     ) -> Sockets<&mut SocketMap<AddrVec<I, D, A>, Bound<S>>, Listener>
     where
         S: SocketMapConflictPolicy<
-            ListenerAddr<I::Addr, D, A::LocalIdentifier>,
+            ListenerAddr<ListenerIpAddr<I::Addr, A::LocalIdentifier>, D>,
             <S as SocketMapStateSpec>::ListenerSharingState,
             I,
             D,
@@ -851,33 +864,12 @@ pub(crate) trait ConvertSocketMapState<I: Ip, D, A: SocketMapAddrSpec, S: Socket
     fn from_socket_id_ref(id: &SocketId<S>) -> &Self::Id;
 }
 
-/// Helper trait for converting between [`SocketState`] and its variants.
-pub(crate) trait ConvertSocketTypeState<I: Ip, D, A: SocketMapAddrSpec, S: SocketStateSpec>:
-    ConvertSocketMapState<I, D, A, S>
-{
-    type State;
-    fn from_socket_state_ref(
-        socket_state: &SocketState<I, D, A, S>,
-    ) -> &(Self::State, Self::SharingState, Self::Addr);
-    fn from_socket_state_mut(
-        socket_state: &mut SocketState<I, D, A, S>,
-    ) -> &mut (Self::State, Self::SharingState, Self::Addr);
-    fn to_socket_state(
-        state: (Self::State, Self::SharingState, Self::Addr),
-    ) -> SocketState<I, D, A, S>;
-    fn from_socket_state(
-        socket_state: SocketState<I, D, A, S>,
-    ) -> (Self::State, Self::SharingState, Self::Addr);
-}
-
 impl<I: Ip, D: Id, A: SocketMapAddrSpec, S: SocketMapStateSpec> ConvertSocketMapState<I, D, A, S>
     for Listener
-where
-    Bound<S>: Tagged<AddrVec<I, D, A>>,
 {
     type Id = S::ListenerId;
     type SharingState = S::ListenerSharingState;
-    type Addr = ListenerAddr<I::Addr, D, A::LocalIdentifier>;
+    type Addr = ListenerAddr<ListenerIpAddr<I::Addr, A::LocalIdentifier>, D>;
     type AddrState = S::ListenerAddrState;
     fn to_addr_vec(addr: &Self::Addr) -> AddrVec<I, D, A> {
         AddrVec::Listen(addr.clone())
@@ -918,56 +910,8 @@ where
     }
 }
 
-impl<I: Ip, D: Id, A: SocketMapAddrSpec, S: SocketStateSpec> ConvertSocketTypeState<I, D, A, S>
-    for Listener
-where
-    Bound<S>: Tagged<AddrVec<I, D, A>>,
-{
-    type State = S::ListenerState;
-    fn from_socket_state(
-        socket_state: SocketState<I, D, A, S>,
-    ) -> (Self::State, Self::SharingState, Self::Addr) {
-        match socket_state {
-            SocketState::Listener(state) => state,
-            SocketState::Connected(state) => {
-                unreachable!("connection state for listener: {state:?}")
-            }
-        }
-    }
-
-    fn from_socket_state_mut(
-        socket_state: &mut SocketState<I, D, A, S>,
-    ) -> &mut (Self::State, Self::SharingState, Self::Addr) {
-        match socket_state {
-            SocketState::Listener(state) => state,
-            SocketState::Connected(state) => {
-                unreachable!("connection state for listener: {state:?}")
-            }
-        }
-    }
-
-    fn from_socket_state_ref(
-        socket_state: &SocketState<I, D, A, S>,
-    ) -> &(Self::State, Self::SharingState, Self::Addr) {
-        match socket_state {
-            SocketState::Listener(state) => state,
-            SocketState::Connected(state) => {
-                unreachable!("connection state for listener: {state:?}")
-            }
-        }
-    }
-
-    fn to_socket_state(
-        state: (Self::State, Self::SharingState, Self::Addr),
-    ) -> SocketState<I, D, A, S> {
-        SocketState::Listener(state)
-    }
-}
-
 impl<I: Ip, D: Id, A: SocketMapAddrSpec, S: SocketMapStateSpec> ConvertSocketMapState<I, D, A, S>
     for Connection
-where
-    Bound<S>: Tagged<AddrVec<I, D, A>>,
 {
     type Id = S::ConnId;
     type SharingState = S::ConnSharingState;
@@ -1010,52 +954,6 @@ where
     }
     fn to_socket_id(id: Self::Id) -> SocketId<S> {
         SocketId::Connection(id)
-    }
-}
-
-impl<I: Ip, D: Id, A: SocketMapAddrSpec, S: SocketStateSpec> ConvertSocketTypeState<I, D, A, S>
-    for Connection
-where
-    Bound<S>: Tagged<AddrVec<I, D, A>>,
-{
-    type State = S::ConnState;
-    fn from_socket_state(
-        socket_state: SocketState<I, D, A, S>,
-    ) -> (Self::State, Self::SharingState, Self::Addr) {
-        match socket_state {
-            SocketState::Connected(state) => state,
-            SocketState::Listener(state) => {
-                unreachable!("listener state for connection: {state:?}")
-            }
-        }
-    }
-
-    fn from_socket_state_mut(
-        socket_state: &mut SocketState<I, D, A, S>,
-    ) -> &mut (Self::State, Self::SharingState, Self::Addr) {
-        match socket_state {
-            SocketState::Connected(state) => state,
-            SocketState::Listener(state) => {
-                unreachable!("listener state for connection: {state:?}")
-            }
-        }
-    }
-
-    fn from_socket_state_ref(
-        socket_state: &SocketState<I, D, A, S>,
-    ) -> &(Self::State, Self::SharingState, Self::Addr) {
-        match socket_state {
-            SocketState::Connected(state) => state,
-            SocketState::Listener(state) => {
-                unreachable!("listener state for connection: {state:?}")
-            }
-        }
-    }
-
-    fn to_socket_state(
-        state: (Self::State, Self::SharingState, Self::Addr),
-    ) -> SocketState<I, D, A, S> {
-        SocketState::Connected(state)
     }
 }
 
@@ -1119,24 +1017,11 @@ mod tests {
     #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
     struct Listener(usize);
 
-    impl From<usize> for Listener {
-        fn from(index: usize) -> Listener {
-            Listener(index)
-        }
-    }
-
-    impl From<usize> for Conn {
-        fn from(index: usize) -> Conn {
-            Conn(index)
-        }
-    }
-
     #[derive(PartialEq, Eq, Debug)]
     struct Multiple<T>(char, Vec<T>);
 
-    impl<T, A> Tagged<A> for Multiple<T> {
-        type Tag = char;
-        fn tag(&self, _: &A) -> Self::Tag {
+    impl<T> Multiple<T> {
+        fn tag(&self) -> char {
             let Multiple(c, _) = self;
             *c
         }
@@ -1163,6 +1048,14 @@ mod tests {
 
         type ListenerAddrState = Multiple<Listener>;
         type ConnAddrState = Multiple<Conn>;
+
+        fn listener_tag(_: ListenerAddrInfo, state: &Self::ListenerAddrState) -> Self::AddrVecTag {
+            state.tag()
+        }
+
+        fn connected_tag(_has_device: bool, state: &Self::ConnAddrState) -> Self::AddrVecTag {
+            state.tag()
+        }
     }
 
     type FakeBoundSocketMap =
@@ -1170,22 +1063,16 @@ mod tests {
 
     /// Generator for unique socket IDs that don't have any state.
     ///
-    /// Calling [`fakeSocketIdGen::id_maker`] returns a callable object that
-    /// creates new socket IDs of the requested type that are all unique. The
-    /// IDs can be stored in a [`BoundSocketMap`] but don't have any additional
-    /// state associated with them.
+    /// Calling [`FakeSocketIdGen::next`] returns a unique ID.
     #[derive(Default)]
     struct FakeSocketIdGen {
         next_id: usize,
     }
 
     impl FakeSocketIdGen {
-        fn id_maker<T: From<usize>, A, B>(&mut self) -> impl FnOnce(A, B) -> T + '_ {
-            |_: A, _: B| {
-                let id = self.next_id;
-                self.next_id += 1;
-                id.into()
-            }
+        fn next(&mut self) -> usize {
+            let next_next_id = self.next_id + 1;
+            core::mem::replace(&mut self.next_id, next_next_id)
         }
     }
 
@@ -1300,22 +1187,21 @@ mod tests {
             _addr: &A,
             _old_sharing: &char,
             _new_sharing_state: &char,
-        ) -> Result<(), UpdateSharingError>
-        where
-            Bound<Self>: Tagged<AddrVec<Ipv4, FakeWeakDeviceId<FakeDeviceId>, FakeAddrSpec>>,
-        {
+        ) -> Result<(), UpdateSharingError> {
             Ok(())
         }
     }
 
-    const LISTENER_ADDR: ListenerAddr<Ipv4Addr, FakeWeakDeviceId<FakeDeviceId>, u16> =
-        ListenerAddr {
-            ip: ListenerIpAddr {
-                addr: Some(unsafe { SpecifiedAddr::new_unchecked(net_ip_v4!("1.2.3.4")) }),
-                identifier: 0,
-            },
-            device: None,
-        };
+    const LISTENER_ADDR: ListenerAddr<
+        ListenerIpAddr<Ipv4Addr, u16>,
+        FakeWeakDeviceId<FakeDeviceId>,
+    > = ListenerAddr {
+        ip: ListenerIpAddr {
+            addr: Some(unsafe { SpecifiedAddr::new_unchecked(net_ip_v4!("1.2.3.4")) }),
+            identifier: 0,
+        },
+        device: None,
+    };
 
     const CONN_ADDR: ConnAddr<Ipv4Addr, FakeWeakDeviceId<FakeDeviceId>, u16, ()> = ConnAddr {
         ip: unsafe {
@@ -1337,7 +1223,7 @@ mod tests {
 
         let id = {
             let entry =
-                bound.listeners_mut().try_insert(addr, 'v', fake_id_gen.id_maker()).unwrap();
+                bound.listeners_mut().try_insert(addr, 'v', Listener(fake_id_gen.next())).unwrap();
             assert_eq!(entry.get_addr(), &addr);
             entry.id()
         };
@@ -1357,7 +1243,7 @@ mod tests {
         let addr = CONN_ADDR;
 
         let id = {
-            let entry = bound.conns_mut().try_insert(addr, 'v', fake_id_gen.id_maker()).unwrap();
+            let entry = bound.conns_mut().try_insert(addr, 'v', Conn(fake_id_gen.next())).unwrap();
             assert_eq!(entry.get_addr(), &addr);
             entry.id()
         };
@@ -1398,10 +1284,10 @@ mod tests {
 
         for addr in listener_addrs.iter().cloned() {
             let _entry =
-                bound.listeners_mut().try_insert(addr, 'a', fake_id_gen.id_maker()).unwrap();
+                bound.listeners_mut().try_insert(addr, 'a', Listener(fake_id_gen.next())).unwrap();
         }
         for addr in conn_addrs.iter().cloned() {
-            let _entry = bound.conns_mut().try_insert(addr, 'a', fake_id_gen.id_maker()).unwrap();
+            let _entry = bound.conns_mut().try_insert(addr, 'a', Conn(fake_id_gen.next())).unwrap();
         }
         let expected_addrs = listener_addrs
             .into_iter()
@@ -1413,6 +1299,52 @@ mod tests {
     }
 
     #[test]
+    fn try_insert_with_callback_not_called_on_error() {
+        // TODO(https://fxbug.dev/126141): remove this test along with
+        // try_insert_with.
+        set_logger_for_test();
+        let mut bound = FakeBoundSocketMap::default();
+        let addr = LISTENER_ADDR;
+
+        // Insert a listener so that future calls can conflict.
+        let _: Listener = bound.listeners_mut().try_insert(addr, 'a', Listener(0)).unwrap().id();
+
+        // All of the below try_insert_with calls should fail, but more
+        // importantly, they should not call the `make_id` callback (because it
+        // is only called once success is certain).
+        fn is_never_called<A, B, T>(_: A, _: B) -> T {
+            panic!("should never be called");
+        }
+
+        assert_matches!(
+            bound.listeners_mut().try_insert_with(addr, 'b', is_never_called),
+            Err((InsertError::Exists, _))
+        );
+        assert_matches!(
+            bound.listeners_mut().try_insert_with(
+                ListenerAddr { device: Some(FakeWeakDeviceId(FakeDeviceId)), ..addr },
+                'b',
+                is_never_called
+            ),
+            Err((InsertError::ShadowAddrExists, _))
+        );
+        assert_matches!(
+            bound.conns_mut().try_insert_with(
+                ConnAddr {
+                    device: None,
+                    ip: ConnIpAddr {
+                        local: (addr.ip.addr.unwrap(), addr.ip.identifier),
+                        remote: (SpecifiedAddr::new(net_ip_v4!("1.1.1.1")).unwrap(), ()),
+                    },
+                },
+                'b',
+                is_never_called,
+            ),
+            Err((InsertError::ShadowAddrExists, _))
+        );
+    }
+
+    #[test]
     fn insert_listener_conflict_with_listener() {
         set_logger_for_test();
         let mut bound = FakeBoundSocketMap::default();
@@ -1420,9 +1352,9 @@ mod tests {
         let addr = LISTENER_ADDR;
 
         let _: Listener =
-            bound.listeners_mut().try_insert(addr, 'a', fake_id_gen.id_maker()).unwrap().id();
+            bound.listeners_mut().try_insert(addr, 'a', Listener(fake_id_gen.next())).unwrap().id();
         assert_matches!(
-            bound.listeners_mut().try_insert(addr, 'b', fake_id_gen.id_maker()),
+            bound.listeners_mut().try_insert(addr, 'b', Listener(fake_id_gen.next())),
             Err((InsertError::Exists, 'b'))
         );
     }
@@ -1439,9 +1371,9 @@ mod tests {
         };
 
         let _: Listener =
-            bound.listeners_mut().try_insert(addr, 'a', fake_id_gen.id_maker()).unwrap().id();
+            bound.listeners_mut().try_insert(addr, 'a', Listener(fake_id_gen.next())).unwrap().id();
         assert_matches!(
-            bound.listeners_mut().try_insert(shadows_addr, 'b', fake_id_gen.id_maker()),
+            bound.listeners_mut().try_insert(shadows_addr, 'b', Listener(fake_id_gen.next())),
             Err((InsertError::ShadowAddrExists, 'b'))
         );
     }
@@ -1461,9 +1393,9 @@ mod tests {
         };
 
         let _: Listener =
-            bound.listeners_mut().try_insert(addr, 'a', fake_id_gen.id_maker()).unwrap().id();
+            bound.listeners_mut().try_insert(addr, 'a', Listener(fake_id_gen.next())).unwrap().id();
         assert_matches!(
-            bound.conns_mut().try_insert(shadows_addr, 'b', fake_id_gen.id_maker()),
+            bound.conns_mut().try_insert(shadows_addr, 'b', Conn(fake_id_gen.next())),
             Err((InsertError::ShadowAddrExists, 'b'))
         );
     }
@@ -1475,8 +1407,10 @@ mod tests {
         let mut fake_id_gen = FakeSocketIdGen::default();
         let addr = LISTENER_ADDR;
 
-        let a = bound.listeners_mut().try_insert(addr, 'x', fake_id_gen.id_maker()).unwrap().id();
-        let b = bound.listeners_mut().try_insert(addr, 'x', fake_id_gen.id_maker()).unwrap().id();
+        let a =
+            bound.listeners_mut().try_insert(addr, 'x', Listener(fake_id_gen.next())).unwrap().id();
+        let b =
+            bound.listeners_mut().try_insert(addr, 'x', Listener(fake_id_gen.next())).unwrap().id();
         assert_ne!(a, b);
 
         assert_eq!(bound.listeners_mut().remove(&a, &addr), Ok(()));
@@ -1490,8 +1424,8 @@ mod tests {
         let mut fake_id_gen = FakeSocketIdGen::default();
         let addr = CONN_ADDR;
 
-        let a = bound.conns_mut().try_insert(addr, 'x', fake_id_gen.id_maker()).unwrap().id();
-        let b = bound.conns_mut().try_insert(addr, 'x', fake_id_gen.id_maker()).unwrap().id();
+        let a = bound.conns_mut().try_insert(addr, 'x', Conn(fake_id_gen.next())).unwrap().id();
+        let b = bound.conns_mut().try_insert(addr, 'x', Conn(fake_id_gen.next())).unwrap().id();
         assert_ne!(a, b);
 
         assert_eq!(bound.conns_mut().remove(&a, &addr), Ok(()));
@@ -1516,11 +1450,14 @@ mod tests {
             device: None,
         };
 
-        let first =
-            bound.listeners_mut().try_insert(first_addr, 'a', fake_id_gen.id_maker()).unwrap().id();
+        let first = bound
+            .listeners_mut()
+            .try_insert(first_addr, 'a', Listener(fake_id_gen.next()))
+            .unwrap()
+            .id();
         let second = bound
             .listeners_mut()
-            .try_insert(second_addr, 'b', fake_id_gen.id_maker())
+            .try_insert(second_addr, 'b', Listener(fake_id_gen.next()))
             .unwrap()
             .id();
 
@@ -1553,7 +1490,7 @@ mod tests {
         let addr = CONN_ADDR;
         let conn_id = map
             .conns_mut()
-            .try_insert(addr.clone(), 'a', fake_id_gen.id_maker())
+            .try_insert(addr.clone(), 'a', Conn(fake_id_gen.next()))
             .expect("failed to insert")
             .id();
         assert_matches!(map.conns_mut().remove(&conn_id, &addr), Ok(()));
@@ -1568,7 +1505,7 @@ mod tests {
         let addr = CONN_ADDR;
         let entry = map
             .conns_mut()
-            .try_insert(addr.clone(), 'a', fake_id_gen.id_maker())
+            .try_insert(addr.clone(), 'a', Conn(fake_id_gen.next()))
             .expect("failed to insert");
 
         entry.try_update_sharing(&'a', 'd').expect("worked");
@@ -1576,7 +1513,7 @@ mod tests {
         // the address.
         let second_conn = map
             .conns_mut()
-            .try_insert(addr.clone(), 'd', fake_id_gen.id_maker())
+            .try_insert(addr.clone(), 'd', Conn(fake_id_gen.next()))
             .expect("can insert");
         assert_matches!(second_conn.try_update_sharing(&'d', 'e'), Err(UpdateSharingError));
     }

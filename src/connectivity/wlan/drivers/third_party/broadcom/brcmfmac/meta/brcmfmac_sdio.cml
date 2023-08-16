@@ -12,9 +12,11 @@
         bind: "meta/bind/brcmfmac_sdio.bindbc",
         colocate: "true",
         compat: "driver/brcmfmac.so",
+        default_dispatcher_opts: [ "allow_sync_calls" ],
     },
     capabilities: [
         { service: "fuchsia.wlan.phyimpl.Service" },
+        { service: "fuchsia.wlan.fullmac.Service" },
     ],
     use: [
         { service: "fuchsia.hardware.pci.Service" },
@@ -22,6 +24,10 @@
     expose: [
         {
             service: "fuchsia.wlan.phyimpl.Service",
+            from: "self",
+        },
+        {
+            service: "fuchsia.wlan.fullmac.Service",
             from: "self",
         },
     ],

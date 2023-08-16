@@ -116,8 +116,9 @@ function __fx_env_main() {
   function fd {
     local fd_python
     local dest
-    fd_python="${FUCHSIA_DIR}/scripts/fd.py"
-    dest=$(python3 ${fd_python} "$@")
+    cd "${FUCHSIA_DIR}"
+    fd_python="scripts/fd.py"
+    dest=$(fuchsia-vendored-python ${fd_python} "$@")
     cd -- "${dest}"
   }
 

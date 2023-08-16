@@ -47,6 +47,7 @@ _common_bootfs_deps = [
   "//src/graphics/display/drivers/amlogic-display",
   "//src/graphics/display/drivers/dsi-dw",
   "//src/graphics/drivers/aml-gpu",
+  "//src/media/audio/drivers/aml-g12-tdm",
   "//src/power/power-manager/thermal_config:vim3",
   "//src/ui/backlight/drivers/vim3-pwm-backlight",
   "//src/ui/input/drivers/focaltech",
@@ -115,11 +116,8 @@ assembly_generate_fvm_fastboot = true
 board_is_emu = false
 board_is_phys = true
 
-images_config_label = "//boards/images:vim3"
 partitions_config_label = "//boards/partitions:vim3"
 partitions_config_contents +=
     [ "//prebuilt/third_party/firmware/vim3/u-boot.bin.unsigned" ]
-zedboot_images_config_label = "//boards/images:zedboot_vim3"
-bringup_images_config_label = "//boards/images:bringup_vim3"
 
 bazel_product_bundle_board = "vim3"

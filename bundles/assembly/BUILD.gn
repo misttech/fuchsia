@@ -87,6 +87,8 @@ assembly_input_bundle("bootstrap") {
     "//src/bringup/bin/debuglog:bootfs",
     "//src/bringup/bin/dlog:bootfs",
     "//src/bringup/bin/waitfor:bootfs",
+
+    "//src/devices/usb/bin/usbctl",
   ]
   bootfs_packages = [
     "//src/bringup/bin/svchost:pkg",
@@ -251,6 +253,26 @@ assembly_input_bundle("bootstrap") {
       package_target = "//src/ui/input/drivers/usb-hid:package"
       driver_components = [ "meta/usb-hid.cm" ]
     },
+
+    # TODO(fxb/131976): Carve out usb-peripheral-stack drivers for specific products/boards.
+    {
+      package_target =
+          "//src/connectivity/ethernet/drivers/rndis-function:package"
+      driver_components = [ "meta/rndis-function.cm" ]
+    },
+    {
+      package_target =
+          "//src/connectivity/ethernet/drivers/usb-cdc-function:package"
+      driver_components = [ "meta/usb-cdc-function.cm" ]
+    },
+    {
+      package_target = "//src/devices/block/drivers/ums-function:package"
+      driver_components = [ "meta/ums-function.cm" ]
+    },
+    {
+      package_target = "//src/devices/usb/drivers/usb-peripheral:package"
+      driver_components = [ "meta/usb-peripheral.cm" ]
+    },
   ]
 }
 
@@ -276,9 +298,6 @@ assembly_input_bundle("bootstrap_userdebug") {
     "//src/zircon/bin/ktrace:bootfs",
     "//src/zircon/bin/loadgen:bootfs",
 
-    # drivers
-    "//src/devices/nand/drivers/broker:bootfs",
-
     # shell
     "//zircon/third_party/uapp/dash:bootfs",
   ]
@@ -286,6 +305,13 @@ assembly_input_bundle("bootstrap_userdebug") {
   # Do not automatically include pistress, but build it to keep it from
   # bit-rotting.
   deps = [ "//src/zircon/bin/pistress:bootfs" ]
+
+  boot_driver_packages = [
+    {
+      package_target = "//src/devices/nand/drivers/broker:package"
+      driver_components = [ "meta/nand-broker.cm" ]
+    },
+  ]
 }
 
 # The most-common, most-basic, AIB that is included in all eng systems.
@@ -326,11 +352,6 @@ assembly_input_bundle("bootstrap_eng") {
     "//src/devices/block/bin/blktest:bootfs",
     "//src/graphics/display/bin/display-test:bootfs",
     "//src/zircon/tests/evil:bootfs",
-
-    # drivers
-    "//src/devices/misc/drivers/test:bootfs",
-    "//src/devices/tests/sysdev:bootfs",
-    "//src/devices/usb/drivers/usb-peripheral-test:bootfs",
   ]
 
   # Do not automatically include these tools, but build them to keep them from
@@ -503,13 +524,71 @@ assembly_input_bundle("core_realm_networking") {
   ]
 }
 
+# network_realm
+#
+# This AIB is the base on which to build up networking support. It includes all
+# the packages that are common across all products that require networking.
+assembly_input_bundle("network_realm") {
+  base_packages = [
+    "//src/connectivity/network/dhcpv4/server:package",
+    "//src/connectivity/network/dhcpv6/client:package",
+    "//src/connectivity/network/dns:package",
+    "//src/connectivity/network/http-client:package",
+    "//src/connectivity/network/reachability:package",
+  ]
+
+  compiled_packages = [
+    {
+      name = "network"
+      components = [
+        {
+          component_name = "network"
+          shards =
+              rebase_path("//src/connectivity/network/meta/common.shard.cml",
+                          root_build_dir)
+        },
+      ]
+      component_includes = [
+        {
+          source =
+              rebase_path("//sdk/lib/inspect/offer.shard.cml", root_build_dir)
+          destination = "inspect/offer.shard.cml"
+        },
+        {
+          source =
+              rebase_path("//sdk/lib/trace/offer.shard.cml", root_build_dir)
+          destination = "trace/offer.shard.cml"
+        },
+        {
+          source =
+              rebase_path("//sdk/lib/syslog/offer.shard.cml", root_build_dir)
+          destination = "syslog/offer.shard.cml"
+        },
+      ]
+    },
+  ]
+}
+
 # networking_with_virtualization
 #
 # This AIB adds the networking capabilities that include virtualization support.
 # It is mutually-exclusive with networking_basic.
 #
 assembly_input_bundle("networking_with_virtualization") {
-  base_packages = [ "//src/connectivity/network" ]
+  base_packages = [ "//src/connectivity/network/netcfg:package-advanced" ]
+  compiled_packages = [
+    {
+      name = "network"
+      component_shards = [
+        {
+          component_name = "network"
+          shards = rebase_path(
+                  [ "//src/connectivity/network/meta/network-with-virtualization.shard.cml" ],
+                  root_build_dir)
+        },
+      ]
+    },
+  ]
 }
 
 # networking_basic
@@ -518,7 +597,41 @@ assembly_input_bundle("networking_with_virtualization") {
 # It is mutually-exclusive with networking_with_virtualization.
 #
 assembly_input_bundle("networking_basic") {
-  base_packages = [ "//src/connectivity/network:network-basic" ]
+  base_packages = [ "//src/connectivity/network/netcfg:package-basic" ]
+  compiled_packages = [
+    {
+      name = "network"
+      component_shards = [
+        {
+          component_name = "network"
+          shards = rebase_path(
+                  [ "//src/connectivity/network/meta/network-basic.shard.cml" ],
+                  root_build_dir)
+        },
+      ]
+    },
+  ]
+}
+
+# networking_test_collection
+#
+# Includes a test collection inside the network realm that has access to all
+# networking administrative capabilities.
+assembly_input_bundle("networking_test_collection") {
+  testonly = true
+  compiled_packages = [
+    {
+      name = "network"
+      component_shards = [
+        {
+          component_name = "network"
+          shards = rebase_path(
+                  [ "//src/connectivity/network/meta/test-collection.shard.cml" ],
+                  root_build_dir)
+        },
+      ]
+    },
+  ]
 }
 
 # This is common across all eng-mode products that include the core realm.
@@ -1318,11 +1431,10 @@ assembly_input_bundle("fshost_storage") {
     "//src/storage/fshost:assembly_bundle_fshost_storage_common",
     "//src/storage/bin/blobfs:bootfs",
     "//src/storage/blobfs:bootfs",
-    "//src/lib/trace/rust:bootfs",
   ]
 }
 
-# AIB containing fshost with fxfs enabled, but not fxblob
+# AIB containing the fshost with fxfs.
 #
 # optional: product must specify its inclusion
 # valid feature_set_levels: all
@@ -1335,10 +1447,53 @@ assembly_input_bundle("fshost_fxfs") {
       component_shards = [
         {
           component_name = "fshost"
-          shards = rebase_path([
-                                 "//src/storage/fshost/meta/blobfs_fshost.cml",
-                                 "//src/storage/fshost/meta/fxfs_fshost.cml",
-                               ],
+          shards =
+              rebase_path([ "//src/storage/fshost/meta/fxfs_blob_fshost.cml" ],
+                          root_build_dir)
+        },
+      ]
+    },
+  ]
+  bootfs_files_labels =
+      [ "//src/storage/fshost:assembly_bundle_fshost_fxfs_vmex" ]
+}
+
+# AIB containing fshost with an fvm and fxfs to hold the data.
+#
+# optional: product must specify its inclusion
+# valid feature_set_levels: all
+# valid build-types: all
+#
+assembly_input_bundle("fshost_fvm_blobfs") {
+  compiled_packages = [
+    {
+      name = "fshost"
+      component_shards = [
+        {
+          component_name = "fshost"
+          shards =
+              rebase_path([ "//src/storage/fshost/meta/blobfs_fshost.cml" ],
+                          root_build_dir)
+        },
+      ]
+    },
+  ]
+}
+
+# AIB containing fshost with an fvm and fxfs to hold the data.
+#
+# optional: product must specify its inclusion
+# valid feature_set_levels: all
+# valid build-types: all
+#
+assembly_input_bundle("fshost_fvm_fxfs") {
+  compiled_packages = [
+    {
+      name = "fshost"
+      component_shards = [
+        {
+          component_name = "fshost"
+          shards = rebase_path([ "//src/storage/fshost/meta/fxfs_fshost.cml" ],
                                root_build_dir)
         },
       ]
@@ -1347,13 +1502,13 @@ assembly_input_bundle("fshost_fxfs") {
   bootfs_files_labels = [ "//src/storage/fshost:assembly_bundle_fshost_fxfs" ]
 }
 
-# AIB containing the fshost with fxfs and fxblob enabled
+# AIB containing fshost support for minfs. Not compatible with fxfs.
 #
 # optional: product must specify its inclusion
 # valid feature_set_levels: all
 # valid build-types: all
 #
-assembly_input_bundle("fshost_fxfs_fxblob") {
+assembly_input_bundle("fshost_fvm_minfs") {
   compiled_packages = [
     {
       name = "fshost"
@@ -1361,7 +1516,10 @@ assembly_input_bundle("fshost_fxfs_fxblob") {
         {
           component_name = "fshost"
           shards =
-              rebase_path([ "//src/storage/fshost/meta/fxfs_blob_fshost.cml" ],
+              rebase_path([
+                            "//src/storage/fshost/meta/minfs_fshost.cml",
+                            "//src/storage/fshost/meta/non_fxfs_fshost.cml",
+                          ],
                           root_build_dir)
         },
       ]
@@ -1378,47 +1536,23 @@ assembly_input_bundle("fshost_fxfs_fxblob") {
 # valid build-types: all
 # requires: one of fshost_fxfs*
 #
-assembly_input_bundle("fshost_fxfs_minfs_migration") {
+assembly_input_bundle("fshost_fvm_minfs_migration") {
   compiled_packages = [
     {
       name = "fshost"
       component_shards = [
         {
           component_name = "fshost"
-          shards = rebase_path([ "//src/storage/fshost/meta/minfs_fshost.cml" ],
+          shards = rebase_path([
+                                 "//src/storage/fshost/meta/minfs_fshost.cml",
+                                 "//src/storage/fshost/meta/fxfs_fshost.cml",
+                                 "//src/storage/fshost/meta/f2fs_fshost.cml",
+                               ],
                                root_build_dir)
         },
       ]
     },
   ]
-  bootfs_files_labels = [ "//src/storage/fshost:assembly_bundle_fshost_minfs" ]
-}
-
-# AIB containing fshost support for minfs. Not compatible with fxfs.
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: all
-# valid build-types: all
-#
-assembly_input_bundle("fshost_minfs") {
-  compiled_packages = [
-    {
-      name = "fshost"
-      component_shards = [
-        {
-          component_name = "fshost"
-          shards =
-              rebase_path([
-                            "//src/storage/fshost/meta/blobfs_fshost.cml",
-                            "//src/storage/fshost/meta/minfs_fshost.cml",
-                            "//src/storage/fshost/meta/non_fxfs_fshost.cml",
-                          ],
-                          root_build_dir)
-        },
-      ]
-    },
-  ]
-  bootfs_files_labels = [ "//src/storage/fshost:assembly_bundle_fshost_minfs" ]
 }
 
 # AIB containing fshost support for f2fs
@@ -1427,7 +1561,7 @@ assembly_input_bundle("fshost_minfs") {
 # valid feature_set_levels: all
 # valid build-types: all
 #
-assembly_input_bundle("fshost_f2fs") {
+assembly_input_bundle("fshost_fvm_f2fs") {
   compiled_packages = [
     {
       name = "fshost"
@@ -1436,7 +1570,6 @@ assembly_input_bundle("fshost_f2fs") {
           component_name = "fshost"
           shards =
               rebase_path([
-                            "//src/storage/fshost/meta/blobfs_fshost.cml",
                             "//src/storage/fshost/meta/f2fs_fshost.cml",
                             "//src/storage/fshost/meta/non_fxfs_fshost.cml",
                           ],
@@ -1600,6 +1733,19 @@ assembly_input_bundle("virtualization_support") {
 #
 assembly_input_bundle("netstack2") {
   base_packages = [ "//src/connectivity/network:netstack2" ]
+  compiled_packages = [
+    {
+      name = "network"
+      component_shards = [
+        {
+          component_name = "network"
+          shards = rebase_path(
+                  [ "//src/connectivity/network/meta/netstack2.shard.cml" ],
+                  root_build_dir)
+        },
+      ]
+    },
+  ]
 }
 
 # AIB to include Netstack3 as the netstack for use by base networking.
@@ -1609,6 +1755,19 @@ assembly_input_bundle("netstack2") {
 #
 assembly_input_bundle("netstack3") {
   base_packages = [ "//src/connectivity/network:netstack3" ]
+  compiled_packages = [
+    {
+      name = "network"
+      component_shards = [
+        {
+          component_name = "network"
+          shards = rebase_path(
+                  [ "//src/connectivity/network/meta/netstack3.shard.cml" ],
+                  root_build_dir)
+        },
+      ]
+    },
+  ]
 }
 
 # WLAN base support

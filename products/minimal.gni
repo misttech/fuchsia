@@ -14,7 +14,6 @@ import("//products/common/minimal.gni")
 # Kernel command line arguments.
 product_bootfs_labels += [
   "//products/kernel_cmdline:oom.reboot-timeout--low",
-  "//bundles/drivers:usb-peripheral-stack",
   "//src/sys/component_manager:component_manager_bootfs_config",
 ]
 
@@ -28,6 +27,7 @@ legacy_base_package_labels += [
 #
 # This should be overridden by products which inherit from minimal.
 fuchsia_product_assembly_config_label = "//products/minimal"
+zedboot_product_assembly_config_label = "//products/zedboot"
 
 fuchsia_structured_config_policy =
     "//products/minimal/minimal_user_structured_config_policy.json5"
@@ -37,3 +37,6 @@ extra_bazel_assembly_targets =
     [ "//build/bazel/assembly/assembly_outputs:verifications" ]
 
 assembly_fshost = true
+
+# Packages to be published to universe that do not go through assembly.
+discoverable_package_labels += [ "//src/developer/debug/debug_agent" ]

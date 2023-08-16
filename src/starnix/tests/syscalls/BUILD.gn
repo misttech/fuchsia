@@ -8,6 +8,7 @@ import("//build/testing/host_test.gni")
 import("//build/testing/host_test_data.gni")
 import("//src/starnix/kernel/starnix.gni")
 import("//src/starnix/tests/build/starnix_linux_test_component.gni")
+import("//src/starnix/tests/starnix_test_subpackages.gni")
 
 group("tests") {
   testonly = true
@@ -105,6 +106,7 @@ test("syscalls_test_bin") {
     "memfd_test.cc",
     "mmap_test.cc",
     "mount_test.cc",
+    "overlayfs_test.cc",
     "pipe_test.cc",
     "poll_test.cc",
     "prctl_test.cc",
@@ -116,6 +118,7 @@ test("syscalls_test_bin") {
     "signal_handling_test.cc",
     "socket_test.cc",
     "sw_breakpoint_test.cc",
+    "sysfs_power_test.cc",
     "task_test.cc",
     "terminal_test.cc",
     "test_helper_test.cc",
@@ -224,25 +227,16 @@ starnix_linux_test_component("crash_test") {
   test_type = "starnix"
 }
 
-group("container_resources") {
-  deps = [
-    "//src/connectivity/network/netstack:component",
-    "//src/starnix/containers:data_tmp_target",
-    "//src/starnix/containers:default_init",
-    "//src/starnix/containers/debian:system_image",
-  ]
-}
-
 fuchsia_test_package("starnix_syscall_tests") {
   test_components = [
     ":syscalls_test",
     ":crash_test",
   ]
 
-  subpackages = [ "//src/starnix/kernel:starnix_kernel_package" ]
+  subpackages = starnix_test_subpackages
+  subpackages += [ "//src/starnix/containers/debian:debian_package" ]
 
   deps = [
-    ":container_resources",
     ":extended_pstate_initial_state_child_resource",
     "//src/lib/testing/expectation:expectation_comparer",
   ]

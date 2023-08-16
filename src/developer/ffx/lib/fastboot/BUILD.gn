@@ -15,6 +15,7 @@ if (is_host) {
     deps = [
       "//build/sdk/meta:rust",
       "//sdk/fidl/fuchsia.developer.ffx:fuchsia.developer.ffx_rust",
+      "//src/developer/fastboot:lib",
       "//src/developer/ffx/config:lib",
       "//src/developer/ffx/lib/errors:lib",
       "//src/developer/ffx/lib/fms:lib",
@@ -26,6 +27,7 @@ if (is_host) {
       "//src/lib/fidl/rust/fidl",
       "//src/lib/fuchsia-async",
       "//src/lib/gcs:lib",
+      "//src/lib/usb_bulk/rust:lib",
       "//src/storage/lib/sparse/rust:lib",
       "//third_party/rust_crates:anyhow",
       "//third_party/rust_crates:async-fs",
@@ -58,6 +60,7 @@ if (is_host) {
       "src/common/cmd.rs",
       "src/common/crypto.rs",
       "src/common/file.rs",
+      "src/common/find.rs",
       "src/common/gcs.rs",
       "src/common/mod.rs",
       "src/info/mod.rs",

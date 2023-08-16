@@ -6,14 +6,10 @@
 #define SRC_DEVICES_BIN_DRIVER_MANAGER_V2_NODE_H_
 
 #include <fidl/fuchsia.component.runner/cpp/wire.h>
-#include <fidl/fuchsia.driver.development/cpp/natural_types.h>
-#include <fidl/fuchsia.driver.development/cpp/wire.h>
+#include <fidl/fuchsia.driver.development/cpp/fidl.h>
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
-#include <fidl/fuchsia.driver.framework/cpp/wire.h>
 #include <fidl/fuchsia.driver.host/cpp/wire.h>
 #include <fidl/fuchsia.driver.index/cpp/wire.h>
-#include <lib/async_patterns/cpp/task_scope.h>
-#include <lib/zircon-internal/thread_annotations.h>
 
 #include <list>
 #include <memory>
@@ -22,6 +18,7 @@
 #include "lib/fidl/cpp/wire/internal/transport_channel.h"
 #include "src/devices/bin/driver_manager/devfs/devfs.h"
 #include "src/devices/bin/driver_manager/inspect.h"
+#include "src/devices/bin/driver_manager/v2/bind_result_tracker.h"
 #include "src/devices/bin/driver_manager/v2/driver_host.h"
 
 namespace dfv2 {
@@ -35,39 +32,11 @@ class Node;
 class NodeRemovalTracker;
 using NodeId = uint32_t;
 
-using NodeBindingInfoResultCallback =
-    fit::callback<void(fidl::VectorView<fuchsia_driver_development::wire::NodeBindingInfo>)>;
-
 using AddNodeResultCallback = fit::callback<void(
     fit::result<fuchsia_driver_framework::wire::NodeError, std::shared_ptr<Node>>)>;
 
 using DestroyDriverComponentCallback =
     fit::callback<void(fidl::WireUnownedResult<fuchsia_component::Realm::DestroyChild>& result)>;
-
-// Used to track binding results. Once the tracker reaches the expected result count, it invokes the
-// callback. The expected result count must be greater than 0.
-class BindResultTracker {
- public:
-  explicit BindResultTracker(size_t expected_result_count,
-                             NodeBindingInfoResultCallback result_callback);
-
-  void ReportSuccessfulBind(const std::string_view& node_name, const std::string_view& driver);
-  void ReportSuccessfulBind(
-      const std::string_view& node_name,
-      const std::vector<fuchsia_driver_development::CompositeInfo>& legacy_composite_infos,
-      const std::vector<fuchsia_driver_index::wire::MatchedCompositeNodeSpecInfo>&
-          composite_spec_infos);
-  void ReportNoBind();
-
- private:
-  void Complete(size_t current);
-  fidl::Arena<> arena_;
-  size_t expected_result_count_;
-  size_t currently_reported_ TA_GUARDED(lock_);
-  std::mutex lock_;
-  NodeBindingInfoResultCallback result_callback_;
-  std::vector<fuchsia_driver_development::wire::NodeBindingInfo> results_;
-};
 
 class NodeManager {
  public:
@@ -119,6 +88,13 @@ enum class NodeState {
   kWaitingOnDriverComponent,  // Waiting driver component to be destroyed.
   kStopping,                  // finishing shutdown of node.
 };
+
+enum class NodeType {
+  kNormal,           // Normal non-composite node.
+  kLegacyComposite,  // Composite node created from the legacy system.
+  kComposite,        // Composite node created from composite node specs.
+};
+
 class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
              public fidl::WireServer<fuchsia_driver_framework::Node>,
              public fidl::WireServer<fuchsia_component_runner::ComponentController>,
@@ -126,18 +102,18 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
              public fidl::WireAsyncEventHandler<fuchsia_driver_host::Driver>,
              public std::enable_shared_from_this<Node> {
  public:
-  Node(std::string_view name, std::vector<Node*> parents, NodeManager* node_manager,
-       async_dispatcher_t* dispatcher, DeviceInspect inspect, uint32_t primary_index = 0);
-  Node(std::string_view name, std::vector<Node*> parents, NodeManager* node_manager,
-       async_dispatcher_t* dispatcher, DeviceInspect inspect, DriverHost* driver_host);
+  Node(std::string_view name, std::vector<std::weak_ptr<Node>> parents, NodeManager* node_manager,
+       async_dispatcher_t* dispatcher, DeviceInspect inspect, uint32_t primary_index = 0,
+       NodeType type = NodeType::kNormal);
 
   ~Node() override;
 
   static zx::result<std::shared_ptr<Node>> CreateCompositeNode(
-      std::string_view node_name, std::vector<Node*> parents,
+      std::string_view node_name, std::vector<std::weak_ptr<Node>> parents,
       std::vector<std::string> parents_names,
       const std::vector<fuchsia_driver_framework::wire::NodeProperty>& properties,
-      NodeManager* driver_binder, async_dispatcher_t* dispatcher, uint32_t primary_index = 0);
+      NodeManager* driver_binder, async_dispatcher_t* dispatcher, bool is_legacy,
+      uint32_t primary_index = 0);
 
   void OnBind() const;
 
@@ -181,7 +157,9 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
                    fidl::ServerEnd<fuchsia_component_runner::ComponentController> controller,
                    fit::callback<void(zx::result<>)> cb);
 
-  bool IsComposite() const;
+  bool IsComposite() const {
+    return type_ == NodeType::kLegacyComposite || type_ == NodeType::kComposite;
+  }
 
   // Creates the node's topological path by combining each primary parent's name together,
   // separated by '/'.
@@ -194,7 +172,9 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   std::string MakeComponentMoniker() const;
 
   // Exposed for testing.
-  Node* GetPrimaryParent() const;
+  Node* GetPrimaryParent() const {
+    return parents_.empty() ? nullptr : parents_[primary_index_].lock().get();
+  }
 
   // This should be used on the root node. Install the root node at the top of the devfs filesystem.
   void SetupDevfsForRootNode(
@@ -213,15 +193,38 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   void CompleteBind(zx::result<> result);
 
   const std::string& name() const { return name_; }
+
+  NodeType type() const { return type_; }
+
   const DriverHost* driver_host() const { return *driver_host_; }
+
   const std::string& driver_url() const;
-  const std::vector<Node*>& parents() const;
-  const std::list<std::shared_ptr<Node>>& children() const;
+
+  const std::vector<std::weak_ptr<Node>>& parents() const { return parents_; }
+
+  const std::list<std::shared_ptr<Node>>& children() const { return children_; }
+
   fidl::ArenaBase& arena() { return arena_; }
-  fidl::VectorView<fuchsia_component_decl::wire::Offer> offers() const;
-  fidl::VectorView<fuchsia_driver_framework::wire::NodeSymbol> symbols() const;
-  const std::vector<fuchsia_driver_framework::wire::NodeProperty>& properties() const;
+
+  // TODO(fxbug.dev/66150): Once FIDL wire types support a Clone() method,
+  // remove the const_cast.
+  fidl::VectorView<fuchsia_component_decl::wire::Offer> offers() const {
+    return fidl::VectorView<fuchsia_component_decl::wire::Offer>::FromExternal(
+        const_cast<decltype(offers_)&>(offers_));
+  }
+
+  // TODO(fxbug.dev/7999): Remove const_cast once VectorView supports const.
+  fidl::VectorView<fuchsia_driver_framework::wire::NodeSymbol> symbols() const {
+    return fidl::VectorView<fuchsia_driver_framework::wire::NodeSymbol>::FromExternal(
+        const_cast<decltype(symbols_)&>(symbols_));
+  }
+
+  const std::vector<fuchsia_driver_framework::wire::NodeProperty>& properties() const {
+    return properties_;
+  }
+
   const Collection& collection() const { return collection_; }
+
   DevfsDevice& devfs_device() { return devfs_device_; }
 
   // Exposed for testing.
@@ -232,7 +235,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   bool can_multibind_composites() const { return can_multibind_composites_; }
 
-  void set_collection(Collection collection);
+  void set_collection(Collection collection) { collection_ = collection; }
   void set_offers(std::vector<fuchsia_component_decl::wire::Offer> offers) {
     offers_ = std::move(offers);
   }
@@ -332,9 +335,11 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   std::string name_;
 
+  NodeType type_;
+
   // If this is a composite device, this stores the list of each parent's names.
   std::vector<std::string> parents_names_;
-  std::vector<Node*> parents_;
+  std::vector<std::weak_ptr<Node>> parents_;
   uint32_t primary_index_ = 0;
   std::list<std::shared_ptr<Node>> children_;
   fit::nullable<NodeManager*> node_manager_;
@@ -373,8 +378,6 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   DevfsDevice devfs_device_;
 
   fidl::ServerBindingGroup<fuchsia_device::Controller> dev_controller_bindings_;
-
-  async_patterns::TaskScope tasks_;
 };
 
 }  // namespace dfv2

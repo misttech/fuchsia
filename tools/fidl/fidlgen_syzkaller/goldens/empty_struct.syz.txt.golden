@@ -5,7 +5,6 @@
 
 # fidl_experiment = no_optional_structs
 # fidl_experiment = output_index_json
-# fidl_experiment = simple_empty_response_syntax
 # fidl_experiment = unknown_interactions
 # fidl_experiment = unknown_interactions_mandate
 
@@ -18,6 +17,42 @@ test_emptystruct_EmptyOutOfLine {
 } [packed]
 test_emptystruct_EmptyHandles {
     void void
+} [packed]
+test_emptystruct_EmptyProtocolReceiveRequestInLine {
+    eInLine test_emptystruct_EmptyInLine
+} [packed]
+test_emptystruct_EmptyProtocolReceiveRequestOutOfLine {
+    eOutOfLine test_emptystruct_EmptyOutOfLine
+} [packed]
+test_emptystruct_EmptyProtocolReceiveRequestHandles {
+    e test_emptystruct_EmptyHandles
+} [packed]
+test_emptystruct_EmptyProtocolSendAndReceiveRequestInLine {
+    eInLine test_emptystruct_EmptyInLine
+} [packed]
+test_emptystruct_EmptyProtocolSendAndReceiveRequestOutOfLine {
+    eOutOfLine test_emptystruct_EmptyOutOfLine
+} [packed]
+test_emptystruct_EmptyProtocolSendAndReceiveRequestHandles {
+    e test_emptystruct_EmptyHandles
+} [packed]
+test_emptystruct_EmptyProtocolSendAndReceiveResponseInLine {
+    eInLine test_emptystruct_EmptyInLine
+} [packed]
+test_emptystruct_EmptyProtocolSendAndReceiveResponseOutOfLine {
+    eOutOfLine test_emptystruct_EmptyOutOfLine
+} [packed]
+test_emptystruct_EmptyProtocolSendAndReceiveResponseHandles {
+    e test_emptystruct_EmptyHandles
+} [packed]
+test_emptystruct_EmptyProtocolSendRequestInLine {
+    eInLine test_emptystruct_EmptyInLine
+} [packed]
+test_emptystruct_EmptyProtocolSendRequestOutOfLine {
+    eOutOfLine test_emptystruct_EmptyOutOfLine
+} [packed]
+test_emptystruct_EmptyProtocolSendRequestHandles {
+    e test_emptystruct_EmptyHandles
 } [packed]
 
 

@@ -137,10 +137,8 @@ async fn get_and_verify_package(
     package_cache: &fpkg::PackageCacheProxy,
     pkg: &Package,
 ) -> fio::DirectoryProxy {
-    let meta_blob_info = fpkg::BlobInfo {
-        blob_id: fpkg_ext::BlobId::from(*pkg.meta_far_merkle_root()).into(),
-        length: 0,
-    };
+    let meta_blob_info =
+        fpkg::BlobInfo { blob_id: fpkg_ext::BlobId::from(*pkg.hash()).into(), length: 0 };
 
     let (needed_blobs, needed_blobs_server_end) =
         fidl::endpoints::create_proxy::<fpkg::NeededBlobsMarker>().unwrap();
@@ -230,10 +228,8 @@ async fn verify_package_cached(
     proxy: &fpkg::PackageCacheProxy,
     pkg: &Package,
 ) -> fio::DirectoryProxy {
-    let meta_blob_info = fpkg::BlobInfo {
-        blob_id: fpkg_ext::BlobId::from(*pkg.meta_far_merkle_root()).into(),
-        length: 0,
-    };
+    let meta_blob_info =
+        fpkg::BlobInfo { blob_id: fpkg_ext::BlobId::from(*pkg.hash()).into(), length: 0 };
 
     let (needed_blobs, needed_blobs_server_end) =
         fidl::endpoints::create_proxy::<fpkg::NeededBlobsMarker>().unwrap();
@@ -262,39 +258,18 @@ async fn verify_package_cached(
 
     let (blob_iterator, blob_iterator_server_end) =
         fidl::endpoints::create_proxy::<fpkg::BlobInfoIteratorMarker>().unwrap();
-    let missing_blobs_response = needed_blobs.get_missing_blobs(blob_iterator_server_end);
+    let () = needed_blobs.get_missing_blobs(blob_iterator_server_end).unwrap();
+    let chunk = blob_iterator.next().await;
 
     if epitaph_received {
-        // The rust FIDL bindings that send an epitaph do not immediately close the channel
-        // (see fxbug.dev/81036).
-        // Since NeededBlobs.GetMissingBlobs has no return value, the rust bindings just write a
-        // message to the channel and do not wait for a response.
-        // Therefore, it's possible for the client's GetMissingBlobs message to race with the
-        // server's closing of the channel after writing the epitaph.
-        // If the client does manage to send the GetMissingBlobs message before the server closes
-        // the channel, the blob iterator server end will be closed (by the kernel as part of
-        // cleaning up the zircon channel).
-        // pkg-cache does not immediately drop the NeededBlobs request stream after writing the
-        // epitaph, so this race condition is perhaps slightly more likely to occur than normal.
-        // https://cs.opensource.google/fuchsia/fuchsia/+/main:src/sys/pkg/bin/pkg-cache/src/cache_service.rs;l=226;drc=74e6e2b5ca618c0d9caa8ab07f64eba96f4ce922
-        match missing_blobs_response {
-            // Channel closed before GetMissingBlob request was sent.
-            Err(fidl::Error::ClientChannelClosed { status: Status::OK, .. }) => {}
-            // GetMissingBlob request sent before channel was closed, the iterator channel
-            // should be closed.
-            Ok(()) => {
-                assert_matches!(
-                    blob_iterator.next().await,
-                    Err(fidl::Error::ClientChannelClosed { status: Status::PEER_CLOSED, .. })
-                );
-            }
-            Err(e) => {
-                panic!("Content blobs not cached: unexpected error {e:?}")
-            }
-        }
+        // The server closed the channel, so the iterator gets closed too.
+        assert_matches!(
+            chunk,
+            Err(fidl::Error::ClientChannelClosed { status: Status::PEER_CLOSED, .. })
+        );
     } else {
         // All subpackage meta.fars and content blobs should be cached, so iterator should be empty.
-        assert_eq!(blob_iterator.next().await.unwrap(), vec![]);
+        assert_eq!(chunk.unwrap(), vec![]);
     }
 
     let () = get_fut.await.unwrap().unwrap();
@@ -362,7 +337,7 @@ impl TestEnvBuilder<BoxFuture<'static, (BlobfsRamdisk, Option<Hash>)>> {
                     let blobfs =
                         BlobfsRamdisk::builder().implementation(blob_impl).start().await.unwrap();
                     let () = system_image_package.write_to_blobfs(&blobfs).await;
-                    (blobfs, Some(*system_image_package.meta_far_merkle_root()))
+                    (blobfs, Some(*system_image_package.hash()))
                 }
                 .boxed()
             }),
@@ -420,7 +395,7 @@ where
         for pkg in extra_packages {
             let () = pkg.write_to_blobfs(&blobfs).await;
         }
-        let system_image_hash = *system_image.meta_far_merkle_root();
+        let system_image_hash = *system_image.hash();
 
         TestEnvBuilder::<_> {
             blobfs_and_system_image: Box::new(move |_| {

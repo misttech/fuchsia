@@ -32,13 +32,10 @@ bool Logger::FlushRecord(flog::LogBuffer& buffer, uint32_t dropped) {
 
 void Logger::BeginRecord(flog::LogBuffer& buffer, FuchsiaLogSeverity severity,
                          cpp17::optional<cpp17::string_view> file_name, unsigned int line,
-                         cpp17::optional<cpp17::string_view> message,
-                         cpp17::optional<cpp17::string_view> condition, bool is_printf,
-                         uint32_t dropped) {
+                         cpp17::optional<cpp17::string_view> message, uint32_t dropped) {
   static zx_koid_t pid = GetKoid(zx_process_self());
   static thread_local zx_koid_t tid = GetKoid(zx_thread_self());
-  buffer.BeginRecord(severity, file_name, line, message, condition, is_printf, socket_.borrow(),
-                     dropped, pid, tid);
+  buffer.BeginRecord(severity, file_name, line, message, socket_.borrow(), dropped, pid, tid);
   buffer.WriteKeyValue("tag", "driver");
   buffer.WriteKeyValue("tag", tag_);
 }
@@ -88,9 +85,7 @@ Logger* Logger::GlobalInstance() {
   return g_instance.load();
 }
 
-void Logger::SetGlobalInstance(Logger* logger) {
-  g_instance = logger;
-}
+void Logger::SetGlobalInstance(Logger* logger) { g_instance = logger; }
 
 Logger::~Logger() = default;
 
@@ -210,7 +205,7 @@ void Logger::logvf(FuchsiaLogSeverity severity, cpp20::span<std::string> tags, c
 
   file = StripFile(file, severity);
   flog::LogBuffer buffer;
-  BeginRecord(buffer, severity, file, line, fmt_string, std::nullopt, this->socket_.get(), dropped);
+  BeginRecord(buffer, severity, file, line, fmt_string, dropped);
   for (const auto& tag : tags) {
     buffer.WriteKeyValue("tag", tag);
   }

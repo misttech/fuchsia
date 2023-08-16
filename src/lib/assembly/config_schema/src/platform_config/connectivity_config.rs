@@ -25,7 +25,36 @@ pub struct PlatformNetworkConfig {
     pub networking: Option<NetworkingConfig>,
 
     #[serde(default)]
-    pub force_netstack3: bool,
+    pub netstack_version: NetstackVersion,
+
+    #[serde(default)]
+    pub netcfg_config: NetcfgConfig,
+}
+
+/// Network stack version to use.
+#[derive(Debug, Default, Copy, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+// TODO(https://fxbug.dev/131101): Introduce migration version option.
+pub enum NetstackVersion {
+    #[default]
+    Netstack2,
+    Netstack3,
+}
+
+/// Which netcfg configuration to use.
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum NetcfgConfig {
+    /// The default network configuration.
+    #[default]
+    Default,
+
+    /// An unspecified network configuration.
+    ///
+    /// Product owners are expected to specify the configuration for
+    /// netcfg some other way when this value is used.
+    // TODO(https://fxbug.dev/132060): Remove this.
+    Unspecified,
 }
 
 /// Which networking type to use (standard or basic).

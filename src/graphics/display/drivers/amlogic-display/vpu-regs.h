@@ -126,7 +126,6 @@
 #define VPU_WRBACK_CTRL (0x1df9 << 2)
 #define VPU_VDIN0_WRARB_REQEN_SLV (0x12c1 << 2)
 #define VPU_VDIN1_COM_CTRL0 (0x1302 << 2)
-#define VPU_VDIN1_COM_STATUS0 (0x1305 << 2)
 #define VPU_VDIN1_MATRIX_CTRL (0x1310 << 2)
 #define VPU_VDIN1_COEF00_01 (0x1311 << 2)
 #define VPU_VDIN1_COEF02_10 (0x1312 << 2)
@@ -143,9 +142,7 @@
 #define VPU_VDIN1_WR_CTRL (0x1320 << 2)
 #define VPU_VDIN1_WR_H_START_END (0x1321 << 2)
 #define VPU_VDIN1_WR_V_START_END (0x1322 << 2)
-#define VPU_VDIN1_ASFIFO_CTRL3 (0x136f << 2)
 #define VPU_VDIN1_MISC_CTRL (0x2782 << 2)
-#define VPU_VIU_VDIN_IF_MUX_CTRL (0x2783 << 2)  // undocumented ¯\_(ツ)_/¯
 
 #define VPU_MAFBC_BLOCK_ID (0x3a00 << 2)
 #define VPU_MAFBC_IRQ_RAW_STATUS (0x3a01 << 2)
@@ -190,20 +187,6 @@ class WrBackCtrlReg : public hwreg::RegisterBase<WrBackCtrlReg, uint32_t> {
   static auto Get() { return hwreg::RegisterAddr<WrBackCtrlReg>(VPU_WRBACK_CTRL); }
 };
 
-class VdInComCtrl0Reg : public hwreg::RegisterBase<VdInComCtrl0Reg, uint32_t> {
- public:
-  DEF_FIELD(26, 20, hold_lines);
-  DEF_BIT(4, enable_vdin);
-  DEF_FIELD(3, 0, vdin_selection);
-  static auto Get() { return hwreg::RegisterAddr<VdInComCtrl0Reg>(VPU_VDIN1_COM_CTRL0); }
-};
-
-class VdInComStatus0Reg : public hwreg::RegisterBase<VdInComStatus0Reg, uint32_t> {
- public:
-  DEF_BIT(2, done);
-  static auto Get() { return hwreg::RegisterAddr<VdInComStatus0Reg>(VPU_VDIN1_COM_STATUS0); }
-};
-
 class VdInMatrixCtrlReg : public hwreg::RegisterBase<VdInMatrixCtrlReg, uint32_t> {
  public:
   DEF_FIELD(3, 2, select);
@@ -245,29 +228,41 @@ class VdinCoef22Reg : public hwreg::RegisterBase<VdinCoef22Reg, uint32_t> {
   static auto Get() { return hwreg::RegisterAddr<VdinCoef22Reg>(VPU_VDIN1_COEF22); }
 };
 
+// VDIN1_MATRIX_OFFSET0_1
+// A311D datasheet, section 10.2.3 "Video Output" > "Register Description",
+// page 1113.
 class VdinOffset0_1Reg : public hwreg::RegisterBase<VdinOffset0_1Reg, uint32_t> {
  public:
-  DEF_FIELD(28, 16, offset0);
-  DEF_FIELD(12, 0, offset1);
+  DEF_FIELD(26, 16, offset0);
+  DEF_FIELD(10, 0, offset1);
   static auto Get() { return hwreg::RegisterAddr<VdinOffset0_1Reg>(VPU_VDIN1_OFFSET0_1); }
 };
 
+// VDIN1_MATRIX_OFFSET2
+// A311D datasheet, section 10.2.3 "Video Output" > "Register Description",
+// page 1113.
 class VdinOffset2Reg : public hwreg::RegisterBase<VdinOffset2Reg, uint32_t> {
  public:
-  DEF_FIELD(12, 0, offset2);
+  DEF_FIELD(10, 0, offset2);
   static auto Get() { return hwreg::RegisterAddr<VdinOffset2Reg>(VPU_VDIN1_OFFSET2); }
 };
 
+// VDIN1_MATRIX_PRE_OFFSET0_1
+// A311D datasheet, section 10.2.3 "Video Output" > "Register Description",
+// page 1114.
 class VdinPreOffset0_1Reg : public hwreg::RegisterBase<VdinPreOffset0_1Reg, uint32_t> {
  public:
-  DEF_FIELD(28, 16, preoffset0);
-  DEF_FIELD(12, 0, preoffset1);
+  DEF_FIELD(26, 16, preoffset0);
+  DEF_FIELD(10, 0, preoffset1);
   static auto Get() { return hwreg::RegisterAddr<VdinPreOffset0_1Reg>(VPU_VDIN1_PRE_OFFSET0_1); }
 };
 
+// VDIN1_MATRIX_PRE_OFFSET2
+// A311D datasheet, section 10.2.3 "Video Output" > "Register Description",
+// page 1114.
 class VdinPreOffset2Reg : public hwreg::RegisterBase<VdinPreOffset2Reg, uint32_t> {
  public:
-  DEF_FIELD(12, 0, preoffset2);
+  DEF_FIELD(10, 0, preoffset2);
   static auto Get() { return hwreg::RegisterAddr<VdinPreOffset2Reg>(VPU_VDIN1_PRE_OFFSET2); }
 };
 
@@ -311,30 +306,10 @@ class VdInWrVStartEndReg : public hwreg::RegisterBase<VdInWrVStartEndReg, uint32
   static auto Get() { return hwreg::RegisterAddr<VdInWrVStartEndReg>(VPU_VDIN1_WR_V_START_END); }
 };
 
-class VdInAFifoCtrl3Reg : public hwreg::RegisterBase<VdInAFifoCtrl3Reg, uint32_t> {
- public:
-  DEF_BIT(7, data_valid_en);
-  DEF_BIT(6, go_field_en);
-  DEF_BIT(5, go_line_en);
-  DEF_BIT(4, vsync_pol_set);
-  DEF_BIT(3, hsync_pol_set);
-  DEF_BIT(2, vsync_sync_reset_en);
-  DEF_BIT(1, fifo_overflow_clr);
-  DEF_BIT(0, soft_reset_en);
-  static auto Get() { return hwreg::RegisterAddr<VdInAFifoCtrl3Reg>(VPU_VDIN1_ASFIFO_CTRL3); }
-};
-
 class VdInMiscCtrlReg : public hwreg::RegisterBase<VdInMiscCtrlReg, uint32_t> {
  public:
   DEF_BIT(4, mif_reset);
   static auto Get() { return hwreg::RegisterAddr<VdInMiscCtrlReg>(VPU_VDIN1_MISC_CTRL); }
-};
-
-class VdInIfMuxCtrlReg : public hwreg::RegisterBase<VdInIfMuxCtrlReg, uint32_t> {
- public:
-  DEF_FIELD(12, 8, vpu_path_1);  // bit defs are not documented.
-  DEF_FIELD(4, 0, vpu_path_0);   // bit defs are not documented.
-  static auto Get() { return hwreg::RegisterAddr<VdInIfMuxCtrlReg>(VPU_VIU_VDIN_IF_MUX_CTRL); }
 };
 
 class AfbcCommandReg : public RegisterBase<AfbcCommandReg, uint32_t> {

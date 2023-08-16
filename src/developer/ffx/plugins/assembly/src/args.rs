@@ -44,10 +44,6 @@ pub struct CreateSystemArgs {
     #[argh(switch)]
     pub include_account: bool,
 
-    /// the configuration file that specifies which images to generate and how.
-    #[argh(option)]
-    pub images: Utf8PathBuf,
-
     /// the directory to write assembled outputs to.
     #[argh(option)]
     pub outdir: Utf8PathBuf,
@@ -315,13 +311,6 @@ pub struct ProductArgs {
     /// disable validation of the assembly's packages
     #[argh(option, default = "Default::default()")]
     pub package_validation: PackageValidationHandling,
-
-    /// the path to the filesystem config that declares which filesystems to
-    /// create and how to create them. If provided, then the config will be
-    /// merged with the information in the board and added to the image
-    /// assembly config.
-    #[argh(option)]
-    pub filesystem_config: Option<Utf8PathBuf>,
 }
 
 #[derive(Debug, Default, PartialEq)]

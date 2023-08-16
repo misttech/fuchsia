@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "src/graphics/display/drivers/amlogic-display/amlogic-display.h"
+#include "src/graphics/display/drivers/amlogic-display/clock-regs.h"
 #include "src/graphics/display/drivers/amlogic-display/hdmi-host.h"
 #include "src/graphics/display/drivers/amlogic-display/hhi-regs.h"
 #include "src/graphics/display/drivers/amlogic-display/vpu-regs.h"
@@ -56,7 +57,7 @@ void HdmiHost::WaitForPllLocked() {
             .WriteTo(&(*hhi_mmio_));
       }
     }
-    DISP_ERROR("pll[0x%x] reset %d times\n", HHI_HDMI_PLL_CNTL0, 10000 - cnt);
+    zxlogf(ERROR, "pll[0x%x] reset %d times", HHI_HDMI_PLL_CNTL0, 10000 - cnt);
     if (cnt <= 0)
       err = true;
   } while (err);
@@ -77,12 +78,14 @@ zx_status_t HdmiHost::ConfigurePll() {
         .set_viu2_sel_venc(static_cast<uint8_t>(pll->viu_type))
         .WriteTo(&(*vpu_mmio_));
   }
-  HhiHdmiClkCntlReg::Get()
-      .ReadFrom(&(*hhi_mmio_))
-      .set_clk_sel(0)
-      .set_clk_div(0)
-      .set_clk_en(1)
-      .WriteTo(&(*hhi_mmio_));
+  HdmiClockControl::Get()
+      .ReadFrom(&*hhi_mmio_)
+      .set_hdmi_tx_system_clock_selection(
+          HdmiClockControl::HdmiTxSystemClockSource::kExternalOscillator24Mhz)
+      .SetHdmiTxSystemClockDivider(1)
+      .set_hdmi_tx_system_clock_enabled(true)
+      .WriteTo(&*hhi_mmio_);
+
   ConfigureHpllClkOut(pll->hpll_clk_out);
 
   HhiHdmiPllCntlReg::Get()
@@ -94,43 +97,61 @@ zx_status_t HdmiHost::ConfigurePll() {
 
   ConfigureOd3Div(static_cast<uint8_t>(pll->vid_pll_div));
 
-  HhiVidClkCntlReg::Get().ReadFrom(&(*hhi_mmio_)).set_clk_in_sel(0).WriteTo(&(*hhi_mmio_));
-  HhiVidClkDivReg::Get()
+  VideoClock1Control::Get()
+      .ReadFrom(&*hhi_mmio_)
+      .set_mux_source(VideoClockMuxSource::kVideoPll)
+      .WriteTo(&*hhi_mmio_);
+  VideoClock1Divider::Get()
       .ReadFrom(&(*hhi_mmio_))
-      .set_xd0((pll->vid_clk_div == 0) ? 0 : (pll->vid_clk_div - 1))
+      .SetDivider0((pll->vid_clk_div == 0) ? 1 : (pll->vid_clk_div))
       .WriteTo(&(*hhi_mmio_));
-  HhiVidClkCntlReg::Get()
+  VideoClock1Control::Get()
+      .ReadFrom(&*hhi_mmio_)
+      .set_div4_enabled(true)
+      .set_div2_enabled(true)
+      .set_div1_enabled(true)
+      .WriteTo(&*hhi_mmio_);
+
+  HdmiClockControl::Get()
       .ReadFrom(&(*hhi_mmio_))
-      .set_div4_en(1)
-      .set_div2_en(1)
-      .set_div1_en(1)
+      .set_hdmi_tx_pixel_clock_selection(HdmiClockControl::HdmiTxPixelClockSource::kVideoClock1)
       .WriteTo(&(*hhi_mmio_));
 
-  HhiHdmiClkCntlReg::Get()
-      .ReadFrom(&(*hhi_mmio_))
-      .set_crt_hdmi_pixel_clk_sel((pll->hdmi_tx_pixel_div == 12) ? 4
-                                                                 : (pll->hdmi_tx_pixel_div >> 1))
-      .WriteTo(&(*hhi_mmio_));
-  HhiVidClkCntl2Reg::Get().ReadFrom(&(*hhi_mmio_)).set_hdmi_tx_pixel_clk(1).WriteTo(&(*hhi_mmio_));
+  VideoClockOutputControl::Get()
+      .ReadFrom(&*hhi_mmio_)
+      .set_hdmi_tx_pixel_clock_enabled(true)
+      .WriteTo(&*hhi_mmio_);
 
   if (pll->encp_div != (uint32_t)-1) {
-    HhiVidClkDivReg::Get()
+    VideoClock1Divider::Get()
         .ReadFrom(&(*hhi_mmio_))
-        .set_encp_clk_sel((pll->encp_div == 12) ? 4 : (pll->encp_div >> 1))
+        .set_encp_clock_selection(EncoderClockSource::kVideoClock1)
         .WriteTo(&(*hhi_mmio_));
-    HhiVidClkCntl2Reg::Get().ReadFrom(&(*hhi_mmio_)).set_encp(1).WriteTo(&(*hhi_mmio_));
-    HhiVidClkCntlReg::Get().ReadFrom(&(*hhi_mmio_)).set_clk_en0(1).WriteTo(&(*hhi_mmio_));
+    VideoClockOutputControl::Get()
+        .ReadFrom(&*hhi_mmio_)
+        .set_encoder_progressive_enabled(true)
+        .WriteTo(&*hhi_mmio_);
+    VideoClock1Control::Get()
+        .ReadFrom(&(*hhi_mmio_))
+        .set_divider0_enabled(true)
+        .WriteTo(&(*hhi_mmio_));
   }
   if (pll->enci_div != (uint32_t)-1) {
-    HhiVidClkDivReg::Get()
+    VideoClock1Divider::Get()
         .ReadFrom(&(*hhi_mmio_))
-        .set_enci_clk_sel((pll->encp_div == 12) ? 4 : (pll->encp_div >> 1))
+        .set_enci_clock_selection(EncoderClockSource::kVideoClock1)
         .WriteTo(&(*hhi_mmio_));
-    HhiVidClkCntl2Reg::Get().ReadFrom(&(*hhi_mmio_)).set_enci(1).WriteTo(&(*hhi_mmio_));
-    HhiVidClkCntlReg::Get().ReadFrom(&(*hhi_mmio_)).set_clk_en0(1).WriteTo(&(*hhi_mmio_));
+    VideoClockOutputControl::Get()
+        .ReadFrom(&*hhi_mmio_)
+        .set_encoder_interlaced_enabled(true)
+        .WriteTo(&*hhi_mmio_);
+    VideoClock1Control::Get()
+        .ReadFrom(&(*hhi_mmio_))
+        .set_divider0_enabled(true)
+        .WriteTo(&(*hhi_mmio_));
   }
 
-  DISP_INFO("done!\n");
+  zxlogf(INFO, "done!");
   return ZX_OK;
 }
 
@@ -141,8 +162,8 @@ void HdmiHost::ConfigureHpllClkOut(uint32_t hpll) {
   whole = (uint8_t)desired_pll;
   frac = static_cast<uint16_t>(((float)desired_pll - (float)whole) * kFracMax);
 
-  DISP_ERROR("Desired PLL = %f (frac = %d, whole = %d) (hpll = %d)\n", desired_pll, frac, whole,
-             hpll);
+  zxlogf(ERROR, "Desired PLL = %f (frac = %d, whole = %d) (hpll = %d)", desired_pll, frac, whole,
+         hpll);
 
   HhiHdmiPllCntlReg::Get().FromValue(0x0b3a0400).set_hdmi_dpll_M(whole).WriteTo(&(*hhi_mmio_));
 
@@ -189,7 +210,7 @@ void HdmiHost::ConfigureOd3Div(uint32_t div_sel) {
     /* TODO(fxb/69679): Add in Resets
     auto result = display->reset_register_.WriteRegister32(PRESET0_REGISTER, 1 << 7, 1 << 7);
     if ((result.status() != ZX_OK) || result->is_error()) {
-      zxlogf(ERROR, "Reset0 Set failed\n");
+      zxlogf(ERROR, "Reset0 Set failed");
     }
     */
   }
@@ -262,7 +283,7 @@ void HdmiHost::ConfigureOd3Div(uint32_t div_sel) {
       shift_sel = 2;
       break;
     default:
-      DISP_ERROR("Error: clocks_set_vid_clk_div:  Invalid parameter\n");
+      zxlogf(ERROR, "Error: clocks_set_vid_clk_div:  Invalid parameter");
       break;
   }
 

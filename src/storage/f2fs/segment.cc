@@ -151,7 +151,7 @@ block_t SegmentManager::ReservedSections() {
   return GetReservedSegmentsCount() / superblock_info_->GetSegsPerSec();
 }
 bool SegmentManager::NeedSSR() {
-  return (!superblock_info_->TestOpt(kMountForceLfs) &&
+  return (!superblock_info_->TestOpt(MountOption::kForceLfs) &&
           FreeSections() < static_cast<uint32_t>(OverprovisionSections()));
 }
 
@@ -178,7 +178,7 @@ constexpr uint32_t kMinIpuUtil = 100;
 bool SegmentManager::NeedInplaceUpdate(VnodeF2fs *vnode) {
   if (vnode->IsDir())
     return false;
-  if (superblock_info_->TestOpt(kMountForceLfs)) {
+  if (superblock_info_->TestOpt(MountOption::kForceLfs)) {
     return false;
   }
   return NeedSSR() && Utilization() > kMinIpuUtil;
@@ -398,7 +398,7 @@ void SegmentManager::ClearPrefreeSegments() {
   uint32_t offset = 0;
   uint32_t total_segs = TotalSegs();
   bool need_align =
-      superblock_info_->TestOpt(kMountForceLfs) && superblock_info_->GetSegsPerSec() > 1;
+      superblock_info_->TestOpt(MountOption::kForceLfs) && superblock_info_->GetSegsPerSec() > 1;
 
   std::lock_guard seglist_lock(dirty_info_->seglist_lock);
   while (true) {
@@ -428,7 +428,7 @@ void SegmentManager::ClearPrefreeSegments() {
       }
     }
 
-    if (!superblock_info_->TestOpt(kMountDiscard)) {
+    if (!superblock_info_->TestOpt(MountOption::kDiscard)) {
       continue;
     }
 
@@ -706,7 +706,7 @@ void SegmentManager::NewCurseg(CursegType type, bool new_sec) {
   if (type == CursegType::kCursegWarmData || type == CursegType::kCursegColdData)
     dir = static_cast<int>(AllocDirection::kAllocRight);
 
-  if (superblock_info.TestOpt(kMountNoheap))
+  if (superblock_info.TestOpt(MountOption::kNoHeap))
     dir = static_cast<int>(AllocDirection::kAllocRight);
 
   GetNewSegment(&segno, new_sec, dir);
@@ -914,7 +914,7 @@ zx::result<PageList> SegmentManager::GetBlockAddrsForDirtyDataPages(std::vector<
     ZX_DEBUG_ASSERT(page->IsUptodate());
     ZX_ASSERT_MSG(
         vnode.GetPageType() == PageType::kData,
-        "[f2fs] Failed to allocate blocks for vnode %u that should not have any dirty data Pages.",
+        "failed to allocate blocks for vnode %u that should not have any dirty data Pages.",
         vnode.Ino());
     if (!is_reclaim || fs_->CanReclaim()) {
       auto addr_or = vnode.GetBlockAddrForDirtyDataPage(page, is_reclaim);
@@ -922,7 +922,7 @@ zx::result<PageList> SegmentManager::GetBlockAddrsForDirtyDataPages(std::vector<
         if (page->IsUptodate() && addr_or.status_value() != ZX_ERR_NOT_FOUND) {
           // In case of failure, redirty it.
           page.SetDirty();
-          FX_LOGS(WARNING) << "[f2fs] Failed to allocate a block: " << addr_or.status_value();
+          FX_LOGS(WARNING) << "failed to allocate a block: " << addr_or.status_value();
         }
         page->ClearWriteback();
       } else {

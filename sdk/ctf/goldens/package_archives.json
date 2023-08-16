@@ -10,9 +10,24 @@
     "package_name": "fuchsia-hwinfo-tests"
   },
   {
+    "archive_gn_label": "//sdk/ctf/tests/fidl/fuchsia.intl:fuchsia-intl-tests_archive_copy",
+    "archive_name": "fuchsia-intl-tests",
+    "package_name": "fuchsia-intl-tests"
+  },
+  {
     "archive_gn_label": "//sdk/ctf/tests/fidl/fuchsia.settings:fuchsia-settings-tests_archive_copy",
     "archive_name": "fuchsia-settings-tests",
     "package_name": "fuchsia-settings-tests"
+  },
+  {
+    "archive_gn_label": "//sdk/ctf/tests/pkg/fdio:fdio-spawn-tests_archive_copy",
+    "archive_name": "fdio-spawn-tests",
+    "package_name": "fdio-spawn-tests"
+  },
+  {
+    "archive_gn_label": "//sdk/ctf/tests/pkg/vulkan:vulkan-loader-tests_archive_copy",
+    "archive_name": "vulkan-loader-tests",
+    "package_name": "vulkan-loader-tests"
   },
   {
     "archive_gn_label": "//src/sys/pkg/tests/pkgdir:pkgdir-tests_archive_copy",

@@ -1,0 +1,68 @@
+// Copyright 2022 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+library fuchsia.component.sandbox;
+
+using zx;
+
+/// A capability of unknown type.
+alias Capability = zx.Handle;
+
+/// The key of a [`DictItem`].
+alias DictKey = string:MAX;
+
+/// A key-value pair in a [`Dict`].
+type DictItem = resource struct {
+    key DictKey;
+    value Capability;
+};
+
+/// Error returned from methods in [`Dict`].
+type DictError = flexible enum {
+    /// The Dict does not contain an item with the given key.
+    NOT_FOUND = 1;
+
+    /// The Dict already contains an item with the given key.
+    ALREADY_EXISTS = 2;
+
+    /// The `Capability` handle was invalid.
+    BAD_HANDLE = 3;
+};
+
+closed protocol Dict {
+    /// Inserts a key-value pair into the dict.
+    ///
+    /// * error `DictError.ALREADY_EXISTS` if the dict already contains an
+    /// item with the same key.
+    strict Insert(DictItem) -> () error DictError;
+
+    /// Removes a key from the dict, returning the [`Capability`] value.
+    ///
+    /// * error `DictError.NOT_FOUND` if the dict does not contain the key.
+    strict Remove(struct {
+        key DictKey;
+    }) -> (resource struct {
+        capability Capability;
+    }) error DictError;
+};
+
+type SenderError = flexible enum {
+    /// The `Capability` handle was invalid.
+    BAD_HANDLE = 1;
+};
+
+closed protocol Sender {
+    /// Sends a single Capability handle over this sender.
+    strict Send(resource struct {
+        capability Capability;
+    }) -> () error SenderError;
+};
+
+closed protocol Receiver {
+    /// Receives a single Capability handle.
+    ///
+    /// This is a hanging get that returns the next available handle.
+    strict Receive() -> (resource struct {
+        capability Capability;
+    });
+};

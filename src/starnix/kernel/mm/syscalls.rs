@@ -4,7 +4,6 @@
 
 use fuchsia_runtime::duplicate_utc_clock_handle;
 use fuchsia_zircon as zx;
-use std::sync::Arc;
 
 use crate::{
     execution::notify_debugger_of_module_list,
@@ -15,6 +14,7 @@ use crate::{
     logging::*,
     mm::*,
     syscalls::*,
+    task::Task,
 };
 
 // Returns any platform-specific mmap flags. This is a separate function because as of this writing
@@ -215,8 +215,12 @@ pub fn sys_process_vm_readv(
     local_iov_count: i32,
     remote_iov_addr: UserAddress,
     remote_iov_count: i32,
-    _flags: usize,
+    flags: usize,
 ) -> Result<usize, Errno> {
+    if flags != 0 {
+        return error!(EINVAL);
+    }
+
     // Source and destination are allowed to be of different length. It is valid to use a nullptr if
     // the associated length is 0. Thus, if either source or destination length is 0 and nullptr,
     // make sure to return Ok(0) before doing any other validation/operations.
@@ -226,15 +230,13 @@ pub fn sys_process_vm_readv(
         return Ok(0);
     }
 
-    let task = current_task.get_task(pid).ok_or_else(|| errno!(ESRCH))?;
-    // When this check is loosened to allow reading memory from other processes, the check should
-    // be like checking if the current process is allowed to debug the other process.
-    if !Arc::ptr_eq(&task.thread_group, &current_task.thread_group) {
-        return error!(EPERM);
-    }
+    let weak_remote_task = current_task.get_task(pid);
+    let remote_task = Task::from_weak(&weak_remote_task)?;
 
-    let local_iov = task.mm.read_iovec(local_iov_addr, local_iov_count)?;
-    let remote_iov = task.mm.read_iovec(remote_iov_addr, remote_iov_count)?;
+    current_task.check_ptrace_access_mode(PTRACE_MODE_ATTACH_REALCREDS, &remote_task)?;
+
+    let local_iov = current_task.read_iovec(local_iov_addr, local_iov_count)?;
+    let remote_iov = current_task.read_iovec(remote_iov_addr, remote_iov_count)?;
     log_trace!(
         "process_vm_readv(pid={}, local_iov={:?}, remote_iov={:?})",
         pid,
@@ -244,8 +246,51 @@ pub fn sys_process_vm_readv(
     // TODO(tbodt): According to the man page, this syscall was added to Linux specifically to
     // avoid doing two copies like other IPC mechanisms require. We should avoid this too at some
     // point.
-    let mut input = UserBuffersInputBuffer::new(&current_task.mm, remote_iov)?;
+    let mut input = UserBuffersInputBuffer::new(&remote_task.mm, remote_iov)?;
     let mut output = UserBuffersOutputBuffer::new(&current_task.mm, local_iov)?;
+    output.write_buffer(&mut input)
+}
+
+pub fn sys_process_vm_writev(
+    current_task: &CurrentTask,
+    pid: pid_t,
+    local_iov_addr: UserAddress,
+    local_iov_count: i32,
+    remote_iov_addr: UserAddress,
+    remote_iov_count: i32,
+    flags: usize,
+) -> Result<usize, Errno> {
+    if flags != 0 {
+        return error!(EINVAL);
+    }
+
+    // Source and destination are allowed to be of different length. It is valid to use a nullptr if
+    // the associated length is 0. Thus, if either source or destination length is 0 and nullptr,
+    // make sure to return Ok(0) before doing any other validation/operations.
+    if (local_iov_count == 0 && local_iov_addr.is_null())
+        || (remote_iov_count == 0 && remote_iov_addr.is_null())
+    {
+        return Ok(0);
+    }
+
+    let weak_remote_task = current_task.get_task(pid);
+    let remote_task = Task::from_weak(&weak_remote_task)?;
+
+    current_task.check_ptrace_access_mode(PTRACE_MODE_ATTACH_REALCREDS, &remote_task)?;
+
+    let local_iov = current_task.read_iovec(local_iov_addr, local_iov_count)?;
+    let remote_iov = current_task.read_iovec(remote_iov_addr, remote_iov_count)?;
+    log_trace!(
+        "sys_process_vm_writev(pid={}, local_iov={:?}, remote_iov={:?})",
+        pid,
+        local_iov,
+        remote_iov
+    );
+    // TODO(tbodt): According to the man page, this syscall was added to Linux specifically to
+    // avoid doing two copies like other IPC mechanisms require. We should avoid this too at some
+    // point.
+    let mut input = UserBuffersInputBuffer::new(&current_task.mm, local_iov)?;
+    let mut output = UserBuffersOutputBuffer::new(&remote_task.mm, remote_iov)?;
     output.write_buffer(&mut input)
 }
 
@@ -276,8 +321,9 @@ fn realtime_deadline_to_monotonic(deadline: timespec) -> Result<zx::Time, Errno>
     Ok(details.mono_to_synthetic.apply_inverse(utc_time))
 }
 
-pub fn sys_futex(
+fn do_futex<Key: FutexKey>(
     current_task: &CurrentTask,
+    futexes: &FutexTable<Key>,
     addr: UserAddress,
     op: u32,
     value: u32,
@@ -285,12 +331,6 @@ pub fn sys_futex(
     addr2: UserAddress,
     value3: u32,
 ) -> Result<usize, Errno> {
-    let futexes = if op & FUTEX_PRIVATE_FLAG != 0 {
-        &current_task.mm.futex
-    } else {
-        &current_task.kernel().shared_futexes
-    };
-
     let is_realtime = op & FUTEX_CLOCK_REALTIME != 0;
     let cmd = op & (FUTEX_CMD_MASK as u32);
     match cmd {
@@ -339,6 +379,31 @@ pub fn sys_futex(
     }
 }
 
+pub fn sys_futex(
+    current_task: &CurrentTask,
+    addr: UserAddress,
+    op: u32,
+    value: u32,
+    utime: UserRef<timespec>,
+    addr2: UserAddress,
+    value3: u32,
+) -> Result<usize, Errno> {
+    if op & FUTEX_PRIVATE_FLAG != 0 {
+        do_futex(current_task, &current_task.mm.futex, addr, op, value, utime, addr2, value3)
+    } else {
+        do_futex(
+            current_task,
+            &current_task.kernel().shared_futexes,
+            addr,
+            op,
+            value,
+            utime,
+            addr2,
+            value3,
+        )
+    }
+}
+
 pub fn sys_get_robust_list(
     current_task: &CurrentTask,
     pid: pid_t,
@@ -354,16 +419,11 @@ pub fn sys_get_robust_list(
     if pid != 0 && !current_task.creds().has_capability(CAP_SYS_PTRACE) {
         return error!(EPERM);
     }
-    let task = if pid == 0 { Some(current_task.task.clone()) } else { current_task.get_task(pid) };
-
-    match task {
-        Some(t) => {
-            current_task.write_object(user_head_ptr, &t.read().robust_list_head)?;
-            current_task.write_object(user_len_ptr, &std::mem::size_of::<robust_list_head>())?;
-            Ok(())
-        }
-        None => error!(ESRCH),
-    }
+    let task = if pid == 0 { current_task.weak_task() } else { current_task.get_task(pid) };
+    let task = Task::from_weak(&task)?;
+    current_task.write_object(user_head_ptr, &task.read().robust_list_head)?;
+    current_task.write_object(user_len_ptr, &std::mem::size_of::<robust_list_head>())?;
+    Ok(())
 }
 
 pub fn sys_set_robust_list(

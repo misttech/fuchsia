@@ -30,17 +30,23 @@ fn create_pkgfs(kernel: &Arc<Kernel>) -> FileSystemHandle {
     let rights = fio::OpenFlags::RIGHT_READABLE | fio::OpenFlags::RIGHT_EXECUTABLE;
     let (server, client) = zx::Channel::create();
     fdio::open("/pkg", rights, server).expect("failed to open /pkg");
-    RemoteFs::new_fs(kernel, client, "/pkg", rights).unwrap()
+    RemoteFs::new_fs(
+        kernel,
+        client,
+        FileSystemOptions { source: b"/pkg".to_vec(), ..Default::default() },
+        rights,
+    )
+    .unwrap()
 }
 
 /// Creates a `Kernel` and `Task` with the package file system for testing purposes.
 ///
 /// The `Task` is backed by a real process, and can be used to test syscalls.
-pub fn create_kernel_and_task_with_pkgfs() -> (Arc<Kernel>, CurrentTask) {
+pub fn create_kernel_and_task_with_pkgfs() -> (Arc<Kernel>, AutoReleasableTask) {
     create_kernel_and_task_with_fs(create_pkgfs)
 }
 
-pub fn create_kernel_and_task() -> (Arc<Kernel>, CurrentTask) {
+pub fn create_kernel_and_task() -> (Arc<Kernel>, AutoReleasableTask) {
     create_kernel_and_task_with_fs(TmpFs::new_fs)
 }
 /// Creates a `Kernel` and `Task` for testing purposes.
@@ -48,7 +54,7 @@ pub fn create_kernel_and_task() -> (Arc<Kernel>, CurrentTask) {
 /// The `Task` is backed by a real process, and can be used to test syscalls.
 fn create_kernel_and_task_with_fs(
     create_fs: impl FnOnce(&Arc<Kernel>) -> FileSystemHandle,
-) -> (Arc<Kernel>, CurrentTask) {
+) -> (Arc<Kernel>, AutoReleasableTask) {
     let kernel =
         Kernel::new(b"test-kernel", &[], &Vec::new(), None, None, fuchsia_inspect::Node::default())
             .expect("failed to create kernel");
@@ -71,13 +77,13 @@ fn create_kernel_and_task_with_fs(
         let _l2 = task.read();
     }
 
-    (kernel, task)
+    (kernel, task.into())
 }
 
 /// Creates a new `Task` in the provided kernel.
 ///
 /// The `Task` is backed by a real process, and can be used to test syscalls.
-pub fn create_task(kernel: &Arc<Kernel>, task_name: &str) -> CurrentTask {
+pub fn create_task(kernel: &Arc<Kernel>, task_name: &str) -> AutoReleasableTask {
     let task = Task::create_process_without_parent(
         kernel,
         CString::new(task_name).unwrap(),
@@ -92,7 +98,7 @@ pub fn create_task(kernel: &Arc<Kernel>, task_name: &str) -> CurrentTask {
         let _l2 = task.read();
     }
 
-    task
+    task.into()
 }
 
 /// Maps a region of memory at least `len` bytes long with `PROT_READ | PROT_WRITE`,
@@ -220,6 +226,8 @@ pub fn check_unmapped(current_task: &CurrentTask, addr: UserAddress) {
 pub struct PanickingFsNode;
 
 impl FsNodeOps for PanickingFsNode {
+    fs_node_impl_not_dir!();
+
     fn create_file_ops(
         &self,
         _node: &FsNode,
@@ -309,5 +317,78 @@ impl<'a> UserMemoryWriter<'a> {
     /// Returns the current address at which data will be next written.
     pub fn current_address(&self) -> UserAddress {
         self.current_addr
+    }
+}
+
+#[derive(Debug)]
+pub struct AutoReleasableTask(Option<CurrentTask>);
+
+impl AutoReleasableTask {
+    fn as_ref(this: &Self) -> &CurrentTask {
+        this.0.as_ref().unwrap()
+    }
+
+    fn as_mut(this: &mut Self) -> &mut CurrentTask {
+        this.0.as_mut().unwrap()
+    }
+}
+
+impl From<CurrentTask> for AutoReleasableTask {
+    fn from(task: CurrentTask) -> Self {
+        Self(Some(task))
+    }
+}
+
+impl Drop for AutoReleasableTask {
+    fn drop(&mut self) {
+        self.0.take().unwrap().release(&());
+    }
+}
+
+impl std::ops::Deref for AutoReleasableTask {
+    type Target = CurrentTask;
+
+    fn deref(&self) -> &Self::Target {
+        AutoReleasableTask::as_ref(self)
+    }
+}
+
+impl std::ops::DerefMut for AutoReleasableTask {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        AutoReleasableTask::as_mut(self)
+    }
+}
+
+impl std::borrow::Borrow<CurrentTask> for AutoReleasableTask {
+    fn borrow(&self) -> &CurrentTask {
+        AutoReleasableTask::as_ref(self)
+    }
+}
+
+impl std::convert::AsRef<CurrentTask> for AutoReleasableTask {
+    fn as_ref(&self) -> &CurrentTask {
+        AutoReleasableTask::as_ref(self)
+    }
+}
+
+impl MemoryAccessor for AutoReleasableTask {
+    fn read_memory_to_slice(&self, addr: UserAddress, bytes: &mut [u8]) -> Result<(), Errno> {
+        (**self).read_memory_to_slice(addr, bytes)
+    }
+    fn read_memory_partial_to_slice(
+        &self,
+        addr: UserAddress,
+        bytes: &mut [u8],
+    ) -> Result<usize, Errno> {
+        (**self).read_memory_partial_to_slice(addr, bytes)
+    }
+    fn write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
+        (**self).write_memory(addr, bytes)
+    }
+    fn write_memory_partial(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
+        (**self).write_memory_partial(addr, bytes)
+    }
+    fn zero(&self, addr: UserAddress, length: usize) -> Result<usize, Errno> {
+        (**self).zero(addr, length)
     }
 }

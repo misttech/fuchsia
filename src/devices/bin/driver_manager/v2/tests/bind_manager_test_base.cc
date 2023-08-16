@@ -38,6 +38,11 @@ void TestDriverIndex::AddCompositeNodeSpec(AddCompositeNodeSpecRequestView reque
   completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
+void TestDriverIndex::RebindCompositeNodeSpec(RebindCompositeNodeSpecRequestView request,
+                                              RebindCompositeNodeSpecCompleter::Sync& completer) {
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
 zx::result<fidl::ClientEnd<fdi::DriverIndex>> TestDriverIndex::Connect() {
   auto endpoints = fidl::CreateEndpoints<fdi::DriverIndex>();
   if (endpoints.is_error()) {
@@ -150,8 +155,8 @@ void BindManagerTestBase::VerifyBindManagerData(BindManagerTestBase::BindManager
 std::shared_ptr<dfv2::Node> BindManagerTestBase::CreateNode(const std::string name,
                                                             bool enable_multibind) {
   std::shared_ptr new_node =
-      std::make_shared<dfv2::Node>(name, std::vector<dfv2::Node*>(), &node_manager_, dispatcher(),
-                                   inspect_.CreateDevice(name, zx::vmo(), 0));
+      std::make_shared<dfv2::Node>(name, std::vector<std::weak_ptr<dfv2::Node>>(), &node_manager_,
+                                   dispatcher(), inspect_.CreateDevice(name, zx::vmo(), 0));
   new_node->AddToDevfsForTesting(root_devnode_.value());
   new_node->set_can_multibind_composites(enable_multibind);
   return new_node;

@@ -7,10 +7,14 @@
 use {
     crate::{
         common::{
-            inherit_rights_for_clone, rights_to_posix_mode_bits, send_on_open_with_error, IntoAny,
+            decode_extended_attribute_value, encode_extended_attribute_value,
+            extended_attributes_sender, inherit_rights_for_clone, rights_to_posix_mode_bits,
+            send_on_open_with_error, IntoAny,
         },
         directory::entry::{DirectoryEntry, EntryInfo},
         execution_scope::ExecutionScope,
+        name::parse_name,
+        node::Node,
         object_request::Representation,
         path::Path,
         ObjectRequest, ProtocolsExt, ToObjectRequest,
@@ -23,21 +27,32 @@ use {
 };
 
 #[async_trait]
-pub trait Symlink: Send + Sync {
+pub trait Symlink: Node {
     async fn read_target(&self) -> Result<Vec<u8>, zx::Status>;
 
-    /// Returns node attributes (io2).
-    async fn get_attributes(
+    // Extended attributes for symlinks.
+    async fn list_extended_attributes(&self) -> Result<Vec<Vec<u8>>, zx::Status> {
+        Err(zx::Status::NOT_SUPPORTED)
+    }
+    async fn get_extended_attribute(&self, _name: Vec<u8>) -> Result<Vec<u8>, zx::Status> {
+        Err(zx::Status::NOT_SUPPORTED)
+    }
+    async fn set_extended_attribute(
         &self,
-        _requested_attributes: fio::NodeAttributesQuery,
-    ) -> Result<fio::NodeAttributes2, zx::Status> {
+        _name: Vec<u8>,
+        _value: Vec<u8>,
+        _mode: fio::SetExtendedAttributeMode,
+    ) -> Result<(), zx::Status> {
+        Err(zx::Status::NOT_SUPPORTED)
+    }
+    async fn remove_extended_attribute(&self, _name: Vec<u8>) -> Result<(), zx::Status> {
         Err(zx::Status::NOT_SUPPORTED)
     }
 }
 
 pub struct Connection {
-    symlink: Arc<dyn Symlink>,
     scope: ExecutionScope,
+    symlink: Arc<dyn Symlink>,
 }
 
 pub struct SymlinkOptions;
@@ -74,7 +89,7 @@ impl Connection {
         _options: SymlinkOptions,
         object_request: ObjectRequest,
     ) {
-        let mut connection = Connection { symlink, scope };
+        let mut connection = Connection { scope, symlink };
         if let Ok(mut requests) = object_request.into_request_stream(&connection).await {
             while let Some(Ok(request)) = requests.next().await {
                 let Some(_guard) = connection.scope.try_active_guard() else { break };
@@ -104,6 +119,11 @@ impl Connection {
                 responder.send(Ok(()))?;
                 return Ok(true);
             }
+            fio::SymlinkRequest::LinkInto { dst_parent_token, dst, responder } => {
+                responder.send(
+                    self.handle_link_into(dst_parent_token, dst).await.map_err(|s| s.into_raw()),
+                )?;
+            }
             fio::SymlinkRequest::GetConnectionInfo { responder } => {
                 // TODO(https://fxbug.dev/77623): Restrict GET_ATTRIBUTES.
                 let rights = fio::Operations::GET_ATTRIBUTES;
@@ -127,17 +147,24 @@ impl Connection {
             fio::SymlinkRequest::UpdateAttributes { payload: _, responder } => {
                 responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
             }
-            fio::SymlinkRequest::ListExtendedAttributes { iterator, .. } => {
-                iterator.close_with_epitaph(zx::Status::NOT_SUPPORTED)?;
+            fio::SymlinkRequest::ListExtendedAttributes { iterator, control_handle: _ } => {
+                self.handle_list_extended_attribute(iterator).await;
             }
-            fio::SymlinkRequest::GetExtendedAttribute { responder, .. } => {
-                responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
+            fio::SymlinkRequest::GetExtendedAttribute { responder, name } => {
+                let res = self.handle_get_extended_attribute(name).await.map_err(|s| s.into_raw());
+                responder.send(res)?;
             }
-            fio::SymlinkRequest::SetExtendedAttribute { responder, .. } => {
-                responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
+            fio::SymlinkRequest::SetExtendedAttribute { responder, name, value, mode } => {
+                let res = self
+                    .handle_set_extended_attribute(name, value, mode)
+                    .await
+                    .map_err(|s| s.into_raw());
+                responder.send(res)?;
             }
-            fio::SymlinkRequest::RemoveExtendedAttribute { responder, .. } => {
-                responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
+            fio::SymlinkRequest::RemoveExtendedAttribute { responder, name } => {
+                let res =
+                    self.handle_remove_extended_attribute(name).await.map_err(|s| s.into_raw());
+                responder.send(res)?;
             }
             fio::SymlinkRequest::Describe { responder } => match self.symlink.read_target().await {
                 Ok(target) => responder
@@ -200,6 +227,64 @@ impl Connection {
             modification_time: 0,
         })
     }
+
+    async fn handle_link_into(
+        &mut self,
+        target_parent_token: zx::Event,
+        target_name: String,
+    ) -> Result<(), zx::Status> {
+        let target_name = parse_name(target_name).map_err(|_| zx::Status::INVALID_ARGS)?;
+
+        let (target_parent, _flags) = self
+            .scope
+            .token_registry()
+            .get_owner(target_parent_token.into())?
+            .ok_or(Err(zx::Status::NOT_FOUND))?;
+
+        self.symlink.clone().link_into(target_parent, target_name).await
+    }
+
+    async fn handle_list_extended_attribute(
+        &self,
+        iterator: ServerEnd<fio::ExtendedAttributeIteratorMarker>,
+    ) {
+        let attributes = match self.symlink.list_extended_attributes().await {
+            Ok(attributes) => attributes,
+            Err(status) => {
+                tracing::error!(?status, "list extended attributes failed");
+                iterator
+                    .close_with_epitaph(status)
+                    .unwrap_or_else(|error| tracing::error!(?error, "failed to send epitaph"));
+                return;
+            }
+        };
+        self.scope.spawn(extended_attributes_sender(iterator, attributes));
+    }
+
+    async fn handle_get_extended_attribute(
+        &self,
+        name: Vec<u8>,
+    ) -> Result<fio::ExtendedAttributeValue, zx::Status> {
+        let value = self.symlink.get_extended_attribute(name).await?;
+        encode_extended_attribute_value(value)
+    }
+
+    async fn handle_set_extended_attribute(
+        &self,
+        name: Vec<u8>,
+        value: fio::ExtendedAttributeValue,
+        mode: fio::SetExtendedAttributeMode,
+    ) -> Result<(), zx::Status> {
+        if name.iter().any(|c| *c == 0) {
+            return Err(zx::Status::INVALID_ARGS);
+        }
+        let val = decode_extended_attribute_value(value)?;
+        self.symlink.set_extended_attribute(name, val, mode).await
+    }
+
+    async fn handle_remove_extended_attribute(&self, name: Vec<u8>) -> Result<(), zx::Status> {
+        self.symlink.remove_extended_attribute(name).await
+    }
 }
 
 impl<T: IntoAny + Symlink + Send + Sync> DirectoryEntry for T {
@@ -251,7 +336,7 @@ mod tests {
     use {
         super::{Connection, Symlink},
         crate::{
-            common::rights_to_posix_mode_bits, execution_scope::ExecutionScope,
+            common::rights_to_posix_mode_bits, execution_scope::ExecutionScope, node::Node,
             symlink::SymlinkOptions, ProtocolsExt, ToObjectRequest,
         },
         assert_matches::assert_matches,
@@ -259,15 +344,65 @@ mod tests {
         fidl::endpoints::create_proxy,
         fidl_fuchsia_io as fio, fuchsia_zircon as zx,
         futures::StreamExt,
-        std::sync::Arc,
+        std::{
+            collections::HashMap,
+            sync::{Arc, Mutex},
+        },
     };
 
-    struct TestSymlink;
+    struct TestSymlink {
+        xattrs: Mutex<HashMap<Vec<u8>, Vec<u8>>>,
+    }
+
+    impl TestSymlink {
+        fn new() -> Self {
+            TestSymlink { xattrs: Mutex::new(HashMap::new()) }
+        }
+    }
 
     #[async_trait]
     impl Symlink for TestSymlink {
         async fn read_target(&self) -> Result<Vec<u8>, zx::Status> {
             Ok(b"target".to_vec())
+        }
+        async fn list_extended_attributes(&self) -> Result<Vec<Vec<u8>>, zx::Status> {
+            let map = self.xattrs.lock().unwrap();
+            Ok(map.values().map(|x| x.clone()).collect())
+        }
+        async fn get_extended_attribute(&self, name: Vec<u8>) -> Result<Vec<u8>, zx::Status> {
+            let map = self.xattrs.lock().unwrap();
+            map.get(&name).map(|x| x.clone()).ok_or(zx::Status::NOT_FOUND)
+        }
+        async fn set_extended_attribute(
+            &self,
+            name: Vec<u8>,
+            value: Vec<u8>,
+            _mode: fio::SetExtendedAttributeMode,
+        ) -> Result<(), zx::Status> {
+            let mut map = self.xattrs.lock().unwrap();
+            // Don't bother replicating the mode behavior, we just care that this method is hooked
+            // up at all.
+            map.insert(name, value);
+            Ok(())
+        }
+        async fn remove_extended_attribute(&self, name: Vec<u8>) -> Result<(), zx::Status> {
+            let mut map = self.xattrs.lock().unwrap();
+            map.remove(&name);
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl Node for TestSymlink {
+        async fn get_attributes(
+            &self,
+            _requested_attributes: fio::NodeAttributesQuery,
+        ) -> Result<fio::NodeAttributes2, zx::Status> {
+            unreachable!();
+        }
+
+        async fn get_attrs(&self) -> Result<fio::NodeAttributes, zx::Status> {
+            unreachable!();
         }
     }
 
@@ -278,7 +413,7 @@ mod tests {
             create_proxy::<fio::SymlinkMarker>().expect("create_proxy failed");
         Connection::spawn(
             scope,
-            Arc::new(TestSymlink),
+            Arc::new(TestSymlink::new()),
             SymlinkOptions,
             fio::OpenFlags::RIGHT_READABLE.to_object_request(server_end),
         );
@@ -300,7 +435,7 @@ mod tests {
             flags.to_object_request(server_end).handle(|object_request| {
                 Connection::spawn(
                     scope.clone(),
-                    Arc::new(TestSymlink),
+                    Arc::new(TestSymlink::new()),
                     flags.to_symlink_options()?,
                     object_request.take(),
                 );
@@ -350,7 +485,7 @@ mod tests {
         let flags = fio::OpenFlags::RIGHT_READABLE;
         Connection::spawn(
             scope,
-            Arc::new(TestSymlink),
+            Arc::new(TestSymlink::new()),
             flags.to_symlink_options().unwrap(),
             flags.to_object_request(server_end.into_channel()),
         );
@@ -381,7 +516,7 @@ mod tests {
         let flags = fio::OpenFlags::RIGHT_READABLE;
         Connection::spawn(
             scope,
-            Arc::new(TestSymlink),
+            Arc::new(TestSymlink::new()),
             flags.to_symlink_options().unwrap(),
             flags.to_object_request(server_end),
         );
@@ -392,6 +527,46 @@ mod tests {
                 target: Some(target),
                 ..
             } if target == b"target"
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_xattrs() {
+        let scope = ExecutionScope::new();
+        let (client_end, server_end) =
+            create_proxy::<fio::SymlinkMarker>().expect("create_proxy failed");
+        let flags = fio::OpenFlags::RIGHT_READABLE;
+        Connection::spawn(
+            scope,
+            Arc::new(TestSymlink::new()),
+            flags.to_symlink_options().unwrap(),
+            flags.to_object_request(server_end),
+        );
+
+        client_end
+            .set_extended_attribute(
+                b"foo",
+                fio::ExtendedAttributeValue::Bytes(b"bar".to_vec()),
+                fio::SetExtendedAttributeMode::Set,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            client_end.get_extended_attribute(b"foo").await.unwrap().unwrap(),
+            fio::ExtendedAttributeValue::Bytes(b"bar".to_vec()),
+        );
+        let (iterator_client_end, iterator_server_end) =
+            create_proxy::<fio::ExtendedAttributeIteratorMarker>().unwrap();
+        client_end.list_extended_attributes(iterator_server_end).unwrap();
+        assert_eq!(
+            iterator_client_end.get_next().await.unwrap().unwrap(),
+            (vec![b"bar".to_vec()], true)
+        );
+        client_end.remove_extended_attribute(b"foo").await.unwrap().unwrap();
+        assert_eq!(
+            client_end.get_extended_attribute(b"foo").await.unwrap().unwrap_err(),
+            zx::Status::NOT_FOUND.into_raw(),
         );
     }
 }

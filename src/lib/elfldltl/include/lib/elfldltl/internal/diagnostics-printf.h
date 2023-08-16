@@ -21,6 +21,8 @@ struct FileOffset;
 template <typename T>
 struct FileAddress;
 
+class SymbolName;
+
 namespace internal {
 
 // This only exists to be specialized.  The interface is shown here.
@@ -66,20 +68,39 @@ struct PrintfType<uint32_t> {
   static constexpr auto Arguments(uint32_t arg) { return std::make_tuple(arg); }
 };
 
+template <typename T, size_t N>
+struct Map {
+  using Type = T;
+  ConstString<N> string;
+};
+
+template <typename T, size_t N>
+constexpr auto FormatFor(const char (&string)[N]) {
+  return Map<T, N - 1>{string};
+}
+
+template <typename T, class First, class... Rest>
+constexpr auto Pick(First first, Rest... rest) {
+  if constexpr (std::is_same_v<T, typename First::Type>) {
+    return first.string;
+  } else {
+    static_assert(sizeof...(Rest) > 0, "missing type?");
+    return Pick<T>(rest...);
+  }
+}
+
 template <typename T>
 constexpr auto PrintfHexFormatStringForType() {
-  if constexpr (std::is_same_v<T, uint8_t>) {
-    return ConstString(" %#" PRIx8);
-  } else if constexpr (std::is_same_v<T, uint16_t>) {
-    return ConstString(" %#" PRIx16);
-  } else if constexpr (std::is_same_v<T, uint32_t>) {
-    return ConstString(" %#" PRIx32);
-  } else if constexpr (std::is_same_v<T, uint64_t>) {
-    return ConstString(" %#" PRIx64);
-  } else {
-    static_assert(std::is_void_v<T>, "unhandled integer type??");
-    return ConstString(" elfldltl BUG!");
-  }
+  return ConstString(" %#") + Pick<T>(                                  //
+                                  FormatFor<uint8_t>(PRIx8),            //
+                                  FormatFor<uint16_t>(PRIx16),          //
+                                  FormatFor<uint32_t>(PRIx32),          //
+                                  FormatFor<uint64_t>(PRIx64),          //
+                                  FormatFor<unsigned char>("hhx"),      //
+                                  FormatFor<unsigned short int>("hx"),  //
+                                  FormatFor<unsigned int>("x"),         //
+                                  FormatFor<unsigned long int>("lx"),   //
+                                  FormatFor<unsigned long long int>("llx"));
 }
 
 // This handles string literals.  It could fold them into the format
@@ -111,6 +132,9 @@ struct PrintfType<std::string_view> {
     return std::make_tuple(static_cast<int>(str.size()), str.data());
   }
 };
+
+template <>
+struct PrintfType<SymbolName> : public PrintfType<std::string_view> {};
 
 template <typename T>
 struct PrintfType<FileOffset<T>> {

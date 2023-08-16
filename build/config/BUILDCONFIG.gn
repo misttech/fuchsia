@@ -80,14 +80,13 @@ set_default_toolchain(target_toolchain)
 sources_assignment_filter = []
 
 # Variables used to refer to the in-tree python interpreter.
-python_version = "3.11"
-python_exe_src = "//prebuilt/third_party/python${python_version}/${host_platform}/bin/python${python_version}"
-python_include_dir =
-    "//prebuilt/third_party/python${python_version}/${host_platform}/include"
+python_exe_src = "//prebuilt/third_party/python3/${host_platform}/bin/python3"
+python_include_dir = "//prebuilt/third_party/python3/${host_platform}/include"
 
 # Variables used to refer to the in-tree python pip.
 pip_version = "3.11"
-pip_exe_src = "//prebuilt/third_party/python${python_version}/${host_platform}/bin/pip${pip_version}"
+pip_exe_src =
+    "//prebuilt/third_party/python3/${host_platform}/bin/pip${pip_version}"
 
 # These files are needed when enabling 'restat' behavior through this wrapper
 # script.  'restat' preserves old timestamps on unchanged outputs.
@@ -609,6 +608,9 @@ default_rust_configs = [
   "//build/config/rust/lints:deny_unused_crate_dependencies",
   "//build/config/rust/lints:deny_unused_results",
   "//build/config/rust/lints:allow_unused_results",
+
+  # TODO(fxbug.dev/131835) Remove once lints cleaned up
+  "//build/config/rust:allow_noop_method_call",
 ]
 
 set_defaults("rustc_binary") {
@@ -1074,13 +1076,16 @@ foreach(_target_type,
           import("//build/config/clang/clang.gni")
           import("//build/toolchain/zircon/gcc.gni")
         }
-        _ignored_prefixes_allowlist = [
-          # The clang and gcc toolchains are identified by the "bin/"
-          # subdirectory of their installation, so the parent of that directory
-          # is what's in the ignored-prefixes list.
-          get_path_info(_ignored_prefixes_imports.clang_prefix, "dir"),
-          get_path_info(_ignored_prefixes_imports.gcc_tool_dir, "dir"),
-        ]
+
+        # The clang and gcc toolchains are identified by the "bin/"
+        # subdirectory of their installation, so the parent of that directory
+        # is what's in the ignored-prefixes list.
+        _ignored_prefixes_allowlist =
+            [ get_path_info(_ignored_prefixes_imports.clang_prefix, "dir") ]
+        if (is_gcc) {
+          _ignored_prefixes_allowlist +=
+              [ get_path_info(_ignored_prefixes_imports.gcc_tool_dir, "dir") ]
+        }
       }
       if (hermetic_toolchain) {
         if (!hermetic_deps ||
@@ -1223,6 +1228,12 @@ foreach(_target_type,
       no_output_dir_leaks = true
       if (defined(invoker.no_output_dir_leaks)) {
         no_output_dir_leaks = invoker.no_output_dir_leaks
+      } else if (string_replace("##${current_toolchain}",
+                                "##//third_party/",
+                                "") != "##${current_toolchain}") {
+        # Disable build-time leak checks when running actions that belong to
+        # toolchain() instances defined by //third_party/ build files.
+        no_output_dir_leaks = false
       }
 
       if (!no_output_dir_leaks) {
@@ -2568,30 +2579,22 @@ template("variant_target") {
         visibility += [ ":${target_name}" ]
       }
     }
-  } else if (current_toolchain == shlib_toolchain ||
-             target_type == "shared_library" ||
+  } else if (target_type == "shared_library" ||
              builder_toolchain == toolchain_variant.base) {
     # This corresponds to the following cases, which don't require a
     # copy from the builder_toolchain to the current one:
     #
-    # - current_toolchain == shlib_toolchain:
-    #
-    #    Already in an shlib toolchain, but needs to be built in a
-    #    different (variant-specific) shlib toolchain. This happens
-    #    when the shared_library("foo") target depends on another
-    #    loadable_module("bar") target that must be built with a
-    #    different variant. E.g.:
-    #
-    #      //src:prog -->
-    #          //src:foo -->
-    #              //src:foo(x64-shared) -->
-    #                 //src:bar(x64-shared) --> HERE!
-    #                    //src:bar(x64-asan-shared)
-    #
     # - target_type == "shared_library":
     #
-    #    Should only happen when in the default toolchain instance
+    #    Should only happen when in the base toolchain instance
     #    to redirect to the variant-specific builder toolchain.
+    #
+    #    Note that a loadable_module() target does require a copy from its
+    #    variant-shlib_toolchain location to the base shlib_toolchain location
+    #    because its output file might be used as in the input to another
+    #    target like an action() or copy() (e.g. via host_test_data()); these
+    #    expect to use the shlib_toolchain for their deps since it's known to
+    #    be a loadable_module() target, but they don't know about the variant.
     #
     # - builder_toolchain == toolchain_variant.base
     #
@@ -2657,9 +2660,14 @@ template("variant_target") {
       deps = [ ":${target_name}(${builder_toolchain})" ]
 
       full_output_name = target_invoker.output_name
-      if (defined(target_invoker.output_extension) &&
-          target_invoker.output_extension != "") {
-        full_output_name += ".${target_invoker.output_extension}"
+      output_extension = ""
+      if (defined(target_invoker.output_extension)) {
+        output_extension = target_invoker.output_extension
+      } else if (target_type == "loadable_module") {
+        output_extension = ".so"
+      }
+      if (output_extension != "") {
+        full_output_name += ".$output_extension"
       }
 
       local_out_dir = root_out_dir

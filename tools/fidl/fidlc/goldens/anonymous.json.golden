@@ -3,7 +3,6 @@
   "experiments": [
     "no_optional_structs",
     "output_index_json",
-    "simple_empty_response_syntax",
     "unknown_interactions",
     "unknown_interactions_mandate"
   ],
@@ -609,6 +608,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 56,
         "alignment": 8,
@@ -742,6 +742,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 40,
         "alignment": 8,
@@ -822,6 +823,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 4,
         "alignment": 4,
@@ -902,6 +904,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 1,
         "alignment": 1,
@@ -1352,6 +1355,7 @@
       ],
       "strict": false,
       "resource": false,
+      "is_result": false,
       "type_shape_v1": {
         "inline_size": 24,
         "alignment": 8,
@@ -1386,18 +1390,6 @@
         "column": 11,
         "length": 110
       },
-      "maybe_attributes": [
-        {
-          "name": "result",
-          "arguments": [],
-          "location": {
-            "filename": "generated",
-            "line": 4,
-            "column": 1,
-            "length": 6
-          }
-        }
-      ],
       "members": [
         {
           "ordinal": 1,
@@ -1474,6 +1466,7 @@
       ],
       "strict": true,
       "resource": false,
+      "is_result": true,
       "type_shape_v1": {
         "inline_size": 24,
         "alignment": 8,
@@ -1558,6 +1551,7 @@
       ],
       "strict": false,
       "resource": false,
+      "is_result": false,
       "type_shape_v1": {
         "inline_size": 24,
         "alignment": 8,

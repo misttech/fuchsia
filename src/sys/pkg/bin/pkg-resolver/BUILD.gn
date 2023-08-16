@@ -95,7 +95,6 @@ rustc_library("lib") {
     "src/metrics_util.rs",
     "src/repository.rs",
     "src/repository/filesystem_repository.rs",
-    "src/repository/local_provider.rs",
     "src/repository/updating_tuf_client.rs",
     "src/repository_manager.rs",
     "src/repository_service.rs",
@@ -173,12 +172,11 @@ fuchsia_test_package("unit-tests-package") {
       max_severity = "ERROR"
     }
   }
-  package_name = "pkg-resolver-unit-tests"
+  package_name = "pkg-resolver-tests"
   deps = [
     ":unit-tests-driver",
     "//src/connectivity/network/dns:component",
     "//src/connectivity/network/netstack:component",
-    "//src/sys/pkg/bin/pm:pm_bin",
     "//src/sys/pkg/tests/pkg-resolver:empty-repo",
   ]
   test_components = [ ":unit-tests-root" ]
@@ -203,8 +201,7 @@ fuchsia_structured_config_rust_lib("config_lib") {
 # LINT.IfChange
 structured_config_values = {
   fetch_delivery_blob = false
-  delivery_blob_fallback = false
-  allow_local_mirror = false
+  delivery_blob_fallback = true
 
   # Repository size is currently 100 KB. Allowing for 10x growth and assuming a
   # 4,096 B/s minimum bandwidth (the default minimum bandwidth used by rust-tuf
@@ -236,7 +233,6 @@ fuchsia_structured_config_values("eng_config_values_from_gn") {
   cm_label = ":manifest"
 
   values = structured_config_values
-  values.delivery_blob_fallback = true
 }
 
 group("tests") {

@@ -46,10 +46,6 @@ namespace runtests {
 
 namespace {
 
-// Path to helper binary which can run test as a component. This binary takes
-// component url as its parameter.
-constexpr char kRunTestComponentPath[] = "/bin/run-test-component";
-
 // Path to helper binary which can run test as a v2 component. This binary takes
 // component url as its parameter.
 constexpr char kRunTestSuitePath[] = "/bin/run-test-suite";
@@ -69,9 +65,7 @@ fbl::String RootName(const fbl::String& path) {
 bool SetUpForTestComponent(const char* test_path, fbl::String* out_component_executor) {
   if (IsFuchsiaPkgURI(test_path)) {
     const char* last_three_chars_of_url = &(test_path[strlen(test_path) - 3]);
-    if (0 == strncmp(last_three_chars_of_url, "cmx", 3)) {  // v1 component
-      *out_component_executor = kRunTestComponentPath;
-    } else if (0 == strncmp(last_three_chars_of_url, ".cm", 3)) {  // v2
+    if (0 == strncmp(last_three_chars_of_url, ".cm", 3)) {  // v2
       *out_component_executor = kRunTestSuitePath;
     } else {
       fprintf(stderr, "FAILURE: component URL has unexpected format: %s\n", test_path);
@@ -103,7 +97,7 @@ zx_status_t RunLoopUntilSignalOrDeadline(async::Loop& loop, zx::time deadline, z
 }
 
 std::unique_ptr<Result> RunTest(const char* argv[], const char* output_dir, const char* test_name,
-                                int64_t timeout_msec, const char* realm_label) {
+                                int64_t timeout_msec) {
   // The arguments passed to fdio_spawn_etc. May be overridden.
   const char** args = argv;
   // calculate size of argv
@@ -114,16 +108,12 @@ std::unique_ptr<Result> RunTest(const char* argv[], const char* output_dir, cons
 
   const char* path = argv[0];
   fbl::String component_executor;
-  fbl::String realm_label_arg;
 
   if (!SetUpForTestComponent(path, &component_executor)) {
     return std::make_unique<Result>(path, FAILED_TO_LAUNCH, 0, 0);
   }
 
-  const char* component_launch_args[argc + 4];
-  if (realm_label != nullptr) {
-    realm_label_arg = fbl::String::Concat({"--realm-label=", realm_label});
-  }
+  const char* component_launch_args[argc + 3];
   if (component_executor.length() > 0) {
     // Check whether the executor is present and print a more helpful error, rather than failing
     // later in the fdio_spawn_etc call.
@@ -137,10 +127,6 @@ std::unique_ptr<Result> RunTest(const char* argv[], const char* output_dir, cons
     }
     component_launch_args[0] = component_executor.c_str();
     int j = 1;
-    if (realm_label != nullptr) {
-      component_launch_args[j] = realm_label_arg.c_str();
-      j++;
-    }
     component_launch_args[j] = path;
     j++;
     for (size_t i = 1; i <= argc; i++) {

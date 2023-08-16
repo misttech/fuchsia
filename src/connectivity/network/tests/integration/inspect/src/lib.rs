@@ -858,6 +858,7 @@ async fn inspect_stat_counters<N: Netstack>(name: &str) {
             FailedPortReservations: AnyProperty,
             FastRecovery: AnyProperty,
             FastRetransmit: AnyProperty,
+            ForwardMaxInFlightDrop: AnyProperty,
             InvalidSegmentsReceived: AnyProperty,
             ListenOverflowAckDrop: AnyProperty,
             ListenOverflowInvalidSynCookieRcvd: AnyProperty,
@@ -1466,11 +1467,12 @@ async fn inspect_socket_stats<N: Netstack>(name: &str) {
 }
 
 #[netstack_test]
-async fn inspect_ns3_socket_stats(name: &str) {
+async fn inspect_ns3_sockets(name: &str) {
     type N = netstack_testing_common::realms::Netstack3;
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
     let realm = sandbox.create_netstack_realm::<N, _>(name).expect("failed to create realm");
 
+    // Ensure ns3 has started and that there is a Socket to collect inspect data about.
     let _tcp_socket = realm
         .stream_socket(fposix_socket::Domain::Ipv4, fposix_socket::StreamSocketProtocol::Tcp)
         .await
@@ -1478,17 +1480,62 @@ async fn inspect_ns3_socket_stats(name: &str) {
 
     let data = get_inspect_data(&realm, "netstack", "root", "fuchsia.inspect.Tree")
         .await
-        .expect("Socket Info inspect data should be present");
+        .expect("inspect data should be present");
+
     // Debug print the tree to make debugging easier in case of failures.
     println!("Got inspect data: {:#?}", data);
     fuchsia_inspect::assert_data_tree!(data, "root": contains {
-        "Socket Info": {
+        "Sockets": {
             "0": {
                 LocalAddress: "[NOT BOUND]",
                 RemoteAddress: "[NOT CONNECTED]",
                 TransportProtocol: "TCP",
                 NetworkProtocol: "IPv4"
             }
+        }
+    })
+}
+
+#[netstack_test]
+async fn inspect_ns3_routes(name: &str) {
+    type N = netstack_testing_common::realms::Netstack3;
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    let realm = sandbox.create_netstack_realm::<N, _>(name).expect("failed to create realm");
+
+    // Ensure ns3 has started by connecting to a FIDL protocol.
+    let _interfaces_state = realm
+        .connect_to_protocol::<fidl_fuchsia_net_interfaces::StateMarker>()
+        .expect("failed to connect to fuchsia.net.interfaces/State");
+
+    let data = get_inspect_data(&realm, "netstack", "root", "fuchsia.inspect.Tree")
+        .await
+        .expect("inspect data should be present");
+
+    // Debug print the tree to make debugging easier in case of failures.
+    println!("Got inspect data: {:#?}", data);
+    fuchsia_inspect::assert_data_tree!(data, "root": contains {
+        "Routes": {
+            "0": {
+                Destination: "255.255.255.255/32",
+                InterfaceId: 1u64,
+                Gateway: "[NONE]",
+                Metric: 99999u64,
+                MetricTracksInterface: false,
+            },
+            "1": {
+                Destination: "127.0.0.0/8",
+                InterfaceId: 1u64,
+                Gateway: "[NONE]",
+                Metric: 100u64,
+                MetricTracksInterface: true,
+            },
+            "2": {
+                Destination: "224.0.0.0/4",
+                InterfaceId: 1u64,
+                Gateway: "[NONE]",
+                Metric: 100u64,
+                MetricTracksInterface: true,
+            },
         }
     })
 }

@@ -89,7 +89,6 @@
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.hardware.power.statecontrol.RebootMethodsWatcherRegister",
                 "fuchsia.hardware.pty.Device",
-                "fuchsia.hardware.usb.DeviceWatcher",
                 "fuchsia.kernel.Counter",
                 "fuchsia.kernel.DebugBroker",
                 "fuchsia.kernel.DebugResource",
@@ -668,7 +667,7 @@
             ],
             from: "#ui",
             to: "#sshd-host",
-            dependency: "weak_for_migration",
+            dependency: "weak",
             source_availability: "unknown",
         },
         {

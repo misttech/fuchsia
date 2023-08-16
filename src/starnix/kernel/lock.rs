@@ -3,24 +3,48 @@
 // found in the LICENSE file.
 
 // Use these crates so that we don't need to make the dependency conditional.
+use fuchsia_sync as _;
 use lock_api as _;
 use parking_lot as _;
 
-#[cfg(not(any(test, debug_assertions)))]
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// In release, either use parking_lot::Mutex or fuchsia_sync::Mutex depending on use_fuchsia_mutex
+//
+#[cfg(all(not(any(test, debug_assertions)), use_fuchsia_mutex))]
 pub type Mutex<T> = fuchsia_sync::Mutex<T>;
-#[cfg(not(any(test, debug_assertions)))]
+#[cfg(all(not(any(test, debug_assertions)), use_fuchsia_mutex))]
 pub type MutexGuard<'a, T> = fuchsia_sync::MutexGuard<'a, T>;
 #[allow(unused)]
-#[cfg(not(any(test, debug_assertions)))]
+#[cfg(all(not(any(test, debug_assertions)), use_fuchsia_mutex))]
 pub type MappedMutexGuard<'a, T> = fuchsia_sync::MappedMutexGuard<'a, T>;
+#[cfg(all(not(any(test, debug_assertions)), not(use_fuchsia_mutex)))]
+pub type Mutex<T> = parking_lot::Mutex<T>;
+#[cfg(all(not(any(test, debug_assertions)), not(use_fuchsia_mutex)))]
+pub type MutexGuard<'a, T> = parking_lot::MutexGuard<'a, T>;
+#[cfg(all(not(any(test, debug_assertions)), not(use_fuchsia_mutex)))]
+#[allow(unused)]
+pub type MappedMutexGuard<'a, T> = parking_lot::MappedMutexGuard<'a, T>;
+//
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
-// TODO(fxbug.dev/88603): Switch RWLocks to fuchsia_sync as well once fuchsia_sync offers RWLocks.
-#[cfg(not(any(test, debug_assertions)))]
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// In release, either use parking_lot::Mutex or fuchsia_sync::Mutex depending on use_fuchsia_rwlock
+//
+// TODO(fxbug.dev/88603): Use fuchsia_sync all the time.
+#[cfg(all(not(any(test, debug_assertions)), use_fuchsia_rwlock))]
+pub type RwLock<T> = fuchsia_sync::RwLock<T>;
+#[cfg(all(not(any(test, debug_assertions)), use_fuchsia_rwlock))]
+pub type RwLockReadGuard<'a, T> = fuchsia_sync::RwLockReadGuard<'a, T>;
+#[cfg(all(not(any(test, debug_assertions)), use_fuchsia_rwlock))]
+pub type RwLockWriteGuard<'a, T> = fuchsia_sync::RwLockWriteGuard<'a, T>;
+#[cfg(all(not(any(test, debug_assertions)), not(use_fuchsia_rwlock)))]
 pub type RwLock<T> = parking_lot::RwLock<T>;
-#[cfg(not(any(test, debug_assertions)))]
+#[cfg(all(not(any(test, debug_assertions)), not(use_fuchsia_rwlock)))]
 pub type RwLockReadGuard<'a, T> = parking_lot::RwLockReadGuard<'a, T>;
-#[cfg(not(any(test, debug_assertions)))]
+#[cfg(all(not(any(test, debug_assertions)), not(use_fuchsia_rwlock)))]
 pub type RwLockWriteGuard<'a, T> = parking_lot::RwLockWriteGuard<'a, T>;
+//
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(any(test, debug_assertions))]
 type RawTracingMutex = tracing_mutex::lockapi::TracingWrapper<fuchsia_sync::RawSyncMutex>;
@@ -32,13 +56,14 @@ pub type MutexGuard<'a, T> = lock_api::MutexGuard<'a, RawTracingMutex, T>;
 #[cfg(any(test, debug_assertions))]
 pub type MappedMutexGuard<'a, T> = lock_api::MappedMutexGuard<'a, RawTracingMutex, T>;
 
-// TODO(fxbug.dev/88603): Switch RWLocks to fuchsia_sync as well once fuchsia_sync offers RWLocks.
 #[cfg(any(test, debug_assertions))]
-pub type RwLock<T> = tracing_mutex::parkinglot::TracingRwLock<T>;
+type RawTracingRwLock = tracing_mutex::lockapi::TracingWrapper<fuchsia_sync::RawSyncRwLock>;
 #[cfg(any(test, debug_assertions))]
-pub type RwLockReadGuard<'a, T> = tracing_mutex::parkinglot::TracingRwLockReadGuard<'a, T>;
+pub type RwLock<T> = lock_api::RwLock<RawTracingRwLock, T>;
 #[cfg(any(test, debug_assertions))]
-pub type RwLockWriteGuard<'a, T> = tracing_mutex::parkinglot::TracingRwLockWriteGuard<'a, T>;
+pub type RwLockReadGuard<'a, T> = lock_api::RwLockReadGuard<'a, RawTracingRwLock, T>;
+#[cfg(any(test, debug_assertions))]
+pub type RwLockWriteGuard<'a, T> = lock_api::RwLockWriteGuard<'a, RawTracingRwLock, T>;
 
 /// Lock `m1` and `m2` in a consistent order (using the memory address of m1 and m2 and returns the
 /// associated guard. This ensure that `ordered_lock(m1, m2)` and `ordered_lock(m2, m1)` will not

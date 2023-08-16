@@ -27,7 +27,7 @@ namespace fvm {
 class VPartitionManager;
 class VPartition;
 
-using PartitionDeviceType = ddk::Device<VPartition, ddk::GetProtocolable>;
+using PartitionDeviceType = ddk::Device<VPartition, ddk::GetProtocolable, ddk::MadeVisibleable>;
 
 class VPartition : public PartitionDeviceType,
                    public ddk::BlockImplProtocol<VPartition, ddk::base_protocol>,
@@ -38,12 +38,13 @@ class VPartition : public PartitionDeviceType,
 
   static zx_status_t Create(VPartitionManager* vpm, size_t entry_index,
                             std::unique_ptr<VPartition>* out);
+  // Add `vp` device, signaling `on_visible` once the device can be enumerated in devfs.
+  static zx_status_t AddSignalVisible(std::unique_ptr<VPartition> vp, const std::string& name,
+                                      sync_completion_t* on_visible);
+
   // Device Protocol
-  // TODO(https://fxbug.dev/126961): NOTE!! We are currently reliant on VPartition NOT implementing
-  // DdkInit to ensure that child partitions of the VPartitionManager are visible in devfs on the
-  // return of GetInfo(). If VPartition implements DdkInit, we can no longer rely on the
-  // completion of GetInfo() to know when it is safe to enumerate child partitions in devfs.
   zx_status_t DdkGetProtocol(uint32_t proto_id, void* out);
+  void DdkMadeVisible();
   void DdkRelease();
 
   // Block Protocol
@@ -114,6 +115,7 @@ class VPartition : public PartitionDeviceType,
 
   VPartitionManager* mgr_;
   size_t entry_index_;
+  sync_completion_t* on_visible_;
 
   // Mapping of virtual slice number (index) to physical slice number (value).
   // Physical slice zero is reserved to mean "unmapped", so a zeroed slice_map

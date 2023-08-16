@@ -49,6 +49,7 @@
 #include <linux/netlink.h>
 #include <linux/oom.h>
 #include <linux/personality.h>
+#include <linux/pidfd.h>
 #include <linux/poll.h>
 #include <linux/prctl.h>
 #include <linux/random.h>
@@ -75,8 +76,8 @@
 #include <linux/wait.h>
 #include <linux/xattr.h>
 
-// Constants shared between Starnix and a vDSO implementation.
-#include <vdso-constants.h>
+// Data shared between Starnix and a vDSO implementation.
+#include <vvar-data.h>
 
 #ifdef __x86_64__
 #include <asm/prctl.h>

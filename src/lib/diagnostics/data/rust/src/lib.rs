@@ -42,6 +42,8 @@ const SCHEMA_VERSION: u64 = 1;
 const MICROS_IN_SEC: u128 = 1000000;
 const ROOT_MONIKER_REPR: &str = "<root>";
 
+/// The possible name for a handle to inspect data. It could be a filename (being deprecated) or a
+/// name published using `fuchsia.inspect.InspectSink`.
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Hash, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum InspectHandleName {
@@ -513,6 +515,7 @@ impl<D> Data<D>
 where
     D: DiagnosticsData,
 {
+    /// Returns a [`Data`] with an error indicating that the payload was dropped.
     pub fn dropped_payload_schema(self, error_string: String) -> Data<D>
     where
         D: DiagnosticsData,
@@ -592,12 +595,9 @@ pub struct LogsDataBuilder {
     args: BuilderArgs,
     /// List of KVPs from the user
     keys: Vec<Property<LogsField>>,
-    /// Printf format string
-    format: Option<String>,
-    /// Arguments for printf string
-    printf_args: Vec<String>,
 }
 
+/// Arguments used to create a new [`LogsDataBuilder`].
 pub struct BuilderArgs {
     /// The moniker for the component
     pub moniker: String,
@@ -622,8 +622,6 @@ impl LogsDataBuilder {
             tags: vec![],
             tid: None,
             keys: vec![],
-            format: None,
-            printf_args: vec![],
         }
     }
 
@@ -675,6 +673,7 @@ impl LogsDataBuilder {
         self
     }
 
+    /// Sets the severity of the log.
     pub fn set_severity(mut self, severity: Severity) -> Self {
         self.args.severity = severity;
         self
@@ -703,20 +702,6 @@ impl LogsDataBuilder {
         let mut payload_fields = vec![DiagnosticsHierarchy::new("message", args, vec![])];
         if !self.keys.is_empty() {
             let val = DiagnosticsHierarchy::new("keys", self.keys, vec![]);
-            payload_fields.push(val);
-        }
-        if let Some(format) = self.format {
-            let val = DiagnosticsHierarchy::new(
-                "printf".to_string(),
-                vec![
-                    LogsProperty::String(LogsField::Other("format".to_string()), format),
-                    LogsProperty::StringList(
-                        LogsField::Other("args".to_string()),
-                        self.printf_args,
-                    ),
-                ],
-                vec![],
-            );
             payload_fields.push(val);
         }
         let mut payload = LogsHierarchy::new("root", vec![], payload_fields);
@@ -748,14 +733,6 @@ impl LogsDataBuilder {
     #[must_use = "You must call build on your builder to consume its result"]
     pub fn set_message(mut self, msg: impl Into<String>) -> Self {
         self.msg = Some(msg.into());
-        self
-    }
-
-    /// Sets the printf format and arguments.
-    #[must_use = "You must call build on your builder to consume its result"]
-    pub fn set_format_printf(mut self, format: impl Into<String>, args: Vec<String>) -> Self {
-        self.format = Some(format.into());
-        self.printf_args = args;
         self
     }
 
@@ -831,6 +808,7 @@ impl Data<Logs> {
         })
     }
 
+    /// If the log has a message, returns a shared reference to the message contents.
     pub fn msg_mut(&mut self) -> Option<&mut String> {
         self.payload_message_mut().and_then(|p| {
             p.properties.iter_mut().find_map(|property| match property {
@@ -840,36 +818,14 @@ impl Data<Logs> {
         })
     }
 
-    pub fn payload_printf_format(&mut self) -> Option<&str> {
-        self.payload_printf().as_ref().and_then(|p| {
-            p.properties.iter().find_map(|property| match property {
-                LogsProperty::String(LogsField::Format, format) => Some(format.as_str()),
-                _ => None,
-            })
-        })
-    }
-
-    pub fn payload_printf_args(&mut self) -> Option<&Vec<String>> {
-        self.payload_printf().as_ref().and_then(|p| {
-            p.properties.iter().find_map(|property| match property {
-                LogsProperty::StringList(LogsField::Args, format) => Some(format),
-                _ => None,
-            })
-        })
-    }
-
-    pub fn payload_printf(&self) -> Option<&DiagnosticsHierarchy<LogsField>> {
-        self.payload
-            .as_ref()
-            .and_then(|p| p.children.iter().find(|property| property.name.as_str() == "printf"))
-    }
-
+    /// If the log has message, returns an exclusive reference to it.
     pub fn payload_message(&self) -> Option<&DiagnosticsHierarchy<LogsField>> {
         self.payload
             .as_ref()
             .and_then(|p| p.children.iter().find(|property| property.name.as_str() == "message"))
     }
 
+    /// If the log has structured keys, returns an exclusive reference to them.
     pub fn payload_keys(&self) -> Option<&DiagnosticsHierarchy<LogsField>> {
         self.payload
             .as_ref()
@@ -936,6 +892,7 @@ impl Data<Logs> {
         }
     }
 
+    /// If the log has a message, returns a mutable reference to it.
     pub fn payload_message_mut(&mut self) -> Option<&mut DiagnosticsHierarchy<LogsField>> {
         self.payload.as_mut().and_then(|p| {
             p.children.iter_mut().find(|property| property.name.as_str() == "message")
@@ -1017,6 +974,7 @@ impl Data<Logs> {
             .flatten()
     }
 
+    /// If the log has a verbosity, returns its value.
     pub fn verbosity(&self) -> Option<i8> {
         self.payload_message().and_then(|payload| {
             payload
@@ -1030,6 +988,7 @@ impl Data<Logs> {
         })
     }
 
+    /// Sets the verbosity of a log.
     pub fn set_legacy_verbosity(&mut self, legacy: i8) {
         if let Some(payload_message) = self.payload_message_mut() {
             payload_message.properties.push(LogsProperty::Int(LogsField::Verbosity, legacy.into()));
@@ -1085,6 +1044,7 @@ impl Default for LogTextDisplayOptions {
     }
 }
 
+/// Configuration for the color of a log line that is displayed in tools using [`LogTextPresenter`].
 #[derive(Clone, Copy, Debug, Default)]
 pub enum LogTextColor {
     /// Do not print this log with ANSI colors.
@@ -1132,6 +1092,7 @@ impl LogTextColor {
     }
 }
 
+/// Options for the timezone associated to the timestamp of a log line.
 #[derive(Clone, Copy, Debug)]
 pub enum Timezone {
     /// Display a timestamp in terms of the local timezone as reported by the operating system.
@@ -1141,6 +1102,17 @@ pub enum Timezone {
     Utc,
 }
 
+impl Timezone {
+    fn format(&self, seconds: i64, rem_nanos: u32) -> impl std::fmt::Display {
+        const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S.%3f";
+        match self {
+            Timezone::Local => Local.timestamp(seconds, rem_nanos).format(TIMESTAMP_FORMAT),
+            Timezone::Utc => Utc.timestamp(seconds, rem_nanos).format(TIMESTAMP_FORMAT),
+        }
+    }
+}
+
+/// Configuration for how to display the timestamp associated to a log line.
 #[derive(Clone, Copy, Debug, Default)]
 pub enum LogTimeDisplayFormat {
     /// Display the log message's timestamp as monotonic nanoseconds since boot.
@@ -1161,7 +1133,6 @@ pub enum LogTimeDisplayFormat {
 impl LogTimeDisplayFormat {
     fn write_timestamp(&self, f: &mut fmt::Formatter<'_>, time: i64) -> fmt::Result {
         const NANOS_IN_SECOND: i64 = 1_000_000_000;
-        const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S.%3f";
 
         match self {
             // Don't try to print a human readable string if it's going to be in 1970, fall back
@@ -1174,10 +1145,7 @@ impl LogTimeDisplayFormat {
                 let adjusted = time + offset;
                 let seconds = adjusted / NANOS_IN_SECOND;
                 let rem_nanos = (adjusted % NANOS_IN_SECOND) as u32;
-                let formatted = match tz {
-                    Timezone::Local => Local.timestamp(seconds, rem_nanos).format(TIMESTAMP_FORMAT),
-                    Timezone::Utc => Utc.timestamp(seconds, rem_nanos).format(TIMESTAMP_FORMAT),
-                };
+                let formatted = tz.format(seconds, rem_nanos);
                 write!(f, "[{}]", formatted)?;
             }
         }
@@ -1334,8 +1302,6 @@ pub enum LogsField {
     MsgStructured,
     FilePath,
     LineNumber,
-    Args,
-    Format,
     Other(String),
 }
 
@@ -1351,8 +1317,6 @@ impl fmt::Display for LogsField {
             LogsField::MsgStructured => write!(f, "value"),
             LogsField::FilePath => write!(f, "file_path"),
             LogsField::LineNumber => write!(f, "line_number"),
-            LogsField::Args => write!(f, "args"),
-            LogsField::Format => write!(f, "format"),
             LogsField::Other(name) => write!(f, "{}", name),
         }
     }
@@ -1360,16 +1324,23 @@ impl fmt::Display for LogsField {
 
 // TODO(fxbug.dev/50519) - ensure that strings reported here align with naming
 // decisions made for the structured log format sent by other components.
+/// The label for the process koid in the log metadata.
 pub const PID_LABEL: &str = "pid";
+/// The label for the thread koid in the log metadata.
 pub const TID_LABEL: &str = "tid";
+/// The label for the number of dropped logs in the log metadata.
 pub const DROPPED_LABEL: &str = "num_dropped";
+/// The label for a tag in the log metadata.
 pub const TAG_LABEL: &str = "tag";
+/// The label for the contents of a message in the log payload.
 pub const MESSAGE_LABEL_STRUCTURED: &str = "value";
+/// The label for the message in the log payload.
 pub const MESSAGE_LABEL: &str = "message";
-pub const FORMAT_LABEL: &str = "format";
-pub const ARGS_LABEL: &str = "args";
+/// The label for the verbosity of a log.
 pub const VERBOSITY_LABEL: &str = "verbosity";
+/// The label for the file associated with a log line.
 pub const FILE_PATH_LABEL: &str = "file";
+/// The label for the line number in the file associated with a log line.
 pub const LINE_NUMBER_LABEL: &str = "line";
 
 impl LogsField {
@@ -1399,8 +1370,6 @@ impl AsRef<str> for LogsField {
             Self::FilePath => FILE_PATH_LABEL,
             Self::LineNumber => LINE_NUMBER_LABEL,
             Self::MsgStructured => MESSAGE_LABEL_STRUCTURED,
-            Self::Args => ARGS_LABEL,
-            Self::Format => FORMAT_LABEL,
             Self::Other(str) => str.as_str(),
         }
     }
@@ -1422,8 +1391,6 @@ where
             FILE_PATH_LABEL => Self::FilePath,
             LINE_NUMBER_LABEL => Self::LineNumber,
             MESSAGE_LABEL_STRUCTURED => Self::MsgStructured,
-            FORMAT_LABEL => Self::Format,
-            ARGS_LABEL => Self::Args,
             _ => Self::Other(s.to_string()),
         }
     }
@@ -1639,60 +1606,6 @@ mod tests {
                   },
                   "message":{
                       "value":"app"
-                  }
-              }
-          },
-          "metadata": {
-            "errors": [],
-            "component_url": "url",
-              "errors": [{"dropped_logs":{"count":2}}],
-              "file": "test file.cc",
-              "line": 420,
-              "pid": 1001,
-              "severity": "INFO",
-              "tags": ["You're", "IT!"],
-              "tid": 200,
-
-            "timestamp": 0,
-          }
-        });
-        let result_json =
-            serde_json::to_value(&builder.build()).expect("serialization should succeed.");
-        pretty_assertions::assert_eq!(result_json, expected_json, "golden diff failed.");
-    }
-
-    #[fuchsia::test]
-    fn printf_test() {
-        let builder = LogsDataBuilder::new(BuilderArgs {
-            component_url: Some("url".to_string()),
-            moniker: String::from("moniker"),
-            severity: Severity::Info,
-            timestamp_nanos: 0.into(),
-        })
-        .set_format_printf("app", vec!["some".to_string(), "arg".to_string()])
-        .set_file("test file.cc")
-        .set_line(420)
-        .set_pid(1001)
-        .set_tid(200)
-        .set_dropped(2)
-        .add_tag("You're")
-        .add_tag("IT!")
-        .add_key(LogsProperty::String(LogsField::Other("key".to_string()), "value".to_string()));
-        let expected_json = json!({
-          "moniker": "moniker",
-          "version": 1,
-          "data_source": "Logs",
-          "payload": {
-              "root":
-              {
-                  "keys":{
-                      "key":"value"
-                  },
-                  "printf":{
-                    "args":["some", "arg"],
-                    "format":"app"
-                  },
-                  "message":{
                   }
               }
           },
@@ -2062,26 +1975,6 @@ mod tests {
         .build();
 
         assert_eq!("[00012.345678][123][456][moniker] INFO: some message", format!("{}", data))
-    }
-
-    #[fuchsia::test]
-    fn display_for_logs_with_args_no_printf() {
-        let data = LogsDataBuilder::new(BuilderArgs {
-            timestamp_nanos: Timestamp::from(12345678000i64).into(),
-            component_url: Some(String::from("fake-url")),
-            moniker: String::from("moniker"),
-            severity: Severity::Info,
-        })
-        .set_pid(123)
-        .set_tid(456)
-        .set_message("some message".to_string())
-        .add_key(LogsProperty::String(LogsField::Other("args".to_string()), "value".to_string()))
-        .build();
-
-        assert_eq!(
-            "[00012.345678][123][456][moniker] INFO: some message args=value",
-            format!("{}", data)
-        )
     }
 
     #[fuchsia::test]

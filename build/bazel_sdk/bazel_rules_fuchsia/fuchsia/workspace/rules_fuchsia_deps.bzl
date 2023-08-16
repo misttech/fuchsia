@@ -11,9 +11,28 @@ load(
     "assert_bazel_version",
 )
 
+#TODO(b/295359013) uncomment when we are ready to use these.
+# def _fuchsia_sdk_common_repository_impl(ctx):
+#     root = ctx.path(ctx.attr._fuchsia_sdk_workspace)
+#     ctx.symlink(root.dirname.get_child("common"), ".")
+
+# _fuchsia_sdk_common_repository = repository_rule(
+#     implementation = _fuchsia_sdk_common_repository_impl,
+#     attrs = {
+#         "_fuchsia_sdk_workspace": attr.label(allow_single_file = True, default = "@fuchsia_sdk//:WORKSPACE.bazel")
+#     }
+# )
+
 # buildifier: disable=function-docstring
 def rules_fuchsia_deps():
     assert_bazel_version(min = "6.0.0")
+
+    #TODO(b/295359013) Make bazel_sdk_common available to be used by fuchsia_clang_repository
+    #once b/295358711 is finished.
+    # _fuchsia_sdk_common_repository(
+    #     name = "fuchsia_sdk_common",
+    # )
+
     maybe(
         name = "rules_python",
         repo_rule = http_archive,
@@ -25,8 +44,8 @@ def rules_fuchsia_deps():
     maybe(
         name = "rules_license",
         repo_rule = http_archive,
-        sha256 = "6157e1e68378532d0241ecd15d3c45f6e5cfd98fc10846045509fb2a7cc9e381",
-        url = "https://github.com/bazelbuild/rules_license/releases/download/0.0.4/rules_license-0.0.4.tar.gz",
+        sha256 = "4531deccb913639c30e5c7512a054d5d875698daeb75d8cf90f284375fe7c360",
+        url = "https://github.com/bazelbuild/rules_license/releases/download/0.0.7/rules_license-0.0.7.tar.gz",
     )
     # rules_license_dependencies needs to be loaded from @rules_license//:deps.bzl
     # and invoked here, but that is not possible. Fortunately all it does is fetch

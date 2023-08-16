@@ -115,6 +115,8 @@ struct File {
 }
 
 impl FsNodeOps for File {
+    fs_node_impl_not_dir!();
+
     fn create_file_ops(
         &self,
         _node: &FsNode,
@@ -125,7 +127,7 @@ impl FsNodeOps for File {
         Ok(Box::new(RemoteFileObject::new(zxio)))
     }
 
-    fn update_info<'a>(
+    fn refresh_info<'a>(
         &self,
         _node: &FsNode,
         _current_task: &CurrentTask,
@@ -215,6 +217,8 @@ impl FileOps for DirectoryObject {
 }
 
 impl FsNodeOps for DirectoryObject {
+    fs_node_impl_dir_readonly!();
+
     fn create_file_ops(
         &self,
         _node: &FsNode,
@@ -436,10 +440,6 @@ mod test {
 
             fn offset(&self) -> off_t {
                 self.offset
-            }
-
-            fn actual(&self) -> usize {
-                0
             }
         }
 

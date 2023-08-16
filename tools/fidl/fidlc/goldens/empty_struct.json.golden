@@ -3,7 +3,6 @@
   "experiments": [
     "no_optional_structs",
     "output_index_json",
-    "simple_empty_response_syntax",
     "unknown_interactions",
     "unknown_interactions_mandate"
   ],
@@ -187,6 +186,7 @@
       },
       "members": [],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 1,
         "alignment": 1,
@@ -266,6 +266,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 1,
         "alignment": 1,
@@ -345,6 +346,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 1,
         "alignment": 1,
@@ -424,6 +426,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 1,
         "alignment": 1,
@@ -503,6 +506,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 1,
         "alignment": 1,

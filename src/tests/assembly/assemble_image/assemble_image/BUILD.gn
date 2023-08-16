@@ -9,5 +9,19 @@ test_assembly_config("assemble_image") {
   platform = {
     feature_set_level = "empty"
     build_type = "eng"
+    storage = {
+      configure_fshost = true
+      filesystems = {
+        image_name = "assemble_test"
+        volume = {
+          fvm = {
+            data = {
+            }
+            blob = {
+            }
+          }
+        }
+      }
+    }
   }
 }

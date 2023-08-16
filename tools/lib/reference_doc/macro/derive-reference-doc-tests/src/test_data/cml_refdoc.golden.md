@@ -388,7 +388,7 @@ Example:
 environments: [
     {
         name: "test-env",
-        extend: "realm",
+        extends: "realm",
         runners: [
             {
                 runner: "gtest-runner",
@@ -497,11 +497,10 @@ this component and the capability's source.
 - `path`: (_optional `string`_) The path at which to install the capability in the component's namespace. For protocols,
     defaults to `/svc/${protocol}`.  Required for `directory` and `storage`. This property is
     disallowed for declarations with arrays of capability names.
-- `rights`: (_optional `string`_) (`directory` only) the maximum [directory rights][doc-directory-rights] to apply to
+- `rights`: (_optional `array of string`_) (`directory` only) the maximum [directory rights][doc-directory-rights] to apply to
     the directory in the component's namespace.
 - `subdir`: (_optional `string`_) (`directory` only) A subdirectory within the directory capability to provide in the
     component's namespace.
-- `as`: (_optional `string`_) Deprecated and unusable. In the process of being removed.
 - `scope`: (_optional `string or array of strings`_) (`event_stream` only) When defined the event stream will contain events about only the
     components defined in the scope.
 - `filter`: (_optional `object`_) (`event_stream` only) Capability requested event streams require specifying a filter
@@ -515,9 +514,6 @@ this component and the capability's source.
     - `weak`: a weak dependency, which is ignored during shutdown. When component manager
         stops the parent realm, the source may stop before the clients. Clients of weak
         dependencies must be able to handle these dependencies becoming unavailable.
-    - `weak_for_migration`: this has the same runtime consequences as `weak`,
-        but also implies this capability will be made strong after completion of the v2
-        component migration.
 - `availability`: (_optional `string`_) `availability` _(optional)_: The expectations around this capability's availability. One
     of:
     - `required` (default): a required dependency, the component is unable to perform its
@@ -583,7 +579,7 @@ One and only one of the capability type keys (`protocol`, `directory`, `service`
     defaults to the original name. `as` cannot be used when an array of multiple capability
     names is provided.
 - `to`: (_optional `string`_) The capability target. Either `parent` or `framework`. Defaults to `parent`.
-- `rights`: (_optional `string`_) (`directory` only) the maximum [directory rights][doc-directory-rights] to apply to
+- `rights`: (_optional `array of string`_) (`directory` only) the maximum [directory rights][doc-directory-rights] to apply to
     the exposed directory capability.
 - `subdir`: (_optional `string`_) (`directory` only) the relative path of a subdirectory within the source directory
     capability to route.
@@ -683,11 +679,10 @@ instance or a [child collection][doc-collections].
         shutdown. When component manager stops the parent realm, the source may
         stop before the clients. Clients of weak dependencies must be able to
         handle these dependencies becoming unavailable.
-- `rights`: (_optional `string`_) (`directory` only) the maximum [directory rights][doc-directory-rights] to apply to
+- `rights`: (_optional `array of string`_) (`directory` only) the maximum [directory rights][doc-directory-rights] to apply to
     the offered directory capability.
 - `subdir`: (_optional `string`_) (`directory` only) the relative path of a subdirectory within the source directory
     capability to route.
-- `filter`: (_optional `object`_) Deprecated and unusable. In the process of being removed.
 - `event_stream`: (_optional `string or array of strings`_) (`event_stream` only) the name(s) of the event streams being offered.
 - `scope`: (_optional `string or array of strings`_) (`event_stream` only) When defined the event stream will contain events about only the
     components defined in the scope.
@@ -717,7 +712,7 @@ offer: [
         protocol: "fuchsia.logger.LogSink",
         from: "#logger",
         to: [ "#fshost", "#pkg_cache" ],
-        dependency: "weak_for_migration",
+        dependency: "weak",
     },
     {
         protocol: [

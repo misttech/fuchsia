@@ -18,6 +18,19 @@ use bitflags::bitflags;
 use fuchsia_zircon as zx;
 use once_cell::sync::OnceCell;
 use std::sync::{Arc, Weak};
+use syncio::zxio_node_attr_has_t;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FsNodeLinkBehavior {
+    Allowed,
+    Disallowed,
+}
+
+impl Default for FsNodeLinkBehavior {
+    fn default() -> Self {
+        FsNodeLinkBehavior::Allowed
+    }
+}
 
 pub struct FsNode {
     /// The FsNodeOps for this FsNode.
@@ -71,6 +84,11 @@ pub struct FsNode {
 
     /// Records locks associated with this node.
     record_locks: RecordLocks,
+
+    /// Whether this node can be linked into a directory.
+    ///
+    /// Only set for nodes created with `O_TMPFILE`.
+    link_behavior: OnceCell<FsNodeLinkBehavior>,
 
     /// Tracks lock state for this file.
     pub write_guard_state: Mutex<FileWriteGuardState>,
@@ -428,9 +446,11 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         &self,
         _node: &FsNode,
         _current_task: &CurrentTask,
-        _name: &FsStr,
+        name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
-        error!(ENOTDIR)
+        // The default implementation here is suitable for filesystems that have permanent entries;
+        // entries that already exist will get found in the cache and shouldn't get this far.
+        error!(ENOENT, format!("looking for {:?}", String::from_utf8_lossy(name)))
     }
 
     /// Create and return the given child node.
@@ -448,9 +468,7 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         _mode: FileMode,
         _dev: DeviceType,
         _owner: FsCred,
-    ) -> Result<FsNodeHandle, Errno> {
-        error!(ENOTDIR)
-    }
+    ) -> Result<FsNodeHandle, Errno>;
 
     /// Create and return the given child node as a subdirectory.
     fn mkdir(
@@ -460,9 +478,7 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         _name: &FsStr,
         _mode: FileMode,
         _owner: FsCred,
-    ) -> Result<FsNodeHandle, Errno> {
-        error!(ENOTDIR)
-    }
+    ) -> Result<FsNodeHandle, Errno>;
 
     /// Creates a symlink with the given `target` path.
     fn create_symlink(
@@ -472,8 +488,21 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         _name: &FsStr,
         _target: &FsStr,
         _owner: FsCred,
+    ) -> Result<FsNodeHandle, Errno>;
+
+    /// Creates an anonymous file.
+    ///
+    /// The FileMode::IFMT of the FileMode is always FileMode::IFREG.
+    ///
+    /// Used by O_TMPFILE.
+    fn create_tmpfile(
+        &self,
+        _node: &FsNode,
+        _current_task: &CurrentTask,
+        _mode: FileMode,
+        _owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
-        error!(ENOTDIR)
+        error!(EOPNOTSUPP)
     }
 
     /// Reads the symlink from this node.
@@ -506,9 +535,7 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         _current_task: &CurrentTask,
         _name: &FsStr,
         _child: &FsNodeHandle,
-    ) -> Result<(), Errno> {
-        error!(ENOTDIR)
-    }
+    ) -> Result<(), Errno>;
 
     /// Change the length of the file.
     fn truncate(
@@ -541,13 +568,22 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
     /// override this function.
     ///
     /// Return a reader lock on the updated information.
-    fn update_info<'a>(
+    fn refresh_info<'a>(
         &self,
         _node: &FsNode,
         _current_task: &CurrentTask,
         info: &'a RwLock<FsNodeInfo>,
     ) -> Result<RwLockReadGuard<'a, FsNodeInfo>, Errno> {
         Ok(info.read())
+    }
+
+    /// Update node attributes persistently.
+    fn update_attributes(
+        &self,
+        _info: &FsNodeInfo,
+        _has: zxio_node_attr_has_t,
+    ) -> Result<(), Errno> {
+        Ok(())
     }
 
     /// Get an extended attribute on the node.
@@ -608,6 +644,8 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
 /// You must implement [`FsNodeOps::readlink`].
 macro_rules! fs_node_impl_symlink {
     () => {
+        fs_node_impl_not_dir!();
+
         fn create_file_ops(
             &self,
             _node: &crate::fs::FsNode,
@@ -723,6 +761,64 @@ macro_rules! fs_node_impl_xattr_delegate {
     ($delegate:expr) => { fs_node_impl_xattr_delegate(self, $delegate) };
 }
 
+/// Stubs out [`FsNodeOps`] methods that only apply to directories.
+macro_rules! fs_node_impl_not_dir {
+    () => {
+        fn lookup(
+            &self,
+            _node: &crate::fs::FsNode,
+            _current_task: &crate::task::CurrentTask,
+            _name: &crate::fs::FsStr,
+        ) -> Result<crate::fs::FsNodeHandle, crate::types::Errno> {
+            error!(ENOTDIR)
+        }
+
+        fn mknod(
+            &self,
+            _node: &crate::fs::FsNode,
+            _current_task: &crate::task::CurrentTask,
+            _name: &crate::fs::FsStr,
+            _mode: crate::types::FileMode,
+            _dev: crate::types::DeviceType,
+            _owner: crate::auth::FsCred,
+        ) -> Result<crate::fs::FsNodeHandle, crate::types::Errno> {
+            error!(ENOTDIR)
+        }
+
+        fn mkdir(
+            &self,
+            _node: &crate::fs::FsNode,
+            _current_task: &crate::task::CurrentTask,
+            _name: &crate::fs::FsStr,
+            _mode: crate::types::FileMode,
+            _owner: crate::auth::FsCred,
+        ) -> Result<crate::fs::FsNodeHandle, crate::types::Errno> {
+            error!(ENOTDIR)
+        }
+
+        fn create_symlink(
+            &self,
+            _node: &crate::fs::FsNode,
+            _current_task: &crate::task::CurrentTask,
+            _name: &crate::fs::FsStr,
+            _target: &crate::fs::FsStr,
+            _owner: crate::auth::FsCred,
+        ) -> Result<crate::fs::FsNodeHandle, crate::types::Errno> {
+            error!(ENOTDIR)
+        }
+
+        fn unlink(
+            &self,
+            _node: &crate::fs::FsNode,
+            _current_task: &crate::task::CurrentTask,
+            _name: &crate::fs::FsStr,
+            _child: &crate::fs::FsNodeHandle,
+        ) -> Result<(), crate::types::Errno> {
+            error!(ENOTDIR)
+        }
+    };
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum TimeUpdateType {
     Now,
@@ -732,12 +828,15 @@ pub enum TimeUpdateType {
 
 // Public re-export of macros allows them to be used like regular rust items.
 pub(crate) use fs_node_impl_dir_readonly;
+pub(crate) use fs_node_impl_not_dir;
 pub(crate) use fs_node_impl_symlink;
 pub(crate) use fs_node_impl_xattr_delegate;
 
 pub struct SpecialNode;
 
 impl FsNodeOps for SpecialNode {
+    fs_node_impl_not_dir!();
+
     fn create_file_ops(
         &self,
         _node: &FsNode,
@@ -804,6 +903,7 @@ impl FsNode {
                 append_lock: Default::default(),
                 flock_info: Default::default(),
                 record_locks: Default::default(),
+                link_behavior: Default::default(),
                 watchers: Default::default(),
                 write_guard_state: Default::default(),
             };
@@ -915,7 +1015,7 @@ impl FsNode {
                 rdev,
                 DeviceMode::Block,
             ),
-            FileMode::IFIFO => Ok(Pipe::open(self.fifo.as_ref().unwrap(), flags)),
+            FileMode::IFIFO => Pipe::open(self.fifo.as_ref().unwrap(), flags),
             // UNIX domain sockets can't be opened.
             FileMode::IFSOCK => error!(ENXIO),
             _ => self.create_file_ops(current_task, flags),
@@ -966,6 +1066,19 @@ impl FsNode {
         self.ops().create_symlink(self, current_task, name, target, owner)
     }
 
+    pub fn create_tmpfile(
+        &self,
+        current_task: &CurrentTask,
+        mode: FileMode,
+        owner: FsCred,
+        link_behavior: FsNodeLinkBehavior,
+    ) -> Result<FsNodeHandle, Errno> {
+        self.check_access(current_task, Access::WRITE)?;
+        let node = self.ops().create_tmpfile(self, current_task, mode, owner)?;
+        node.link_behavior.set(link_behavior).unwrap();
+        Ok(node)
+    }
+
     // This method does not attempt to update the atime of the node.
     // Use `NamespaceNode::readlink` which checks the mount flags and updates the atime accordingly.
     pub fn readlink(&self, current_task: &CurrentTask) -> Result<SymlinkTarget, Errno> {
@@ -981,6 +1094,10 @@ impl FsNode {
     ) -> Result<(), Errno> {
         self.check_access(current_task, Access::WRITE)?;
 
+        if matches!(child.link_behavior.get(), Some(FsNodeLinkBehavior::Disallowed)) {
+            return error!(ENOENT);
+        }
+
         // Check that `current_task` has permission to create the hard link.
         //
         // See description of /proc/sys/fs/protected_hardlinks in
@@ -995,7 +1112,7 @@ impl FsNode {
         // Check that the the filesystem UID of the calling process (`current_task`) is the same as
         // the UID of the existing file. The check can be bypassed if the calling process has
         // `CAP_FOWNER` capability.
-        if !creds.has_capability(CAP_FOWNER) && child_uid != creds.euid {
+        if !creds.has_capability(CAP_FOWNER) && child_uid != creds.fsuid {
             // If current_task is not the user of the existing file, it needs to have read and write
             // access to the existing file.
             child.check_access(current_task, Access::READ | Access::WRITE).map_err(|e| {
@@ -1032,7 +1149,7 @@ impl FsNode {
         self.check_access(current_task, Access::WRITE)?;
         self.check_sticky_bit(current_task, child)?;
         self.ops().unlink(self, current_task, name, child)?;
-        self.update_ctime_mtime()?;
+        self.update_ctime_mtime();
         Ok(())
     }
 
@@ -1086,7 +1203,7 @@ impl FsNode {
         // an append to continue using the old size.
         let _guard = self.append_lock.read(current_task);
         self.ops().truncate(self, current_task, length)?;
-        self.update_ctime_mtime()?;
+        self.update_ctime_mtime();
         Ok(())
     }
 
@@ -1094,7 +1211,7 @@ impl FsNode {
     /// which will also perform additional verifications.
     pub fn fallocate(&self, mode: FallocMode, offset: u64, length: u64) -> Result<(), Errno> {
         self.ops().allocate(self, mode, offset, length)?;
-        self.update_ctime_mtime()?;
+        self.update_ctime_mtime();
         Ok(())
     }
 
@@ -1114,7 +1231,7 @@ impl FsNode {
                 // At least one of the EXEC bits must be set to execute files.
                 0o6 | (mode & 0o100) >> 6 | (mode & 0o010) >> 3 | mode & 0o001
             }
-        } else if creds.euid == node_uid {
+        } else if creds.fsuid == node_uid {
             (mode & 0o700) >> 6
         } else if creds.is_in_group(node_gid) {
             (mode & 0o070) >> 3
@@ -1126,7 +1243,7 @@ impl FsNode {
         }
 
         if access.contains(Access::NOATIME)
-            && node_uid != creds.euid
+            && node_uid != creds.fsuid
             && !creds.has_capability(CAP_FOWNER)
         {
             return error!(EPERM);
@@ -1136,7 +1253,7 @@ impl FsNode {
     }
 
     /// Check whether the stick bit, `S_ISVTX`, forbids the `current_task` from removing the given
-    /// `child`. If this node has `S_ISVTX`, then either the child must be owned by the `euid` of
+    /// `child`. If this node has `S_ISVTX`, then either the child must be owned by the `fsuid` of
     /// `current_task` or `current_task` must have `CAP_FOWNER`.
     pub fn check_sticky_bit(
         &self,
@@ -1146,7 +1263,7 @@ impl FsNode {
         let creds = current_task.creds();
         if !creds.has_capability(CAP_FOWNER)
             && self.info().mode.contains(FileMode::ISVTX)
-            && child.info().uid != creds.euid
+            && child.info().uid != creds.fsuid
         {
             return error!(EPERM);
         }
@@ -1172,11 +1289,31 @@ impl FsNode {
         self.socket.get()
     }
 
+    fn update_attributes<F>(&self, mutator: F) -> Result<(), Errno>
+    where
+        F: FnOnce(&mut FsNodeInfo) -> Result<(), Errno>,
+    {
+        let mut info = self.info.write();
+        let mut new_info = info.clone();
+        mutator(&mut new_info)?;
+        let mut has = zxio_node_attr_has_t { ..Default::default() };
+        has.modification_time = info.time_status_change != new_info.time_status_change;
+        has.mode = info.mode != new_info.mode;
+        has.uid = info.uid != new_info.uid;
+        has.gid = info.gid != new_info.gid;
+        has.rdev = info.rdev != new_info.rdev;
+        if has.modification_time || has.mode || has.uid || has.gid || has.rdev {
+            self.ops().update_attributes(&new_info, has)?;
+            *info = new_info;
+        }
+        Ok(())
+    }
+
     /// Set the permissions on this FsNode to the given values.
     ///
     /// Does not change the IFMT of the node.
     pub fn chmod(&self, current_task: &CurrentTask, mut mode: FileMode) -> Result<(), Errno> {
-        self.update_info(|info| {
+        self.update_attributes(|info| {
             let creds = current_task.creds();
             if !creds.has_capability(CAP_FOWNER) {
                 if info.uid != creds.euid {
@@ -1198,7 +1335,7 @@ impl FsNode {
         owner: Option<uid_t>,
         group: Option<gid_t>,
     ) -> Result<(), Errno> {
-        self.update_info(|info| {
+        self.update_attributes(|info| {
             if !current_task.creds().has_capability(CAP_CHOWN) {
                 let creds = current_task.creds();
                 if info.uid != creds.euid {
@@ -1250,7 +1387,7 @@ impl FsNode {
     }
 
     pub fn stat(&self, current_task: &CurrentTask) -> Result<uapi::stat, Errno> {
-        let info = self.ops().update_info(self, current_task, &self.info)?;
+        let info = self.refresh_info(current_task)?;
 
         let time_to_kernel_timespec_pair = |t| {
             let timespec { tv_sec, tv_nsec } = timespec_from_time(t);
@@ -1306,9 +1443,9 @@ impl FsNode {
     ) -> Result<statx, Errno> {
         // Ignore mask for now and fill in all of the fields.
         let info = if flags.contains(StatxFlags::AT_STATX_DONT_SYNC) {
-            self.info.read()
+            self.info()
         } else {
-            self.ops().update_info(self, current_task, &self.info)?
+            self.refresh_info(current_task)?
         };
         if mask & STATX__RESERVED == STATX__RESERVED {
             return error!(EINVAL);
@@ -1415,12 +1552,22 @@ impl FsNode {
         }))
     }
 
+    /// Returns current `FsNodeInfo`.
     pub fn info(&self) -> RwLockReadGuard<'_, FsNodeInfo> {
         self.info.read()
     }
-    pub fn update_info<F, T>(&self, mutator: F) -> Result<T, Errno>
+
+    /// Refreshes the `FsNodeInfo` if necessary and returns a read lock.
+    pub fn refresh_info(
+        &self,
+        current_task: &CurrentTask,
+    ) -> Result<RwLockReadGuard<'_, FsNodeInfo>, Errno> {
+        self.ops().refresh_info(self, current_task, &self.info)
+    }
+
+    pub fn update_info<F, T>(&self, mutator: F) -> T
     where
-        F: FnOnce(&mut FsNodeInfo) -> Result<T, Errno>,
+        F: FnOnce(&mut FsNodeInfo) -> T,
     {
         let mut info = self.info.write();
         mutator(&mut info)
@@ -1429,7 +1576,7 @@ impl FsNode {
     /// Clear the SUID and SGID bits unless the `current_task` has `CAP_FSETID`
     pub fn clear_suid_and_sgid_bits(&self, current_task: &CurrentTask) -> Result<(), Errno> {
         if !current_task.creds().has_capability(CAP_FSETID) {
-            self.update_info(|info| {
+            self.update_attributes(|info| {
                 info.clear_suid_and_sgid_bits();
                 Ok(())
             })?;
@@ -1438,22 +1585,20 @@ impl FsNode {
     }
 
     /// Update the ctime and mtime of a file to now.
-    pub fn update_ctime_mtime(&self) -> Result<(), Errno> {
+    pub fn update_ctime_mtime(&self) {
         self.update_info(|info| {
             let now = utc::utc_now();
             info.time_status_change = now;
             info.time_modify = now;
-            Ok(())
-        })
+        });
     }
 
     /// Update the ctime of a file to now.
-    pub fn update_ctime(&self) -> Result<(), Errno> {
+    pub fn update_ctime(&self) {
         self.update_info(|info| {
             let now = utc::utc_now();
             info.time_status_change = now;
-            Ok(())
-        })
+        });
     }
 
     /// Update the atime and mtime if the `current_task` has write access, is the file owner, or
@@ -1470,7 +1615,7 @@ impl FsNode {
         // the CAP_FOWNER capability.
         let creds = current_task.creds();
         let has_owner_priviledge =
-            creds.euid == self.info().uid || creds.has_capability(CAP_FOWNER);
+            creds.fsuid == self.info().uid || creds.has_capability(CAP_FOWNER);
         let set_current_time = matches!((atime, mtime), (TimeUpdateType::Now, TimeUpdateType::Now));
         if !has_owner_priviledge {
             if set_current_time {
@@ -1495,8 +1640,7 @@ impl FsNode {
                 if let Some(time) = get_time(mtime) {
                     info.time_modify = time;
                 }
-                Ok(())
-            })?;
+            });
         }
         Ok(())
     }
@@ -1586,9 +1730,7 @@ mod tests {
             info.time_access = zx::Time::from_nanos(2);
             info.time_modify = zx::Time::from_nanos(3);
             info.rdev = DeviceType::new(13, 13);
-            Ok(())
-        })
-        .expect("update_info");
+        });
         let stat = node.stat(&current_task).expect("stat");
 
         assert_eq!(stat.st_mode, FileMode::IFSOCK.bits());
@@ -1648,8 +1790,7 @@ mod tests {
                 info.mode = mode!(IFREG, perm);
                 info.uid = uid;
                 info.gid = gid;
-                Ok(())
-            })?;
+            });
             node.check_access(&current_task, access)
         };
 

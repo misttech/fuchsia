@@ -99,6 +99,7 @@
 //sdk/fidl/fuchsia.net.mdns:fuchsia.net.mdns_sdk
 //sdk/fidl/fuchsia.net.reachability:fuchsia.net.reachability_sdk
 //sdk/fidl/fuchsia.net.routes:fuchsia.net.routes_sdk
+//sdk/fidl/fuchsia.net.stackmigrationdeprecated:fuchsia.net.stackmigrationdeprecated_sdk
 //sdk/fidl/fuchsia.net:fuchsia.net_sdk
 //sdk/fidl/fuchsia.power.clientlevel:fuchsia.power.clientlevel_sdk
 //sdk/fidl/fuchsia.power.profile:fuchsia.power.profile_sdk
@@ -181,6 +182,7 @@
 //sdk/lib/inspect/service/cpp:cpp_sdk
 //sdk/lib/inspect:inspect
 //sdk/lib/magma_client:magma_client_sdk_manifest
+//sdk/lib/magma_common:magma_common_sdk
 //sdk/lib/media/cpp:cpp_sdk
 //sdk/lib/media/cpp:no_converters_sdk
 //sdk/lib/stdcompat:stdcompat_sdk

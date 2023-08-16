@@ -862,7 +862,8 @@ function fx-run-ninja {
 
 
   # TERM is passed for the pretty ninja UI
-  # PATH is passed as some tools are referenced via $PATH due to platform differences.
+  # PATH is passed through.  The ninja actions should invoke tools without
+  # relying on PATH.
   # TMPDIR is passed for Goma on macOS.
   # NINJA_STATUS, NINJA_STATUS_MAX_COMMANDS and NINJA_STATUS_REFRESH_MILLIS
   # are passed to control Ninja progress status.
@@ -877,7 +878,6 @@ function fx-run-ninja {
   # rbe_wrapper is used to auto-start/stop a proxy process for the duration of
   # the build, so that RBE-enabled build actions can operate through the proxy.
   #
-  local newpath="${PREBUILT_ALL_PATHS}:${PATH}"
   local rbe_wrapper=()
   local user_env=()
   if fx-rbe-enabled
@@ -891,10 +891,11 @@ function fx-run-ninja {
     env -i
     "${user_env[@]}"
     "TERM=${TERM}"
-    "PATH=${newpath}"
+    "PATH=${PATH}"
     # By default, also show the number of actively running actions.
     "NINJA_STATUS=${NINJA_STATUS:-"[%f/%t](%r) "}"
-    "NINJA_STATUS_MAX_COMMANDS=${NINJA_STATUS_MAX_COMMANDS:-0}"
+    # By default, print the 4 oldest commands that are still running.
+    "NINJA_STATUS_MAX_COMMANDS=${NINJA_STATUS_MAX_COMMANDS:-4}"
     "NINJA_STATUS_REFRESH_MILLIS=${NINJA_STATUS_REFRESH_MILLIS:-100}"
     ${GOMA_DISABLED+"GOMA_DISABLED=$GOMA_DISABLED"}
     ${TMPDIR+"TMPDIR=$TMPDIR"}

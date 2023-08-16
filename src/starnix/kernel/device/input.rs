@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::{
-    device::{framebuffer::Framebuffer, DeviceMode, DeviceOps},
+    device::{framebuffer::Framebuffer, DeviceMode},
     fs::{
         buffers::{InputBuffer, OutputBuffer},
         kobject::{KObjectDeviceAttribute, KType},
@@ -27,6 +27,7 @@ use fidl_fuchsia_ui_pointer::{
 };
 use fidl_fuchsia_ui_views as fuiviews;
 use fuchsia_async as fasync;
+use fuchsia_inspect::{self, health::Reporter};
 use fuchsia_zircon as zx;
 use futures::{
     future::{self, Either},
@@ -38,17 +39,19 @@ use zerocopy::AsBytes as _; // for `as_bytes()`
 pub struct InputDevice {
     // Right now the input device assumes that there is only one input file, and that it represents
     // a touch input device. This structure will soon change to support multiple input files.
-    touch_input_file: Arc<InputFile>,
+    pub touch_input_file: Arc<InputFile>,
 
-    keyboard_input_file: Arc<InputFile>,
+    pub keyboard_input_file: Arc<InputFile>,
 }
 
 impl InputDevice {
-    pub fn new(framebuffer: Arc<Framebuffer>) -> Arc<Self> {
+    pub fn new(framebuffer: Arc<Framebuffer>, kernel_node: &fuchsia_inspect::Node) -> Arc<Self> {
         let fb_state = framebuffer.info.read();
+        let input_files_node = kernel_node.create_child("input_files");
         let touch_input_file = InputFile::new_touch(
             fb_state.xres.try_into().expect("Failed to convert framebuffer width to i32."),
             fb_state.yres.try_into().expect("Failed to convert framebuffer height to i32."),
+            input_files_node.create_child("touch_input_file"),
         );
         let keyboard_input_file = InputFile::new_keyboard();
         std::mem::drop(fb_state);
@@ -66,21 +69,64 @@ impl InputDevice {
     }
 }
 
-impl DeviceOps for Arc<InputDevice> {
-    fn open(
-        &self,
-        _current_task: &CurrentTask,
-        dev: DeviceType,
-        _node: &FsNode,
-        _flags: OpenFlags,
-    ) -> Result<Box<dyn FileOps>, Errno> {
-        match dev.minor() {
-            // Because all open input files share the same underlying input file, the clients
-            // may race for events. This does not matter right now, since there is only ever
-            // one client, but eventually each open should get its own sequence of events.
-            TOUCH_INPUT_MINOR => Ok(Box::new(self.touch_input_file.clone())),
-            KEYBOARD_INPUT_MINOR => Ok(Box::new(self.keyboard_input_file.clone())),
-            _ => error!(EINVAL),
+fn create_touch_device(
+    current_task: &CurrentTask,
+    _id: DeviceType,
+    _node: &FsNode,
+    _flags: OpenFlags,
+) -> Result<Box<dyn FileOps>, Errno> {
+    Ok(Box::new(current_task.kernel().input_device.touch_input_file.clone()))
+}
+
+fn create_keyboard_device(
+    current_task: &CurrentTask,
+    _id: DeviceType,
+    _node: &FsNode,
+    _flags: OpenFlags,
+) -> Result<Box<dyn FileOps>, Errno> {
+    Ok(Box::new(current_task.kernel().input_device.keyboard_input_file.clone()))
+}
+
+pub struct InspectStatus {
+    /// A node that contains the state below.
+    _inspect_node: fuchsia_inspect::Node,
+
+    /// The number of FIDL events received from Fuchsia input system.
+    _fidl_events_received_count: fuchsia_inspect::UintProperty,
+
+    /// The number of FIDL events converted to this module’s representation of TouchEvent.
+    _fidl_events_converted_count: fuchsia_inspect::UintProperty,
+
+    /// The number of invalid incoming FIDL events discarded by this InputFile.
+    _fidl_events_discarded_count: fuchsia_inspect::UintProperty,
+
+    /// The number of uapi::input_events generated from TouchEvents.
+    _uapi_events_generated_count: fuchsia_inspect::UintProperty,
+
+    /// The number of uapi::input_events read from this touch file by external process.
+    _uapi_events_read_count: fuchsia_inspect::UintProperty,
+
+    // Health status of this InputFile. UNHEALTHY if InputFile loses connection to TouchSource protocol
+    pub health_node: fuchsia_inspect::health::Node,
+}
+
+impl InspectStatus {
+    fn new(node: fuchsia_inspect::Node) -> Self {
+        let mut health_node = fuchsia_inspect::health::Node::new(&node);
+        health_node.set_starting_up();
+        let fidl_events_received_count = node.create_uint("fidl_events_received_count", 0);
+        let fidl_events_converted_count = node.create_uint("fidl_events_converted_count", 0);
+        let fidl_events_discarded_count = node.create_uint("fidl_events_discarded_count", 0);
+        let uapi_events_generated_count = node.create_uint("uapi_events_generated_count", 0);
+        let uapi_events_read_count = node.create_uint("uapi_events_read_count", 0);
+        Self {
+            _inspect_node: node,
+            _fidl_events_received_count: fidl_events_received_count,
+            _fidl_events_converted_count: fidl_events_converted_count,
+            _fidl_events_discarded_count: fidl_events_discarded_count,
+            _uapi_events_generated_count: uapi_events_generated_count,
+            _uapi_events_read_count: uapi_events_read_count,
+            health_node,
         }
     }
 }
@@ -105,6 +151,10 @@ pub struct InputFile {
 struct InputFileMutableState {
     events: VecDeque<uapi::input_event>,
     waiters: WaitQueue,
+    // TODO: fxb/131759 - remove `Optional` when implementing Inspect for Keyboard InputFiles
+    // Touch InputFile will be initialized with a InspectStatus that holds Inspect data
+    // `None` for Keyboard InputFile
+    _inspect_status: Option<InspectStatus>,
 }
 
 #[derive(Copy, Clone)]
@@ -138,7 +188,7 @@ impl InputFile {
         uapi::input_id { bustype: BUS_VIRTUAL as u16, product: 0, vendor: 0, version: 0 };
 
     /// Creates an `InputFile` instance suitable for emulating a touchscreen.
-    fn new_touch(width: i32, height: i32) -> Arc<Self> {
+    fn new_touch(width: i32, height: i32, inspect_node: fuchsia_inspect::Node) -> Arc<Self> {
         // Fuchsia scales the position reported by the touch sensor to fit view coordinates.
         // Hence, the range of touch positions is exactly the same as the range of view
         // coordinates.
@@ -170,6 +220,7 @@ impl InputFile {
             inner: Mutex::new(InputFileMutableState {
                 events: VecDeque::new(),
                 waiters: WaitQueue::default(),
+                _inspect_status: Some(InspectStatus::new(inspect_node)),
             }),
         })
     }
@@ -191,6 +242,7 @@ impl InputFile {
             inner: Mutex::new(InputFileMutableState {
                 events: VecDeque::new(),
                 waiters: WaitQueue::default(),
+                _inspect_status: None,
             }),
         })
     }
@@ -672,31 +724,28 @@ fn phase_change_from_fidl_phase(fidl_phase: &FidlEventPhase) -> Option<PhaseChan
 }
 
 pub fn init_input_devices(kernel: &Arc<Kernel>) {
-    kernel
-        .device_registry
-        .register_chrdev_major(INPUT_MAJOR, kernel.input_device.clone())
-        .expect("input device register failed.");
-
     let input_class = kernel.device_registry.virtual_bus().get_or_create_child(
         b"input",
         KType::Class,
         SysFsDirectory::new,
     );
     let touch_attr = KObjectDeviceAttribute::new(
+        Some(input_class.clone()),
         b"event0",
         b"input/event0",
         DeviceType::new(INPUT_MAJOR, TOUCH_INPUT_MINOR),
         DeviceMode::Char,
     );
-    kernel.add_chr_device(input_class.clone(), touch_attr);
+    kernel.add_and_register_device(touch_attr, create_touch_device);
 
     let keyboard_attr = KObjectDeviceAttribute::new(
+        Some(input_class.clone()),
         b"event1",
         b"input/event1",
         DeviceType::new(INPUT_MAJOR, KEYBOARD_INPUT_MINOR),
         DeviceMode::Char,
     );
-    kernel.add_chr_device(input_class, keyboard_attr);
+    kernel.add_and_register_device(keyboard_attr, create_keyboard_device);
 }
 
 #[cfg(test)]
@@ -707,7 +756,7 @@ mod test {
     use crate::{
         fs::buffers::VecOutputBuffer,
         task::Kernel,
-        testing::{create_kernel_and_task, map_memory},
+        testing::{create_kernel_and_task, map_memory, AutoReleasableTask},
     };
     use anyhow::anyhow;
     use assert_matches::assert_matches;
@@ -763,7 +812,9 @@ mod test {
 
     fn start_touch_input(
     ) -> (Arc<InputFile>, fuipointer::TouchSourceRequestStream, std::thread::JoinHandle<()>) {
-        let input_file = InputFile::new_touch(720, 1200);
+        let inspector = fuchsia_inspect::Inspector::default();
+        let input_file =
+            InputFile::new_touch(720, 1200, inspector.root().create_child("touch_input_file"));
         let (touch_source_proxy, touch_source_stream) =
             fidl::endpoints::create_proxy_and_stream::<TouchSourceMarker>()
                 .expect("failed to create TouchSource channel");
@@ -783,7 +834,9 @@ mod test {
         (input_file, keyboard_stream, relay_thread)
     }
 
-    fn make_kernel_objects(file: Arc<InputFile>) -> (Arc<Kernel>, CurrentTask, Arc<FileObject>) {
+    fn make_kernel_objects(
+        file: Arc<InputFile>,
+    ) -> (Arc<Kernel>, AutoReleasableTask, Arc<FileObject>) {
         let (kernel, current_task) = create_kernel_and_task();
         let file_object = FileObject::new(
             Box::new(file),
@@ -1066,7 +1119,9 @@ mod test {
     #[::fuchsia::test]
     async fn provides_correct_axis_ranges((x_max, y_max): (i32, i32), ioctl_op: u32) -> (i32, i32) {
         // Set up resources.
-        let input_file = InputFile::new_touch(x_max, y_max);
+        let inspector = fuchsia_inspect::Inspector::default();
+        let input_file =
+            InputFile::new_touch(x_max, y_max, inspector.root().create_child("touch_input_file"));
         let (_kernel, current_task, file_object) = make_kernel_objects(input_file.clone());
         let address = map_memory(
             &current_task,
@@ -1331,5 +1386,28 @@ mod test {
         relay_thread.join().expect("relay thread failed"); // Wait for relay thread to finish.
         let events = read_uapi_events(keyboard_file, &file_object, &current_task);
         assert_eq!(events.len(), 0);
+    }
+
+    #[::fuchsia::test]
+    fn touch_input_file_initialized_with_inspect_node() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let _touch_file =
+            InputFile::new_touch(720, 1200, inspector.root().create_child("touch_input_file"));
+
+        fuchsia_inspect::assert_data_tree!(inspector, root: {
+            touch_input_file: {
+                fidl_events_received_count: 0u64,
+                fidl_events_converted_count: 0u64,
+                fidl_events_discarded_count: 0u64,
+                uapi_events_generated_count: 0u64,
+                uapi_events_read_count: 0u64,
+                "fuchsia.inspect.Health": {
+                    status: "STARTING_UP",
+                    // Timestamp value is unpredictable and not relevant in this context,
+                    // so we only assert that the property is present.
+                    start_timestamp_nanos: fuchsia_inspect::AnyProperty
+                },
+            }
+        });
     }
 }

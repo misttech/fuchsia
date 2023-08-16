@@ -73,8 +73,7 @@ pub fn define_configuration(
 
         // Set up the context that's used by each subsystem to get the generally-
         // available platform information.
-        let context =
-            ConfigurationContext { feature_set_level, build_type, board_info: board_info };
+        let context = ConfigurationContext { feature_set_level, build_type, board_info };
 
         // Call the configuration functions for each subsystem.
         configure_subsystems(&context, config, &mut builder)?;

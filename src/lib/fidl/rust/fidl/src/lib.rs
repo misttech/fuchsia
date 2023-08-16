@@ -11,19 +11,19 @@
 pub mod encoding;
 
 pub mod client;
-pub mod endpoints;
 pub mod epitaph;
 pub mod handle;
 pub mod prelude;
 pub mod server;
+
+pub mod endpoints;
+pub use endpoints::MethodType;
+
+mod persistence;
+pub use persistence::*;
 
 mod error;
 pub use self::error::{Error, Result};
 
 pub use handle::*;
 pub use server::ServeInner;
-
-pub use encoding::{
-    persist, standalone_decode_resource, standalone_decode_value, standalone_encode_resource,
-    standalone_encode_value, unpersist, Persistable, Standalone,
-};

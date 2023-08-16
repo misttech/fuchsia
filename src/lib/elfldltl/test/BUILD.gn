@@ -26,6 +26,8 @@ test("elfldltl-unittests") {
     "internal-tests.cc",
     "layout-tests.cc",
     "load-tests.cc",
+    "load-tests.h",
+    "loadinfo-mapped-memory-tests.cc",
     "mapped-fd-file-tests.cc",
     "memory-tests.cc",
     "note-tests.cc",
@@ -45,8 +47,8 @@ test("elfldltl-unittests") {
   }
 
   deps = [
-    ":test-utils",
     "..",
+    "../testing",
     "//sdk/lib/stdcompat",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/symbolizer-markup",
@@ -58,13 +60,6 @@ test("elfldltl-unittests") {
   }
 
   data_deps = [ ":resolve_test_dsos" ]
-}
-
-source_set("test-utils") {
-  visibility = [ ":*" ]
-  testonly = true
-
-  public_deps = [ "..:elfldltl-testutils" ]
 }
 
 resolve_dsos = [
@@ -126,7 +121,10 @@ if (current_os == "linux") {
         "-static-pie",
         "-nolibc",
       ]
-      deps = [ ":linux-static-pie" ]
+      deps = [
+        ":linux-static-pie",
+        "//zircon/system/ulib/c/string:hermetic",
+      ]
 
       exclude_toolchain_tags = [ "instrumented" ]
     }
@@ -180,8 +178,8 @@ if (is_fuchsia) {
       deps = [
         ":static-pie",
         "//src/zircon/lib/zircon",
+        "//zircon/system/ulib/c/stdlib:hermetic",
         "//zircon/system/ulib/c/string:hermetic",
-        "//zircon/third_party/ulib/musl/src/exit:abort",
       ]
 
       exclude_toolchain_tags = [ "instrumented" ]
@@ -336,8 +334,8 @@ source_set("loader-tests") {
 
   deps = [
     ":test-data",
-    ":test-utils",
     "..",
+    "../testing",
     "//sdk/lib/stdcompat",
     "//third_party/googletest:gmock",
     "//zircon/system/ulib/fbl",
@@ -370,27 +368,52 @@ fuchsia_unittest_package("elfldltl-tests") {
 
 cpp_fuzzer("dynamic-fuzzer") {
   sources = [ "dynamic-fuzzer.cc" ]
-  deps = [ ".." ]
+  deps = [
+    "..",
+    "../testing",
+  ]
+}
+
+cpp_fuzzer("loadinfo-fuzzer") {
+  sources = [ "loadinfo-fuzzer.cc" ]
+  deps = [
+    "..",
+    "../testing",
+  ]
 }
 
 cpp_fuzzer("note-fuzzer") {
   sources = [ "note-fuzzer.cc" ]
-  deps = [ ".." ]
+  deps = [
+    "..",
+    "../testing",
+  ]
 }
 
 cpp_fuzzer("relocation-fuzzer") {
   sources = [ "relocation-fuzzer.cc" ]
-  deps = [ ".." ]
+  deps = [
+    "..",
+    "../testing",
+  ]
 }
 
 cpp_fuzzer("symbol-fuzzer") {
   sources = [ "symbol-fuzzer.cc" ]
-  deps = [ ".." ]
+  deps = [
+    "..",
+    "../testing",
+  ]
 }
 
 fuchsia_fuzzer_component("dynamic-fuzzer-component") {
   manifest = "meta/dynamic-fuzzer.cml"
   deps = [ ":dynamic-fuzzer" ]
+}
+
+fuchsia_fuzzer_component("loadinfo-fuzzer-component") {
+  manifest = "meta/loadinfo-fuzzer.cml"
+  deps = [ ":loadinfo-fuzzer" ]
 }
 
 fuchsia_fuzzer_component("note-fuzzer-component") {
@@ -412,6 +435,7 @@ if (is_fuchsia) {
   fuchsia_fuzzer_package("elfldltl-fuzzers") {
     cpp_fuzzer_components = [
       ":dynamic-fuzzer-component",
+      ":loadinfo-fuzzer-component",
       ":note-fuzzer-component",
       ":relocation-fuzzer-component",
       ":symbol-fuzzer-component",
@@ -422,12 +446,14 @@ if (is_fuchsia) {
     testonly = true
     deps = [
       ":dynamic-fuzzer",
+      ":loadinfo-fuzzer",
       ":note-fuzzer",
       ":relocation-fuzzer",
       ":symbol-fuzzer",
     ]
   }
 }
+
 group("tests") {
   testonly = true
 

@@ -3,7 +3,6 @@
   "experiments": [
     "no_optional_structs",
     "output_index_json",
-    "simple_empty_response_syntax",
     "unknown_interactions",
     "unknown_interactions_mandate"
   ],
@@ -2046,6 +2045,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 16,
         "alignment": 8,
@@ -2165,6 +2165,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 16,
         "alignment": 8,
@@ -2284,6 +2285,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 16,
         "alignment": 8,
@@ -2362,6 +2364,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 8,
         "alignment": 8,
@@ -2444,6 +2447,7 @@
         }
       ],
       "resource": true,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 4,
         "alignment": 4,
@@ -2526,6 +2530,7 @@
         }
       ],
       "resource": true,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 4,
         "alignment": 4,
@@ -2608,6 +2613,7 @@
         }
       ],
       "resource": true,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 4,
         "alignment": 4,
@@ -2690,6 +2696,7 @@
         }
       ],
       "resource": true,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 4,
         "alignment": 4,
@@ -2772,6 +2779,7 @@
         }
       ],
       "resource": true,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 4,
         "alignment": 4,
@@ -2854,6 +2862,7 @@
         }
       ],
       "resource": true,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 4,
         "alignment": 4,
@@ -2936,6 +2945,7 @@
         }
       ],
       "resource": true,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 4,
         "alignment": 4,
@@ -3588,6 +3598,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 15,
         "alignment": 1,
@@ -3667,6 +3678,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 24,
         "alignment": 8,
@@ -3746,6 +3758,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 24,
         "alignment": 8,
@@ -3953,6 +3966,7 @@
         }
       ],
       "resource": true,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 16,
         "alignment": 4,
@@ -4072,6 +4086,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 16,
         "alignment": 8,
@@ -4150,6 +4165,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 8,
         "alignment": 8,
@@ -4228,6 +4244,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 8,
         "alignment": 8,
@@ -4306,6 +4323,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 8,
         "alignment": 8,
@@ -4384,6 +4402,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 8,
         "alignment": 8,
@@ -4462,6 +4481,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 16,
         "alignment": 8,
@@ -4540,6 +4560,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 16,
         "alignment": 8,
@@ -4618,6 +4639,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 16,
         "alignment": 8,
@@ -4696,6 +4718,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 16,
         "alignment": 8,
@@ -4774,6 +4797,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 16,
         "alignment": 8,
@@ -4852,6 +4876,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 16,
         "alignment": 8,
@@ -4889,6 +4914,7 @@
       },
       "members": [],
       "resource": false,
+      "is_empty_success_struct": true,
       "type_shape_v1": {
         "inline_size": 1,
         "alignment": 1,
@@ -4926,6 +4952,7 @@
       },
       "members": [],
       "resource": false,
+      "is_empty_success_struct": true,
       "type_shape_v1": {
         "inline_size": 1,
         "alignment": 1,
@@ -5009,6 +5036,7 @@
         }
       ],
       "resource": true,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 4,
         "alignment": 4,
@@ -5170,6 +5198,7 @@
         }
       ],
       "resource": false,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 24,
         "alignment": 8,
@@ -5250,6 +5279,7 @@
         }
       ],
       "resource": true,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 4,
         "alignment": 4,
@@ -5330,6 +5360,7 @@
         }
       ],
       "resource": true,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 4,
         "alignment": 4,
@@ -5410,6 +5441,7 @@
         }
       ],
       "resource": true,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 4,
         "alignment": 4,
@@ -5490,6 +5522,7 @@
         }
       ],
       "resource": true,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 4,
         "alignment": 4,
@@ -5569,6 +5602,7 @@
         }
       ],
       "resource": true,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 16,
         "alignment": 4,
@@ -5648,6 +5682,7 @@
         }
       ],
       "resource": true,
+      "is_empty_success_struct": false,
       "type_shape_v1": {
         "inline_size": 16,
         "alignment": 4,
@@ -5723,6 +5758,7 @@
       ],
       "strict": false,
       "resource": false,
+      "is_result": false,
       "type_shape_v1": {
         "inline_size": 24,
         "alignment": 8,
@@ -5757,18 +5793,6 @@
         "column": 29,
         "length": 2
       },
-      "maybe_attributes": [
-        {
-          "name": "result",
-          "arguments": [],
-          "location": {
-            "filename": "generated",
-            "line": 12,
-            "column": 1,
-            "length": 6
-          }
-        }
-      ],
       "members": [
         {
           "ordinal": 1,
@@ -5801,7 +5825,7 @@
           },
           "location": {
             "filename": "generated",
-            "line": 9,
+            "line": 7,
             "column": 1,
             "length": 8
           }
@@ -5837,7 +5861,7 @@
           },
           "location": {
             "filename": "generated",
-            "line": 10,
+            "line": 8,
             "column": 1,
             "length": 3
           }
@@ -5845,6 +5869,7 @@
       ],
       "strict": true,
       "resource": false,
+      "is_result": true,
       "type_shape_v1": {
         "inline_size": 24,
         "alignment": 8,
@@ -5879,18 +5904,6 @@
         "column": 34,
         "length": 2
       },
-      "maybe_attributes": [
-        {
-          "name": "result",
-          "arguments": [],
-          "location": {
-            "filename": "generated",
-            "line": 8,
-            "column": 1,
-            "length": 6
-          }
-        }
-      ],
       "members": [
         {
           "ordinal": 1,
@@ -5923,7 +5936,7 @@
           },
           "location": {
             "filename": "generated",
-            "line": 5,
+            "line": 4,
             "column": 1,
             "length": 8
           }
@@ -5958,7 +5971,7 @@
           },
           "location": {
             "filename": "generated",
-            "line": 6,
+            "line": 5,
             "column": 1,
             "length": 3
           }
@@ -5966,6 +5979,7 @@
       ],
       "strict": true,
       "resource": false,
+      "is_result": true,
       "type_shape_v1": {
         "inline_size": 24,
         "alignment": 8,
@@ -6000,18 +6014,6 @@
         "column": 32,
         "length": 46
       },
-      "maybe_attributes": [
-        {
-          "name": "result",
-          "arguments": [],
-          "location": {
-            "filename": "generated",
-            "line": 16,
-            "column": 1,
-            "length": 6
-          }
-        }
-      ],
       "members": [
         {
           "ordinal": 1,
@@ -6044,7 +6046,7 @@
           },
           "location": {
             "filename": "generated",
-            "line": 13,
+            "line": 10,
             "column": 1,
             "length": 8
           }
@@ -6079,7 +6081,7 @@
           },
           "location": {
             "filename": "generated",
-            "line": 14,
+            "line": 11,
             "column": 1,
             "length": 3
           }
@@ -6087,6 +6089,7 @@
       ],
       "strict": true,
       "resource": true,
+      "is_result": true,
       "type_shape_v1": {
         "inline_size": 24,
         "alignment": 8,
@@ -6121,18 +6124,6 @@
         "column": 34,
         "length": 67
       },
-      "maybe_attributes": [
-        {
-          "name": "result",
-          "arguments": [],
-          "location": {
-            "filename": "generated",
-            "line": 4,
-            "column": 1,
-            "length": 6
-          }
-        }
-      ],
       "members": [
         {
           "ordinal": 1,
@@ -6208,6 +6199,7 @@
       ],
       "strict": true,
       "resource": false,
+      "is_result": true,
       "type_shape_v1": {
         "inline_size": 24,
         "alignment": 8,

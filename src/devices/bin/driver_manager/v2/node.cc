@@ -4,8 +4,6 @@
 
 #include "src/devices/bin/driver_manager/v2/node.h"
 
-#include <fidl/fuchsia.driver.development/cpp/fidl.h>
-#include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <lib/driver/component/cpp/internal/start_args.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 
@@ -17,8 +15,6 @@
 #include "src/devices/lib/log/log.h"
 #include "src/lib/fxl/strings/join_strings.h"
 
-const std::string kUnboundUrl = "unbound";
-
 namespace fdf {
 using namespace fuchsia_driver_framework;
 }  // namespace fdf
@@ -28,6 +24,8 @@ namespace fcomponent = fuchsia_component;
 namespace dfv2 {
 
 namespace {
+
+const std::string kUnboundUrl = "unbound";
 
 const char* State2String(NodeState state) {
   switch (state) {
@@ -274,89 +272,20 @@ std::optional<fdecl::wire::Offer> CreateCompositeOffer(fidl::AnyArena& arena,
   return fidl::ToWire(arena, fidl::ToNatural(offer));
 }
 
-BindResultTracker::BindResultTracker(size_t expected_result_count,
-                                     NodeBindingInfoResultCallback result_callback)
-    : expected_result_count_(expected_result_count),
-      currently_reported_(0),
-      result_callback_(std::move(result_callback)) {
-  ZX_ASSERT(expected_result_count > 0);
-}
-
-void BindResultTracker::ReportNoBind() {
-  size_t current;
-  {
-    std::scoped_lock guard(lock_);
-    currently_reported_++;
-    current = currently_reported_;
-  }
-
-  Complete(current);
-}
-
-void BindResultTracker::ReportSuccessfulBind(const std::string_view& node_name,
-                                             const std::string_view& driver) {
-  size_t current;
-  {
-    std::scoped_lock guard(lock_);
-    currently_reported_++;
-    auto node_binding_info = fuchsia_driver_development::wire::NodeBindingInfo::Builder(arena_)
-                                 .node_name(node_name)
-                                 .driver_url(driver)
-                                 .Build();
-    results_.emplace_back(node_binding_info);
-    current = currently_reported_;
-  }
-
-  Complete(current);
-}
-
-void BindResultTracker::ReportSuccessfulBind(
-    const std::string_view& node_name,
-    const std::vector<fuchsia_driver_development::CompositeInfo>& legacy_composite_infos,
-    const std::vector<fuchsia_driver_index::wire::MatchedCompositeNodeSpecInfo>&
-        composite_spec_infos) {
-  size_t current;
-  {
-    std::scoped_lock guard(lock_);
-    currently_reported_++;
-
-    // The wire data in |composite_spec_infos| belongs to an incoming FIDL response so we cannot
-    // store it here for ourselves. Therefore this code copies the data over and uses the alloctor
-    // that is owned here.
-    fidl::VectorView<fuchsia_driver_index::wire::MatchedCompositeNodeSpecInfo>
-        composite_spec_copied(arena_, composite_spec_infos.size());
-    for (size_t i = 0; i < composite_spec_infos.size(); i++) {
-      composite_spec_copied[i] = fidl::ToWire(arena_, fidl::ToNatural(composite_spec_infos[i]));
-    }
-
-    auto node_binding_info = fuchsia_driver_development::wire::NodeBindingInfo::Builder(arena_)
-                                 .node_name(node_name)
-                                 .legacy_composites(fidl::ToWire(arena_, legacy_composite_infos))
-                                 .composite_specs(composite_spec_copied)
-                                 .Build();
-    results_.emplace_back(node_binding_info);
-    current = currently_reported_;
-  }
-
-  Complete(current);
-}
-
-void BindResultTracker::Complete(size_t current) {
-  if (current == expected_result_count_) {
-    result_callback_(
-        fidl::VectorView<fuchsia_driver_development::wire::NodeBindingInfo>(arena_, results_));
-  }
-}
-
-Node::Node(std::string_view name, std::vector<Node*> parents, NodeManager* node_manager,
-           async_dispatcher_t* dispatcher, DeviceInspect inspect, uint32_t primary_index)
+Node::Node(std::string_view name, std::vector<std::weak_ptr<Node>> parents,
+           NodeManager* node_manager, async_dispatcher_t* dispatcher, DeviceInspect inspect,
+           uint32_t primary_index, NodeType type)
     : name_(name),
+      type_(type),
       parents_(std::move(parents)),
       primary_index_(primary_index),
       node_manager_(node_manager),
       dispatcher_(dispatcher),
-      inspect_(std::move(inspect)),
-      tasks_(dispatcher) {
+      inspect_(std::move(inspect)) {
+  if (type == NodeType::kNormal) {
+    ZX_ASSERT(parents_.size() <= 1);
+  }
+
   ZX_ASSERT(primary_index_ == 0 || primary_index_ < parents_.size());
   if (auto primary_parent = GetPrimaryParent()) {
     // By default, we set `driver_host_` to match the primary parent's
@@ -366,30 +295,28 @@ Node::Node(std::string_view name, std::vector<Node*> parents, NodeManager* node_
   }
 }
 
-Node::Node(std::string_view name, std::vector<Node*> parents, NodeManager* node_manager,
-           async_dispatcher_t* dispatcher, DeviceInspect inspect, DriverHost* driver_host)
-    : name_(name),
-      parents_(std::move(parents)),
-      node_manager_(node_manager),
-      dispatcher_(dispatcher),
-      driver_host_(driver_host),
-      inspect_(std::move(inspect)),
-      tasks_(dispatcher) {}
-
 zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
-    std::string_view node_name, std::vector<Node*> parents, std::vector<std::string> parents_names,
+    std::string_view node_name, std::vector<std::weak_ptr<Node>> parents,
+    std::vector<std::string> parents_names,
     const std::vector<fuchsia_driver_framework::wire::NodeProperty>& properties,
-    NodeManager* driver_binder, async_dispatcher_t* dispatcher, uint32_t primary_index) {
+    NodeManager* driver_binder, async_dispatcher_t* dispatcher, bool is_legacy,
+    uint32_t primary_index) {
   ZX_ASSERT(!parents.empty());
   if (primary_index >= parents.size()) {
     LOGF(ERROR, "Primary node index is out of bounds");
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
+  auto primary_node_ptr = parents[primary_index].lock();
+  if (!primary_node_ptr) {
+    LOGF(ERROR, "Primary node freed before use");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
   DeviceInspect inspect =
-      parents[primary_index]->inspect_.CreateChild(std::string(node_name), zx::vmo(), 0);
-  std::shared_ptr composite = std::make_shared<Node>(node_name, std::move(parents), driver_binder,
-                                                     dispatcher, std::move(inspect), primary_index);
+      primary_node_ptr->inspect_.CreateChild(std::string(node_name), zx::vmo(), 0);
+  std::shared_ptr composite = std::make_shared<Node>(
+      node_name, std::move(parents), driver_binder, dispatcher, std::move(inspect), primary_index,
+      is_legacy ? NodeType::kLegacyComposite : NodeType::kComposite);
   composite->parents_names_ = std::move(parents_names);
 
   for (const auto& prop : properties) {
@@ -415,8 +342,13 @@ zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
   // Copy the offers from each parent.
   std::vector<fdecl::wire::Offer> node_offers;
   size_t parent_index = 0;
-  for (const Node* parent : composite->parents_) {
-    auto parent_offers = parent->offers();
+  for (const std::weak_ptr<Node> parent : composite->parents_) {
+    auto parent_ptr = parent.lock();
+    if (!parent_ptr) {
+      LOGF(ERROR, "Composite parent node freed before use");
+      return zx::error(ZX_ERR_INTERNAL);
+    }
+    auto parent_offers = parent_ptr->offers();
     node_offers.reserve(node_offers.size() + parent_offers.count());
 
     for (auto& parent_offer : parent_offers) {
@@ -443,6 +375,10 @@ zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
 }
 
 Node::~Node() {
+  if (node_state_ != NodeState::kStopping) {
+    LOGF(INFO, "Node deallocating while at state %s", State2String(node_state_));
+  }
+
   CloseIfExists(controller_ref_);
   CloseIfExists(node_ref_);
   if (pending_bind_completer_.has_value()) {
@@ -457,26 +393,6 @@ const std::string& Node::driver_url() const {
   }
   return kUnboundUrl;
 }
-const std::vector<Node*>& Node::parents() const { return parents_; }
-
-const std::list<std::shared_ptr<Node>>& Node::children() const { return children_; }
-
-fidl::VectorView<fuchsia_component_decl::wire::Offer> Node::offers() const {
-  // TODO(fxbug.dev/66150): Once FIDL wire types support a Clone() method,
-  // remove the const_cast.
-  return fidl::VectorView<fdecl::wire::Offer>::FromExternal(
-      const_cast<decltype(offers_)&>(offers_));
-}
-
-fidl::VectorView<fdf::wire::NodeSymbol> Node::symbols() const {
-  // TODO(fxbug.dev/7999): Remove const_cast once VectorView supports const.
-  return fidl::VectorView<fdf::wire::NodeSymbol>::FromExternal(
-      const_cast<decltype(symbols_)&>(symbols_));
-}
-
-const std::vector<fdf::wire::NodeProperty>& Node::properties() const { return properties_; }
-
-void Node::set_collection(Collection collection) { collection_ = collection; }
 
 std::string Node::MakeTopologicalPath() const {
   std::deque<std::string_view> names;
@@ -517,10 +433,6 @@ void Node::Kill(KillCompleter::Sync& completer) {
   Remove(RemovalSet::kAll, nullptr);
 }
 
-Node* Node::GetPrimaryParent() const {
-  return parents_.empty() ? nullptr : parents_[primary_index_];
-}
-
 void Node::CompleteBind(zx::result<> result) {
   if (result.is_error()) {
     driver_component_.reset();
@@ -542,8 +454,12 @@ void Node::CompleteBind(zx::result<> result) {
 
 void Node::AddToParents() {
   auto this_node = shared_from_this();
-  for (auto parent : parents_) {
-    parent->children_.push_back(this_node);
+  for (auto& parent : parents_) {
+    if (auto ptr = parent.lock(); ptr) {
+      ptr->children_.push_back(this_node);
+      continue;
+    }
+    LOGF(WARNING, "Parent freed before child %s could be added to it", name().c_str());
   }
 }
 
@@ -581,11 +497,12 @@ void Node::CheckForRemoval() {
     // We'd better continue to close, since we can't talk to the driver.
   }
 
+  LOGF(INFO, "Node: %s Scheduling stop component", MakeComponentMoniker().c_str());
   ScheduleStopComponent();
 }
 
 void Node::FinishRemoval() {
-  LOGF(DEBUG, "Node: %s Finishing removal", name().c_str());
+  LOGF(INFO, "Node: %s Finishing removal", name().c_str());
   ZX_ASSERT_MSG(node_state_ == NodeState::kWaitingOnDriverComponent,
                 "FinishRemoval called in invalid node state: %s", State2String(node_state_));
 
@@ -599,7 +516,11 @@ void Node::FinishRemoval() {
   node_state_ = NodeState::kStopping;
   driver_component_.reset();
   for (auto& parent : parents()) {
-    parent->RemoveChild(shared_from_this());
+    if (auto ptr = parent.lock(); ptr) {
+      ptr->RemoveChild(this_node);
+      continue;
+    }
+    LOGF(WARNING, "Parent freed before child %s could be removed from it", name().c_str());
   }
   parents_.clear();
 
@@ -815,8 +736,9 @@ fit::result<fuchsia_driver_framework::wire::NodeError, std::shared_ptr<Node>> No
     inspect_vmo = std::move(args.devfs_args()->inspect().value());
   }
   DeviceInspect inspect = inspect_.CreateChild(std::string(name), std::move(inspect_vmo), 0);
-  std::shared_ptr child = std::make_shared<Node>(name, std::vector<Node*>{this}, *node_manager_,
-                                                 dispatcher_, std::move(inspect));
+  std::shared_ptr child =
+      std::make_shared<Node>(name, std::vector<std::weak_ptr<Node>>{weak_from_this()},
+                             *node_manager_, dispatcher_, std::move(inspect));
 
   if (args.offers().has_value()) {
     child->offers_.reserve(args.offers().value().size());
@@ -964,8 +886,6 @@ void Node::AddChild(fuchsia_driver_framework::NodeAddArgs args,
       });
 }
 
-bool Node::IsComposite() const { return parents_.size() > 1; }
-
 void Node::Remove(RemoveCompleter::Sync& completer) {
   LOGF(DEBUG, "Remove() Fidl call for %s", name().c_str());
   Remove(RemovalSet::kAll, nullptr);
@@ -1089,6 +1009,7 @@ void Node::StartDriver(fuchsia_component_runner::wire::ComponentStartInfo start_
         if (!node_ptr) {
           LOGF(WARNING, "Node freed before it is used");
           cb(result);
+          return;
         }
 
         if (result.is_error()) {
@@ -1104,7 +1025,8 @@ void Node::ScheduleStopComponent() {
                 State2String(node_state_));
   node_state_ = NodeState::kWaitingOnDriverComponent;
   if (!driver_component_) {
-    tasks_.Post(fit::bind_member(this, &Node::FinishRemoval));
+    // TODO(fxb/130850): Move this call to an async task.
+    FinishRemoval();
     return;
   }
   // Send an epitaph to the component manager and close the connection. The
@@ -1143,7 +1065,7 @@ void Node::on_fidl_error(fidl::UnbindInfo info) {
          info.FormatDescription().data());
   }
   if (node_state_ == NodeState::kWaitingOnDriver) {
-    LOGF(DEBUG, "Node: %s: realm channel had expected shutdown.", name().c_str());
+    LOGF(INFO, "Node: %s: realm channel had expected shutdown.", MakeComponentMoniker().c_str());
     ScheduleStopComponent();
   } else if (node_state_ == NodeState::kWaitingOnDriverComponent) {
     LOGF(DEBUG, "Node: %s: driver channel had expected shutdown.", name().c_str());

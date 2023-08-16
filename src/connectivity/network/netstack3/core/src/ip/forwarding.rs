@@ -7,23 +7,26 @@
 use alloc::vec::Vec;
 use core::{fmt::Debug, slice::Iter};
 
+use lock_order::Locked;
 use net_types::{
-    ip::{Ip, Subnet},
+    ip::{GenericOverIp, Ip, IpInvariant, Ipv4, Ipv6, Subnet},
     SpecifiedAddr,
 };
 use thiserror::Error;
 use tracing::debug;
 
 use crate::{
+    device::DeviceLayerTypes,
     error::NotFoundError,
     ip::{
         types::{
             AddableEntry, AddableMetric, DecomposedAddableEntry, Destination, Entry, Metric,
             NextHop, RawMetric,
         },
-        AnyDevice, DeviceIdContext, IpLayerEvent, IpLayerIpExt, IpLayerNonSyncContext,
+        AnyDevice, DeviceIdContext, IpExt, IpLayerEvent, IpLayerIpExt, IpLayerNonSyncContext,
         IpStateContext,
     },
+    DeviceId, NonSyncContext, SyncCtx,
 };
 
 /// Provides access to a device for the purposes of IP forwarding.
@@ -194,10 +197,49 @@ fn observe_metric<I: Ip, SC: IpForwardingDeviceContext<I>>(
     }
 }
 
+/// Visitor for route table state.
+pub trait RoutesVisitor<'a, C: DeviceLayerTypes + 'a> {
+    /// The result of [`RoutesVisitor::visit`].
+    type VisitResult;
+
+    /// Consumes `self` and an Entry iterator to produce a `VisitResult`.
+    fn visit<'b, I: Ip>(
+        self,
+        stats: impl Iterator<Item = &'b Entry<I::Addr, DeviceId<C>>> + 'b,
+    ) -> Self::VisitResult
+    where
+        'a: 'b;
+}
+
+/// Provides access to the state of the route table via a visitor.
+pub fn with_routes<'a, I, C, V>(sync_ctx: &SyncCtx<C>, cb: V) -> V::VisitResult
+where
+    I: IpExt,
+    C: NonSyncContext + 'a,
+    V: RoutesVisitor<'a, C>,
+{
+    let mut sync_ctx = Locked::new(sync_ctx);
+    let IpInvariant(r) = I::map_ip(
+        IpInvariant((&mut sync_ctx, cb)),
+        |IpInvariant((sync_ctx, cb))| {
+            IpInvariant(sync_ctx.with_ip_routing_table(
+                |_sync_ctx, table: &ForwardingTable<Ipv4, _>| cb.visit::<Ipv4>(table.iter_table()),
+            ))
+        },
+        |IpInvariant((sync_ctx, cb))| {
+            IpInvariant(sync_ctx.with_ip_routing_table(
+                |_sync_ctx, table: &ForwardingTable<Ipv6, _>| cb.visit::<Ipv6>(table.iter_table()),
+            ))
+        },
+    );
+    r
+}
+
 /// An IP forwarding table.
 ///
 /// `ForwardingTable` maps destination subnets to the nearest IP hosts (on the
 /// local network) able to route IP packets to those subnets.
+#[derive(GenericOverIp)]
 pub struct ForwardingTable<I: Ip, D> {
     /// All the routes available to forward a packet.
     ///
@@ -363,9 +405,9 @@ impl<I: Ip, D: Clone + Debug + PartialEq> ForwardingTable<I, D> {
 #[cfg(test)]
 pub(crate) mod testutil {
     use alloc::collections::HashSet;
-    use core::marker::PhantomData;
 
     use derivative::Derivative;
+    use net_types::ip::{IpAddress, IpInvariant, Ipv4, Ipv6};
 
     use super::*;
 
@@ -373,6 +415,18 @@ pub(crate) mod testutil {
         context::testutil::FakeSyncCtx,
         ip::{testutil::FakeIpDeviceIdCtx, StrongId},
     };
+
+    /// Adds an on-link forwarding entry for the specified address and device.
+    pub(crate) fn add_on_link_forwarding_entry<A: IpAddress, D: Clone + Debug + PartialEq>(
+        table: &mut ForwardingTable<A::Version, D>,
+        ip: SpecifiedAddr<A>,
+        device: D,
+    ) {
+        let subnet = Subnet::new(*ip, A::BYTES * 8).unwrap();
+        let entry =
+            Entry { subnet, device, gateway: None, metric: Metric::ExplicitMetric(RawMetric(0)) };
+        assert_eq!(crate::ip::forwarding::testutil::add_entry(table, entry.clone()), Ok(&entry));
+    }
 
     // Provide tests with access to the private `ForwardingTable.add_entry` fn.
     pub(crate) fn add_entry<I: Ip, D: Clone + Debug + PartialEq>(
@@ -384,13 +438,12 @@ pub(crate) mod testutil {
 
     #[derive(Derivative)]
     #[derivative(Default(bound = ""))]
-    pub(crate) struct FakeIpForwardingContext<I, D> {
+    pub(crate) struct FakeIpForwardingContext<D> {
         disabled_devices: HashSet<D>,
         ip_device_id_ctx: FakeIpDeviceIdCtx<D>,
-        _marker: PhantomData<I>,
     }
 
-    impl<I, D> FakeIpForwardingContext<I, D> {
+    impl<D> FakeIpForwardingContext<D> {
         pub(crate) fn ip_device_id_ctx_mut(&mut self) -> &mut FakeIpDeviceIdCtx<D> {
             &mut self.ip_device_id_ctx
         }
@@ -400,21 +453,21 @@ pub(crate) mod testutil {
         }
     }
 
-    impl<I, D> AsRef<FakeIpDeviceIdCtx<D>> for FakeIpForwardingContext<I, D> {
+    impl<D> AsRef<FakeIpDeviceIdCtx<D>> for FakeIpForwardingContext<D> {
         fn as_ref(&self) -> &FakeIpDeviceIdCtx<D> {
             &self.ip_device_id_ctx
         }
     }
 
-    impl<I, D> AsMut<FakeIpDeviceIdCtx<D>> for FakeIpForwardingContext<I, D> {
+    impl<D> AsMut<FakeIpDeviceIdCtx<D>> for FakeIpForwardingContext<D> {
         fn as_mut(&mut self) -> &mut FakeIpDeviceIdCtx<D> {
             &mut self.ip_device_id_ctx
         }
     }
 
-    pub(crate) type FakeIpForwardingCtx<I, D> = FakeSyncCtx<FakeIpForwardingContext<I, D>, (), D>;
+    pub(crate) type FakeIpForwardingCtx<D> = FakeSyncCtx<FakeIpForwardingContext<D>, (), D>;
 
-    impl<I: Ip, D: StrongId> IpForwardingDeviceContext<I> for FakeIpForwardingCtx<I, D>
+    impl<I: Ip, D: StrongId> IpForwardingDeviceContext<I> for FakeIpForwardingCtx<D>
     where
         Self: DeviceIdContext<AnyDevice, DeviceId = D>,
     {
@@ -426,7 +479,35 @@ pub(crate) mod testutil {
             !self.get_ref().disabled_devices.contains(device_id)
         }
     }
+
+    #[derive(Derivative)]
+    #[derivative(Default(bound = ""))]
+    pub(crate) struct DualStackForwardingTable<D> {
+        v4: ForwardingTable<Ipv4, D>,
+        v6: ForwardingTable<Ipv6, D>,
+    }
+
+    impl<D, I: Ip> AsRef<ForwardingTable<I, D>> for DualStackForwardingTable<D> {
+        fn as_ref(&self) -> &ForwardingTable<I, D> {
+            I::map_ip(
+                IpInvariant(self),
+                |IpInvariant(table)| &table.v4,
+                |IpInvariant(table)| &table.v6,
+            )
+        }
+    }
+
+    impl<D, I: Ip> AsMut<ForwardingTable<I, D>> for DualStackForwardingTable<D> {
+        fn as_mut(&mut self) -> &mut ForwardingTable<I, D> {
+            I::map_ip(
+                IpInvariant(self),
+                |IpInvariant(table)| &mut table.v4,
+                |IpInvariant(table)| &mut table.v6,
+            )
+        }
+    }
 }
+
 #[cfg(test)]
 mod tests {
     use fakealloc::collections::HashSet;
@@ -450,7 +531,7 @@ mod tests {
         testutil::FakeEventDispatcherConfig,
     };
 
-    type FakeCtx<I> = FakeIpForwardingCtx<I, MultipleDevicesId>;
+    type FakeCtx = FakeIpForwardingCtx<MultipleDevicesId>;
 
     impl<I: Ip, D: Clone + Debug + PartialEq> ForwardingTable<I, D> {
         /// Print the table.
@@ -598,7 +679,7 @@ mod tests {
     #[ip_test]
     fn test_simple_lookup<I: Ip + TestIpExt>() {
         let (mut table, config, next_hop, _next_hop_subnet, device, metric) = simple_setup::<I>();
-        let mut sync_ctx = FakeCtx::<I>::default();
+        let mut sync_ctx = FakeCtx::default();
 
         // Do lookup for our next hop (should be the device).
         assert_eq!(
@@ -666,7 +747,7 @@ mod tests {
 
     #[ip_test]
     fn test_default_route_ip<I: Ip + TestIpExt>() {
-        let mut sync_ctx = FakeCtx::<I>::default();
+        let mut sync_ctx = FakeCtx::default();
         let mut table = ForwardingTable::<I, MultipleDevicesId>::default();
         let device0 = MultipleDevicesId::A;
         let (addr1, sub1) = I::next_hop_addr_sub(1, 24);
@@ -723,7 +804,7 @@ mod tests {
         const MORE_SPECIFIC_SUB_DEVICE: MultipleDevicesId = MultipleDevicesId::A;
         const LESS_SPECIFIC_SUB_DEVICE: MultipleDevicesId = MultipleDevicesId::B;
 
-        let mut sync_ctx = FakeCtx::<I>::default();
+        let mut sync_ctx = FakeCtx::default();
         let mut table = ForwardingTable::<I, MultipleDevicesId>::default();
         let (remote, more_specific_sub) = I::next_hop_addr_sub(1, 1);
         let less_specific_sub = {
@@ -796,7 +877,7 @@ mod tests {
 
     #[ip_test]
     fn test_lookup_filter_map<I: Ip + TestIpExt>() {
-        let mut sync_ctx = FakeCtx::<I>::default();
+        let mut sync_ctx = FakeCtx::default();
         let mut table = ForwardingTable::<I, MultipleDevicesId>::default();
 
         let (next_hop, more_specific_sub) = I::next_hop_addr_sub(1, 1);
@@ -831,7 +912,7 @@ mod tests {
         fn lookup_with_devices<I: Ip>(
             table: &ForwardingTable<I, MultipleDevicesId>,
             next_hop: SpecifiedAddr<I::Addr>,
-            sync_ctx: &mut FakeCtx<I>,
+            sync_ctx: &mut FakeCtx,
             devices: &[MultipleDevicesId],
         ) -> Vec<Destination<I::Addr, MultipleDevicesId>> {
             table
@@ -887,7 +968,7 @@ mod tests {
         const DEVICE1: MultipleDevicesId = MultipleDevicesId::A;
         const DEVICE2: MultipleDevicesId = MultipleDevicesId::B;
 
-        let mut sync_ctx = FakeCtx::<I>::default();
+        let mut sync_ctx = FakeCtx::default();
         let mut table = ForwardingTable::<I, MultipleDevicesId>::default();
         let (remote, sub) = I::next_hop_addr_sub(1, 1);
         let metric = Metric::ExplicitMetric(RawMetric(0));
@@ -932,12 +1013,12 @@ mod tests {
         }
     }; "device_disabled")]
     fn test_usable_device<I: Ip + TestIpExt>(
-        set_inactive: fn(&mut FakeCtx<I>, MultipleDevicesId, bool),
+        set_inactive: fn(&mut FakeCtx, MultipleDevicesId, bool),
     ) {
         const MORE_SPECIFIC_SUB_DEVICE: MultipleDevicesId = MultipleDevicesId::A;
         const LESS_SPECIFIC_SUB_DEVICE: MultipleDevicesId = MultipleDevicesId::B;
 
-        let mut sync_ctx = FakeCtx::<I>::default();
+        let mut sync_ctx = FakeCtx::default();
         let mut table = ForwardingTable::<I, MultipleDevicesId>::default();
         let (remote, more_specific_sub) = I::next_hop_addr_sub(1, 1);
         let less_specific_sub = {

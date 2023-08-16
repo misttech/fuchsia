@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use starnix_sync::InterruptibleEvent;
+use std::{collections::VecDeque, sync::Arc};
+use zerocopy::{AsBytes, FromBytes, FromZeroes};
+
 use crate::{
     lock::RwLock,
     task::{WaitQueue, WaiterRef},
     types::*,
 };
-use std::{collections::VecDeque, sync::Arc};
-use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
 /// `SignalActions` contains a `sigaction_t` for each valid signal.
 #[derive(Debug)]
@@ -51,6 +53,67 @@ impl SignalActions {
     }
 }
 
+/// Whether, and how, this task is blocked. This enum can be extended with new
+/// variants to optimize different kinds of waiting.
+#[derive(Debug, Clone)]
+pub enum RunState {
+    /// This task is not blocked.
+    ///
+    /// The task might be running in userspace or kernel.
+    Running,
+
+    /// This thread is blocked in a `Waiter`.
+    Waiter(WaiterRef),
+
+    /// This thread is blocked in an `InterruptibleEvent`.
+    Event(Arc<InterruptibleEvent>),
+}
+
+impl Default for RunState {
+    fn default() -> Self {
+        RunState::Running
+    }
+}
+
+impl RunState {
+    /// Whether this task is blocked.
+    ///
+    /// If the task is blocked, you can break the task out of the wait using the `wake` function.
+    pub fn is_blocked(&self) -> bool {
+        match self {
+            RunState::Running => false,
+            RunState::Waiter(waiter) => waiter.is_valid(),
+            RunState::Event(_) => true,
+        }
+    }
+
+    /// Unblock the task by interrupting whatever wait the task is blocked upon.
+    pub fn wake(&self) {
+        match self {
+            RunState::Running => (),
+            RunState::Waiter(waiter) => {
+                waiter.access(|waiter| {
+                    if let Some(waiter) = waiter {
+                        waiter.interrupt()
+                    }
+                });
+            }
+            RunState::Event(event) => event.interrupt(),
+        }
+    }
+}
+
+impl PartialEq<RunState> for RunState {
+    fn eq(&self, other: &RunState) -> bool {
+        match (self, other) {
+            (RunState::Running, RunState::Running) => true,
+            (RunState::Waiter(lhs), RunState::Waiter(rhs)) => lhs == rhs,
+            (RunState::Event(lhs), RunState::Event(rhs)) => Arc::ptr_eq(lhs, rhs),
+            _ => false,
+        }
+    }
+}
+
 /// Per-task signal handling state.
 #[derive(Default)]
 pub struct SignalState {
@@ -60,8 +123,8 @@ pub struct SignalState {
     /// Wait queue for signalfd and sigtimedwait. Signaled whenever a signal is added to the queue.
     pub signal_wait: WaitQueue,
 
-    /// The waiter that the task is currently sleeping on, if any.
-    pub waiter: WaiterRef,
+    /// A handle for interrupting this task, if any.
+    pub run_state: RunState,
 
     /// The signal mask of the task.
     // See https://man7.org/linux/man-pages/man2/rt_sigprocmask.2.html

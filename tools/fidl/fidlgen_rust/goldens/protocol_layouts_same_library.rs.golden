@@ -2,7 +2,6 @@
 
 // fidl_experiment = no_optional_structs
 // fidl_experiment = output_index_json
-// fidl_experiment = simple_empty_response_syntax
 // fidl_experiment = unknown_interactions
 // fidl_experiment = unknown_interactions_mandate
 
@@ -805,8 +804,8 @@ impl ComposedProtocolEvent {
     fn decode(mut buf: fidl::MessageBufEtc) -> Result<ComposedProtocolEvent, fidl::Error> {
         let (bytes, _handles) = buf.split_mut();
         let (tx_header, _body_bytes) = fidl::encoding::decode_transaction_header(bytes)?;
-        debug_assert_eq!(tx_header.tx_id(), 0);
-        match tx_header.ordinal() {
+        debug_assert_eq!(tx_header.tx_id, 0);
+        match tx_header.ordinal {
             0x49a6eee3a0300e28 => {
                 let mut out = fidl::new_empty!(ComposedProtocolOnAnonComposedRequest);
                 fidl::encoding::Decoder::decode_into::<ComposedProtocolOnAnonComposedRequest>(
@@ -845,7 +844,7 @@ impl ComposedProtocolEvent {
                 Ok((ComposedProtocolEvent::OnNamedComposedWithError { result: out.map(|x| x) }))
             }
             _ => Err(fidl::Error::UnknownOrdinal {
-                ordinal: tx_header.ordinal(),
+                ordinal: tx_header.ordinal,
                 protocol_name:
                     <ComposedProtocolMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME,
             }),
@@ -919,8 +918,9 @@ impl futures::Stream for ComposedProtocolRequestStream {
             // A message has been received from the channel
             let (header, _body_bytes) = fidl::encoding::decode_transaction_header(bytes)?;
 
-            std::task::Poll::Ready(Some(match header.ordinal() {
+            std::task::Poll::Ready(Some(match header.ordinal {
                 0x6e7a205bdad7941f => {
+                    header.validate_request_tx_id(fidl::MethodType::OneWay)?;
                     let mut req = fidl::new_empty!(ComposedProtocolOneWayAnonComposedRequest);
                     fidl::encoding::Decoder::decode_into::<
                         ComposedProtocolOneWayAnonComposedRequest,
@@ -930,6 +930,7 @@ impl futures::Stream for ComposedProtocolRequestStream {
                     Ok(ComposedProtocolRequest::OneWayAnonComposed { payload: req, control_handle })
                 }
                 0x7083713dee9435f4 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(ComposedProtocolTwoWayAnonComposedRequest);
                     fidl::encoding::Decoder::decode_into::<
                         ComposedProtocolTwoWayAnonComposedRequest,
@@ -940,12 +941,12 @@ impl futures::Stream for ComposedProtocolRequestStream {
                         payload: req,
                         responder: ComposedProtocolTwoWayAnonComposedResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x4fd32c5e2ffa6828 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req =
                         fidl::new_empty!(ComposedProtocolTwoWayAnonComposedWithErrorRequest);
                     fidl::encoding::Decoder::decode_into::<
@@ -957,12 +958,12 @@ impl futures::Stream for ComposedProtocolRequestStream {
                         payload: req,
                         responder: ComposedProtocolTwoWayAnonComposedWithErrorResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x101636a8fa3e69b8 => {
+                    header.validate_request_tx_id(fidl::MethodType::OneWay)?;
                     let mut req = fidl::new_empty!(TablePayload);
                     fidl::encoding::Decoder::decode_into::<TablePayload>(
                         &header,
@@ -978,6 +979,7 @@ impl futures::Stream for ComposedProtocolRequestStream {
                     })
                 }
                 0x45b4d3d31b374054 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(UnionPayload);
                     fidl::encoding::Decoder::decode_into::<UnionPayload>(
                         &header,
@@ -991,12 +993,12 @@ impl futures::Stream for ComposedProtocolRequestStream {
                         payload: req,
                         responder: ComposedProtocolTwoWayNamedComposedResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x450531e2d20c52ef => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(TablePayload);
                     fidl::encoding::Decoder::decode_into::<TablePayload>(
                         &header,
@@ -1010,13 +1012,12 @@ impl futures::Stream for ComposedProtocolRequestStream {
                         payload: req,
                         responder: ComposedProtocolTwoWayNamedComposedWithErrorResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 _ => Err(fidl::Error::UnknownOrdinal {
-                    ordinal: header.ordinal(),
+                    ordinal: header.ordinal,
                     protocol_name:
                         <ComposedProtocolMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME,
                 }),
@@ -1218,7 +1219,6 @@ impl ComposedProtocolControlHandle {
 pub struct ComposedProtocolTwoWayAnonComposedResponder {
     control_handle: std::mem::ManuallyDrop<ComposedProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`ComposedProtocolControlHandle::shutdown`])
@@ -1280,7 +1280,7 @@ impl ComposedProtocolTwoWayAnonComposedResponder {
         self.control_handle.inner.send::<ComposedProtocolTwoWayAnonComposedResponse>(
             payload,
             self.tx_id,
-            self.ordinal,
+            0x7083713dee9435f4,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -1291,7 +1291,6 @@ impl ComposedProtocolTwoWayAnonComposedResponder {
 pub struct ComposedProtocolTwoWayAnonComposedWithErrorResponder {
     control_handle: std::mem::ManuallyDrop<ComposedProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`ComposedProtocolControlHandle::shutdown`])
@@ -1356,7 +1355,7 @@ impl ComposedProtocolTwoWayAnonComposedWithErrorResponder {
         >>(
             result,
             self.tx_id,
-            self.ordinal,
+            0x4fd32c5e2ffa6828,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -1367,7 +1366,6 @@ impl ComposedProtocolTwoWayAnonComposedWithErrorResponder {
 pub struct ComposedProtocolTwoWayNamedComposedResponder {
     control_handle: std::mem::ManuallyDrop<ComposedProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`ComposedProtocolControlHandle::shutdown`])
@@ -1420,7 +1418,7 @@ impl ComposedProtocolTwoWayNamedComposedResponder {
         self.control_handle.inner.send::<TablePayload>(
             payload,
             self.tx_id,
-            self.ordinal,
+            0x45b4d3d31b374054,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -1431,7 +1429,6 @@ impl ComposedProtocolTwoWayNamedComposedResponder {
 pub struct ComposedProtocolTwoWayNamedComposedWithErrorResponder {
     control_handle: std::mem::ManuallyDrop<ComposedProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`ComposedProtocolControlHandle::shutdown`])
@@ -1487,7 +1484,7 @@ impl ComposedProtocolTwoWayNamedComposedWithErrorResponder {
         self.control_handle.inner.send::<fidl::encoding::ResultType<UnionPayload, u32>>(
             result,
             self.tx_id,
-            self.ordinal,
+            0x450531e2d20c52ef,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -2213,8 +2210,8 @@ impl MainProtocolEvent {
     fn decode(mut buf: fidl::MessageBufEtc) -> Result<MainProtocolEvent, fidl::Error> {
         let (bytes, _handles) = buf.split_mut();
         let (tx_header, _body_bytes) = fidl::encoding::decode_transaction_header(bytes)?;
-        debug_assert_eq!(tx_header.tx_id(), 0);
-        match tx_header.ordinal() {
+        debug_assert_eq!(tx_header.tx_id, 0);
+        match tx_header.ordinal {
             0x49a6eee3a0300e28 => {
                 let mut out = fidl::new_empty!(ComposedProtocolOnAnonComposedRequest);
                 fidl::encoding::Decoder::decode_into::<ComposedProtocolOnAnonComposedRequest>(
@@ -2287,7 +2284,7 @@ impl MainProtocolEvent {
                 Ok((MainProtocolEvent::OnAnonWithError { result: out.map(|x| x) }))
             }
             _ => Err(fidl::Error::UnknownOrdinal {
-                ordinal: tx_header.ordinal(),
+                ordinal: tx_header.ordinal,
                 protocol_name: <MainProtocolMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME,
             }),
         }
@@ -2360,8 +2357,9 @@ impl futures::Stream for MainProtocolRequestStream {
             // A message has been received from the channel
             let (header, _body_bytes) = fidl::encoding::decode_transaction_header(bytes)?;
 
-            std::task::Poll::Ready(Some(match header.ordinal() {
+            std::task::Poll::Ready(Some(match header.ordinal {
                 0x6e7a205bdad7941f => {
+                    header.validate_request_tx_id(fidl::MethodType::OneWay)?;
                     let mut req = fidl::new_empty!(ComposedProtocolOneWayAnonComposedRequest);
                     fidl::encoding::Decoder::decode_into::<
                         ComposedProtocolOneWayAnonComposedRequest,
@@ -2370,6 +2368,7 @@ impl futures::Stream for MainProtocolRequestStream {
                     Ok(MainProtocolRequest::OneWayAnonComposed { payload: req, control_handle })
                 }
                 0x7083713dee9435f4 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(ComposedProtocolTwoWayAnonComposedRequest);
                     fidl::encoding::Decoder::decode_into::<
                         ComposedProtocolTwoWayAnonComposedRequest,
@@ -2379,12 +2378,12 @@ impl futures::Stream for MainProtocolRequestStream {
                         payload: req,
                         responder: MainProtocolTwoWayAnonComposedResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x4fd32c5e2ffa6828 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req =
                         fidl::new_empty!(ComposedProtocolTwoWayAnonComposedWithErrorRequest);
                     fidl::encoding::Decoder::decode_into::<
@@ -2395,12 +2394,12 @@ impl futures::Stream for MainProtocolRequestStream {
                         payload: req,
                         responder: MainProtocolTwoWayAnonComposedWithErrorResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x101636a8fa3e69b8 => {
+                    header.validate_request_tx_id(fidl::MethodType::OneWay)?;
                     let mut req = fidl::new_empty!(TablePayload);
                     fidl::encoding::Decoder::decode_into::<TablePayload>(
                         &header,
@@ -2412,6 +2411,7 @@ impl futures::Stream for MainProtocolRequestStream {
                     Ok(MainProtocolRequest::OneWayNamedComposed { payload: req, control_handle })
                 }
                 0x45b4d3d31b374054 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(UnionPayload);
                     fidl::encoding::Decoder::decode_into::<UnionPayload>(
                         &header,
@@ -2424,12 +2424,12 @@ impl futures::Stream for MainProtocolRequestStream {
                         payload: req,
                         responder: MainProtocolTwoWayNamedComposedResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x450531e2d20c52ef => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(TablePayload);
                     fidl::encoding::Decoder::decode_into::<TablePayload>(
                         &header,
@@ -2442,12 +2442,12 @@ impl futures::Stream for MainProtocolRequestStream {
                         payload: req,
                         responder: MainProtocolTwoWayNamedComposedWithErrorResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x3954b4c6b80956c1 => {
+                    header.validate_request_tx_id(fidl::MethodType::OneWay)?;
                     let mut req = fidl::new_empty!(TablePayload);
                     fidl::encoding::Decoder::decode_into::<TablePayload>(
                         &header,
@@ -2459,6 +2459,7 @@ impl futures::Stream for MainProtocolRequestStream {
                     Ok(MainProtocolRequest::OneWayLocal { payload: req, control_handle })
                 }
                 0x26998b4c1e8a9a57 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(UnionPayload);
                     fidl::encoding::Decoder::decode_into::<UnionPayload>(
                         &header,
@@ -2471,12 +2472,12 @@ impl futures::Stream for MainProtocolRequestStream {
                         payload: req,
                         responder: MainProtocolTwoWayLocalResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x4a7bf9ce881afde7 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(TablePayload);
                     fidl::encoding::Decoder::decode_into::<TablePayload>(
                         &header,
@@ -2489,12 +2490,12 @@ impl futures::Stream for MainProtocolRequestStream {
                         payload: req,
                         responder: MainProtocolTwoWayLocalWithErrorResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x774bf445f584ce2c => {
+                    header.validate_request_tx_id(fidl::MethodType::OneWay)?;
                     let mut req = fidl::new_empty!(MainProtocolOneWayAnonRequest);
                     fidl::encoding::Decoder::decode_into::<MainProtocolOneWayAnonRequest>(
                         &header,
@@ -2506,6 +2507,7 @@ impl futures::Stream for MainProtocolRequestStream {
                     Ok(MainProtocolRequest::OneWayAnon { payload: req, control_handle })
                 }
                 0x3fd7ad8e52b07e2e => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(MainProtocolTwoWayAnonRequest);
                     fidl::encoding::Decoder::decode_into::<MainProtocolTwoWayAnonRequest>(
                         &header,
@@ -2518,12 +2520,12 @@ impl futures::Stream for MainProtocolRequestStream {
                         payload: req,
                         responder: MainProtocolTwoWayAnonResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x1d33061a424eb245 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(MainProtocolTwoWayAnonWithErrorRequest);
                     fidl::encoding::Decoder::decode_into::<MainProtocolTwoWayAnonWithErrorRequest>(
                         &header,
@@ -2536,13 +2538,12 @@ impl futures::Stream for MainProtocolRequestStream {
                         payload: req,
                         responder: MainProtocolTwoWayAnonWithErrorResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 _ => Err(fidl::Error::UnknownOrdinal {
-                    ordinal: header.ordinal(),
+                    ordinal: header.ordinal,
                     protocol_name:
                         <MainProtocolMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME,
                 }),
@@ -2875,7 +2876,6 @@ impl MainProtocolControlHandle {
 pub struct MainProtocolTwoWayAnonComposedResponder {
     control_handle: std::mem::ManuallyDrop<MainProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`MainProtocolControlHandle::shutdown`])
@@ -2937,7 +2937,7 @@ impl MainProtocolTwoWayAnonComposedResponder {
         self.control_handle.inner.send::<ComposedProtocolTwoWayAnonComposedResponse>(
             payload,
             self.tx_id,
-            self.ordinal,
+            0x7083713dee9435f4,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -2948,7 +2948,6 @@ impl MainProtocolTwoWayAnonComposedResponder {
 pub struct MainProtocolTwoWayAnonComposedWithErrorResponder {
     control_handle: std::mem::ManuallyDrop<MainProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`MainProtocolControlHandle::shutdown`])
@@ -3013,7 +3012,7 @@ impl MainProtocolTwoWayAnonComposedWithErrorResponder {
         >>(
             result,
             self.tx_id,
-            self.ordinal,
+            0x4fd32c5e2ffa6828,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -3024,7 +3023,6 @@ impl MainProtocolTwoWayAnonComposedWithErrorResponder {
 pub struct MainProtocolTwoWayNamedComposedResponder {
     control_handle: std::mem::ManuallyDrop<MainProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`MainProtocolControlHandle::shutdown`])
@@ -3077,7 +3075,7 @@ impl MainProtocolTwoWayNamedComposedResponder {
         self.control_handle.inner.send::<TablePayload>(
             payload,
             self.tx_id,
-            self.ordinal,
+            0x45b4d3d31b374054,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -3088,7 +3086,6 @@ impl MainProtocolTwoWayNamedComposedResponder {
 pub struct MainProtocolTwoWayNamedComposedWithErrorResponder {
     control_handle: std::mem::ManuallyDrop<MainProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`MainProtocolControlHandle::shutdown`])
@@ -3144,7 +3141,7 @@ impl MainProtocolTwoWayNamedComposedWithErrorResponder {
         self.control_handle.inner.send::<fidl::encoding::ResultType<UnionPayload, u32>>(
             result,
             self.tx_id,
-            self.ordinal,
+            0x450531e2d20c52ef,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -3155,7 +3152,6 @@ impl MainProtocolTwoWayNamedComposedWithErrorResponder {
 pub struct MainProtocolTwoWayLocalResponder {
     control_handle: std::mem::ManuallyDrop<MainProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`MainProtocolControlHandle::shutdown`])
@@ -3208,7 +3204,7 @@ impl MainProtocolTwoWayLocalResponder {
         self.control_handle.inner.send::<TablePayload>(
             payload,
             self.tx_id,
-            self.ordinal,
+            0x26998b4c1e8a9a57,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -3219,7 +3215,6 @@ impl MainProtocolTwoWayLocalResponder {
 pub struct MainProtocolTwoWayLocalWithErrorResponder {
     control_handle: std::mem::ManuallyDrop<MainProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`MainProtocolControlHandle::shutdown`])
@@ -3275,7 +3270,7 @@ impl MainProtocolTwoWayLocalWithErrorResponder {
         self.control_handle.inner.send::<fidl::encoding::ResultType<UnionPayload, u32>>(
             result,
             self.tx_id,
-            self.ordinal,
+            0x4a7bf9ce881afde7,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -3286,7 +3281,6 @@ impl MainProtocolTwoWayLocalWithErrorResponder {
 pub struct MainProtocolTwoWayAnonResponder {
     control_handle: std::mem::ManuallyDrop<MainProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`MainProtocolControlHandle::shutdown`])
@@ -3342,7 +3336,7 @@ impl MainProtocolTwoWayAnonResponder {
         self.control_handle.inner.send::<MainProtocolTwoWayAnonResponse>(
             payload,
             self.tx_id,
-            self.ordinal,
+            0x3fd7ad8e52b07e2e,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -3353,7 +3347,6 @@ impl MainProtocolTwoWayAnonResponder {
 pub struct MainProtocolTwoWayAnonWithErrorResponder {
     control_handle: std::mem::ManuallyDrop<MainProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`MainProtocolControlHandle::shutdown`])
@@ -3418,7 +3411,7 @@ impl MainProtocolTwoWayAnonWithErrorResponder {
         >>(
             result,
             self.tx_id,
-            self.ordinal,
+            0x1d33061a424eb245,
             fidl::encoding::DynamicFlags::empty(),
         )
     }

@@ -85,7 +85,7 @@ impl<DeviceId> From<IgmpTimerId<DeviceId>> for Ipv4DeviceTimerId<DeviceId> {
 impl_timer_context!(
     DeviceId,
     Ipv4DeviceTimerId<DeviceId>,
-    IgmpTimerId<DeviceId>,
+    IgmpTimerId::<DeviceId>,
     Ipv4DeviceTimerId(id),
     id
 );
@@ -170,35 +170,35 @@ impl<DeviceId> From<SlaacTimerId<DeviceId>> for Ipv6DeviceTimerId<DeviceId> {
 impl_timer_context!(
     DeviceId,
     Ipv6DeviceTimerId<DeviceId>,
-    MldDelayedReportTimerId<DeviceId>,
+    MldDelayedReportTimerId::<DeviceId>,
     Ipv6DeviceTimerId::Mld(id),
     id
 );
 impl_timer_context!(
     DeviceId,
     Ipv6DeviceTimerId<DeviceId>,
-    DadTimerId<DeviceId>,
+    DadTimerId::<DeviceId>,
     Ipv6DeviceTimerId::Dad(id),
     id
 );
 impl_timer_context!(
     DeviceId,
     Ipv6DeviceTimerId<DeviceId>,
-    RsTimerId<DeviceId>,
+    RsTimerId::<DeviceId>,
     Ipv6DeviceTimerId::Rs(id),
     id
 );
 impl_timer_context!(
     DeviceId,
     Ipv6DeviceTimerId<DeviceId>,
-    Ipv6DiscoveredRouteTimerId<DeviceId>,
+    Ipv6DiscoveredRouteTimerId::<DeviceId>,
     Ipv6DeviceTimerId::RouteDiscovery(id),
     id
 );
 impl_timer_context!(
     DeviceId,
     Ipv6DeviceTimerId<DeviceId>,
-    SlaacTimerId<DeviceId>,
+    SlaacTimerId::<DeviceId>,
     Ipv6DeviceTimerId::Slaac(id),
     id
 );
@@ -2382,7 +2382,7 @@ mod tests {
                     state: IpAddressState::Unavailable,
                 }),
                 DispatchedEvent::IpDeviceIpv4(IpDeviceEvent::EnabledChanged {
-                    device: weak_device_id.clone(),
+                    device: weak_device_id,
                     ip_enabled: false,
                 }),
             ]
@@ -2687,7 +2687,7 @@ mod tests {
                     state: IpAddressState::Tentative,
                 }),
                 DispatchedEvent::IpDeviceIpv6(IpDeviceEvent::EnabledChanged {
-                    device: weak_device_id.clone(),
+                    device: weak_device_id,
                     ip_enabled: true,
                 })
             ]
@@ -2788,7 +2788,7 @@ mod tests {
         assert_eq!(
             non_sync_ctx.take_events()[..],
             [DispatchedEvent::IpDeviceIpv6(IpDeviceEvent::AddressRemoved {
-                device: weak_device_id.clone(),
+                device: weak_device_id,
                 addr: assigned_addr.addr(),
                 reason: RemovedReason::DadFailed,
             }),]

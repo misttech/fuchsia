@@ -9,7 +9,6 @@ use {
     },
     ::routing::{
         component_id_index::ComponentIdIndexError,
-        config::AbiRevisionError,
         error::{ComponentInstanceError, RoutingError},
         policy::PolicyError,
         resolving::ResolverError,
@@ -21,13 +20,12 @@ use {
     moniker::{ChildName, Moniker, MonikerError},
     std::path::PathBuf,
     thiserror::Error,
+    version_history::AbiRevisionError,
 };
 
 /// Errors produced by `Model`.
 #[derive(Debug, Error, Clone)]
 pub enum ModelError {
-    #[error("component collection not found with name {}", name)]
-    CollectionNotFound { name: String },
     // TODO(https://fxbug.dev/117080): Remove this error by using the `camino` library
     #[error("path is not utf-8: {:?}", path)]
     PathIsNotUtf8 { path: PathBuf },
@@ -69,8 +67,8 @@ pub enum ModelError {
         #[from]
         err: ComponentInstanceError,
     },
-    #[error("error in collection service dir VFS for component {moniker}: {err}")]
-    CollectionServiceDirError {
+    #[error("error in service dir VFS for component {moniker}: {err}")]
+    ServiceDirError {
         moniker: Moniker,
 
         #[source]
@@ -163,8 +161,6 @@ pub enum StructuredConfigError {
     ConfigResolutionFailed(#[source] config_encoder::ResolutionError),
     #[error("couldn't create vmo: {_0}")]
     VmoCreateFailed(#[source] zx::Status),
-    #[error("couldn't write to vmo: {_0}")]
-    VmoWriteFailed(#[source] zx::Status),
 }
 
 #[derive(Clone, Debug, Error)]
@@ -541,7 +537,7 @@ pub enum CapabilityProviderError {
 }
 
 impl CapabilityProviderError {
-    fn as_zx_status(&self) -> zx::Status {
+    pub fn as_zx_status(&self) -> zx::Status {
         match self {
             Self::StreamCreationError => zx::Status::BAD_HANDLE,
             Self::BadFlags | Self::BadPath => zx::Status::INVALID_ARGS,
@@ -596,8 +592,6 @@ impl OpenError {
 /// Describes all errors encountered when routing and opening a namespace capability.
 #[derive(Debug, Clone, Error)]
 pub enum RouteAndOpenCapabilityError {
-    #[error("not a namespace capability")]
-    NotNamespaceCapability,
     #[error("could not route {request}: {err}")]
     RoutingError {
         request: RouteRequest,
@@ -615,7 +609,6 @@ pub enum RouteAndOpenCapabilityError {
 impl RouteAndOpenCapabilityError {
     fn as_zx_status(&self) -> zx::Status {
         match self {
-            Self::NotNamespaceCapability { .. } => zx::Status::INVALID_ARGS,
             Self::RoutingError { err, .. } => err.as_zx_status(),
             Self::OpenError { err, .. } => err.as_zx_status(),
         }
@@ -647,11 +640,11 @@ pub enum StartActionError {
         #[source]
         err: PolicyError,
     },
-    #[error("Couldn't start `{moniker}` because we failed to populate its namespace: {err}")]
-    NamespacePopulateError {
+    #[error("Couldn't start `{moniker}` because we failed to create its namespace: {err}")]
+    CreateNamespaceError {
         moniker: Moniker,
         #[source]
-        err: NamespacePopulateError,
+        err: CreateNamespaceError,
     },
     #[error("Couldn't start `{moniker}` due to a structured configuration error: {err}")]
     StructuredConfigError {
@@ -673,7 +666,7 @@ impl StartActionError {
             Self::RebootOnTerminateForbidden { err, .. } => err.as_zx_status(),
             Self::ResolveRunnerError { err, .. } => err.as_zx_status(),
             Self::InstanceDestroyed { .. } | Self::InstanceShutDown { .. } => zx::Status::NOT_FOUND,
-            Self::NamespacePopulateError { err, .. } => err.as_zx_status(),
+            Self::CreateNamespaceError { err, .. } => err.as_zx_status(),
             _ => zx::Status::INTERNAL,
         }
     }
@@ -838,23 +831,23 @@ impl Into<fsys::UnresolveError> for UnresolveActionError {
 }
 
 #[derive(Debug, Clone, Error)]
-pub enum NamespacePopulateError {
+pub enum CreateNamespaceError {
     #[error("failed to clone pkg dir: {0}")]
-    ClonePkgDirFailed(#[source] ClonableError),
+    ClonePkgDirFailed(#[source] fuchsia_fs::node::CloneError),
 
     #[error("{0}")]
     InstanceNotInInstanceIdIndex(#[source] RoutingError),
 
-    #[error("failed to add additional namespace entries because they conflict with paths for used capabilities")]
-    ConflictBetweenUsesAndAdditionalEntries,
+    #[error("invalid additional namespace entries")]
+    InvalidAdditionalEntries(#[source] cm_runner::NamespaceError),
 }
 
-impl NamespacePopulateError {
+impl CreateNamespaceError {
     fn as_zx_status(&self) -> zx::Status {
         match self {
             Self::ClonePkgDirFailed(_) => zx::Status::IO,
             Self::InstanceNotInInstanceIdIndex(e) => e.as_zx_status(),
-            Self::ConflictBetweenUsesAndAdditionalEntries { .. } => zx::Status::INVALID_ARGS,
+            Self::InvalidAdditionalEntries(_) => zx::Status::INVALID_ARGS,
         }
     }
 }

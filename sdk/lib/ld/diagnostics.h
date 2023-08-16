@@ -7,6 +7,8 @@
 
 #include <lib/elfldltl/diagnostics.h>
 
+#include <cassert>
+#include <cstdarg>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -29,28 +31,66 @@ struct StartupDiagnosticsFlags {
   [[no_unique_address]] std::false_type extra_checking;
 };
 
-// This function gets wrapped to make a Diagnostics object.  It's responsible
-// for the actual printing, which might need to use the StartupData.
-//
-// TODO(mcgrathr): for now, it just takes the main string. later probably wire
-// up the printf engine and use PrintfDiagnosticsReport.
-void ReportError(StartupData& startup, std::string_view str);
+// This provides the Report callable object for Diagnostics.  It uses the
+// printf engine to ultimately call StartupMessage with the captured
+// StartupData reference.  But it also holds a current module name that can
+// be changed; when set, it's used as a prefix on error messages.
+class DiagnosticsReport {
+ public:
+  constexpr explicit DiagnosticsReport(StartupData& startup) : startup_(startup) {}
 
-// This constructs a Report function that calls ReportError.
-constexpr auto MakeDiagnosticsReport(StartupData& startup) {
-  return [&startup](std::string_view str, ...) {
-    ReportError(startup, str);
+  constexpr std::string_view module() const { return module_; }
+
+  constexpr void set_module(std::string_view module) { module_ = module; }
+
+  constexpr void clear_module() { module_ = {}; }
+
+  template <typename... Args>
+  bool operator()(Args&&... args) const {
+    auto report = [&](auto... prefix) {
+      auto printf = [this](auto... args) { this->Printf(args...); };
+      auto report = elfldltl::PrintfDiagnosticsReport(printf, prefix...);
+      report(std::forward<Args>(args)...);
+    };
+    if (module_.empty()) {
+      report();
+    } else {
+      constexpr std::string_view kColon = ": ";
+      report(module_, kColon);
+    }
     return true;
-  };
-}
+  }
+
+ private:
+  void Printf(const char* format, ...) const;
+  void Printf(const char* format, va_list args) const;
+
+  StartupData& startup_;
+  std::string_view module_;
+};
 
 // This constructs the main Diagnostics object for the startup dynamic linker.
 constexpr auto MakeDiagnostics(StartupData& startup) {
-  return elfldltl::Diagnostics{MakeDiagnosticsReport(startup), StartupDiagnosticsFlags{}};
+  return elfldltl::Diagnostics{DiagnosticsReport(startup), StartupDiagnosticsFlags{}};
 }
 
 // Its type is captured so it can be used as an explicit non-template argument.
 using Diagnostics = decltype(MakeDiagnostics(std::declval<StartupData&>()));
+
+// This is an RAII type that exists to temporarily set the module name in the
+// Diagnostics::report() object.
+class ModuleDiagnostics {
+ public:
+  constexpr explicit ModuleDiagnostics(Diagnostics& diag, std::string_view name) : diag_(diag) {
+    assert(diag_.report().module().empty());
+    diag_.report().set_module(name);
+  }
+
+  ~ModuleDiagnostics() { diag_.report().clear_module(); }
+
+ private:
+  Diagnostics& diag_;
+};
 
 // This is called before proceeding from loading to relocation / linking, and
 // then again when proceeding from final cleanup to transferring control.

@@ -247,7 +247,7 @@ impl Injector for Injection {
     }
 
     async fn is_experiment(&self, key: &str) -> bool {
-        ffx_config::get(key).await.unwrap_or(false)
+        self.env_context.get(key).await.unwrap_or(false)
     }
 
     async fn build_info(&self) -> Result<VersionInfo> {
@@ -435,7 +435,7 @@ mod test {
         };
         let daemon_hoist = Arc::new(Hoist::new().unwrap());
         let listener = UnixListener::bind(&sockpath).unwrap();
-        let local_link_task = local_hoist.start_socket_link(sockpath.clone(), hoist::Cso::Enabled);
+        let local_link_task = local_hoist.start_socket_link(sockpath.clone());
 
         let (s, p) = fidl::Channel::create();
         daemon_hoist.publish_service(DaemonMarker::PROTOCOL_NAME, ClientEnd::new(p)).unwrap();

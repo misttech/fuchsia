@@ -43,11 +43,11 @@ library_headers("headers") {
     "lib/elfldltl/constants.h",
     "lib/elfldltl/container.h",
     "lib/elfldltl/diagnostics.h",
+    "lib/elfldltl/diagnostics-ostream.h",
     "lib/elfldltl/dynamic.h",
     "lib/elfldltl/fd.h",
     "lib/elfldltl/field.h",
     "lib/elfldltl/file.h",
-    "lib/elfldltl/fuzzer.h",
     "lib/elfldltl/gnu-hash.h",
     "lib/elfldltl/init-fini.h",
     "lib/elfldltl/internal/const-string.h",
@@ -62,6 +62,7 @@ library_headers("headers") {
     "lib/elfldltl/mapped-fd-file.h",
     "lib/elfldltl/mapped-vmo-file.h",
     "lib/elfldltl/memory.h",
+    "lib/elfldltl/loadinfo-mapped-memory.h",
     "lib/elfldltl/mmap-loader.h",
     "lib/elfldltl/note.h",
     "lib/elfldltl/phdr.h",
@@ -112,41 +113,6 @@ static_library("elfldltl") {
 
   if (is_linux) {
     configs -= [ "//build/config/linux:implicit-host-libs" ]
-  }
-}
-
-library_headers("test-headers") {
-  testonly = true
-
-  headers = [
-    "lib/elfldltl/testing/diagnostics.h",
-    "lib/elfldltl/testing/get-test-data.h",
-    "lib/elfldltl/testing/loader.h",
-    "lib/elfldltl/testing/typed-test.h",
-  ]
-
-  public_deps = [
-    ":elfldltl",
-    "//third_party/googletest:gmock",
-    "//third_party/googletest:gtest",
-    "//zircon/system/ulib/fbl",
-  ]
-}
-
-static_library("elfldltl-testutils") {
-  testonly = true
-
-  public_deps = [ ":test-headers" ]
-
-  sources = [ "get-test-data-path.cc" ]
-  deps = []
-  if (is_fuchsia) {
-    sources += [ "get-test-lib.cc" ]
-    deps += [
-      "//sdk/fidl/fuchsia.ldsvc:fuchsia.ldsvc_cpp",
-      "//sdk/lib/fdio",
-      "//zircon/system/ulib/zx",
-    ]
   }
 }
 

@@ -73,7 +73,6 @@ class FakeDriverHost : public fidl::WireServer<fdm::DriverHostController> {
   }
 
   void Restart(RestartCompleter::Sync& completer) override {}
-  void Start(StartRequestView request, StartCompleter::Sync& completer) override {}
 
  private:
   const char* expected_driver_;
@@ -220,6 +219,14 @@ void DeviceState::CheckResumeReceivedAndReply(SystemPowerState target_state,
                                               zx_status_t return_status) {
   CheckResumeReceived(target_state);
   SendResumeReply(return_status);
+}
+
+void DeviceState::CheckSignalMadeVisible() {
+  ASSERT_FALSE(made_visible_);
+  continue_dispatch_ = false;
+  Dispatch();
+  ASSERT_TRUE(made_visible_);
+  continue_dispatch_ = true;
 }
 
 void MultipleDeviceTestCase::SetUp() {

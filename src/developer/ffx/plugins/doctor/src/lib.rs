@@ -247,7 +247,7 @@ pub async fn doctor_cmd_impl<W: Write + Send + Sync + 'static>(
     let mut log_root = None;
     let mut output_dir = None;
     let mut record = cmd.record;
-    match get("log.enabled").await {
+    match context.get("log.enabled").await {
         Ok(enabled) => {
             let enabled: bool = enabled;
             if !enabled && cmd.record {
@@ -264,7 +264,7 @@ pub async fn doctor_cmd_impl<W: Write + Send + Sync + 'static>(
                 fuchsia_async::Timer::new(Duration::from_millis(10000)).await;
             }
 
-            log_root = Some(get("log.dir").await?);
+            log_root = Some(context.get("log.dir").await?);
             let final_output_dir =
                 cmd.output_dir.map(|s| PathBuf::from(s)).unwrap_or(std::env::current_dir()?);
 
@@ -319,7 +319,8 @@ pub async fn doctor_cmd_impl<W: Write + Send + Sync + 'static>(
 
     let recorder = Arc::new(Mutex::new(DoctorRecorder::new()));
     let mut handler = DefaultDoctorStepHandler::new(recorder.clone(), Box::new(writer));
-    let default_target = get(TARGET_DEFAULT_KEY)
+    let default_target = context
+        .get(TARGET_DEFAULT_KEY)
         .await
         .map_err(|e: ffx_config::api::ConfigError| format!("{:?}", e).replace("\n", ""));
 
@@ -614,7 +615,7 @@ async fn daemon_restart<W: Write>(
     calc_daemon_pid_diff(error, daemon_manager, ledger, cpid, apid, spid).await;
 
     // Kill the daemon if it is running.
-    let daemon_killed = if daemon_manager.is_running().await {
+    let daemon_killed = if daemon_manager.is_daemon_running().await {
         let node = ledger.add_node("Killing running daemons.", LedgerMode::Automatic)?;
         daemon_manager.kill_all().await?;
         ledger.set_outcome(node, LedgerOutcome::Success)?;
@@ -920,7 +921,7 @@ async fn doctor_summary<W: Write>(
 
     main_node = ledger.add_node("Checking daemon", LedgerMode::Automatic)?;
 
-    if daemon_manager.is_running().await {
+    if daemon_manager.is_daemon_running().await {
         let pid_vec = get_daemon_pid(daemon_manager, ledger).await.unwrap_or_default();
         let node = ledger
             .add_node(&format!("Daemon found: {}", format_vec(&pid_vec)), LedgerMode::Automatic)?;
@@ -1279,7 +1280,7 @@ mod test {
     use super::*;
     use async_lock::Mutex;
     use async_trait::async_trait;
-    use ffx_config::{query, ConfigLevel, TestEnv};
+    use ffx_config::{ConfigLevel, TestEnv};
     use ffx_doctor_test_utils::MockWriter;
     use fidl::{
         endpoints::{
@@ -1583,7 +1584,7 @@ mod test {
             );
             assert!(
                 state.daemons_running_results.is_empty(),
-                "too few calls to is_running. remaining entries: {:?}",
+                "too few calls to is_daemon_running. remaining entries: {:?}",
                 state.daemons_running_results
             );
             assert!(
@@ -1613,9 +1614,12 @@ mod test {
             state.get_pid_results.remove(0)
         }
 
-        async fn is_running(&self) -> bool {
+        async fn is_daemon_running(&self) -> bool {
             let mut state = self.state_manager.lock().await;
-            assert!(!state.daemons_running_results.is_empty(), "too many calls to is_running");
+            assert!(
+                !state.daemons_running_results.is_empty(),
+                "too many calls to is_daemon_running"
+            );
             state.daemons_running_results.remove(0)
         }
 
@@ -3368,8 +3372,20 @@ mod test {
         let pub_key = test_env.isolate_root.path().join("test_authorized_keys");
         let priv_key = test_env.isolate_root.path().join("test_ed25519_key");
         // Set the paths to use for the SSH keys
-        query("ssh.pub").level(Some(ConfigLevel::User)).set(json!([&pub_key])).await.unwrap();
-        query("ssh.priv").level(Some(ConfigLevel::User)).set(json!([&priv_key])).await.unwrap();
+        test_env
+            .context
+            .query("ssh.pub")
+            .level(Some(ConfigLevel::User))
+            .set(json!([&pub_key]))
+            .await
+            .unwrap();
+        test_env
+            .context
+            .query("ssh.priv")
+            .level(Some(ConfigLevel::User))
+            .set(json!([&priv_key]))
+            .await
+            .unwrap();
 
         // Do not generate the keys - so they are missing.
 

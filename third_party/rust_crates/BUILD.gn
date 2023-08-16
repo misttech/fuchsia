@@ -36,7 +36,7 @@ group("arbitrary") {
 }
 
 group("argh") {
-  public_deps = [ ":argh-v0_1_10" ]
+  public_deps = [ ":argh-v0_1_12" ]
 }
 
 group("arrayvec") {
@@ -1084,6 +1084,10 @@ group("webpki") {
   public_deps = [ ":webpki-v0_21_0" ]
 }
 
+group("which") {
+  public_deps = [ ":which-v4_0_2" ]
+}
+
 group("xml-rs") {
   public_deps = [ ":xml-rs-v0_8_0" ]
 }
@@ -1093,7 +1097,7 @@ group("xts-mode") {
 }
 
 group("zerocopy") {
-  public_deps = [ ":zerocopy-v0_7_0-alpha_4" ]
+  public_deps = [ ":zerocopy-v0_7_0-alpha_5" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -1330,67 +1334,68 @@ rust_library("arbitrary-v1_0_3") {
   visibility = [ ":*" ]
 }
 
-rust_library("argh-v0_1_10") {
+rust_library("argh-v0_1_12") {
   crate_name = "argh"
-  crate_root = "//third_party/rust_crates/vendor/argh-0.1.10/src/lib.rs"
-  output_name = "argh-985f0733f1979a4e"
+  crate_root = "//third_party/rust_crates/vendor/argh-0.1.12/src/lib.rs"
+  output_name = "argh-22dc77a208701f30"
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":argh_derive-v0_1_10($host_toolchain)" ]
-  deps += [ ":argh_shared-v0_1_10" ]
+  deps += [ ":argh_derive-v0_1_12($host_toolchain)" ]
+  deps += [ ":argh_shared-v0_1_12" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
     "--edition=2018",
-    "-Cmetadata=985f0733f1979a4e",
-    "-Cextra-filename=-985f0733f1979a4e",
+    "-Cmetadata=22dc77a208701f30",
+    "-Cextra-filename=-22dc77a208701f30",
   ]
 
   visibility = [ ":*" ]
 }
 
-rust_proc_macro("argh_derive-v0_1_10") {
+rust_proc_macro("argh_derive-v0_1_12") {
   crate_name = "argh_derive"
-  crate_root = "//third_party/rust_crates/vendor/argh_derive-0.1.10/src/lib.rs"
-  output_name = "argh_derive-e6feaf0d203e8ea9"
+  crate_root = "//third_party/rust_crates/vendor/argh_derive-0.1.12/src/lib.rs"
+  output_name = "argh_derive-5f3acc1b826834de"
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":argh_shared-v0_1_10" ]
+  deps += [ ":argh_shared-v0_1_12" ]
   deps += [ ":proc-macro2-v1_0_63" ]
   deps += [ ":quote-v1_0_29" ]
-  deps += [ ":syn-v1_0_98" ]
+  deps += [ ":syn-v2_0_23" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
     "--edition=2018",
-    "-Cmetadata=e6feaf0d203e8ea9",
-    "-Cextra-filename=-e6feaf0d203e8ea9",
+    "-Cmetadata=5f3acc1b826834de",
+    "-Cextra-filename=-5f3acc1b826834de",
   ]
 
   visibility = [ ":*" ]
 }
 
-rust_library("argh_shared-v0_1_10") {
+rust_library("argh_shared-v0_1_12") {
   crate_name = "argh_shared"
-  crate_root = "//third_party/rust_crates/vendor/argh_shared-0.1.10/src/lib.rs"
-  output_name = "argh_shared-782b5a39ef65589c"
+  crate_root = "//third_party/rust_crates/vendor/argh_shared-0.1.12/src/lib.rs"
+  output_name = "argh_shared-544226982af09ad9"
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":serde-v1_0_147" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
     "--edition=2018",
-    "-Cmetadata=782b5a39ef65589c",
-    "-Cextra-filename=-782b5a39ef65589c",
+    "-Cmetadata=544226982af09ad9",
+    "-Cextra-filename=-544226982af09ad9",
   ]
 
   visibility = [ ":*" ]
@@ -7005,7 +7010,7 @@ rust_library("parking_lot_core-v0_6_2") {
 
   deps = []
   deps += [ ":cfg-if-v0_1_10" ]
-  deps += [ ":smallvec-v0_6_13" ]
+  deps += [ ":smallvec-v0_6_14" ]
   if (false) {
     deps += [ ":cloudabi-v0_0_3" ]
   }
@@ -8256,7 +8261,7 @@ rust_library("rand-v0_6_5") {
 
   deps = []
   deps += [ ":rand_chacha-v0_1_1" ]
-  deps += [ ":rand_core-v0_4_0" ]
+  deps += [ ":rand_core-v0_4_2" ]
   deps += [ ":rand_hc-v0_1_0" ]
   deps += [ ":rand_isaac-v0_1_1" ]
   deps += [ ":rand_jitter-v0_1_3" ]
@@ -8380,7 +8385,7 @@ rust_library("rand_core-v0_3_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":rand_core-v0_4_0" ]
+  deps += [ ":rand_core-v0_4_2" ]
 
   rustenv = []
 
@@ -8394,10 +8399,10 @@ rust_library("rand_core-v0_3_1") {
   visibility = [ ":*" ]
 }
 
-rust_library("rand_core-v0_4_0") {
+rust_library("rand_core-v0_4_2") {
   crate_name = "rand_core"
-  crate_root = "//third_party/rust_crates/vendor/rand_core-0.4.0/src/lib.rs"
-  output_name = "rand_core-b977c15482d5a8aa"
+  crate_root = "//third_party/rust_crates/vendor/rand_core-0.4.2/src/lib.rs"
+  output_name = "rand_core-a1ab8a2dace5ada0"
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
@@ -8407,8 +8412,8 @@ rust_library("rand_core-v0_4_0") {
   rustflags = [
     "--cap-lints=allow",
     "--edition=2015",
-    "-Cmetadata=b977c15482d5a8aa",
-    "-Cextra-filename=-b977c15482d5a8aa",
+    "-Cmetadata=a1ab8a2dace5ada0",
+    "-Cextra-filename=-a1ab8a2dace5ada0",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"std\"",
   ]
@@ -8510,7 +8515,7 @@ rust_library("rand_jitter-v0_1_3") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":rand_core-v0_4_0" ]
+  deps += [ ":rand_core-v0_4_2" ]
   if (current_os == "mac" || false) {
     deps += [ ":libc-v0_2_142" ]
   }
@@ -8538,7 +8543,7 @@ rust_library("rand_os-v0_1_2") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":rand_core-v0_4_0" ]
+  deps += [ ":rand_core-v0_4_2" ]
   if (false) {
     deps += [ ":rdrand-v0_4_0" ]
   }
@@ -10364,10 +10369,10 @@ rust_library("slab-v0_4_7") {
   visibility = [ ":*" ]
 }
 
-rust_library("smallvec-v0_6_13") {
+rust_library("smallvec-v0_6_14") {
   crate_name = "smallvec"
-  crate_root = "//third_party/rust_crates/vendor/smallvec-0.6.13/lib.rs"
-  output_name = "smallvec-15257cc85e7a16b9"
+  crate_root = "//third_party/rust_crates/vendor/smallvec-0.6.14/lib.rs"
+  output_name = "smallvec-17cff5ddbac2d3b4"
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
@@ -10378,8 +10383,8 @@ rust_library("smallvec-v0_6_13") {
   rustflags = [
     "--cap-lints=allow",
     "--edition=2015",
-    "-Cmetadata=15257cc85e7a16b9",
-    "-Cextra-filename=-15257cc85e7a16b9",
+    "-Cmetadata=17cff5ddbac2d3b4",
+    "-Cextra-filename=-17cff5ddbac2d3b4",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
@@ -13022,24 +13027,24 @@ rust_library("xts-mode-v0_4_1") {
   visibility = [ ":*" ]
 }
 
-rust_library("zerocopy-v0_7_0-alpha_4") {
+rust_library("zerocopy-v0_7_0-alpha_5") {
   crate_name = "zerocopy"
   crate_root =
-      "//third_party/rust_crates/vendor/zerocopy-0.7.0-alpha.4/src/lib.rs"
-  output_name = "zerocopy-ed393f51636da2c3"
+      "//third_party/rust_crates/vendor/zerocopy-0.7.0-alpha.5/src/lib.rs"
+  output_name = "zerocopy-2977ee0d554be9ca"
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
   deps += [ ":byteorder-v1_4_3" ]
-  deps += [ ":zerocopy-derive-v0_7_0-alpha_4($host_toolchain)" ]
+  deps += [ ":zerocopy-derive-v0_7_0-alpha_5($host_toolchain)" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
     "--edition=2021",
-    "-Cmetadata=ed393f51636da2c3",
-    "-Cextra-filename=-ed393f51636da2c3",
+    "-Cmetadata=2977ee0d554be9ca",
+    "-Cextra-filename=-2977ee0d554be9ca",
     "--cfg=feature=\"byteorder\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"simd\"",
@@ -13048,10 +13053,10 @@ rust_library("zerocopy-v0_7_0-alpha_4") {
   visibility = [ ":*" ]
 }
 
-rust_proc_macro("zerocopy-derive-v0_7_0-alpha_4") {
+rust_proc_macro("zerocopy-derive-v0_7_0-alpha_5") {
   crate_name = "zerocopy_derive"
-  crate_root = "//third_party/rust_crates/vendor/zerocopy-derive-0.7.0-alpha.4/src/lib.rs"
-  output_name = "zerocopy_derive-7c6eecfa76aeacea"
+  crate_root = "//third_party/rust_crates/vendor/zerocopy-derive-0.7.0-alpha.5/src/lib.rs"
+  output_name = "zerocopy_derive-6330c727c000fadc"
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
@@ -13064,8 +13069,8 @@ rust_proc_macro("zerocopy-derive-v0_7_0-alpha_4") {
   rustflags = [
     "--cap-lints=allow",
     "--edition=2021",
-    "-Cmetadata=7c6eecfa76aeacea",
-    "-Cextra-filename=-7c6eecfa76aeacea",
+    "-Cmetadata=6330c727c000fadc",
+    "-Cextra-filename=-6330c727c000fadc",
   ]
 
   visibility = [ ":*" ]

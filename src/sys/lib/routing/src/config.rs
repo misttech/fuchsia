@@ -23,7 +23,7 @@ use {
     },
     thiserror::Error,
     tracing::warn,
-    version_history::AbiRevision,
+    version_history::{check_abi_revision, AbiRevision, AbiRevisionError},
 };
 
 /// Runtime configuration options.
@@ -98,6 +98,9 @@ pub struct RuntimeConfig {
 
     /// The enforcement and validation policy to apply to component target ABI revisions.
     pub abi_revision_policy: AbiRevisionPolicy,
+
+    /// Where to get the vmex resource from.
+    pub vmex_source: VmexSource,
 }
 
 /// A single security policy allowlist entry.
@@ -276,14 +279,6 @@ pub enum CapabilityAllowlistSource {
     Capability,
 }
 
-#[derive(Debug, Clone, Error, PartialEq, Eq)]
-pub enum AbiRevisionError {
-    #[error("Missing a component target ABI revision.")]
-    Absent,
-    #[error("Unsupported component target ABI revision: {0}. The following revisions are supported: {1}")]
-    Unsupported(AbiRevision, String),
-}
-
 /// The enforcement and validation policy to apply to component target ABI revisions.
 /// Defaults to `AllowAll`
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -308,21 +303,6 @@ impl Default for AbiRevisionPolicy {
 }
 
 impl AbiRevisionPolicy {
-    fn is_supported(moniker: &Moniker, abi_revision: Option<AbiRevision>) -> bool {
-        match abi_revision {
-            Some(abi) => {
-                let is_supported = version_history::is_supported_abi_revision(abi);
-                if !is_supported {
-                    warn!("Component {} targets an invalid ABI revision {}.", moniker, abi)
-                }
-                is_supported
-            }
-            None => {
-                warn!("Component {} does not have a target ABI revision.", moniker);
-                false
-            }
-        }
-    }
     /// Check if the abi_revision, if present, is supported by the platform and compatible with the
     /// `AbiRevisionPolicy`. Regardless of the enforcement policy, log a warning if the
     /// ABI revision is missing or not supported by the platform.
@@ -331,23 +311,44 @@ impl AbiRevisionPolicy {
         moniker: &Moniker,
         abi_revision: Option<AbiRevision>,
     ) -> Result<(), AbiRevisionError> {
-        let is_supported_abi = Self::is_supported(moniker, abi_revision);
-        match (self, abi_revision) {
-            (AbiRevisionPolicy::AllowAll, _) => Ok(()),
-            (AbiRevisionPolicy::EnforcePresenceOnly, Some(_)) => Ok(()),
-            (AbiRevisionPolicy::EnforcePresenceAndCompatibility, Some(abi)) => {
-                if is_supported_abi {
-                    Ok(())
-                } else {
-                    let supported_abis: Vec<_> = version_history::get_supported_abi_revisions()
-                        .into_iter()
-                        .map(|v| format!("{}", version_history::AbiRevision(v)))
-                        .collect();
-                    Err(AbiRevisionError::Unsupported(abi, supported_abis.join(",")))
-                }
+        let Err(abi_error) = check_abi_revision(abi_revision) else { return Ok(()) };
+
+        match self {
+            AbiRevisionPolicy::AllowAll => {
+                warn!(
+                    "Ignoring AbiRevisionError in {} due to AllowAll policy: {}",
+                    moniker, abi_error
+                );
+                Ok(())
             }
-            _ => Err(AbiRevisionError::Absent),
+            AbiRevisionPolicy::EnforcePresenceOnly => match abi_error {
+                AbiRevisionError::Absent => Err(AbiRevisionError::Absent),
+                _ => {
+                    warn!(
+                        "Ignoring AbiRevisionError in {} due to EnforcePresenceOnly policy: {}",
+                        moniker, abi_error
+                    );
+                    Ok(())
+                }
+            },
+            AbiRevisionPolicy::EnforcePresenceAndCompatibility => Err(abi_error),
         }
+    }
+}
+
+/// Where to get the Vmex resource from, if this component_manager is hosting bootfs.
+/// Defaults to `SystemResource`.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum VmexSource {
+    SystemResource,
+    Namespace,
+}
+
+symmetrical_enums!(VmexSource, component_internal::VmexSource, SystemResource, Namespace);
+
+impl Default for VmexSource {
+    fn default() -> Self {
+        VmexSource::SystemResource
     }
 }
 
@@ -383,6 +384,7 @@ impl Default for RuntimeConfig {
             builtin_boot_resolver: BuiltinBootResolver::None,
             realm_builder_resolver_and_runner: RealmBuilderResolverAndRunner::None,
             abi_revision_policy: Default::default(),
+            vmex_source: Default::default(),
         }
     }
 }
@@ -550,6 +552,8 @@ impl TryFrom<component_internal::Config> for RuntimeConfig {
         let abi_revision_policy =
             config.abi_revision_policy.map(AbiRevisionPolicy::from).unwrap_or_default();
 
+        let vmex_source = config.vmex_source.map(VmexSource::from).unwrap_or_default();
+
         Ok(RuntimeConfig {
             list_children_batch_size,
             security_policy: Arc::new(security_policy),
@@ -579,6 +583,7 @@ impl TryFrom<component_internal::Config> for RuntimeConfig {
                 .realm_builder_resolver_and_runner
                 .unwrap_or(default.realm_builder_resolver_and_runner),
             abi_revision_policy,
+            vmex_source,
         })
     }
 }
@@ -938,6 +943,7 @@ mod tests {
                 builtin_boot_resolver: Some(component_internal::BuiltinBootResolver::None),
                 realm_builder_resolver_and_runner: Some(component_internal::RealmBuilderResolverAndRunner::None),
                 abi_revision_policy: Some(component_internal::AbiRevisionPolicy::AllowAll),
+                vmex_source: Some(component_internal::VmexSource::Namespace),
                 ..Default::default()
             },
             RuntimeConfig {
@@ -1062,6 +1068,7 @@ mod tests {
                 log_all_events: true,
                 builtin_boot_resolver: BuiltinBootResolver::None,
                 realm_builder_resolver_and_runner: RealmBuilderResolverAndRunner::None,
+                vmex_source: VmexSource::Namespace,
             }
         ),
     }
@@ -1250,20 +1257,30 @@ mod tests {
 
     #[test]
     fn abi_revision_policy_check_compatibility() -> Result<(), Error> {
-        // This test assumes the platform does not support a u64::MAX ABI value.
-        let invalid_abi = AbiRevision(u64::MAX);
-        let valid_abi = version_history::LATEST_VERSION.abi_revision;
-        let supported_abis: Vec<_> = version_history::get_supported_abi_revisions()
-            .into_iter()
-            .map(|v| format!("{}", version_history::AbiRevision(v)))
-            .collect();
+        // This test assumes the platform does not support a u64::MAX ABI value
+        // and the first entry in VERSION_HISTORY is unsupported.
+        let unknown_abi = AbiRevision(u64::MAX);
+        assert!(version_history::version_from_abi_revision(unknown_abi).is_none());
+
+        let unsupported_version = version_history::VERSION_HISTORY[0].clone();
+        assert!(!unsupported_version.is_supported());
+
+        let supported_version = version_history::LATEST_VERSION.clone();
+        assert!(supported_version.is_supported());
+
         let test_scenarios = vec![
             (AbiRevisionPolicy::AllowAll, None, Ok(())),
-            (AbiRevisionPolicy::AllowAll, Some(invalid_abi), Ok(())),
-            (AbiRevisionPolicy::AllowAll, Some(valid_abi), Ok(())),
+            (AbiRevisionPolicy::AllowAll, Some(unknown_abi), Ok(())),
+            (AbiRevisionPolicy::AllowAll, Some(unsupported_version.abi_revision), Ok(())),
+            (AbiRevisionPolicy::AllowAll, Some(supported_version.abi_revision), Ok(())),
             (AbiRevisionPolicy::EnforcePresenceOnly, None, Err(AbiRevisionError::Absent)),
-            (AbiRevisionPolicy::EnforcePresenceOnly, Some(invalid_abi), Ok(())),
-            (AbiRevisionPolicy::EnforcePresenceOnly, Some(valid_abi), Ok(())),
+            (AbiRevisionPolicy::EnforcePresenceOnly, Some(unknown_abi), Ok(())),
+            (
+                AbiRevisionPolicy::EnforcePresenceOnly,
+                Some(unsupported_version.abi_revision),
+                Ok(()),
+            ),
+            (AbiRevisionPolicy::EnforcePresenceOnly, Some(supported_version.abi_revision), Ok(())),
             (
                 AbiRevisionPolicy::EnforcePresenceAndCompatibility,
                 None,
@@ -1271,10 +1288,25 @@ mod tests {
             ),
             (
                 AbiRevisionPolicy::EnforcePresenceAndCompatibility,
-                Some(invalid_abi),
-                Err(AbiRevisionError::Unsupported(invalid_abi, supported_abis.join(","))),
+                Some(unknown_abi),
+                Err(AbiRevisionError::Unknown {
+                    abi_revision: unknown_abi,
+                    supported_versions: version_history::SUPPORTED_API_LEVELS.to_vec(),
+                }),
             ),
-            (AbiRevisionPolicy::EnforcePresenceAndCompatibility, Some(valid_abi), Ok(())),
+            (
+                AbiRevisionPolicy::EnforcePresenceAndCompatibility,
+                Some(unsupported_version.abi_revision),
+                Err(AbiRevisionError::Unsupported {
+                    version: unsupported_version,
+                    supported_versions: version_history::SUPPORTED_API_LEVELS.to_vec(),
+                }),
+            ),
+            (
+                AbiRevisionPolicy::EnforcePresenceAndCompatibility,
+                Some(supported_version.abi_revision),
+                Ok(()),
+            ),
         ];
         for (policy, abi, expected_res) in test_scenarios {
             println!(

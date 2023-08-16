@@ -602,6 +602,7 @@ build_api_module("fuzzers") {
 #
 build_api_module("images") {
   testonly = true
+  walk_keys = [ "images_barrier" ]
   data_keys = [ "images" ]
   deps = [
     # XXX(46415): as the build is specialized by board (bootfs_only)
@@ -1003,7 +1004,7 @@ group("tool_paths.metadata") {
     "//prebuilt/third_party/go/$host_platform/bin/gofmt",
     "//prebuilt/third_party/goma/$host_platform/goma_ctl.py",
     "//prebuilt/third_party/ninja/$host_platform/ninja",
-    "//prebuilt/third_party/python3.11/$host_platform/bin/python3.11",
+    "//prebuilt/third_party/python3/$host_platform/bin/python3",
     "//scripts/yapf",
     "//third_party/catapult/tracing/bin/trace2html",
   ]
@@ -1475,13 +1476,6 @@ group("default") {
     deps += [
       "//:drivers-check",
       "//build/images:default-images",
-    ]
-  }
-
-  if (use_bazel_images_only) {
-    assert_no_deps = [
-      "//build/images/fuchsia",
-      "//build/images/zedboot",
     ]
   }
 }

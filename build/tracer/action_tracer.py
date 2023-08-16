@@ -684,12 +684,9 @@ def main_arg_parser() -> argparse.ArgumentParser:
         "--trace-output", required=True, help="Where to store the trace")
     parser.add_argument(
         "--keep-raw-trace",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=False,
         help="Whether to keep trace output after the checks are successful")
-    parser.add_argument(
-        "--no-keep-raw-trace", action="store_false", dest="keep_raw_trace")
-
     parser.add_argument(
         "--target-type",
         choices=["action", "action_foreach"],
@@ -714,33 +711,21 @@ def main_arg_parser() -> argparse.ArgumentParser:
         nargs="*",
         default=[],
         help="Extra file-path prefix that should be ignored.")
-
-    # Want --foo (default:True) and --no-foo (False).
-    # This is ugly, trying to emulate argparse.BooleanOptionalAction,
-    # which isn't available until Python 3.9.
     parser.add_argument(
         "--check-access-permissions",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=True,
         help="Check permissions on file reads and writes")
-    parser.add_argument(
-        "--no-check-access-permissions",
-        action="store_false",
-        dest="check_access_permissions")
 
     # This affects the set of files that are allowed to be written.
     # TODO(fangism): remove this flag entirely, disallowing writes to inputs
     parser.add_argument(
         "--writeable-depfile-inputs",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=False,
         help=
         "Allow writes to inputs found in depfiles.  Only effective with --check-access-permissions."
     )
-    parser.add_argument(
-        "--no-writeable-depfile-inputs",
-        action="store_false",
-        dest="writeable_depfile_inputs")
 
     # TODO(fangism): This check is blocked on *.py being in the ignored set.
     parser.add_argument(
@@ -767,7 +752,7 @@ def get_python_script(command: ToolCommand) -> Optional[str]:
     if command.tool.endswith(('.py', '.pyz')):
         return command.tool
     # 2. is explicitly executed by an interpreter
-    #    for example: path/to/prebuilt/python3.8 build.py
+    #    for example: path/to/prebuilt/python3 build.py
     elif _tool_is_python(command.tool):
         script_index = _find_first_index(
             command.args, lambda x: x.endswith(('.py', '.pyz')))
@@ -905,15 +890,10 @@ def main():
         # https://bugs.chromium.org/p/gn/issues/detail?id=313
         os.path.join(os.getcwd(), "compile_commands.json"),
 
-        ### C/C++
-        # Clang standard libraries, compiler runtime, etc are not strict inputs.
-        os.path.join(
-            src_root, "prebuilt", "third_party", "clang", "linux-x64", "lib/"),
-        os.path.join(
-            src_root, "prebuilt", "third_party", "clang", "linux-x64",
-            "include/"),
-        os.path.join(src_root, "prebuilt", "third_party", "sysroot/"),
-        os.path.join(os.getcwd(), "gen", "zircon", "public", "sysroot/"),
+        ### C/C++ toolchain-related
+        # Specify toolchain/sysroot related exceptions using explicit
+        # --ignore-prefix (hermetic_action_ignored_prefixes in GN),
+        # instead of hard-coding their paths here.
 
         ### Python
         # Python scripts access Python prebuilts for the interpreter,
@@ -957,6 +937,14 @@ def main():
         "/.dart_tool/package_config.json",
         # Allow Flutter to read and write tool states.
         "/.config/flutter/tool_state",
+
+        # Allow global access to remote action download file locks,
+        # which are not consumed by any other builds actions.
+        ".dl-lock",
+
+        # Downloads stubs can be kept as backups after downloading
+        # the real artifact.  No build action consumes these backups.
+        ".dl-stub",
 
         # Allow actions to read .fx-build-dir to figure out the current build
         # directory.

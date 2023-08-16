@@ -31,6 +31,10 @@ pub struct BoardFilesystemConfig {
     /// request a fvm, then these values are ignored.
     #[serde(default)]
     pub fvm: Fvm,
+
+    /// Permit multiple GPT devices to be matched.
+    #[serde(default)]
+    pub gpt_all: bool,
 }
 
 /// Parameters describing how to generate the ZBI.
@@ -131,6 +135,10 @@ pub struct Fvm {
     #[serde(default)]
     pub slice_size: FvmSliceSize,
 
+    /// If provided, the standard fvm will be truncated to the specified length.
+    #[serde(default)]
+    pub truncate_to_length: Option<u64>,
+
     /// Board configuration for a blobfs if requested by a product. If the product does not
     /// request a blobfs, then these values are ignored.
     #[serde(default)]
@@ -174,7 +182,14 @@ pub struct Blobfs {
     #[serde(default)]
     pub size_checker_maximum_bytes: Option<u64>,
 
+    /// Maximum number of bytes blobfs can consume at build time.
+    /// This value is used by the fvm tool to preallocate space.
+    /// Most boards should avoid setting this value, and set maximum_bytes instead.
+    #[serde(default)]
+    pub build_time_maximum_bytes: Option<u64>,
+
     /// Maximum number of bytes blobfs can consume at runtime.
+    /// This value is placed in fshost config to enforce size budgets at runtime.
     #[serde(default)]
     pub maximum_bytes: Option<u64>,
 

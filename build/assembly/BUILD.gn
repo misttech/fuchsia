@@ -30,15 +30,19 @@ if (is_fuchsia) {
     platform = {
       build_type = "eng"
       feature_set_level = "bootstrap"
-    }
-    product = {
-    }
-  }
-
-  product_assembly_configuration("bootable_product_config") {
-    platform = {
-      build_type = "user"
-      feature_set_level = "bootstrap"
+      storage = {
+        configure_fshost = true
+        filesystems = {
+          volume = {
+            fvm = {
+              data = {
+              }
+              blob = {
+              }
+            }
+          }
+        }
+      }
     }
     product = {
     }

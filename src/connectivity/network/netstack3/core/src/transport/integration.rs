@@ -12,10 +12,11 @@ use packet::BufferMut;
 
 use crate::{
     device::WeakDeviceId,
-    ip::{device::IpDeviceNonSyncContext, BufferTransportIpContext, IpExt},
+    ip::{device::IpDeviceNonSyncContext, BufferTransportIpContext},
+    socket::datagram::{MaybeDualStack, UninstantiableContext},
     transport::{
         tcp::{self, socket::isn::IsnGenerator, TcpState},
-        udp,
+        udp::{self},
     },
     NonSyncContext, SyncCtx,
 };
@@ -116,6 +117,13 @@ impl<C: NonSyncContext, L: LockBefore<crate::lock_ordering::UdpSocketsTable<Ipv4
         cb(&mut locked, &mut socket_state)
     }
 
+    fn with_bound_state_context<O, F: FnOnce(&mut Self::SocketStateCtx<'_>) -> O>(
+        &mut self,
+        cb: F,
+    ) -> O {
+        cb(&mut self.cast_locked())
+    }
+
     fn should_send_port_unreachable(&mut self) -> bool {
         self.cast_with(|s| &s.state.transport.udpv4.send_port_unreachable).copied()
     }
@@ -125,6 +133,8 @@ impl<C: NonSyncContext, L: LockBefore<crate::lock_ordering::UdpBoundMap<Ipv4>>>
     udp::BoundStateContext<Ipv4, C> for Locked<&SyncCtx<C>, L>
 {
     type IpSocketsCtx<'a> = Locked<&'a SyncCtx<C>, crate::lock_ordering::UdpBoundMap<Ipv4>>;
+    type DualStackContext = UninstantiableContext<Ipv4, udp::Udp, Self>;
+    type NonDualStackContext = Self;
 
     fn with_bound_sockets<
         O,
@@ -150,7 +160,13 @@ impl<C: NonSyncContext, L: LockBefore<crate::lock_ordering::UdpBoundMap<Ipv4>>>
         cb(&mut locked, &mut bound_sockets)
     }
 
-    fn without_bound_sockets<O, F: FnOnce(&mut Self::IpSocketsCtx<'_>) -> O>(
+    fn dual_stack_context(
+        &mut self,
+    ) -> MaybeDualStack<&mut Self::DualStackContext, &mut Self::NonDualStackContext> {
+        MaybeDualStack::NotDualStack(self)
+    }
+
+    fn with_transport_context<O, F: FnOnce(&mut Self::IpSocketsCtx<'_>) -> O>(
         &mut self,
         cb: F,
     ) -> O {
@@ -190,15 +206,24 @@ impl<C: NonSyncContext, L: LockBefore<crate::lock_ordering::UdpSocketsTable<Ipv6
         cb(&mut locked, &mut socket_state)
     }
 
+    fn with_bound_state_context<O, F: FnOnce(&mut Self::SocketStateCtx<'_>) -> O>(
+        &mut self,
+        cb: F,
+    ) -> O {
+        cb(&mut self.cast_locked())
+    }
+
     fn should_send_port_unreachable(&mut self) -> bool {
         self.cast_with(|s| &s.state.transport.udpv6.send_port_unreachable).copied()
     }
 }
 
-impl<C: NonSyncContext, L: LockBefore<crate::lock_ordering::UdpBoundMap<Ipv6>>>
+impl<C: NonSyncContext, L: LockBefore<crate::lock_ordering::UdpBoundMap<Ipv4>>>
     udp::BoundStateContext<Ipv6, C> for Locked<&SyncCtx<C>, L>
 {
     type IpSocketsCtx<'a> = Locked<&'a SyncCtx<C>, crate::lock_ordering::UdpBoundMap<Ipv6>>;
+    type DualStackContext = Self;
+    type NonDualStackContext = UninstantiableContext<Ipv6, udp::Udp, Self>;
 
     fn with_bound_sockets<
         O,
@@ -224,16 +249,71 @@ impl<C: NonSyncContext, L: LockBefore<crate::lock_ordering::UdpBoundMap<Ipv6>>>
         cb(&mut locked, &mut bound_sockets)
     }
 
-    fn without_bound_sockets<O, F: FnOnce(&mut Self::IpSocketsCtx<'_>) -> O>(
+    fn dual_stack_context(
+        &mut self,
+    ) -> MaybeDualStack<&mut Self::DualStackContext, &mut Self::NonDualStackContext> {
+        MaybeDualStack::DualStack(self)
+    }
+
+    fn with_transport_context<O, F: FnOnce(&mut Self::IpSocketsCtx<'_>) -> O>(
         &mut self,
         cb: F,
     ) -> O {
-        cb(&mut self.cast_locked())
+        cb(&mut self.cast_locked::<crate::lock_ordering::UdpBoundMap<Ipv6>>())
     }
 }
 
-impl<I: IpExt, B: BufferMut, C: udp::BufferNonSyncContext<I, B> + crate::NonSyncContext, L>
-    udp::BufferStateContext<I, C, B> for Locked<&SyncCtx<C>, L>
+impl<L, C: NonSyncContext> udp::UdpStateContext for Locked<&SyncCtx<C>, L> {}
+
+impl<C: NonSyncContext, L: LockBefore<crate::lock_ordering::UdpBoundMap<Ipv4>>>
+    udp::DualStackBoundStateContext<Ipv6, C> for Locked<&SyncCtx<C>, L>
+{
+    type IpSocketsCtx<'a> = Locked<&'a SyncCtx<C>, crate::lock_ordering::UdpBoundMap<Ipv6>>;
+
+    fn with_both_bound_sockets_mut<
+        O,
+        F: FnOnce(
+            &mut Self::IpSocketsCtx<'_>,
+            &mut udp::BoundSockets<Ipv6, Self::WeakDeviceId>,
+            &mut udp::BoundSockets<Ipv4, Self::WeakDeviceId>,
+        ) -> O,
+    >(
+        &mut self,
+        cb: F,
+    ) -> O {
+        let (mut bound_v4, mut locked) =
+            self.write_lock_and::<crate::lock_ordering::UdpBoundMap<Ipv4>>();
+        let (mut bound_v6, mut locked) =
+            locked.write_lock_and::<crate::lock_ordering::UdpBoundMap<Ipv6>>();
+        cb(&mut locked, &mut bound_v6, &mut bound_v4)
+    }
+
+    fn with_other_bound_sockets_mut<
+        O,
+        F: FnOnce(&mut Self::IpSocketsCtx<'_>, &mut udp::BoundSockets<Ipv4, Self::WeakDeviceId>) -> O,
+    >(
+        &mut self,
+        cb: F,
+    ) -> O {
+        let (mut bound_v4, mut locked) =
+            self.write_lock_and::<crate::lock_ordering::UdpBoundMap<Ipv4>>();
+        cb(&mut locked.cast_locked(), &mut bound_v4)
+    }
+}
+
+impl<C: NonSyncContext, L: LockBefore<crate::lock_ordering::UdpBoundMap<Ipv4>>>
+    udp::NonDualStackBoundStateContext<Ipv4, C> for Locked<&SyncCtx<C>, L>
+{
+}
+
+impl<
+        I: udp::IpExt,
+        B: BufferMut,
+        C: udp::BufferNonSyncContext<I, B>
+            + udp::BufferNonSyncContext<I::OtherVersion, B>
+            + crate::NonSyncContext,
+        L,
+    > udp::BufferStateContext<I, C, B> for Locked<&SyncCtx<C>, L>
 where
     Self: udp::StateContext<I, C>,
     for<'a> Self::SocketStateCtx<'a>: udp::BufferBoundStateContext<I, C, B>,
@@ -241,8 +321,14 @@ where
     type BufferSocketStateCtx<'a> = Self::SocketStateCtx<'a>;
 }
 
-impl<I: IpExt, B: BufferMut, C: udp::BufferNonSyncContext<I, B> + crate::NonSyncContext, L>
-    udp::BufferBoundStateContext<I, C, B> for Locked<&SyncCtx<C>, L>
+impl<
+        I: udp::IpExt,
+        B: BufferMut,
+        C: udp::BufferNonSyncContext<I, B>
+            + udp::BufferNonSyncContext<I::OtherVersion, B>
+            + crate::NonSyncContext,
+        L,
+    > udp::BufferBoundStateContext<I, C, B> for Locked<&SyncCtx<C>, L>
 where
     Self: udp::BoundStateContext<I, C>,
     for<'a> Self::IpSocketsCtx<'a>: BufferTransportIpContext<I, C, B>,

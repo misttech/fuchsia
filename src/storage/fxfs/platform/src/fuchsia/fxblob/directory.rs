@@ -38,9 +38,8 @@ use {
         object_handle::{ObjectProperties, ReadObjectHandle},
         object_store::{
             self,
-            directory::ObjectDescriptor,
             transaction::{LockKey, Options},
-            HandleOptions, ObjectStore, BLOB_MERKLE_ATTRIBUTE_ID,
+            HandleOptions, ObjectDescriptor, ObjectStore, BLOB_MERKLE_ATTRIBUTE_ID,
         },
         serialized_types::BlobMetadata,
     },
@@ -557,9 +556,8 @@ mod tests {
 
             fixture
                 .volumes_directory()
-                .serve_volume(fixture.volume(), server_end, true, true)
-                .await
-                .expect("failed to create_and_serve the blob volume");
+                .serve_volume(fixture.volume(), server_end, true)
+                .expect("failed to serve blob volume");
             let blob_proxy =
                 connect_to_protocol_at_dir_svc::<fidl_fuchsia_fxfs::BlobCreatorMarker>(
                     &blob_volume_outgoing_dir,
@@ -630,9 +628,8 @@ mod tests {
 
             fixture
                 .volumes_directory()
-                .serve_volume(fixture.volume(), server_end, true, true)
-                .await
-                .expect("failed to create_and_serve the blob volume");
+                .serve_volume(fixture.volume(), server_end, true)
+                .expect("failed to serve blob volume");
             let blob_proxy =
                 connect_to_protocol_at_dir_svc::<fidl_fuchsia_fxfs::BlobCreatorMarker>(
                     &blob_volume_outgoing_dir,

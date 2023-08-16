@@ -1,4 +1,8 @@
-#!/usr/bin/env -S fuchsia-vendored-python -B
+#!/usr/bin/env -S python3 -B
+# TODO(b/295039695): We intentionally use the host python3 here instead of
+# fuchsia-vendored-python. This script calls out to cbindgen that is not part
+# of the Fuchsia repo and must be installed on the local host.
+#
 # Copyright 2023 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -56,7 +60,7 @@ OPAQUE_TYPES = [
     '__sighandler_t',
     '__sigrestore_t',
     'group_filter.*',
-    'sigevent',
+    'sigval',
 ]
 
 # Cross-architecture include paths (the ArchInfo class also has an arch-specific one to add).
@@ -70,7 +74,7 @@ INCLUDE_DIRS = [
 # Additional traits that should be added to types matching the regexps.
 AUTO_DERIVE_TRAITS = [
     (r'__IncompleteArrayField', ['Clone', 'AsBytes, FromBytes', 'FromZeroes']),
-    (r'__sifields__bindgen_ty_7', ['AsBytes, FromBytes', 'FromZeroes']),
+    (r'__sifields__bindgen_ty_(2|3|7)', ['AsBytes, FromBytes', 'FromZeroes']),
     (
         r'binder_transaction_data__bindgen_ty_2__bindgen_ty_1',
         ['AsBytes', 'FromBytes', 'FromZeroes']),
@@ -92,6 +96,8 @@ AUTO_DERIVE_TRAITS = [
     (r'ip6t_ip6', ['FromBytes', 'FromZeroes']),
     (r'robust_list_head', ['FromBytes', 'FromZeroes']),
     (r'robust_list', ['FromBytes', 'FromZeroes']),
+    (r'sigevent', ['FromBytes', 'FromZeroes']),
+    (r'sigval', ['AsBytes', 'FromBytes', 'FromZeroes']),
     (r'sockaddr_in*', ['AsBytes', 'FromBytes', 'FromZeroes']),
     (r'sock_fprog', ['FromBytes', 'FromZeroes']),
     (r'sysinfo', ['AsBytes']),
@@ -138,10 +144,14 @@ REPLACEMENTS = [
     (
         r'::std::option::Option<unsafe extern "C" fn\([a-zA-Z_0-9: ]*\)>',
         'uaddr'),
-    (r'([:=]) \*(const|mut) ([a-zA-Z_0-9:]*)', '\\1 uref<\\3>')
+    (r'([:=]) \*(const|mut) ([a-zA-Z_0-9:]*)', '\\1 uref<\\3>'),
 ]
 
 INPUT_FILE = 'src/starnix/lib/linux_uapi/wrapper.h'
+
+NO_DEBUG_TYPES = [
+    '__sifields__bindgen_ty_(2|3)',
+]
 
 
 class ArchInfo:
@@ -169,6 +179,7 @@ bindgen.opaque_types = OPAQUE_TYPES
 bindgen.set_auto_derive_traits(AUTO_DERIVE_TRAITS)
 bindgen.set_replacements(REPLACEMENTS)
 bindgen.ignore_functions = True
+bindgen.no_debug_types = NO_DEBUG_TYPES
 
 for arch in ARCH_INFO:
     bindgen.c_types_prefix = "crate::types"

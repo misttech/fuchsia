@@ -365,6 +365,7 @@ sdk_molecule("core_lib") {
     "//sdk/lib/inspect",
     "//sdk/lib/inspect/service/cpp:cpp_sdk",
     "//sdk/lib/magma_client:magma_client_sdk",
+    "//sdk/lib/magma_common:magma_common_sdk",
     "//sdk/lib/media/cpp:cpp_sdk",
     "//sdk/lib/stdcompat:stdcompat_sdk",
     "//sdk/lib/svc:svc_sdk",
@@ -423,6 +424,7 @@ sdk_molecule("core_testing_deps") {
 
   deps = [
     "//sdk/fidl:fidl_testing",
+    "//sdk/lib/async-loop-testing/cpp:cpp_sdk",
     "//sdk/lib/driver/testing/cpp:cpp_sdk",
     "//sdk/lib/sys/component/cpp/testing:cpp_library_sdk",
     "//sdk/lib/sys/cpp/testing:cpp_sdk",
@@ -455,7 +457,6 @@ sdk_molecule("platform_libs") {
     "//sdk/lib/syslog/cpp:backend_fuchsia_lib_sdk",
     "//src/developer/debug/ipc:ipc_sdk",
     "//src/developer/debug/shared:shared_sdk",
-    "//src/developer/debug/third_party/libunwindstack:libunwindstack_sdk",
     "//src/lib/containers/cpp:cpp_sdk",
     "//src/lib/diagnostics/accessor2logger:accessor2logger_sdk",
     "//src/lib/elflib:elflib_sdk",
@@ -463,7 +464,6 @@ sdk_molecule("platform_libs") {
     "//src/lib/process:process_sdk",
     "//third_party/re2:re2_sdk",
     "//zircon/public/sysroot/sdk:sysroot_sdk",
-    "//zircon/third_party/ulib/ngunwind:ngunwind_sdk",
   ]
 }
 
@@ -646,7 +646,6 @@ sdk_molecule("driver_fidl") {
   deps = [
     "//sdk/fidl/fuchsia.device.fs:fuchsia.device.fs_sdk($fidl_toolchain)",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_sdk($fidl_toolchain)",
-    "//sdk/fidl/fuchsia.hardware.acpi:fuchsia.hardware.acpi_sdk($fidl_toolchain)",
     "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_sdk($fidl_toolchain)",
     "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_sdk($fidl_toolchain)",
     "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_sdk($fidl_toolchain)",

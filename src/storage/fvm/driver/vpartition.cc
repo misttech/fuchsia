@@ -513,4 +513,25 @@ void VPartition::DdkRelease() { delete this; }
 
 zx_device_t* VPartition::GetParent() const { return mgr_->parent(); }
 
+zx_status_t VPartition::AddSignalVisible(std::unique_ptr<VPartition> vp, const std::string& name,
+                                         sync_completion_t* on_visible) {
+  vp->on_visible_ = on_visible;
+  if (zx_status_t status = vp->DdkAdd(name.c_str()); status != ZX_OK) {
+    return status;
+  }
+  // The VPartition object was added to the DDK and is now owned by it. It will be deleted when the
+  // device is released.
+  static_cast<void>(vp.release());
+  return ZX_OK;
+}
+
+void VPartition::DdkMadeVisible() {
+  if (on_visible_) {
+    sync_completion_signal(on_visible_);
+    // TODO(fxbug.dev/126961): DdkMadeVisible gets called multiple times in DFv1 currently, so make
+    // sure we don't signal twice.
+    on_visible_ = nullptr;
+  }
+}
+
 }  // namespace fvm

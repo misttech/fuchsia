@@ -13,11 +13,16 @@ use {
         errors::FxfsError,
         object_handle::ObjectProperties,
         object_store::{
-            transaction::LockKey, ObjectAttributes, ObjectKey, ObjectKind, ObjectValue,
+            transaction::{LockKey, Options},
+            HandleOptions, ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKind, ObjectValue,
+            StoreObjectHandle,
         },
     },
     std::sync::Arc,
-    vfs::{attributes, symlink::Symlink},
+    vfs::{
+        attributes, directory::entry_container::MutableDirectory, name::Name, node::Node,
+        symlink::Symlink,
+    },
 };
 
 pub struct FxSymlink {
@@ -29,6 +34,16 @@ impl FxSymlink {
     pub fn new(volume: Arc<FxVolume>, object_id: u64) -> Self {
         Self { volume, object_id }
     }
+
+    fn store_handle(&self) -> StoreObjectHandle<FxVolume> {
+        StoreObjectHandle::new(
+            self.volume.clone(),
+            self.object_id,
+            None,
+            HandleOptions::default(),
+            false,
+        )
+    }
 }
 
 #[async_trait]
@@ -37,6 +52,30 @@ impl Symlink for FxSymlink {
         self.volume.store().read_symlink(self.object_id).await.map_err(map_to_status)
     }
 
+    async fn list_extended_attributes(&self) -> Result<Vec<Vec<u8>>, zx::Status> {
+        self.store_handle().list_extended_attributes().await.map_err(map_to_status)
+    }
+    async fn get_extended_attribute(&self, name: Vec<u8>) -> Result<Vec<u8>, zx::Status> {
+        self.store_handle().get_extended_attribute(name).await.map_err(map_to_status)
+    }
+    async fn set_extended_attribute(
+        &self,
+        name: Vec<u8>,
+        value: Vec<u8>,
+        mode: fio::SetExtendedAttributeMode,
+    ) -> Result<(), zx::Status> {
+        self.store_handle()
+            .set_extended_attribute(name, value, mode.into())
+            .await
+            .map_err(map_to_status)
+    }
+    async fn remove_extended_attribute(&self, name: Vec<u8>) -> Result<(), zx::Status> {
+        self.store_handle().remove_extended_attribute(name).await.map_err(map_to_status)
+    }
+}
+
+#[async_trait]
+impl Node for FxSymlink {
     async fn get_attributes(
         &self,
         requested_attributes: fio::NodeAttributesQuery,
@@ -61,6 +100,32 @@ impl Symlink for FxSymlink {
                 id: self.object_id,
             }
         ))
+    }
+
+    async fn get_attrs(&self) -> Result<fio::NodeAttributes, zx::Status> {
+        Err(zx::Status::NOT_SUPPORTED)
+    }
+
+    async fn link_into(
+        self: Arc<Self>,
+        destination_dir: Arc<dyn MutableDirectory>,
+        name: Name,
+    ) -> Result<(), zx::Status> {
+        let dir = destination_dir.into_any().downcast::<FxDirectory>().unwrap();
+        let store = self.volume.store();
+        let transaction = store
+            .filesystem()
+            .clone()
+            .new_transaction(
+                &[
+                    LockKey::object(store.store_object_id(), self.object_id),
+                    LockKey::object(store.store_object_id(), dir.object_id()),
+                ],
+                Options::default(),
+            )
+            .await
+            .map_err(map_to_status)?;
+        dir.link_object(transaction, &name, self.object_id, ObjectDescriptor::Symlink).await
     }
 }
 

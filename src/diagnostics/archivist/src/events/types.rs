@@ -154,38 +154,173 @@ impl TryFrom<fcomponent::Event> for Event {
                         }),
                     })
                 }
-                fcomponent::EventType::CapabilityRequested => {
-                    let request_stream = match event.payload {
-                        fcomponent::EventPayload::CapabilityRequested(capability_requested) => {
-                            let name = capability_requested
-                                .name
-                                .ok_or(EventError::MissingField("name"))?;
+                fcomponent::EventType::CapabilityRequested => match event.payload {
+                    fcomponent::EventPayload::CapabilityRequested(capability_requested) => {
+                        let name =
+                            capability_requested.name.ok_or(EventError::MissingField("name"))?;
 
-                            if name != flogger::LogSinkMarker::PROTOCOL_NAME {
-                                return Err(EventError::IncorrectName {
-                                    received: name,
-                                    expected: flogger::LogSinkMarker::PROTOCOL_NAME,
-                                });
-                            }
+                        if name == flogger::LogSinkMarker::PROTOCOL_NAME {
                             let capability = capability_requested
                                 .capability
                                 .ok_or(EventError::MissingField("capability"))?;
-                            ServerEnd::<flogger::LogSinkMarker>::new(capability).into_stream()?
+                            let request_stream =
+                                ServerEnd::<flogger::LogSinkMarker>::new(capability)
+                                    .into_stream()?;
+                            Ok(Event {
+                                timestamp: zx::Time::from_nanos(event.header.timestamp),
+                                payload: EventPayload::LogSinkRequested(LogSinkRequestedPayload {
+                                    component: Arc::new(identity),
+                                    request_stream,
+                                }),
+                            })
+                        } else if name == finspect::InspectSinkMarker::PROTOCOL_NAME {
+                            let capability = capability_requested
+                                .capability
+                                .ok_or(EventError::MissingField("capability"))?;
+                            let request_stream =
+                                ServerEnd::<finspect::InspectSinkMarker>::new(capability)
+                                    .into_stream()?;
+                            Ok(Event {
+                                timestamp: zx::Time::from_nanos(event.header.timestamp),
+                                payload: EventPayload::InspectSinkRequested(
+                                    InspectSinkRequestedPayload {
+                                        component: Arc::new(identity),
+                                        request_stream,
+                                    },
+                                ),
+                            })
+                        } else {
+                            Err(EventError::IncorrectName {
+                                received: name,
+                                expected: flogger::LogSinkMarker::PROTOCOL_NAME,
+                            })
                         }
-                        _ => return Err(EventError::UnknownResult(event.payload)),
-                    };
-                    Ok(Event {
-                        timestamp: zx::Time::from_nanos(event.header.timestamp),
-                        payload: EventPayload::LogSinkRequested(LogSinkRequestedPayload {
-                            component: Arc::new(identity),
-                            request_stream,
-                        }),
-                    })
-                }
+                    }
+                    _ => Err(EventError::UnknownResult(event.payload)),
+                },
                 _ => Err(EventError::InvalidEventType(event.header.event_type)),
             }
         } else {
             Err(EventError::MissingField("Payload or header is missing"))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::identity::ComponentIdentity;
+    use crate::logs::testing::create_log_sink_requested_event;
+    use assert_matches::assert_matches;
+    use fidl::endpoints::ClientEnd;
+    use fidl_fuchsia_component as fcomponent;
+    use fidl_fuchsia_inspect as finspect;
+    use fidl_fuchsia_io as fio;
+    use fidl_fuchsia_logger::LogSinkMarker;
+    use fuchsia_zircon as zx;
+
+    fn create_inspect_sink_requested_event(
+        target_moniker: String,
+        target_url: String,
+        capability: zx::Channel,
+    ) -> fcomponent::Event {
+        fcomponent::Event {
+            header: Some(fcomponent::EventHeader {
+                event_type: Some(fcomponent::EventType::CapabilityRequested),
+                moniker: Some(target_moniker),
+                component_url: Some(target_url),
+                timestamp: Some(zx::Time::get_monotonic().into_nanos()),
+                ..Default::default()
+            }),
+            payload: Some(fcomponent::EventPayload::CapabilityRequested(
+                fcomponent::CapabilityRequestedPayload {
+                    name: Some(finspect::InspectSinkMarker::PROTOCOL_NAME.into()),
+                    capability: Some(capability),
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
+        }
+    }
+
+    fn create_diagnostics_ready_event(
+        target_moniker: String,
+        target_url: String,
+        directory: ClientEnd<fio::NodeMarker>,
+    ) -> fcomponent::Event {
+        fcomponent::Event {
+            header: Some(fcomponent::EventHeader {
+                event_type: Some(fcomponent::EventType::DirectoryReady),
+                moniker: Some(target_moniker),
+                component_url: Some(target_url),
+                timestamp: Some(zx::Time::get_monotonic().into_nanos()),
+                ..Default::default()
+            }),
+            payload: Some(fcomponent::EventPayload::DirectoryReady(
+                fcomponent::DirectoryReadyPayload {
+                    name: Some("diagnostics".into()),
+                    node: Some(directory),
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
+        }
+    }
+
+    #[fuchsia::test]
+    async fn inspect_sink_capability_requested() {
+        let (_, inspect_sink_server_end) =
+            fidl::endpoints::create_proxy::<finspect::InspectSinkMarker>().unwrap();
+        let event = create_inspect_sink_requested_event(
+            "a/b".into(),
+            "".into(),
+            inspect_sink_server_end.into_channel(),
+        );
+        let actual = event.try_into().unwrap();
+
+        assert_matches!(actual, Event { payload, .. } => {
+            assert_matches!(payload,
+                EventPayload::InspectSinkRequested(InspectSinkRequestedPayload {
+                    component, ..
+                }) => {
+                    assert_eq!(component, ComponentIdentity::from(vec!["a", "b"]).into());
+                })
+        });
+    }
+
+    #[fuchsia::test]
+    async fn log_sink_capability_requested() {
+        let (_, log_sink_server_end) = fidl::endpoints::create_proxy::<LogSinkMarker>().unwrap();
+        let event = create_log_sink_requested_event(
+            "a/b".into(),
+            "".into(),
+            log_sink_server_end.into_channel(),
+        );
+        let actual = event.try_into().unwrap();
+
+        assert_matches!(actual, Event { payload, .. } => {
+            assert_matches!(payload,
+                EventPayload::LogSinkRequested(LogSinkRequestedPayload {
+                    component, ..
+                }) => {
+                    assert_eq!(component, ComponentIdentity::from(vec!["a", "b"]).into());
+                })
+        });
+    }
+
+    #[fuchsia::test]
+    async fn diagnostics_ready() {
+        let (directory, _) = fidl::endpoints::create_request_stream::<fio::NodeMarker>().unwrap();
+        let event = create_diagnostics_ready_event("a/b".into(), "".into(), directory);
+        let actual = event.try_into().unwrap();
+
+        assert_matches!(actual, Event { payload, .. } => {
+            assert_matches!(payload,
+                EventPayload::DiagnosticsReady(DiagnosticsReadyPayload {
+                    component, ..
+                }) => {
+                    assert_eq!(component, ComponentIdentity::from(vec!["a", "b"]).into());
+                })
+        });
     }
 }

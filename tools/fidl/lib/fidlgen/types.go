@@ -1189,6 +1189,7 @@ type NewType struct {
 // Union represents the declaration of a FIDL union.
 type Union struct {
 	resourceableLayoutDecl
+	IsResult    bool          `json:"is_result"`
 	Members     []UnionMember `json:"members"`
 	Strictness  `json:"strict"`
 	TypeShapeV1 TypeShape `json:"type_shape_v1"`
@@ -1260,10 +1261,11 @@ func (t *Table) SortedMembersNoReserved() []TableMember {
 // Struct represents a declaration of a FIDL struct.
 type Struct struct {
 	resourceableLayoutDecl
-	Members     []StructMember `json:"members"`
-	MaxHandles  int            `json:"max_handles"`
-	TypeShapeV1 TypeShape      `json:"type_shape_v1"`
-	TypeShapeV2 TypeShape      `json:"type_shape_v2"`
+	IsEmptySuccessStruct bool           `json:"is_empty_success_struct"`
+	Members              []StructMember `json:"members"`
+	MaxHandles           int            `json:"max_handles"`
+	TypeShapeV1          TypeShape      `json:"type_shape_v1"`
+	TypeShapeV2          TypeShape      `json:"type_shape_v2"`
 }
 
 // StructMember represents the declaration of a field in a FIDL struct.
@@ -1847,109 +1849,11 @@ func (r *Root) DeclInfo() DeclInfoMap {
 
 type EncodedCompoundIdentifierSet map[EncodedCompoundIdentifier]struct{}
 
-// GetMessageBodyTypeNames calculates set of ECIs that refer to types used as
-// message bodies by this library.
-func (r *Root) GetMessageBodyTypeNames() EncodedCompoundIdentifierSet {
-	mbtn := EncodedCompoundIdentifierSet{}
-	for _, protocol := range r.Protocols {
-		for _, method := range protocol.Methods {
-			if method.RequestPayload != nil {
-				mbtn[method.RequestPayload.Identifier] = struct{}{}
-			}
-			if method.ResponsePayload != nil {
-				mbtn[method.ResponsePayload.Identifier] = struct{}{}
-			}
-		}
-	}
-	return mbtn
-}
-
-// payloadTypeNames calculates set of ECIs that refer to types used user-defined
-// payloads by this library. Specifically, for the following FIDL method
-// definition:
-//
-// MyMethod(struct{...}) -> (struct{...}) error uint32;
-//
-//	|-----A-----|    |-----B-----| |-----C-----|
-//	                 |------------D------------|
-//
-// types `A` and `B` are payloads, but `C` (the error) and `D` (the result) are
-// not. If the `error` syntax is not used, the message body type name and
-// payload type name sets for a method are identical.
-func (r *Root) payloadTypeNames() EncodedCompoundIdentifierSet {
-	ptn := EncodedCompoundIdentifierSet{}
-	for _, protocol := range r.Protocols {
-		for _, method := range protocol.Methods {
-			if method.RequestPayload != nil {
-				ptn[method.RequestPayload.Identifier] = struct{}{}
-			}
-			if method.ResponsePayload != nil {
-				if method.HasResultUnion() {
-					ptn[method.ValueType.Identifier] = struct{}{}
-				} else {
-					ptn[method.ResponsePayload.Identifier] = struct{}{}
-				}
-			}
-		}
-	}
-	return ptn
-}
-
-// MethodTypeUsage is an enum that stores whether a type referenced by a payload
-// is used only as a payload parameter list, a wire message shape, or both. For
-// example, consider the following FIDL method:
-//
-//	MyMethod(struct{...}) -> (struct{...}) error uint32;
-//	        |-----A-----|    |-----B-----| |-----C-----|
-//	                         |------------D------------|
-//
-// Types `B` is `OnlyPayloadMethodTypeUsage` (it is exposed to the user, but
-// never sent over the wire), type `D` is `OnlyWireMethodTypeUsage` (it
-// describes the shape of a message body sent over the wire, but the wrapper
-// struct is never exposed to the user as a payload that they may send) and type
-// `A` is `BothMethodTypeUsage` (it is both exposed to the user, via the
-// signature of the request-sending function, and describes the shape of the
-// message sent over the wire).
-//
-// TODO(fxbug.dev/123307): Make this easier to understand. Categorize by special
-// cases (top response, result union, empty success struct) rather than
-// generalizing to "payload" and "message body" concepts.
-type MethodTypeUsage string
-
-const (
-	UsedOnlyAsPayload               MethodTypeUsage = "asOnlyPayload"
-	UsedOnlyAsMessageBody           MethodTypeUsage = "asOnlyWire"
-	UsedBothAsPayloadAndMessageBody MethodTypeUsage = "asBoth"
-)
-
-// MethodTypeUsageMap maps the names of types referenced by methods (ResultType,
-// ValueType, ResponsePayload) to the MethodTypeUsage exhibited by that type.
-type MethodTypeUsageMap map[EncodedCompoundIdentifier]MethodTypeUsage
-
-// MethodTypeUsageMap creates a map from the names of all non-error types
-// references by methods to their MethodTypeUsage.
-func (r *Root) MethodTypeUsageMap() MethodTypeUsageMap {
-	out := MethodTypeUsageMap{}
-	mbtn := r.GetMessageBodyTypeNames()
-	ptn := r.payloadTypeNames()
-	for name := range mbtn {
-		if _, ok := ptn[name]; ok {
-			out[name] = UsedBothAsPayloadAndMessageBody
-			delete(ptn, name)
-		} else {
-			out[name] = UsedOnlyAsMessageBody
-		}
-	}
-	for name := range ptn {
-		out[name] = UsedOnlyAsPayload
-	}
-	return out
-}
-
 // filter returns a new Root that excludes elements e where either keep(e) is
 // false or e is an anonymous layout nested inside an excluded declaration.
 func (r *Root) filter(keep func(Element) bool) Root {
 	var excluded []scopedNamingContext
+	excludedIfAnonymous := make(map[EncodedCompoundIdentifier]struct{})
 	r.ForEachDecl(func(decl Decl) {
 		switch decl := decl.(type) {
 		case LayoutDecl:
@@ -1968,6 +1872,12 @@ func (r *Root) filter(keep func(Element) bool) Root {
 						decl.Name.LibraryName(),
 						[]string{protocolName, string(m.Name)},
 					})
+					if id, ok := m.GetRequestPayloadIdentifier(); ok {
+						excludedIfAnonymous[id] = struct{}{}
+					}
+					if id, ok := m.GetResponsePayloadIdentifier(); ok {
+						excludedIfAnonymous[id] = struct{}{}
+					}
 				}
 			}
 		}
@@ -1985,7 +1895,13 @@ func (r *Root) filter(keep func(Element) bool) Root {
 			return
 		}
 		if layout, ok := decl.(LayoutDecl); ok {
-			scoped := scopedNamingContext{r.Name, layout.GetNamingContext()}
+			context := layout.GetNamingContext()
+			if context.IsAnonymous() {
+				if _, ok := excludedIfAnonymous[layout.GetName()]; ok {
+					return
+				}
+			}
+			scoped := scopedNamingContext{r.Name, context}
 			if scoped.nestedInAny(excluded) {
 				return
 			}

@@ -360,9 +360,9 @@ std::unique_ptr<CanvasEntry> AmlogicVideo::ConfigureCanvas(
   info.blkmode = blockmode;
 
   // 64-bit big-endian to little-endian conversion.
-  info.endianness = fuchsia_hardware_amlogiccanvas::CanvasEndianness::kSwap8Bits |
-                    fuchsia_hardware_amlogiccanvas::CanvasEndianness::kSwap16Bits |
-                    fuchsia_hardware_amlogiccanvas::CanvasEndianness::kSwap32Bits;
+  info.endianness = fuchsia_hardware_amlogiccanvas::CanvasEndianness::kSwap8BitPairs |
+                    fuchsia_hardware_amlogiccanvas::CanvasEndianness::kSwap16BitPairs |
+                    fuchsia_hardware_amlogiccanvas::CanvasEndianness::kSwap32BitPairs;
 
   zx::unowned_vmo vmo(io_buffer->vmo_handle);
   zx::vmo dup_vmo;
@@ -867,7 +867,7 @@ zx_status_t AmlogicVideo::InitRegisters(zx_device_t* parent) {
 
   zx::result sysmem_client =
       ddk::Device<void>::DdkConnectFragmentFidlProtocol<fuchsia_hardware_sysmem::Service::Sysmem>(
-          parent, "sysmem-fidl");
+          parent, "sysmem");
   if (sysmem_client.is_error()) {
     zxlogf(ERROR, "Failed to get sysmem protocol: %s", sysmem_client.status_string());
     return sysmem_client.status_value();

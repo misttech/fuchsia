@@ -78,6 +78,8 @@ impl ProcDirectory {
 }
 
 impl FsNodeOps for Arc<ProcDirectory> {
+    fs_node_impl_dir_readonly!();
+
     fn create_file_ops(
         &self,
         _node: &FsNode,
@@ -98,11 +100,9 @@ impl FsNodeOps for Arc<ProcDirectory> {
             None => {
                 let pid_string = std::str::from_utf8(name).map_err(|_| errno!(ENOENT))?;
                 let pid = pid_string.parse::<pid_t>().map_err(|_| errno!(ENOENT))?;
-                if let Some(task) = self.kernel.upgrade().unwrap().pids.read().get_task(pid) {
-                    Ok(pid_directory(&node.fs(), &task))
-                } else {
-                    error!(ENOENT)
-                }
+                let weak_task = self.kernel.upgrade().unwrap().pids.read().get_task(pid);
+                let task = weak_task.upgrade().ok_or_else(|| errno!(ENOENT))?;
+                Ok(pid_directory(&node.fs(), &task))
             }
         }
     }
@@ -515,7 +515,8 @@ impl DynamicFileSource for LoadavgFile {
             let curr_tids = pid_table.task_ids();
             let mut runnable_tasks = 0;
             for pid in &curr_tids {
-                if let Some(task) = pid_table.get_task(*pid) {
+                let weak_task = pid_table.get_task(*pid);
+                if let Some(task) = weak_task.upgrade() {
                     if task.state_code() == TaskStateCode::Running {
                         runnable_tasks += 1;
                     }

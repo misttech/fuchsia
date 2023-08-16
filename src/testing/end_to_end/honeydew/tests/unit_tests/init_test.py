@@ -434,7 +434,7 @@ class InitTests(unittest.TestCase):
         """Test case for honeydew.get_all_affordances() for a SL4F based
         device."""
         expected_affordances: List[str] = [
-            "bluetooth_gap", "component", "tile", "tracing"
+            "bluetooth_gap", "session", "tracing"
         ]
 
         self.assertEqual(
@@ -454,7 +454,7 @@ class InitTests(unittest.TestCase):
         """Test case for honeydew.get_all_affordances() for a Fuchsia-Controller
         based device."""
         expected_affordances: List[str] = [
-            "bluetooth_gap", "component", "tile", "tracing"
+            "bluetooth_gap", "session", "tracing"
         ]
 
         self.assertEqual(
@@ -473,11 +473,13 @@ class InitTests(unittest.TestCase):
             honeydew.device_classes.sl4f.fuchsia_device.FuchsiaDevice,
             honeydew.device_classes.sl4f.generic_fuchsia_device.
             GenericFuchsiaDevice,
+            honeydew.device_classes.sl4f.vim3.VIM3,
             honeydew.device_classes.sl4f.x64.X64,
             honeydew.device_classes.fuchsia_controller.fuchsia_device.
             FuchsiaDevice,
             honeydew.device_classes.fuchsia_controller.generic_fuchsia_device.
             GenericFuchsiaDevice,
+            honeydew.device_classes.fuchsia_controller.vim3.VIM3,
             honeydew.device_classes.fuchsia_controller.x64.X64,
         }
         self.assertEqual(

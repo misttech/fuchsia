@@ -6,13 +6,7 @@ use anyhow::{anyhow, Error};
 use bitflags::bitflags;
 use fuchsia_zircon::{self as zx, AsHandleRef};
 use once_cell::sync::Lazy;
-use std::{
-    collections::HashMap,
-    convert::TryInto,
-    ffi::CStr,
-    ops::Range,
-    sync::{Arc, Weak},
-};
+use std::{collections::HashMap, convert::TryInto, ffi::CStr, ops::Range, sync::Arc};
 use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
@@ -20,7 +14,7 @@ use crate::{
     fs::*,
     lock::{Mutex, RwLock},
     logging::*,
-    mm::{vmo::round_up_to_system_page_size, FutexTable},
+    mm::{vmo::round_up_to_system_page_size, FutexTable, PrivateFutexKey},
     task::*,
     types::{range_ext::RangeExt, *},
     vmex_resource::VMEX_RESOURCE,
@@ -95,8 +89,11 @@ pub enum MappingName {
     /// This mapping is the heap.
     Heap,
 
-    /// This ampping is the vdso.
+    /// This mapping is the vdso.
     Vdso,
+
+    /// This mapping is the vvar.
+    Vvar,
 
     /// The file backing this mapping.
     File(NamespaceNode),
@@ -1423,7 +1420,7 @@ pub struct MemoryManager {
     pub base_addr: UserAddress,
 
     /// The futexes in this address space.
-    pub futex: FutexTable,
+    pub futex: FutexTable<PrivateFutexKey>,
 
     /// Mutable state for the memory manager.
     pub state: RwLock<MemoryManagerState>,
@@ -1453,7 +1450,7 @@ impl MemoryManager {
         MemoryManager {
             root_vmar,
             base_addr: UserAddress::from_ptr(user_vmar_info.base),
-            futex: FutexTable::default(),
+            futex: FutexTable::<PrivateFutexKey>::default(),
             state: RwLock::new(MemoryManagerState {
                 user_vmar,
                 user_vmar_info,
@@ -2178,6 +2175,10 @@ fn write_map(
             fill_to_name(sink);
             sink.write(b"[vdso]");
         }
+        MappingName::Vvar => {
+            fill_to_name(sink);
+            sink.write(b"[vvar]");
+        }
         MappingName::File(name) => {
             fill_to_name(sink);
             // File names can have newlines that need to be escaped before printing.
@@ -2220,9 +2221,9 @@ pub struct MemoryStats {
 }
 
 #[derive(Clone)]
-pub struct ProcMapsFile(Weak<Task>);
+pub struct ProcMapsFile(WeakRef<Task>);
 impl ProcMapsFile {
-    pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
+    pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
         DynamicFile::new_node(Self(task))
     }
 }
@@ -2247,9 +2248,9 @@ impl SequenceFileSource for ProcMapsFile {
 }
 
 #[derive(Clone)]
-pub struct ProcSmapsFile(Weak<Task>);
+pub struct ProcSmapsFile(WeakRef<Task>);
 impl ProcSmapsFile {
-    pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
+    pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
         DynamicFile::new_node(Self(task))
     }
 }

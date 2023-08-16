@@ -29,7 +29,7 @@ use {
         auto_persist::{self, AutoPersist},
         inspect_insert, inspect_log,
         inspectable::{InspectableBool, InspectableU64},
-        log::InspectBytes,
+        log::{InspectBytes, InspectList},
         make_inspect_loggable,
         nodes::BoundedListNode,
     },
@@ -62,15 +62,15 @@ const GET_IFACE_STATS_TIMEOUT: zx::Duration = zx::Duration::from_seconds(5);
 // through the policy API, it is likely that a user intended to restart WLAN connections.
 const USER_RESTART_TIME_THRESHOLD: zx::Duration = zx::Duration::from_seconds(5);
 // Short duration connection for metrics purposes.
-const METRICS_SHORT_CONNECT_DURATION: zx::Duration = zx::Duration::from_seconds(90);
+pub const METRICS_SHORT_CONNECT_DURATION: zx::Duration = zx::Duration::from_seconds(90);
 // Minimum connection duration for logging average connection score deltas.
 pub const AVERAGE_SCORE_DELTA_MINIMUM_DURATION: zx::Duration = zx::Duration::from_seconds(30);
 
 #[derive(Clone, Debug, PartialEq)]
 // Connection score and the time at which it was calculated.
 pub struct TimestampedConnectionScore {
-    score: u8,
-    time: fasync::Time,
+    pub score: u8,
+    pub time: fasync::Time,
 }
 impl TimestampedConnectionScore {
     pub fn new(score: u8, time: fasync::Time) -> Self {
@@ -187,6 +187,17 @@ impl DisconnectSourceExt for fidl_sme::DisconnectSource {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub struct ScanEventInspectData {
+    pub unknown_protection_ies: Vec<String>,
+}
+
+impl ScanEventInspectData {
+    pub fn new() -> Self {
+        Self { unknown_protection_ies: vec![] }
+    }
+}
+
 #[cfg_attr(test, derive(Debug))]
 pub enum TelemetryEvent {
     /// Request telemetry for the latest status
@@ -290,8 +301,6 @@ pub enum TelemetryEvent {
     IfaceCreationFailure,
     /// Notify the telemtry event loop that a PHY has failed to destroy an interface.
     IfaceDestructionFailure,
-    /// Notify telemetry that an unexpected issue occurred while scanning.
-    ScanDefect(ScanIssue),
     /// Notify telemetry that the AP failed to start.
     ApStartFailure,
     /// Record scan fulfillment time
@@ -309,6 +318,13 @@ pub enum TelemetryEvent {
         reason: client::types::ConnectReason,
         scored_candidates: Vec<(client::types::ScannedCandidate, i16)>,
         selected_candidate: Option<(client::types::ScannedCandidate, i16)>,
+    },
+    ScanEvent {
+        inspect_data: ScanEventInspectData,
+        scan_defects: Vec<ScanIssue>,
+    },
+    LongDurationConnectionScoreAverage {
+        scores: Vec<TimestampedConnectionScore>,
     },
 }
 
@@ -753,6 +769,7 @@ macro_rules! log_cobalt_1dot1_batch {
     }};
 }
 
+const INSPECT_SCAN_EVENTS_LIMIT: usize = 7;
 const INSPECT_CONNECT_EVENTS_LIMIT: usize = 7;
 const INSPECT_DISCONNECT_EVENTS_LIMIT: usize = 7;
 const INSPECT_EXTERNAL_DISCONNECT_EVENTS_LIMIT: usize = 2;
@@ -793,6 +810,7 @@ pub struct Telemetry {
     // Inspect properties/nodes that telemetry hangs onto
     inspect_node: InspectNode,
     get_iface_stats_fail_count: UintProperty,
+    scan_events_node: Mutex<AutoPersist<BoundedListNode>>,
     connect_events_node: Mutex<AutoPersist<BoundedListNode>>,
     disconnect_events_node: Mutex<AutoPersist<BoundedListNode>>,
     external_inspect_node: ExternalInspectNode,
@@ -827,6 +845,7 @@ impl Telemetry {
         let stats_logger = StatsLogger::new(cobalt_1dot1_proxy, &inspect_node);
         inspect_record_connection_status(&inspect_node, hasher.clone(), telemetry_sender.clone());
         let get_iface_stats_fail_count = inspect_node.create_uint("get_iface_stats_fail_count", 0);
+        let scan_events = inspect_node.create_child("scan_events");
         let connect_events = inspect_node.create_child("connect_events");
         let disconnect_events = inspect_node.create_child("disconnect_events");
         let external_inspect_node = ExternalInspectNode::new(external_inspect_node);
@@ -840,6 +859,11 @@ impl Telemetry {
             hasher,
             inspect_node,
             get_iface_stats_fail_count,
+            scan_events_node: Mutex::new(AutoPersist::new(
+                BoundedListNode::new(scan_events, INSPECT_SCAN_EVENTS_LIMIT),
+                "wlancfg-scan-events",
+                persistence_req_sender.clone(),
+            )),
             connect_events_node: Mutex::new(AutoPersist::new(
                 BoundedListNode::new(connect_events, INSPECT_CONNECT_EVENTS_LIMIT),
                 "wlancfg-connect-events",
@@ -1145,37 +1169,15 @@ impl Telemetry {
                                 state.network_is_likely_hidden,
                             )
                             .await;
-                        // Logs user requested connection during short duration connection, which indicates
-                        // that the we did not successfully select the user's preferred connection.
+                        // Log metrics if connection had a short duration.
                         if info.connected_duration < METRICS_SHORT_CONNECT_DURATION {
-                            match info.disconnect_source {
-                                fidl_sme::DisconnectSource::User(
-                                    fidl_sme::UserDisconnectReason::FidlConnectRequest,
+                            self.stats_logger
+                                .log_short_duration_connection_metrics(
+                                    info.connection_scores.clone(),
+                                    info.disconnect_source,
+                                    info.previous_connect_reason,
                                 )
-                                | fidl_sme::DisconnectSource::User(
-                                    fidl_sme::UserDisconnectReason::NetworkUnsaved,
-                                ) => {
-                                    let metric_events = vec![
-                                MetricEvent {
-                                    metric_id: metrics::POLICY_FIDL_CONNECTION_ATTEMPTS_DURING_SHORT_CONNECTION_METRIC_ID,
-                                    event_codes: vec![],
-                                    payload: MetricEventPayload::Count(1),
-                                },
-                                MetricEvent {
-                                    metric_id: metrics::POLICY_FIDL_CONNECTION_ATTEMPTS_DURING_SHORT_CONNECTION_DETAILED_METRIC_ID,
-                                    event_codes: vec![info.previous_connect_reason as u32],
-                                    payload: MetricEventPayload::Count(1),
-                                }
-                            ];
-
-                                    log_cobalt_1dot1_batch!(
-                                        self.stats_logger.cobalt_1dot1_proxy,
-                                        &metric_events,
-                                        "log_fidl_connect_request_during_short_duration",
-                                    );
-                                }
-                                _ => {}
-                            }
+                                .await;
                         }
                     }
                     _ => {
@@ -1277,9 +1279,6 @@ impl Telemetry {
             TelemetryEvent::IfaceDestructionFailure => {
                 self.stats_logger.log_iface_destruction_failure().await;
             }
-            TelemetryEvent::ScanDefect(issue) => {
-                self.stats_logger.log_scan_issue(issue).await;
-            }
             TelemetryEvent::ApStartFailure => {
                 self.stats_logger.log_ap_start_failure().await;
             }
@@ -1305,6 +1304,28 @@ impl Telemetry {
                     .log_post_connection_score_deltas(connect_time, score_at_connect, scores)
                     .await;
             }
+            TelemetryEvent::ScanEvent { inspect_data, scan_defects } => {
+                self.log_scan_event_inspect(inspect_data);
+                for defect in scan_defects {
+                    self.stats_logger.log_scan_issue(defect).await;
+                }
+            }
+            TelemetryEvent::LongDurationConnectionScoreAverage { scores } => {
+                self.stats_logger
+                    .log_connection_score_average(
+                        metrics::ConnectionScoreAverageMetricDimensionDuration::LongDuration as u32,
+                        scores,
+                    )
+                    .await;
+            }
+        }
+    }
+
+    pub fn log_scan_event_inspect(&self, scan_event_info: ScanEventInspectData) {
+        if !scan_event_info.unknown_protection_ies.is_empty() {
+            inspect_log!(self.scan_events_node.lock().get_mut(), {
+                unknown_protection_ies: InspectList(&scan_event_info.unknown_protection_ies)
+            });
         }
     }
 
@@ -1452,18 +1473,6 @@ pub async fn create_metrics_logger(
 const HIGH_PACKET_DROP_RATE_THRESHOLD: f64 = 0.02;
 const VERY_HIGH_PACKET_DROP_RATE_THRESHOLD: f64 = 0.05;
 
-const DEVICE_LOW_UPTIME_THRESHOLD: f64 = 0.95;
-/// Threshold for high number of disconnects per day connected.
-/// Example: if threshold is 12 and a device has 1 disconnect after being connected for less
-///          than 2 hours, then it has high DPDC ratio.
-const DEVICE_HIGH_DPDC_THRESHOLD: f64 = 12.0;
-/// Note: Threshold is for "percentage of time" the device has high packet drop rate.
-///       That is, if threshold is 0.10, then the device passes that threshold if more
-///       than 10% of the time it has high packet drop rate.
-const DEVICE_FREQUENT_HIGH_PACKET_DROP_RATE_THRESHOLD: f64 = 0.10;
-const DEVICE_FREQUENT_VERY_HIGH_PACKET_DROP_RATE_THRESHOLD: f64 = 0.10;
-/// TODO(fxbug.dev/83621): Adjust this threshold when we consider unicast frames only
-const DEVICE_FREQUENT_NO_RX_THRESHOLD: f64 = 0.01;
 const DEVICE_LOW_CONNECTION_SUCCESS_RATE_THRESHOLD: f64 = 0.1;
 
 async fn diff_and_log_counters(
@@ -1774,32 +1783,6 @@ impl StatsLogger {
                 event_codes: vec![],
                 payload: MetricEventPayload::IntegerValue(float_to_ten_thousandth(uptime_ratio)),
             });
-
-            if uptime_ratio < DEVICE_LOW_UPTIME_THRESHOLD {
-                metric_events.push(MetricEvent {
-                    metric_id: metrics::DEVICE_WITH_LOW_UPTIME_METRIC_ID,
-                    event_codes: vec![],
-                    payload: MetricEventPayload::Count(1),
-                });
-            }
-
-            let uptime_ratio_dim = {
-                use metrics::ConnectivityWlanMetricDimensionUptimeRatio::*;
-                match uptime_ratio {
-                    x if x < 0.75 => LessThan75Percent,
-                    x if x < 0.90 => _75ToLessThan90Percent,
-                    x if x < 0.95 => _90ToLessThan95Percent,
-                    x if x < 0.98 => _95ToLessThan98Percent,
-                    x if x < 0.99 => _98ToLessThan99Percent,
-                    x if x < 0.995 => _99ToLessThan99_5Percent,
-                    _ => _99_5To100Percent,
-                }
-            };
-            metric_events.push(MetricEvent {
-                metric_id: metrics::DEVICE_CONNECTED_UPTIME_RATIO_BREAKDOWN_METRIC_ID,
-                event_codes: vec![uptime_ratio_dim as u32],
-                payload: MetricEventPayload::Count(1),
-            });
         }
 
         let connected_dur_in_day = c.connected_duration.into_seconds() as f64 / (24 * 3600) as f64;
@@ -1809,31 +1792,6 @@ impl StatsLogger {
                 metric_id: metrics::DISCONNECT_PER_DAY_CONNECTED_METRIC_ID,
                 event_codes: vec![],
                 payload: MetricEventPayload::IntegerValue(float_to_ten_thousandth(dpdc_ratio)),
-            });
-
-            if dpdc_ratio > DEVICE_HIGH_DPDC_THRESHOLD {
-                metric_events.push(MetricEvent {
-                    metric_id: metrics::DEVICE_WITH_HIGH_DISCONNECT_RATE_METRIC_ID,
-                    event_codes: vec![],
-                    payload: MetricEventPayload::Count(1),
-                });
-            }
-
-            let dpdc_ratio_dim = {
-                use metrics::DeviceDisconnectPerDayConnectedBreakdownMetricDimensionDpdcRatio::*;
-                match dpdc_ratio {
-                    x if x == 0.0 => _0,
-                    x if x <= 1.5 => UpTo1_5,
-                    x if x <= 3.0 => UpTo3,
-                    x if x <= 5.0 => UpTo5,
-                    x if x <= 10.0 => UpTo10,
-                    _ => MoreThan10,
-                }
-            };
-            metric_events.push(MetricEvent {
-                metric_id: metrics::DEVICE_DISCONNECT_PER_DAY_CONNECTED_BREAKDOWN_METRIC_ID,
-                event_codes: vec![dpdc_ratio_dim as u32],
-                payload: MetricEventPayload::Count(1),
             });
         }
 
@@ -1867,14 +1825,6 @@ impl StatsLogger {
                     high_rx_drop_time_ratio,
                 )),
             });
-
-            if high_rx_drop_time_ratio > DEVICE_FREQUENT_HIGH_PACKET_DROP_RATE_THRESHOLD {
-                metric_events.push(MetricEvent {
-                    metric_id: metrics::DEVICE_WITH_FREQUENT_HIGH_RX_PACKET_DROP_METRIC_ID,
-                    event_codes: vec![],
-                    payload: MetricEventPayload::Count(1),
-                });
-            }
         }
 
         let high_tx_drop_time_ratio = c.tx_high_packet_drop_duration.into_seconds() as f64
@@ -1887,14 +1837,6 @@ impl StatsLogger {
                     high_tx_drop_time_ratio,
                 )),
             });
-
-            if high_tx_drop_time_ratio > DEVICE_FREQUENT_HIGH_PACKET_DROP_RATE_THRESHOLD {
-                metric_events.push(MetricEvent {
-                    metric_id: metrics::DEVICE_WITH_FREQUENT_HIGH_TX_PACKET_DROP_METRIC_ID,
-                    event_codes: vec![],
-                    payload: MetricEventPayload::Count(1),
-                });
-            }
         }
 
         let very_high_rx_drop_time_ratio = c.rx_very_high_packet_drop_duration.into_seconds()
@@ -1908,14 +1850,6 @@ impl StatsLogger {
                     very_high_rx_drop_time_ratio,
                 )),
             });
-
-            if very_high_rx_drop_time_ratio > DEVICE_FREQUENT_VERY_HIGH_PACKET_DROP_RATE_THRESHOLD {
-                metric_events.push(MetricEvent {
-                    metric_id: metrics::DEVICE_WITH_FREQUENT_VERY_HIGH_RX_PACKET_DROP_METRIC_ID,
-                    event_codes: vec![],
-                    payload: MetricEventPayload::Count(1),
-                });
-            }
         }
 
         let very_high_tx_drop_time_ratio = c.tx_very_high_packet_drop_duration.into_seconds()
@@ -1929,14 +1863,6 @@ impl StatsLogger {
                     very_high_tx_drop_time_ratio,
                 )),
             });
-
-            if very_high_tx_drop_time_ratio > DEVICE_FREQUENT_VERY_HIGH_PACKET_DROP_RATE_THRESHOLD {
-                metric_events.push(MetricEvent {
-                    metric_id: metrics::DEVICE_WITH_FREQUENT_VERY_HIGH_TX_PACKET_DROP_METRIC_ID,
-                    event_codes: vec![],
-                    payload: MetricEventPayload::Count(1),
-                });
-            }
         }
 
         let no_rx_time_ratio =
@@ -1949,14 +1875,6 @@ impl StatsLogger {
                     no_rx_time_ratio,
                 )),
             });
-
-            if no_rx_time_ratio > DEVICE_FREQUENT_NO_RX_THRESHOLD {
-                metric_events.push(MetricEvent {
-                    metric_id: metrics::DEVICE_WITH_FREQUENT_NO_RX_METRIC_ID,
-                    event_codes: vec![],
-                    payload: MetricEventPayload::Count(1),
-                });
-            }
         }
 
         let connection_success_rate = c.connection_success_rate();
@@ -1968,14 +1886,6 @@ impl StatsLogger {
                     connection_success_rate,
                 )),
             });
-
-            if connection_success_rate < DEVICE_LOW_CONNECTION_SUCCESS_RATE_THRESHOLD {
-                metric_events.push(MetricEvent {
-                    metric_id: metrics::DEVICE_WITH_LOW_CONNECTION_SUCCESS_RATE_METRIC_ID,
-                    event_codes: vec![],
-                    payload: MetricEventPayload::Count(1),
-                });
-            }
         }
 
         log_cobalt_1dot1_batch!(
@@ -1995,24 +1905,6 @@ impl StatsLogger {
                 metric_id: metrics::DISCONNECT_PER_DAY_CONNECTED_7D_METRIC_ID,
                 event_codes: vec![],
                 payload: MetricEventPayload::IntegerValue(float_to_ten_thousandth(dpdc_ratio)),
-            });
-
-            let dpdc_ratio_dim = {
-                use metrics::DeviceDisconnectPerDayConnectedBreakdown7dMetricDimensionDpdcRatio::*;
-                match dpdc_ratio {
-                    x if x == 0.0 => _0,
-                    x if x <= 0.2 => UpTo0_2,
-                    x if x <= 0.35 => UpTo0_35,
-                    x if x <= 0.5 => UpTo0_5,
-                    x if x <= 1.0 => UpTo1,
-                    x if x <= 5.0 => UpTo5,
-                    _ => MoreThan5,
-                }
-            };
-            metric_events.push(MetricEvent {
-                metric_id: metrics::DEVICE_DISCONNECT_PER_DAY_CONNECTED_BREAKDOWN_7D_METRIC_ID,
-                event_codes: vec![dpdc_ratio_dim as u32],
-                payload: MetricEventPayload::Count(1),
             });
 
             log_cobalt_1dot1_batch!(
@@ -3102,6 +2994,47 @@ impl StatsLogger {
         }
     }
 
+    async fn log_short_duration_connection_metrics(
+        &mut self,
+        scores: HistoricalList<TimestampedConnectionScore>,
+        disconnect_source: fidl_sme::DisconnectSource,
+        previous_connect_reason: client::types::ConnectReason,
+    ) {
+        self.log_connection_score_average(
+            metrics::ConnectionScoreAverageMetricDimensionDuration::ShortDuration as u32,
+            scores.get_before(fasync::Time::now()),
+        )
+        .await;
+        // Logs user requested connection during short duration connection, which indicates that we
+        // did not successfully select the user's preferred connection.
+        match disconnect_source {
+            fidl_sme::DisconnectSource::User(
+                fidl_sme::UserDisconnectReason::FidlConnectRequest,
+            )
+            | fidl_sme::DisconnectSource::User(fidl_sme::UserDisconnectReason::NetworkUnsaved) => {
+                let metric_events = vec![
+                    MetricEvent {
+                        metric_id: metrics::POLICY_FIDL_CONNECTION_ATTEMPTS_DURING_SHORT_CONNECTION_METRIC_ID,
+                        event_codes: vec![],
+                        payload: MetricEventPayload::Count(1),
+                    },
+                    MetricEvent {
+                        metric_id: metrics::POLICY_FIDL_CONNECTION_ATTEMPTS_DURING_SHORT_CONNECTION_DETAILED_METRIC_ID,
+                        event_codes: vec![previous_connect_reason as u32],
+                        payload: MetricEventPayload::Count(1),
+                    }
+                ];
+
+                log_cobalt_1dot1_batch!(
+                    self.cobalt_1dot1_proxy,
+                    &metric_events,
+                    "log_short_duration_connection_metrics",
+                );
+            }
+            _ => {}
+        }
+    }
+
     async fn log_network_selection_metrics(
         &mut self,
         connection_state: &mut ConnectionState,
@@ -3272,6 +3205,24 @@ impl StatsLogger {
             &metric_events,
             "log_bss_selection_cobalt_metrics",
         );
+    }
+
+    async fn log_connection_score_average(
+        &mut self,
+        duration_dim: u32,
+        scores: Vec<TimestampedConnectionScore>,
+    ) {
+        if !scores.is_empty() {
+            log_cobalt_1dot1!(
+                self.cobalt_1dot1_proxy,
+                log_integer,
+                metrics::CONNECTION_SCORE_AVERAGE_METRIC_ID,
+                scores.iter().map(|t| t.score as i64).sum::<i64>() / scores.len() as i64,
+                &[duration_dim],
+            );
+        } else {
+            warn!("Connection score list is unexpectedly empty.");
+        }
     }
 }
 
@@ -4797,20 +4748,6 @@ mod tests {
         assert_eq!(uptime_ratios.len(), 1);
         // 12 hours of uptime, 6 hours of adjusted downtime => 66.66% uptime
         assert_eq!(uptime_ratios[0].payload, MetricEventPayload::IntegerValue(6666));
-
-        let device_low_uptime =
-            test_helper.get_logged_metrics(metrics::DEVICE_WITH_LOW_UPTIME_METRIC_ID);
-        assert_eq!(device_low_uptime.len(), 1);
-        assert_eq!(device_low_uptime[0].payload, MetricEventPayload::Count(1));
-
-        let uptime_ratio_breakdowns = test_helper
-            .get_logged_metrics(metrics::DEVICE_CONNECTED_UPTIME_RATIO_BREAKDOWN_METRIC_ID);
-        assert_eq!(uptime_ratio_breakdowns.len(), 1);
-        assert_eq!(
-            uptime_ratio_breakdowns[0].event_codes,
-            &[metrics::ConnectivityWlanMetricDimensionUptimeRatio::LessThan75Percent as u32]
-        );
-        assert_eq!(uptime_ratio_breakdowns[0].payload, MetricEventPayload::Count(1));
     }
 
     /// Send a random connect event and 4 hours later send a disconnect with the specified
@@ -4880,31 +4817,6 @@ mod tests {
         assert_eq!(dpdc_ratios_7d.len(), 1);
         assert_eq!(dpdc_ratios_7d[0].payload, MetricEventPayload::IntegerValue(60_000));
 
-        let device_high_disconnect =
-            test_helper.get_logged_metrics(metrics::DEVICE_WITH_HIGH_DISCONNECT_RATE_METRIC_ID);
-        assert_eq!(device_high_disconnect.len(), 0);
-
-        let dpdc_ratio_breakdowns = test_helper
-            .get_logged_metrics(metrics::DEVICE_DISCONNECT_PER_DAY_CONNECTED_BREAKDOWN_METRIC_ID);
-        assert_eq!(dpdc_ratio_breakdowns.len(), 1);
-        assert_eq!(
-            dpdc_ratio_breakdowns[0].event_codes,
-            &[metrics::DeviceDisconnectPerDayConnectedBreakdownMetricDimensionDpdcRatio::UpTo10
-                as u32]
-        );
-        assert_eq!(dpdc_ratio_breakdowns[0].payload, MetricEventPayload::Count(1));
-
-        let dpdc_ratio_7d_breakdowns = test_helper.get_logged_metrics(
-            metrics::DEVICE_DISCONNECT_PER_DAY_CONNECTED_BREAKDOWN_7D_METRIC_ID,
-        );
-        assert_eq!(dpdc_ratio_7d_breakdowns.len(), 1);
-        assert_eq!(
-            dpdc_ratio_7d_breakdowns[0].event_codes,
-            &[metrics::DeviceDisconnectPerDayConnectedBreakdown7dMetricDimensionDpdcRatio::MoreThan5
-                as u32]
-        );
-        assert_eq!(dpdc_ratio_7d_breakdowns[0].payload, MetricEventPayload::Count(1));
-
         // Clear record of logged Cobalt events
         test_helper.cobalt_events.clear();
 
@@ -4936,27 +4848,6 @@ mod tests {
             test_helper.get_logged_metrics(metrics::ROAMING_DISCONNECT_PER_DAY_CONNECTED_METRIC_ID);
         assert_eq!(roam_dpdc_ratios.len(), 1);
         assert_eq!(roam_dpdc_ratios[0].payload, MetricEventPayload::IntegerValue(0));
-
-        let dpdc_ratio_breakdowns = test_helper
-            .get_logged_metrics(metrics::DEVICE_DISCONNECT_PER_DAY_CONNECTED_BREAKDOWN_METRIC_ID);
-        assert_eq!(dpdc_ratio_breakdowns.len(), 1);
-        assert_eq!(
-            dpdc_ratio_breakdowns[0].event_codes,
-            &[metrics::DeviceDisconnectPerDayConnectedBreakdownMetricDimensionDpdcRatio::_0 as u32]
-        );
-        assert_eq!(dpdc_ratio_breakdowns[0].payload, MetricEventPayload::Count(1));
-
-        // In the last 7 days, 3 disconnects and 1.25 days connected => 2.4 dpdc ratio
-        let dpdc_ratio_7d_breakdowns = test_helper.get_logged_metrics(
-            metrics::DEVICE_DISCONNECT_PER_DAY_CONNECTED_BREAKDOWN_7D_METRIC_ID,
-        );
-        assert_eq!(dpdc_ratio_7d_breakdowns.len(), 1);
-        assert_eq!(
-            dpdc_ratio_7d_breakdowns[0].event_codes,
-            &[metrics::DeviceDisconnectPerDayConnectedBreakdown7dMetricDimensionDpdcRatio::UpTo5
-                as u32]
-        );
-        assert_eq!(dpdc_ratio_7d_breakdowns[0].payload, MetricEventPayload::Count(1));
     }
 
     #[fuchsia::test]
@@ -5012,11 +4903,6 @@ mod tests {
         assert_eq!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
 
         test_helper.advance_by(23.hours(), test_fut.as_mut());
-
-        let device_high_disconnect =
-            test_helper.get_logged_metrics(metrics::DEVICE_WITH_HIGH_DISCONNECT_RATE_METRIC_ID);
-        assert_eq!(device_high_disconnect.len(), 1);
-        assert_eq!(device_high_disconnect[0].payload, MetricEventPayload::Count(1));
     }
 
     #[fuchsia::test]
@@ -5055,21 +4941,11 @@ mod tests {
         assert_eq!(high_rx_drop_time_ratios.len(), 1);
         assert_eq!(high_rx_drop_time_ratios[0].payload, MetricEventPayload::IntegerValue(1666));
 
-        let device_frequent_high_rx_drop = test_helper
-            .get_logged_metrics(metrics::DEVICE_WITH_FREQUENT_HIGH_RX_PACKET_DROP_METRIC_ID);
-        assert_eq!(device_frequent_high_rx_drop.len(), 1);
-        assert_eq!(device_frequent_high_rx_drop[0].payload, MetricEventPayload::Count(1));
-
         let high_tx_drop_time_ratios =
             test_helper.get_logged_metrics(metrics::TIME_RATIO_WITH_HIGH_TX_PACKET_DROP_METRIC_ID);
         // 3 hours of high RX drop rate, 24 hours connected => 12.48% duration
         assert_eq!(high_tx_drop_time_ratios.len(), 1);
         assert_eq!(high_tx_drop_time_ratios[0].payload, MetricEventPayload::IntegerValue(1250));
-
-        let device_frequent_high_tx_drop = test_helper
-            .get_logged_metrics(metrics::DEVICE_WITH_FREQUENT_HIGH_TX_PACKET_DROP_METRIC_ID);
-        assert_eq!(device_frequent_high_tx_drop.len(), 1);
-        assert_eq!(device_frequent_high_tx_drop[0].payload, MetricEventPayload::Count(1));
 
         let very_high_rx_drop_time_ratios = test_helper
             .get_logged_metrics(metrics::TIME_RATIO_WITH_VERY_HIGH_RX_PACKET_DROP_METRIC_ID);
@@ -5079,11 +4955,6 @@ mod tests {
             MetricEventPayload::IntegerValue(1666)
         );
 
-        let device_frequent_very_high_rx_drop = test_helper
-            .get_logged_metrics(metrics::DEVICE_WITH_FREQUENT_VERY_HIGH_RX_PACKET_DROP_METRIC_ID);
-        assert_eq!(device_frequent_very_high_rx_drop.len(), 1);
-        assert_eq!(device_frequent_very_high_rx_drop[0].payload, MetricEventPayload::Count(1));
-
         let very_high_tx_drop_time_ratios = test_helper
             .get_logged_metrics(metrics::TIME_RATIO_WITH_VERY_HIGH_TX_PACKET_DROP_METRIC_ID);
         assert_eq!(very_high_tx_drop_time_ratios.len(), 1);
@@ -5092,21 +4963,11 @@ mod tests {
             MetricEventPayload::IntegerValue(1250)
         );
 
-        let device_frequent_very_high_tx_drop = test_helper
-            .get_logged_metrics(metrics::DEVICE_WITH_FREQUENT_VERY_HIGH_TX_PACKET_DROP_METRIC_ID);
-        assert_eq!(device_frequent_very_high_tx_drop.len(), 1);
-        assert_eq!(device_frequent_very_high_tx_drop[0].payload, MetricEventPayload::Count(1));
-
         // 1 hour of no RX, 24 hours connected => 4.16% duration
         let no_rx_time_ratios =
             test_helper.get_logged_metrics(metrics::TIME_RATIO_WITH_NO_RX_METRIC_ID);
         assert_eq!(no_rx_time_ratios.len(), 1);
         assert_eq!(no_rx_time_ratios[0].payload, MetricEventPayload::IntegerValue(416));
-
-        let device_frequent_no_rx =
-            test_helper.get_logged_metrics(metrics::DEVICE_WITH_FREQUENT_NO_RX_METRIC_ID);
-        assert_eq!(device_frequent_no_rx.len(), 1);
-        assert_eq!(device_frequent_no_rx[0].payload, MetricEventPayload::Count(1));
     }
 
     #[fuchsia::test]
@@ -5173,11 +5034,6 @@ mod tests {
         assert_eq!(connection_success_rate.len(), 1);
         // 1 successful, 11 total attempts => 9.09% success rate
         assert_eq!(connection_success_rate[0].payload, MetricEventPayload::IntegerValue(909));
-
-        let device_low_success = test_helper
-            .get_logged_metrics(metrics::DEVICE_WITH_LOW_CONNECTION_SUCCESS_RATE_METRIC_ID);
-        assert_eq!(device_low_success.len(), 1);
-        assert_eq!(device_low_success[0].payload, MetricEventPayload::Count(1));
     }
 
     #[fuchsia::test]
@@ -5450,13 +5306,18 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_log_fidl_connect_request_during_short_duration() {
+    fn test_log_short_duration_connection_metrics() {
         let (mut test_helper, mut test_fut) = setup_test();
+        let now = fasync::Time::now();
         test_helper.send_connected_event(random_bss_description!(Wpa2));
         assert_eq!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
 
         let channel = generate_random_channel();
         let ap_state = random_bss_description!(Wpa2, channel: channel).into();
+        let mut connection_scores = HistoricalList::new(5);
+        connection_scores.add(TimestampedConnectionScore::new(10, now));
+        connection_scores.add(TimestampedConnectionScore::new(20, now));
+        connection_scores.add(TimestampedConnectionScore::new(30, now));
         // Log disconnect with reason FidlConnectRequest during short duration
         let info = DisconnectInfo {
             connected_duration: METRICS_SHORT_CONNECT_DURATION - 1.second(),
@@ -5464,6 +5325,7 @@ mod tests {
                 fidl_sme::UserDisconnectReason::FidlConnectRequest,
             ),
             ap_state,
+            connection_scores,
             ..fake_disconnect_info()
         };
         test_helper.telemetry_sender.send(TelemetryEvent::Disconnected {
@@ -5511,6 +5373,15 @@ mod tests {
         );
         assert_eq!(logged_metrics.len(), 2);
         assert_eq!(logged_metrics[0].event_codes, vec![info.previous_connect_reason as u32]);
+
+        let logged_metrics =
+            test_helper.get_logged_metrics(metrics::CONNECTION_SCORE_AVERAGE_METRIC_ID);
+        assert_eq!(logged_metrics.len(), 2);
+        assert_eq!(
+            logged_metrics[0].event_codes,
+            vec![metrics::ConnectionScoreAverageMetricDimensionDuration::ShortDuration as u32]
+        );
+        assert_eq!(logged_metrics[0].payload, MetricEventPayload::IntegerValue(20));
     }
 
     #[fuchsia::test]
@@ -6982,21 +6853,17 @@ mod tests {
         assert_eq!(logged_metrics.len(), 1);
     }
 
-    #[test_case(
-        TelemetryEvent::ScanDefect(ScanIssue::ScanFailure),
-        metrics::CLIENT_SCAN_FAILURE_METRIC_ID
-    )]
-    #[test_case(
-        TelemetryEvent::ScanDefect(ScanIssue::AbortedScan),
-        metrics::ABORTED_SCAN_METRIC_ID
-    )]
-    #[test_case(
-        TelemetryEvent::ScanDefect(ScanIssue::EmptyScanResults),
-        metrics::EMPTY_SCAN_RESULTS_METRIC_ID
-    )]
+    #[test_case(ScanIssue::ScanFailure, metrics::CLIENT_SCAN_FAILURE_METRIC_ID)]
+    #[test_case(ScanIssue::AbortedScan, metrics::ABORTED_SCAN_METRIC_ID)]
+    #[test_case(ScanIssue::EmptyScanResults, metrics::EMPTY_SCAN_RESULTS_METRIC_ID)]
     #[fuchsia::test(add_test_attr = false)]
-    fn test_scan_defect_metrics(event: TelemetryEvent, expected_metric_id: u32) {
+    fn test_scan_defect_metrics(scan_issue: ScanIssue, expected_metric_id: u32) {
         let (mut test_helper, mut test_fut) = setup_test();
+
+        let event = TelemetryEvent::ScanEvent {
+            inspect_data: ScanEventInspectData::new(),
+            scan_defects: vec![scan_issue],
+        };
 
         // Send a notification that interface creation has failed.
         test_helper.telemetry_sender.send(event);
@@ -7476,6 +7343,42 @@ mod tests {
             .is_empty());
     }
 
+    #[fuchsia::test]
+    fn test_log_connection_score_average_long_duration() {
+        let (mut test_helper, mut test_fut) = setup_test();
+        let now = fasync::Time::now();
+        let scores = vec![
+            TimestampedConnectionScore::new(10, now),
+            TimestampedConnectionScore::new(20, now),
+            TimestampedConnectionScore::new(30, now),
+            TimestampedConnectionScore::new(40, now),
+            TimestampedConnectionScore::new(50, now),
+        ];
+        test_helper
+            .telemetry_sender
+            .send(TelemetryEvent::LongDurationConnectionScoreAverage { scores });
+        test_helper.drain_cobalt_events(&mut test_fut);
+
+        let logged_metrics =
+            test_helper.get_logged_metrics(metrics::CONNECTION_SCORE_AVERAGE_METRIC_ID);
+        assert_eq!(logged_metrics.len(), 1);
+        assert_eq!(
+            logged_metrics[0].event_codes,
+            vec![metrics::ConnectionScoreAverageMetricDimensionDuration::LongDuration as u32]
+        );
+        assert_eq!(logged_metrics[0].payload, MetricEventPayload::IntegerValue(30));
+
+        // Ensure an empty score list would not cause an arithmetic error.
+        test_helper
+            .telemetry_sender
+            .send(TelemetryEvent::LongDurationConnectionScoreAverage { scores: vec![] });
+        test_helper.drain_cobalt_events(&mut test_fut);
+        assert_eq!(
+            test_helper.get_logged_metrics(metrics::CONNECTION_SCORE_AVERAGE_METRIC_ID).len(),
+            1
+        );
+    }
+
     struct TestHelper {
         telemetry_sender: TelemetrySender,
         inspector: Inspector,
@@ -7555,7 +7458,7 @@ mod tests {
                         respond_iface_counter_stats_req(
                             &mut self.exec,
                             telemetry_svc_stream,
-                            &mut self.counter_stats_resp,
+                            &self.counter_stats_resp,
                         );
                     }
                 }
@@ -7646,7 +7549,7 @@ mod tests {
     fn respond_iface_counter_stats_req(
         executor: &mut fasync::TestExecutor,
         telemetry_svc_stream: &mut fidl_fuchsia_wlan_sme::TelemetryRequestStream,
-        counter_stats_resp: &mut Option<
+        counter_stats_resp: &Option<
             Box<dyn Fn() -> fidl_fuchsia_wlan_sme::TelemetryGetCounterStatsResult>,
         >,
     ) {

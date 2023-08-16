@@ -6,4 +6,5 @@ import("//build/bind/bind.gni")
 
 bind_library("fuchsia.qualcomm.platform") {
   source = "fuchsia.qualcomm.platform.bind"
+  sdk_category = "partner"
 }

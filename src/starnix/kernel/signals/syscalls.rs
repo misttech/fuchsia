@@ -288,12 +288,19 @@ pub fn sys_kill(
         pid if pid > 0 => {
             // "If pid is positive, then signal sig is sent to the process with
             // the ID specified by pid."
-            let target_thread_group =
-                &pids.get_task(pid).ok_or_else(|| errno!(ESRCH))?.thread_group;
-            let target = target_thread_group
-                .read()
-                .get_signal_target(&unchecked_signal)
-                .ok_or_else(|| errno!(ESRCH))?;
+            let weak_task = pids.get_task(pid);
+            let target_task = Task::from_weak(&weak_task)?;
+            let target_thread_group = &target_task.thread_group;
+            // SAFETY: target  is kept on the stack. The static is required to ensure the lock on
+            // ThreadGroup can be dropped.
+            let target = unsafe {
+                TempRef::into_static(
+                    target_thread_group
+                        .read()
+                        .get_signal_target(&unchecked_signal)
+                        .ok_or_else(|| errno!(ESRCH))?,
+                )
+            };
             if !current_task.can_signal(&target, &unchecked_signal) {
                 return error!(EPERM);
             }
@@ -356,7 +363,8 @@ pub fn sys_tkill(
     if tid <= 0 {
         return error!(EINVAL);
     }
-    let target = current_task.get_task(tid).ok_or_else(|| errno!(ESRCH))?;
+    let weak_target = current_task.get_task(tid);
+    let target = Task::from_weak(&weak_target)?;
     if !current_task.can_signal(&target, &unchecked_signal) {
         return error!(EPERM);
     }
@@ -374,7 +382,8 @@ pub fn sys_tgkill(
         return error!(EINVAL);
     }
 
-    let target = current_task.get_task(tid).ok_or_else(|| errno!(ESRCH))?;
+    let weak_target = current_task.get_task(tid);
+    let target = Task::from_weak(&weak_target)?;
     if target.get_pid() != tgid {
         return error!(EINVAL);
     }
@@ -391,6 +400,28 @@ pub fn sys_rt_sigreturn(current_task: &mut CurrentTask) -> Result<SyscallResult,
     Ok(current_task.registers.return_register().into())
 }
 
+fn read_siginfo(
+    current_task: &CurrentTask,
+    signal: Signal,
+    siginfo_ref: UserAddress,
+) -> Result<SignalInfo, Errno> {
+    // Rust will let us do this cast in a const assignment but not in a const generic constraint.
+    const SI_MAX_SIZE_AS_USIZE: usize = SI_MAX_SIZE as usize;
+
+    let siginfo_mem = current_task.read_memory_to_array::<SI_MAX_SIZE_AS_USIZE>(siginfo_ref)?;
+    let header = SignalInfoHeader::read_from(&siginfo_mem[..SI_HEADER_SIZE]).unwrap();
+
+    if header.signo != 0 && header.signo != signal.number() {
+        return error!(EINVAL);
+    }
+
+    let mut bytes = [0u8; SI_MAX_SIZE as usize - SI_HEADER_SIZE];
+    bytes.copy_from_slice(&siginfo_mem[SI_HEADER_SIZE..SI_MAX_SIZE as usize]);
+    let details = SignalDetail::Raw { data: bytes };
+
+    Ok(SignalInfo { signal, errno: header.errno, code: header.code, detail: details, force: false })
+}
+
 pub fn sys_rt_tgsigqueueinfo(
     current_task: &CurrentTask,
     tgid: pid_t,
@@ -398,35 +429,55 @@ pub fn sys_rt_tgsigqueueinfo(
     unchecked_signal: UncheckedSignal,
     siginfo_ref: UserAddress,
 ) -> Result<(), Errno> {
-    // Rust will let us do this cast in a const assignment but not in a const generic constraint.
-    const SI_MAX_SIZE_AS_USIZE: usize = SI_MAX_SIZE as usize;
-
-    let siginfo_mem = current_task.read_memory_to_array::<SI_MAX_SIZE_AS_USIZE>(siginfo_ref)?;
-
-    let header = SignalInfoHeader::read_from(&siginfo_mem[..SI_HEADER_SIZE]).unwrap();
-
     let signal = Signal::try_from(unchecked_signal)?;
+    let signal_info = read_siginfo(current_task, signal, siginfo_ref)?;
 
     let this_pid = current_task.get_pid();
-    if this_pid == tgid && (header.code >= 0 || header.code == SI_TKILL) {
+    if this_pid == tgid && (signal_info.code >= 0 || signal_info.code == SI_TKILL) {
         return error!(EINVAL);
     }
 
-    let mut bytes = [0u8; SI_MAX_SIZE as usize - SI_HEADER_SIZE];
-    bytes.copy_from_slice(&siginfo_mem[SI_HEADER_SIZE..SI_MAX_SIZE as usize]);
-    let details = SignalDetail::Raw { data: bytes };
-    let signal_info = SignalInfo {
-        signal,
-        errno: header.errno,
-        code: header.code,
-        detail: details,
-        force: false,
-    };
-
-    let target = current_task.get_task(tid).ok_or_else(|| errno!(ESRCH))?;
+    let weak_target = current_task.get_task(tid);
+    let target = Task::from_weak(&weak_target)?;
     if target.get_pid() != tgid {
         return error!(EINVAL);
     }
+    if !current_task.can_signal(&target, &unchecked_signal) {
+        return error!(EPERM);
+    }
+
+    send_unchecked_signal_info(&target, &unchecked_signal, signal_info)?;
+    Ok(())
+}
+
+pub fn sys_pidfd_send_signal(
+    current_task: &CurrentTask,
+    pidfd: FdNumber,
+    unchecked_signal: UncheckedSignal,
+    siginfo_ref: UserAddress,
+    flags: u32,
+) -> Result<(), Errno> {
+    if flags != 0 {
+        return error!(EINVAL);
+    }
+
+    let file = current_task.files.get(pidfd)?;
+    let target = current_task.get_task(file.as_pid()?);
+    let target = target.upgrade().ok_or_else(|| errno!(ESRCH))?;
+
+    let signal = Signal::try_from(unchecked_signal)?;
+    let signal_info = if siginfo_ref.is_null() {
+        SignalInfo {
+            signal,
+            errno: 0,
+            code: SI_USER as i32,
+            detail: Default::default(),
+            force: false,
+        }
+    } else {
+        read_siginfo(current_task, signal, siginfo_ref)?
+    };
+
     if !current_task.can_signal(&target, &unchecked_signal) {
         return error!(EPERM);
     }
@@ -459,8 +510,15 @@ where
     // This loop keeps track of whether a signal was sent, so that "on
     // success (at least one signal was sent), zero is returned."
     for thread_group in thread_groups {
-        let target =
-            thread_group.read().get_signal_target(unchecked_signal).ok_or_else(|| errno!(ESRCH))?;
+        let target = thread_group
+            .read()
+            .get_signal_target(unchecked_signal)
+            .map(|task| {
+                // SAFETY: target is kept on the stack. The static is required
+                // to ensure the lock on ThreadGroup can be dropped.
+                unsafe { TempRef::into_static(task) }
+            })
+            .ok_or_else(|| errno!(ESRCH))?;
         if !task.can_signal(&target, unchecked_signal) {
             last_error = errno!(EPERM);
             continue;
@@ -570,7 +628,7 @@ pub fn sys_waitid(
     options: u32,
     user_rusage: UserRef<rusage>,
 ) -> Result<(), Errno> {
-    let waiting_options = WaitingOptions::new_for_waitid(options)?;
+    let mut waiting_options = WaitingOptions::new_for_waitid(options)?;
 
     let task_selector = match id_type {
         P_PID => ProcessSelector::Pid(id),
@@ -581,8 +639,12 @@ pub fn sys_waitid(
             id
         }),
         P_PIDFD => {
-            not_implemented!("unsupported waitpid id_type {:?}", id_type);
-            return error!(ENOSYS);
+            let fd = FdNumber::from_raw(id);
+            let file = current_task.files.get(fd)?;
+            if file.flags().contains(OpenFlags::NONBLOCK) {
+                waiting_options.block = false;
+            }
+            ProcessSelector::Pid(file.as_pid()?)
         }
         _ => return error!(EINVAL),
     };
@@ -605,6 +667,16 @@ pub fn sys_waitid(
             let siginfo = waitable_process.as_signal_info();
             current_task.write_memory(user_info, &siginfo.as_siginfo_bytes())?;
         }
+    } else if id_type == P_PIDFD {
+        // From <https://man7.org/linux/man-pages/man2/pidfd_open.2.html>:
+        //
+        //   PIDFD_NONBLOCK
+        //     Return a nonblocking file descriptor.  If the process
+        //     referred to by the file descriptor has not yet terminated,
+        //     then an attempt to wait on the file descriptor using
+        //     waitid(2) will immediately return the error EAGAIN rather
+        //     than blocking.
+        return error!(EAGAIN);
     }
 
     Ok(())
@@ -1323,8 +1395,10 @@ mod tests {
     #[::fuchsia::test]
     async fn test_suspend() {
         let (kernel, first_current) = create_kernel_and_task();
-        let first_task_clone = first_current.task_arc_clone();
-        let first_task_id = first_task_clone.id;
+        let first_task_weak = first_current.weak_task();
+        let first_task_temp = first_task_weak.upgrade().expect("Task must be alive");
+        let first_task_id = first_task_temp.id;
+        let (tx, rx) = futures::channel::oneshot::channel();
 
         let thread = std::thread::spawn(move || {
             let mut current_task = first_current;
@@ -1338,6 +1412,7 @@ mod tests {
                 sys_rt_sigsuspend(&mut current_task, user_ref, std::mem::size_of::<SigSet>()),
                 error!(EINTR)
             );
+            tx.send(()).expect("send");
         });
 
         let current_task = create_task(&kernel, "test-task-2");
@@ -1345,7 +1420,7 @@ mod tests {
         // Wait for the first task to be suspended.
         let mut suspended = false;
         while !suspended {
-            suspended = first_task_clone.read().signals.waiter.is_valid();
+            suspended = first_task_temp.read().signals.run_state.is_blocked();
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
 
@@ -1353,9 +1428,11 @@ mod tests {
         let _ = sys_kill(&current_task, first_task_id, UncheckedSignal::from(SIGHUP));
 
         // Wait for the sigsuspend to complete.
+        rx.await.expect("receive");
+        assert!(!first_task_temp.read().signals.run_state.is_blocked());
+        // Drop the borrow to let the task ends.
+        std::mem::drop(first_task_temp);
         let _ = thread.join();
-
-        assert!(!first_task_clone.read().signals.waiter.is_valid());
     }
 
     #[::fuchsia::test]
@@ -1508,7 +1585,7 @@ mod tests {
             Ok(None)
         );
 
-        let task_clone = task.task_arc_clone();
+        let weak_task = task.weak_task();
         let child_id = child.id;
         let thread = std::thread::spawn(move || {
             // Block until child is terminated.
@@ -1523,7 +1600,7 @@ mod tests {
         });
 
         // Wait for the thread to be blocked on waiting for a child.
-        while !task_clone.read().signals.waiter.is_valid() {
+        while !weak_task.upgrade().unwrap().read().signals.run_state.is_blocked() {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         child.thread_group.exit(ExitStatus::Exit(0));
@@ -1672,7 +1749,11 @@ mod tests {
         const VALUE_DATA_OFFSET: usize = SI_HEADER_SIZE + 8;
 
         let mut data = vec![0u8; SI_MAX_SIZE as usize];
-        let header = SignalInfoHeader { code: SI_QUEUE, ..SignalInfoHeader::default() };
+        let header = SignalInfoHeader {
+            signo: SIGIO.number(),
+            code: SI_QUEUE,
+            ..SignalInfoHeader::default()
+        };
         header.write_to(&mut data[..SI_HEADER_SIZE]);
         data[PID_DATA_OFFSET..PID_DATA_OFFSET + 4].copy_from_slice(&current_pid.to_ne_bytes());
         data[UID_DATA_OFFSET..UID_DATA_OFFSET + 4].copy_from_slice(&current_uid.to_ne_bytes());

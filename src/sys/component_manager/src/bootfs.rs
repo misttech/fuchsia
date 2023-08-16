@@ -4,8 +4,9 @@
 
 use {
     fidl::AsHandleRef as _,
-    fidl_fuchsia_io as fio, fuchsia_async as fasync,
+    fidl_fuchsia_io as fio, fidl_fuchsia_kernel as fkernel, fuchsia_async as fasync,
     fuchsia_bootfs::{BootfsParser, BootfsParserError},
+    fuchsia_component::client,
     fuchsia_runtime::{take_startup_handle, HandleInfo, HandleType},
     fuchsia_zircon::{self as zx, HandleBased, Resource},
     std::convert::{From, TryFrom},
@@ -88,12 +89,6 @@ impl BootfsSvc {
         let bootfs_handle = take_startup_handle(HandleType::BootfsVmo.into())
             .ok_or(BootfsError::InvalidHandle { handle_type: HandleType::BootfsVmo })?;
         let bootfs = zx::Vmo::from(bootfs_handle);
-        Self::new_internal(bootfs)
-    }
-
-    // BootfsSvc can be used in hermetic integration tests by providing
-    // an arbitrary vmo containing a valid bootfs image.
-    pub fn new_for_test(bootfs: zx::Vmo) -> Result<Self, BootfsError> {
         Self::new_internal(bootfs)
     }
 
@@ -181,7 +176,10 @@ impl BootfsSvc {
         Err(BootfsError::MissingEntry { name: config_path.to_string() })
     }
 
-    pub fn ingest_bootfs_vmo(self, system: &Option<Resource>) -> Result<Self, BootfsError> {
+    pub fn ingest_bootfs_vmo_with_system_resource(
+        self,
+        system: &Option<Resource>,
+    ) -> Result<Self, BootfsError> {
         let system = system
             .as_ref()
             .ok_or(BootfsError::InvalidHandle { handle_type: HandleType::Resource })?;
@@ -195,7 +193,18 @@ impl BootfsSvc {
                 BOOTFS_VMEX_NAME.as_bytes(),
             )
             .map_err(BootfsError::Vmex)?;
+        self.ingest_bootfs_vmo(vmex)
+    }
 
+    pub async fn ingest_bootfs_vmo_with_namespace_vmex(self) -> Result<Self, BootfsError> {
+        let vmex_service = client::connect_to_protocol::<fkernel::VmexResourceMarker>()
+            .map_err(|_| BootfsError::Vmex(zx::Status::UNAVAILABLE))?;
+        let vmex =
+            vmex_service.get().await.map_err(|_| BootfsError::Vmex(zx::Status::UNAVAILABLE))?;
+        self.ingest_bootfs_vmo(vmex)
+    }
+
+    fn ingest_bootfs_vmo(self, vmex: Resource) -> Result<Self, BootfsError> {
         // The bootfs VFS is comprised of multiple child VMOs which are just offsets into a
         // single backing parent VMO.
         //
@@ -211,19 +220,6 @@ impl BootfsSvc {
         let bootfs_exec = bootfs_exec.replace_as_executable(&vmex).map_err(BootfsError::ExecVmo)?;
 
         self.ingest_bootfs_vmo_internal(bootfs_exec)
-    }
-
-    // Ingesting the bootfs vmo with this API will produce a /boot VFS that supports all
-    // functionality except execution of contents; the permission to convert arbitrary vmos
-    // to executable requires the root System resource, which is not available to fuchsia
-    // test components.
-    pub fn ingest_bootfs_vmo_for_test(self) -> Result<Self, BootfsError> {
-        let fake_exec: zx::Vmo = self
-            .bootfs
-            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-            .map_err(BootfsError::DuplicateHandle)?
-            .into();
-        self.ingest_bootfs_vmo_internal(fake_exec)
     }
 
     pub fn ingest_bootfs_vmo_internal(mut self, bootfs_exec: zx::Vmo) -> Result<Self, BootfsError> {

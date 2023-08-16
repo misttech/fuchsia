@@ -17,10 +17,6 @@
             matchers: [
                 // TODO(https://fxbug.dev/119476): Implement pidfd
                 "pidfd_DeathTest.pidfd_send_signal",
-                "fdtrack.pidfd_open",
-                "fdtrack.pidfd_getfd",
-                "pidfd.pidfd_getfd",
-                "pidfd.pidfd_open",
 
                 // These tests expect /proc/version to exist
                 "dirent.scandir_filter",
@@ -185,7 +181,6 @@
                 "sys_timex.adjtimex_smoke",
                 "sys_timex.clock_adjtime_EFAULT",
                 "sys_timex.clock_adjtime_smoke",
-                "sys_uio.process_vm_writev",
                 "time.clock_getcpuclockid_ESRCH",
                 "time.clock_settime",
                 "unistd.close_range",
@@ -227,6 +222,9 @@
                 "stack_unwinding.unwind_through_signal_frame",
                 "stack_unwinding.unwind_through_signal_frame_SA_SIGINFO",
 
+                // These tests are skipped on both arm64 and x86_64.
+                "sys_hwprobe.__riscv_hwprobe",
+
                 // These tests are arm32 specific
                 "aeabi.read_tp",
                 "getauxval.arm_has_AT_HWCAP2",
@@ -259,6 +257,10 @@
                 // TODO(https://fxbug.dev/129654): Flaky on the bots - need to be investigated.
                 "pthread.pthread_getcpuclockid__clock_gettime",
                 "unistd*.sleep",
+
+                // TODO(https://fxbug.dev/131217): Flaky on the bots - needs to be investigated.
+                "android_mallopt.multiple_enable_gwp_asan",
+                "pidfd.pidfd_open",
 
                 // These tests were updated and no longer pass.
                 "stdio.popen_return_value_signal",

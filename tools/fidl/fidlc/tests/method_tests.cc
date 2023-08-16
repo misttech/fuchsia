@@ -1061,9 +1061,7 @@ open protocol Test {
   ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrEmptyPayloadStructs);
 }
 
-// TODO(fxbug.dev/112767): This is temporarily still allowed. Remove once the
-// soft transition of `--experimental simple_empty_response_syntax` is done.
-TEST(MethodTests, GoodEmptyStructPayloadFlexibleNoError) {
+TEST(MethodTests, BadEmptyStructPayloadFlexibleNoError) {
   TestLibrary library(R"FIDL(library example;
 
 open protocol Test {
@@ -1072,12 +1070,10 @@ open protocol Test {
 )FIDL");
   library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
   library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
-  ASSERT_COMPILED(library);
+  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrEmptyPayloadStructs);
 }
 
-// TODO(fxbug.dev/112767): This is temporarily still allowed. Remove once the
-// soft transition of `--experimental simple_empty_response_syntax` is done.
-TEST(MethodTests, GoodEmptyStructPayloadStrictError) {
+TEST(MethodTests, BadEmptyStructPayloadStrictError) {
   TestLibrary library(R"FIDL(library example;
 
 open protocol Test {
@@ -1086,12 +1082,10 @@ open protocol Test {
 )FIDL");
   library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
   library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
-  ASSERT_COMPILED(library);
+  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrEmptyPayloadStructs);
 }
 
-// TODO(fxbug.dev/112767): This is temporarily still allowed. Remove once the
-// soft transition of `--experimental simple_empty_response_syntax` is done.
-TEST(MethodTests, GoodEmptyStructPayloadFlexibleError) {
+TEST(MethodTests, BadEmptyStructPayloadFlexibleError) {
   TestLibrary library(R"FIDL(library example;
 
 open protocol Test {
@@ -1100,7 +1094,7 @@ open protocol Test {
 )FIDL");
   library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
   library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
-  ASSERT_COMPILED(library);
+  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrEmptyPayloadStructs);
 }
 
 TEST(MethodTests, GoodAbsentPayloadFlexibleNoError) {
@@ -1139,37 +1133,6 @@ open protocol Test {
   ASSERT_COMPILED(library);
 }
 
-TEST(MethodTests, BadEmptyStructPayloadStrictError) {
-  TestLibrary library;
-  library.AddFile("bad/fi-0194-a.test.fidl");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kSimpleEmptyResponseSyntax);
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrEmptyPayloadStructsWhenResultUnion);
-}
-
-TEST(MethodTests, BadEmptyStructPayloadFlexibleError) {
-  TestLibrary library(R"FIDL(library example;
-
-open protocol Test {
-  flexible Method() -> (struct {}) error int32;
-};
-)FIDL");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kSimpleEmptyResponseSyntax);
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrEmptyPayloadStructsWhenResultUnion);
-}
-
-TEST(MethodTests, BadEmptyStructPayloadFlexibleNoError) {
-  TestLibrary library;
-  library.AddFile("bad/fi-0194-b.test.fidl");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractions);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults);
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kSimpleEmptyResponseSyntax);
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrEmptyPayloadStructsWhenResultUnion);
-}
-
 TEST(MethodTests, GoodFlexibleNoErrorResponseUnion) {
   TestLibrary library(R"FIDL(library example;
 
@@ -1194,9 +1157,11 @@ open protocol Example {
   ASSERT_EQ(id->type_decl->kind, fidl::flat::Decl::Kind::kUnion);
   auto result_union = static_cast<const fidl::flat::Union*>(id->type_decl);
   ASSERT_NOT_NULL(result_union);
-  ASSERT_NOT_NULL(result_union->attributes);
-  ASSERT_NOT_NULL(result_union->attributes->Get("result"));
   ASSERT_EQ(result_union->members.size(), 3);
+
+  auto anonymous = result_union->name.as_anonymous();
+  ASSERT_NOT_NULL(anonymous);
+  ASSERT_EQ(anonymous->provenance, fidl::flat::Name::Provenance::kGeneratedResultUnion);
 
   const auto& success = result_union->members.at(0);
   ASSERT_NOT_NULL(success.maybe_used);
@@ -1241,9 +1206,11 @@ open protocol Example {
   ASSERT_EQ(id->type_decl->kind, fidl::flat::Decl::Kind::kUnion);
   auto result_union = static_cast<const fidl::flat::Union*>(id->type_decl);
   ASSERT_NOT_NULL(result_union);
-  ASSERT_NOT_NULL(result_union->attributes);
-  ASSERT_NOT_NULL(result_union->attributes->Get("result"));
   ASSERT_EQ(result_union->members.size(), 3);
+
+  auto anonymous = result_union->name.as_anonymous();
+  ASSERT_NOT_NULL(anonymous);
+  ASSERT_EQ(anonymous->provenance, fidl::flat::Name::Provenance::kGeneratedResultUnion);
 
   const auto& success = result_union->members.at(0);
   ASSERT_NOT_NULL(success.maybe_used);

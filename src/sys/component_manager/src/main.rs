@@ -4,16 +4,21 @@
 
 // TODO Follow 2018 idioms
 #![allow(elided_lifetimes_in_paths)]
+// This is needed for the pseudo_directory nesting in crate::model::tests
+#![recursion_limit = "256"]
+// Printing to stdout and stderr directly is discouraged for component_manager.
+// Instead, the tracing library, e.g. through macros like `info!`, and `error!`,
+// should be used.
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr,))]
 
 use {
+    crate::{
+        bootfs::BootfsSvc,
+        builtin_environment::{BuiltinEnvironment, BuiltinEnvironmentBuilder},
+    },
     ::cm_logger::klog,
     ::routing::config::RuntimeConfig,
     anyhow::Error,
-    component_manager::{
-        bootfs::BootfsSvc,
-        builtin_environment::{BuiltinEnvironment, BuiltinEnvironmentBuilder},
-        startup,
-    },
     fidl_fuchsia_component_internal as finternal, fuchsia_async as fasync,
     fuchsia_runtime::{job_default, process_self},
     fuchsia_zircon::JobCriticalOptions,
@@ -21,6 +26,19 @@ use {
     std::{panic, process},
     tracing::{error, info},
 };
+
+mod bootfs;
+mod builtin;
+mod builtin_environment;
+mod capability;
+mod constants;
+mod diagnostics;
+mod directory_ready_notifier;
+mod elf_runner;
+mod framework;
+mod model;
+mod root_stop_notifier;
+mod startup;
 
 extern "C" {
     fn dl_set_loader_service(

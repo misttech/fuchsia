@@ -453,6 +453,10 @@ func TestSplitOutMultipliers(t *testing.T) {
 				tc.testDurations,
 				tc.targetDuration,
 				tc.targetTestCount,
+				// Override the default max multiplied runs per shard
+				// so test data doesn't need to be updated when changing the
+				// production value.
+				2000,
 				MultipliedShardPrefix,
 			)
 			assertEqual(t, tc.expected, actual)
@@ -1299,10 +1303,24 @@ func depsFile(t *testing.T, buildDir string, deps ...string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(name, b, 0o400); err != nil {
+	if err := os.WriteFile(name, b, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	for _, dep := range deps {
+		// Create an empty file for each dep so that it passes the check that
+		// all deps are built.
+		touchFile(t, filepath.Join(buildDir, dep))
+	}
 	return filepath.Base(name)
+}
+
+func touchFile(t *testing.T, path string) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func shardHasExpectedDeps(t *testing.T, buildDir string, tests []Test, expected []string) {
@@ -1405,60 +1423,10 @@ func TestExtractDeps(t *testing.T) {
 				},
 			},
 		}
+		touchFile(t, filepath.Join(buildDir, "path/to/A"))
+		touchFile(t, filepath.Join(buildDir, "path/to/B"))
 		expected := []string{"1", "2", "path/to/A", "path/to/B"}
 		shardHasExpectedDeps(t, buildDir, tests, expected)
-	})
-}
-
-func TestApplyRealmLabel(t *testing.T) {
-	shardTests1 := []Test{
-		{Test: build.Test{Name: "test1", OS: linux, CPU: "arm64"}},
-		{Test: build.Test{Name: "test2", OS: linux, CPU: "arm64"}},
-	}
-
-	shardTests2 := []Test{
-		{Test: build.Test{Name: "test3", OS: linux, CPU: x64}},
-		{Test: build.Test{Name: "test4", OS: linux, CPU: x64}},
-	}
-
-	t.Run("realm label applies to all tests on all shards", func(t *testing.T) {
-		shards := []*Shard{
-			{Name: "foo", Tests: shardTests1},
-			{Name: "bar", Tests: shardTests2},
-		}
-
-		ApplyRealmLabel(shards, "testrealm")
-
-		expected := []*Shard{
-			{
-				Name: "foo",
-				Tests: []Test{
-					{
-						Test:       build.Test{Name: "test1", OS: linux, CPU: "arm64"},
-						RealmLabel: "testrealm",
-					},
-					{
-						Test:       build.Test{Name: "test2", OS: linux, CPU: "arm64"},
-						RealmLabel: "testrealm",
-					},
-				},
-			},
-			{
-				Name: "bar",
-				Tests: []Test{
-					{
-						Test:       build.Test{Name: "test3", OS: linux, CPU: x64},
-						RealmLabel: "testrealm",
-					},
-					{
-						Test:       build.Test{Name: "test4", OS: linux, CPU: x64},
-						RealmLabel: "testrealm",
-					},
-				},
-			},
-		}
-
-		assertEqual(t, expected, shards)
 	})
 }
 

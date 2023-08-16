@@ -55,17 +55,13 @@ pub struct TaskInfo {
 /// Executes the provided `syscall` in `current_task`.
 ///
 /// Returns an `ErrorContext` if the system call returned an error.
+#[inline(never)] // Inlining this function breaks the CFI directives used to unwind into user code.
 pub fn execute_syscall(
     current_task: &mut CurrentTask,
     syscall_decl: SyscallDecl,
 ) -> Option<ErrorContext> {
     #[cfg(feature = "syscall_stats")]
     SyscallDecl::stats_property(syscall_decl.number).add(1);
-    trace_duration!(
-        trace_category_starnix!(),
-        trace_name_execute_syscall!(),
-        trace_arg_name!() => syscall_decl.name
-    );
 
     let syscall = Syscall::new(syscall_decl, current_task);
 
@@ -178,11 +174,15 @@ pub fn create_remotefs_filesystem(
     kernel: &Arc<Kernel>,
     root: &fio::DirectorySynchronousProxy,
     rights: fio::OpenFlags,
-    fs_src: &str,
+    options: FileSystemOptions,
 ) -> Result<FileSystemHandle, Error> {
-    let root = syncio::directory_open_directory_async(root, fs_src, rights)
-        .map_err(|e| anyhow!("Failed to open root: {}", e))?;
-    RemoteFs::new_fs(kernel, root.into_channel(), fs_src, rights).map_err(|e| e.into())
+    let root = syncio::directory_open_directory_async(
+        root,
+        std::str::from_utf8(&options.source).map_err(|_| anyhow!("source path is not utf8"))?,
+        rights,
+    )
+    .map_err(|e| anyhow!("Failed to open root: {}", e))?;
+    RemoteFs::new_fs(kernel, root.into_channel(), options, rights).map_err(|e| e.into())
 }
 
 pub fn create_filesystem_from_spec<'a>(
@@ -214,7 +214,7 @@ pub fn create_filesystem_from_spec<'a>(
     // common code that also handles the mount() system call.
     let fs = match fs_type {
         "remote_bundle" => RemoteBundle::new_fs(kernel, pkg, rights, fs_src)?,
-        "remotefs" => create_remotefs_filesystem(kernel, pkg, rights, fs_src)?,
+        "remotefs" => create_remotefs_filesystem(kernel, pkg, rights, options)?,
         _ => kernel.create_filesystem(fs_type.as_bytes(), options)?,
     };
     Ok((mount_point.as_bytes(), fs))
@@ -263,15 +263,18 @@ mod tests {
         // Stop the task.
         task.thread_group.set_stopped(true, SignalInfo::default(SIGSTOP));
 
-        let cloned_task = task.task_arc_clone();
-        let thread = std::thread::spawn(move || {
-            // Wait for the task to have a waiter.
-            while !cloned_task.read().signals.waiter.is_valid() {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
+        let thread = std::thread::spawn({
+            let task = task.weak_task();
+            move || {
+                let task = task.upgrade().expect("task must be alive");
+                // Wait for the task to have a waiter.
+                while !task.read().signals.run_state.is_blocked() {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
 
-            // Continue the task.
-            cloned_task.thread_group.set_stopped(false, SignalInfo::default(SIGCONT));
+                // Continue the task.
+                task.thread_group.set_stopped(false, SignalInfo::default(SIGCONT));
+            }
         });
 
         // Block until continued.
@@ -294,15 +297,18 @@ mod tests {
         // Stop the task.
         task.thread_group.set_stopped(true, SignalInfo::default(SIGSTOP));
 
-        let cloned_task = task.task_arc_clone();
-        let thread = std::thread::spawn(move || {
-            // Wait for the task to have a waiter.
-            while !cloned_task.read().signals.waiter.is_valid() {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
+        let thread = std::thread::spawn({
+            let task = task.weak_task();
+            move || {
+                let task = task.upgrade().expect("task must be alive");
+                // Wait for the task to have a waiter.
+                while !task.read().signals.run_state.is_blocked() {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
 
-            // exit the task.
-            cloned_task.thread_group.exit(ExitStatus::Exit(1));
+                // exit the task.
+                task.thread_group.exit(ExitStatus::Exit(1));
+            }
         });
 
         // Block until continued.

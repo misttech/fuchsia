@@ -11,6 +11,7 @@ import("//build/images/paths.gni")
 import("//build/images/vboot/vboot.gni")
 import("//build/images/zedboot/zedboot_args.gni")
 import("//build/info/info.gni")
+import("//build/product.gni")
 import("//build/testing/host_test_data.gni")
 import("//src/storage/fshost/generated_fshost_config.gni")
 import("//src/sys/core/build/core.gni")
@@ -36,36 +37,34 @@ if (is_fuchsia) {
          "//build/images/* are only valid in the Fuchsia toolchain")
 
   if (has_board) {
-    assert(images_config_label != false, "Need to define images_config_label")
-  } else {
-    images_config_label = "//boards/images:default"
+    assert(board_information_for_assembly != false,
+           "Need to define board_information_for_assembly for cuckoo tests")
   }
 
   # Parameters shared between recovery-eng and recovery-installer
   recovery_base = {
     testonly = true
     image_name = "fuchsia"
-    generate_fvm = !bootfs_only && !fxfs_blob
-    generate_fxfs = !bootfs_only && fxfs_blob
-
-    generate_fvm_fastboot = generate_fvm && assembly_generate_fvm_fastboot
-    generate_fvm_nand = generate_fvm && assembly_generate_fvm_nand
     generate_vbmeta = use_vbmeta
 
     ramdisk_in_zbi = true
 
-    assembly_images_config_label = images_config_label
+    if (!fxfs_blob) {
+      generate_fvm = !bootfs_only
+      generate_fvm_fastboot = generate_fvm && assembly_generate_fvm_fastboot
+      generate_fvm_nand = generate_fvm && assembly_generate_fvm_nand
+    } else {
+      generate_fxfs = !bootfs_only
+    }
+    board_config = board_information_for_assembly
+    fshost_config = board_fshost_config
 
     include_component_id_index = true
     additional_boot_args =
         [ "virtcon.disable=true" ] + zedboot_additional_boot_args
+    use_assembly_fshost = true
 
-    bootfs_labels = [
-      "//build/input:recovery_bootfs",
-      "//bundles/drivers:bootstrap",
-      "//bundles/drivers:usb-host-stack",
-      "//bundles/drivers:usb-peripheral-stack",
-    ]
+    bootfs_labels = [ "//build/input:recovery_bootfs" ]
     bootfs_labels +=
         [ "//src/sys/component_manager:component_manager_bootfs_config" ]
 
@@ -111,7 +110,7 @@ if (is_fuchsia) {
     "//src/connectivity/wlan/wlancfg/tool:for_transition",
 
     # Device side of zxdb & fidlcat:
-    "//src/developer/debug/debug_agent:for_transition",
+    "//src/developer/debug/debug_agent",
   ]
   core_realm_testing_aib_pkgs = [
     # SL4F for infra testing
@@ -210,6 +209,36 @@ if (is_fuchsia) {
   recovery_fdr_packages -= [ "//src/recovery/system:system_recovery" ]
   recovery_fdr_packages += [ "//src/recovery/system:system_recovery_fdr" ]
 
+  if (!fxfs_blob) {
+    _storage_config = {
+      storage = {
+        configure_fshost = true
+        filesystems = {
+          image_mode = "ramdisk"
+          volume = {
+            fvm = {
+              data = {
+                data_filesystem_format = data_filesystem_format
+              }
+              blob = {
+              }
+            }
+          }
+        }
+      }
+    }
+  } else {
+    _storage_config = {
+      storage = {
+        configure_fshost = true
+        filesystems = {
+          image_mode = "ramdisk"
+          volume = "fxfs"
+        }
+      }
+    }
+  }
+
   product_assembly_configuration("for-eng") {
     platform = {
       build_type = "eng"
@@ -225,6 +254,7 @@ if (is_fuchsia) {
           legacy_privacy_support = true
         }
       }
+      forward_variables_from(_storage_config, "*")
     }
     product = {
     }
@@ -255,6 +285,7 @@ if (is_fuchsia) {
           legacy_privacy_support = true
         }
       }
+      forward_variables_from(_storage_config, "*")
     }
     product = {
     }
@@ -284,9 +315,6 @@ if (is_fuchsia) {
     bootfs_labels = []
     bootfs_labels = [
       "//build/input:recovery_bootfs",
-      "//bundles/drivers:bootstrap",
-      "//bundles/drivers:usb-host-stack",
-      "//bundles/drivers:usb-peripheral-stack",
       "//src/sys/component_manager:component_manager_bootfs_config",
     ]
 
@@ -327,6 +355,7 @@ if (is_fuchsia) {
     platform = {
       build_type = "user"
       feature_set_level = "utility"
+      forward_variables_from(_storage_config, "*")
     }
     product = {
     }
@@ -338,12 +367,16 @@ if (is_fuchsia) {
 
     base_packages = recovery_fdr_packages
     core_realm_definition = ":core"
-    generate_fvm = !bootfs_only && !fxfs_blob
-    generate_fxfs = !bootfs_only && fxfs_blob
-
-    generate_fvm_fastboot = generate_fvm && assembly_generate_fvm_fastboot
-    generate_fvm_nand = generate_fvm && assembly_generate_fvm_nand
     generate_vbmeta = use_vbmeta
+    use_assembly_fshost = true
+
+    if (!fxfs_blob) {
+      generate_fvm = !bootfs_only
+      generate_fvm_fastboot = generate_fvm && assembly_generate_fvm_fastboot
+      generate_fvm_nand = generate_fvm && assembly_generate_fvm_nand
+    } else {
+      generate_fxfs = !bootfs_only
+    }
 
     ramdisk_in_zbi = true
 
@@ -352,15 +385,11 @@ if (is_fuchsia) {
     additional_boot_args = [ "virtcon.disable=true" ]
     cmdline = []
 
-    assembly_images_config_label = images_config_label
     product_assembly_config_label = ":for-fdr"
+    board_config = board_information_for_assembly
+    fshost_config = board_fshost_config
 
-    bootfs_labels = [
-      "//build/input:recovery_bootfs",
-      "//bundles/drivers:bootstrap",
-      "//bundles/drivers:usb-host-stack",
-      "//bundles/drivers:usb-peripheral-stack",
-    ]
+    bootfs_labels = [ "//build/input:recovery_bootfs" ]
     bootfs_labels +=
         [ "//src/sys/component_manager:component_manager_bootfs_config" ]
 
@@ -400,6 +429,7 @@ if (is_fuchsia) {
           publish_fuchsia_dev_wired_service = false
         }
       }
+      forward_variables_from(_storage_config, "*")
     }
     product = {
     }
@@ -414,12 +444,6 @@ if (is_fuchsia) {
     product_assembly_config_label = ":for-installer"
 
     core_realm_definition = ":core-installer"
-
-    # The installer needs to see all partitions on the system so that it can
-    #determine the installation source and destination
-    fshost_config = {
-      gpt_all = true
-    }
   }
 
   recovery_build_info_product = "${target_gen_dir}/product.txt"

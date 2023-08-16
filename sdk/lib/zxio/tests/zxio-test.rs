@@ -19,6 +19,7 @@ use {
         directory::entry::{DirectoryEntry, EntryInfo},
         execution_scope::ExecutionScope,
         file::{FidlIoConnection, File, FileIo, FileOptions, SyncMode},
+        node::Node,
         path::Path,
         pseudo_directory,
         symlink::Symlink,
@@ -76,6 +77,20 @@ async fn test_read_link_error() {
     impl Symlink for ErrorSymlink {
         async fn read_target(&self) -> Result<Vec<u8>, zx::Status> {
             Err(zx::Status::IO)
+        }
+    }
+
+    #[async_trait]
+    impl Node for ErrorSymlink {
+        async fn get_attributes(
+            &self,
+            _requested_attributes: fio::NodeAttributesQuery,
+        ) -> Result<fio::NodeAttributes2, zx::Status> {
+            unreachable!();
+        }
+
+        async fn get_attrs(&self) -> Result<fio::NodeAttributes, zx::Status> {
+            unreachable!();
         }
     }
 
@@ -330,6 +345,48 @@ impl File for XattrFile {
         let mut map = self.extended_attributes.lock().await;
         map.remove(&name).map(|_| ()).ok_or(zx::Status::NOT_FOUND)
     }
+}
+
+#[fuchsia::test]
+async fn test_xattr_symlink() {
+    let fixture = TestFixture::new().await;
+
+    let (dir_client, dir_server) = zx::Channel::create();
+    fixture
+        .root()
+        .clone(fio::OpenFlags::CLONE_SAME_RIGHTS, dir_server.into())
+        .expect("clone failed");
+
+    fasync::unblock(|| {
+        let dir_zxio = Zxio::create(dir_client.into_handle()).expect("create failed");
+
+        let symlink_zxio =
+            dir_zxio.create_symlink("symlink", b"target").expect("create_symlink failed");
+        assert_eq!(symlink_zxio.read_link().expect("read_link failed"), b"target");
+
+        assert_matches!(symlink_zxio.xattr_get(b"security.selinux"), Err(zx::Status::NOT_FOUND));
+
+        symlink_zxio.xattr_set(b"security.selinux", b"bar", XattrSetMode::Set).unwrap();
+
+        assert_eq!(symlink_zxio.xattr_get(b"security.selinux").unwrap(), b"bar");
+
+        {
+            let names = symlink_zxio.xattr_list().unwrap();
+            assert_eq!(names, vec![b"security.selinux".to_owned()]);
+        }
+
+        symlink_zxio.xattr_remove(b"security.selinux").unwrap();
+
+        assert_matches!(symlink_zxio.xattr_get(b"security.selinux"), Err(zx::Status::NOT_FOUND));
+
+        {
+            let names = symlink_zxio.xattr_list().unwrap();
+            assert_eq!(names, Vec::<Vec<u8>>::new());
+        }
+    })
+    .await;
+
+    fixture.close().await;
 }
 
 #[fuchsia::test]

@@ -16,7 +16,7 @@ use {
     anyhow::format_err,
     assert_matches::assert_matches,
     async_trait::async_trait,
-    cm_runner::Runner,
+    cm_runner::{Namespace, Runner},
     cm_rust::{CapabilityTypeName, ComponentDecl, ConfigValuesData},
     fidl::prelude::*,
     fidl::{
@@ -269,7 +269,7 @@ impl Resolver for MockResolver {
 
 pub type HostFn = Box<dyn Fn(ServerEnd<fio::DirectoryMarker>) + Send + Sync>;
 
-pub type ManagedNamespace = Mutex<Vec<fcrunner::ComponentNamespaceEntry>>;
+pub type ManagedNamespace = Mutex<Namespace>;
 
 struct MockRunnerInner {
     /// List of URLs started by this runner instance.
@@ -279,7 +279,7 @@ struct MockRunnerInner {
     url_waiters: Vec<futures::channel::oneshot::Sender<()>>,
 
     /// Namespace for each component, mapping resolved URL to the component's namespace.
-    namespaces: HashMap<String, Arc<Mutex<Vec<fcrunner::ComponentNamespaceEntry>>>>,
+    namespaces: HashMap<String, Arc<Mutex<Namespace>>>,
 
     /// Functions for serving the `outgoing` and `runtime` directories
     /// of a given compoment. When a component is started, these
@@ -341,11 +341,6 @@ impl MockRunner {
         self.inner.lock().unwrap().outgoing_host_fns.insert(name.to_string(), Arc::new(function));
     }
 
-    /// Register `function` to serve the runtime directory of component `name`
-    pub fn add_runtime_host_fn(&self, name: &str, function: HostFn) {
-        self.inner.lock().unwrap().runtime_host_fns.insert(name.to_string(), Arc::new(function));
-    }
-
     /// Get the input namespace for component `name`.
     pub fn get_namespace(&self, name: &str) -> Option<Arc<ManagedNamespace>> {
         self.inner.lock().unwrap().namespaces.get(name).map(Arc::clone)
@@ -404,13 +399,13 @@ impl BuiltinRunnerFactory for MockRunner {
 impl Runner for MockRunner {
     async fn start(
         &self,
-        start_info: fcrunner::ComponentStartInfo,
+        start_info: cm_runner::StartInfo,
         server_end: ServerEnd<fcrunner::ComponentControllerMarker>,
     ) {
         let outgoing_host_fn;
         let runtime_host_fn;
         let runner_requests;
-        let resolved_url = start_info.resolved_url.unwrap();
+        let resolved_url = start_info.resolved_url;
 
         // The koid is the only unique piece of information we have about a
         // component start request. Two start requests for the same component
@@ -441,7 +436,7 @@ impl Runner for MockRunner {
             // Create a namespace for the component.
             state
                 .namespaces
-                .insert(resolved_url.clone(), Arc::new(Mutex::new(start_info.ns.unwrap())));
+                .insert(resolved_url.clone(), Arc::new(Mutex::new(start_info.namespace)));
 
             let abort_handle =
                 MockController::new(server_end, runner_requests, channel_koid).serve();

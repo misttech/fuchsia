@@ -10,6 +10,7 @@
 #include <lib/fidl/cpp/interface_handle.h>
 #include <lib/fidl/cpp/interface_request.h>
 #include <lib/syslog/cpp/macros.h>
+#include <zircon/errors.h>
 
 #include <memory>
 #include <optional>
@@ -35,9 +36,9 @@ class SingleBindingFidlServer : public TestBase {
     };
   }
 
-  void CloseConnection() {
+  void CloseConnection(const zx_status_t status = ZX_ERR_PEER_CLOSED) {
     if (binding_) {
-      binding_->Close(ZX_ERR_PEER_CLOSED);
+      binding_->Close(status);
     }
   }
 
@@ -66,7 +67,9 @@ class MultiBindingFidlServer : public TestBase {
     };
   }
 
-  void CloseAllConnections() { bindings_.CloseAll(); }
+  void CloseAllConnections(const zx_status_t status = ZX_ERR_PEER_CLOSED) {
+    bindings_.CloseAll(status);
+  }
 
   size_t NumConnections() { return bindings_.size(); }
 

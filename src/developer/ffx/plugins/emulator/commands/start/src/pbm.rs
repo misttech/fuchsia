@@ -16,24 +16,17 @@ use ffx_emulator_common::{
 };
 use ffx_emulator_config::convert_bundle_to_configs;
 use ffx_emulator_start_args::StartCommand;
-use pbms::{load_product_bundle, ListingMode, ProductBundle};
+use pbms::ProductBundle;
 use std::{
     collections::hash_map::DefaultHasher, env, hash::Hasher, path::PathBuf, str::FromStr,
     time::Duration,
 };
 
-/// Lists the virtual device spec names in the specified product.
-pub(crate) async fn list_virtual_devices(
-    cmd: &StartCommand,
-    sdk: &ffx_config::Sdk,
-) -> Result<Vec<String>> {
-    let bundle: ProductBundle =
-        load_product_bundle(&sdk, &cmd.product_bundle, ListingMode::ReadyBundlesOnly).await?.into();
-    bundle.device_refs()
-}
-
 /// Create a RuntimeConfiguration based on the command line args.
-pub(crate) async fn make_configs(cmd: &StartCommand) -> Result<EmulatorConfiguration> {
+pub(crate) async fn make_configs(
+    cmd: &StartCommand,
+    product_bundle: Option<ProductBundle>,
+) -> Result<EmulatorConfiguration> {
     // Start with a default structure, than fill it in as we go.
     let mut emu_config = EmulatorConfiguration::default();
 
@@ -44,11 +37,14 @@ pub(crate) async fn make_configs(cmd: &StartCommand) -> Result<EmulatorConfigura
         emu_config.runtime.template = PathBuf::from(env::current_dir()?).join(template_file);
         emu_config.runtime.config_override = true;
     } else {
-        // Apply the values from the manifest to an emulation configuration.
-        emu_config =
-            convert_bundle_to_configs(cmd.product_bundle.clone(), cmd.device().await?, cmd.verbose)
+        if let Some(pb) = product_bundle {
+            // Apply the values from the manifest to an emulation configuration.
+            emu_config = convert_bundle_to_configs(&pb, cmd.device().await?, cmd.verbose)
                 .await
                 .context("problem with convert_bundle_to_configs")?;
+        } else {
+            bail!("Product bundle required for configuring the emulator instance.")
+        }
     }
 
     // HostConfig values that come from the OS environment.
@@ -275,7 +271,7 @@ mod tests {
         AccelerationMode, ConsoleType, CpuArchitecture, EmulatorConfiguration, GpuType, LogLevel,
         NetworkingMode, PortMapping,
     };
-    use ffx_config::{query, ConfigLevel};
+    use ffx_config::ConfigLevel;
     use ffx_emulator_common::config::{
         EMU_DEFAULT_DEVICE, EMU_DEFAULT_ENGINE, EMU_DEFAULT_GPU, EMU_INSTANCE_ROOT_DIR,
         EMU_START_TIMEOUT,
@@ -290,7 +286,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_apply_command_line_options() -> Result<()> {
-        let _env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().await.unwrap();
 
         // Set up some test data to be applied.
         let mut cmd = StartCommand {
@@ -337,7 +333,8 @@ mod tests {
         assert_eq!(opts.runtime.name, "SomeName");
         assert_eq!(opts.runtime.upscript, None);
 
-        query(EMU_UPSCRIPT_FILE)
+        env.context
+            .query(EMU_UPSCRIPT_FILE)
             .level(Some(ConfigLevel::User))
             .set(json!("/path/to/upscript".to_string()))
             .await?;
@@ -395,7 +392,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_config_backed_values() -> Result<()> {
-        let _env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().await.unwrap();
         let mut cmd = StartCommand::default();
         let emu_config = EmulatorConfiguration::default();
 
@@ -409,10 +406,22 @@ mod tests {
         let opts = result.unwrap();
         assert_eq!(opts.host.gpu, GpuType::SwiftshaderIndirect);
 
-        query(EMU_DEFAULT_DEVICE).level(Some(ConfigLevel::User)).set(json!("my_device")).await?;
-        query(EMU_DEFAULT_ENGINE).level(Some(ConfigLevel::User)).set(json!("qemu")).await?;
-        query(EMU_DEFAULT_GPU).level(Some(ConfigLevel::User)).set(json!("host")).await?;
-        query(EMU_START_TIMEOUT).level(Some(ConfigLevel::User)).set(json!(120)).await?;
+        env.context
+            .query(EMU_DEFAULT_DEVICE)
+            .level(Some(ConfigLevel::User))
+            .set(json!("my_device"))
+            .await?;
+        env.context
+            .query(EMU_DEFAULT_ENGINE)
+            .level(Some(ConfigLevel::User))
+            .set(json!("qemu"))
+            .await?;
+        env.context
+            .query(EMU_DEFAULT_GPU)
+            .level(Some(ConfigLevel::User))
+            .set(json!("host"))
+            .await?;
+        env.context.query(EMU_START_TIMEOUT).level(Some(ConfigLevel::User)).set(json!(120)).await?;
 
         assert_eq!(cmd.device().await.unwrap(), Some(String::from("my_device")));
         assert_eq!(cmd.engine().await.unwrap(), "qemu");
@@ -437,7 +446,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_accel_auto() -> Result<()> {
-        let _env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().await.unwrap();
         let temp_path = PathBuf::from(tempdir().unwrap().path());
         let file_path = temp_path.join("kvm");
         create_dir_all(&temp_path).expect("Create all temp directory");
@@ -445,7 +454,8 @@ mod tests {
         let file = File::create(&file_path).expect("Create temp file");
         let mut perms = file.metadata().expect("Get file metadata").permissions();
 
-        query(KVM_PATH)
+        env.context
+            .query(KVM_PATH)
             .level(Some(ConfigLevel::User))
             .set(json!(file_path
                 .as_path()
@@ -453,7 +463,8 @@ mod tests {
                 .expect("Couldn't convert file_path to str")
                 .to_string()))
             .await?;
-        query(EMU_INSTANCE_ROOT_DIR)
+        env.context
+            .query(EMU_INSTANCE_ROOT_DIR)
             .level(Some(ConfigLevel::User))
             .set(json!(temp_path
                 .as_path()

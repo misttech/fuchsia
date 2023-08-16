@@ -4,10 +4,12 @@
 import unittest
 import fidl.fuchsia_developer_ffx as ffx_fidl
 import os
+import sys
 import tempfile
 import os.path
 import asyncio
-from fuchsia_controller_py import Context, IsolateDir
+from fidl_codec import encode_fidl_message, method_ordinal
+from fuchsia_controller_py import Context, IsolateDir, Channel
 
 
 class EndToEnd(unittest.IsolatedAsyncioTestCase):
@@ -48,6 +50,65 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(echo_proxy.pending_txids), 0)
         self.assertEqual(len(echo_proxy.staged_messages), 0)
 
+    def test_sending_and_later_awaiting_protocol_method_call(self):
+        ctx = self._make_ctx()
+        (ch0, ch1) = Channel.create()
+        echo_proxy1 = ffx_fidl.Echo.Client(ch0)
+        echo_proxy2 = ffx_fidl.Echo.Client(
+            ctx.connect_daemon_protocol(ffx_fidl.Echo.MARKER))
+        echo_proxy3 = ffx_fidl.Echo.Client(
+            ctx.connect_daemon_protocol(ffx_fidl.Echo.MARKER))
+        coro = echo_proxy1.echo_string(value="foo")
+        buf, _ = ch1.read()
+        txid = int.from_bytes(buf[0:4], sys.byteorder)
+        encoded_bytes, _ = encode_fidl_message(
+            object=ffx_fidl.EchoEchoStringRequest(value="foo"),
+            library="fuchsia.developer.ffx",
+            type_name="fuchsia.developer.ffx/EchoEchoStringRequest",
+            txid=txid,
+            ordinal=method_ordinal(
+                protocol="fuchsia.developer.ffx/Echo", method="EchoString"))
+        self.assertEqual(buf, encoded_bytes)
+        msg = encode_fidl_message(
+            object=ffx_fidl.EchoEchoStringResponse(response="otherthing"),
+            library="fuchsia.developer.ffx",
+            type_name="fuchsia.developer.ffx/EchoEchoStringResponse",
+            txid=txid,
+            ordinal=method_ordinal(
+                protocol="fuchsia.developer.ffx/Echo", method="EchoString"))
+        ch1.write(msg)
+        res = asyncio.run(echo_proxy2.echo_string(value="bar"))
+        self.assertEqual(res.response, "bar")
+        res = asyncio.run(echo_proxy2.echo_string(value="baz"))
+        self.assertEqual(res.response, "baz")
+        result = asyncio.run(coro)
+        self.assertEqual(result.response, "otherthing")
+
+    async def test_client_sends_message_before_coro_await(self):
+        (ch0, ch1) = Channel.create()
+        echo_proxy = ffx_fidl.Echo.Client(ch0)
+        coro = echo_proxy.echo_string(value="foo")
+        buf, _ = ch1.read()
+        txid = int.from_bytes(buf[0:4], sys.byteorder)
+        encoded_bytes, _ = encode_fidl_message(
+            object=ffx_fidl.EchoEchoStringRequest(value="foo"),
+            library="fuchsia.developer.ffx",
+            type_name="fuchsia.developer.ffx/EchoEchoStringRequest",
+            txid=txid,
+            ordinal=method_ordinal(
+                protocol="fuchsia.developer.ffx/Echo", method="EchoString"))
+        self.assertEqual(buf, encoded_bytes)
+        msg = encode_fidl_message(
+            object=ffx_fidl.EchoEchoStringResponse(response="otherthing"),
+            library="fuchsia.developer.ffx",
+            type_name="fuchsia.developer.ffx/EchoEchoStringResponse",
+            txid=txid,
+            ordinal=method_ordinal(
+                protocol="fuchsia.developer.ffx/Echo", method="EchoString"))
+        ch1.write(msg)
+        result = await coro
+        self.assertEqual(result.response, "otherthing")
+
     def test_context_creation_no_config_but_target(self):
         """This test simply ensures passing a target does not cause an error."""
         _ctx = Context(target="foo")
@@ -83,3 +144,17 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res.response, "foo")
         res = asyncio.run(e.echo_string(value="barzzz"))
         self.assertEqual(res.response, "barzzz")
+
+    async def test_sending_fidl_protocol(self):
+        tc_server, tc_client = Channel.create()
+        list_server, list_client = Channel.create()
+        tc_proxy = ffx_fidl.TargetCollection.Client(tc_client)
+        query = ffx_fidl.TargetQuery(string_matcher="foobar")
+        tc_proxy.list_targets(query=query, reader=list_client.take())
+        buf, hdls = tc_server.read()
+        self.assertEqual(len(hdls), 1)
+        new_list_client = hdls[0]
+        new_list_client.write((bytearray([5, 6, 7]), []))
+        list_buf, list_hdls = list_server.read()
+        self.assertEqual(len(list_hdls), 0)
+        self.assertEqual(list_buf, bytearray([5, 6, 7]))

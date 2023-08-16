@@ -5,7 +5,6 @@
 
 load(
     ":providers.bzl",
-    "FuchsiaAssemblyConfigInfo",
     "FuchsiaBoardConfigInfo",
     "FuchsiaProductAssemblyBundleInfo",
     "FuchsiaProductAssemblyInfo",
@@ -24,7 +23,7 @@ $FFX \
     assembly \
     product \
     --product $PRODUCT_CONFIG_PATH \
-    {board_config_arg} \
+    --board-info $BOARD_CONFIG_PATH \
     --legacy-bundle $LEGACY_AIB \
     --input-bundles-dir $PLATFORM_AIB_DIR \
     --outdir $OUTDIR
@@ -40,7 +39,6 @@ $FFX \
     assembly \
     create-system \
     --image-assembly-config $PRODUCT_ASSEMBLY_OUTDIR/image_assembly.json \
-    --images $IMAGES_CONFIG_PATH \
     {mode_arg} \
     --outdir $OUTDIR
 """
@@ -68,18 +66,14 @@ def _fuchsia_product_assembly_impl(ctx):
 
     # Invoke Product Assembly
     product_config_file = ctx.attr.product_config[FuchsiaProductConfigInfo].product_config
-    board_config_file = ctx.attr.board_config[FuchsiaBoardConfigInfo].board_config if ctx.attr.board_config else None
-    shell_src = _PRODUCT_ASSEMBLY_RUNNER_SH_TEMPLATE.format(
-        board_config_arg = "--board-info $BOARD_CONFIG_PATH" if board_config_file else "",
-    )
+    board_config_file = ctx.attr.board_config[FuchsiaBoardConfigInfo].board_config
+    shell_src = _PRODUCT_ASSEMBLY_RUNNER_SH_TEMPLATE
 
     ffx_inputs = get_ffx_assembly_inputs(fuchsia_toolchain)
     ffx_inputs += ctx.files.product_config
-    if board_config_file:
-        ffx_inputs.append(board_config_file)
+    ffx_inputs += ctx.files.board_config
     ffx_inputs += legacy_aib.files
     ffx_inputs += platform_aibs.files
-    ffx_inputs += ctx.files.product_config
     ffx_isolate_dir = ctx.actions.declare_directory(ctx.label.name + "_ffx_isolate_dir")
 
     shell_env = {
@@ -88,11 +82,10 @@ def _fuchsia_product_assembly_impl(ctx):
         "FFX_ISOLATE_DIR": ffx_isolate_dir.path,
         "OUTDIR": out_dir.path,
         "PRODUCT_CONFIG_PATH": product_config_file.path,
+        "BOARD_CONFIG_PATH": board_config_file.path,
         "LEGACY_AIB": legacy_aib.dir.path,
         "PLATFORM_AIB_DIR": platform_aibs.dir.path,
     }
-    if board_config_file:
-        shell_env["BOARD_CONFIG_PATH"] = board_config_file.path
 
     ctx.actions.run_shell(
         inputs = ffx_inputs,
@@ -151,8 +144,7 @@ fuchsia_product_assembly = rule(
         "board_config": attr.label(
             doc = "A board configuration target.",
             providers = [FuchsiaBoardConfigInfo],
-            # TODO(fxb/119590): Make mandatory once soft transition completes.
-            mandatory = False,
+            mandatory = True,
         ),
         "legacy_aib": attr.label(
             doc = "Legacy AIB for this product.",
@@ -187,11 +179,9 @@ def _fuchsia_product_create_system_impl(ctx):
     out_dir = ctx.actions.declare_directory(ctx.label.name + "_out")
 
     # Assembly create-system
-    images_config_file = ctx.attr.image[FuchsiaAssemblyConfigInfo].config
     product_assembly_out = ctx.attr.product_assembly[FuchsiaProductAssemblyInfo].product_assembly_out
 
     ffx_inputs = get_ffx_assembly_inputs(fuchsia_toolchain)
-    ffx_inputs += ctx.files.image
     ffx_inputs += ctx.files.product_assembly
     ffx_isolate_dir = ctx.actions.declare_directory(ctx.label.name + "_ffx_isolate_dir")
 
@@ -204,7 +194,6 @@ def _fuchsia_product_create_system_impl(ctx):
         "SDK_ROOT": ctx.attr._sdk_manifest.label.workspace_root,
         "FFX_ISOLATE_DIR": ffx_isolate_dir.path,
         "OUTDIR": out_dir.path,
-        "IMAGES_CONFIG_PATH": images_config_file.path,
         "PRODUCT_ASSEMBLY_OUTDIR": product_assembly_out.path,
     }
 
@@ -239,11 +228,6 @@ fuchsia_product_create_system = rule(
     toolchains = ["@fuchsia_sdk//fuchsia:toolchain"],
     provides = [FuchsiaProductImageInfo],
     attrs = {
-        "image": attr.label(
-            doc = "A fuchsia_images_configuration target.",
-            providers = [FuchsiaAssemblyConfigInfo],
-            mandatory = True,
-        ),
         "product_assembly": attr.label(
             doc = "A fuchsia_product_assembly target.",
             providers = [FuchsiaProductAssemblyInfo],
@@ -264,8 +248,7 @@ def fuchsia_product_image(
         product_config,
         legacy_aib,
         platform_aibs,
-        image,
-        board_config = None,
+        board_config,
         create_system_mode = None,
         **kwargs):
     fuchsia_product_assembly(
@@ -279,7 +262,6 @@ def fuchsia_product_image(
     fuchsia_product_create_system(
         name = name,
         product_assembly = ":" + name + "_product_assembly",
-        image = image,
         mode = create_system_mode,
         **kwargs
     )

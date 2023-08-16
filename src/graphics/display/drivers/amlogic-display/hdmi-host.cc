@@ -8,6 +8,7 @@
 
 #include <limits>
 
+#include "src/graphics/display/drivers/amlogic-display/clock-regs.h"
 #include "src/graphics/display/drivers/amlogic-display/common.h"
 #include "src/graphics/display/drivers/amlogic-display/gpio-mux-regs.h"
 #include "src/graphics/display/drivers/amlogic-display/hhi-regs.h"
@@ -60,25 +61,25 @@ void TranslateDisplayMode(fidl::AnyArena& allocator, const display_mode_t& in_mo
 zx_status_t HdmiHost::Init() {
   auto status = pdev_.MapMmio(MMIO_VPU, &vpu_mmio_);
   if (status != ZX_OK) {
-    DISP_ERROR("Could not map VPU mmio %d\n", status);
+    zxlogf(ERROR, "Could not map VPU mmio: %s", zx_status_get_string(status));
     return status;
   }
 
   status = pdev_.MapMmio(MMIO_HHI, &hhi_mmio_);
   if (status != ZX_OK) {
-    DISP_ERROR("Could not map HHI mmio %d\n", status);
+    zxlogf(ERROR, "Could not map HHI mmio: %s", zx_status_get_string(status));
     return status;
   }
 
   status = pdev_.MapMmio(MMIO_GPIO_MUX, &gpio_mux_mmio_);
   if (status != ZX_OK) {
-    DISP_ERROR("Could not map GPIO MUX mmio %d\n", status);
+    zxlogf(ERROR, "Could not map GPIO MUX mmio: %s", zx_status_get_string(status));
     return status;
   }
 
   auto res = hdmi_->PowerUp(1);  // only supports 1 display for now.
   if ((res.status() != ZX_OK) || res->is_error()) {
-    zxlogf(ERROR, "Power Up failed: %s\n", res.FormatDescription().c_str());
+    zxlogf(ERROR, "Power Up failed: %s", res.FormatDescription().c_str());
     return ZX_ERR_INTERNAL;
   }
   return ZX_OK;
@@ -92,11 +93,12 @@ zx_status_t HdmiHost::HostOn() {
   SET_BIT32(GPIO_MUX, PERIPHS_PIN_MUX_B, 0x11, 0, 8);
 
   // enable clocks
-  HhiHdmiClkCntlReg::Get()
+  HdmiClockControl::Get()
       .ReadFrom(&(*hhi_mmio_))
-      .set_clk_div(0)
-      .set_clk_en(1)
-      .set_clk_sel(0)
+      .SetHdmiTxSystemClockDivider(1)
+      .set_hdmi_tx_system_clock_enabled(true)
+      .set_hdmi_tx_system_clock_selection(
+          HdmiClockControl::HdmiTxSystemClockSource::kExternalOscillator24Mhz)
       .WriteTo(&(*hhi_mmio_));
 
   // enable clk81 (needed for HDMI module and a bunch of other modules)
@@ -107,7 +109,7 @@ zx_status_t HdmiHost::HostOn() {
 
   auto res = hdmi_->Reset(1);  // only supports 1 display for now
   if ((res.status() != ZX_OK) || res->is_error()) {
-    zxlogf(ERROR, "Reset failed\n");
+    zxlogf(ERROR, "Reset failed");
     return ZX_ERR_INTERNAL;
   }
   return ZX_OK;
@@ -122,7 +124,7 @@ void HdmiHost::HostOff() {
 
   auto res = hdmi_->PowerDown(1);  // only supports 1 display for now
   if (res.status() != ZX_OK) {
-    zxlogf(ERROR, "Power Down failed\n");
+    zxlogf(ERROR, "Power Down failed");
   }
 }
 
@@ -152,7 +154,7 @@ zx_status_t HdmiHost::ModeSet(const display_mode_t& mode) {
   TranslateDisplayMode(allocator, mode, color_, &translated_mode);
   auto res = hdmi_->ModeSet(1, translated_mode);  // only supports 1 display for now
   if ((res.status() != ZX_OK) || res->is_error()) {
-    DISP_ERROR("Unable to initialize interface\n");
+    zxlogf(ERROR, "Unable to initialize interface");
     return ZX_ERR_INTERNAL;
   }
 
@@ -191,7 +193,7 @@ zx_status_t HdmiHost::ModeSet(const display_mode_t& mode) {
   // setup hdmi phy
   ConfigPhy();
 
-  DISP_INFO("done!!\n");
+  zxlogf(INFO, "done!!");
   return ZX_OK;
 }
 
@@ -223,7 +225,7 @@ zx_status_t HdmiHost::EdidTransfer(const i2c_impl_op_t* op_list, size_t op_count
 
   auto res = hdmi_->EdidTransfer(all_ops, all_writes, all_reads);
   if ((res.status() != ZX_OK) || res->is_error()) {
-    DISP_ERROR("Unable to perform Edid Transfer\n");
+    zxlogf(ERROR, "Unable to perform Edid Transfer");
     return ZX_ERR_INTERNAL;
   }
 
@@ -251,11 +253,11 @@ zx_status_t HdmiHost::GetVic(display_mode_t* disp_timing) { return GetVic(disp_t
 
 zx_status_t HdmiHost::GetVic(display_mode_t* disp_timing, hdmi_param* p) {
   if (disp_timing->v_addressable == 2160) {
-    DISP_INFO("4K Monitor Detected.\n");
+    zxlogf(INFO, "4K Monitor Detected.");
 
     if ((disp_timing->pixel_clock_10khz * 10) == 533250) {
       // FIXME: 4K with reduced blanking (533.25MHz) does not work
-      DISP_INFO("4K @ 30Hz\n");
+      zxlogf(INFO, "4K @ 30Hz");
       disp_timing->flags &= ~MODE_FLAG_INTERLACED;
       disp_timing->pixel_clock_10khz = 29700;
       disp_timing->h_addressable = 3840;
@@ -339,8 +341,8 @@ zx_status_t HdmiHost::GetVic(display_mode_t* disp_timing, hdmi_param* p) {
     }
   }
   if (p->pll_p_24b.hpll_clk_out > 6000000) {
-    DISP_ERROR("Something went wrong in clock calculation (pll_out = %d)\n",
-               p->pll_p_24b.hpll_clk_out);
+    zxlogf(ERROR, "Something went wrong in clock calculation (pll_out = %d)",
+           p->pll_p_24b.hpll_clk_out);
     return ZX_ERR_OUT_OF_RANGE;
   }
 
@@ -407,7 +409,7 @@ void HdmiHost::ConfigEncoder() {
   if (p->timings.interlace_mode) {
     // TODO: Add support for interlace mode
     // We should not even get here
-    DISP_ERROR("Interlace mode not supported\n");
+    zxlogf(ERROR, "Interlace mode not supported");
   }
 
   // HSync Timings
@@ -449,7 +451,7 @@ void HdmiHost::ConfigEncoder() {
   // Select ENCP data to HDMI
   VpuHdmiSettingReg::Get().ReadFrom(&(*vpu_mmio_)).set_src_sel(2).WriteTo(&(*vpu_mmio_));
 
-  DISP_INFO("done\n");
+  zxlogf(INFO, "done");
 }
 
 void HdmiHost::ConfigPhy() {
@@ -528,7 +530,7 @@ void HdmiHost::ConfigPhy() {
       break;
   }
   usleep(20);
-  DISP_INFO("done!\n");
+  zxlogf(INFO, "done!");
 }
 
 }  // namespace amlogic_display

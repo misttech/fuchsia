@@ -5,8 +5,11 @@
 #include "src/graphics/display/drivers/amlogic-display/clock.h"
 
 #include <lib/ddk/debug.h>
+#include <zircon/status.h>
 
 #include <fbl/alloc_checker.h>
+
+#include "src/graphics/display/drivers/amlogic-display/clock-regs.h"
 
 namespace amlogic_display {
 
@@ -17,55 +20,55 @@ constexpr uint8_t kStv1Sel = 4;
 constexpr uint32_t kKHZ = 1000;
 
 void DumpPllCfg(const PllConfig& pll_cfg) {
-  DISP_INFO("#############################");
-  DISP_INFO("Dumping pll_cfg structure:");
-  DISP_INFO("#############################");
-  DISP_INFO("fin = 0x%x (%u)", pll_cfg.fin, pll_cfg.fin);
-  DISP_INFO("fout = 0x%x (%u)", pll_cfg.fout, pll_cfg.fout);
-  DISP_INFO("pll_m = 0x%x (%u)", pll_cfg.pll_m, pll_cfg.pll_m);
-  DISP_INFO("pll_n = 0x%x (%u)", pll_cfg.pll_n, pll_cfg.pll_n);
-  DISP_INFO("pll_fvco = 0x%x (%u)", pll_cfg.pll_fvco, pll_cfg.pll_fvco);
-  DISP_INFO("pll_od1_sel = 0x%x (%u)", pll_cfg.pll_od1_sel, pll_cfg.pll_od1_sel);
-  DISP_INFO("pll_od2_sel = 0x%x (%u)", pll_cfg.pll_od2_sel, pll_cfg.pll_od2_sel);
-  DISP_INFO("pll_od3_sel = 0x%x (%u)", pll_cfg.pll_od3_sel, pll_cfg.pll_od3_sel);
-  DISP_INFO("pll_frac = 0x%x (%u)", pll_cfg.pll_frac, pll_cfg.pll_frac);
-  DISP_INFO("pll_fout = 0x%x (%u)", pll_cfg.pll_fout, pll_cfg.pll_fout);
+  zxlogf(INFO, "#############################");
+  zxlogf(INFO, "Dumping pll_cfg structure:");
+  zxlogf(INFO, "#############################");
+  zxlogf(INFO, "fin = 0x%x (%u)", pll_cfg.fin, pll_cfg.fin);
+  zxlogf(INFO, "fout = 0x%x (%u)", pll_cfg.fout, pll_cfg.fout);
+  zxlogf(INFO, "pll_m = 0x%x (%u)", pll_cfg.pll_m, pll_cfg.pll_m);
+  zxlogf(INFO, "pll_n = 0x%x (%u)", pll_cfg.pll_n, pll_cfg.pll_n);
+  zxlogf(INFO, "pll_fvco = 0x%x (%u)", pll_cfg.pll_fvco, pll_cfg.pll_fvco);
+  zxlogf(INFO, "pll_od1_sel = 0x%x (%u)", pll_cfg.pll_od1_sel, pll_cfg.pll_od1_sel);
+  zxlogf(INFO, "pll_od2_sel = 0x%x (%u)", pll_cfg.pll_od2_sel, pll_cfg.pll_od2_sel);
+  zxlogf(INFO, "pll_od3_sel = 0x%x (%u)", pll_cfg.pll_od3_sel, pll_cfg.pll_od3_sel);
+  zxlogf(INFO, "pll_frac = 0x%x (%u)", pll_cfg.pll_frac, pll_cfg.pll_frac);
+  zxlogf(INFO, "pll_fout = 0x%x (%u)", pll_cfg.pll_fout, pll_cfg.pll_fout);
 }
 
 void DumpLcdTiming(const LcdTiming& lcd_timing) {
-  DISP_INFO("#############################");
-  DISP_INFO("Dumping lcd_timing structure:");
-  DISP_INFO("#############################");
-  DISP_INFO("vid_pixel_on = 0x%x (%u)", lcd_timing.vid_pixel_on, lcd_timing.vid_pixel_on);
-  DISP_INFO("vid_line_on = 0x%x (%u)", lcd_timing.vid_line_on, lcd_timing.vid_line_on);
-  DISP_INFO("de_hs_addr = 0x%x (%u)", lcd_timing.de_hs_addr, lcd_timing.de_hs_addr);
-  DISP_INFO("de_he_addr = 0x%x (%u)", lcd_timing.de_he_addr, lcd_timing.de_he_addr);
-  DISP_INFO("de_vs_addr = 0x%x (%u)", lcd_timing.de_vs_addr, lcd_timing.de_vs_addr);
-  DISP_INFO("de_ve_addr = 0x%x (%u)", lcd_timing.de_ve_addr, lcd_timing.de_ve_addr);
-  DISP_INFO("hs_hs_addr = 0x%x (%u)", lcd_timing.hs_hs_addr, lcd_timing.hs_hs_addr);
-  DISP_INFO("hs_he_addr = 0x%x (%u)", lcd_timing.hs_he_addr, lcd_timing.hs_he_addr);
-  DISP_INFO("hs_vs_addr = 0x%x (%u)", lcd_timing.hs_vs_addr, lcd_timing.hs_vs_addr);
-  DISP_INFO("hs_ve_addr = 0x%x (%u)", lcd_timing.hs_ve_addr, lcd_timing.hs_ve_addr);
-  DISP_INFO("vs_hs_addr = 0x%x (%u)", lcd_timing.vs_hs_addr, lcd_timing.vs_hs_addr);
-  DISP_INFO("vs_he_addr = 0x%x (%u)", lcd_timing.vs_he_addr, lcd_timing.vs_he_addr);
-  DISP_INFO("vs_vs_addr = 0x%x (%u)", lcd_timing.vs_vs_addr, lcd_timing.vs_vs_addr);
-  DISP_INFO("vs_ve_addr = 0x%x (%u)", lcd_timing.vs_ve_addr, lcd_timing.vs_ve_addr);
+  zxlogf(INFO, "#############################");
+  zxlogf(INFO, "Dumping lcd_timing structure:");
+  zxlogf(INFO, "#############################");
+  zxlogf(INFO, "vid_pixel_on = 0x%x (%u)", lcd_timing.vid_pixel_on, lcd_timing.vid_pixel_on);
+  zxlogf(INFO, "vid_line_on = 0x%x (%u)", lcd_timing.vid_line_on, lcd_timing.vid_line_on);
+  zxlogf(INFO, "de_hs_addr = 0x%x (%u)", lcd_timing.de_hs_addr, lcd_timing.de_hs_addr);
+  zxlogf(INFO, "de_he_addr = 0x%x (%u)", lcd_timing.de_he_addr, lcd_timing.de_he_addr);
+  zxlogf(INFO, "de_vs_addr = 0x%x (%u)", lcd_timing.de_vs_addr, lcd_timing.de_vs_addr);
+  zxlogf(INFO, "de_ve_addr = 0x%x (%u)", lcd_timing.de_ve_addr, lcd_timing.de_ve_addr);
+  zxlogf(INFO, "hs_hs_addr = 0x%x (%u)", lcd_timing.hs_hs_addr, lcd_timing.hs_hs_addr);
+  zxlogf(INFO, "hs_he_addr = 0x%x (%u)", lcd_timing.hs_he_addr, lcd_timing.hs_he_addr);
+  zxlogf(INFO, "hs_vs_addr = 0x%x (%u)", lcd_timing.hs_vs_addr, lcd_timing.hs_vs_addr);
+  zxlogf(INFO, "hs_ve_addr = 0x%x (%u)", lcd_timing.hs_ve_addr, lcd_timing.hs_ve_addr);
+  zxlogf(INFO, "vs_hs_addr = 0x%x (%u)", lcd_timing.vs_hs_addr, lcd_timing.vs_hs_addr);
+  zxlogf(INFO, "vs_he_addr = 0x%x (%u)", lcd_timing.vs_he_addr, lcd_timing.vs_he_addr);
+  zxlogf(INFO, "vs_vs_addr = 0x%x (%u)", lcd_timing.vs_vs_addr, lcd_timing.vs_vs_addr);
+  zxlogf(INFO, "vs_ve_addr = 0x%x (%u)", lcd_timing.vs_ve_addr, lcd_timing.vs_ve_addr);
 }
 
 void DumpDisplaySettings(const display_setting_t& settings) {
-  DISP_INFO("#############################");
-  DISP_INFO("Dumping display_setting structure:");
-  DISP_INFO("#############################");
-  DISP_INFO("lcd_clock = 0x%x (%u)", settings.lcd_clock, settings.lcd_clock);
-  DISP_INFO("clock_factor = 0x%x (%u)", settings.clock_factor, settings.clock_factor);
-  DISP_INFO("h_period = 0x%x (%u)", settings.h_period, settings.h_period);
-  DISP_INFO("h_active = 0x%x (%u)", settings.h_active, settings.h_active);
-  DISP_INFO("hsync_bp = 0x%x (%u)", settings.hsync_bp, settings.hsync_bp);
-  DISP_INFO("hsync_width = 0x%x (%u)", settings.hsync_width, settings.hsync_width);
-  DISP_INFO("v_period = 0x%x (%u)", settings.v_period, settings.v_period);
-  DISP_INFO("v_active = 0x%x (%u)", settings.v_active, settings.v_active);
-  DISP_INFO("vsync_bp = 0x%x (%u)", settings.vsync_bp, settings.vsync_bp);
-  DISP_INFO("vsync_width = 0x%x (%u)", settings.vsync_width, settings.vsync_width);
+  zxlogf(INFO, "#############################");
+  zxlogf(INFO, "Dumping display_setting structure:");
+  zxlogf(INFO, "#############################");
+  zxlogf(INFO, "lcd_clock = 0x%x (%u)", settings.lcd_clock, settings.lcd_clock);
+  zxlogf(INFO, "clock_factor = 0x%x (%u)", settings.clock_factor, settings.clock_factor);
+  zxlogf(INFO, "h_period = 0x%x (%u)", settings.h_period, settings.h_period);
+  zxlogf(INFO, "h_active = 0x%x (%u)", settings.h_active, settings.h_active);
+  zxlogf(INFO, "hsync_bp = 0x%x (%u)", settings.hsync_bp, settings.hsync_bp);
+  zxlogf(INFO, "hsync_width = 0x%x (%u)", settings.hsync_width, settings.hsync_width);
+  zxlogf(INFO, "v_period = 0x%x (%u)", settings.v_period, settings.v_period);
+  zxlogf(INFO, "v_active = 0x%x (%u)", settings.v_active, settings.v_active);
+  zxlogf(INFO, "vsync_bp = 0x%x (%u)", settings.vsync_bp, settings.vsync_bp);
+  zxlogf(INFO, "vsync_width = 0x%x (%u)", settings.vsync_width, settings.vsync_width);
 }
 
 }  // namespace
@@ -111,7 +114,7 @@ zx_status_t Clock::PllLockWait() {
   uint32_t pll_lock;
 
   for (int lock_attempts = 0; lock_attempts < kMaxPllLockAttempt; lock_attempts++) {
-    DISP_TRACE("Waiting for PLL Lock: (%d/3).", lock_attempts + 1);
+    zxlogf(TRACE, "Waiting for PLL Lock: (%d/3).", lock_attempts + 1);
     if (lock_attempts == 1) {
       SET_BIT32(HHI, HHI_HDMI_PLL_CNTL3, 1, 31, 1);
     } else if (lock_attempts == 2) {
@@ -128,7 +131,7 @@ zx_status_t Clock::PllLockWait() {
   }
 
   // We got here, which means we never locked!
-  DISP_ERROR("PLL not locked! exiting");
+  zxlogf(ERROR, "PLL not locked! exiting");
   return ZX_ERR_UNAVAILABLE;
 }
 
@@ -139,7 +142,7 @@ zx::result<PllConfig> Clock::GenerateHPLL(const display_setting_t& d) {
   // Requested Pixel clock
   pll_cfg.fout = d.lcd_clock / kKHZ;  // KHz
   if (pll_cfg.fout > MAX_PIXEL_CLK_KHZ) {
-    DISP_ERROR("Pixel clock out of range (%u KHz)", pll_cfg.fout);
+    zxlogf(ERROR, "Pixel clock out of range (%u KHz)", pll_cfg.fout);
     return zx::error(ZX_ERR_OUT_OF_RANGE);
   }
 
@@ -166,7 +169,7 @@ zx::result<PllConfig> Clock::GenerateHPLL(const display_setting_t& d) {
     uint32_t dsi_bit_rate_max_khz = d.bit_rate_max * 1000;  // change to KHz
     uint32_t dsi_bit_rate_min_khz = dsi_bit_rate_max_khz - pll_cfg.fout;
     if ((pll_fout < dsi_bit_rate_min_khz) || (pll_fout > dsi_bit_rate_max_khz)) {
-      DISP_TRACE("Calculated clocks out of range for xd = %u, skipped", clock_factor);
+      zxlogf(TRACE, "Calculated clocks out of range for xd = %u, skipped", clock_factor);
       continue;
     }
 
@@ -191,8 +194,8 @@ zx::result<PllConfig> Clock::GenerateHPLL(const display_setting_t& d) {
             pll_cfg.pll_od2_sel = od2 >> 1;
             pll_cfg.pll_od3_sel = od3 >> 1;
             pll_cfg.pll_fout = pll_fout;
-            DISP_TRACE("od1=%d, od2=%d, od3=%d", (od1 >> 1), (od2 >> 1), (od3 >> 1));
-            DISP_TRACE("pll_fvco=%d", fod1);
+            zxlogf(TRACE, "od1=%d, od2=%d, od3=%d", (od1 >> 1), (od2 >> 1), (od3 >> 1));
+            zxlogf(TRACE, "pll_fvco=%d", fod1);
             pll_cfg.pll_fvco = fod1;
             // for simplicity, assume n = 1
             // calculate m such that fin x m = fod1
@@ -204,7 +207,7 @@ zx::result<PllConfig> Clock::GenerateHPLL(const display_setting_t& d) {
             pll_cfg.pll_m = m;
             pll_cfg.pll_n = 1;
             pll_cfg.pll_frac = pll_frac;
-            DISP_TRACE("m=%d, n=%d, frac=0x%x", m, 1, pll_frac);
+            zxlogf(TRACE, "m=%d, n=%d, frac=0x%x", m, 1, pll_frac);
             pll_cfg.bitrate = pll_fout * kKHZ;  // Hz
             return zx::ok(std::move(pll_cfg));
           }
@@ -216,7 +219,7 @@ zx::result<PllConfig> Clock::GenerateHPLL(const display_setting_t& d) {
     }
   }
 
-  DISP_ERROR("Could not generate correct PLL values!");
+  zxlogf(ERROR, "Could not generate correct PLL values!");
   DumpDisplaySettings(d);
   return zx::error(ZX_ERR_INTERNAL);
 }
@@ -227,9 +230,19 @@ void Clock::Disable() {
   }
   WRITE32_REG(VPU, ENCL_VIDEO_EN, 0);
 
-  SET_BIT32(HHI, HHI_VID_CLK_CNTL2, 0, ENCL_GATE_VCLK, 1);
-  SET_BIT32(HHI, HHI_VIID_CLK_CNTL, 0, 0, 5);
-  SET_BIT32(HHI, HHI_VIID_CLK_CNTL, 0, VCLK2_EN, 1);
+  VideoClockOutputControl::Get()
+      .ReadFrom(&*hhi_mmio_)
+      .set_encoder_lvds_enabled(false)
+      .WriteTo(&*hhi_mmio_);
+  VideoClock2Control::Get()
+      .ReadFrom(&*hhi_mmio_)
+      .set_div1_enabled(false)
+      .set_div2_enabled(false)
+      .set_div4_enabled(false)
+      .set_div6_enabled(false)
+      .set_div12_enabled(false)
+      .WriteTo(&*hhi_mmio_);
+  VideoClock2Control::Get().ReadFrom(&*hhi_mmio_).set_clock_enabled(false).WriteTo(&*hhi_mmio_);
 
   // disable pll
   SET_BIT32(HHI, HHI_HDMI_PLL_CNTL0, 0, LCD_PLL_EN_HPLL_G12A, 1);
@@ -248,7 +261,7 @@ zx_status_t Clock::Enable(const display_setting_t& d) {
     pll_cfg_ = std::move(pll_result.value());
     last_valid_display_settings_ = d;
   } else {
-    DISP_ERROR("PLL generation failed, using the old config");
+    zxlogf(ERROR, "PLL generation failed, using the old config");
     Dump();
   }
 
@@ -280,12 +293,12 @@ zx_status_t Clock::Enable(const display_setting_t& d) {
   zx_nanosleep(zx_deadline_after(ZX_USEC(50)));
   zx_status_t status = PllLockWait();
   if (status != ZX_OK) {
-    DISP_ERROR("hpll lock failed");
+    zxlogf(ERROR, "hpll lock failed");
     return status;
   }
 
-  // Enable VIID Clock (whatever that is)
-  SET_BIT32(HHI, HHI_VIID_CLK_CNTL, 0, VCLK2_EN, 1);
+  // Disable Video Clock mux 2 since we are changing its input selection.
+  VideoClock2Control::Get().ReadFrom(&*hhi_mmio_).set_clock_enabled(false).WriteTo(&*hhi_mmio_);
   zx_nanosleep(zx_deadline_after(ZX_USEC(5)));
 
   // Disable the div output clock
@@ -297,41 +310,66 @@ zx_status_t Clock::Enable(const display_setting_t& d) {
   // Enable the final output clock
   SET_BIT32(HHI, HHI_VID_PLL_CLK_DIV, 1, 19, 1);  // Undocumented register bit
 
-  // Undocumented register bits
-  SET_BIT32(HHI, HHI_VDIN_MEAS_CLK_CNTL, 0, 21, 3);
-  SET_BIT32(HHI, HHI_VDIN_MEAS_CLK_CNTL, 0, 12, 7);
-  SET_BIT32(HHI, HHI_VDIN_MEAS_CLK_CNTL, 1, 20, 1);
+  // Enable DSI measure clocks.
+  VideoInputMeasureClockControl::Get()
+      .ReadFrom(&*hhi_mmio_)
+      .set_dsi_measure_clock_selection(
+          VideoInputMeasureClockControl::ClockSource::kExternalOscillator24Mhz)
+      .WriteTo(&*hhi_mmio_);
+  VideoInputMeasureClockControl::Get()
+      .ReadFrom(&*hhi_mmio_)
+      .SetDsiMeasureClockDivider(1)
+      .WriteTo(&*hhi_mmio_);
+  VideoInputMeasureClockControl::Get()
+      .ReadFrom(&*hhi_mmio_)
+      .set_dsi_measure_clock_enabled(true)
+      .WriteTo(&*hhi_mmio_);
 
-  // USE VID_PLL
-  SET_BIT32(HHI, HHI_MIPIDSI_PHY_CLK_CNTL, 0, 12, 3);
-  // enable dsi_phy_clk
-  SET_BIT32(HHI, HHI_MIPIDSI_PHY_CLK_CNTL, 1, 8, 1);
-  // set divider to 0 -- undocumented
-  SET_BIT32(HHI, HHI_MIPIDSI_PHY_CLK_CNTL, 0, 0, 7);
+  // Use Video PLL (vid_pll) as MIPI_DSY PHY clock source.
+  MipiDsiPhyClockControl::Get()
+      .ReadFrom(&*hhi_mmio_)
+      .set_clock_source(MipiDsiPhyClockControl::ClockSource::kVideoPll)
+      .WriteTo(&*hhi_mmio_);
+  // Enable MIPI-DSY PHY clock.
+  MipiDsiPhyClockControl::Get().ReadFrom(&*hhi_mmio_).set_enabled(true).WriteTo(&*hhi_mmio_);
+  // Set divider to 1.
+  // TODO(fxbug.dev/131925): This should occur before enabling the clock.
+  MipiDsiPhyClockControl::Get().ReadFrom(&*hhi_mmio_).SetDivider(1).WriteTo(&*hhi_mmio_);
 
-  // setup the XD divider value
-  SET_BIT32(HHI, HHI_VIID_CLK_DIV, (pll_cfg_.clock_factor - 1), VCLK2_XD, 8);
+  // Set the Video clock 2 divider.
+  VideoClock2Divider::Get()
+      .ReadFrom(&*hhi_mmio_)
+      .SetDivider2(pll_cfg_.clock_factor)
+      .WriteTo(&*hhi_mmio_);
   zx_nanosleep(zx_deadline_after(ZX_USEC(5)));
 
-  // select vid_pll_clk
-  SET_BIT32(HHI, HHI_VIID_CLK_CNTL, 0, VCLK2_CLK_IN_SEL, 3);
-  SET_BIT32(HHI, HHI_VIID_CLK_CNTL, 1, VCLK2_EN, 1);
+  VideoClock2Control::Get()
+      .ReadFrom(&*hhi_mmio_)
+      .set_mux_source(VideoClockMuxSource::kVideoPll)
+      .WriteTo(&*hhi_mmio_);
+  VideoClock2Control::Get().ReadFrom(&*hhi_mmio_).set_clock_enabled(true).WriteTo(&*hhi_mmio_);
   zx_nanosleep(zx_deadline_after(ZX_USEC(2)));
 
-  // [15:12] encl_clk_sel, select vclk2_div1
-  SET_BIT32(HHI, HHI_VIID_CLK_DIV, 8, ENCL_CLK_SEL, 4);
-  // release vclk2_div_reset and enable vclk2_div
-  SET_BIT32(HHI, HHI_VIID_CLK_DIV, 1, VCLK2_XD_EN, 2);
+  // Select video clock 2 for ENCL clock.
+  VideoClock2Divider::Get()
+      .ReadFrom(&*hhi_mmio_)
+      .set_encl_clock_selection(EncoderClockSource::kVideoClock2)
+      .WriteTo(&*hhi_mmio_);
+  // Enable video clock 2 divider.
+  VideoClock2Divider::Get().ReadFrom(&*hhi_mmio_).set_divider_enabled(true).WriteTo(&*hhi_mmio_);
   zx_nanosleep(zx_deadline_after(ZX_USEC(5)));
 
-  SET_BIT32(HHI, HHI_VIID_CLK_CNTL, 1, VCLK2_DIV1_EN, 1);
-  SET_BIT32(HHI, HHI_VIID_CLK_CNTL, 1, VCLK2_SOFT_RST, 1);
+  VideoClock2Control::Get().ReadFrom(&*hhi_mmio_).set_div1_enabled(true).WriteTo(&*hhi_mmio_);
+  VideoClock2Control::Get().ReadFrom(&*hhi_mmio_).set_soft_reset(true).WriteTo(&*hhi_mmio_);
   zx_nanosleep(zx_deadline_after(ZX_USEC(10)));
-  SET_BIT32(HHI, HHI_VIID_CLK_CNTL, 0, VCLK2_SOFT_RST, 1);
+  VideoClock2Control::Get().ReadFrom(&*hhi_mmio_).set_soft_reset(false).WriteTo(&*hhi_mmio_);
   zx_nanosleep(zx_deadline_after(ZX_USEC(5)));
 
-  // enable CTS_ENCL clk gate
-  SET_BIT32(HHI, HHI_VID_CLK_CNTL2, 1, ENCL_GATE_VCLK, 1);
+  // Enable ENCL clock output.
+  VideoClockOutputControl::Get()
+      .ReadFrom(&*hhi_mmio_)
+      .set_encoder_lvds_enabled(true)
+      .WriteTo(&*hhi_mmio_);
 
   zx_nanosleep(zx_deadline_after(ZX_MSEC(10)));
 
@@ -433,20 +471,20 @@ zx::result<std::unique_ptr<Clock>> Clock::Create(ddk::PDevFidl& pdev, bool alrea
   fbl::AllocChecker ac;
   auto self = fbl::make_unique_checked<Clock>(&ac);
   if (!ac.check()) {
-    DISP_ERROR("Clock: could not allocate memory");
+    zxlogf(ERROR, "Clock: could not allocate memory");
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 
   // Map VPU and HHI registers
   zx_status_t status = pdev.MapMmio(MMIO_VPU, &(self->vpu_mmio_));
   if (status != ZX_OK) {
-    DISP_ERROR("Clock: Could not map VPU mmio");
+    zxlogf(ERROR, "Clock: Could not map VPU mmio: %s", zx_status_get_string(status));
     return zx::error(status);
   }
 
   status = pdev.MapMmio(MMIO_HHI, &(self->hhi_mmio_));
   if (status != ZX_OK) {
-    DISP_ERROR("Clock: Could not map HHI mmio");
+    zxlogf(ERROR, "Clock: Could not map HHI mmio: %s", zx_status_get_string(status));
     return zx::error(status);
   }
   self->clock_enabled_ = already_enabled;

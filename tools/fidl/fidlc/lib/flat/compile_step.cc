@@ -11,11 +11,11 @@
 
 #include "tools/fidl/fidlc/include/fidl/diagnostics.h"
 #include "tools/fidl/fidlc/include/fidl/flat/attribute_schema.h"
+#include "tools/fidl/fidlc/include/fidl/flat/name.h"
 #include "tools/fidl/fidlc/include/fidl/flat/type_resolver.h"
 #include "tools/fidl/fidlc/include/fidl/flat_ast.h"
 #include "tools/fidl/fidlc/include/fidl/names.h"
 #include "tools/fidl/fidlc/include/fidl/ordinals.h"
-#include "tools/fidl/fidlc/include/fidl/program_invocation.h"
 
 namespace fidl::flat {
 
@@ -1053,23 +1053,18 @@ void CompileStep::CompileProtocol(Protocol* protocol_declaration) {
 
   CheckScopes(protocol_declaration, CheckScopes);
 
-  enum class EmptyPayload {
-    kBanned,
-    kFixable,
-    kAllowed,
-  };
-
   // Ensure that the method's type constructors for request/response payloads actually exist, and
   // are the right kind of layout.
-  std::function<void(const SourceSpan&, const Decl*, EmptyPayload)> CheckPayloadDeclKind =
-      [&](const SourceSpan& method_name, const Decl* decl, EmptyPayload permission) -> void {
+  std::function<void(const SourceSpan&, const Decl*)> CheckPayloadDeclKind =
+      [&](const SourceSpan& method_name, const Decl* decl) -> void {
     switch (decl->kind) {
       case Decl::Kind::kStruct: {
-        const auto struct_decl = static_cast<const Struct*>(decl);
-        if (permission == EmptyPayload::kBanned && struct_decl->members.empty()) {
+        auto empty = static_cast<const Struct*>(decl)->members.empty();
+        auto anonymous = decl->name.as_anonymous();
+        auto compiler_generated =
+            anonymous && anonymous->provenance == Name::Provenance::kGeneratedEmptySuccessStruct;
+        if (empty && !compiler_generated) {
           Fail(ErrEmptyPayloadStructs, method_name, method_name.data());
-        } else if (permission == EmptyPayload::kFixable && struct_decl->members.empty()) {
-          Fail(ErrEmptyPayloadStructsWhenResultUnion, method_name, method_name.data());
         }
         break;
       }
@@ -1083,7 +1078,7 @@ void CompileStep::CompileProtocol(Protocol* protocol_declaration) {
         switch (aliased_type->kind) {
           case Type::Kind::kIdentifier: {
             const auto as_identifier_type = static_cast<const IdentifierType*>(aliased_type);
-            CheckPayloadDeclKind(method_name, as_identifier_type->type_decl, permission);
+            CheckPayloadDeclKind(method_name, as_identifier_type->type_decl);
             break;
           }
           default: {
@@ -1131,7 +1126,7 @@ void CompileStep::CompileProtocol(Protocol* protocol_declaration) {
           auto decl = static_cast<const flat::IdentifierType*>(type)->type_decl;
           CompileDecl(decl);
           CheckNoDefaultMembers(decl);
-          CheckPayloadDeclKind(method.name, decl, EmptyPayload::kBanned);
+          CheckPayloadDeclKind(method.name, decl);
         }
       }
     }
@@ -1157,20 +1152,13 @@ void CompileStep::CompileProtocol(Protocol* protocol_declaration) {
                 const auto* success_decl =
                     static_cast<const IdentifierType*>(success_variant_type)->type_decl;
                 CheckNoDefaultMembers(success_decl);
-                auto empty_payload_permission = EmptyPayload::kAllowed;
-                if (experimental_flags().IsFlagEnabled(
-                        ExperimentalFlags::Flag::kSimpleEmptyResponseSyntax)) {
-                  auto* anonymous = success_decl->name.as_anonymous();
-                  if (!anonymous || anonymous->provenance != Name::Provenance::kCompilerGenerated) {
-                    empty_payload_permission = EmptyPayload::kFixable;
-                  }
-                }
-                CheckPayloadDeclKind(method.name, success_decl, empty_payload_permission);
+                CheckPayloadDeclKind(method.name, success_decl);
               }
             }
+            ValidateDomainErrorType(result_union);
           } else {
             CheckNoDefaultMembers(decl);
-            CheckPayloadDeclKind(method.name, decl, EmptyPayload::kBanned);
+            CheckPayloadDeclKind(method.name, decl);
           }
         }
       }
@@ -1204,6 +1192,32 @@ void CompileStep::CompileProtocol(Protocol* protocol_declaration) {
     if (method.has_response && !method.has_request) {
       CheckNoEventErrorSyntax(method);
     }
+  }
+}
+
+void CompileStep::ValidateDomainErrorType(const Union* result_union) {
+  auto& error_member = result_union->members[1];
+  if (!error_member.maybe_used) {
+    return;
+  }
+  auto error_type = error_member.maybe_used->type_ctor->type;
+  if (!error_type) {
+    return;
+  }
+  const PrimitiveType* error_primitive = nullptr;
+  if (error_type->kind == Type::Kind::kPrimitive) {
+    error_primitive = static_cast<const PrimitiveType*>(error_type);
+  } else if (error_type->kind == Type::Kind::kIdentifier) {
+    auto identifier_type = static_cast<const IdentifierType*>(error_type);
+    if (identifier_type->type_decl->kind == Decl::Kind::kEnum) {
+      auto error_enum = static_cast<const Enum*>(identifier_type->type_decl);
+      ZX_ASSERT(error_enum->subtype_ctor->type->kind == Type::Kind::kPrimitive);
+      error_primitive = static_cast<const PrimitiveType*>(error_enum->subtype_ctor->type);
+    }
+  }
+  if (!error_primitive || (error_primitive->subtype != types::PrimitiveSubtype::kInt32 &&
+                           error_primitive->subtype != types::PrimitiveSubtype::kUint32)) {
+    Fail(ErrInvalidErrorType, result_union->name.span().value());
   }
 }
 

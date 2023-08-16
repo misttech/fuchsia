@@ -4,8 +4,8 @@
 
 use {
     crate::{
-        get_system_image_hash, CachePackages, CachePackagesInitError, NonStaticAllowList,
-        StaticPackages, StaticPackagesInitError,
+        get_system_image_hash, CachePackages, CachePackagesInitError, StaticPackages,
+        StaticPackagesInitError,
     },
     anyhow::Context as _,
     fuchsia_hash::Hash,
@@ -13,8 +13,6 @@ use {
 };
 
 static DISABLE_RESTRICTIONS_FILE_PATH: &str = "data/pkgfs_disable_executability_restrictions";
-static NON_STATIC_ALLOW_LIST_FILE_PATH: &str =
-    "data/pkgfs_packages_non_static_packages_allowlist.txt";
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ExecutabilityRestrictions {
@@ -33,8 +31,9 @@ impl SystemImage {
         boot_args: &fidl_fuchsia_boot::ArgumentsProxy,
     ) -> Result<Self, anyhow::Error> {
         let hash = get_system_image_hash(boot_args).await.context("getting system_image hash")?;
-        let root_dir =
-            RootDir::new(blobfs, hash).await.context("creating RootDir for system_image")?;
+        let root_dir = RootDir::new(blobfs, hash)
+            .await
+            .with_context(|| format!("creating RootDir for system_image: {hash}"))?;
         Ok(SystemImage { root_dir })
     }
 
@@ -76,29 +75,6 @@ impl SystemImage {
         .map_err(StaticPackagesInitError::ProcessingStaticPackages)
     }
 
-    /// Load the non-static allow list from
-    /// "data/pkgfs_packages_non_static_packages_allowlist.txt". Errors during loading result in an
-    /// empty allow list.
-    pub async fn non_static_allow_list(&self) -> NonStaticAllowList {
-        async {
-            NonStaticAllowList::parse(
-                self.root_dir
-                    .read_file(NON_STATIC_ALLOW_LIST_FILE_PATH)
-                    .await
-                    .context("reading allow list contents")?
-                    .as_slice(),
-            )
-            .context("parsing allow list contents")
-        }
-        .await
-        .unwrap_or_else(|e| {
-            tracing::warn!(
-                "Failed to load non static allow list from system_image, treating as empty: {e:#}"
-            );
-            NonStaticAllowList::empty()
-        })
-    }
-
     /// Consume self and return the contained `package_directory::RootDir`.
     pub fn into_root_dir(self) -> RootDir<blobfs::Client> {
         self.root_dir
@@ -126,8 +102,7 @@ mod tests {
             let blobfs = blobfs_ramdisk::BlobfsRamdisk::start().await.unwrap();
             let system_image = system_image.build().await;
             system_image.write_to_blobfs(&blobfs).await;
-            let root_dir =
-                RootDir::new(blobfs.client(), *system_image.meta_far_merkle_root()).await.unwrap();
+            let root_dir = RootDir::new(blobfs.client(), *system_image.hash()).await.unwrap();
             (Self { _blobfs: blobfs }, SystemImage { root_dir })
         }
     }
@@ -174,25 +149,5 @@ mod tests {
             system_image.static_packages().await.unwrap(),
             StaticPackages::from_entries(vec![("name/variant".parse().unwrap(), [0; 32].into())])
         );
-    }
-
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn non_static_allow_list_succeeds() {
-        let (_env, system_image) = TestEnv::new(
-            SystemImageBuilder::new().pkgfs_non_static_packages_allowlist(&["allow-me"]),
-        )
-        .await;
-
-        assert_eq!(
-            system_image.non_static_allow_list().await,
-            NonStaticAllowList::parse(b"allow-me\n").unwrap()
-        );
-    }
-
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn non_static_allow_list_missing_file_causes_empty_list() {
-        let (_env, system_image) = TestEnv::new(SystemImageBuilder::new()).await;
-
-        assert_eq!(system_image.non_static_allow_list().await, NonStaticAllowList::empty());
     }
 }

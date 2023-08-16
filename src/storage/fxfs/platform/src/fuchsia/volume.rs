@@ -10,7 +10,7 @@ use {
         fxblob::blob::FxBlob,
         memory_pressure::{MemoryPressureLevel, MemoryPressureMonitor},
         node::{FxNode, GetResult, NodeCache},
-        pager::{Pager, PagerExecutor},
+        pager::Pager,
         symlink::FxSymlink,
         vmo_data_buffer::VmoDataBuffer,
         volumes_directory::VolumesDirectory,
@@ -35,14 +35,14 @@ use {
         filesystem::{self, SyncOptions},
         log::*,
         object_store::{
-            directory::{Directory, ObjectDescriptor},
-            transaction::Options,
-            HandleOptions, HandleOwner, ObjectStore,
+            directory::Directory, transaction::Options, HandleOptions, HandleOwner,
+            ObjectDescriptor, ObjectStore,
         },
     },
     std::{
         boxed::Box,
         convert::TryInto,
+        future::Future,
         marker::Unpin,
         sync::{Arc, Mutex, Weak},
         time::Duration,
@@ -109,15 +109,16 @@ impl FxVolume {
         store: Arc<ObjectStore>,
         fs_id: u64,
     ) -> Result<Self, Error> {
+        let scope = ExecutionScope::new();
         Ok(Self {
             parent,
             cache: NodeCache::new(),
             store,
-            pager: Pager::new(PagerExecutor::global_instance())?,
+            pager: Pager::new(scope.clone())?,
             executor: fasync::EHandle::local(),
             flush_task: Mutex::new(None),
             fs_id,
-            scope: ExecutionScope::new(),
+            scope,
         })
     }
 
@@ -148,8 +149,8 @@ impl FxVolume {
     pub async fn terminate(&self) {
         self.cache.clear();
         self.scope.shutdown();
+        self.pager.terminate();
         self.scope.wait().await;
-        self.pager.terminate().await;
         self.store.filesystem().graveyard().flush().await;
         let task = std::mem::replace(&mut *self.flush_task.lock().unwrap(), None);
         if let Some((task, terminate)) = task {
@@ -359,6 +360,16 @@ impl FxVolume {
             flushed += 1;
         }
         debug!(store_id = self.store.store_object_id(), file_count = flushed, "FxVolume flushed");
+    }
+
+    /// Spawns a short term task for the volume that includes a guard that will prevent termination.
+    pub fn spawn(&self, task: impl Future<Output = ()> + Send + 'static) {
+        let guard = self.scope().active_guard();
+        fasync::Task::spawn_on(&self.executor, async move {
+            task.await;
+            std::mem::drop(guard);
+        })
+        .detach();
     }
 }
 
@@ -608,10 +619,9 @@ mod tests {
             fsck::{fsck, fsck_volume},
             object_handle::{ObjectHandle, ObjectHandleExt},
             object_store::{
-                directory::ObjectDescriptor,
                 transaction::{Options, TransactionHandler},
                 volume::root_volume,
-                HandleOptions, ObjectStore,
+                HandleOptions, ObjectDescriptor, ObjectStore,
             },
         },
         fxfs_insecure_crypto::InsecureCrypt,
@@ -911,7 +921,7 @@ mod tests {
                 .expect("Not a file");
 
             // Write some data to the file, which will only go to the cache for now.
-            write_at(&file, 0, &[123u8]).expect("write_at failed");
+            write_at(&file, 0, &[123u8]).await.expect("write_at failed");
 
             let data_has_persisted = || async {
                 // We have to reopen the object each time since this is a distinct handle from the
@@ -990,7 +1000,7 @@ mod tests {
                 .expect("Not a file");
 
             // Write some data to the file, which will only go to the cache for now.
-            write_at(&file, 0, &[123u8]).expect("write_at failed");
+            write_at(&file, 0, &[123u8]).await.expect("write_at failed");
 
             let data_has_persisted = || async {
                 // We have to reopen the object each time since this is a distinct handle from the
@@ -1087,7 +1097,7 @@ mod tests {
                 .expect("Not a file");
 
             // Write some data to the file, which will only go to the cache for now.
-            write_at(&file, 0, &[123u8]).expect("write_at failed");
+            write_at(&file, 0, &[123u8]).await.expect("write_at failed");
 
             let data_has_persisted = || async {
                 // We have to reopen the object each time since this is a distinct handle from the
@@ -1185,8 +1195,7 @@ mod tests {
                 fidl::endpoints::create_proxy::<fio::DirectoryMarker>()
                     .expect("Create dir proxy to succeed");
             volumes_directory
-                .serve_volume(&volume_and_root, dir_server_end, false, false)
-                .await
+                .serve_volume(&volume_and_root, dir_server_end, false)
                 .expect("serve_volume failed");
 
             let project_proxy =
@@ -1294,7 +1303,7 @@ mod tests {
             .await
             .unwrap();
             let volume_and_root = volumes_directory
-                .mount_volume(VOLUME_NAME, None)
+                .mount_volume(VOLUME_NAME, None, false)
                 .await
                 .expect("mount unencrypted volume failed");
             let (volume_proxy, volume_server_end) =
@@ -1311,8 +1320,7 @@ mod tests {
                     fidl::endpoints::create_proxy::<fio::DirectoryMarker>()
                         .expect("Create dir proxy to succeed");
                 volumes_directory
-                    .serve_volume(&volume_and_root, dir_server_end, false, false)
-                    .await
+                    .serve_volume(&volume_and_root, dir_server_end, false)
                     .expect("serve_volume failed");
 
                 connect_to_protocol_at_dir_svc::<ProjectIdMarker>(&volume_dir_proxy)
@@ -1363,15 +1371,14 @@ mod tests {
         .await
         .unwrap();
         let volume_and_root = volumes_directory
-            .mount_volume(VOLUME_NAME, None)
+            .mount_volume(VOLUME_NAME, None, false)
             .await
             .expect("mount unencrypted volume failed");
         let (volume_dir_proxy, dir_server_end) =
             fidl::endpoints::create_proxy::<fio::DirectoryMarker>()
                 .expect("Create dir proxy to succeed");
         volumes_directory
-            .serve_volume(&volume_and_root, dir_server_end, false, false)
-            .await
+            .serve_volume(&volume_and_root, dir_server_end, false)
             .expect("serve_volume failed");
         let project_proxy = connect_to_protocol_at_dir_svc::<ProjectIdMarker>(&volume_dir_proxy)
             .expect("Unable to connect to project id service");
@@ -1424,8 +1431,7 @@ mod tests {
                 fidl::endpoints::create_proxy::<fio::DirectoryMarker>()
                     .expect("Create dir proxy to succeed");
             volumes_directory
-                .serve_volume(&volume_and_root, dir_server_end, false, false)
-                .await
+                .serve_volume(&volume_and_root, dir_server_end, false)
                 .expect("serve_volume failed");
 
             let project_proxy =
@@ -1542,7 +1548,7 @@ mod tests {
             .await
             .unwrap();
             let volume_and_root = volumes_directory
-                .mount_volume(VOLUME_NAME, Some(Arc::new(InsecureCrypt::new())))
+                .mount_volume(VOLUME_NAME, Some(Arc::new(InsecureCrypt::new())), false)
                 .await
                 .expect("mount unencrypted volume failed");
             let (volume_proxy, volume_server_end) =
@@ -1559,8 +1565,7 @@ mod tests {
                     fidl::endpoints::create_proxy::<fio::DirectoryMarker>()
                         .expect("Create dir proxy to succeed");
                 volumes_directory
-                    .serve_volume(&volume_and_root, dir_server_end, false, false)
-                    .await
+                    .serve_volume(&volume_and_root, dir_server_end, false)
                     .expect("serve_volume failed");
 
                 let (root_proxy, root_server_end) =
@@ -1732,8 +1737,7 @@ mod tests {
                 fidl::endpoints::create_proxy::<fio::DirectoryMarker>()
                     .expect("Create dir proxy to succeed");
             volumes_directory
-                .serve_volume(&volume_and_root, dir_server_end, false, false)
-                .await
+                .serve_volume(&volume_and_root, dir_server_end, false)
                 .expect("serve_volume failed");
 
             let project_proxy =
@@ -1871,8 +1875,7 @@ mod tests {
                 fidl::endpoints::create_proxy::<fio::DirectoryMarker>()
                     .expect("Create dir proxy to succeed");
             volumes_directory
-                .serve_volume(&volume_and_root, dir_server_end, false, false)
-                .await
+                .serve_volume(&volume_and_root, dir_server_end, false)
                 .expect("serve_volume failed");
             let project_proxy =
                 connect_to_protocol_at_dir_svc::<ProjectIdMarker>(&volume_dir_proxy)

@@ -33,10 +33,7 @@ use {
     event_listener::Event,
     fuchsia_async as fasync,
     fuchsia_inspect::{NumericProperty as _, UintProperty},
-    futures::{
-        channel::oneshot::{channel, Sender},
-        FutureExt,
-    },
+    futures::FutureExt,
     fxfs_crypto::Crypt,
     once_cell::sync::OnceCell,
     scopeguard::ScopeGuard,
@@ -146,9 +143,6 @@ pub trait Filesystem: TransactionHandler {
 
     /// Returns the filesystem options.
     fn options(&self) -> &Options;
-
-    /// Spawns a new task that runs `future` to completion in the background.
-    fn spawn_background_task(&self, future: futures::future::BoxFuture<'static, ()>);
 }
 
 /// The context in which a transaction is being applied.
@@ -226,12 +220,9 @@ impl OpenFxFilesystem {
     /// Waits for filesystem to be dropped (so callers should ensure all direct and indirect
     /// references are dropped) and returns the device.  No attempt is made at a graceful shutdown.
     pub async fn take_device(self) -> DeviceHolder {
-        let (sender, receiver) = channel::<DeviceHolder>();
-        self.device_sender
-            .set(sender)
-            .unwrap_or_else(|_| panic!("take_device should only be called once"));
+        let fut = self.device.take_when_dropped();
         std::mem::drop(self);
-        debug_assert_not_too_long!(receiver).unwrap()
+        debug_assert_not_too_long!(fut)
     }
 }
 
@@ -265,7 +256,6 @@ pub struct FxFilesystemBuilder {
     on_new_allocator: Option<Box<dyn Fn(Arc<SimpleAllocator>) + Send + Sync>>,
     on_new_store: Option<Box<dyn Fn(&ObjectStore) + Send + Sync>>,
     fsck_after_every_transaction: bool,
-    background_task_spawner: Box<dyn Fn(futures::future::BoxFuture<'static, ()>) + Send + Sync>,
 }
 
 impl FxFilesystemBuilder {
@@ -278,7 +268,6 @@ impl FxFilesystemBuilder {
             on_new_allocator: None,
             on_new_store: None,
             fsck_after_every_transaction: false,
-            background_task_spawner: Box::new(Self::default_background_task_spawner),
         }
     }
 
@@ -363,18 +352,6 @@ impl FxFilesystemBuilder {
         self
     }
 
-    /// Sets the function to use to spawn background tasks.
-    pub fn background_task_spawner(
-        mut self,
-        background_task_spawner: impl Fn(futures::future::BoxFuture<'static, ()>)
-            + Send
-            + Sync
-            + 'static,
-    ) -> Self {
-        self.background_task_spawner = Box::new(background_task_spawner);
-        self
-    }
-
     /// Constructs an `FxFilesystem` object with the specified settings.
     pub async fn open(self, device: DeviceHolder) -> Result<OpenFxFilesystem, Error> {
         let read_only = self.options.read_only;
@@ -399,15 +376,20 @@ impl FxFilesystemBuilder {
                 Some(Box::new(move || instance.clone().run().boxed()));
         }
 
+        if !read_only && !self.format {
+            // See comment in JournalRecord::DidFlushDevice for why we need to flush the device
+            // before replay.
+            device.flush().await.context("Device flush failed")?;
+        }
+
         let filesystem = Arc::new(FxFilesystem {
-            device: OnceCell::new(),
+            device,
             block_size,
             objects: objects.clone(),
             journal,
             commit_mutex: futures::lock::Mutex::new(()),
             lock_manager: LockManager::new(),
             flush_task: Mutex::new(None),
-            device_sender: OnceCell::new(),
             closed: AtomicBool::new(true),
             trace: self.trace,
             graveyard: Graveyard::new(objects.clone()),
@@ -415,7 +397,6 @@ impl FxFilesystemBuilder {
             options: filesystem_options,
             in_flight_transactions: AtomicU64::new(0),
             event: Event::new(),
-            background_task_spawner: self.background_task_spawner,
         });
 
         if let Some(fsck_after_every_transaction) = fsck_after_every_transaction {
@@ -424,13 +405,6 @@ impl FxFilesystemBuilder {
                 .set(Arc::downgrade(&filesystem))
                 .unwrap_or_else(|_| unreachable!());
         }
-
-        if !read_only && !self.format {
-            // See comment in JournalRecord::DidFlushDevice for why we need to flush the device
-            // before replay.
-            device.flush().await.context("Device flush failed")?;
-        }
-        filesystem.device.set(device).unwrap_or_else(|_| unreachable!());
 
         filesystem.journal.set_trace(self.trace);
         if self.format {
@@ -480,21 +454,15 @@ impl FxFilesystemBuilder {
         filesystem.closed.store(false, Ordering::SeqCst);
         Ok(filesystem.into())
     }
-
-    fn default_background_task_spawner(future: futures::future::BoxFuture<'static, ()>) {
-        fasync::Task::spawn(future).detach();
-    }
 }
 
 pub struct FxFilesystem {
-    device: OnceCell<DeviceHolder>,
     block_size: u64,
     objects: Arc<ObjectManager>,
     journal: Arc<Journal>,
     commit_mutex: futures::lock::Mutex<()>,
     lock_manager: LockManager,
     flush_task: Mutex<Option<fasync::Task<()>>>,
-    device_sender: OnceCell<Sender<DeviceHolder>>,
     closed: AtomicBool,
     trace: bool,
     graveyard: Arc<Graveyard>,
@@ -508,7 +476,9 @@ pub struct FxFilesystem {
     // limit.
     event: Event,
 
-    background_task_spawner: Box<dyn Fn(futures::future::BoxFuture<'static, ()>) + Send + Sync>,
+    // NOTE: This *must* go last so that when users take the device from a closed filesystem, the
+    // filesystem has dropped all other members first (Rust drops members in declaration order).
+    device: DeviceHolder,
 }
 
 impl FxFilesystem {
@@ -632,19 +602,10 @@ impl FxFilesystem {
     }
 }
 
-impl Drop for FxFilesystem {
-    fn drop(&mut self) {
-        if let Some(sender) = self.device_sender.take() {
-            // We don't care if this fails to send.
-            let _ = sender.send(self.device.take().unwrap());
-        }
-    }
-}
-
 #[async_trait]
 impl Filesystem for FxFilesystem {
     fn device(&self) -> Arc<dyn Device> {
-        Arc::clone(self.device.get().unwrap())
+        Arc::clone(&self.device)
     }
 
     fn root_store(&self) -> Arc<ObjectStore> {
@@ -673,7 +634,7 @@ impl Filesystem for FxFilesystem {
 
     fn get_info(&self) -> Info {
         Info {
-            total_bytes: self.device.get().unwrap().size(),
+            total_bytes: self.device.size(),
             used_bytes: self.object_manager().allocator().get_used_bytes(),
         }
     }
@@ -692,10 +653,6 @@ impl Filesystem for FxFilesystem {
 
     fn options(&self) -> &Options {
         &self.options
-    }
-
-    fn spawn_background_task(&self, future: futures::future::BoxFuture<'static, ()>) {
-        (self.background_task_spawner)(future);
     }
 }
 

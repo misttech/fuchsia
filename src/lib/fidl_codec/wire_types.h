@@ -22,6 +22,7 @@ namespace fidl_codec {
 // Transaction header size in bytes.
 constexpr uint32_t kTransactionHeaderSize = 16;
 
+class HandleType;
 class LibraryLoader;
 class StructType;
 class TableType;
@@ -46,6 +47,7 @@ class Type {
   virtual const UnionType* AsUnionType() const { return nullptr; }
   virtual const StructType* AsStructType() const { return nullptr; }
   virtual const TableType* AsTableType() const { return nullptr; }
+  virtual const HandleType* AsHandleType() const { return nullptr; }
 
   // Returns true if the type is a ArrayType.
   virtual bool IsArray() const { return false; }
@@ -396,11 +398,23 @@ class StringType : public Type {
 
 class HandleType : public Type {
  public:
+  explicit HandleType(std::optional<zx_rights_t> rights = std::nullopt,
+                      std::optional<zx_obj_type_t> obj_type = std::nullopt, bool nullable = false)
+      : rights_(rights), obj_type_(obj_type), nullable_(nullable) {}
   std::string Name() const override { return "handle"; }
   std::string CppName() const override { return "zx::handle"; }
   size_t InlineSize(WireVersion version) const override { return sizeof(zx_handle_t); }
   std::unique_ptr<Value> Decode(MessageDecoder* decoder, uint64_t offset) const override;
   void Visit(TypeVisitor* visitor) const override;
+  bool Nullable() const override { return nullable_; }
+  zx_obj_type_t ObjectType() const { return obj_type_.value_or(ZX_OBJ_TYPE_NONE); }
+  zx_rights_t Rights() const { return rights_.value_or(ZX_RIGHT_SAME_RIGHTS); }
+  const HandleType* AsHandleType() const override { return this; }
+
+ private:
+  std::optional<zx_rights_t> rights_;
+  std::optional<zx_obj_type_t> obj_type_;
+  bool nullable_;
 };
 
 class EnumType : public Type {

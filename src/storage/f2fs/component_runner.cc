@@ -12,6 +12,16 @@
 
 namespace f2fs {
 
+zx::result<std::unique_ptr<ComponentRunner>> ComponentRunner::CreateRunner(
+    FuchsiaDispatcher dispatcher) {
+  std::unique_ptr<ComponentRunner> runner(new ComponentRunner(dispatcher));
+  // Create Pager and PagerPool
+  if (auto status = runner->Init(); status.is_error()) {
+    return status.take_error();
+  }
+  return zx::ok(std::move(runner));
+}
+
 ComponentRunner::ComponentRunner(async_dispatcher_t* dispatcher)
     : fs::PagedVfs(dispatcher), dispatcher_(dispatcher) {
   outgoing_ = fbl::MakeRefCounted<fs::PseudoDir>();
@@ -73,9 +83,8 @@ zx::result<> ComponentRunner::Configure(std::unique_ptr<Bcache> bcache,
     return status.take_error();
   }
 
-  uint32_t readonly;
-  ZX_ASSERT(options.GetValue(f2fs::kOptReadOnly, &readonly) == ZX_OK);
-  SetReadonly(readonly != 0);
+  auto readonly_or = options.GetValue(MountOption::kReadOnly);
+  SetReadonly(*readonly_or != 0);
 
   auto f2fs = F2fs::Create(dispatcher_, std::move(bcache), options, this);
   if (f2fs.is_error()) {
@@ -166,7 +175,7 @@ void ComponentRunner::OnNoConnections() {
     return;
   }
   Shutdown([](zx_status_t status) mutable {
-    ZX_ASSERT_MSG(status == ZX_OK, "Filesystem shutdown failed on OnNoConnections(): %s",
+    ZX_ASSERT_MSG(status == ZX_OK, "shutdown failed on OnNoConnections(): %s",
                   zx_status_get_string(status));
   });
 }

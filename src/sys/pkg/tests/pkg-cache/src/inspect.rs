@@ -32,7 +32,7 @@ async fn system_image_hash_present() {
     assert_data_tree!(
         hierarchy,
         root: contains {
-            "system_image": system_image_package.meta_far_merkle_root().to_string(),
+            "system_image": system_image_package.hash().to_string(),
         }
     );
     env.stop().await;
@@ -54,29 +54,6 @@ async fn system_image_hash_ignored() {
 }
 
 #[fuchsia::test]
-async fn non_static_allow_list() {
-    let system_image_package = SystemImageBuilder::new()
-        .pkgfs_non_static_packages_allowlist(&["a-package-name", "another-name"])
-        .build()
-        .await;
-    let env =
-        TestEnv::builder().blobfs_from_system_image(&system_image_package).await.build().await;
-    env.block_until_started().await;
-
-    let hierarchy = env.inspect_hierarchy().await;
-    assert_data_tree!(
-        hierarchy,
-        "root": contains {
-            "non_static_allow_list": {
-                "a-package-name": "",
-                "another-name": "",
-            },
-        }
-    );
-    env.stop().await;
-}
-
-#[fuchsia::test]
 async fn base_packages() {
     let env = TestEnv::builder().build().await;
     env.block_until_started().await;
@@ -87,7 +64,9 @@ async fn base_packages() {
         hierarchy,
         root: contains {
             "base-packages": {
-                "system_image/0": AnyProperty
+                "system_image/0": {
+                    "hash": AnyProperty
+                }
             }
         }
     );
@@ -114,7 +93,7 @@ async fn cache_packages() {
             "cache-packages": vec![
                 format!(
                     "fuchsia-pkg://fuchsia.com/a-cache-package/0?hash={}",
-                    cache_package.meta_far_merkle_root()
+                    cache_package.hash()
                 )
             ]
         }
@@ -203,7 +182,7 @@ async fn dynamic_index_with_cache_packages() {
         root: contains {
             "index": contains {
                 "dynamic": {
-                    cache_package.meta_far_merkle_root().to_string() => {
+                    cache_package.hash().to_string() => {
                         "state" : "active",
                         "time": AnyProperty,
                         "required_blobs": 1u64,
@@ -221,8 +200,7 @@ async fn dynamic_index_needed_blobs() {
     let env = TestEnv::builder().build().await;
     let pkg = PackageBuilder::new("single-blob").build().await.unwrap();
 
-    let meta_blob_info =
-        BlobInfo { blob_id: BlobId::from(*pkg.meta_far_merkle_root()).into(), length: 0 };
+    let meta_blob_info = BlobInfo { blob_id: BlobId::from(*pkg.hash()).into(), length: 0 };
 
     let (needed_blobs, needed_blobs_server_end) =
         fidl::endpoints::create_proxy::<NeededBlobsMarker>().unwrap();
@@ -245,7 +223,7 @@ async fn dynamic_index_needed_blobs() {
         root: contains {
             "index": contains {
                 "dynamic": {
-                    pkg.meta_far_merkle_root().to_string() => {
+                    pkg.hash().to_string() => {
                         "state": "pending",
                         "time": AnyProperty,
                     }
@@ -260,7 +238,7 @@ async fn dynamic_index_needed_blobs() {
         "root": contains {
             "index": contains {
                 "dynamic": contains {
-                    pkg.meta_far_merkle_root().to_string() => contains {
+                    pkg.hash().to_string() => contains {
                         "state": "with_meta_far",
                         "path": AnyProperty,
                         "required_blobs": AnyProperty,
@@ -277,7 +255,7 @@ async fn dynamic_index_needed_blobs() {
         root: contains {
             "index": contains {
                 "dynamic": {
-                    pkg.meta_far_merkle_root().to_string() => {
+                    pkg.hash().to_string() => {
                         "state": "with_meta_far",
                         "required_blobs": 0u64,
                         "time": AnyProperty,
@@ -298,7 +276,7 @@ async fn dynamic_index_needed_blobs() {
         root: contains {
             "index": contains {
                 "dynamic": {
-                    pkg.meta_far_merkle_root().to_string() => {
+                    pkg.hash().to_string() => {
                         "state": "active",
                         "required_blobs": 0u64,
                         "time": AnyProperty,
@@ -318,8 +296,7 @@ async fn dynamic_index_package_hash_update() {
     let env = TestEnv::builder().build().await;
     let pkg = PackageBuilder::new("single-blob").build().await.unwrap();
 
-    let meta_blob_info =
-        BlobInfo { blob_id: BlobId::from(*pkg.meta_far_merkle_root()).into(), length: 0 };
+    let meta_blob_info = BlobInfo { blob_id: BlobId::from(*pkg.hash()).into(), length: 0 };
 
     let (needed_blobs, needed_blobs_server_end) =
         fidl::endpoints::create_proxy::<NeededBlobsMarker>().unwrap();
@@ -345,7 +322,7 @@ async fn dynamic_index_package_hash_update() {
         root: contains {
             "index": contains {
                 "dynamic": {
-                    pkg.meta_far_merkle_root().to_string() => {
+                    pkg.hash().to_string() => {
                         "state": "active",
                         "required_blobs": 0u64,
                         "time": AnyProperty,
@@ -363,8 +340,8 @@ async fn dynamic_index_package_hash_update() {
         .await
         .unwrap();
 
-    let updated_hash = updated_pkg.meta_far_merkle_root().to_string();
-    assert_ne!(pkg.meta_far_merkle_root().to_string(), updated_hash);
+    let updated_hash = updated_pkg.hash().to_string();
+    assert_ne!(pkg.hash().to_string(), updated_hash);
 
     let () = get_and_verify_packages(&env.proxies.package_cache, &[updated_pkg]).await;
     let hierarchy = env.inspect_hierarchy().await;
@@ -455,8 +432,7 @@ async fn package_cache_get() {
         .await
         .unwrap();
 
-    let meta_blob_info =
-        BlobInfo { blob_id: BlobId::from(*package.meta_far_merkle_root()).into(), length: 42 };
+    let meta_blob_info = BlobInfo { blob_id: BlobId::from(*package.hash()).into(), length: 42 };
 
     let (needed_blobs, needed_blobs_server_end) =
         fidl::endpoints::create_proxy::<NeededBlobsMarker>().unwrap();
@@ -552,7 +528,7 @@ async fn package_cache_concurrent_gets() {
     let package2 = PackageBuilder::new("b-blob").build().await.unwrap();
     let env = TestEnv::builder().build().await;
 
-    let blob_id = BlobId::from(*package.meta_far_merkle_root());
+    let blob_id = BlobId::from(*package.hash());
     let meta_blob_info = BlobInfo { blob_id: blob_id.into(), length: 42 };
 
     let (_needed_blobs, needed_blobs_server_end) =
@@ -572,7 +548,7 @@ async fn package_cache_concurrent_gets() {
         .connect_to_protocol_at_exposed_dir::<PackageCacheMarker>()
         .expect("connect to package cache");
 
-    let blob_id2 = BlobId::from(*package2.meta_far_merkle_root());
+    let blob_id2 = BlobId::from(*package2.hash());
     let meta_blob_info2 = BlobInfo { blob_id: blob_id2.into(), length: 7 };
     let (_needed_blobs2, needed_blobs_server_end2) =
         fidl::endpoints::create_proxy::<NeededBlobsMarker>().unwrap();
@@ -677,8 +653,7 @@ async fn retained_index_updated_and_persisted() {
             .await
             .unwrap(),
     ];
-    let blob_ids =
-        packages.iter().map(|pkg| BlobId::from(*pkg.meta_far_merkle_root())).collect::<Vec<_>>();
+    let blob_ids = packages.iter().map(|pkg| BlobId::from(*pkg.hash())).collect::<Vec<_>>();
 
     replace_retained_packages(&env.proxies.retained_packages, blob_ids.as_slice()).await;
 
@@ -741,8 +716,7 @@ async fn retained_index_updated_and_persisted() {
     ))
     .await;
 
-    let meta_blob_info2 =
-        BlobInfo { blob_id: BlobId::from(*packages[1].meta_far_merkle_root()).into(), length: 0 };
+    let meta_blob_info2 = BlobInfo { blob_id: BlobId::from(*packages[1].hash()).into(), length: 0 };
 
     let (needed_blobs2, needed_blobs_server_end2) =
         fidl::endpoints::create_proxy::<NeededBlobsMarker>().unwrap();
@@ -819,7 +793,7 @@ async fn index_updated_mid_package_write() {
         .build()
         .await
         .unwrap();
-    let blob_id = BlobId::from(*package.meta_far_merkle_root());
+    let blob_id = BlobId::from(*package.hash());
     let meta_blob_info = BlobInfo { blob_id: blob_id.into(), length: 0 };
 
     let (needed_blobs, needed_blobs_server_end) =

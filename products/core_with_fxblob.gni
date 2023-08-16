@@ -3,4 +3,6 @@
 # found in the LICENSE file.
 
 import("//products/core.gni")
-# TODO(b/291975381): Move Fxfs images config here from //boards/x64-fxfs.gni.
+fuchsia_product_assembly_config_label = "//products/core:core_with_fxfs"
+zedboot_product_assembly_config_label = "//products/zedboot:zedboot_with_fxfs"
+fxfs_blob = true

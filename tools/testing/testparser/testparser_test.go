@@ -537,11 +537,13 @@ booooo I printed an error, but it doesn't count as fail reason
 [stdout - legacy_test]
 ---- tests::test_add stderr ----
 [stdout - legacy_test]
-thread 'main' panicked at 'assertion failed: ` + "`(left != right)`" + `
+thread 'main' panicked at ../../src/lib/zircon/rust/src/channel.rs:761:9:
+[stdout - legacy_test]
+assertion failed: ` + "`(left != right)`" + `
 [stdout - legacy_test]
   left: ` + "`ObjectType(PORT)`" + `,
 [stdout - legacy_test]
-  right: ` + "`ObjectType(PORT)`', ../../src/lib/zircon/rust/src/channel.rs:761:9`" + `
+  right: ` + "`ObjectType(PORT)`" + `
 [stdout - legacy_test]
 stack backtrace:
 [stdout - legacy_test]
@@ -556,11 +558,13 @@ stack backtrace:
 [stdout - legacy_test]
 ---- tests::test_substract stderr ----
 [stdout - legacy_test]
-thread 'main' panicked at 'assertion failed: ` + "`(left != right)`" + `
+thread 'main' panicked at ../../src/lib/zircon/rust/src/channel.rs:783:9:
+[stdout - legacy_test]
+assertion failed: ` + "`(left != right)`" + `
 [stdout - legacy_test]
   left: ` + "`Err((5, 0))`" + `,
 [stdout - legacy_test]
-  right: ` + "`Err((5, 0))`" + `', ../../src/lib/zircon/rust/src/channel.rs:783:9
+  right: ` + "`Err((5, 0))`" + `
 [stdout - legacy_test]
 stack backtrace:
 [stdout - legacy_test]
@@ -606,14 +610,14 @@ One or more test runs failed.`
 			CaseName:    "test_add",
 			Status:      runtests.TestFailure,
 			Format:      "Rust",
-			FailReason:  "thread 'main' panicked at 'assertion failed: `(left != right)`\n  left: `ObjectType(PORT)`,\n  right: `ObjectType(PORT)`', ../../src/lib/zircon/rust/src/channel.rs:761:9`",
+			FailReason:  "thread 'main' panicked at ../../src/lib/zircon/rust/src/channel.rs:761:9:\nassertion failed: `(left != right)`\n  left: `ObjectType(PORT)`,\n  right: `ObjectType(PORT)`",
 		}, {
 			DisplayName: "tests::test_substract",
 			SuiteName:   "tests",
 			CaseName:    "test_substract",
 			Status:      runtests.TestFailure,
 			Format:      "Rust",
-			FailReason:  "thread 'main' panicked at 'assertion failed: `(left != right)`\n  left: `Err((5, 0))`,\n  right: `Err((5, 0))`', ../../src/lib/zircon/rust/src/channel.rs:783:9",
+			FailReason:  "thread 'main' panicked at ../../src/lib/zircon/rust/src/channel.rs:783:9:\nassertion failed: `(left != right)`\n  left: `Err((5, 0))`,\n  right: `Err((5, 0))`",
 		},
 	}
 	testCaseCmp(t, stdout, want)
@@ -1352,7 +1356,9 @@ Type: Record
 UID: null
 ---
 Begin Time: 1668122321143
-Details: null
+Details: 'Some multi-line error:
+    line-1,
+    line-2'
 End Time: 1668122321149
 Extra Errors: {}
 Extras: null
@@ -1379,6 +1385,7 @@ Type: Summary
 	want := []runtests.TestCaseResult{
 		{
 			DisplayName: "GreetingsTest.test_goodbye",
+			FailReason:  "",
 			SuiteName:   "GreetingsTest",
 			CaseName:    "test_goodbye",
 			Status:      runtests.TestSuccess,
@@ -1387,6 +1394,7 @@ Type: Summary
 		},
 		{
 			DisplayName: "GreetingsTest.test_hello",
+			FailReason:  "",
 			SuiteName:   "GreetingsTest",
 			CaseName:    "test_hello",
 			Status:      runtests.TestFailure,
@@ -1395,6 +1403,7 @@ Type: Summary
 		},
 		{
 			DisplayName: "GreetingsTest.test_skipped",
+			FailReason:  "",
 			SuiteName:   "GreetingsTest",
 			CaseName:    "test_skipped",
 			Status:      runtests.TestSkipped,
@@ -1403,6 +1412,7 @@ Type: Summary
 		},
 		{
 			DisplayName: "GreetingsTest.test_error",
+			FailReason:  "Some multi-line error: line-1, line-2",
 			SuiteName:   "GreetingsTest",
 			CaseName:    "test_error",
 			Status:      runtests.TestCrashed,

@@ -3,14 +3,16 @@
 // found in the LICENSE file.
 
 use extended_pstate::ExtendedPstateState;
-use fuchsia_zircon::{self as zx, sys::zx_thread_state_general_regs_t, AsHandleRef, Signals};
+use fuchsia_zircon::{
+    self as zx, sys::zx_thread_state_general_regs_t, AsHandleRef, Signals, Task as _,
+};
 use once_cell::sync::OnceCell;
 use std::{
     cmp,
     convert::TryFrom,
     ffi::CString,
     fmt,
-    sync::{atomic::Ordering, Arc, Weak},
+    sync::{atomic::Ordering, Arc},
 };
 
 use crate::{
@@ -27,7 +29,7 @@ use crate::{
     loader::*,
     lock::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard},
     logging::*,
-    mm::{MemoryAccessor, MemoryAccessorExt, MemoryManager},
+    mm::{DumpPolicy, MemoryAccessor, MemoryAccessorExt, MemoryManager},
     signals::{types::*, SignalInfo},
     syscalls::{decls::Syscall, SyscallResult},
     task::*,
@@ -57,7 +59,7 @@ const DEFAULT_TASK_PRIORITY: u8 = 20;
 /// See also `Task` for more information about tasks.
 pub struct CurrentTask {
     /// The underlying task object.
-    pub task: Arc<Task>,
+    pub task: OwnedRef<Task>,
 
     /// A copy of the registers associated with the Zircon thread. Up-to-date values can be read
     /// from `self.handle.read_state_general_regs()`. To write these values back to the thread, call
@@ -76,16 +78,13 @@ pub struct CurrentTask {
 type SyscallRestartFunc =
     dyn FnOnce(&mut CurrentTask) -> Result<SyscallResult, Errno> + Send + Sync;
 
-impl std::ops::Drop for CurrentTask {
-    fn drop(&mut self) {
+impl Releasable for CurrentTask {
+    type Context = ();
+
+    fn release(&self, _: &()) {
         self.notify_robust_list();
         let _ignored = self.clear_child_tid_if_needed();
-        self.thread_group.remove(&self.task);
-
-        // Release the fd table.
-        // TODO(https://fxbug.dev/122600#c12) This will be unneeded once the live state of a task is deleted as soon
-        // as the task dies, instead of relying on Drop.
-        self.files.drop_local();
+        self.task.release(self);
     }
 }
 
@@ -513,9 +512,8 @@ pub struct PageFaultExceptionReport {
 }
 
 impl Task {
-    /// Upgrade a weak reference to a Task, returning a ESRCH errno if the weak reference cannot be
-    /// upgraded.
-    pub fn from_weak(weak: &Weak<Task>) -> Result<Arc<Task>, Errno> {
+    /// Upgrade a Reference to a Task, returning a ESRCH errno if the reference cannot be borrowed.
+    pub fn from_weak(weak: &WeakRef<Task>) -> Result<TempRef<'_, Task>, Errno> {
         weak.upgrade().ok_or_else(|| errno!(ESRCH))
     }
 
@@ -629,11 +627,86 @@ impl Task {
         self.fs.set(fs).map_err(|_| "Cannot set fs multiple times").unwrap();
     }
 
+    // See "Ptrace access mode checking" in https://man7.org/linux/man-pages/man2/ptrace.2.html
+    pub fn check_ptrace_access_mode(
+        &self,
+        mode: PtraceAccessMode,
+        target: &Task,
+    ) -> Result<(), Errno> {
+        // (1)  If the calling thread and the target thread are in the same
+        //      thread group, access is always allowed.
+        if self.thread_group.leader == target.thread_group.leader {
+            return Ok(());
+        }
+
+        // (2)  If the access mode specifies PTRACE_MODE_FSCREDS, then, for
+        //      the check in the next step, employ the caller's filesystem
+        //      UID and GID.  (As noted in credentials(7), the filesystem
+        //      UID and GID almost always have the same values as the
+        //      corresponding effective IDs.)
+        //
+        //      Otherwise, the access mode specifies PTRACE_MODE_REALCREDS,
+        //      so use the caller's real UID and GID for the checks in the
+        //      next step.  (Most APIs that check the caller's UID and GID
+        //      use the effective IDs.  For historical reasons, the
+        //      PTRACE_MODE_REALCREDS check uses the real IDs instead.)
+        let creds = self.creds();
+        let (uid, gid) = if mode.contains(PTRACE_MODE_FSCREDS) {
+            let fscred = creds.as_fscred();
+            (fscred.uid, fscred.gid)
+        } else if mode.contains(PTRACE_MODE_REALCREDS) {
+            (creds.uid, creds.gid)
+        } else {
+            unreachable!();
+        };
+
+        // (3)  Deny access if neither of the following is true:
+        //
+        //      -  The real, effective, and saved-set user IDs of the target
+        //         match the caller's user ID, and the real, effective, and
+        //         saved-set group IDs of the target match the caller's
+        //         group ID.
+        //
+        //      -  The caller has the CAP_SYS_PTRACE capability in the user
+        //         namespace of the target.
+        let target_creds = target.creds();
+        if !creds.has_capability(CAP_SYS_PTRACE)
+            || !(target_creds.uid == uid
+                && target_creds.euid == uid
+                && target_creds.saved_uid == uid
+                && target_creds.gid == gid
+                && target_creds.egid == gid
+                && target_creds.saved_gid == gid)
+        {
+            return error!(EPERM);
+        }
+
+        // (4)  Deny access if the target process "dumpable" attribute has a
+        //      value other than 1 (SUID_DUMP_USER; see the discussion of
+        //      PR_SET_DUMPABLE in prctl(2)), and the caller does not have
+        //      the CAP_SYS_PTRACE capability in the user namespace of the
+        //      target process.
+        let dumpable = *target.mm.dumpable.lock();
+        if dumpable != DumpPolicy::User && !creds.has_capability(CAP_SYS_PTRACE) {
+            return error!(EPERM);
+        }
+
+        // TODO: Implement the LSM security_ptrace_access_check() interface.
+        //
+        // (5)  The kernel LSM security_ptrace_access_check() interface is
+        //      invoked to see if ptrace access is permitted.
+
+        // (6)  If access has not been denied by any of the preceding steps,
+        //      then access is allowed.
+        Ok(())
+    }
+
     pub fn create_init_child_process(
         kernel: &Arc<Kernel>,
         binary_path: &CString,
     ) -> Result<CurrentTask, Errno> {
-        let init_task = kernel.pids.read().get_task(1).ok_or_else(|| errno!(EINVAL))?;
+        let weak_init = kernel.pids.read().get_task(1);
+        let init_task = weak_init.upgrade().ok_or_else(|| errno!(EINVAL))?;
         let task = Self::create_process_without_parent(
             kernel,
             binary_path.clone(),
@@ -743,10 +816,65 @@ impl Task {
             UserAddress::NULL.into(),
             default_timerslack,
         ));
-        current_task.thread_group.add(&current_task.task)?;
+        release_on_error!(current_task, &(), {
+            let temp_task = current_task.temp_task();
+            current_task.thread_group.add(&temp_task)?;
 
-        pids.add_task(&current_task.task);
-        pids.add_thread_group(&current_task.thread_group);
+            pids.add_task(&temp_task);
+            pids.add_thread_group(&current_task.thread_group);
+            Ok(())
+        });
+        Ok(current_task)
+    }
+
+    /// Create a kernel task in the same ThreadGroup as the given `system_task`.
+    ///
+    /// There is no underlying Zircon thread to host the task.
+    pub fn create_kernel_thread(
+        system_task: &CurrentTask,
+        initial_name: CString,
+    ) -> Result<CurrentTask, Errno> {
+        let mut pids = system_task.kernel().pids.write();
+        let pid = pids.allocate_pid();
+
+        let priority;
+        let uts_ns;
+        let default_timerslack_ns;
+        {
+            let state = system_task.read();
+            priority = state.priority;
+            uts_ns = state.uts_ns.clone();
+            default_timerslack_ns = state.default_timerslack_ns;
+        }
+
+        let current_task = CurrentTask::new(Self::new(
+            pid,
+            initial_name,
+            Arc::clone(&system_task.thread_group),
+            None,
+            FdTable::default(),
+            Arc::clone(&system_task.mm),
+            Some(Arc::clone(system_task.fs())),
+            system_task.creds(),
+            Arc::clone(&system_task.abstract_socket_namespace),
+            Arc::clone(&system_task.abstract_vsock_namespace),
+            None,
+            Default::default(),
+            None,
+            priority,
+            uts_ns,
+            false,
+            SeccompState::default(),
+            SeccompFilterContainer::default(),
+            UserAddress::NULL.into(),
+            default_timerslack_ns,
+        ));
+        release_on_error!(current_task, &(), {
+            let temp_task = current_task.temp_task();
+            current_task.thread_group.add(&temp_task)?;
+            pids.add_task(&temp_task);
+            Ok(())
+        });
         Ok(current_task)
     }
 
@@ -778,6 +906,11 @@ impl Task {
             | CLONE_CHILD_CLEARTID
             | CLONE_CHILD_SETTID
             | CLONE_VFORK) as u64;
+        // A mask with all valid flags set, because we want to return a different error code for an
+        // invalid flag vs an unimplemented flag. Subtracting 1 from the largest valid flag gives a
+        // mask with all flags below it set. Shift up by one to make sure the largest flag is also
+        // set.
+        const VALID_FLAGS: u64 = (CLONE_INTO_CGROUP << 1) - 1;
 
         // CLONE_SETTLS is implemented by sys_clone.
 
@@ -792,6 +925,9 @@ impl Task {
             return error!(EINVAL);
         }
         if clone_thread && !clone_sighand {
+            return error!(EINVAL);
+        }
+        if flags & !VALID_FLAGS != 0 {
             return error!(EINVAL);
         }
 
@@ -921,51 +1057,54 @@ impl Task {
             timerslack_ns,
         ));
 
-        // Drop the pids lock as soon as possible after creating the child. Destroying the child
-        // and removing it from the pids table itself requires the pids lock, so if an early exit
-        // takes place we have a self deadlock.
-        pids.add_task(&child.task);
-        if !clone_thread {
-            pids.add_thread_group(&child.thread_group);
-        }
-        std::mem::drop(pids);
-
-        // Child lock must be taken before this lock. Drop the lock on the task, take a writable
-        // lock on the child and take the current state back.
-
-        #[cfg(any(test, debug_assertions))]
-        {
-            // Take the lock on the thread group and its child in the correct order to ensure any wrong ordering
-            // will trigger the tracing-mutex at the right call site.
+        release_on_error!(child, &(), {
+            let child_task = TempRef::from(&child.task);
+            // Drop the pids lock as soon as possible after creating the child. Destroying the child
+            // and removing it from the pids table itself requires the pids lock, so if an early exit
+            // takes place we have a self deadlock.
+            pids.add_task(&child_task);
             if !clone_thread {
-                let _l1 = self.thread_group.read();
-                let _l2 = child.thread_group.read();
+                pids.add_thread_group(&child.thread_group);
             }
-        }
+            std::mem::drop(pids);
 
-        if clone_thread {
-            self.thread_group.add(&child.task)?;
-        } else {
-            child.thread_group.add(&child.task)?;
-            let mut child_state = child.write();
-            let state = self.read();
-            child_state.signals.alt_stack = state.signals.alt_stack;
-            child_state.signals.set_mask(state.signals.mask());
-            self.mm.snapshot_to(&child.mm)?;
-        }
+            // Child lock must be taken before this lock. Drop the lock on the task, take a writable
+            // lock on the child and take the current state back.
 
-        if flags & (CLONE_PARENT_SETTID as u64) != 0 {
-            self.mm.write_object(user_parent_tid, &child.id)?;
-        }
+            #[cfg(any(test, debug_assertions))]
+            {
+                // Take the lock on the thread group and its child in the correct order to ensure any wrong ordering
+                // will trigger the tracing-mutex at the right call site.
+                if !clone_thread {
+                    let _l1 = self.thread_group.read();
+                    let _l2 = child.thread_group.read();
+                }
+            }
 
-        if flags & (CLONE_CHILD_CLEARTID as u64) != 0 {
-            child.write().clear_child_tid = user_child_tid;
-        }
+            if clone_thread {
+                self.thread_group.add(&child_task)?;
+            } else {
+                child.thread_group.add(&child_task)?;
+                let mut child_state = child.write();
+                let state = self.read();
+                child_state.signals.alt_stack = state.signals.alt_stack;
+                child_state.signals.set_mask(state.signals.mask());
+                self.mm.snapshot_to(&child.mm)?;
+            }
 
-        if flags & (CLONE_CHILD_SETTID as u64) != 0 {
-            child.mm.write_object(user_child_tid, &child.id)?;
-        }
+            if flags & (CLONE_PARENT_SETTID as u64) != 0 {
+                self.mm.write_object(user_parent_tid, &child.id)?;
+            }
 
+            if flags & (CLONE_CHILD_CLEARTID as u64) != 0 {
+                child.write().clear_child_tid = user_child_tid;
+            }
+
+            if flags & (CLONE_CHILD_SETTID as u64) != 0 {
+                child.mm.write_object(user_child_tid, &child.id)?;
+            }
+            Ok(())
+        });
         Ok(child)
     }
 
@@ -980,7 +1119,7 @@ impl Task {
 
     /// Blocks the caller until the task has exited or executed execve(). This is used to implement
     /// vfork() and clone(... CLONE_VFORK, ...). The task musy have created with CLONE_EXECVE.
-    pub fn wait_for_execve(&self, task_to_wait: Weak<Task>) -> Result<(), Errno> {
+    pub fn wait_for_execve(&self, task_to_wait: WeakRef<Task>) -> Result<(), Errno> {
         let event = task_to_wait.upgrade().and_then(|t| t.vfork_event.clone());
         if let Some(event) = event {
             event
@@ -993,7 +1132,11 @@ impl Task {
     /// The flags indicates only the flags as in clone3(), and does not use the low 8 bits for the
     /// exit signal as in clone().
     #[cfg(test)]
-    pub fn clone_task_for_test(&self, flags: u64, exit_signal: Option<Signal>) -> CurrentTask {
+    pub fn clone_task_for_test(
+        &self,
+        flags: u64,
+        exit_signal: Option<Signal>,
+    ) -> crate::testing::AutoReleasableTask {
         let result = self
             .clone_task(flags, exit_signal, UserRef::default(), UserRef::default())
             .expect("failed to create task in test");
@@ -1005,7 +1148,7 @@ impl Task {
             let _l2 = result.read();
         }
 
-        result
+        result.into()
     }
 
     /// If needed, clear the child tid for this task.
@@ -1032,7 +1175,7 @@ impl Task {
         Ok(())
     }
 
-    pub fn get_task(&self, pid: pid_t) -> Option<Arc<Task>> {
+    pub fn get_task(&self, pid: pid_t) -> WeakRef<Task> {
         self.thread_group.kernel.pids.read().get_task(pid)
     }
 
@@ -1051,6 +1194,15 @@ impl Task {
         };
 
         self.mm.read_nul_delimited_c_string_list(argv_start, argv_end - argv_start)
+    }
+
+    pub fn thread_runtime_info(&self) -> Result<zx::TaskRuntimeInfo, Errno> {
+        self.thread
+            .read()
+            .as_ref()
+            .ok_or_else(|| errno!(EINVAL))?
+            .get_runtime_info()
+            .map_err(|status| from_status_like_fdio!(status))
     }
 
     pub fn as_ucred(&self) -> ucred {
@@ -1092,11 +1244,7 @@ impl Task {
     /// This will interrupt any blocking syscalls if the task is blocked on one.
     /// The signal_state of the task must not be locked.
     pub fn interrupt(&self) {
-        self.read().signals.waiter.access(|waiter| {
-            if let Some(waiter) = waiter {
-                waiter.interrupt()
-            }
-        });
+        self.read().signals.run_state.wake();
         if let Some(thread) = self.thread.read().as_ref() {
             crate::execution::interrupt_thread(thread);
         }
@@ -1107,6 +1255,15 @@ impl Task {
     }
 
     pub fn set_command_name(&self, name: CString) {
+        // Set the name on the Linux thread.
+        if let Some(thread) = self.thread.read().as_ref() {
+            set_zx_name(thread, name.as_bytes());
+        }
+        // If this is the thread group leader, use this name for the process too.
+        if self.get_pid() == self.get_tid() {
+            set_zx_name(&self.thread_group.process, name.as_bytes());
+        }
+
         // Truncate to 16 bytes, including null byte.
         let bytes = name.to_bytes();
         self.persistent_info.lock().command = if bytes.len() > 15 {
@@ -1125,7 +1282,7 @@ impl Task {
         let status = self.read();
         if status.exit_status.is_some() {
             TaskStateCode::Zombie
-        } else if status.signals.waiter.is_valid() {
+        } else if status.signals.run_state.is_blocked() {
             TaskStateCode::Sleeping
         } else {
             TaskStateCode::Running
@@ -1146,10 +1303,23 @@ impl Task {
     }
 }
 
+impl Releasable for Task {
+    type Context = CurrentTask;
+
+    fn release(&self, current_task: &CurrentTask) {
+        self.thread_group.remove(self);
+
+        // Release the fd table.
+        self.files.release(current_task);
+
+        self.signal_vfork();
+    }
+}
+
 impl CurrentTask {
     fn new(task: Task) -> CurrentTask {
         CurrentTask {
-            task: Arc::new(task),
+            task: OwnedRef::new(task),
             registers: RegisterState::default(),
             extended_pstate: ExtendedPstateState::default(),
             syscall_restart_func: None,
@@ -1160,8 +1330,12 @@ impl CurrentTask {
         &self.thread_group.kernel
     }
 
-    pub fn task_arc_clone(&self) -> Arc<Task> {
-        Arc::clone(&self.task)
+    pub fn weak_task(&self) -> WeakRef<Task> {
+        WeakRef::from(&self.task)
+    }
+
+    pub fn temp_task(&self) -> TempRef<'_, Task> {
+        TempRef::from(&self.task)
     }
 
     pub fn set_syscall_restart_func<R: Into<SyscallResult>>(
@@ -1187,6 +1361,45 @@ impl CurrentTask {
     {
         self.write().signals.set_temporary_mask(signal_mask);
         wait_function(self)
+    }
+
+    /// Set the RunState for the current task to the given value and then call the given callback.
+    ///
+    /// When the callback is done, the run_state is restored to `RunState::Running`.
+    ///
+    /// This function is typically used just before blocking the current task on some operation.
+    /// The given `run_state` registers the mechasim for interrupting the blocking operation with
+    /// the task and the given `callback` actually blocks the task.
+    ///
+    /// This function can only be called in the `RunState::Running` state and cannot set the
+    /// run state to `RunState::Running`. For this reason, this function cannot be reentered.
+    pub fn run_in_state<F, T>(&self, run_state: RunState, callback: F) -> Result<T, Errno>
+    where
+        F: FnOnce() -> Result<T, Errno>,
+    {
+        assert_ne!(run_state, RunState::Running);
+
+        {
+            let mut state = self.write();
+            assert!(!state.signals.run_state.is_blocked());
+            if state.signals.is_any_pending() {
+                return error!(EINTR);
+            }
+            state.signals.run_state = run_state.clone();
+        }
+
+        let result = callback();
+
+        {
+            let mut state = self.write();
+            assert_eq!(
+                state.signals.run_state, run_state,
+                "SignalState run state changed while waiting!"
+            );
+            state.signals.run_state = RunState::Running;
+        };
+
+        result
     }
 
     /// Determine namespace node indicated by the dir_fd.
@@ -1352,6 +1565,10 @@ impl CurrentTask {
             flags &= ALLOWED_FLAGS;
         }
 
+        if flags.contains(OpenFlags::TMPFILE) && !flags.can_write() {
+            return error!(EINVAL);
+        }
+
         let nofollow = flags.contains(OpenFlags::NOFOLLOW);
         let must_create = flags.contains(OpenFlags::CREAT) && flags.contains(OpenFlags::EXCL);
 
@@ -1362,35 +1579,52 @@ impl CurrentTask {
         context.must_be_directory = flags.contains(OpenFlags::DIRECTORY);
         let (name, created) = self.resolve_open_path(&mut context, dir, path, mode, flags)?;
 
-        // Be sure not to reference the mode argument after this point.
-        let mode = name.entry.node.info().mode;
-        if nofollow && mode.is_lnk() {
-            return error!(ELOOP);
-        }
+        let name = if flags.contains(OpenFlags::TMPFILE) {
+            name.create_tmpfile(self, mode.with_type(FileMode::IFREG), flags)?
+        } else {
+            let mode = name.entry.node.info().mode;
 
-        if mode.is_dir() {
-            if flags.can_write()
-                || flags.contains(OpenFlags::CREAT)
-                || flags.contains(OpenFlags::TRUNC)
-            {
-                return error!(EISDIR);
-            }
-            if flags.contains(OpenFlags::DIRECT) {
-                return error!(EINVAL);
-            }
-        } else if context.must_be_directory {
-            return error!(ENOTDIR);
-        }
+            // These checks are not needed in the `O_TMPFILE` case because `mode` refers to the
+            // file we are opening. With `O_TMPFILE`, that file is the regular file we just
+            // created rather than the node we found by resolving the path.
+            //
+            // For example, we do not need to produce `ENOTDIR` when `must_be_directory` is set
+            // because `must_be_directory` refers to the node we found by resolving the path.
+            // If that node was not a directory, then `create_tmpfile` will produce an error.
+            //
+            // Similarly, we never need to call `truncate` because `O_TMPFILE` is newly created
+            // and therefor already an empty file.
 
-        if flags.contains(OpenFlags::TRUNC) && mode.is_reg() && !created {
-            // You might think we should check file.can_write() at this
-            // point, which is what the docs suggest, but apparently we
-            // are supposed to truncate the file if this task can write
-            // to the underlying node, even if we are opening the file
-            // as read-only. See OpenTest.CanTruncateReadOnly.
-            name.check_readonly_filesystem()?;
-            name.entry.node.truncate(self, 0)?;
-        }
+            if nofollow && mode.is_lnk() {
+                return error!(ELOOP);
+            }
+
+            if mode.is_dir() {
+                if flags.can_write()
+                    || flags.contains(OpenFlags::CREAT)
+                    || flags.contains(OpenFlags::TRUNC)
+                {
+                    return error!(EISDIR);
+                }
+                if flags.contains(OpenFlags::DIRECT) {
+                    return error!(EINVAL);
+                }
+            } else if context.must_be_directory {
+                return error!(ENOTDIR);
+            }
+
+            if flags.contains(OpenFlags::TRUNC) && mode.is_reg() && !created {
+                // You might think we should check file.can_write() at this
+                // point, which is what the docs suggest, but apparently we
+                // are supposed to truncate the file if this task can write
+                // to the underlying node, even if we are opening the file
+                // as read-only. See OpenTest.CanTruncateReadOnly.
+                name.check_readonly_filesystem()?;
+                name.entry.node.truncate(self, 0)?;
+            }
+
+            name
+        };
 
         // If the node has been created, the open operation should not verify access right:
         // From <https://man7.org/linux/man-pages/man2/open.2.html>
@@ -1464,14 +1698,6 @@ impl CurrentTask {
         path: &FsStr,
     ) -> Result<NamespaceNode, Errno> {
         let (parent, basename) = self.lookup_parent(context, dir, path)?;
-
-        // The child must resolve to a directory. This is because a trailing slash
-        // was found in the path. If the child is a symlink, we should follow it.
-        // See https://pubs.opengroup.org/onlinepubs/9699919799/xrat/V4_xbd_chap03.html#tag_21_03_00_75
-        if context.must_be_directory {
-            *context = context.with(SymlinkMode::Follow);
-        }
-
         parent.lookup_child(self, context, basename)
     }
 
@@ -1568,8 +1794,6 @@ impl CurrentTask {
         } else {
             path
         };
-        set_zx_name(&fuchsia_runtime::thread_self(), basename.as_bytes());
-        set_zx_name(&self.thread_group.process, basename.as_bytes());
         self.set_command_name(basename);
         crate::logging::set_current_task_info(self);
 
@@ -1593,6 +1817,7 @@ impl CurrentTask {
         let new_filter = Arc::new(SeccompFilter::from_cbpf(
             &code,
             self.thread_group.next_seccomp_filter_id.fetch_add(1, Ordering::SeqCst),
+            flags & SECCOMP_FILTER_FLAG_LOG != 0,
         )?);
 
         let mut maybe_fd: Option<FdNumber> = None;
@@ -1693,7 +1918,7 @@ impl CurrentTask {
     // we fail to walk it.
     // TODO(fxbug.dev/128610): This only sets the FUTEX_OWNER_DIED bit; it does
     // not wake up a waiter.
-    pub fn notify_robust_list(&mut self) {
+    pub fn notify_robust_list(&self) {
         let task_state = self.write();
         let robust_list_addr = task_state.robust_list_head.addr();
         if robust_list_addr == UserAddress::NULL {
@@ -1813,6 +2038,32 @@ impl CurrentTask {
     }
 }
 
+impl MemoryAccessor for Task {
+    fn read_memory_to_slice(&self, addr: UserAddress, bytes: &mut [u8]) -> Result<(), Errno> {
+        self.mm.read_memory_to_slice(addr, bytes)
+    }
+
+    fn read_memory_partial_to_slice(
+        &self,
+        addr: UserAddress,
+        bytes: &mut [u8],
+    ) -> Result<usize, Errno> {
+        self.mm.read_memory_partial_to_slice(addr, bytes)
+    }
+
+    fn write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
+        self.mm.write_memory(addr, bytes)
+    }
+
+    fn write_memory_partial(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
+        self.mm.write_memory_partial(addr, bytes)
+    }
+
+    fn zero(&self, addr: UserAddress, length: usize) -> Result<usize, Errno> {
+        self.mm.zero(addr, length)
+    }
+}
+
 impl fmt::Debug for Task {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -1862,10 +2113,10 @@ mod test {
         assert_eq!(another_current.get_tid(), 3);
 
         let pids = kernel.pids.read();
-        assert_eq!(pids.get_task(1).unwrap().get_tid(), 1);
-        assert_eq!(pids.get_task(2).unwrap().get_tid(), 2);
-        assert_eq!(pids.get_task(3).unwrap().get_tid(), 3);
-        assert!(pids.get_task(4).is_none());
+        assert_eq!(pids.get_task(1).upgrade().unwrap().get_tid(), 1);
+        assert_eq!(pids.get_task(2).upgrade().unwrap().get_tid(), 2);
+        assert_eq!(pids.get_task(3).upgrade().unwrap().get_tid(), 3);
+        assert!(pids.get_task(4).upgrade().is_none());
     }
 
     #[::fuchsia::test]

@@ -3,8 +3,9 @@
 // found in the LICENSE file.
 
 use fuchsia_zircon::{self as zx, Task};
+use starnix_sync::{InterruptibleEvent, WakeReason};
 
-use crate::{mm::MemoryAccessorExt, syscalls::*, task::*, time::utc::*};
+use crate::{mm::MemoryAccessorExt, signals::RunState, syscalls::*, task::*, time::utc::*};
 
 pub fn sys_clock_getres(
     current_task: &CurrentTask,
@@ -175,8 +176,14 @@ fn clock_nanosleep_monotonic_with_deadline(
     original_utc_deadline: Option<zx::Time>,
     user_remaining: UserRef<timespec>,
 ) -> Result<(), Errno> {
-    match Waiter::new().wait_until(current_task, deadline) {
-        Err(err) if err == ETIMEDOUT => Ok(()),
+    let event = InterruptibleEvent::new();
+    let guard = event.begin_wait();
+    match current_task.run_in_state(RunState::Event(event.clone()), || {
+        match guard.block_until(deadline) {
+            Err(WakeReason::Interrupted) => error!(EINTR),
+            _ => Ok(()),
+        }
+    }) {
         Err(err) if err == EINTR && is_absolute => error!(ERESTARTNOHAND),
         Err(err) if err == EINTR => {
             if !user_remaining.is_null() {
@@ -221,14 +228,9 @@ pub fn sys_nanosleep(
 ///
 /// Returns EINVAL if no such task can be found.
 fn get_thread_cpu_time(current_task: &CurrentTask, pid: pid_t) -> Result<i64, Errno> {
-    let task = current_task.get_task(pid).ok_or_else(|| errno!(EINVAL))?;
-    let thread = task.thread.read();
-    Ok(thread
-        .as_ref()
-        .ok_or_else(|| errno!(EINVAL))?
-        .get_runtime_info()
-        .map_err(|status| from_status_like_fdio!(status))?
-        .cpu_time)
+    let weak_task = current_task.get_task(pid);
+    let task = weak_task.upgrade().ok_or_else(|| errno!(EINVAL))?;
+    Ok(task.thread_runtime_info()?.cpu_time)
 }
 
 /// Returns the cpu time for the process associated with the given `pid`. `pid`
@@ -237,7 +239,8 @@ fn get_thread_cpu_time(current_task: &CurrentTask, pid: pid_t) -> Result<i64, Er
 ///
 /// Returns EINVAL if no such process can be found.
 fn get_process_cpu_time(current_task: &CurrentTask, pid: pid_t) -> Result<i64, Errno> {
-    let task = current_task.get_task(pid).ok_or_else(|| errno!(EINVAL))?;
+    let weak_task = current_task.get_task(pid);
+    let task = weak_task.upgrade().ok_or_else(|| errno!(EINVAL))?;
     Ok(task
         .thread_group
         .process
@@ -402,19 +405,22 @@ mod test {
     use super::*;
     use crate::{mm::PAGE_SIZE, testing::*};
     use fuchsia_zircon::HandleBased;
+    use test_util::{assert_geq, assert_leq};
 
     #[::fuchsia::test]
     async fn test_nanosleep_without_remainder() {
         let (_kernel, mut current_task) = create_kernel_and_task();
 
-        let task_clone = current_task.task_arc_clone();
-
-        let thread = std::thread::spawn(move || {
-            // Wait until the task is in nanosleep, and interrupt it.
-            while !task_clone.read().signals.waiter.is_valid() {
-                std::thread::sleep(std::time::Duration::from_millis(10));
+        let thread = std::thread::spawn({
+            let task = current_task.weak_task();
+            move || {
+                let task = task.upgrade().expect("task must be alive");
+                // Wait until the task is in nanosleep, and interrupt it.
+                while !task.read().signals.run_state.is_blocked() {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                task.interrupt();
             }
-            task_clone.interrupt();
         });
 
         let duration = timespec_from_duration(zx::Duration::from_seconds(60));
@@ -481,18 +487,27 @@ mod test {
             UserRef::new(addr)
         };
 
-        // Interrupt the sleep roughly halfway through.
+        // Interrupt the sleep roughly halfway through. The actual interruption might be before the
+        // sleep starts, during the sleep, or after.
+        let interruption_target = zx::Time::get_monotonic() + zx::Duration::from_seconds(1);
+
         let thread_group = std::sync::Arc::downgrade(&current_task.thread_group);
         let thread_join_handle = std::thread::Builder::new()
             .name("clock_nanosleep_interruptor".to_string())
             .spawn(move || {
-                std::thread::sleep(std::time::Duration::from_secs(1));
+                interruption_target.sleep();
                 if let Some(thread_group) = thread_group.upgrade() {
                     let signal_info = crate::signals::SignalInfo::default(signals::SIGALRM);
-                    let signal_target =
-                        thread_group.read().get_signal_target(&signal_info.signal.into());
-                    if let Some(task) = &signal_target {
-                        crate::signals::send_signal(task, signal_info);
+                    let signal_target = thread_group
+                        .read()
+                        .get_signal_target(&signal_info.signal.into())
+                        .map(|task| {
+                            // SAFETY: signal_target is kept on the stack. The static is required
+                            // to ensure the lock on ThreadGroup can be dropped.
+                            unsafe { TempRef::into_static(task) }
+                        });
+                    if let Some(task) = signal_target {
+                        crate::signals::send_signal(&task, signal_info);
                     }
                 }
             })
@@ -500,6 +515,7 @@ mod test {
 
         let result =
             super::clock_nanosleep_relative_to_utc(&mut current_task, tv, false, remaining);
+
         // We can't know deterministically if our interrupter thread will be able to interrupt our sleep.
         // If it did, result should be ERESTART_RESTARTBLOCK and |remaining| will be populated.
         // If it didn't, the result will be OK and |remaining| will not be touched.
@@ -511,15 +527,16 @@ mod test {
                 mm.read_object(remaining).unwrap()
             };
         }
-        assert!(
-            duration_from_timespec(remaining_written).unwrap() <= zx::Duration::from_seconds(1)
+        assert_leq!(
+            duration_from_timespec(remaining_written).unwrap(),
+            zx::Duration::from_seconds(2)
         );
         let elapsed = test_clock.read().unwrap() - before;
         thread_join_handle.join().unwrap();
 
-        assert!(
-            elapsed + duration_from_timespec(remaining_written).unwrap()
-                >= zx::Duration::from_seconds(2)
+        assert_geq!(
+            elapsed + duration_from_timespec(remaining_written).unwrap(),
+            zx::Duration::from_seconds(2)
         );
     }
 }

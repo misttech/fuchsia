@@ -5,12 +5,12 @@
 use crate::{
     fs::{
         buffers::{VecInputBuffer, VecOutputBuffer},
-        DirEntry, DirectoryEntryType, DirentSink, FileHandle, FsStr, LookupContext, NamespaceNode,
+        DirectoryEntryType, DirentSink, FileHandle, FsStr, LookupContext, NamespaceNode,
         RenameFlags, SeekTarget, UnlinkKind,
     },
     mm::ProtectionFlags,
     task::CurrentTask,
-    types::{errno, error, ino_t, off_t, DeviceType, Errno, FileMode, OpenFlags},
+    types::{errno, error, ino_t, off_t, DeviceType, Errno, FileMode, OpenFlags, TempRef, WeakRef},
 };
 use async_trait::async_trait;
 use fidl::{
@@ -44,8 +44,8 @@ pub fn serve_file_at(
     let kernel = current_task.kernel();
     // TODO(security): Switching to the `system_task` here loses track of the credentials from
     //                 `current_task`. Do we need to retain these credentials?
-    let system_task = kernel.kthreads.system_task();
-    let starnix_file = StarnixNodeConnection::new(system_task.clone(), file);
+    let system_task = kernel.kthreads.weak_system_task();
+    let starnix_file = StarnixNodeConnection::new(system_task, file);
     fasync::Task::spawn_on(&kernel.kthreads.ehandle, async move {
         let scope = execution_scope::ExecutionScope::new();
         directory::entry::DirectoryEntry::open(
@@ -74,13 +74,17 @@ pub fn serve_file_at(
 /// methods are run from the kernel dynamic thread pool so that the async dispatched do not block
 /// on these.
 struct StarnixNodeConnection {
-    task: Arc<CurrentTask>,
+    task: WeakRef<CurrentTask>,
     file: FileHandle,
 }
 
 impl StarnixNodeConnection {
-    fn new(task: Arc<CurrentTask>, file: FileHandle) -> Arc<Self> {
+    fn new(task: WeakRef<CurrentTask>, file: FileHandle) -> Arc<Self> {
         Arc::new(StarnixNodeConnection { task, file })
+    }
+
+    fn task(&self) -> Result<TempRef<'_, CurrentTask>, Errno> {
+        self.task.upgrade().ok_or_else(|| errno!(ESRCH))
     }
 
     fn is_dir(&self) -> bool {
@@ -90,7 +94,7 @@ impl StarnixNodeConnection {
     /// Reopen the current `StarnixNodeConnection` with the given `OpenFlags`. The new file will not share
     /// state. It is equivalent to opening the same file, not dup'ing the file descriptor.
     fn reopen(&self, flags: fio::OpenFlags) -> Result<Arc<Self>, Errno> {
-        let file = self.file.name.open(&self.task, flags.into(), true)?;
+        let file = self.file.name.open(self.task()?.as_ref(), flags.into(), true)?;
         Ok(StarnixNodeConnection::new(self.task.clone(), file))
     }
 
@@ -152,9 +156,6 @@ impl StarnixNodeConnection {
             fn offset(&self) -> off_t {
                 *self.offset
             }
-            fn actual(&self) -> usize {
-                0
-            }
         }
         let offset = match pos {
             directory::traversal_position::TraversalPosition::Start => 0,
@@ -165,14 +166,14 @@ impl StarnixNodeConnection {
             }
         };
         if *self.file.offset.lock() != offset {
-            self.file.seek(&self.task, SeekTarget::Set(offset))?;
+            self.file.seek(self.task()?.as_ref(), SeekTarget::Set(offset))?;
         }
         let mut file_offset = self.file.offset.lock();
         let mut dirent_sink = DirentSinkAdapter {
             sink: Some(directory::dirents_sink::AppendResult::Ok(sink)),
             offset: &mut file_offset,
         };
-        self.file.readdir(&self.task, &mut dirent_sink)?;
+        self.file.readdir(self.task()?.as_ref(), &mut dirent_sink)?;
         match dirent_sink.sink {
             Some(directory::dirents_sink::AppendResult::Sealed(seal)) => {
                 Ok((directory::traversal_position::TraversalPosition::End, seal))
@@ -186,7 +187,7 @@ impl StarnixNodeConnection {
     }
 
     fn lookup_parent<'a>(&self, path: &'a FsStr) -> Result<(NamespaceNode, &'a FsStr), Errno> {
-        self.task.lookup_parent(&mut LookupContext::default(), self.file.name.clone(), path)
+        self.task()?.lookup_parent(&mut LookupContext::default(), self.file.name.clone(), path)
     }
 
     /// Implementation of `vfs::directory::entry::DirectoryEntry::open`.
@@ -219,7 +220,7 @@ impl StarnixNodeConnection {
             let (node, name) = self.lookup_parent(path.as_bytes())?;
             let must_create_directory =
                 flags.contains(fio::OpenFlags::DIRECTORY | fio::OpenFlags::CREATE);
-            let file = match self.task.open_namespace_node_at(
+            let file = match self.task()?.open_namespace_node_at(
                 node.clone(),
                 name,
                 flags.into(),
@@ -227,11 +228,12 @@ impl StarnixNodeConnection {
             ) {
                 Err(e) if e == errno!(EISDIR) && must_create_directory => {
                     let mode =
-                        self.task.fs().apply_umask(FileMode::from_bits(0o777) | FileMode::IFDIR);
-                    let name = node.create_node(&self.task, name, mode, DeviceType::NONE)?;
+                        self.task()?.fs().apply_umask(FileMode::from_bits(0o777) | FileMode::IFDIR);
+                    let name =
+                        node.create_node(self.task()?.as_ref(), name, mode, DeviceType::NONE)?;
                     let flags =
                         flags & !(fio::OpenFlags::CREATE | fio::OpenFlags::CREATE_IF_ABSENT);
-                    name.open(&self.task, flags.into(), false)?
+                    name.open(self.task()?.as_ref(), flags.into(), false)?
                 }
                 f => f?,
             };
@@ -332,11 +334,7 @@ impl StarnixNodeConnection {
 
     /// Implementation of `vfs::directory::entry_container::MutableDirectory::set_attrs` and
     /// `vfs::File::set_attrs`.
-    fn set_attrs(
-        &self,
-        flags: fio::NodeAttributeFlags,
-        attributes: fio::NodeAttributes,
-    ) -> Result<(), Errno> {
+    fn set_attrs(&self, flags: fio::NodeAttributeFlags, attributes: fio::NodeAttributes) {
         self.file.node().update_info(|info| {
             if flags.contains(fio::NodeAttributeFlags::CREATION_TIME) {
                 info.time_status_change = zx::Time::from_nanos(attributes.creation_time as i64);
@@ -344,11 +342,10 @@ impl StarnixNodeConnection {
             if flags.contains(fio::NodeAttributeFlags::MODIFICATION_TIME) {
                 info.time_modify = zx::Time::from_nanos(attributes.modification_time as i64);
             }
-            Ok(())
-        })
+        });
     }
 
-    fn update_attributes(&self, attributes: fio::MutableNodeAttributes) -> Result<(), Errno> {
+    fn update_attributes(&self, attributes: fio::MutableNodeAttributes) {
         self.file.node().update_info(|info| {
             if let Some(time) = attributes.creation_time {
                 info.time_status_change = zx::Time::from_nanos(time as i64);
@@ -368,8 +365,7 @@ impl StarnixNodeConnection {
             if let Some(rdev) = attributes.rdev {
                 info.rdev = DeviceType::from_bits(rdev);
             }
-            Ok(())
-        })
+        });
     }
 }
 
@@ -421,14 +417,14 @@ impl directory::entry_container::MutableDirectory for StarnixNodeConnection {
         flags: fio::NodeAttributeFlags,
         attributes: fio::NodeAttributes,
     ) -> Result<(), zx::Status> {
-        StarnixNodeConnection::set_attrs(self, flags, attributes)?;
+        StarnixNodeConnection::set_attrs(self, flags, attributes);
         Ok(())
     }
     async fn update_attributes(
         &self,
         attributes: fio::MutableNodeAttributes,
     ) -> Result<(), zx::Status> {
-        StarnixNodeConnection::update_attributes(self, attributes)?;
+        StarnixNodeConnection::update_attributes(self, attributes);
         Ok(())
     }
     async fn unlink(
@@ -437,7 +433,7 @@ impl directory::entry_container::MutableDirectory for StarnixNodeConnection {
         must_be_directory: bool,
     ) -> Result<(), zx::Status> {
         let kind = if must_be_directory { UnlinkKind::Directory } else { UnlinkKind::NonDirectory };
-        self.file.name.entry.unlink(&self.task, name.as_bytes(), kind, false)?;
+        self.file.name.entry.unlink(self.task()?.as_ref(), name.as_bytes(), kind, false)?;
         Ok(())
     }
     async fn sync(&self) -> Result<(), zx::Status> {
@@ -455,8 +451,8 @@ impl directory::entry_container::MutableDirectory for StarnixNodeConnection {
             src_dir.into_any().downcast::<StarnixNodeConnection>().map_err(|_| errno!(EXDEV))?;
         let (src_node, src_name) = src_dir.lookup_parent(src_name.as_bytes())?;
         let (dst_node, dst_name) = self.lookup_parent(dst_name.as_bytes())?;
-        DirEntry::rename(
-            &self.task,
+        NamespaceNode::rename(
+            self.task()?.as_ref(),
             &src_node,
             src_name,
             &dst_node,
@@ -476,7 +472,7 @@ impl file::File for StarnixNodeConnection {
         Ok(())
     }
     async fn truncate(&self, length: u64) -> Result<(), zx::Status> {
-        self.file.name.entry.node.truncate(&self.task, length)?;
+        self.file.name.entry.node.truncate(self.task()?.as_ref(), length)?;
         Ok(())
     }
     async fn get_backing_memory(&self, flags: fio::VmoFlags) -> Result<zx::Vmo, zx::Status> {
@@ -490,7 +486,7 @@ impl file::File for StarnixNodeConnection {
         if flags.contains(fio::VmoFlags::EXECUTE) {
             prot_flags |= ProtectionFlags::EXEC;
         }
-        let vmo = self.file.get_vmo(&self.task, None, prot_flags)?;
+        let vmo = self.file.get_vmo(self.task()?.as_ref(), None, prot_flags)?;
         if flags.contains(fio::VmoFlags::PRIVATE_CLONE) {
             let size = vmo.get_size()?;
             vmo.create_child(zx::VmoChildOptions::SNAPSHOT_AT_LEAST_ON_WRITE, 0, size)
@@ -507,14 +503,14 @@ impl file::File for StarnixNodeConnection {
         flags: fio::NodeAttributeFlags,
         attributes: fio::NodeAttributes,
     ) -> Result<(), zx::Status> {
-        StarnixNodeConnection::set_attrs(self, flags, attributes)?;
+        StarnixNodeConnection::set_attrs(self, flags, attributes);
         Ok(())
     }
     async fn update_attributes(
         &self,
         attributes: fio::MutableNodeAttributes,
     ) -> Result<(), zx::Status> {
-        StarnixNodeConnection::update_attributes(self, attributes)?;
+        StarnixNodeConnection::update_attributes(self, attributes);
         Ok(())
     }
     async fn sync(&self, _mode: file::SyncMode) -> Result<(), zx::Status> {
@@ -527,12 +523,12 @@ impl file::RawFileIoConnection for StarnixNodeConnection {
     async fn read(&self, count: u64) -> Result<Vec<u8>, zx::Status> {
         let task = self.task.clone();
         let file = self.file.clone();
-        Ok(self
-            .task
-            .kernel()
+        let kernel = self.task()?.kernel().clone();
+        Ok(kernel
             .kthreads
             .pool
             .dispatch_and_get_result(move || -> Result<Vec<u8>, Errno> {
+                let task = task.upgrade().ok_or_else(|| errno!(ESRCH))?;
                 let mut data = VecOutputBuffer::new(count as usize);
                 file.read(&task, &mut data)?;
                 Ok(data.into())
@@ -543,12 +539,12 @@ impl file::RawFileIoConnection for StarnixNodeConnection {
     async fn read_at(&self, offset: u64, count: u64) -> Result<Vec<u8>, zx::Status> {
         let task = self.task.clone();
         let file = self.file.clone();
-        Ok(self
-            .task
-            .kernel()
+        let kernel = self.task()?.kernel().clone();
+        Ok(kernel
             .kthreads
             .pool
             .dispatch_and_get_result(move || -> Result<Vec<u8>, Errno> {
+                let task = task.upgrade().ok_or_else(|| errno!(ESRCH))?;
                 let mut data = VecOutputBuffer::new(count as usize);
                 file.read_at(&task, offset as usize, &mut data)?;
                 Ok(data.into())
@@ -559,13 +555,13 @@ impl file::RawFileIoConnection for StarnixNodeConnection {
     async fn write(&self, content: &[u8]) -> Result<u64, zx::Status> {
         let task = self.task.clone();
         let file = self.file.clone();
+        let kernel = self.task()?.kernel().clone();
         let mut data = VecInputBuffer::new(content);
-        let written = self
-            .task
-            .kernel()
+        let written = kernel
             .kthreads
             .pool
             .dispatch_and_get_result(move || -> Result<usize, Errno> {
+                let task = task.upgrade().ok_or_else(|| errno!(ESRCH))?;
                 file.write(&task, &mut data)
             })
             .await??;
@@ -575,13 +571,13 @@ impl file::RawFileIoConnection for StarnixNodeConnection {
     async fn write_at(&self, offset: u64, content: &[u8]) -> Result<u64, zx::Status> {
         let task = self.task.clone();
         let file = self.file.clone();
+        let kernel = self.task()?.kernel().clone();
         let mut data = VecInputBuffer::new(content);
-        let written = self
-            .task
-            .kernel()
+        let written = kernel
             .kthreads
             .pool
             .dispatch_and_get_result(move || -> Result<usize, Errno> {
+                let task = task.upgrade().ok_or_else(|| errno!(ESRCH))?;
                 file.write_at(&task, offset as usize, &mut data)
             })
             .await??;
@@ -594,7 +590,7 @@ impl file::RawFileIoConnection for StarnixNodeConnection {
             fio::SeekOrigin::Current => SeekTarget::Cur(offset),
             fio::SeekOrigin::End => SeekTarget::End(offset),
         };
-        Ok(self.file.seek(&self.task, target)? as u64)
+        Ok(self.file.seek(self.task()?.as_ref(), target)? as u64)
     }
 
     fn update_flags(&self, flags: fio::OpenFlags) -> zx::Status {

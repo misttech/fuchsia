@@ -380,7 +380,6 @@ pub enum OfferDecl {
 pub struct OfferEventStreamDecl {
     pub source: OfferSource,
     pub scope: Option<Vec<EventScope>>,
-    pub filter: Option<HashMap<String, DictionaryValue>>,
     pub source_name: Name,
     pub target: OfferTarget,
     pub target_name: Name,
@@ -1470,16 +1469,9 @@ fidl_translations_from_into!(cm_types::AllowedOffers, fdecl::AllowedOffers);
 pub enum DependencyType {
     Strong,
     Weak,
-    WeakForMigration,
 }
 
-fidl_translations_symmetrical_enums!(
-    fdecl::DependencyType,
-    DependencyType,
-    Strong,
-    Weak,
-    WeakForMigration
-);
+fidl_translations_symmetrical_enums!(fdecl::DependencyType, DependencyType, Strong, Weak);
 
 impl UseDecl {
     pub fn path(&self) -> Option<&Path> {
@@ -2399,7 +2391,7 @@ mod tests {
                            }
                         )),
                         target_name: Some("legacy_mynetstack".to_string()),
-                        dependency_type: Some(fdecl::DependencyType::WeakForMigration),
+                        dependency_type: Some(fdecl::DependencyType::Weak),
                         availability: Some(fdecl::Availability::Required),
                         ..Default::default()
                     }),
@@ -2777,7 +2769,7 @@ mod tests {
                             source_name: "legacy_netstack".parse().unwrap(),
                             target: OfferTarget::static_child("echo".to_string()),
                             target_name: "legacy_mynetstack".parse().unwrap(),
-                            dependency_type: DependencyType::WeakForMigration,
+                            dependency_type: DependencyType::Weak,
                             availability: Availability::Required,
                         }),
                         OfferDecl::Directory(OfferDirectoryDecl {
@@ -2843,7 +2835,6 @@ mod tests {
                                 target: OfferTarget::Child(ChildRef{name: "netstack".into(), collection: None}),
                                 scope: Some(vec![EventScope::Child(ChildRef{ name: "netstack".into(), collection: None})]),
                                 target_name: "diagnostics_ready".parse().unwrap(),
-                                filter: None,
                                 availability: Availability::Optional,
                             }
                         )

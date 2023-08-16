@@ -92,9 +92,9 @@ dependencies = [
 
 [[package]]
 name = "argh"
-version = "0.1.10"
+version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab257697eb9496bf75526f0217b5ed64636a9cfafa78b8365c71bd283fcef93e"
+checksum = "7af5ba06967ff7214ce4c7419c7d185be7ecd6cc4965a8f6e1d8ce0398aad219"
 dependencies = [
  "argh_derive",
  "argh_shared",
@@ -102,21 +102,24 @@ dependencies = [
 
 [[package]]
 name = "argh_derive"
-version = "0.1.10"
+version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b382dbd3288e053331f03399e1db106c9fb0d8562ad62cb04859ae926f324fa6"
+checksum = "56df0aeedf6b7a2fc67d06db35b09684c3e8da0c95f8f27685cb17e08413d87a"
 dependencies = [
  "argh_shared",
  "proc-macro2 1.0.63",
  "quote 1.0.29",
- "syn 1.0.98",
+ "syn 2.0.23",
 ]
 
 [[package]]
 name = "argh_shared"
-version = "0.1.10"
+version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64cb94155d965e3d37ffbbe7cc5b82c3dd79dd33bd48e536f73d2cfb8d85506f"
+checksum = "5693f39141bda5760ecc4111ab08da40565d1771038c4a0250f03457ec707531"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "arrayref"
@@ -1461,6 +1464,7 @@ dependencies = [
  "walkdir",
  "wasm-bindgen",
  "webpki",
+ "which",
  "xml-rs",
  "xts-mode",
  "zerocopy",
@@ -2604,7 +2608,7 @@ dependencies = [
  "libc",
  "redox_syscall 0.1.51",
  "rustc_version",
- "smallvec 0.6.13",
+ "smallvec 0.6.14",
  "winapi",
 ]
 
@@ -3136,7 +3140,7 @@ dependencies = [
  "autocfg 0.1.7",
  "libc",
  "rand_chacha 0.1.1",
- "rand_core 0.4.0",
+ "rand_core 0.4.2",
  "rand_hc 0.1.0",
  "rand_isaac",
  "rand_jitter",
@@ -3184,14 +3188,14 @@ version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a6fdeb83b075e8266dcc8762c22776f6877a63111121f5f8c7411e5be7eed4b"
 dependencies = [
- "rand_core 0.4.0",
+ "rand_core 0.4.2",
 ]
 
 [[package]]
 name = "rand_core"
-version = "0.4.0"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0e7a549d590831370895ab7ba4ea0c1b6b011d106b5ff2da6eee112615e6dc0"
+checksum = "9c33a3c44ca05fa6f1807d8e6743f3824e8509beca625669633be0acbdf509dc"
 
 [[package]]
 name = "rand_core"
@@ -3236,7 +3240,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b9ea758282efe12823e0d952ddb269d2e1897227e464919a554f2a03ef1b832"
 dependencies = [
  "libc",
- "rand_core 0.4.0",
+ "rand_core 0.4.2",
  "winapi",
 ]
 
@@ -3249,7 +3253,7 @@ dependencies = [
  "cloudabi",
  "fuchsia-cprng",
  "libc",
- "rand_core 0.4.0",
+ "rand_core 0.4.2",
  "rdrand",
  "winapi",
 ]
@@ -4027,9 +4031,9 @@ dependencies = [
 
 [[package]]
 name = "smallvec"
-version = "0.6.13"
+version = "0.6.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7b0758c52e15a8b5e3691eae6cc559f08eee9406e548a4477ba4e67770a82b6"
+checksum = "b97fcaeba89edba30f044a10c6a3cc39df9c3f17d7cd829dd1446cab35f890e0"
 dependencies = [
  "maybe-uninit",
 ]
@@ -4992,9 +4996,9 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.7.0-alpha.4"
+version = "0.7.0-alpha.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "214900ce429718b80cdac5a064b416f11690725fb0b91466ba31708a67e6a704"
+checksum = "4a6af2a597c29c91408ca68b125c8fe551200e3ce57d94cecd0d389b3e119925"
 dependencies = [
  "byteorder",
  "zerocopy-derive",
@@ -5002,9 +5006,9 @@ dependencies = [
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.7.0-alpha.4"
+version = "0.7.0-alpha.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f51252e43a2703975bfced731591702259e93925ba3a17d8d52ce41f589a864"
+checksum = "3e195e4eb506e3be24f80be50b20df45b5e5d9820ed8d6eadac28ad8906e5e71"
 dependencies = [
  "proc-macro2 1.0.63",
  "quote 1.0.29",

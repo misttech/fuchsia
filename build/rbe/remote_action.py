@@ -730,10 +730,6 @@ class DownloadStubInfo(object):
         Returns:
           subprocess results, including exit code.
         """
-        # TODO: use filelock.FileLock when downloading from outside
-        # of this remote action, e.g. when lazily fetching local inputs.
-        # This would gracefully handle concurrent requests for the same file.
-
         # self.path assumes that the working dir == build subbdir
         dest_abs = working_dir_abs / (dest or self.path)
         temp_dl = download_temp_location(dest_abs)
@@ -797,21 +793,41 @@ def download_from_stub(
         stub: Path, downloader: remotetool.RemoteTool,
         working_dir_abs: Path) -> cl_utils.SubprocessResult:
     """Possibly downloads a file over a stub link.
+
+    This interface is suitable for external programs to
+    invoke because it safely handles concurrent duplicate
+    download requests via file-lock.
+
     Args:
-      downloader: remotetool instance used to download.
       stub: is a path to a possible download stub.
+      downloader: remotetool instance used to download.
+      working_dir_abs: current working dir.
 
     Returns:
       download exit status, or 0 if there is nothing to download.
     """
-    if not is_download_stub_file(stub):
-        return cl_utils.SubprocessResult(0)
+    # Use lock file to safely handle potentially concurrent
+    # download requests to the same artifact.
+    lock_file = Path(str(stub) + '.dl-lock')
+    with cl_utils.BlockingFileLock(lock_file) as lock:
+        ok_result = cl_utils.SubprocessResult(0)
+        if not stub.exists():
+            msg(f'Ignoring request to download nonexistent stub: {stub}')
+            return ok_result
 
-    stub_info = DownloadStubInfo.read_from_file(stub)
-    return stub_info.download(
-        downloader=downloader,
-        working_dir_abs=working_dir_abs,
-    )
+        # If there are concurrent requests to download the same stub,
+        # the lock will be granted to one caller, while the other waits.
+        if not is_download_stub_file(stub):
+            return ok_result
+
+        stub_info = DownloadStubInfo.read_from_file(stub)
+
+        # Download replaces the stub.
+        return stub_info.download(
+            downloader=downloader,
+            working_dir_abs=working_dir_abs,
+            dest=stub,
+        )
 
 
 class RemoteAction(object):
@@ -1356,6 +1372,9 @@ class RemoteAction(object):
             return
 
         # Download outputs that were explicitly requested.
+        # Download actions here do not need to be locked because
+        # this remote action (as a step of a full build)
+        # is the sole producer of its outputs.
         downloader = self.downloader()
         download_args = [
             (self, stub_infos[path], downloader)  # for _download_for_mp
@@ -2304,11 +2323,11 @@ def auto_relaunch_with_reproxy(
 
     python = cl_utils.relpath(Path(sys.executable), start=Path(os.curdir))
     relaunch_args = ['--', str(python), '-S', str(script)] + argv
+    reproxy_wrap = cl_utils.qualify_tool_path(fuchsia.REPROXY_WRAP)
     if args.verbose:
-        cmd_str = cl_utils.command_quoted_str(
-            [str(fuchsia.REPROXY_WRAP)] + relaunch_args)
+        cmd_str = cl_utils.command_quoted_str([reproxy_wrap] + relaunch_args)
         msg(f'Automatically re-launching: {cmd_str}')
-    cl_utils.exec_relaunch([fuchsia.REPROXY_WRAP] + relaunch_args)
+    cl_utils.exec_relaunch([reproxy_wrap] + relaunch_args)
     assert False, "exec_relaunch() should never return"
 
 

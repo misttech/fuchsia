@@ -2,7 +2,6 @@
 
 // fidl_experiment = no_optional_structs
 // fidl_experiment = output_index_json
-// fidl_experiment = simple_empty_response_syntax
 // fidl_experiment = unknown_interactions
 // fidl_experiment = unknown_interactions_mandate
 // fidl_experiment = unknown_interactions_new_defaults
@@ -2142,8 +2141,8 @@ impl UnknownInteractionsAjarProtocolEvent {
     ) -> Result<UnknownInteractionsAjarProtocolEvent, fidl::Error> {
         let (bytes, _handles) = buf.split_mut();
         let (tx_header, _body_bytes) = fidl::encoding::decode_transaction_header(bytes)?;
-        debug_assert_eq!(tx_header.tx_id(), 0);
-        match tx_header.ordinal() {
+        debug_assert_eq!(tx_header.tx_id, 0);
+        match tx_header.ordinal {
             0x6022ae999e9dc2b0 => {
                 let mut out = fidl::new_empty!(fidl::encoding::EmptyPayload);
                 fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&tx_header, _body_bytes, _handles, &mut out)?;
@@ -2276,11 +2275,11 @@ impl UnknownInteractionsAjarProtocolEvent {
             }
             _ if tx_header.dynamic_flags().contains(fidl::encoding::DynamicFlags::FLEXIBLE) => {
                 Ok(UnknownInteractionsAjarProtocolEvent::_UnknownEvent {
-                    ordinal: tx_header.ordinal(),
+                    ordinal: tx_header.ordinal,
                 })
             }
             _ => Err(fidl::Error::UnknownOrdinal {
-                ordinal: tx_header.ordinal(),
+                ordinal: tx_header.ordinal,
                 protocol_name: <UnknownInteractionsAjarProtocolMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME,
             })
         }
@@ -2353,8 +2352,9 @@ impl futures::Stream for UnknownInteractionsAjarProtocolRequestStream {
             // A message has been received from the channel
             let (header, _body_bytes) = fidl::encoding::decode_transaction_header(bytes)?;
 
-            std::task::Poll::Ready(Some(match header.ordinal() {
+            std::task::Poll::Ready(Some(match header.ordinal {
                 0xd4663d6b2b5048b => {
+                    header.validate_request_tx_id(fidl::MethodType::OneWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsAjarProtocolControlHandle {
@@ -2365,6 +2365,7 @@ impl futures::Stream for UnknownInteractionsAjarProtocolRequestStream {
                     })
                 }
                 0x2275b8171ae4834f => {
+                    header.validate_request_tx_id(fidl::MethodType::OneWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsAjarProtocolControlHandle {
@@ -2375,6 +2376,7 @@ impl futures::Stream for UnknownInteractionsAjarProtocolRequestStream {
                     })
                 }
                 0x50e66d328336038 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsAjarProtocolControlHandle {
@@ -2383,12 +2385,12 @@ impl futures::Stream for UnknownInteractionsAjarProtocolRequestStream {
                     Ok(UnknownInteractionsAjarProtocolRequest::StrictTwoWay {
                         responder: UnknownInteractionsAjarProtocolStrictTwoWayResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x1947e36d61e4493a => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsAjarProtocolControlHandle {
@@ -2397,12 +2399,12 @@ impl futures::Stream for UnknownInteractionsAjarProtocolRequestStream {
                     Ok(UnknownInteractionsAjarProtocolRequest::StrictTwoWayFields {
                         responder: UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x5177371967e0e6d1 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsAjarProtocolControlHandle {
@@ -2411,12 +2413,12 @@ impl futures::Stream for UnknownInteractionsAjarProtocolRequestStream {
                     Ok(UnknownInteractionsAjarProtocolRequest::StrictTwoWayUnion {
                         responder: UnknownInteractionsAjarProtocolStrictTwoWayUnionResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x6f8f9343b34e2ed4 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsAjarProtocolControlHandle {
@@ -2425,12 +2427,12 @@ impl futures::Stream for UnknownInteractionsAjarProtocolRequestStream {
                     Ok(UnknownInteractionsAjarProtocolRequest::StrictTwoWayTable {
                         responder: UnknownInteractionsAjarProtocolStrictTwoWayTableResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x5b47637577c69006 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsAjarProtocolControlHandle {
@@ -2439,12 +2441,12 @@ impl futures::Stream for UnknownInteractionsAjarProtocolRequestStream {
                     Ok(UnknownInteractionsAjarProtocolRequest::StrictTwoWayErr {
                         responder: UnknownInteractionsAjarProtocolStrictTwoWayErrResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x844ff7bb3f186d9 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsAjarProtocolControlHandle {
@@ -2453,12 +2455,12 @@ impl futures::Stream for UnknownInteractionsAjarProtocolRequestStream {
                     Ok(UnknownInteractionsAjarProtocolRequest::StrictTwoWayFieldsErr {
                         responder: UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x2cbfd5a859d4ac95 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsAjarProtocolControlHandle {
@@ -2467,12 +2469,12 @@ impl futures::Stream for UnknownInteractionsAjarProtocolRequestStream {
                     Ok(UnknownInteractionsAjarProtocolRequest::StrictTwoWayUnionErr {
                         responder: UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x30c9e1b3da57dc37 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsAjarProtocolControlHandle {
@@ -2481,19 +2483,18 @@ impl futures::Stream for UnknownInteractionsAjarProtocolRequestStream {
                     Ok(UnknownInteractionsAjarProtocolRequest::StrictTwoWayTableErr {
                         responder: UnknownInteractionsAjarProtocolStrictTwoWayTableErrResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
-                _ if header.tx_id() == 0 && header.dynamic_flags().contains(fidl::encoding::DynamicFlags::FLEXIBLE) => {
+                _ if header.tx_id == 0 && header.dynamic_flags().contains(fidl::encoding::DynamicFlags::FLEXIBLE) => {
                     Ok(UnknownInteractionsAjarProtocolRequest::_UnknownMethod {
-                        ordinal: header.ordinal(),
+                        ordinal: header.ordinal,
                         control_handle: UnknownInteractionsAjarProtocolControlHandle { inner: this.inner.clone() },
                     })
                 }
                 _ => Err(fidl::Error::UnknownOrdinal {
-                    ordinal: header.ordinal(),
+                    ordinal: header.ordinal,
                     protocol_name: <UnknownInteractionsAjarProtocolMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME,
                 }),
             }))
@@ -2883,7 +2884,6 @@ impl UnknownInteractionsAjarProtocolControlHandle {
 pub struct UnknownInteractionsAjarProtocolStrictTwoWayResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsAjarProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsAjarProtocolControlHandle::shutdown`])
@@ -2936,7 +2936,7 @@ impl UnknownInteractionsAjarProtocolStrictTwoWayResponder {
         self.control_handle.inner.send::<fidl::encoding::EmptyPayload>(
             (),
             self.tx_id,
-            self.ordinal,
+            0x50e66d328336038,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -2947,7 +2947,6 @@ impl UnknownInteractionsAjarProtocolStrictTwoWayResponder {
 pub struct UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsAjarProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsAjarProtocolControlHandle::shutdown`])
@@ -3000,7 +2999,7 @@ impl UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponder {
         self.control_handle.inner.send::<UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse>(
             (some_field,),
             self.tx_id,
-            self.ordinal,
+            0x1947e36d61e4493a,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -3011,7 +3010,6 @@ impl UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponder {
 pub struct UnknownInteractionsAjarProtocolStrictTwoWayUnionResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsAjarProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsAjarProtocolControlHandle::shutdown`])
@@ -3073,7 +3071,7 @@ impl UnknownInteractionsAjarProtocolStrictTwoWayUnionResponder {
         self.control_handle.inner.send::<UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse>(
             payload,
             self.tx_id,
-            self.ordinal,
+            0x5177371967e0e6d1,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -3084,7 +3082,6 @@ impl UnknownInteractionsAjarProtocolStrictTwoWayUnionResponder {
 pub struct UnknownInteractionsAjarProtocolStrictTwoWayTableResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsAjarProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsAjarProtocolControlHandle::shutdown`])
@@ -3146,7 +3143,7 @@ impl UnknownInteractionsAjarProtocolStrictTwoWayTableResponder {
         self.control_handle.inner.send::<UnknownInteractionsAjarProtocolStrictTwoWayTableResponse>(
             payload,
             self.tx_id,
-            self.ordinal,
+            0x6f8f9343b34e2ed4,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -3157,7 +3154,6 @@ impl UnknownInteractionsAjarProtocolStrictTwoWayTableResponder {
 pub struct UnknownInteractionsAjarProtocolStrictTwoWayErrResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsAjarProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsAjarProtocolControlHandle::shutdown`])
@@ -3212,7 +3208,7 @@ impl UnknownInteractionsAjarProtocolStrictTwoWayErrResponder {
             .send::<fidl::encoding::ResultType<fidl::encoding::EmptyStruct, i32>>(
                 result,
                 self.tx_id,
-                self.ordinal,
+                0x5b47637577c69006,
                 fidl::encoding::DynamicFlags::empty(),
             )
     }
@@ -3223,7 +3219,6 @@ impl UnknownInteractionsAjarProtocolStrictTwoWayErrResponder {
 pub struct UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsAjarProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsAjarProtocolControlHandle::shutdown`])
@@ -3279,7 +3274,7 @@ impl UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponder {
         >>(
             result.map(|some_field| (some_field,)),
             self.tx_id,
-            self.ordinal,
+            0x844ff7bb3f186d9,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -3290,7 +3285,6 @@ impl UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponder {
 pub struct UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsAjarProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsAjarProtocolControlHandle::shutdown`])
@@ -3355,7 +3349,7 @@ impl UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponder {
         >>(
             result,
             self.tx_id,
-            self.ordinal,
+            0x2cbfd5a859d4ac95,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -3366,7 +3360,6 @@ impl UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponder {
 pub struct UnknownInteractionsAjarProtocolStrictTwoWayTableErrResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsAjarProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsAjarProtocolControlHandle::shutdown`])
@@ -3431,7 +3424,7 @@ impl UnknownInteractionsAjarProtocolStrictTwoWayTableErrResponder {
         >>(
             result,
             self.tx_id,
-            self.ordinal,
+            0x30c9e1b3da57dc37,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -4076,8 +4069,8 @@ impl UnknownInteractionsClosedProtocolEvent {
     ) -> Result<UnknownInteractionsClosedProtocolEvent, fidl::Error> {
         let (bytes, _handles) = buf.split_mut();
         let (tx_header, _body_bytes) = fidl::encoding::decode_transaction_header(bytes)?;
-        debug_assert_eq!(tx_header.tx_id(), 0);
-        match tx_header.ordinal() {
+        debug_assert_eq!(tx_header.tx_id, 0);
+        match tx_header.ordinal {
             0xa8ee6ee302f693b => {
                 let mut out = fidl::new_empty!(fidl::encoding::EmptyPayload);
                 fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&tx_header, _body_bytes, _handles, &mut out)?;
@@ -4144,7 +4137,7 @@ impl UnknownInteractionsClosedProtocolEvent {
                 ))
             }
             _ => Err(fidl::Error::UnknownOrdinal {
-                ordinal: tx_header.ordinal(),
+                ordinal: tx_header.ordinal,
                 protocol_name: <UnknownInteractionsClosedProtocolMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME,
             })
         }
@@ -4217,8 +4210,9 @@ impl futures::Stream for UnknownInteractionsClosedProtocolRequestStream {
             // A message has been received from the channel
             let (header, _body_bytes) = fidl::encoding::decode_transaction_header(bytes)?;
 
-            std::task::Poll::Ready(Some(match header.ordinal() {
+            std::task::Poll::Ready(Some(match header.ordinal {
                 0x59282385962da24 => {
+                    header.validate_request_tx_id(fidl::MethodType::OneWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsClosedProtocolControlHandle {
@@ -4229,6 +4223,7 @@ impl futures::Stream for UnknownInteractionsClosedProtocolRequestStream {
                     })
                 }
                 0x5eda305d6b22f1f7 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsClosedProtocolControlHandle {
@@ -4237,12 +4232,12 @@ impl futures::Stream for UnknownInteractionsClosedProtocolRequestStream {
                     Ok(UnknownInteractionsClosedProtocolRequest::StrictTwoWay {
                         responder: UnknownInteractionsClosedProtocolStrictTwoWayResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x1323afa3e0541253 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsClosedProtocolControlHandle {
@@ -4251,12 +4246,12 @@ impl futures::Stream for UnknownInteractionsClosedProtocolRequestStream {
                     Ok(UnknownInteractionsClosedProtocolRequest::StrictTwoWayFields {
                         responder: UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x68b32554eb0f6fa7 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsClosedProtocolControlHandle {
@@ -4265,12 +4260,12 @@ impl futures::Stream for UnknownInteractionsClosedProtocolRequestStream {
                     Ok(UnknownInteractionsClosedProtocolRequest::StrictTwoWayUnion {
                         responder: UnknownInteractionsClosedProtocolStrictTwoWayUnionResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x6e4a94d44b69e785 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsClosedProtocolControlHandle {
@@ -4279,12 +4274,12 @@ impl futures::Stream for UnknownInteractionsClosedProtocolRequestStream {
                     Ok(UnknownInteractionsClosedProtocolRequest::StrictTwoWayTable {
                         responder: UnknownInteractionsClosedProtocolStrictTwoWayTableResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x4fa35d5433db4d3a => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsClosedProtocolControlHandle {
@@ -4293,12 +4288,12 @@ impl futures::Stream for UnknownInteractionsClosedProtocolRequestStream {
                     Ok(UnknownInteractionsClosedProtocolRequest::StrictTwoWayErr {
                         responder: UnknownInteractionsClosedProtocolStrictTwoWayErrResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0xb22aebf23bb58fd => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsClosedProtocolControlHandle {
@@ -4307,12 +4302,12 @@ impl futures::Stream for UnknownInteractionsClosedProtocolRequestStream {
                     Ok(UnknownInteractionsClosedProtocolRequest::StrictTwoWayFieldsErr {
                         responder: UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0xcd65d4d29a43c80 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsClosedProtocolControlHandle {
@@ -4321,12 +4316,12 @@ impl futures::Stream for UnknownInteractionsClosedProtocolRequestStream {
                     Ok(UnknownInteractionsClosedProtocolRequest::StrictTwoWayUnionErr {
                         responder: UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x117dde20b92f7b90 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsClosedProtocolControlHandle {
@@ -4335,13 +4330,12 @@ impl futures::Stream for UnknownInteractionsClosedProtocolRequestStream {
                     Ok(UnknownInteractionsClosedProtocolRequest::StrictTwoWayTableErr {
                         responder: UnknownInteractionsClosedProtocolStrictTwoWayTableErrResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 _ => Err(fidl::Error::UnknownOrdinal {
-                    ordinal: header.ordinal(),
+                    ordinal: header.ordinal,
                     protocol_name: <UnknownInteractionsClosedProtocolMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME,
                 }),
             }))
@@ -4625,7 +4619,6 @@ impl UnknownInteractionsClosedProtocolControlHandle {
 pub struct UnknownInteractionsClosedProtocolStrictTwoWayResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsClosedProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsClosedProtocolControlHandle::shutdown`])
@@ -4678,7 +4671,7 @@ impl UnknownInteractionsClosedProtocolStrictTwoWayResponder {
         self.control_handle.inner.send::<fidl::encoding::EmptyPayload>(
             (),
             self.tx_id,
-            self.ordinal,
+            0x5eda305d6b22f1f7,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -4689,7 +4682,6 @@ impl UnknownInteractionsClosedProtocolStrictTwoWayResponder {
 pub struct UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsClosedProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsClosedProtocolControlHandle::shutdown`])
@@ -4744,7 +4736,7 @@ impl UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponder {
             .send::<UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse>(
                 (some_field,),
                 self.tx_id,
-                self.ordinal,
+                0x1323afa3e0541253,
                 fidl::encoding::DynamicFlags::empty(),
             )
     }
@@ -4755,7 +4747,6 @@ impl UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponder {
 pub struct UnknownInteractionsClosedProtocolStrictTwoWayUnionResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsClosedProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsClosedProtocolControlHandle::shutdown`])
@@ -4819,7 +4810,7 @@ impl UnknownInteractionsClosedProtocolStrictTwoWayUnionResponder {
             .send::<UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse>(
                 payload,
                 self.tx_id,
-                self.ordinal,
+                0x68b32554eb0f6fa7,
                 fidl::encoding::DynamicFlags::empty(),
             )
     }
@@ -4830,7 +4821,6 @@ impl UnknownInteractionsClosedProtocolStrictTwoWayUnionResponder {
 pub struct UnknownInteractionsClosedProtocolStrictTwoWayTableResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsClosedProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsClosedProtocolControlHandle::shutdown`])
@@ -4894,7 +4884,7 @@ impl UnknownInteractionsClosedProtocolStrictTwoWayTableResponder {
             .send::<UnknownInteractionsClosedProtocolStrictTwoWayTableResponse>(
                 payload,
                 self.tx_id,
-                self.ordinal,
+                0x6e4a94d44b69e785,
                 fidl::encoding::DynamicFlags::empty(),
             )
     }
@@ -4905,7 +4895,6 @@ impl UnknownInteractionsClosedProtocolStrictTwoWayTableResponder {
 pub struct UnknownInteractionsClosedProtocolStrictTwoWayErrResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsClosedProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsClosedProtocolControlHandle::shutdown`])
@@ -4960,7 +4949,7 @@ impl UnknownInteractionsClosedProtocolStrictTwoWayErrResponder {
             .send::<fidl::encoding::ResultType<fidl::encoding::EmptyStruct, i32>>(
                 result,
                 self.tx_id,
-                self.ordinal,
+                0x4fa35d5433db4d3a,
                 fidl::encoding::DynamicFlags::empty(),
             )
     }
@@ -4971,7 +4960,6 @@ impl UnknownInteractionsClosedProtocolStrictTwoWayErrResponder {
 pub struct UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsClosedProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsClosedProtocolControlHandle::shutdown`])
@@ -5029,7 +5017,7 @@ impl UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponder {
         >>(
             result.map(|some_field| (some_field,)),
             self.tx_id,
-            self.ordinal,
+            0xb22aebf23bb58fd,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -5040,7 +5028,6 @@ impl UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponder {
 pub struct UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsClosedProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsClosedProtocolControlHandle::shutdown`])
@@ -5105,7 +5092,7 @@ impl UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponder {
         >>(
             result,
             self.tx_id,
-            self.ordinal,
+            0xcd65d4d29a43c80,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -5116,7 +5103,6 @@ impl UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponder {
 pub struct UnknownInteractionsClosedProtocolStrictTwoWayTableErrResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsClosedProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsClosedProtocolControlHandle::shutdown`])
@@ -5181,7 +5167,7 @@ impl UnknownInteractionsClosedProtocolStrictTwoWayTableErrResponder {
         >>(
             result,
             self.tx_id,
-            self.ordinal,
+            0x117dde20b92f7b90,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -6342,8 +6328,8 @@ impl UnknownInteractionsProtocolEvent {
     ) -> Result<UnknownInteractionsProtocolEvent, fidl::Error> {
         let (bytes, _handles) = buf.split_mut();
         let (tx_header, _body_bytes) = fidl::encoding::decode_transaction_header(bytes)?;
-        debug_assert_eq!(tx_header.tx_id(), 0);
-        match tx_header.ordinal() {
+        debug_assert_eq!(tx_header.tx_id, 0);
+        match tx_header.ordinal {
             0x9842669255c4fc1 => {
                 let mut out = fidl::new_empty!(fidl::encoding::EmptyPayload);
                 fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&tx_header, _body_bytes, _handles, &mut out)?;
@@ -6476,11 +6462,11 @@ impl UnknownInteractionsProtocolEvent {
             }
             _ if tx_header.dynamic_flags().contains(fidl::encoding::DynamicFlags::FLEXIBLE) => {
                 Ok(UnknownInteractionsProtocolEvent::_UnknownEvent {
-                    ordinal: tx_header.ordinal(),
+                    ordinal: tx_header.ordinal,
                 })
             }
             _ => Err(fidl::Error::UnknownOrdinal {
-                ordinal: tx_header.ordinal(),
+                ordinal: tx_header.ordinal,
                 protocol_name: <UnknownInteractionsProtocolMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME,
             })
         }
@@ -6553,8 +6539,9 @@ impl futures::Stream for UnknownInteractionsProtocolRequestStream {
             // A message has been received from the channel
             let (header, _body_bytes) = fidl::encoding::decode_transaction_header(bytes)?;
 
-            std::task::Poll::Ready(Some(match header.ordinal() {
+            std::task::Poll::Ready(Some(match header.ordinal {
                 0x4e7273b964d117a6 => {
+                    header.validate_request_tx_id(fidl::MethodType::OneWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsProtocolControlHandle {
@@ -6565,6 +6552,7 @@ impl futures::Stream for UnknownInteractionsProtocolRequestStream {
                     })
                 }
                 0x818bb3a7a910446 => {
+                    header.validate_request_tx_id(fidl::MethodType::OneWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsProtocolControlHandle {
@@ -6575,6 +6563,7 @@ impl futures::Stream for UnknownInteractionsProtocolRequestStream {
                     })
                 }
                 0x734c996b0f37b942 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsProtocolControlHandle {
@@ -6583,12 +6572,12 @@ impl futures::Stream for UnknownInteractionsProtocolRequestStream {
                     Ok(UnknownInteractionsProtocolRequest::StrictTwoWay {
                         responder: UnknownInteractionsProtocolStrictTwoWayResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x334f4e7fff460ae3 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsProtocolControlHandle {
@@ -6597,12 +6586,12 @@ impl futures::Stream for UnknownInteractionsProtocolRequestStream {
                     Ok(UnknownInteractionsProtocolRequest::StrictTwoWayFields {
                         responder: UnknownInteractionsProtocolStrictTwoWayFieldsResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x2212805eca592cad => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsProtocolControlHandle {
@@ -6611,12 +6600,12 @@ impl futures::Stream for UnknownInteractionsProtocolRequestStream {
                     Ok(UnknownInteractionsProtocolRequest::StrictTwoWayUnion {
                         responder: UnknownInteractionsProtocolStrictTwoWayUnionResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x746ebf8659ff23b7 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsProtocolControlHandle {
@@ -6625,12 +6614,12 @@ impl futures::Stream for UnknownInteractionsProtocolRequestStream {
                     Ok(UnknownInteractionsProtocolRequest::StrictTwoWayTable {
                         responder: UnknownInteractionsProtocolStrictTwoWayTableResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x6d1c6002c51bb967 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsProtocolControlHandle {
@@ -6639,12 +6628,12 @@ impl futures::Stream for UnknownInteractionsProtocolRequestStream {
                     Ok(UnknownInteractionsProtocolRequest::StrictTwoWayErr {
                         responder: UnknownInteractionsProtocolStrictTwoWayErrResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x2182a49480e5bd2b => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsProtocolControlHandle {
@@ -6653,12 +6642,12 @@ impl futures::Stream for UnknownInteractionsProtocolRequestStream {
                     Ok(UnknownInteractionsProtocolRequest::StrictTwoWayFieldsErr {
                         responder: UnknownInteractionsProtocolStrictTwoWayFieldsErrResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x453af745d38b20ca => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsProtocolControlHandle {
@@ -6667,12 +6656,12 @@ impl futures::Stream for UnknownInteractionsProtocolRequestStream {
                     Ok(UnknownInteractionsProtocolRequest::StrictTwoWayUnionErr {
                         responder: UnknownInteractionsProtocolStrictTwoWayUnionErrResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x4c26c7ab89cb68d8 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsProtocolControlHandle {
@@ -6681,12 +6670,12 @@ impl futures::Stream for UnknownInteractionsProtocolRequestStream {
                     Ok(UnknownInteractionsProtocolRequest::StrictTwoWayTableErr {
                         responder: UnknownInteractionsProtocolStrictTwoWayTableErrResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x4a5bb3397008b7c => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsProtocolControlHandle {
@@ -6695,12 +6684,12 @@ impl futures::Stream for UnknownInteractionsProtocolRequestStream {
                     Ok(UnknownInteractionsProtocolRequest::FlexibleTwoWay {
                         responder: UnknownInteractionsProtocolFlexibleTwoWayResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x3b13f82f44813a32 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsProtocolControlHandle {
@@ -6709,12 +6698,12 @@ impl futures::Stream for UnknownInteractionsProtocolRequestStream {
                     Ok(UnknownInteractionsProtocolRequest::FlexibleTwoWayFields {
                         responder: UnknownInteractionsProtocolFlexibleTwoWayFieldsResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x44301e4e8d514fb6 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsProtocolControlHandle {
@@ -6723,12 +6712,12 @@ impl futures::Stream for UnknownInteractionsProtocolRequestStream {
                     Ok(UnknownInteractionsProtocolRequest::FlexibleTwoWayUnion {
                         responder: UnknownInteractionsProtocolFlexibleTwoWayUnionResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x7f492934b6c76187 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsProtocolControlHandle {
@@ -6737,12 +6726,12 @@ impl futures::Stream for UnknownInteractionsProtocolRequestStream {
                     Ok(UnknownInteractionsProtocolRequest::FlexibleTwoWayTable {
                         responder: UnknownInteractionsProtocolFlexibleTwoWayTableResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x61240f878cc37c07 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsProtocolControlHandle {
@@ -6751,12 +6740,12 @@ impl futures::Stream for UnknownInteractionsProtocolRequestStream {
                     Ok(UnknownInteractionsProtocolRequest::FlexibleTwoWayErr {
                         responder: UnknownInteractionsProtocolFlexibleTwoWayErrResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0xf2b9611a9089b05 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsProtocolControlHandle {
@@ -6765,12 +6754,12 @@ impl futures::Stream for UnknownInteractionsProtocolRequestStream {
                     Ok(UnknownInteractionsProtocolRequest::FlexibleTwoWayFieldsErr {
                         responder: UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x2172940a75f107d7 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsProtocolControlHandle {
@@ -6779,12 +6768,12 @@ impl futures::Stream for UnknownInteractionsProtocolRequestStream {
                     Ok(UnknownInteractionsProtocolRequest::FlexibleTwoWayUnionErr {
                         responder: UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
                 0x6d8aab48e1693bf2 => {
+                    header.validate_request_tx_id(fidl::MethodType::TwoWay)?;
                     let mut req = fidl::new_empty!(fidl::encoding::EmptyPayload);
                     fidl::encoding::Decoder::decode_into::<fidl::encoding::EmptyPayload>(&header, _body_bytes, handles, &mut req)?;
                     let control_handle = UnknownInteractionsProtocolControlHandle {
@@ -6793,34 +6782,33 @@ impl futures::Stream for UnknownInteractionsProtocolRequestStream {
                     Ok(UnknownInteractionsProtocolRequest::FlexibleTwoWayTableErr {
                         responder: UnknownInteractionsProtocolFlexibleTwoWayTableErrResponder {
                             control_handle: std::mem::ManuallyDrop::new(control_handle),
-                            tx_id: header.tx_id(),
-                            ordinal: header.ordinal(),
+                            tx_id: header.tx_id,
                         },
                     })
                 }
-                _ if header.tx_id() == 0 && header.dynamic_flags().contains(fidl::encoding::DynamicFlags::FLEXIBLE) => {
+                _ if header.tx_id == 0 && header.dynamic_flags().contains(fidl::encoding::DynamicFlags::FLEXIBLE) => {
                     Ok(UnknownInteractionsProtocolRequest::_UnknownMethod {
-                        ordinal: header.ordinal(),
+                        ordinal: header.ordinal,
                         control_handle: UnknownInteractionsProtocolControlHandle { inner: this.inner.clone() },
-                        unknown_method_type: fidl::endpoints::UnknownMethodType::OneWay,
+                        method_type: fidl::MethodType::OneWay,
                     })
                 }
                 _ if header.dynamic_flags().contains(fidl::encoding::DynamicFlags::FLEXIBLE) => {
                     this.inner.send_framework_err(
                         fidl::encoding::FrameworkErr::UnknownMethod,
-                        header.tx_id(),
-                        header.ordinal(),
+                        header.tx_id,
+                        header.ordinal,
                         header.dynamic_flags(),
                         (bytes, handles),
                     )?;
                     Ok(UnknownInteractionsProtocolRequest::_UnknownMethod {
-                        ordinal: header.ordinal(),
+                        ordinal: header.ordinal,
                         control_handle: UnknownInteractionsProtocolControlHandle { inner: this.inner.clone() },
-                        unknown_method_type: fidl::endpoints::UnknownMethodType::TwoWay,
+                        method_type: fidl::MethodType::TwoWay,
                     })
                 }
                 _ => Err(fidl::Error::UnknownOrdinal {
-                    ordinal: header.ordinal(),
+                    ordinal: header.ordinal,
                     protocol_name: <UnknownInteractionsProtocolMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME,
                 }),
             }))
@@ -6890,7 +6878,7 @@ pub enum UnknownInteractionsProtocolRequest {
         /// Ordinal of the method that was called.
         ordinal: u64,
         control_handle: UnknownInteractionsProtocolControlHandle,
-        unknown_method_type: fidl::endpoints::UnknownMethodType,
+        method_type: fidl::MethodType,
     },
 }
 
@@ -7129,11 +7117,11 @@ impl UnknownInteractionsProtocolRequest {
                 "flexible_two_way_table_err"
             }
             UnknownInteractionsProtocolRequest::_UnknownMethod {
-                unknown_method_type: fidl::endpoints::UnknownMethodType::OneWay,
+                method_type: fidl::MethodType::OneWay,
                 ..
             } => "unknown one-way method",
             UnknownInteractionsProtocolRequest::_UnknownMethod {
-                unknown_method_type: fidl::endpoints::UnknownMethodType::TwoWay,
+                method_type: fidl::MethodType::TwoWay,
                 ..
             } => "unknown two-way method",
         }
@@ -7342,7 +7330,6 @@ impl UnknownInteractionsProtocolControlHandle {
 pub struct UnknownInteractionsProtocolStrictTwoWayResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsProtocolControlHandle::shutdown`])
@@ -7395,7 +7382,7 @@ impl UnknownInteractionsProtocolStrictTwoWayResponder {
         self.control_handle.inner.send::<fidl::encoding::EmptyPayload>(
             (),
             self.tx_id,
-            self.ordinal,
+            0x734c996b0f37b942,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -7406,7 +7393,6 @@ impl UnknownInteractionsProtocolStrictTwoWayResponder {
 pub struct UnknownInteractionsProtocolStrictTwoWayFieldsResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsProtocolControlHandle::shutdown`])
@@ -7459,7 +7445,7 @@ impl UnknownInteractionsProtocolStrictTwoWayFieldsResponder {
         self.control_handle.inner.send::<UnknownInteractionsProtocolStrictTwoWayFieldsResponse>(
             (some_field,),
             self.tx_id,
-            self.ordinal,
+            0x334f4e7fff460ae3,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -7470,7 +7456,6 @@ impl UnknownInteractionsProtocolStrictTwoWayFieldsResponder {
 pub struct UnknownInteractionsProtocolStrictTwoWayUnionResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsProtocolControlHandle::shutdown`])
@@ -7532,7 +7517,7 @@ impl UnknownInteractionsProtocolStrictTwoWayUnionResponder {
         self.control_handle.inner.send::<UnknownInteractionsProtocolStrictTwoWayUnionResponse>(
             payload,
             self.tx_id,
-            self.ordinal,
+            0x2212805eca592cad,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -7543,7 +7528,6 @@ impl UnknownInteractionsProtocolStrictTwoWayUnionResponder {
 pub struct UnknownInteractionsProtocolStrictTwoWayTableResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsProtocolControlHandle::shutdown`])
@@ -7605,7 +7589,7 @@ impl UnknownInteractionsProtocolStrictTwoWayTableResponder {
         self.control_handle.inner.send::<UnknownInteractionsProtocolStrictTwoWayTableResponse>(
             payload,
             self.tx_id,
-            self.ordinal,
+            0x746ebf8659ff23b7,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -7616,7 +7600,6 @@ impl UnknownInteractionsProtocolStrictTwoWayTableResponder {
 pub struct UnknownInteractionsProtocolStrictTwoWayErrResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsProtocolControlHandle::shutdown`])
@@ -7671,7 +7654,7 @@ impl UnknownInteractionsProtocolStrictTwoWayErrResponder {
             .send::<fidl::encoding::ResultType<fidl::encoding::EmptyStruct, i32>>(
                 result,
                 self.tx_id,
-                self.ordinal,
+                0x6d1c6002c51bb967,
                 fidl::encoding::DynamicFlags::empty(),
             )
     }
@@ -7682,7 +7665,6 @@ impl UnknownInteractionsProtocolStrictTwoWayErrResponder {
 pub struct UnknownInteractionsProtocolStrictTwoWayFieldsErrResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsProtocolControlHandle::shutdown`])
@@ -7738,7 +7720,7 @@ impl UnknownInteractionsProtocolStrictTwoWayFieldsErrResponder {
         >>(
             result.map(|some_field| (some_field,)),
             self.tx_id,
-            self.ordinal,
+            0x2182a49480e5bd2b,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -7749,7 +7731,6 @@ impl UnknownInteractionsProtocolStrictTwoWayFieldsErrResponder {
 pub struct UnknownInteractionsProtocolStrictTwoWayUnionErrResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsProtocolControlHandle::shutdown`])
@@ -7814,7 +7795,7 @@ impl UnknownInteractionsProtocolStrictTwoWayUnionErrResponder {
         >>(
             result,
             self.tx_id,
-            self.ordinal,
+            0x453af745d38b20ca,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -7825,7 +7806,6 @@ impl UnknownInteractionsProtocolStrictTwoWayUnionErrResponder {
 pub struct UnknownInteractionsProtocolStrictTwoWayTableErrResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsProtocolControlHandle::shutdown`])
@@ -7890,7 +7870,7 @@ impl UnknownInteractionsProtocolStrictTwoWayTableErrResponder {
         >>(
             result,
             self.tx_id,
-            self.ordinal,
+            0x4c26c7ab89cb68d8,
             fidl::encoding::DynamicFlags::empty(),
         )
     }
@@ -7901,7 +7881,6 @@ impl UnknownInteractionsProtocolStrictTwoWayTableErrResponder {
 pub struct UnknownInteractionsProtocolFlexibleTwoWayResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsProtocolControlHandle::shutdown`])
@@ -7954,7 +7933,7 @@ impl UnknownInteractionsProtocolFlexibleTwoWayResponder {
         self.control_handle.inner.send::<fidl::encoding::FlexibleType<fidl::encoding::EmptyStruct>>(
             fidl::encoding::Flexible::new(()),
             self.tx_id,
-            self.ordinal,
+            0x4a5bb3397008b7c,
             fidl::encoding::DynamicFlags::FLEXIBLE,
         )
     }
@@ -7965,7 +7944,6 @@ impl UnknownInteractionsProtocolFlexibleTwoWayResponder {
 pub struct UnknownInteractionsProtocolFlexibleTwoWayFieldsResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsProtocolControlHandle::shutdown`])
@@ -8020,7 +7998,7 @@ impl UnknownInteractionsProtocolFlexibleTwoWayFieldsResponder {
         >>(
             fidl::encoding::Flexible::new((some_field,)),
             self.tx_id,
-            self.ordinal,
+            0x3b13f82f44813a32,
             fidl::encoding::DynamicFlags::FLEXIBLE,
         )
     }
@@ -8031,7 +8009,6 @@ impl UnknownInteractionsProtocolFlexibleTwoWayFieldsResponder {
 pub struct UnknownInteractionsProtocolFlexibleTwoWayUnionResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsProtocolControlHandle::shutdown`])
@@ -8095,7 +8072,7 @@ impl UnknownInteractionsProtocolFlexibleTwoWayUnionResponder {
         >>(
             fidl::encoding::Flexible::new(payload),
             self.tx_id,
-            self.ordinal,
+            0x44301e4e8d514fb6,
             fidl::encoding::DynamicFlags::FLEXIBLE,
         )
     }
@@ -8106,7 +8083,6 @@ impl UnknownInteractionsProtocolFlexibleTwoWayUnionResponder {
 pub struct UnknownInteractionsProtocolFlexibleTwoWayTableResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsProtocolControlHandle::shutdown`])
@@ -8170,7 +8146,7 @@ impl UnknownInteractionsProtocolFlexibleTwoWayTableResponder {
         >>(
             fidl::encoding::Flexible::new(payload),
             self.tx_id,
-            self.ordinal,
+            0x7f492934b6c76187,
             fidl::encoding::DynamicFlags::FLEXIBLE,
         )
     }
@@ -8181,7 +8157,6 @@ impl UnknownInteractionsProtocolFlexibleTwoWayTableResponder {
 pub struct UnknownInteractionsProtocolFlexibleTwoWayErrResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsProtocolControlHandle::shutdown`])
@@ -8237,7 +8212,7 @@ impl UnknownInteractionsProtocolFlexibleTwoWayErrResponder {
         >>(
             fidl::encoding::FlexibleResult::new(result),
             self.tx_id,
-            self.ordinal,
+            0x61240f878cc37c07,
             fidl::encoding::DynamicFlags::FLEXIBLE,
         )
     }
@@ -8248,7 +8223,6 @@ impl UnknownInteractionsProtocolFlexibleTwoWayErrResponder {
 pub struct UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsProtocolControlHandle::shutdown`])
@@ -8304,7 +8278,7 @@ impl UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponder {
         >>(
             fidl::encoding::FlexibleResult::new(result.map(|some_field| (some_field,))),
             self.tx_id,
-            self.ordinal,
+            0xf2b9611a9089b05,
             fidl::encoding::DynamicFlags::FLEXIBLE,
         )
     }
@@ -8315,7 +8289,6 @@ impl UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponder {
 pub struct UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsProtocolControlHandle::shutdown`])
@@ -8380,7 +8353,7 @@ impl UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponder {
         >>(
             fidl::encoding::FlexibleResult::new(result),
             self.tx_id,
-            self.ordinal,
+            0x2172940a75f107d7,
             fidl::encoding::DynamicFlags::FLEXIBLE,
         )
     }
@@ -8391,7 +8364,6 @@ impl UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponder {
 pub struct UnknownInteractionsProtocolFlexibleTwoWayTableErrResponder {
     control_handle: std::mem::ManuallyDrop<UnknownInteractionsProtocolControlHandle>,
     tx_id: u32,
-    ordinal: u64,
 }
 
 /// Set the the channel to be shutdown (see [`UnknownInteractionsProtocolControlHandle::shutdown`])
@@ -8456,7 +8428,7 @@ impl UnknownInteractionsProtocolFlexibleTwoWayTableErrResponder {
         >>(
             fidl::encoding::FlexibleResult::new(result),
             self.tx_id,
-            self.ordinal,
+            0x6d8aab48e1693bf2,
             fidl::encoding::DynamicFlags::FLEXIBLE,
         )
     }

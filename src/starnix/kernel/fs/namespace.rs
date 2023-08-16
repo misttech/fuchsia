@@ -5,12 +5,11 @@
 use crate::{
     bpf::BpfFs,
     device::BinderFs,
-    fs::buffers::InputBuffer,
     fs::{
-        devpts::dev_pts_fs, devtmpfs::dev_tmp_fs, proc::proc_fs, sysfs::sys_fs, tmpfs::TmpFs,
+        buffers::InputBuffer, devpts::dev_pts_fs, devtmpfs::dev_tmp_fs, ext4::ExtFilesystem,
+        fuse::new_fuse_fs, overlayfs::OverlayFs, proc::proc_fs, sysfs::sys_fs, tmpfs::TmpFs,
         tracefs::trace_fs, FileSystemOptions, FsStr,
     },
-    fs::{ext4::ExtFilesystem, fuse::new_fuse_fs},
     lock::{Mutex, RwLock},
     mutable_state::*,
     selinux::selinux_fs,
@@ -75,6 +74,8 @@ impl Namespace {
 }
 
 impl FsNodeOps for Arc<Namespace> {
+    fs_node_impl_not_dir!();
+
     fn create_file_ops(
         &self,
         _node: &FsNode,
@@ -561,15 +562,17 @@ impl CurrentTask {
             flags: flags & MountFlags::STORED_ON_FILESYSTEM,
             params: data.to_vec(),
         };
+
         match fs_type {
             b"fuse" => new_fuse_fs(self, options),
             b"ext4" => ExtFilesystem::new_fs(kernel, self, options),
+            b"overlay" => OverlayFs::new_fs(self, options),
             _ => self.kernel().create_filesystem(fs_type, options),
         }
     }
 }
 
-struct ProcMountsFileSource(Weak<Task>);
+struct ProcMountsFileSource(WeakRef<Task>);
 
 impl DynamicFileSource for ProcMountsFileSource {
     fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
@@ -601,7 +604,7 @@ pub struct ProcMountsFile {
 }
 
 impl ProcMountsFile {
-    pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
+    pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
         SimpleFileNode::new(move || {
             Ok(Self { dynamic_file: DynamicFile::new(ProcMountsFileSource(task.clone())) })
         })
@@ -644,9 +647,9 @@ impl FileOps for ProcMountsFile {
 }
 
 #[derive(Clone)]
-pub struct ProcMountinfoFile(Weak<Task>);
+pub struct ProcMountinfoFile(WeakRef<Task>);
 impl ProcMountinfoFile {
-    pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
+    pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
         DynamicFile::new_node(Self(task))
     }
 }
@@ -781,7 +784,12 @@ impl LookupContext {
 
     pub fn update_for_path(&mut self, path: &FsStr) {
         if path.last() == Some(&b'/') {
+            // The last path element must resolve to a directory. This is because a trailing slash
+            // was found in the path.
             self.must_be_directory = true;
+            // If the last path element is a symlink, we should follow it.
+            // See https://pubs.opengroup.org/onlinepubs/9699919799/xrat/V4_xbd_chap03.html#tag_21_03_00_75
+            self.symlink_mode = SymlinkMode::Follow;
         }
     }
 }
@@ -928,6 +936,23 @@ impl NamespaceNode {
         self.check_readonly_filesystem()?;
         let owner = current_task.as_fscred();
         Ok(self.with_new_entry(self.entry.create_symlink(current_task, name, target, owner)?))
+    }
+
+    /// Creates an anonymous file.
+    ///
+    /// The FileMode::IFMT of the FileMode is always FileMode::IFREG.
+    ///
+    /// Used by O_TMPFILE.
+    pub fn create_tmpfile(
+        &self,
+        current_task: &CurrentTask,
+        mode: FileMode,
+        flags: OpenFlags,
+    ) -> Result<NamespaceNode, Errno> {
+        self.check_readonly_filesystem()?;
+        let owner = current_task.as_fscred();
+        let mode = current_task.fs().apply_umask(mode);
+        Ok(self.with_new_entry(self.entry.create_tmpfile(current_task, mode, owner, flags)?))
     }
 
     pub fn unlink(
@@ -1175,6 +1200,31 @@ impl NamespaceNode {
         a.mount.as_ref().map(Arc::as_ptr) == b.mount.as_ref().map(Arc::as_ptr)
     }
 
+    pub fn rename(
+        current_task: &CurrentTask,
+        old_parent: &NamespaceNode,
+        old_name: &FsStr,
+        new_parent: &NamespaceNode,
+        new_name: &FsStr,
+        flags: RenameFlags,
+    ) -> Result<(), Errno> {
+        if !NamespaceNode::mount_eq(&old_parent, &new_parent) {
+            return error!(EXDEV);
+        }
+
+        old_parent.check_readonly_filesystem()?;
+        new_parent.check_readonly_filesystem()?;
+
+        DirEntry::rename(
+            current_task,
+            &old_parent.entry,
+            old_name,
+            &new_parent.entry,
+            new_name,
+            flags,
+        )
+    }
+
     fn with_new_entry(&self, entry: DirEntryHandle) -> NamespaceNode {
         NamespaceNode { mount: self.mount.clone(), entry }
     }
@@ -1188,14 +1238,10 @@ impl NamespaceNode {
         // or is mounted with the NOATIME flag.
         if let Some(mount) = &self.mount {
             if !mount.flags().contains(MountFlags::NOATIME) {
-                self.entry
-                    .node
-                    .update_info(|info| {
-                        let now = utc::utc_now();
-                        info.time_access = now;
-                        Ok(())
-                    })
-                    .expect("update_info() is not expected to fail");
+                self.entry.node.update_info(|info| {
+                    let now = utc::utc_now();
+                    info.time_access = now;
+                });
             }
         }
     }

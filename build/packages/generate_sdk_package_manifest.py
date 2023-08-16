@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.8
+#!/usr/bin/env fuchsia-vendored-python
 # Copyright 2023 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -189,7 +189,7 @@ def main():
     parser.add_argument(
         '--target-cpu', help='Target build architecture.', required=True)
     parser.add_argument(
-        '--depfile', help='Path for generating depfile.', required=True)
+        '--depfile', help='Path for generating depfile.', required=False)
 
     args = parser.parse_args()
 

@@ -93,6 +93,14 @@ class TestSelections:
     # The threshold used to match these tests.
     threshold: float
 
+    def has_device_test(self) -> bool:
+        """Determine if this set of test selections has any device tests.
+
+        Returns:
+            bool: True if a test that requires a device is selected, False otherwise.
+        """
+        return any([entry.build.test.package_url for entry in self.selected])
+
 
 def select_tests(
     entries: typing.List[Test], selection: typing.List[str]
@@ -321,7 +329,7 @@ def _parse_selection_command_line(
 ) -> typing.List[MatchGroup]:
     selection = selection.copy()  # Do not affect input list.
     output_groups: typing.List[MatchGroup] = []
-    cur_group: typing.Optional[MatchGroup] = None
+    cur_group: MatchGroup | None = None
 
     def pop_for_arg(arg: str):
         """Mutate the outer cur_group variable depending on the contents of the argument.

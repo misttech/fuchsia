@@ -31,8 +31,7 @@ use crate::{
     },
     socket::{
         address::{AddrVecIter, ConnAddr, ConnIpAddr, IpPortSpec, ListenerAddr},
-        AddrVec, Connection as BoundConnection, ConvertSocketMapState, ConvertSocketTypeState as _,
-        SocketId,
+        AddrVec,
     },
     trace_duration,
     transport::tcp::{
@@ -40,9 +39,9 @@ use crate::{
         segment::{Options, Segment},
         seqnum::UnscaledWindowSize,
         socket::{
-            do_send_inner, isn::IsnGenerator, Acceptor, Connection, ConnectionId, HandshakeStatus,
-            Listener, ListenerAddrState, ListenerId, ListenerNotifier as _, ListenerSharingState,
-            MaybeClosedConnectionId, MaybeListener, MaybeListenerId, NonSyncContext, Sockets,
+            do_send_inner, isn::IsnGenerator, Acceptor, BoundSocketState, Connection,
+            HandshakeStatus, Listener, ListenerAddrState, ListenerNotifier as _,
+            ListenerSharingState, MaybeListener, NonSyncContext, SocketId, SocketState, Sockets,
             SyncContext, TcpIpTransportContext, TimerId,
         },
         state::{BufferProvider, Closed, Initial, State, TimeWait},
@@ -200,10 +199,8 @@ fn handle_incoming_packet<I, B, C, SC>(
                 if let Some(addr_state) = sockets.socketmap.listeners().get_by_addr(&listener_addr)
                 {
                     let id = match addr_state {
-                        ListenerAddrState::ExclusiveListener(id) => id.clone().into(),
-                        ListenerAddrState::Shared { listener: Some(id), bound: _ } => {
-                            id.clone().into()
-                        }
+                        ListenerAddrState::ExclusiveListener(id) => id.clone(),
+                        ListenerAddrState::Shared { listener: Some(id), bound: _ } => id.clone(),
                         ListenerAddrState::ExclusiveBound(_)
                         | ListenerAddrState::Shared { listener: None, bound: _ } => {
                             return ControlFlow::Continue(None)
@@ -268,7 +265,7 @@ fn handle_incoming_packet<I, B, C, SC>(
 
 enum ConnectionIncomingSegmentDisposition<I: Ip> {
     FoundSocket,
-    ReuseCandidateForListener(MaybeClosedConnectionId<I>),
+    ReuseCandidateForListener(SocketId<I>),
 }
 
 enum ListenerIncomingSegmentDisposition {
@@ -287,7 +284,7 @@ fn try_handle_incoming_for_connection<I, SC, C, B>(
     ctx: &mut C,
     sockets: &mut Sockets<I, SC::WeakDeviceId, C>,
     conn_addr: ConnAddr<I::Addr, SC::WeakDeviceId, NonZeroU16, NonZeroU16>,
-    conn_id: MaybeClosedConnectionId<I>,
+    conn_id: SocketId<I>,
     incoming: Segment<&[u8]>,
     now: C::Instant,
 ) -> ConnectionIncomingSegmentDisposition<I>
@@ -303,8 +300,11 @@ where
         >,
     SC: BufferTransportIpContext<I, C, EmptyBuf> + DeviceIpSocketHandler<I, C>,
 {
-    let (conn, _, addr) =
-        conn_id.get_from_bound_state_mut(&mut sockets.bound_state).expect("invalid connection");
+    let (conn, _, addr) = assert_matches!(
+        sockets.socket_state.get_mut(conn_id.into()),
+        Some(SocketState::Bound(BoundSocketState::Connected(conn))) => conn,
+        "invalid socket ID"
+    );
 
     let Connection {
         acceptor,
@@ -368,8 +368,9 @@ where
                 // enter Closed state, and the user has already promised
                 // not to use the connection again, we can remove the
                 // connection from the socketmap.
-                let (_state, _sharing, addr) = BoundConnection::from_socket_state(
-                    conn_id.get_bound_state_entry(&mut sockets.bound_state).remove(),
+                let (_state, _sharing, addr) = assert_matches!(
+                    sockets.socket_state.entry(conn_id.into()).remove(),
+                    Some(SocketState::Bound(BoundSocketState::Connected(conn))) => conn
                 );
                 assert_matches!(sockets.socketmap.conns_mut().remove(&conn_id, &addr), Ok(()));
                 let _: Option<_> = ctx.cancel_timer(TimerId::new::<I>(conn_id));
@@ -412,11 +413,14 @@ where
             conn.acceptor = Some(Acceptor::Ready(listener_id));
             listener_id
         });
-        let Listener { pending, ready, backlog: _, buffer_sizes: _, socket_options: _, notifier } =
-            sockets.get_listener_by_id_mut(acceptor_id).expect("orphaned acceptee");
+        let Listener { pending, ready, backlog: _, buffer_sizes: _, socket_options: _, notifier } = assert_matches!(
+            sockets.socket_state.get_mut(acceptor_id.into()),
+            Some(SocketState::Bound(BoundSocketState::Listener((MaybeListener::Listener(l), _sharing, _addr)))) => l,
+            "invalid socket ID"
+        );
         let pos = pending
             .iter()
-            .position(|x| MaybeClosedConnectionId::from(*x) == conn_id)
+            .position(|x| *x == conn_id)
             .expect("acceptee is not found in acceptor's pending queue");
         let conn = pending.swap_remove(pos);
         ready.push_back((conn, passive_open));
@@ -435,11 +439,11 @@ fn try_handle_incoming_for_listener<I, SC, C, B>(
     ctx: &mut C,
     sockets: &mut Sockets<I, SC::WeakDeviceId, C>,
     isn: &IsnGenerator<C::Instant>,
-    listener_id: MaybeListenerId<I>,
+    listener_id: SocketId<I>,
     incoming: Segment<&[u8]>,
     incoming_addrs: ConnIpAddr<I::Addr, NonZeroU16, NonZeroU16>,
     incoming_device: &SC::DeviceId,
-    tw_reuse: Option<MaybeClosedConnectionId<I>>,
+    tw_reuse: Option<SocketId<I>>,
     now: C::Instant,
 ) -> ListenerIncomingSegmentDisposition
 where
@@ -454,9 +458,12 @@ where
         >,
     SC: BufferTransportIpContext<I, C, EmptyBuf> + DeviceIpSocketHandler<I, C>,
 {
-    let Sockets { port_alloc: _, inactive: _, socketmap, bound_state } = sockets;
-    let (maybe_listener, sharing, listener_addr) =
-        listener_id.get_from_bound_state(bound_state).expect("invalid listener");
+    let Sockets { port_alloc: _, socketmap, socket_state } = sockets;
+    let (maybe_listener, sharing, listener_addr) = assert_matches!(
+        socket_state.get(listener_id.into()),
+        Some(SocketState::Bound(BoundSocketState::Listener(l))) => l,
+        "invalid socket ID"
+    );
 
     let ConnIpAddr { local: (local_ip, local_port), remote: (remote_ip, remote_port) } =
         incoming_addrs;
@@ -556,7 +563,6 @@ where
         let socket_options = socket_options.clone();
         let ListenerSharingState { sharing, listening: _ } = *sharing;
         let bound_device = ip_sock.device().cloned();
-        let MaybeListenerId(listener_index, _marker) = listener_id;
         // We could just reuse the old allocation for the new connection but
         // because of the restrictions on the socket map data structure (for
         // good reasons), we can't update the sharing info unconditionally. So
@@ -564,65 +570,48 @@ where
         // this approach has the benefit of not accidentally persisting the old
         // state that we don't want.
         if let Some(tw_reuse) = tw_reuse {
-            let (_conn, _sharing, conn_addr) = BoundConnection::from_socket_state(
-                tw_reuse.get_bound_state_entry(bound_state).remove(),
+            let (_conn, _sharing, conn_addr) = assert_matches!(
+                socket_state.entry(tw_reuse.into()).remove(),
+                Some(SocketState::Bound(BoundSocketState::Connected(conn))) => conn
             );
             assert_matches!(socketmap.conns_mut().remove(&tw_reuse, &conn_addr), Ok(()));
             assert_matches!(ctx.cancel_timer(TimerId::new::<I>(tw_reuse)), Some(_));
         }
-        let conn_id = socketmap
+        let addr = ConnAddr {
+            ip: ConnIpAddr { local: (local_ip, local_port), remote: (remote_ip, remote_port) },
+            device: bound_device,
+        };
+        let conn_id = socket_state.push(SocketState::Bound(BoundSocketState::Connected((
+            Connection {
+                acceptor: Some(Acceptor::Pending(listener_id)),
+                state,
+                ip_sock,
+                defunct: false,
+                socket_options,
+                soft_error: None,
+                handshake_status: HandshakeStatus::Pending,
+            },
+            sharing,
+            addr.clone(),
+        ))));
+        let conn_id = SocketId(conn_id, IpVersionMarker::default());
+        let _entry = socketmap
             .conns_mut()
-            .try_insert(
-                ConnAddr {
-                    ip: ConnIpAddr {
-                        local: (local_ip, local_port),
-                        remote: (remote_ip, remote_port),
-                    },
-                    device: bound_device,
-                },
-                sharing,
-                |addr, sharing| {
-                    let state = Connection {
-                        acceptor: Some(Acceptor::Pending(ListenerId(
-                            listener_index,
-                            IpVersionMarker::default(),
-                        ))),
-                        state,
-                        ip_sock,
-                        defunct: false,
-                        socket_options,
-                        soft_error: None,
-                        handshake_status: HandshakeStatus::Pending,
-                    };
-                    let entry = bound_state.push_entry(
-                        |index| SocketId::Connection(index.into()),
-                        BoundConnection::to_socket_state((state, sharing, addr)),
-                    );
-                    <BoundConnection as ConvertSocketMapState<
-                        I,
-                        SC::WeakDeviceId,
-                        IpPortSpec,
-                        _,
-                    >>::from_socket_id_ref(entry.key())
-                    .clone()
-                },
-            )
-            .expect("failed to create a new connection")
-            .id();
+            .try_insert(addr, sharing, conn_id)
+            .expect("failed to create a new connection");
         assert_eq!(ctx.schedule_timer_instant(poll_send_at, TimerId::new::<I>(conn_id),), None);
-        let (maybe_listener, _, _): (_, &mut ListenerSharingState, &mut ListenerAddr<_, _, _>) =
-            listener_id.get_from_bound_state_mut(&mut sockets.bound_state).expect("invalid ID");
+        let maybe_listener = assert_matches!(
+            sockets.socket_state.get_mut(listener_id.into()),
+            Some(SocketState::Bound(BoundSocketState::Listener((l, _sharing, _addr)))) => l,
+            "invalid socket ID"
+        );
 
         match maybe_listener {
             MaybeListener::Bound(_bound) => {
                 unreachable!("the listener must be active because we got here");
             }
             MaybeListener::Listener(listener) => {
-                // This conversion is fine because
-                // `conn_id` is newly created; No one
-                // should have called close on it.
-                let MaybeClosedConnectionId(id, marker) = conn_id;
-                listener.pending.push(ConnectionId(id, marker));
+                listener.pending.push(conn_id);
             }
         }
     }

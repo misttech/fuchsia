@@ -12,6 +12,7 @@ common_deps = [
   "//sdk/fidl/fuchsia.net.filter:fuchsia.net.filter_rust",
   "//sdk/fidl/fuchsia.net.interfaces:fuchsia.net.interfaces_rust",
   "//sdk/fidl/fuchsia.net.interfaces.admin:fuchsia.net.interfaces.admin_rust",
+  "//sdk/fidl/fuchsia.net.neighbor:fuchsia.net.neighbor_rust",
   "//sdk/fidl/fuchsia.net.root:fuchsia.net.root_rust",
   "//sdk/fidl/fuchsia.net.routes:fuchsia.net.routes_rust",
   "//sdk/fidl/fuchsia.net.stack:fuchsia.net.stack_rust",
@@ -74,10 +75,12 @@ common_sources = [
   "src/bindings/debug_fidl_worker.rs",
   "src/bindings/devices.rs",
   "src/bindings/filter_worker.rs",
+  "src/bindings/inspect.rs",
   "src/bindings/integration_tests.rs",
   "src/bindings/interfaces_admin.rs",
   "src/bindings/interfaces_watcher.rs",
   "src/bindings/mod.rs",
+  "src/bindings/neighbor_worker.rs",
   "src/bindings/netdevice_worker.rs",
   "src/bindings/root_fidl_worker.rs",
   "src/bindings/routes_fidl_worker.rs",
@@ -135,15 +138,6 @@ fuchsia_component("component-debug") {
   manifest = "meta/netstack3_debug.cml"
   deps = [ ":bin-instrumented" ]
   testonly = true
-}
-
-# Variant of `:component` whose component name shows up in the package as
-# #meta/netstack.cm and can be used in place of Netstack2 when assembling
-# images.
-fuchsia_component("component-dropin") {
-  component_name = "netstack"
-  manifest = "meta/netstack3.cml"
-  deps = [ ":bin" ]
 }
 
 fuchsia_unittest_component("netstack3-bin_test") {

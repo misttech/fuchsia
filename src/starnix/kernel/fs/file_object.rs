@@ -216,7 +216,7 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
             {
                 let mut new_rights = zx::Rights::VMO_DEFAULT - zx::Rights::WRITE;
                 if prot_flags.contains(ProtectionFlags::EXEC) {
-                    new_rights -= zx::Rights::EXECUTE;
+                    new_rights |= zx::Rights::EXECUTE;
                 }
                 vmo = Arc::new(vmo.duplicate_handle(new_rights).map_err(impossible_error)?);
 
@@ -317,6 +317,13 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
         current_task: &CurrentTask,
     ) -> Result<Option<zx::Handle>, Errno> {
         serve_file(current_task, file).map(|c| Some(c.into_handle()))
+    }
+
+    /// Returns the associated pid_t.
+    ///
+    /// Used by pidfd and `/proc/<pid>`. Unlikely to be used by other files.
+    fn as_pid(&self, _file: &FileHandle) -> Result<pid_t, Errno> {
+        error!(EBADF)
     }
 }
 
@@ -780,11 +787,8 @@ impl FileAsyncOwner {
     pub fn validate(self, current_task: &CurrentTask) -> Result<(), Errno> {
         match self {
             FileAsyncOwner::Unowned => (),
-            FileAsyncOwner::Thread(tid) => {
-                current_task.get_task(tid).ok_or_else(|| errno!(ESRCH))?;
-            }
-            FileAsyncOwner::Process(pid) => {
-                current_task.get_task(pid).ok_or_else(|| errno!(ESRCH))?;
+            FileAsyncOwner::Thread(id) | FileAsyncOwner::Process(id) => {
+                Task::from_weak(&current_task.get_task(id))?;
             }
             FileAsyncOwner::ProcessGroup(pgid) => {
                 current_task
@@ -795,6 +799,16 @@ impl FileAsyncOwner {
                     .ok_or_else(|| errno!(ESRCH))?;
             }
         }
+        Ok(())
+    }
+}
+
+fn check_offset(current_task: &CurrentTask, offset: usize) -> Result<(), Errno> {
+    if offset >= MAX_LFS_FILESIZE
+        || offset >= current_task.thread_group.get_rlimit(Resource::FSIZE) as usize
+    {
+        error!(EINVAL)
+    } else {
         Ok(())
     }
 }
@@ -1024,8 +1038,27 @@ impl FileObject {
         self.read_internal(|| self.ops.read(self, current_task, offset, data))
     }
 
-    /// Common implementation for `write` and `write_at`.
-    fn write_internal<W>(&self, current_task: &CurrentTask, write: W) -> Result<usize, Errno>
+    /// Common checks before calling ops().write.
+    fn write_common(
+        &self,
+        current_task: &CurrentTask,
+        offset: usize,
+        data: &mut dyn InputBuffer,
+    ) -> Result<usize, Errno> {
+        // We need to cap the size of `data` to prevent us from growing the file too large,
+        // according to <https://man7.org/linux/man-pages/man2/write.2.html>:
+        //
+        //   The number of bytes written may be less than count if, for example, there is
+        //   insufficient space on the underlying physical medium, or the RLIMIT_FSIZE resource
+        //   limit is encountered (see setrlimit(2)),
+        //
+        // However, at the moment, we just check the `offset`.
+        check_offset(current_task, offset)?;
+        self.ops().write(self, current_task, offset, data)
+    }
+
+    /// Common wrapper work for `write` and `write_at`.
+    fn write_fn<W>(&self, current_task: &CurrentTask, write: W) -> Result<usize, Errno>
     where
         W: FnOnce() -> Result<usize, Errno>,
     {
@@ -1034,7 +1067,7 @@ impl FileObject {
         }
         self.node().clear_suid_and_sgid_bits(current_task)?;
         let bytes_written = write()?;
-        self.node().update_ctime_mtime()?;
+        self.node().update_ctime_mtime();
 
         if bytes_written > 0 {
             self.notify(InotifyMask::MODIFY);
@@ -1048,22 +1081,22 @@ impl FileObject {
         current_task: &CurrentTask,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
-        self.write_internal(current_task, || {
+        self.write_fn(current_task, || {
             if !self.ops().has_persistent_offsets() {
-                return self.ops().write(self, current_task, 0, data);
+                return self.write_common(current_task, 0, data);
             }
 
             let mut offset = self.offset.lock();
-            let written = if self.flags().contains(OpenFlags::APPEND) {
+            let bytes_written = if self.flags().contains(OpenFlags::APPEND) {
                 let _guard = self.node().append_lock.write(current_task)?;
                 *offset = self.ops().seek(self, current_task, *offset, SeekTarget::End(0))?;
-                self.ops().write(self, current_task, *offset as usize, data)
+                self.write_common(current_task, *offset as usize, data)
             } else {
                 let _guard = self.node().append_lock.read(current_task)?;
-                self.ops().write(self, current_task, *offset as usize, data)
+                self.write_common(current_task, *offset as usize, data)
             }?;
-            *offset += written as off_t;
-            Ok(written)
+            *offset += bytes_written as off_t;
+            Ok(bytes_written)
         })
     }
 
@@ -1087,10 +1120,7 @@ impl FileObject {
         mut offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
-        if offset >= MAX_LFS_FILESIZE {
-            return error!(EINVAL);
-        }
-        self.write_internal(current_task, || {
+        self.write_fn(current_task, || {
             let _guard = self.node().append_lock.read(current_task)?;
 
             // According to LTP test pwrite04:
@@ -1099,10 +1129,11 @@ impl FileObject {
             //   location at which pwrite() writes data. However, on Linux, if a file is opened with
             //   O_APPEND, pwrite() appends data to the end of the file, regardless of the value of offset.
             if self.flags().contains(OpenFlags::APPEND) && self.ops().is_seekable() {
+                check_offset(current_task, offset)?;
                 offset = default_eof_offset(self, current_task)? as usize;
             }
 
-            self.ops().write(self, current_task, offset, data)
+            self.write_common(current_task, offset, data)
         })
     }
 
@@ -1178,22 +1209,8 @@ impl FileObject {
             return error!(ENOENT);
         }
 
-        match self.ops().readdir(self, current_task, sink) {
-            // The ENOSPC we catch here is generated by DirentSink::add. We
-            // return the error to the caller only if we didn't have space for
-            // the first directory entry.
-            //
-            // We use ENOSPC rather than EINVAL to signal this condition
-            // because EINVAL is a very generic error. We only want to perform
-            // this transformation in exactly the case where there was not
-            // sufficient space in the DirentSink.
-            Err(errno) if errno == ENOSPC && sink.actual() > 0 => Ok(()),
-            Err(errno) if errno == ENOSPC => error!(EINVAL),
-            result => result,
-        }?;
-
+        self.ops().readdir(self, current_task, sink)?;
         self.update_atime();
-
         Ok(())
     }
 
@@ -1251,6 +1268,10 @@ impl FileObject {
         current_task: &CurrentTask,
     ) -> Result<Option<zx::Handle>, Errno> {
         self.ops().to_handle(self, current_task)
+    }
+
+    pub fn as_pid(self: &Arc<Self>) -> Result<pid_t, Errno> {
+        self.ops().as_pid(self)
     }
 
     pub fn update_file_flags(&self, value: OpenFlags, mask: OpenFlags) {
@@ -1351,8 +1372,10 @@ impl fmt::Debug for FileObject {
 mod tests {
     use crate::{
         auth::FsCred,
-        fs::buffers::{VecInputBuffer, VecOutputBuffer},
-        fs::tmpfs::TmpFs,
+        fs::{
+            buffers::{VecInputBuffer, VecOutputBuffer},
+            tmpfs::TmpFs,
+        },
         testing::*,
         types::{DeviceType, FileMode, OpenFlags},
     };

@@ -4,7 +4,18 @@
 
 #![deny(missing_docs)]
 
-//! Ping library.
+//! Helpers to ping an IPv4 or IPv6 address by sending ICMP echo requests and
+//! waiting for ICMP echo replies.
+//!
+//! Functionality in this crate relies on [ICMP sockets], a kind of socket where
+//! each payload read/written contains ICMP headers.
+//!
+//! As a starting point, see [`new_unicast_sink_and_stream`], which is built
+//! on top of the other facilities in the crate and models pinging as sending
+//! an ICMP echo request whenever a value is sent to the sink, and a stream
+//! which yields an item for every echo reply received.
+//!
+//! [ICMP sockets]: https://lwn.net/Articles/422330/
 
 #[cfg(target_os = "fuchsia")]
 mod fuchsia;
@@ -391,9 +402,8 @@ where
 }
 
 fn verify_packet<I: Ip>(addr: I::Addr, packet: &[u8]) -> Result<PingData<I>, PingError> {
-    let (reply, body): (zerocopy::LayoutVerified<_, IcmpHeader>, _) =
-        zerocopy::LayoutVerified::new_unaligned_from_prefix(packet)
-            .ok_or_else(|| PingError::Parse)?;
+    let (reply, body): (zerocopy::Ref<_, IcmpHeader>, _) =
+        zerocopy::Ref::new_unaligned_from_prefix(packet).ok_or_else(|| PingError::Parse)?;
 
     // The identifier cannot be verified, since ICMP socket implementations rewrites the field on
     // send and uses its value to demultiplex packets for delivery to sockets on receive.
@@ -490,8 +500,8 @@ mod test {
                 .flatten()
                 .copied()
                 .collect::<Vec<u8>>();
-            let (mut header, _): (zerocopy::LayoutVerified<_, IcmpHeader>, _) =
-                match zerocopy::LayoutVerified::new_unaligned_from_prefix(&mut buf[..]) {
+            let (mut header, _): (zerocopy::Ref<_, IcmpHeader>, _) =
+                match zerocopy::Ref::new_unaligned_from_prefix(&mut buf[..]) {
                     Some(layout_verified) => layout_verified,
                     None => {
                         return Poll::Ready(Err(std::io::Error::new(

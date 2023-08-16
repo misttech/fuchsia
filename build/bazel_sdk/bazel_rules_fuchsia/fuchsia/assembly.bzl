@@ -9,12 +9,12 @@ load(
     _fuchsia_prebuilt_package = "fuchsia_prebuilt_package",
 )
 load(
-    "//fuchsia/private/assembly:fuchsia_assemble_package.bzl",
-    _fuchsia_assemble_package = "fuchsia_assemble_package",
+    "//fuchsia/private/assembly:fuchsia_package_directory.bzl",
+    _fuchsia_package_directory = "fuchsia_package_directory",
 )
 load(
-    "//fuchsia/private/assembly:fuchsia_images_configuration.bzl",
-    _fuchsia_images_configuration = "fuchsia_images_configuration",
+    "//fuchsia/private/assembly:fuchsia_assemble_package.bzl",
+    _fuchsia_assemble_package = "fuchsia_assemble_package",
 )
 load(
     "//fuchsia/private/assembly:fuchsia_product_image.bzl",
@@ -55,49 +55,6 @@ load(
 load(
     "//fuchsia/private/assembly:fuchsia_product_bundle.bzl",
     _fuchsia_product_bundle = "fuchsia_product_bundle",
-)
-load(
-    "//fuchsia/private/assembly:fuchsia_zbi.bzl",
-    _ZBI_COMPRESSION = "ZBI_COMPRESSION",
-    _fuchsia_zbi = "fuchsia_zbi",
-)
-load(
-    "//fuchsia/private/assembly:fuchsia_vbmeta.bzl",
-    _fuchsia_vbmeta = "fuchsia_vbmeta",
-    _fuchsia_vbmeta_extra_descriptor = "fuchsia_vbmeta_extra_descriptor",
-)
-load(
-    "//fuchsia/private/assembly:fuchsia_filesystem_blobfs.bzl",
-    _BLOBFS_LAYOUT = "BLOBFS_LAYOUT",
-    _fuchsia_filesystem_blobfs = "fuchsia_filesystem_blobfs",
-)
-load(
-    "//fuchsia/private/assembly:fuchsia_filesystem_empty_account.bzl",
-    _fuchsia_filesystem_empty_account = "fuchsia_filesystem_empty_account",
-)
-load(
-    "//fuchsia/private/assembly:fuchsia_filesystem_empty_data.bzl",
-    _fuchsia_filesystem_empty_data = "fuchsia_filesystem_empty_data",
-)
-load(
-    "//fuchsia/private/assembly:fuchsia_filesystem_reserved.bzl",
-    _fuchsia_filesystem_reserved = "fuchsia_filesystem_reserved",
-)
-load(
-    "//fuchsia/private/assembly:fuchsia_fvm_nand.bzl",
-    _fuchsia_fvm_nand = "fuchsia_fvm_nand",
-)
-load(
-    "//fuchsia/private/assembly:fuchsia_fvm_sparse.bzl",
-    _fuchsia_fvm_sparse = "fuchsia_fvm_sparse",
-)
-load(
-    "//fuchsia/private/assembly:fuchsia_fxfs.bzl",
-    _fuchsia_fxfs = "fuchsia_fxfs",
-)
-load(
-    "//fuchsia/private/assembly:fuchsia_fvm_standard.bzl",
-    _fuchsia_fvm_standard = "fuchsia_fvm_standard",
 )
 load(
     "//fuchsia/private/assembly:fuchsia_bootstrap_partition.bzl",
@@ -141,8 +98,8 @@ load(
 # Rules
 assembly_bundle = _assembly_bundle
 fuchsia_prebuilt_package = _fuchsia_prebuilt_package
+fuchsia_package_directory = _fuchsia_package_directory
 fuchsia_assemble_package = _fuchsia_assemble_package
-fuchsia_images_configuration = _fuchsia_images_configuration
 fuchsia_product_configuration = _fuchsia_product_configuration
 fuchsia_virtual_device = _fuchsia_virtual_device
 fuchsia_board_configuration = _fuchsia_board_configuration
@@ -156,17 +113,6 @@ fuchsia_elf_sizes = _fuchsia_elf_sizes
 fuchsia_update_package = _fuchsia_update_package
 fuchsia_repository_keys = _fuchsia_repository_keys
 fuchsia_task_flash = _fuchsia_task_flash
-fuchsia_zbi = _fuchsia_zbi
-fuchsia_vbmeta = _fuchsia_vbmeta
-fuchsia_vbmeta_extra_descriptor = _fuchsia_vbmeta_extra_descriptor
-fuchsia_filesystem_blobfs = _fuchsia_filesystem_blobfs
-fuchsia_filesystem_empty_account = _fuchsia_filesystem_empty_account
-fuchsia_filesystem_empty_data = _fuchsia_filesystem_empty_data
-fuchsia_filesystem_reserved = _fuchsia_filesystem_reserved
-fuchsia_fvm_nand = _fuchsia_fvm_nand
-fuchsia_fvm_sparse = _fuchsia_fvm_sparse
-fuchsia_fvm_standard = _fuchsia_fvm_standard
-fuchsia_fxfs = _fuchsia_fxfs
 fuchsia_scrutiny_config = _fuchsia_scrutiny_config
 
 fuchsia_bootstrap_partition = _fuchsia_bootstrap_partition
@@ -181,8 +127,6 @@ FuchsiaProductAssemblyInfo = _FuchsiaProductAssemblyInfo
 
 # constants
 BUILD_TYPES = _BUILD_TYPES
-ZBI_COMPRESSION = _ZBI_COMPRESSION
-BLOBFS_LAYOUT = _BLOBFS_LAYOUT
 PARTITION_TYPE = _PARTITION_TYPE
 SLOT = _SLOT
 ARCH = _ARCH
