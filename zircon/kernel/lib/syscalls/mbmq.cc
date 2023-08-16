@@ -12,7 +12,7 @@
 
 // zx_status_t zx_mbo_create
 zx_status_t sys_mbo_create(uint32_t options, zx_handle_t msgqueue_handle, uint64_t reply_key,
-                           user_out_handle* out) {
+                           zx_handle_t* out) {
   if (options != 0u)
     return ZX_ERR_INVALID_ARGS;
 
@@ -30,13 +30,15 @@ zx_status_t sys_mbo_create(uint32_t options, zx_handle_t msgqueue_handle, uint64
   zx_status_t result = MBODispatcher::Create(ktl::move(msgqueue), reply_key, &handle, &rights);
   if (result != ZX_OK)
     return result;
-  return out->make(ktl::move(handle), rights);
+  return up->MakeAndAddHandle(ktl::move(handle), rights, out);
 }
 
 // zx_status_t zx_msgqueue_create
-zx_status_t sys_msgqueue_create(uint32_t options, user_out_handle* out) {
+zx_status_t sys_msgqueue_create(uint32_t options, zx_handle_t* out) {
   if (options != 0u)
     return ZX_ERR_INVALID_ARGS;
+
+  auto up = ProcessDispatcher::GetCurrent();
 
   KernelHandle<MsgQueueDispatcher> handle;
   zx_rights_t rights;
@@ -44,13 +46,15 @@ zx_status_t sys_msgqueue_create(uint32_t options, user_out_handle* out) {
   zx_status_t result = MsgQueueDispatcher::Create(&handle, &rights);
   if (result != ZX_OK)
     return result;
-  return out->make(ktl::move(handle), rights);
+  return up->MakeAndAddHandle(ktl::move(handle), rights, out);
 }
 
 // zx_status_t zx_calleesref_create
-zx_status_t sys_calleesref_create(uint32_t options, user_out_handle* out) {
+zx_status_t sys_calleesref_create(uint32_t options, zx_handle_t* out) {
   if (options != 0u)
     return ZX_ERR_INVALID_ARGS;
+
+  auto up = ProcessDispatcher::GetCurrent();
 
   KernelHandle<CalleesRefDispatcher> handle;
   zx_rights_t rights;
@@ -58,7 +62,7 @@ zx_status_t sys_calleesref_create(uint32_t options, user_out_handle* out) {
   zx_status_t result = CalleesRefDispatcher::Create(&handle, &rights);
   if (result != ZX_OK)
     return result;
-  return out->make(ktl::move(handle), rights);
+  return up->MakeAndAddHandle(ktl::move(handle), rights, out);
 }
 
 // zx_status_t zx_channel_write_mbo
@@ -83,7 +87,7 @@ zx_status_t sys_channel_write_mbo(zx_handle_t channel_handle, zx_handle_t mbo_ha
 
 // zx_status_t zx_msgqueue_create_channel
 zx_status_t sys_msgqueue_create_channel(zx_handle_t msgqueue_handle, uint64_t key,
-                                        user_out_handle* out) {
+                                        zx_handle_t* out) {
   auto up = ProcessDispatcher::GetCurrent();
 
   fbl::RefPtr<MsgQueueDispatcher> msgqueue;
@@ -98,7 +102,7 @@ zx_status_t sys_msgqueue_create_channel(zx_handle_t msgqueue_handle, uint64_t ke
   zx_status_t result = NewChannelDispatcher::Create(ktl::move(msgqueue), key, &handle, &rights);
   if (result != ZX_OK)
     return result;
-  return out->make(ktl::move(handle), rights);
+  return up->MakeAndAddHandle(ktl::move(handle), rights, out);
 }
 
 // zx_status_t zx_msgqueue_wait
