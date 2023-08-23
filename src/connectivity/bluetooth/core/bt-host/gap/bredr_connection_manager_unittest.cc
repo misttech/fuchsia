@@ -4,10 +4,6 @@
 
 #include "src/connectivity/bluetooth/core/bt-host/gap/bredr_connection_manager.h"
 
-#include <lib/async/time.h>
-
-#include <gmock/gmock.h>
-
 #include "src/connectivity/bluetooth/core/bt-host/common/error.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/fake_pairing_delegate.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/peer_cache.h"
@@ -37,7 +33,7 @@ using bt::testing::CommandTransaction;
 using pw::bluetooth::emboss::AuthenticationRequirements;
 using pw::bluetooth::emboss::IoCapability;
 
-using TestingBase = bt::testing::ControllerTest<bt::testing::MockController>;
+using TestingBase = bt::testing::FakeDispatcherControllerTest<bt::testing::MockController>;
 
 constexpr hci_spec::ConnectionHandle kConnectionHandle = 0x0BAA;
 constexpr hci_spec::ConnectionHandle kConnectionHandle2 = 0x0BAB;
@@ -564,8 +560,8 @@ class BrEdrConnectionManagerTest : public TestingBase {
     TestingBase::SetUp();
     InitializeACLDataChannel(kBrEdrBufferInfo, kLeBufferInfo);
 
-    peer_cache_ = std::make_unique<PeerCache>(pw_dispatcher());
-    l2cap_ = std::make_unique<l2cap::testing::FakeL2cap>(pw_dispatcher());
+    peer_cache_ = std::make_unique<PeerCache>(dispatcher());
+    l2cap_ = std::make_unique<l2cap::testing::FakeL2cap>(dispatcher());
 
     // Respond to BrEdrConnectionManager controller setup with success.
     EXPECT_CMD_PACKET_OUT(test_device(),
@@ -576,9 +572,9 @@ class BrEdrConnectionManagerTest : public TestingBase {
     connection_manager_ = std::make_unique<BrEdrConnectionManager>(
         transport()->GetWeakPtr(), peer_cache_.get(), kLocalDevAddr, l2cap_.get(),
         /*use_interlaced_scan=*/true,
-        /*local_secure_connections_supported=*/true, pw_dispatcher());
+        /*local_secure_connections_supported=*/true, dispatcher());
 
-    RunLoopUntilIdle();
+    RunUntilIdle();
 
     test_device()->SetTransactionCallback([this] { transaction_count_++; });
   }
@@ -592,7 +588,7 @@ class BrEdrConnectionManagerTest : public TestingBase {
       EXPECT_CMD_PACKET_OUT(test_device(), kWriteScanEnableInq, &kWriteScanEnableRsp);
       connection_manager_ = nullptr;
     }
-    RunLoopUntilIdle();
+    RunUntilIdle();
     // A disconnection may also occur for a queued disconnection, allow up to 1 extra transaction.
     EXPECT_LE(expected_transaction_count, transaction_count());
     EXPECT_GE(expected_transaction_count + 1, transaction_count());
@@ -805,7 +801,7 @@ TEST_F(BrEdrConnectionManagerTest, DisableConnectivity) {
 
   connmgr()->SetConnectable(/*connectable=*/false, cb);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1u, cb_count);
 
@@ -814,7 +810,7 @@ TEST_F(BrEdrConnectionManagerTest, DisableConnectivity) {
 
   connmgr()->SetConnectable(/*connectable=*/false, cb);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(2u, cb_count);
 }
@@ -833,7 +829,7 @@ TEST_F(BrEdrConnectionManagerTest, EnableConnectivity) {
 
   connmgr()->SetConnectable(/*connectable=*/true, cb);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1u, cb_count);
 
@@ -844,7 +840,7 @@ TEST_F(BrEdrConnectionManagerTest, EnableConnectivity) {
 
   connmgr()->SetConnectable(/*connectable=*/true, cb);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(2u, cb_count);
 }
@@ -868,7 +864,7 @@ TEST_F(BrEdrConnectionManagerTest, IncomingConnection_BrokenExtendedPageResponse
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(6, transaction_count());
 
@@ -885,7 +881,7 @@ TEST_F(BrEdrConnectionManagerTest, IncomingConnectionSuccess) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   auto* peer = peer_cache()->FindByAddress(kTestDevAddr);
   ASSERT_TRUE(peer);
@@ -910,7 +906,7 @@ TEST_F(BrEdrConnectionManagerTest, IncomingConnectionUpgradesKnownLowEnergyPeerT
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_EQ(peer, peer_cache()->FindByAddress(kTestDevAddr));
   EXPECT_EQ(peer->identifier(), connmgr()->GetPeerId(kConnectionHandle));
@@ -926,7 +922,7 @@ TEST_F(BrEdrConnectionManagerTest, RemoteDisconnect) {
   QueueSuccessfulIncomingConn();
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   auto* peer = peer_cache()->FindByAddress(kTestDevAddr);
   ASSERT_TRUE(peer);
@@ -937,7 +933,7 @@ TEST_F(BrEdrConnectionManagerTest, RemoteDisconnect) {
   // Remote end disconnects.
   test_device()->SendCommandChannelPacket(kDisconnectionComplete);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kInvalidPeerId, connmgr()->GetPeerId(kConnectionHandle));
 }
@@ -970,7 +966,7 @@ TEST_F(BrEdrConnectionManagerTest, IncomingConnectionFailedInterrogation) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(5, transaction_count());
 }
@@ -982,7 +978,7 @@ TEST_F(BrEdrConnectionManagerTest, IoCapabilityRequestNegativeReplyWithNoPairing
 
   test_device()->SendCommandChannelPacket(kIoCapabilityRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, transaction_count());
 }
@@ -997,7 +993,7 @@ TEST_F(BrEdrConnectionManagerTest, IoCapabilityRequestNegativeReplyWhenNotConnec
 
   test_device()->SendCommandChannelPacket(kIoCapabilityRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, transaction_count());
 }
@@ -1011,7 +1007,7 @@ TEST_F(BrEdrConnectionManagerTest, IoCapabilityRequestReplyWhenConnected) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_EQ(kIncomingConnTransactions, transaction_count());
 
@@ -1024,7 +1020,7 @@ TEST_F(BrEdrConnectionManagerTest, IoCapabilityRequestReplyWhenConnected) {
       IoCapability::DISPLAY_ONLY, AuthenticationRequirements::MITM_GENERAL_BONDING));
   test_device()->SendCommandChannelPacket(kIoCapabilityRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions + 1, transaction_count());
 
@@ -1037,7 +1033,7 @@ TEST_F(BrEdrConnectionManagerTest, RespondToNumericComparisonPairingAfterUserRej
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions, transaction_count());
 
@@ -1074,7 +1070,7 @@ TEST_F(BrEdrConnectionManagerTest, RespondToNumericComparisonPairingAfterUserRej
   // We disconnect the peer when authentication fails.
   QueueDisconnection(kConnectionHandle);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 }
 
 const auto kUserPasskeyRequest = StaticByteBuffer(hci_spec::kUserPasskeyRequestEventCode,
@@ -1104,7 +1100,7 @@ TEST_F(BrEdrConnectionManagerTest, RespondToPasskeyEntryPairingAfterUserProvides
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions, transaction_count());
 
@@ -1138,7 +1134,7 @@ TEST_F(BrEdrConnectionManagerTest, RespondToPasskeyEntryPairingAfterUserProvides
   // We disconnect the peer when authentication fails.
   QueueDisconnection(kConnectionHandle);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 }
 
 // Test: replies negative to Link Key Requests for unknown and unbonded peers
@@ -1148,7 +1144,7 @@ TEST_F(BrEdrConnectionManagerTest, LinkKeyRequestAndNegativeReply) {
 
   test_device()->SendCommandChannelPacket(kLinkKeyRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, transaction_count());
 
@@ -1156,7 +1152,7 @@ TEST_F(BrEdrConnectionManagerTest, LinkKeyRequestAndNegativeReply) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions + 1, transaction_count());
 
@@ -1170,7 +1166,7 @@ TEST_F(BrEdrConnectionManagerTest, LinkKeyRequestAndNegativeReply) {
 
   test_device()->SendCommandChannelPacket(kLinkKeyRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions + 2, transaction_count());
 
@@ -1191,7 +1187,7 @@ TEST_F(BrEdrConnectionManagerTest, RecallLinkKeyForBondedPeer) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions, transaction_count());
   ASSERT_TRUE(IsInitializing(peer));
@@ -1200,7 +1196,7 @@ TEST_F(BrEdrConnectionManagerTest, RecallLinkKeyForBondedPeer) {
 
   test_device()->SendCommandChannelPacket(kLinkKeyRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   /// Peer is still initializing until the Pairing is complete (OnPairingComplete)
   ASSERT_TRUE(IsInitializing(peer));
 
@@ -1217,7 +1213,7 @@ TEST_F(BrEdrConnectionManagerTest, EncryptAfterPasskeyEntryPairingAndUserProvide
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   auto* peer = peer_cache()->FindByAddress(kTestDevAddr);
   ASSERT_TRUE(peer);
@@ -1258,7 +1254,7 @@ TEST_F(BrEdrConnectionManagerTest, EncryptAfterPasskeyEntryPairingAndUserProvide
                         &kEncryptionChangeEvent);
   EXPECT_CMD_PACKET_OUT(test_device(), kReadEncryptionKeySize, &kReadEncryptionKeySizeRsp);
 
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
   ASSERT_TRUE(IsConnected(peer));
   EXPECT_TRUE(peer->bonded());
 
@@ -1272,7 +1268,7 @@ TEST_F(BrEdrConnectionManagerTest, EncryptAfterPasskeyDisplayPairing) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   auto* peer = peer_cache()->FindByAddress(kTestDevAddr);
   ASSERT_TRUE(peer);
@@ -1306,7 +1302,7 @@ TEST_F(BrEdrConnectionManagerTest, EncryptAfterPasskeyDisplayPairing) {
   pairing_delegate.SetCompletePairingCallback(
       [](PeerId, sm::Result<> status) { EXPECT_EQ(fit::ok(), status); });
 
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
   ASSERT_TRUE(IsInitializing(peer));
 
   test_device()->SendCommandChannelPacket(kSimplePairingCompleteSuccess);
@@ -1316,7 +1312,7 @@ TEST_F(BrEdrConnectionManagerTest, EncryptAfterPasskeyDisplayPairing) {
                         &kEncryptionChangeEvent);
   EXPECT_CMD_PACKET_OUT(test_device(), kReadEncryptionKeySize, &kReadEncryptionKeySizeRsp);
 
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
   ASSERT_TRUE(IsConnected(peer));
   EXPECT_TRUE(peer->bonded());
 
@@ -1330,7 +1326,7 @@ TEST_F(BrEdrConnectionManagerTest, EncryptAndBondAfterNumericComparisonPairingAn
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   auto* peer = peer_cache()->FindByAddress(kTestDevAddr);
   ASSERT_TRUE(peer);
@@ -1367,7 +1363,7 @@ TEST_F(BrEdrConnectionManagerTest, EncryptAndBondAfterNumericComparisonPairingAn
   pairing_delegate.SetCompletePairingCallback(
       [](PeerId, sm::Result<> status) { EXPECT_EQ(fit::ok(), status); });
 
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
   ASSERT_TRUE(IsInitializing(peer));
 
   test_device()->SendCommandChannelPacket(kSimplePairingCompleteSuccess);
@@ -1377,14 +1373,14 @@ TEST_F(BrEdrConnectionManagerTest, EncryptAndBondAfterNumericComparisonPairingAn
                         &kEncryptionChangeEvent);
   EXPECT_CMD_PACKET_OUT(test_device(), kReadEncryptionKeySize, &kReadEncryptionKeySizeRsp);
 
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
   ASSERT_TRUE(IsConnected(peer));
   EXPECT_TRUE(peer->bonded());
 
   EXPECT_CMD_PACKET_OUT(test_device(), kLinkKeyRequestReply, &kLinkKeyRequestReplyRsp);
   test_device()->SendCommandChannelPacket(kLinkKeyRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   QueueDisconnection(kConnectionHandle);
 }
@@ -1395,7 +1391,7 @@ TEST_F(BrEdrConnectionManagerTest, UnbondedPeerChangeLinkKey) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions, transaction_count());
 
@@ -1407,7 +1403,7 @@ TEST_F(BrEdrConnectionManagerTest, UnbondedPeerChangeLinkKey) {
   // Change the link key.
   test_device()->SendCommandChannelPacket(kLinkKeyNotificationChanged);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_FALSE(IsConnected(peer));
   EXPECT_FALSE(peer->bonded());
 
@@ -1415,7 +1411,7 @@ TEST_F(BrEdrConnectionManagerTest, UnbondedPeerChangeLinkKey) {
 
   test_device()->SendCommandChannelPacket(kLinkKeyRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_FALSE(IsConnected(peer));
   EXPECT_FALSE(peer->bonded());
@@ -1439,7 +1435,7 @@ TEST_F(BrEdrConnectionManagerTest, LegacyLinkKeyNotBonded) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions, transaction_count());
 
@@ -1450,14 +1446,14 @@ TEST_F(BrEdrConnectionManagerTest, LegacyLinkKeyNotBonded) {
 
   test_device()->SendCommandChannelPacket(kLinkKeyNotificationLegacy);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_FALSE(peer->bonded());
 
   EXPECT_CMD_PACKET_OUT(test_device(), kLinkKeyRequestNegativeReply, &kLinkKeyRequestReplyRsp);
 
   test_device()->SendCommandChannelPacket(kLinkKeyRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_FALSE(IsConnected(peer));
   EXPECT_FALSE(peer->bonded());
@@ -1472,7 +1468,7 @@ TEST_F(BrEdrConnectionManagerTest, DisconnectOnLinkError) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions, transaction_count());
 
@@ -1481,7 +1477,7 @@ TEST_F(BrEdrConnectionManagerTest, DisconnectOnLinkError) {
 
   l2cap()->TriggerLinkError(kConnectionHandle);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions + 1, transaction_count());
 }
@@ -1491,7 +1487,7 @@ TEST_F(BrEdrConnectionManagerTest, InitializingPeerDoesNotTimeout) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions, transaction_count());
 
@@ -1501,7 +1497,7 @@ TEST_F(BrEdrConnectionManagerTest, InitializingPeerDoesNotTimeout) {
   EXPECT_FALSE(peer->bonded());
 
   // We want to make sure the connection doesn't expire just because they didn't pair.
-  RunLoopFor(zx::sec(600));
+  RunFor(std::chrono::seconds(600));
 
   auto* peer_still = peer_cache()->FindByAddress(kTestDevAddr);
   ASSERT_TRUE(peer_still);
@@ -1510,7 +1506,7 @@ TEST_F(BrEdrConnectionManagerTest, InitializingPeerDoesNotTimeout) {
   // Remote end disconnects.
   test_device()->SendCommandChannelPacket(kDisconnectionComplete);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Peer should still be there, but not connected anymore, until they time out.
   peer = peer_cache()->FindByAddress(kTestDevAddr);
@@ -1541,7 +1537,7 @@ TEST_F(BrEdrConnectionManagerTest, PeerServicesAddedBySearchAndRetainedIfNotSear
   l2cap()->set_channel_callback([&sdp_chan, &sdp_request_tid, this](auto new_chan) {
     new_chan->SetSendCallback(
         [&sdp_request_tid](auto packet) { sdp_request_tid = tid_from_sdp_packet(packet); },
-        pw_dispatcher());
+        dispatcher());
     sdp_chan = std::move(new_chan);
   });
 
@@ -1551,7 +1547,7 @@ TEST_F(BrEdrConnectionManagerTest, PeerServicesAddedBySearchAndRetainedIfNotSear
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_TRUE(sdp_chan.is_alive());
   ASSERT_EQ(0u, search_cb_count);
@@ -1564,7 +1560,7 @@ TEST_F(BrEdrConnectionManagerTest, PeerServicesAddedBySearchAndRetainedIfNotSear
 
   sdp_chan->Receive(*rsp_ptr);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_EQ(1u, search_cb_count);
 
@@ -1590,7 +1586,7 @@ TEST_F(BrEdrConnectionManagerTest, PeerServiceNotErasedByEmptyResultsForSearchOf
   l2cap()->set_channel_callback([&sdp_chan, &sdp_request_tid, this](auto new_chan) {
     new_chan->SetSendCallback(
         [&sdp_request_tid](auto packet) { sdp_request_tid = tid_from_sdp_packet(packet); },
-        pw_dispatcher());
+        dispatcher());
     sdp_chan = std::move(new_chan);
   });
 
@@ -1599,7 +1595,7 @@ TEST_F(BrEdrConnectionManagerTest, PeerServiceNotErasedByEmptyResultsForSearchOf
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_TRUE(sdp_chan.is_alive());
   ASSERT_EQ(0u, search_cb_count);
@@ -1610,7 +1606,7 @@ TEST_F(BrEdrConnectionManagerTest, PeerServiceNotErasedByEmptyResultsForSearchOf
 
   sdp_chan->Receive(*rsp_ptr);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Search callback isn't called by empty attribute list from peer.
   ASSERT_EQ(0u, search_cb_count);
@@ -1659,18 +1655,17 @@ TEST_F(BrEdrConnectionManagerTest, ServiceSearch) {
   l2cap::testing::FakeChannel::WeakPtr sdp_chan;
   std::optional<uint16_t> sdp_request_tid;
 
-  l2cap()->set_channel_callback(
-      [&sdp_chan, &sdp_request_tid, dispatcher = dispatcher(), this](auto new_chan) {
-        new_chan->SetSendCallback(MakeAudioSinkSearchExpected(&sdp_request_tid), pw_dispatcher());
-        sdp_chan = std::move(new_chan);
-      });
+  l2cap()->set_channel_callback([&sdp_chan, &sdp_request_tid, this](auto new_chan) {
+    new_chan->SetSendCallback(MakeAudioSinkSearchExpected(&sdp_request_tid), dispatcher());
+    sdp_chan = std::move(new_chan);
+  });
 
   QueueSuccessfulIncomingConn();
   l2cap()->ExpectOutboundL2capChannel(kConnectionHandle, l2cap::kSDP, 0x40, 0x41, kChannelParams);
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_TRUE(sdp_chan.is_alive());
   ASSERT_TRUE(sdp_request_tid);
@@ -1683,14 +1678,14 @@ TEST_F(BrEdrConnectionManagerTest, ServiceSearch) {
 
   sdp_chan->Receive(*rsp_ptr);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_EQ(1u, search_cb_count);
 
   // Remote end disconnects.
   test_device()->SendCommandChannelPacket(kDisconnectionComplete);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   sdp_request_tid.reset();
 
@@ -1707,7 +1702,7 @@ TEST_F(BrEdrConnectionManagerTest, ServiceSearch) {
                         &kReadRemoteExtended2Complete);
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // We shouldn't have searched for anything.
   ASSERT_FALSE(sdp_request_tid);
@@ -1721,7 +1716,7 @@ TEST_F(BrEdrConnectionManagerTest, SearchAfterConnected) {
   QueueSuccessfulIncomingConn();
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   size_t search_cb_count = 0;
   auto search_cb = [&](auto id, const auto& attributes) {
@@ -1736,7 +1731,7 @@ TEST_F(BrEdrConnectionManagerTest, SearchAfterConnected) {
   std::optional<uint16_t> sdp_request_tid;
 
   l2cap()->set_channel_callback([&sdp_chan, &sdp_request_tid, this](auto new_chan) {
-    new_chan->SetSendCallback(MakeAudioSinkSearchExpected(&sdp_request_tid), pw_dispatcher());
+    new_chan->SetSendCallback(MakeAudioSinkSearchExpected(&sdp_request_tid), dispatcher());
     sdp_chan = std::move(new_chan);
   });
 
@@ -1749,7 +1744,7 @@ TEST_F(BrEdrConnectionManagerTest, SearchAfterConnected) {
 
   ASSERT_NE(sdp::ServiceDiscoverer::kInvalidSearchId, search_id);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_TRUE(sdp_chan.is_alive());
   ASSERT_TRUE(sdp_request_tid);
@@ -1762,14 +1757,14 @@ TEST_F(BrEdrConnectionManagerTest, SearchAfterConnected) {
 
   sdp_chan->Receive(*rsp_ptr);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_EQ(1u, search_cb_count);
 
   // Remote end disconnects.
   test_device()->SendCommandChannelPacket(kDisconnectionComplete);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   sdp_request_tid.reset();
   sdp_chan.reset();
@@ -1786,7 +1781,7 @@ TEST_F(BrEdrConnectionManagerTest, SearchAfterConnected) {
   l2cap()->ExpectOutboundL2capChannel(kConnectionHandle, l2cap::kSDP, 0x40, 0x41, kChannelParams);
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_TRUE(sdp_chan.is_alive());
   ASSERT_TRUE(sdp_request_tid);
@@ -1819,7 +1814,7 @@ TEST_F(BrEdrConnectionManagerTest, SearchOnReconnect) {
   std::optional<uint16_t> sdp_request_tid;
 
   l2cap()->set_channel_callback([&sdp_chan, &sdp_request_tid, this](auto new_chan) {
-    new_chan->SetSendCallback(MakeAudioSinkSearchExpected(&sdp_request_tid), pw_dispatcher());
+    new_chan->SetSendCallback(MakeAudioSinkSearchExpected(&sdp_request_tid), dispatcher());
     sdp_chan = std::move(new_chan);
   });
 
@@ -1847,7 +1842,7 @@ TEST_F(BrEdrConnectionManagerTest, SearchOnReconnect) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_TRUE(sdp_chan.is_alive());
   ASSERT_TRUE(sdp_request_tid);
@@ -1860,14 +1855,14 @@ TEST_F(BrEdrConnectionManagerTest, SearchOnReconnect) {
 
   sdp_chan->Receive(*rsp_ptr);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_EQ(1u, search_cb_count);
 
   // Remote end disconnects.
   test_device()->SendCommandChannelPacket(kDisconnectionComplete);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   sdp_request_tid.reset();
   sdp_chan.reset();
@@ -1881,7 +1876,7 @@ TEST_F(BrEdrConnectionManagerTest, SearchOnReconnect) {
   l2cap()->ExpectOutboundL2capChannel(kConnectionHandle, l2cap::kSDP, 0x40, 0x41, kChannelParams);
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // We should have searched again.
   ASSERT_TRUE(sdp_chan.is_alive());
@@ -1892,7 +1887,7 @@ TEST_F(BrEdrConnectionManagerTest, SearchOnReconnect) {
 
   sdp_chan->Receive(*rsp_ptr);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_EQ(2u, search_cb_count);
 
@@ -1906,7 +1901,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capPairsAndEncryptsThenRetries) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions, transaction_count());
   auto* const peer = peer_cache()->FindByAddress(kTestDevAddr);
@@ -1956,7 +1951,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capPairsAndEncryptsThenRetries) {
   connmgr()->OpenL2capChannel(peer->identifier(), l2cap::kAVDTP, kNoSecurityRequirements,
                               kChannelParams, chan_cb);
 
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
 
   // We should not have a channel because the L2CAP open callback shouldn't have been called, but
   // the LTK should be stored since the link key got received.
@@ -1968,7 +1963,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capPairsAndEncryptsThenRetries) {
 
   l2cap()->ExpectOutboundL2capChannel(kConnectionHandle, l2cap::kAVDTP, 0x40, 0x41, kChannelParams);
 
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
   // We should signal to PeerCache as connected once we finish pairing.
   ASSERT_TRUE(IsConnected(peer));
 
@@ -1983,7 +1978,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capPairsAndEncryptsThenRetries) {
   connmgr()->OpenL2capChannel(peer->identifier(), l2cap::kAVDTP, kNoSecurityRequirements,
                               kChannelParams, chan_cb);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_TRUE(connected_chan);
 
@@ -2007,7 +2002,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capEncryptsForBondedPeerThenRetries) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions, transaction_count());
   ASSERT_FALSE(IsNotConnected(peer));
@@ -2026,7 +2021,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capEncryptsForBondedPeerThenRetries) {
   connmgr()->OpenL2capChannel(peer->identifier(), l2cap::kAVDTP, kNoSecurityRequirements,
                               kChannelParams, socket_cb);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // L2CAP connect shouldn't have been called, and callback shouldn't be called.
   // We should not have a socket.
@@ -2044,7 +2039,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capEncryptsForBondedPeerThenRetries) {
                         &kEncryptionChangeEvent);
   EXPECT_CMD_PACKET_OUT(test_device(), kReadEncryptionKeySize, );
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // No socket until the encryption verification completes.
   ASSERT_FALSE(connected_chan);
@@ -2053,7 +2048,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capEncryptsForBondedPeerThenRetries) {
 
   l2cap()->ExpectOutboundL2capChannel(kConnectionHandle, l2cap::kAVDTP, 0x40, 0x41, kChannelParams);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Once the L2CAP channel has connected, we have connected.
   ASSERT_TRUE(IsConnected(peer));
@@ -2073,7 +2068,7 @@ TEST_F(BrEdrConnectionManagerTest,
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions, transaction_count());
   auto* const peer = peer_cache()->FindByAddress(kTestDevAddr);
@@ -2094,7 +2089,7 @@ TEST_F(BrEdrConnectionManagerTest,
   connmgr()->OpenL2capChannel(peer->identifier(), l2cap::kAVDTP, kNoSecurityRequirements,
                               kChannelParams, socket_cb);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // The L2CAP shouldn't have been called
   // We should not have a channel, and the callback shouldn't have been called.
@@ -2107,7 +2102,7 @@ TEST_F(BrEdrConnectionManagerTest,
   // We disconnect the peer when authentication fails.
   QueueDisconnection(kConnectionHandle);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // An invalid channel should have been sent because the connection failed.
   ASSERT_TRUE(connected_chan);
@@ -2121,7 +2116,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capPairingFinishesButDisconnects) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions, transaction_count());
   auto* const peer = peer_cache()->FindByAddress(kTestDevAddr);
@@ -2170,7 +2165,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capPairingFinishesButDisconnects) {
   connmgr()->OpenL2capChannel(peer->identifier(), l2cap::kAVDTP, kNoSecurityRequirements,
                               kChannelParams, chan_cb);
 
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
 
   // We should not have a channel because the L2CAP open callback shouldn't have been called, but
   // the LTK should be stored since the link key got received.
@@ -2179,7 +2174,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capPairingFinishesButDisconnects) {
   // The remote device disconnects now, when the pairing has been started, then pairing completes.
   test_device()->SendCommandChannelPacket(kDisconnectionComplete);
   test_device()->SendCommandChannelPacket(kReadEncryptionKeySizeRsp);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // We should get a callback from the OpenL2capChannel
   ASSERT_TRUE(connected_chan);
@@ -2204,7 +2199,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capDuringPairingWaitsForPairingToComple
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions, transaction_count());
   auto* const peer = peer_cache()->FindByAddress(kTestDevAddr);
@@ -2232,7 +2227,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capDuringPairingWaitsForPairingToComple
   test_device()->SendCommandChannelPacket(MakeIoCapabilityResponse(
       IoCapability::DISPLAY_YES_NO, AuthenticationRequirements::MITM_GENERAL_BONDING));
 
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
 
   // Initial connection request
 
@@ -2255,7 +2250,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capDuringPairingWaitsForPairingToComple
   connmgr()->OpenL2capChannel(peer->identifier(), l2cap::kAVDTP, kNoSecurityRequirements,
                               kChannelParams, socket_cb);
 
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
 
   // We should not have a socket because the L2CAP open callback shouldn't have been called, but
   // the LTK should be stored since the link key got received.
@@ -2265,7 +2260,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capDuringPairingWaitsForPairingToComple
 
   l2cap()->ExpectOutboundL2capChannel(kConnectionHandle, l2cap::kAVDTP, 0x40, 0x41, kChannelParams);
 
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
 
   // The socket should be returned.
   ASSERT_TRUE(connected_chan);
@@ -2291,7 +2286,7 @@ TEST_F(BrEdrConnectionManagerTest, InterrogationInProgressAllowsBondingButNotL2c
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Ensure that the interrogation has begun but the peer hasn't yet bonded
   EXPECT_EQ(4, transaction_count());
@@ -2327,7 +2322,7 @@ TEST_F(BrEdrConnectionManagerTest, InterrogationInProgressAllowsBondingButNotL2c
                         &kEncryptionChangeEvent);
   EXPECT_CMD_PACKET_OUT(test_device(), kReadEncryptionKeySize, &kReadEncryptionKeySizeRsp);
 
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
 
   // At this point the peer is bonded and the link is encrypted but interrogation has not completed
   // so host-side L2CAP should still be inactive on this link (though it may be buffering packets).
@@ -2341,7 +2336,7 @@ TEST_F(BrEdrConnectionManagerTest, InterrogationInProgressAllowsBondingButNotL2c
   connmgr()->OpenL2capChannel(peer->identifier(), l2cap::kAVDTP, kNoSecurityRequirements,
                               kChannelParams, socket_fails_cb);
 
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
   EXPECT_TRUE(socket_cb_called);
 
   // Complete interrogation successfully.
@@ -2351,7 +2346,7 @@ TEST_F(BrEdrConnectionManagerTest, InterrogationInProgressAllowsBondingButNotL2c
                         &kReadRemoteExtended1Complete);
   test_device()->SendCommandChannelPacket(kReadRemoteSupportedFeaturesComplete);
 
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
 
   EXPECT_TRUE(l2cap()->IsLinkConnected(kConnectionHandle));
 
@@ -2370,7 +2365,7 @@ TEST_F(BrEdrConnectionManagerTest, ConnectLowEnergyPeer) {
 TEST_F(BrEdrConnectionManagerTest, DisconnectUnknownPeerDoesNothing) {
   EXPECT_TRUE(connmgr()->Disconnect(PeerId(999), DisconnectReason::kApiRequest));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(0, transaction_count());
 }
@@ -2381,7 +2376,7 @@ TEST_F(BrEdrConnectionManagerTest, DisconnectClosesHciConnection) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions, transaction_count());
   auto* const peer = peer_cache()->FindByAddress(kTestDevAddr);
@@ -2393,7 +2388,7 @@ TEST_F(BrEdrConnectionManagerTest, DisconnectClosesHciConnection) {
   EXPECT_TRUE(connmgr()->Disconnect(peer->identifier(), DisconnectReason::kApiRequest));
   EXPECT_TRUE(IsNotConnected(peer));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions + 1, transaction_count());
   EXPECT_TRUE(IsNotConnected(peer));
@@ -2404,7 +2399,7 @@ TEST_F(BrEdrConnectionManagerTest, DisconnectSamePeerIsIdempotent) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   auto* const peer = peer_cache()->FindByAddress(kTestDevAddr);
   ASSERT_TRUE(peer);
@@ -2419,7 +2414,7 @@ TEST_F(BrEdrConnectionManagerTest, DisconnectSamePeerIsIdempotent) {
   // Disconnection Complete not yet received).
   EXPECT_TRUE(connmgr()->Disconnect(peer->identifier(), DisconnectReason::kApiRequest));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions + 1, transaction_count());
   ASSERT_TRUE(IsNotConnected(peer));
@@ -2433,7 +2428,7 @@ TEST_F(BrEdrConnectionManagerTest, RemovePeerFromPeerCacheDuringDisconnection) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   auto* const peer = peer_cache()->FindByAddress(kTestDevAddr);
   ASSERT_TRUE(peer);
@@ -2448,7 +2443,7 @@ TEST_F(BrEdrConnectionManagerTest, RemovePeerFromPeerCacheDuringDisconnection) {
   // Remove the peer from PeerCache before receiving HCI Disconnection Complete.
   EXPECT_TRUE(peer_cache()->RemoveDisconnectedPeer(id));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions + 1, transaction_count());
   EXPECT_FALSE(peer_cache()->FindById(id));
@@ -2488,7 +2483,7 @@ TEST_F(BrEdrConnectionManagerTest, AddServiceSearchAll) {
           ASSERT_EQ(kSearchExpectedParams, packet->view(sizeof(bt::sdp::Header)));
           sdp_request_tid = tid_from_sdp_packet(packet);
         },
-        pw_dispatcher());
+        dispatcher());
     sdp_chan = std::move(new_chan);
   });
 
@@ -2497,7 +2492,7 @@ TEST_F(BrEdrConnectionManagerTest, AddServiceSearchAll) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_TRUE(sdp_chan.is_alive());
   ASSERT_TRUE(sdp_request_tid);
@@ -2510,7 +2505,7 @@ TEST_F(BrEdrConnectionManagerTest, AddServiceSearchAll) {
 
   sdp_chan->Receive(*rsp_ptr);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_EQ(1u, search_cb_count);
 
@@ -2529,7 +2524,7 @@ TEST_F(BrEdrConnectionManagerTest, ConnectSinglePeerErrorStatus) {
   hci::Result<> status = fit::ok();
   EXPECT_TRUE(connmgr()->Connect(peer->identifier(), CALLBACK_EXPECT_FAILURE(status)));
   EXPECT_TRUE(IsInitializing(peer));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(pw::bluetooth::emboss::StatusCode::CONNECTION_FAILED_TO_BE_ESTABLISHED),
             status);
@@ -2555,7 +2550,7 @@ TEST_F(BrEdrConnectionManagerTest, ConnectSinglePeerFailure) {
   ASSERT_TRUE(peer->bredr());
   EXPECT_TRUE(IsInitializing(peer));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_TRUE(callback_run);
 
@@ -2580,8 +2575,8 @@ TEST_F(BrEdrConnectionManagerTest, ConnectSinglePeerTimeout) {
   EXPECT_TRUE(connmgr()->Connect(peer->identifier(), callback));
   ASSERT_TRUE(peer->bredr());
   EXPECT_TRUE(IsInitializing(peer));
-  RunLoopFor(kBrEdrCreateConnectionTimeout);
-  RunLoopFor(kBrEdrCreateConnectionTimeout);
+  RunFor(kBrEdrCreateConnectionTimeout);
+  RunFor(kBrEdrCreateConnectionTimeout);
   EXPECT_EQ(ToResult(HostError::kTimedOut), status);
   EXPECT_TRUE(IsNotConnected(peer));
 }
@@ -2609,7 +2604,7 @@ TEST_F(BrEdrConnectionManagerTest, ConnectSinglePeer) {
   EXPECT_TRUE(connmgr()->Connect(peer->identifier(), callback));
   ASSERT_TRUE(peer->bredr());
   EXPECT_TRUE(IsInitializing(peer));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
   EXPECT_TRUE(HasConnectionTo(peer, conn_ref));
   EXPECT_FALSE(IsNotConnected(peer));
@@ -2641,11 +2636,11 @@ TEST_F(BrEdrConnectionManagerTest, ConnectSinglePeerFailedInterrogation) {
   };
 
   EXPECT_TRUE(connmgr()->Connect(peer->identifier(), callback));
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
 
   test_device()->SendCommandChannelPacket(kReadRemoteSupportedFeaturesCompleteFailed);
   QueueDisconnection(kConnectionHandle);
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
 
   EXPECT_EQ(ToResult(HostError::kNotSupported), status);
   EXPECT_TRUE(IsNotConnected(peer));
@@ -2677,7 +2672,7 @@ TEST_F(BrEdrConnectionManagerTest, ConnectSinglePeerAlreadyConnected) {
   EXPECT_TRUE(connmgr()->Connect(peer->identifier(), callback));
   ASSERT_TRUE(peer->bredr());
   EXPECT_TRUE(IsInitializing(peer));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
   EXPECT_TRUE(HasConnectionTo(peer, conn_ref));
   EXPECT_FALSE(IsNotConnected(peer));
@@ -2724,7 +2719,7 @@ TEST_F(BrEdrConnectionManagerTest, ConnectSinglePeerTwoInFlight) {
   EXPECT_TRUE(connmgr()->Connect(peer->identifier(), callback));
 
   // Run the loop which should complete both requests
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(fit::ok(), status);
   EXPECT_TRUE(HasConnectionTo(peer, conn_ref));
@@ -2757,7 +2752,7 @@ TEST_F(BrEdrConnectionManagerTest, ConnectInterrogatingPeerOnlyCompletesAfterInt
   EXPECT_TRUE(connmgr()->Connect(peer->identifier(), callback));
   ASSERT_TRUE(peer->bredr());
   EXPECT_TRUE(IsInitializing(peer));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Launch second request, which should not complete immediately.
   EXPECT_TRUE(connmgr()->Connect(peer->identifier(), callback));
@@ -2765,7 +2760,7 @@ TEST_F(BrEdrConnectionManagerTest, ConnectInterrogatingPeerOnlyCompletesAfterInt
 
   // Finishing interrogation should complete both requests.
   CompleteInterrogation(kConnectionHandle);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(fit::ok(), status);
   EXPECT_TRUE(HasConnectionTo(peer, conn_ref));
@@ -2808,15 +2803,15 @@ TEST_F(BrEdrConnectionManagerTest, ConnectSecondPeerFirstTimesOut) {
   ASSERT_TRUE(peer_a->bredr());
   EXPECT_TRUE(IsInitializing(peer_a));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Launch second inflight request (this will wait for the first)
   EXPECT_TRUE(connmgr()->Connect(peer_b->identifier(), callback_b));
   ASSERT_TRUE(peer_b->bredr());
 
   // Run the loop which should complete both requests
-  RunLoopFor(kBrEdrCreateConnectionTimeout);
-  RunLoopFor(kBrEdrCreateConnectionTimeout);
+  RunFor(kBrEdrCreateConnectionTimeout);
+  RunFor(kBrEdrCreateConnectionTimeout);
 
   EXPECT_TRUE(status_a.is_error());
   EXPECT_EQ(fit::ok(), status_b);
@@ -2853,12 +2848,12 @@ TEST_P(FirstLowEnergyOnlyPeer, ConnectToDualModePeerThatWasFirstLowEnergyOnly) {
   EXPECT_TRUE(connmgr()->Connect(peer->identifier(), callback));
   ASSERT_TRUE(peer->bredr());
   EXPECT_TRUE(IsInitializing(peer));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   test_device()->SendCommandChannelPacket(kConnectionComplete);
   QueueSuccessfulInterrogation(peer->address(), kConnectionHandle);
   QueueDisconnection(kConnectionHandle);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(fit::ok(), status);
   EXPECT_TRUE(HasConnectionTo(peer, conn_ref));
@@ -2898,19 +2893,19 @@ TEST_F(BrEdrConnectionManagerTest, SuccessfulHciRetriesAfterPageTimeout) {
   EXPECT_TRUE(connmgr()->Connect(peer->identifier(), callback));
   ASSERT_TRUE(peer->bredr());
   // Cause the initial Create Connection to wait for 14s for Connection Complete
-  RunLoopFor(zx::sec(14));
+  RunFor(std::chrono::seconds(14));
   ASSERT_TRUE(test_device()->SendCommandChannelPacket(kConnectionCompletePageTimeout));
   // Verify higher layers have not been notified of failure.
   EXPECT_EQ(ToResult(HostError::kFailed), status);
   // Cause the first retry Create Connection to wait for 14s for Connection Complete - now 28s since
   // the first Create Connection, bumping up on the retry window limit of 30s.
-  RunLoopFor(zx::sec(14));
+  RunFor(std::chrono::seconds(14));
   // Cause a second retry.
   ASSERT_TRUE(test_device()->SendCommandChannelPacket(kConnectionCompletePageTimeout));
   // Verify higher layers have not been notified of failure until the Connection Complete propagates
   EXPECT_EQ(ToResult(HostError::kFailed), status);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
   EXPECT_TRUE(HasConnectionTo(peer, conn_ref));
   EXPECT_EQ(conn_ref->link().role(), pw::bluetooth::emboss::ConnectionRole::CENTRAL);
@@ -2936,15 +2931,15 @@ TEST_F(BrEdrConnectionManagerTest, DontRetryAfterWindowClosed) {
 
   EXPECT_TRUE(connmgr()->Connect(peer->identifier(), callback));
   ASSERT_TRUE(peer->bredr());
-  RunLoopFor(zx::sec(15));
+  RunFor(std::chrono::seconds(15));
   // Higher layers should not be notified yet.
   EXPECT_EQ(fit::ok(), status);
   ASSERT_TRUE(test_device()->SendCommandChannelPacket(kConnectionCompletePageTimeout));
 
   // Create Connection will retry, and it hangs for 16s before ConnectionCompletePageTimeout
-  RunLoopFor(zx::sec(16));
+  RunFor(std::chrono::seconds(16));
   ASSERT_TRUE(test_device()->SendCommandChannelPacket(kConnectionCompletePageTimeout));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   // Create Connection will *not* be tried again as we are outside of the retry window.
   EXPECT_EQ(ToResult(pw::bluetooth::emboss::StatusCode::PAGE_TIMEOUT), status);
 }
@@ -2988,7 +2983,7 @@ TEST_F(BrEdrConnectionManagerTest, ConnectSecondPeerFirstFailsWithPageTimeoutAnd
   EXPECT_TRUE(IsInitializing(peer_b));
 
   // Run the loop which should complete both requests
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // The Connect() request to peer_a should fail with the Page Timeout status code without retrying
   EXPECT_EQ(ToResult(pw::bluetooth::emboss::StatusCode::PAGE_TIMEOUT), status_a);
@@ -3016,7 +3011,7 @@ TEST_F(BrEdrConnectionManagerTest, DisconnectPendingConnections) {
   EXPECT_TRUE(connmgr()->Connect(peer_b->identifier(), callback_b));
 
   // Put the first connection into flight.
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
 
   ASSERT_TRUE(IsInitializing(peer_a));
   ASSERT_TRUE(IsInitializing(peer_b));
@@ -3031,14 +3026,14 @@ TEST_F(GAP_BrEdrConnectionManagerTest, DisconnectCooldownIncoming) {
   // Peer successfully connects to us.
   QueueSuccessfulIncomingConn(kTestDevAddr);
   test_device()->SendCommandChannelPacket(kConnectionRequest);
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
   EXPECT_FALSE(IsNotConnected(peer));
 
   // Disconnect locally from an API Request.
   QueueDisconnection(kConnectionHandle);
   EXPECT_TRUE(connmgr()->Disconnect(peer->identifier(), DisconnectReason::kApiRequest));
 
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
   EXPECT_TRUE(IsNotConnected(peer));
 
   // Peer tries to connect to us. We should reject the connection.
@@ -3051,23 +3046,21 @@ TEST_F(GAP_BrEdrConnectionManagerTest, DisconnectCooldownIncoming) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
   EXPECT_TRUE(IsNotConnected(peer));
 
   // After the cooldown time, a successful incoming connection can happen.
-  RunLoopFor(zx::sec(std::chrono::duration_cast<std::chrono::seconds>(
-                         BrEdrConnectionManager::kLocalDisconnectCooldownDuration)
-                         .count()));
+  RunFor(BrEdrConnectionManager::kLocalDisconnectCooldownDuration);
 
   QueueRepeatIncomingConn(kTestDevAddr);
   test_device()->SendCommandChannelPacket(kConnectionRequest);
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
   EXPECT_FALSE(IsNotConnected(peer));
 
   // Can still connect out if we disconnect locally.
   QueueDisconnection(kConnectionHandle);
   EXPECT_TRUE(connmgr()->Disconnect(peer->identifier(), DisconnectReason::kApiRequest));
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
 
   EXPECT_TRUE(IsNotConnected(peer));
 
@@ -3088,7 +3081,7 @@ TEST_F(GAP_BrEdrConnectionManagerTest, DisconnectCooldownIncoming) {
   EXPECT_TRUE(connmgr()->Connect(peer->identifier(), callback));
 
   // Complete connection.
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
 
   EXPECT_EQ(fit::ok(), status);
   EXPECT_TRUE(HasConnectionTo(peer, connection));
@@ -3096,23 +3089,23 @@ TEST_F(GAP_BrEdrConnectionManagerTest, DisconnectCooldownIncoming) {
 
   // Remote disconnections can reconnect immediately
   test_device()->SendCommandChannelPacket(kDisconnectionComplete);
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
   EXPECT_TRUE(IsNotConnected(peer));
 
   QueueRepeatIncomingConn(kTestDevAddr);
   test_device()->SendCommandChannelPacket(kConnectionRequest);
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
   EXPECT_FALSE(IsNotConnected(peer));
 
   // If the reason is not kApiRequest, then the remote peer can reconnect immediately.
   QueueDisconnection(kConnectionHandle);
   EXPECT_TRUE(connmgr()->Disconnect(peer->identifier(), DisconnectReason::kPairingFailed));
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
   EXPECT_TRUE(IsNotConnected(peer));
 
   QueueRepeatIncomingConn(kTestDevAddr);
   test_device()->SendCommandChannelPacket(kConnectionRequest);
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
   EXPECT_FALSE(IsNotConnected(peer));
 
   // Queue disconnection for teardown.
@@ -3125,14 +3118,14 @@ TEST_F(GAP_BrEdrConnectionManagerTest, DisconnectCooldownCancelOnOutgoing) {
   // Peer successfully connects to us.
   QueueSuccessfulIncomingConn(kTestDevAddr);
   test_device()->SendCommandChannelPacket(kConnectionRequest);
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
   EXPECT_FALSE(IsNotConnected(peer));
 
   // Disconnect locally from an API Request.
   QueueDisconnection(kConnectionHandle);
   EXPECT_TRUE(connmgr()->Disconnect(peer->identifier(), DisconnectReason::kApiRequest));
 
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
   EXPECT_TRUE(IsNotConnected(peer));
 
   // Peer tries to connect to us. We should reject the connection.
@@ -3145,7 +3138,7 @@ TEST_F(GAP_BrEdrConnectionManagerTest, DisconnectCooldownCancelOnOutgoing) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
   EXPECT_TRUE(IsNotConnected(peer));
 
   // If we initiate a connection out, then an incoming connection can succeed, even if
@@ -3156,7 +3149,7 @@ TEST_F(GAP_BrEdrConnectionManagerTest, DisconnectCooldownCancelOnOutgoing) {
   hci::Result<> status = fit::ok();
   EXPECT_TRUE(connmgr()->Connect(peer->identifier(), CALLBACK_EXPECT_FAILURE(status)));
   EXPECT_TRUE(IsInitializing(peer));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // The outgoing connection failed to succeed
   EXPECT_TRUE(IsNotConnected(peer));
@@ -3164,7 +3157,7 @@ TEST_F(GAP_BrEdrConnectionManagerTest, DisconnectCooldownCancelOnOutgoing) {
   // but an incoming connection can now succeed, since our intent is to connect now
   QueueRepeatIncomingConn(kTestDevAddr);
   test_device()->SendCommandChannelPacket(kConnectionRequest);
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
   EXPECT_FALSE(IsNotConnected(peer));
 
   // Queue disconnection for teardown.
@@ -3190,7 +3183,7 @@ TEST_F(BrEdrConnectionManagerTest, SDPChannelCreationFailsGracefully) {
                                       kChannelParams);
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Peer should still connect successfully.
   auto* peer = peer_cache()->FindByAddress(kTestDevAddr);
@@ -3200,7 +3193,7 @@ TEST_F(BrEdrConnectionManagerTest, SDPChannelCreationFailsGracefully) {
   EXPECT_FALSE(IsNotConnected(peer));
 
   test_device()->SendCommandChannelPacket(kDisconnectionComplete);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_TRUE(IsNotConnected(peer));
 }
@@ -3217,7 +3210,7 @@ TEST_F(BrEdrConnectionManagerTest,
   QueueSuccessfulIncomingConn(kTestDevAddr, kConnectionHandle);
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   auto* peer = peer_cache()->FindByAddress(kTestDevAddr);
   ASSERT_TRUE(peer);
@@ -3226,7 +3219,7 @@ TEST_F(BrEdrConnectionManagerTest,
   QueueSuccessfulIncomingConn(kTestDevAddr2, kConnectionHandle2);
   test_device()->SendCommandChannelPacket(testing::ConnectionRequestPacket(kTestDevAddr2));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   auto* peer2 = peer_cache()->FindByAddress(kTestDevAddr2);
   ASSERT_TRUE(peer2);
@@ -3259,7 +3252,7 @@ TEST_F(BrEdrConnectionManagerTest,
       /*payload_size=*/1);
   packet_0->mutable_view()->mutable_payload_data()[0] = static_cast<uint8_t>(1);
   connection_0.QueuePacket(std::move(packet_0));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_ACL_PACKET_OUT(test_device(),
                         StaticByteBuffer(
@@ -3275,7 +3268,7 @@ TEST_F(BrEdrConnectionManagerTest,
       /*payload_size=*/1);
   packet_1->mutable_view()->mutable_payload_data()[0] = static_cast<uint8_t>(1);
   connection_1.QueuePacket(std::move(packet_1));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(connection_0.queued_packets().size(), 0u);
   EXPECT_EQ(connection_1.queued_packets().size(), 1u);
@@ -3284,7 +3277,7 @@ TEST_F(BrEdrConnectionManagerTest,
   EXPECT_CMD_PACKET_OUT(test_device(), kDisconnect, &kDisconnectRsp);
 
   EXPECT_TRUE(connmgr()->Disconnect(peer->identifier(), DisconnectReason::kApiRequest));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Packet for |kConnectionHandle2| should not have been sent before Disconnection Complete event.
   EXPECT_EQ(connection_0.queued_packets().size(), 0u);
@@ -3294,7 +3287,7 @@ TEST_F(BrEdrConnectionManagerTest,
   acl_data_channel()->UnregisterConnection(kConnectionHandle);
 
   test_device()->SendCommandChannelPacket(kDisconnectionComplete);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_TRUE(IsNotConnected(peer));
 
@@ -3326,7 +3319,7 @@ TEST_F(BrEdrConnectionManagerTest, Pair) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions, transaction_count());
   auto* const peer = peer_cache()->FindByAddress(kTestDevAddr);
@@ -3360,7 +3353,7 @@ TEST_F(BrEdrConnectionManagerTest, Pair) {
   connmgr()->Pair(peer->identifier(), kNoSecurityRequirements, pairing_complete_cb);
   ASSERT_TRUE(IsInitializing(peer));
   ASSERT_FALSE(peer->bonded());
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_EQ(fit::ok(), pairing_status);
   ASSERT_TRUE(IsConnected(peer));
@@ -3374,7 +3367,7 @@ TEST_F(BrEdrConnectionManagerTest, PairTwice) {
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kIncomingConnTransactions, transaction_count());
   auto* const peer = peer_cache()->FindByAddress(kTestDevAddr);
@@ -3406,7 +3399,7 @@ TEST_F(BrEdrConnectionManagerTest, PairTwice) {
   };
 
   connmgr()->Pair(peer->identifier(), kNoSecurityRequirements, pairing_complete_cb);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_EQ(fit::ok(), pairing_status);
   ASSERT_TRUE(IsConnected(peer));
@@ -3417,7 +3410,7 @@ TEST_F(BrEdrConnectionManagerTest, PairTwice) {
 
   // Note that we do not call QueueSuccessfulPairing twice, even though we pair twice - this is to
   // test that pairing on an already-paired link succeeds without sending any messages to the peer.
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_EQ(fit::ok(), pairing_status);
   ASSERT_TRUE(peer->bonded());
 
@@ -3434,7 +3427,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capChannelCreatesChannelWithChannelPara
   QueueSuccessfulIncomingConn(kTestDevAddr, kConnectionHandle);
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   auto* peer = peer_cache()->FindByAddress(kTestDevAddr);
   ASSERT_TRUE(peer);
@@ -3449,7 +3442,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capChannelCreatesChannelWithChannelPara
       [](PeerId, sm::Result<> status) { EXPECT_EQ(fit::ok(), status); });
 
   QueueSuccessfulPairing();
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   l2cap()->ExpectOutboundL2capChannel(kConnectionHandle, kPSM, kLocalId, 0x41, params);
 
@@ -3462,7 +3455,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capChannelCreatesChannelWithChannelPara
   };
   connmgr()->OpenL2capChannel(peer->identifier(), kPSM, kNoSecurityRequirements, params, sock_cb);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1u, sock_cb_count);
   ASSERT_TRUE(chan_info);
   EXPECT_EQ(*params.mode, chan_info->mode);
@@ -3494,7 +3487,7 @@ TEST_F(BrEdrConnectionManagerTest, ConnectionCleanUpFollowingEncryptionFailure) 
 
   EXPECT_TRUE(connmgr()->Connect(peer->identifier(), callback));
   ASSERT_TRUE(peer->bredr());
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_EQ(fit::ok(), status);
 
   test_device()->SendCommandChannelPacket(testing::EncryptionChangeEventPacket(
@@ -3502,7 +3495,7 @@ TEST_F(BrEdrConnectionManagerTest, ConnectionCleanUpFollowingEncryptionFailure) 
       hci_spec::EncryptionStatus::kOff));
   test_device()->SendCommandChannelPacket(testing::DisconnectionCompletePacket(
       kConnectionHandle, pw::bluetooth::emboss::StatusCode::CONNECTION_TERMINATED_MIC_FAILURE));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_TRUE(IsNotConnected(peer));
 }
@@ -3511,7 +3504,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capChannelUpgradesLinkKey) {
   QueueSuccessfulIncomingConn(kTestDevAddr, kConnectionHandle);
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   auto* peer = peer_cache()->FindByAddress(kTestDevAddr);
   ASSERT_TRUE(peer);
@@ -3545,7 +3538,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capChannelUpgradesLinkKey) {
   connmgr()->OpenL2capChannel(peer->identifier(), kPSM0, sec_reqs, l2cap::ChannelParameters(),
                               sock_cb);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1u, sock_cb_count);
 
   // New pairing delegate with display can support authenticated pairing.
@@ -3568,7 +3561,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capChannelUpgradesLinkKey) {
   connmgr()->OpenL2capChannel(peer->identifier(), kPSM1, sec_reqs1, l2cap::ChannelParameters(),
                               sock_cb);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(2u, sock_cb_count);
 
   QueueDisconnection(kConnectionHandle);
@@ -3578,7 +3571,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capChannelUpgradeLinkKeyFails) {
   QueueSuccessfulIncomingConn(kTestDevAddr, kConnectionHandle);
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   auto* peer = peer_cache()->FindByAddress(kTestDevAddr);
   ASSERT_TRUE(peer);
@@ -3618,7 +3611,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capChannelUpgradeLinkKeyFails) {
   connmgr()->OpenL2capChannel(peer->identifier(), kPSM0, sec_reqs_none, l2cap::ChannelParameters(),
                               sock_cb);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1u, sock_cb_count);
 
   // Pairing caused by insufficient link key.
@@ -3630,7 +3623,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capChannelUpgradeLinkKeyFails) {
   connmgr()->OpenL2capChannel(peer->identifier(), kPSM1, sec_reqs_auth, l2cap::ChannelParameters(),
                               sock_cb);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(2u, sock_cb_count);
 
   // Pairing should not be attempted a third time.
@@ -3653,7 +3646,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenScoConnectionWithoutExistingBrEdrConnecti
 TEST_F(BrEdrConnectionManagerTest, OpenScoConnectionInitiator) {
   QueueSuccessfulIncomingConn();
   test_device()->SendCommandChannelPacket(kConnectionRequest);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   auto* peer = peer_cache()->FindByAddress(kTestDevAddr);
   ASSERT_TRUE(peer);
 
@@ -3675,7 +3668,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenScoConnectionInitiator) {
   auto req_handle =
       connmgr()->OpenScoConnection(peer->identifier(), {kScoConnection}, std::move(conn_cb));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(conn_result.has_value());
   ASSERT_TRUE(conn_result->is_ok());
   EXPECT_EQ(conn_result->value()->handle(), kScoConnectionHandle);
@@ -3685,7 +3678,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenScoConnectionInitiator) {
   QueueDisconnection(kScoConnectionHandle);
   QueueDisconnection(kConnectionHandle);
   connmgr()->Disconnect(peer->identifier(), DisconnectReason::kApiRequest);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 }
 
 class ScoLinkTypesTest : public BrEdrConnectionManagerTest,
@@ -3694,7 +3687,7 @@ class ScoLinkTypesTest : public BrEdrConnectionManagerTest,
 TEST_P(ScoLinkTypesTest, OpenScoConnectionResponder) {
   QueueSuccessfulIncomingConn();
   test_device()->SendCommandChannelPacket(kConnectionRequest);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   auto* peer = peer_cache()->FindByAddress(kTestDevAddr);
   ASSERT_TRUE(peer);
 
@@ -3723,7 +3716,7 @@ TEST_P(ScoLinkTypesTest, OpenScoConnectionResponder) {
       test_device(),
       testing::EnhancedAcceptSynchronousConnectionRequestPacket(peer->address(), sco_conn_params),
       &accept_status_packet);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_FALSE(conn_result.has_value());
 
   constexpr hci_spec::ConnectionHandle kScoConnectionHandle = 0x41;
@@ -3731,7 +3724,7 @@ TEST_P(ScoLinkTypesTest, OpenScoConnectionResponder) {
       kScoConnectionHandle, peer->address(), /*link_type=*/GetParam(),
       pw::bluetooth::emboss::StatusCode::SUCCESS));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(conn_result.has_value());
   ASSERT_TRUE(conn_result->is_ok());
   EXPECT_EQ(conn_result->value().first->handle(), kScoConnectionHandle);
@@ -3741,7 +3734,7 @@ TEST_P(ScoLinkTypesTest, OpenScoConnectionResponder) {
   QueueDisconnection(kScoConnectionHandle);
   QueueDisconnection(kConnectionHandle);
   connmgr()->Disconnect(peer->identifier(), DisconnectReason::kApiRequest);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 }
 
 INSTANTIATE_TEST_SUITE_P(BrEdrConnectionManagerTest, ScoLinkTypesTest,
@@ -3765,7 +3758,7 @@ TEST_P(UnconnectedLinkTypesTest, RejectUnsupportedSCOConnectionRequests) {
       &status_event, &complete_event);
   test_device()->SendCommandChannelPacket(
       testing::ConnectionRequestPacket(kTestDevAddr, /*link_type=*/GetParam()));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 }
 
 INSTANTIATE_TEST_SUITE_P(BrEdrConnectionManagerTest, UnconnectedLinkTypesTest,
@@ -3787,7 +3780,7 @@ TEST_F(BrEdrConnectionManagerTest, RejectUnsupportedConnectionRequest) {
           kTestDevAddr, pw::bluetooth::emboss::StatusCode::UNSUPPORTED_FEATURE_OR_PARAMETER),
       &status_event, &complete_event);
   test_device()->SendCommandChannelPacket(testing::ConnectionRequestPacket(kTestDevAddr, linktype));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 }
 
 TEST_F(BrEdrConnectionManagerTest, IncomingConnectionRacesOutgoing) {
@@ -3814,7 +3807,7 @@ TEST_F(BrEdrConnectionManagerTest, IncomingConnectionRacesOutgoing) {
   // We expect it to be accepted, and then return a command status response, but not a
   // ConnectionComplete event yet
   EXPECT_CMD_PACKET_OUT(test_device(), kAcceptConnectionRequest, &kAcceptConnectionRequestRsp);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // The controller now establishes the link, but will respond to the outgoing connection with the
   // hci error: `ConnectionAlreadyExists`
@@ -3828,7 +3821,7 @@ TEST_F(BrEdrConnectionManagerTest, IncomingConnectionRacesOutgoing) {
   test_device()->SendCommandChannelPacket(kConnectionComplete);
   // We expect to connect and begin interrogation, and for our connect() callback to have been run
   QueueSuccessfulInterrogation(kTestDevAddr, kConnectionHandle);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
 
   // Peers are marked as initializing until a pairing procedure finishes.
@@ -3854,20 +3847,20 @@ TEST_F(BrEdrConnectionManagerTest, OutgoingConnectionRacesIncoming) {
   // We expect it to be accepted, and then return a command status response, but not a
   // ConnectionComplete event yet
   EXPECT_CMD_PACKET_OUT(test_device(), kAcceptConnectionRequest, &kAcceptConnectionRequestRsp);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   // Meanwhile, a client calls Connect() for the peer. We don't expect any packets out as the
   // connection manager will defer requests that have an active incoming request. Instead, this
   // request will be completed when the incoming procedure completes.
   EXPECT_TRUE(connmgr()->Connect(peer->identifier(), should_succeed));
   // We should still expect to connect
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // The controller now notifies us of the complete incoming connection
   test_device()->SendCommandChannelPacket(kConnectionComplete);
   // We expect to connect and begin interrogation, and for the callback passed to Connect() to have
   // been executed when the incoming connection succeeded.
   QueueSuccessfulInterrogation(kTestDevAddr, kConnectionHandle);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
 
   // Peers are marked as initializing until a pairing procedure finishes.
@@ -3884,7 +3877,7 @@ TEST_F(BrEdrConnectionManagerTest, DuplicateIncomingConnectionsFromSamePeerRejec
   // complete yet
   EXPECT_CMD_PACKET_OUT(test_device(), kAcceptConnectionRequest, &kAcceptConnectionRequestRsp);
   test_device()->SendCommandChannelPacket(kConnectionRequest);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   auto status_event = testing::CommandStatusPacket(hci_spec::kRejectConnectionRequest,
                                                    pw::bluetooth::emboss::StatusCode::SUCCESS);
@@ -3897,14 +3890,14 @@ TEST_F(BrEdrConnectionManagerTest, DuplicateIncomingConnectionsFromSamePeerRejec
   // Our second request should be rejected - we already have an incoming request
   EXPECT_CMD_PACKET_OUT(test_device(), reject_packet, &status_event);
   test_device()->SendCommandChannelPacket(kConnectionRequest);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   QueueSuccessfulInterrogation(kTestDevAddr, kConnectionHandle);
   test_device()->SendCommandChannelPacket(kConnectionComplete);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   test_device()->SendCommandChannelPacket(complete_error);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_FALSE(IsNotConnected(peer));
 
@@ -3920,7 +3913,7 @@ TEST_F(BrEdrConnectionManagerTest, IncomingRequestInitializesPeer) {
   // yet
   EXPECT_CMD_PACKET_OUT(test_device(), kAcceptConnectionRequest, &kAcceptConnectionRequestRsp);
   test_device()->SendCommandChannelPacket(kConnectionRequest);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // We should now have a peer in the cache to track our incoming request address
   // The peer is marked as 'Initializing` immediately.
@@ -3939,7 +3932,7 @@ TEST_F(BrEdrConnectionManagerTest, Inspect) {
   EXPECT_CMD_PACKET_OUT(test_device(), testing::AcceptConnectionRequestPacket(kTestDevAddr),
                         &kAcceptConnectionRequestRsp);
   test_device()->SendCommandChannelPacket(kConnectionRequest);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   auto requests_one_request_matcher =
       AllOf(NodeMatches(NameMatches("connection_requests")),
@@ -3956,7 +3949,7 @@ TEST_F(BrEdrConnectionManagerTest, Inspect) {
   const auto connection_complete =
       testing::ConnectionCompletePacket(kTestDevAddr, kConnectionHandle);
   test_device()->SendCommandChannelPacket(connection_complete);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   auto* const peer = peer_cache()->FindByAddress(kTestDevAddr);
   ASSERT_TRUE(peer);
   ASSERT_EQ(peer->bredr()->connection_state(), Peer::ConnectionState::kInitializing);
@@ -3998,10 +3991,10 @@ TEST_F(BrEdrConnectionManagerTest, Inspect) {
   EXPECT_THAT(hierarchy.value(), ChildrenMatch(ElementsAre(conn_mgr_matcher)));
 
   // Delay disconnect so connection has non-zero duration.
-  RunLoopFor(zx::sec(1));
+  RunFor(std::chrono::seconds(1));
   QueueDisconnection(kConnectionHandle);
   EXPECT_TRUE(connmgr()->Disconnect(peer->identifier(), DisconnectReason::kApiRequest));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   auto incoming_matcher_after_disconnect =
       AllOf(NodeMatches(AllOf(NameMatches("incoming"),
@@ -4044,7 +4037,7 @@ TEST_F(BrEdrConnectionManagerTest, RoleChangeAfterInboundConnection) {
 
   QueueSuccessfulIncomingConn();
   test_device()->SendCommandChannelPacket(kConnectionRequest);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   auto* peer = peer_cache()->FindByAddress(kTestDevAddr);
   ASSERT_TRUE(peer);
   EXPECT_EQ(peer->bredr()->connection_state(), Peer::ConnectionState::kInitializing);
@@ -4060,7 +4053,7 @@ TEST_F(BrEdrConnectionManagerTest, RoleChangeAfterInboundConnection) {
 
   test_device()->SendCommandChannelPacket(
       testing::RoleChangePacket(kTestDevAddr, pw::bluetooth::emboss::ConnectionRole::CENTRAL));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(conn_ref->link().role(), pw::bluetooth::emboss::ConnectionRole::CENTRAL);
 
   QueueDisconnection(kConnectionHandle);
@@ -4071,7 +4064,7 @@ TEST_F(BrEdrConnectionManagerTest, RoleChangeWithFailureStatusAfterInboundConnec
 
   QueueSuccessfulIncomingConn();
   test_device()->SendCommandChannelPacket(kConnectionRequest);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   auto* peer = peer_cache()->FindByAddress(kTestDevAddr);
   ASSERT_TRUE(peer);
   EXPECT_EQ(peer->bredr()->connection_state(), Peer::ConnectionState::kInitializing);
@@ -4087,7 +4080,7 @@ TEST_F(BrEdrConnectionManagerTest, RoleChangeWithFailureStatusAfterInboundConnec
   test_device()->SendCommandChannelPacket(
       testing::RoleChangePacket(kTestDevAddr, pw::bluetooth::emboss::ConnectionRole::CENTRAL,
                                 pw::bluetooth::emboss::StatusCode::UNSPECIFIED_ERROR));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   // The role should not change.
   EXPECT_EQ(conn_ref->link().role(), pw::bluetooth::emboss::ConnectionRole::PERIPHERAL);
 
@@ -4100,7 +4093,7 @@ TEST_F(BrEdrConnectionManagerTest, RoleChangeDuringInboundConnectionProcedure) {
   QueueSuccessfulIncomingConn(kTestDevAddr, kConnectionHandle,
                               /*role_change=*/pw::bluetooth::emboss::ConnectionRole::CENTRAL);
   test_device()->SendCommandChannelPacket(kConnectionRequest);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   auto* peer = peer_cache()->FindByAddress(kTestDevAddr);
   ASSERT_TRUE(peer);
   EXPECT_EQ(peer->bredr()->connection_state(), Peer::ConnectionState::kInitializing);
@@ -4168,7 +4161,7 @@ TEST_F(BrEdrConnectionManagerTest, SecureConnectionsSupportedCorrectLinkKeyTypeS
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Ensure that the interrogation has begun but the peer hasn't yet bonded
   EXPECT_EQ(6, transaction_count());
@@ -4204,7 +4197,7 @@ TEST_F(BrEdrConnectionManagerTest, SecureConnectionsSupportedCorrectLinkKeyTypeS
                         &kEncryptionChangeEvent);
   EXPECT_CMD_PACKET_OUT(test_device(), kReadEncryptionKeySize, &kReadEncryptionKeySizeRsp);
 
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
 
   EXPECT_TRUE(l2cap()->IsLinkConnected(kConnectionHandle));
 
@@ -4255,7 +4248,7 @@ TEST_F(BrEdrConnectionManagerTest, SecureConnectionsSupportedIncorrectLinkKeyTyp
 
   test_device()->SendCommandChannelPacket(kConnectionRequest);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Ensure that the interrogation has begun but the peer hasn't yet bonded
   EXPECT_EQ(6, transaction_count());
@@ -4292,7 +4285,7 @@ TEST_F(BrEdrConnectionManagerTest, SecureConnectionsSupportedIncorrectLinkKeyTyp
   // When SC is supported, key type must be of SC type (kUnauthenticatedCombination256 or
   // kAuthenticatedCombination256).
   QueueDisconnection(kConnectionHandle);
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
 }
 
 #undef COMMAND_COMPLETE_RSP
