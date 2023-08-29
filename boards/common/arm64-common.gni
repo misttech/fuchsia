@@ -18,21 +18,11 @@ max_blob_contents_size =
 _bootfs_deps = [
   # Drivers
   "//src/devices/bus/drivers/pci:bus-pci",
-  "//src/devices/usb/drivers/xhci",
-
-  # Configs
-  "//src/power/power-manager:base_config",
-  "//src/security/policy/zxcrypt:null",
 ]
 
 board_bootfs_labels += _bootfs_deps
 board_zedboot_bootfs_labels += _bootfs_deps
 board_recovery_bootfs_labels += _bootfs_deps
-
-board_package_labels += [
-  "//src/hwinfo:default_board_config",
-  "//src/graphics/bin/vulkan_loader",
-]
 
 max_fuchsia_zbi_size = 16777216  # 16 MiB
 max_zedboot_zbi_size = 16777216  # 16 MiB

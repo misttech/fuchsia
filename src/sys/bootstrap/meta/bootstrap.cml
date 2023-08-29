@@ -64,12 +64,12 @@
         {
             name: "live_usb",
             url: "fuchsia-boot:///live-usb#meta/live-usb.cm",
-            startup: "eager",
+            //startup: "eager",
         },
         {
             name: "netsvc",
             url: "fuchsia-boot:///netsvc#meta/netsvc.cm",
-            startup: "eager",
+            //startup: "eager",
         },
         {
             name: "ptysvc",
@@ -81,7 +81,7 @@
 
             // pwrbtn-monitor should start eagerly - the only services it offers may never be called
             // on some builds, so there's no other way to start it.
-            startup: "eager",
+            //startup: "eager",
         },
         {
             name: "shutdown_shim",

@@ -10,9 +10,9 @@ impl DefineSubsystemConfiguration<GraphicsConfig> for GraphicsSubsystemConfig {
     fn define_configuration(
         context: &ConfigurationContext<'_>,
         graphics_config: &GraphicsConfig,
-        builder: &mut dyn ConfigurationBuilder,
+        _builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
-        let enable_virtual_console =
+        let _enable_virtual_console =
             match (context.build_type, graphics_config.enable_virtual_console) {
                 // Use the value if one was specified.
                 (_, Some(enable_virtual_console)) => enable_virtual_console,
@@ -21,9 +21,6 @@ impl DefineSubsystemConfiguration<GraphicsConfig> for GraphicsSubsystemConfig {
                 // Otherwise, enable virtcon.
                 (_, _) => true,
             };
-        if enable_virtual_console {
-            builder.platform_bundle("virtcon");
-        }
         Ok(())
     }
 }

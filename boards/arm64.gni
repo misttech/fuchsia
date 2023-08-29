@@ -15,11 +15,8 @@ board_configuration_label = "//boards/arm64"
 board_name = "arm64"
 board_description = "A generic emulated arm64 device."
 
-_bootfs_deps = [ "//src/devices/block/drivers/nvme" ]
-
 # Additional drivers to support running as a virtualization guest.
-_bootfs_deps += _imports.virtio_drivers + [
-                  "//src/devices/block/drivers/ahci",
+_bootfs_deps = _imports.virtio_drivers + [
                   "//src/devices/board/drivers/acpi-arm64",
                   "//src/devices/board/drivers/qemu-arm64",
                   "//src/devices/rtc/drivers/pl031-rtc",

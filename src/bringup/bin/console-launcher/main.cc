@@ -119,6 +119,7 @@ zx::result<fidl::ClientEnd<fuchsia_hardware_pty::Device>> ConnectToPty(
   return std::move(watch_result.value());
 }
 
+#if 0
 zx::result<fidl::ClientEnd<fuchsia_hardware_pty::Device>> CreateVirtualConsole(
     const fidl::WireSyncClient<fuchsia_virtualconsole::SessionManager>& session_manager) {
   zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_pty::Device>();
@@ -134,6 +135,7 @@ zx::result<fidl::ClientEnd<fuchsia_hardware_pty::Device>> CreateVirtualConsole(
   }
   return zx::ok(std::move(client));
 }
+#endif
 
 std::vector<std::thread> LaunchAutorun(const console_launcher::ConsoleLauncher& launcher,
                                        std::shared_ptr<loader::LoaderService> ldsvc,
@@ -449,6 +451,8 @@ int main(int argv, char** argc) {
 
   std::vector<std::thread> workers;
 
+  
+#if 0
   if (!args.virtcon_disable) {
     zx_status_t status = [&]() {
       zx::result virtcon = component::Connect<fuchsia_virtualconsole::SessionManager>();
@@ -486,6 +490,7 @@ int main(int argv, char** argc) {
       FX_PLOGS(ERROR, status) << "failed to set up virtcon";
     }
   }
+#endif
 
   if (args.run_shell) {
     FX_LOGS(INFO) << "console.shell: enabled";

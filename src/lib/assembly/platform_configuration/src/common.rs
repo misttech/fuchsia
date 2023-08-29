@@ -98,6 +98,7 @@ pub(crate) struct ConfigurationContext<'a> {
     pub feature_set_level: &'a FeatureSupportLevel,
     pub build_type: &'a BuildType,
     pub board_info: &'a BoardInformation,
+    #[allow(dead_code)]
     pub ramdisk_image: bool,
 }
 

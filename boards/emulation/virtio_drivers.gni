@@ -7,15 +7,7 @@
 # These drivers are used when Fuchsia is running as a guest in a hypervisor
 # such as QEMU.
 virtio_drivers = [
-  "//src/connectivity/ethernet/drivers/virtio:virtio_netdevice",
   "//src/devices/block/drivers/virtio:virtio_block",
-  "//src/devices/block/drivers/virtio:virtio_scsi",
-  "//src/devices/misc/drivers/virtio-rng:virtio_rng",
   "//src/devices/misc/drivers/virtio-socket:virtio_socket",
   "//src/devices/serial/drivers/virtio-console:virtio_console",
-  "//src/graphics/drivers/misc:goldfish_fuchsia_drivers",
-  "//src/graphics/display/drivers/goldfish-display",
-  "//src/graphics/display/drivers/virtio-guest:virtio_gpu",
-  "//src/ui/input/drivers/virtio:virtio_input",
-  "//src/ui/input/drivers/goldfish_sensor:sensor_driver",
 ]
