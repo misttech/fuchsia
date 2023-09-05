@@ -39,6 +39,10 @@ class ElfldltlResolveTests : public testing::Test {
 
     constexpr size_type load_bias() const { return 0; }
 
+    constexpr bool uses_static_tls() const { return false; }
+    constexpr size_type tls_module_id() const { return 0; }
+    constexpr size_type static_tls_bias() const { return 0; }
+
     constexpr auto& file() { return file_; }
 
    private:

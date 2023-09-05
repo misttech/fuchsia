@@ -144,6 +144,10 @@ class LoadModule {
   constexpr size_type load_bias() const { return module().link_map.addr; }
 
   // TODO(fxbug.dev/128502): tls methods
+  constexpr bool uses_static_tls() const {
+    ZX_PANIC("Should never be called");
+    return false;
+  }
   constexpr size_t static_tls_bias() const {
     ZX_PANIC("Should never be called");
     return 0;

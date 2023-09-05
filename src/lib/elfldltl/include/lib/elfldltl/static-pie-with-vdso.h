@@ -36,16 +36,20 @@ namespace elfldltl {
 // Do self-relocation against the vDSO so system calls can be made normally.
 // This is the simplified all-in-one version that decodes the all vDSO details
 // from memory itself.  It returns the the program's own SymbolInfo data; see
-// <lib/elfldltl/symbol.h> for details.
-template <class Self, class DiagnosticsType>
+// <lib/elfldltl/symbol.h> for details.  Optional additional arguments are
+// passed along to DecodeDynamic as observer objects to collect information
+// other than the SymbolInfo and RelocationInfo implicitly collected here.
+template <class Self, class DiagnosticsType, typename... Observers>
 inline SymbolInfo<typename Self::Elf> LinkStaticPieWithVdso(  //
-    const Self& self, DiagnosticsType& diagnostics, const void* vdso_base);
+    const Self& self, DiagnosticsType& diagnostics, const void* vdso_base,
+    Observers&&... observers);
 
 // This version takes vDSO details already distilled separately.
-template <class Self, class DiagnosticsType>
+template <class Self, class DiagnosticsType, typename... Observers>
 inline SymbolInfo<typename Self::Elf> LinkStaticPieWithVdso(
     const Self& self, DiagnosticsType& diagnostics,
-    const SymbolInfo<typename Self::Elf>& vdso_symbols, typename Self::Elf::size_type vdso_bias) {
+    const SymbolInfo<typename Self::Elf>& vdso_symbols, typename Self::Elf::size_type vdso_bias,
+    Observers&&... observers) {
   using namespace std::literals;
   using Elf = typename Self::Elf;
   using size_type = typename Elf::size_type;
@@ -59,7 +63,8 @@ inline SymbolInfo<typename Self::Elf> LinkStaticPieWithVdso(
   SymbolInfo<Elf> symbol_info;
   DecodeDynamic(diagnostics, memory, Self::Dynamic(),       //
                 DynamicRelocationInfoObserver(reloc_info),  //
-                DynamicSymbolInfoObserver(symbol_info));
+                DynamicSymbolInfoObserver(symbol_info),     //
+                std::forward<Observers>(observers)...);
 
   // Apply simple fixups first, just in case anything else needs them done.
   if (RelocateRelative(diagnostics, memory, reloc_info, bias)) {
@@ -113,7 +118,7 @@ inline SymbolInfo<typename Self::Elf> LinkStaticPieWithVdso(
 }
 
 // This distills the vDSO symbols and load bias from the image in memory.
-template <class Elf, class DiagnosticsType>
+template <class Elf = Elf<>, class DiagnosticsType>
 inline std::pair<SymbolInfo<Elf>, uintptr_t> GetVdsoSymbols(DiagnosticsType& diagnostics,
                                                             const void* vdso_base) {
   using Ehdr = typename Elf::Ehdr;
@@ -157,16 +162,18 @@ inline std::pair<SymbolInfo<Elf>, uintptr_t> GetVdsoSymbols(DiagnosticsType& dia
 }
 
 // This just combines the two functions above.
-template <class Self, class DiagnosticsType>
+template <class Self, class DiagnosticsType, typename... Observers>
 inline SymbolInfo<typename Self::Elf> LinkStaticPieWithVdso(  //
-    const Self& self, DiagnosticsType& diagnostics, const void* vdso_base) {
+    const Self& self, DiagnosticsType& diagnostics, const void* vdso_base,
+    Observers&&... observers) {
   using Elf = typename Self::Elf;
 
   // Fetch the vDSO symbol table.
   auto [vdso_symbols, vdso_bias] = GetVdsoSymbols<Elf>(diagnostics, vdso_base);
 
   // The main work is done in the overload defined above.
-  return LinkStaticPieWithVdso(self, diagnostics, vdso_symbols, vdso_bias);
+  return LinkStaticPieWithVdso(self, diagnostics, vdso_symbols, vdso_bias,
+                               std::forward<Observers>(observers)...);
 }
 
 }  // namespace elfldltl

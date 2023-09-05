@@ -19,20 +19,26 @@ namespace elfldltl {
 // the `resolve` parameter for RelocateSymbolic. See link.h for more details.
 // The Module type must have the following methods:
 //
-//  * const SymbolInfo& symbol_info()
+//  * const SymbolInfo& symbol_info() const
 //    Returns the SymbolInfo type associated with this module. This is used
 //    to call SymbolInfo::Lookup().
 //
-//  * size_type load_bias()
+//  * size_type load_bias() const
 //    Returns the load bias for symbol addresses in this module.
 //
-//  * size_type tls_module_id()
+//  * size_type tls_module_id() const
 //    Returns the TLS module ID number for this module.
+//    This will be zero for a module with no PT_TLS segment.
+//    It's always one in the main executable if has a PT_TLS segment,
+//    but may be one in a different module if the main executable has none.
 //
-//  * size_type static_tls_bias()
+//  * bool uses_static_tls() const
+//    This module may have TLS relocations for IE or LE model accesses.
+//
+//  * size_type static_tls_bias() const
 //    Returns the static TLS layout bias for the defining module.
 //
-//  * size_type tls_desc_hook(const Sym&), tls_desc_value(const Sym&)
+//  * size_type tls_desc_hook(const Sym&), tls_desc_value(const Sym&) const
 //    Returns the two values for the TLSDESC resolution.
 //
 template <class Module>
@@ -75,13 +81,6 @@ constexpr auto MakeSymbolResolver(const SymbolInfo& ref_info, const ModuleList& 
   using Definition = ResolverDefinition<Module>;
 
   return [&](const auto& ref, elfldltl::RelocateTls tls_type) -> std::optional<Definition> {
-    // TODO(fxbug.dev/118060): Support thread local symbols. For now we just use
-    // FormatError, which isn't preferable, but this is just a temporary error.
-    if (tls_type != RelocateTls::kNone) {
-      diag.FormatError("TLS not yet supported");
-      return std::nullopt;
-    }
-
     elfldltl::SymbolName name{ref_info, ref};
 
     if (name.empty()) [[unlikely]] {
@@ -91,6 +90,29 @@ constexpr auto MakeSymbolResolver(const SymbolInfo& ref_info, const ModuleList& 
 
     for (const auto& module : modules) {
       if (const auto* sym = name.Lookup(module.symbol_info())) {
+        switch (tls_type) {
+          case RelocateTls::kNone:
+            if (sym->type() == ElfSymType::kTls) [[unlikely]] {
+              diag.FormatError("non-TLS relocation resolves to STT_TLS symbol ", name);
+              return std::nullopt;
+            }
+            break;
+          case RelocateTls::kStatic:
+            if (!module.uses_static_tls()) [[unlikely]] {
+              diag.FormatError(
+                  "TLS Initial Exec relocation resolves to STT_TLS symbol in module without DF_STATIC_TLS: ",
+                  name);
+              return std::nullopt;
+            }
+            [[fallthrough]];
+          case RelocateTls::kDynamic:
+          case RelocateTls::kDesc:
+            if (sym->type() != ElfSymType::kTls) [[unlikely]] {
+              diag.FormatError("TLS relocation resolves to non-STT_TLS symbol: ", name);
+              return std::nullopt;
+            }
+            break;
+        }
         return Definition{sym, std::addressof(module)};
       }
     }
