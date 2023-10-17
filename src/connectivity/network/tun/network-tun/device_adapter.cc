@@ -13,8 +13,9 @@
 namespace network {
 namespace tun {
 
-zx::result<std::unique_ptr<DeviceAdapter>> DeviceAdapter::Create(async_dispatcher_t* dispatcher,
-                                                                 DeviceAdapterParent* parent) {
+zx::result<std::unique_ptr<DeviceAdapter>> DeviceAdapter::Create(
+    const DeviceInterfaceDispatchers& dispatchers, const ShimDispatchers& shim_dispatchers,
+    DeviceAdapterParent* parent) {
   fbl::AllocChecker ac;
   std::unique_ptr<DeviceAdapter> adapter(new (&ac) DeviceAdapter(parent));
   if (!ac.check()) {
@@ -25,8 +26,8 @@ zx::result<std::unique_ptr<DeviceAdapter>> DeviceAdapter::Create(async_dispatche
       .ctx = adapter.get(),
   };
 
-  zx::result device =
-      NetworkDeviceInterface::Create(dispatcher, ddk::NetworkDeviceImplProtocolClient(&proto));
+  zx::result device = NetworkDeviceInterface::Create(dispatchers, shim_dispatchers,
+                                                     ddk::NetworkDeviceImplProtocolClient(&proto));
   if (device.is_error()) {
     return device.take_error();
   }
@@ -74,6 +75,8 @@ void DeviceAdapter::NetworkDeviceImplStop(network_device_impl_stop_callback call
           .length = 0,
       };
       rx_buffer_t return_buffer = {
+          .meta = {.frame_type =
+                       static_cast<uint8_t>(fuchsia_hardware_network::FrameType::kEthernet)},
           .data_list = &part,
           .data_count = 1,
       };
@@ -139,6 +142,8 @@ void DeviceAdapter::NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buf_l
             .length = 0,
         };
         rx_buffer_t buffer = {
+            .meta = {.frame_type =
+                         static_cast<uint8_t>(fuchsia_hardware_network::FrameType::kEthernet)},
             .data_list = &part,
             .data_count = 1,
         };

@@ -22,6 +22,9 @@ ddk_source_split("device") {
     "diagnostics_service.cc",
     "diagnostics_service.h",
     "log.h",
+    "mac_addr_shim.cc",
+    "network_device_shim.cc",
+    "network_port_shim.cc",
     "port_watcher.cc",
     "port_watcher.h",
     "public/network_device.h",
@@ -42,6 +45,7 @@ ddk_source_split("device") {
     "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_cpp",
     "//sdk/lib/fidl",
     "//src/connectivity/lib/network-device/buffer_descriptor",
+    "//src/devices/lib/driver:driver_runtime",
     "//src/lib/debug:backtrace-request",
     "//src/lib/vmo_store",
     "//zircon/system/ulib/async:async-cpp",
@@ -49,6 +53,7 @@ ddk_source_split("device") {
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/sync",
+    "//zircon/system/ulib/sync:sync-cpp",
     "//zircon/system/ulib/zx",
   ]
 
@@ -74,6 +79,8 @@ test("test_bin") {
 
   deps = [
     ":device",
+    "//sdk/lib/driver/testing/cpp:cpp",
+    "//src/connectivity/network/drivers/network-device/mac:test_util",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
     "//third_party/googletest:gmock",
@@ -106,8 +113,11 @@ test("microbenchmarks_bin") {
 
   deps = [
     ":device",
+    "//sdk/lib/driver/runtime/testing/cpp:cpp",
+    "//sdk/lib/driver/testing/cpp",
     "//src/lib/fxl",
     "//zircon/system/ulib/perftest",
+    "//zircon/system/ulib/sync:sync-cpp",
   ]
 
   # TODO(fxbug.dev/94768): This target uses mutable tables which are deprecated,

@@ -42,9 +42,10 @@ zx::result<std::unique_ptr<RxQueue>> RxQueue::Create(DeviceInterface* parent) {
   }
   queue->in_flight_ = std::move(in_flight.value());
 
-  auto device_depth = parent->info().rx_depth;
+  auto device_depth = parent->info().rx_depth().value_or(0);
 
-  std::unique_ptr<rx_space_buffer_t[]> buffers(new (&ac) rx_space_buffer_t[device_depth]);
+  std::unique_ptr<fuchsia_hardware_network_driver::wire::RxSpaceBuffer[]> buffers(
+      new (&ac) fuchsia_hardware_network_driver::wire::RxSpaceBuffer[device_depth]);
   if (!ac.check()) {
     return zx::error(ZX_ERR_NO_MEMORY);
   }
@@ -53,13 +54,15 @@ zx::result<std::unique_ptr<RxQueue>> RxQueue::Create(DeviceInterface* parent) {
     return zx::error(status);
   }
 
-  using ThreadArgs = std::tuple<RxQueue*, std::unique_ptr<rx_space_buffer_t[]>>;
+  using ThreadArgs =
+      std::tuple<RxQueue*, std::unique_ptr<fuchsia_hardware_network_driver::wire::RxSpaceBuffer[]>>;
   auto* thread_args = new (&ac) ThreadArgs(queue.get(), std::move(buffers));
   if (!ac.check()) {
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 
   thrd_t watch_thread;
+  // Dispatchers don't support thread profiles at this point, create a thread instead.
   if (int result = thrd_create_with_name(
           &watch_thread,
           [](void* ctx) {
@@ -168,7 +171,7 @@ std::tuple<RxQueue::InFlightBuffer*, uint32_t> RxQueue::GetBuffer() {
   return std::make_tuple(&in_flight_->Get(idx), idx);
 }
 
-zx_status_t RxQueue::PrepareBuff(rx_space_buffer_t* buff) {
+zx_status_t RxQueue::PrepareBuff(fuchsia_hardware_network_driver::wire::RxSpaceBuffer* buff) {
   auto [session_buffer, index] = GetBuffer();
   if (session_buffer == nullptr) {
     return ZX_ERR_NO_RESOURCES;
@@ -190,22 +193,22 @@ zx_status_t RxQueue::PrepareBuff(rx_space_buffer_t* buff) {
   return ZX_OK;
 }
 
-void RxQueue::CompleteRxList(const rx_buffer_t* rx_buffer_list, size_t count) {
+void RxQueue::CompleteRxList(
+    const fidl::VectorView<::fuchsia_hardware_network_driver::wire::RxBuffer>& rx_buffer_list) {
   fbl::AutoLock lock(&parent_->rx_lock());
   SharedAutoLock control_lock(&parent_->control_lock());
-  device_buffer_count_ -= count;
-  for (const auto& rx_buffer : cpp20::span(rx_buffer_list, count)) {
-    ZX_ASSERT_MSG(rx_buffer.data_count <= MAX_BUFFER_PARTS,
-                  "too many buffer parts in rx buffer: %ld", rx_buffer.data_count);
-
+  device_buffer_count_ -= rx_buffer_list.count();
+  for (const auto& rx_buffer : rx_buffer_list.get()) {
+    ZX_ASSERT_MSG(rx_buffer.data.count() <= MAX_BUFFER_PARTS,
+                  "too many buffer parts in rx buffer: %ld", rx_buffer.data.count());
     std::array<SessionRxBuffer, MAX_BUFFER_PARTS> session_parts;
     auto session_parts_iter = session_parts.begin();
     bool drop_frame = false;
     uint32_t total_length = 0;
 
     Session* primary_session = nullptr;
-    cpp20::span rx_parts(rx_buffer.data_list, rx_buffer.data_count);
-    for (const rx_buffer_part_t& rx_part : rx_parts) {
+    cpp20::span rx_parts = rx_buffer.data.get();
+    for (const fuchsia_hardware_network_driver::wire::RxBufferPart& rx_part : rx_parts) {
       InFlightBuffer& in_flight_buffer = in_flight_->Get(rx_part.id);
 
       total_length += rx_part.length;
@@ -225,7 +228,7 @@ void RxQueue::CompleteRxList(const rx_buffer_t* rx_buffer_list, size_t count) {
         LOGF_WARN(
             "dropping chained frame with %ld buffers spanning different sessions: "
             "%s, %s",
-            rx_buffer.data_count, primary_session->name(), in_flight_buffer.session->name());
+            rx_buffer.data.count(), primary_session->name(), in_flight_buffer.session->name());
         drop_frame = true;
       }
       ZX_DEBUG_ASSERT(in_flight_buffer.session != nullptr);
@@ -240,7 +243,7 @@ void RxQueue::CompleteRxList(const rx_buffer_t* rx_buffer_list, size_t count) {
 
     // Drop any frames containing no data or where inconsistencies were found above.
     if (total_length == 0 || drop_frame) {
-      for (const rx_buffer_part_t& rx_part : rx_parts) {
+      for (const fuchsia_hardware_network_driver::wire::RxBufferPart& rx_part : rx_parts) {
         InFlightBuffer& in_flight_buffer = in_flight_->Get(rx_part.id);
         in_flight_buffer.session->AssertParentRxLock(*parent_);
         if (in_flight_buffer.session->CompleteUnfulfilledRx()) {
@@ -265,11 +268,11 @@ void RxQueue::CompleteRxList(const rx_buffer_t* rx_buffer_list, size_t count) {
     primary_session->AssertParentRxLock(*parent_);
     if (primary_session->CompleteRx(frame_info)) {
       std::for_each(rx_parts.begin(), rx_parts.end(),
-                    [this](const rx_buffer_part_t& rx)
+                    [this](const fuchsia_hardware_network_driver::wire::RxBufferPart& rx)
                         __TA_REQUIRES(parent_->rx_lock()) { available_queue_->Push(rx.id); });
     } else {
       std::for_each(rx_parts.begin(), rx_parts.end(),
-                    [this](const rx_buffer_part_t& rx)
+                    [this](const fuchsia_hardware_network_driver::wire::RxBufferPart& rx)
                         __TA_REQUIRES(parent_->rx_lock()) { in_flight_->Free(rx.id); });
     }
   }
@@ -279,7 +282,8 @@ void RxQueue::CompleteRxList(const rx_buffer_t* rx_buffer_list, size_t count) {
   }
 }
 
-int RxQueue::WatchThread(std::unique_ptr<rx_space_buffer_t[]> space_buffers) {
+int RxQueue::WatchThread(
+    std::unique_ptr<fuchsia_hardware_network_driver::wire::RxSpaceBuffer[]> space_buffers) {
   auto loop = [this, space_buffers = std::move(space_buffers)]() -> zx_status_t {
     fbl::RefPtr<RefCountedFifo> observed_fifo(nullptr);
     bool waiting_on_fifo = false;
@@ -332,7 +336,8 @@ int RxQueue::WatchThread(std::unique_ptr<rx_space_buffer_t[]> space_buffers) {
 
       fbl::AutoLock rx_lock(&parent_->rx_lock());
       SharedAutoLock control_lock(&parent_->control_lock());
-      size_t push_count = parent_->info().rx_depth - device_buffer_count_;
+      const uint16_t rx_depth = parent_->info().rx_depth().value_or(0);
+      size_t push_count = rx_depth - device_buffer_count_;
       if (parent_->IsDataPlaneOpen()) {
         for (; pushed < push_count; pushed++) {
           if (PrepareBuff(&space_buffers[pushed]) != ZX_OK) {
@@ -349,8 +354,7 @@ int RxQueue::WatchThread(std::unique_ptr<rx_space_buffer_t[]> space_buffers) {
       // Otherwise, we'll trigger the loop again once the device calls CompleteRx.
       //
       // Similarly, we should not wait on the FIFO if the device has not started yet.
-      should_wait_on_fifo =
-          device_buffer_count_ < parent_->info().rx_depth && parent_->IsDataPlaneOpen();
+      should_wait_on_fifo = device_buffer_count_ < rx_depth && parent_->IsDataPlaneOpen();
 
       // We release the main rx queue and control locks before calling into the parent device so we
       // don't cause a re-entrant deadlock.
@@ -360,10 +364,10 @@ int RxQueue::WatchThread(std::unique_ptr<rx_space_buffer_t[]> space_buffers) {
       if (pushed != 0) {
         // Send buffers in batches of at most |MAX_RX_SPACE_BUFFERS| at a time to stay within the
         // FIDL channel maximum.
-        rx_space_buffer* buffers = space_buffers.get();
+        netdriver::wire::RxSpaceBuffer* buffers = space_buffers.get();
         while (pushed > 0) {
           const uint32_t batch = std::min(static_cast<uint32_t>(pushed), MAX_RX_SPACE_BUFFERS);
-          parent_->QueueRxSpace(buffers, static_cast<uint32_t>(batch));
+          parent_->QueueRxSpace(cpp20::span(buffers, static_cast<uint32_t>(batch)));
           buffers += batch;
           pushed -= batch;
         }

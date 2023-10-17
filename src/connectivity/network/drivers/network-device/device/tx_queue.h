@@ -5,7 +5,6 @@
 #ifndef SRC_CONNECTIVITY_NETWORK_DRIVERS_NETWORK_DEVICE_DEVICE_TX_QUEUE_H_
 #define SRC_CONNECTIVITY_NETWORK_DRIVERS_NETWORK_DEVICE_DEVICE_TX_QUEUE_H_
 
-#include <fuchsia/hardware/network/driver/cpp/banjo.h>
 #include <lib/zx/port.h>
 #include <lib/zx/thread.h>
 #include <threads.h>
@@ -55,13 +54,13 @@ class TxQueue {
   // Helper class to handle Tx transactions from sessions.
   class SessionTransaction {
    public:
-    SessionTransaction(cpp20::span<tx_buffer_t> buffers, TxQueue* parent, Session* session)
-        __TA_REQUIRES(parent->parent_->tx_lock());
+    SessionTransaction(cpp20::span<fuchsia_hardware_network_driver::wire::TxBuffer> buffers,
+                       TxQueue* parent, Session* session) __TA_REQUIRES(parent->parent_->tx_lock());
     void Commit() __TA_EXCLUDES(queue_->parent_->tx_lock());
 
     uint32_t available() const { return available_; }
     bool overrun() const { return available_ == 0; }
-    tx_buffer_t* GetBuffer();
+    fuchsia_hardware_network_driver::wire::TxBuffer* GetBuffer();
     void Push(uint16_t descriptor) __TA_REQUIRES(queue_->parent_->tx_lock());
 
     void AssertParentTxLock(DeviceInterface& parent) __TA_ASSERT(queue_->parent_->tx_lock())
@@ -70,8 +69,8 @@ class TxQueue {
     }
 
    private:
-    cpp20::span<tx_buffer_t> buffers_;
-    // Pointer to queue over which transaction is opened, not owned.
+    cpp20::span<fuchsia_hardware_network_driver::wire::TxBuffer> buffers_;
+    //  Pointer to queue over which transaction is opened, not owned.
     TxQueue* const queue_;
     // Pointer to session that opened the transaction, not owned.
     Session* const session_;
@@ -81,18 +80,20 @@ class TxQueue {
   };
 
   // Marks all buffers in tx as complete, returning them to their respective sessions.
-  void CompleteTxList(const tx_result_t* tx, size_t count) __TA_EXCLUDES(parent_->tx_lock());
+  void CompleteTxList(const fidl::VectorView<fuchsia_hardware_network_driver::wire::TxResult>& tx)
+      __TA_EXCLUDES(parent_->tx_lock());
 
   zx::unowned_thread thread_handle();
 
  private:
   explicit TxQueue(DeviceInterface* parent) : parent_(parent) {}
 
-  void Thread(cpp20::span<tx_buffer_t> buffers);
+  void Thread(cpp20::span<fuchsia_hardware_network_driver::wire::TxBuffer> buffers);
   zx_status_t EnqueueUserPacket(uint64_t key);
   zx_status_t UpdateFifoWatches();
-  zx_status_t HandleFifoSignal(cpp20::span<tx_buffer_t> buffers, SessionKey session_key,
-                               zx_signals_t signals);
+
+  zx_status_t HandleFifoSignal(cpp20::span<fuchsia_hardware_network_driver::wire::TxBuffer> buffers,
+                               SessionKey session, zx_signals_t signals);
 
   struct InFlightBuffer {
     InFlightBuffer() = default;

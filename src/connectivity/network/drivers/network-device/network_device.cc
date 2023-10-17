@@ -11,27 +11,137 @@
 #include <ddktl/device.h>
 #include <ddktl/fidl.h>
 #include <fbl/alloc_checker.h>
+#include <fbl/auto_lock.h>
+
+#include "device/network_device_shim.h"
 
 namespace network {
+namespace {
 
-NetworkDevice::~NetworkDevice() = default;
-
-zx_status_t NetworkDevice::Create(void* ctx, zx_device_t* parent, async_dispatcher_t* dispatcher) {
+// Creates a `NetworkDeviceImplFactory` based on the `parent` device type.
+zx::result<std::unique_ptr<NetworkDeviceImplBinder>> CreateImplFactory(
+    ddk::NetworkDeviceImplProtocolClient netdevice_impl, NetworkDevice* device,
+    const ShimDispatchers& dispatchers) {
   fbl::AllocChecker ac;
-  std::unique_ptr netdev = fbl::make_unique_checked<NetworkDevice>(&ac, parent, dispatcher);
+
+  // If the `parent` is Banjo based, then we must use "shims" to translate
+  // between Banjo and FIDL in order to leverage the netdevice core library.
+  if (netdevice_impl.is_valid()) {
+    auto shim = fbl::make_unique_checked<NetworkDeviceShim>(&ac, netdevice_impl, dispatchers);
+    if (!ac.check()) {
+      zxlogf(ERROR, "no memory");
+      return zx::error(ZX_ERR_NO_MEMORY);
+    }
+
+    return zx::ok(std::move(shim));
+  }
+
+  // If the `parent` is FIDL based, then return a factory that connects to the
+  // device with no extra translation layer.
+  std::unique_ptr fidl = fbl::make_unique_checked<FidlNetworkDeviceImplFactory>(&ac, device);
+  if (!ac.check()) {
+    zxlogf(ERROR, "no memory");
+    return zx::error(ZX_ERR_NO_MEMORY);
+  }
+
+  return zx::ok(std::move(fidl));
+}
+
+}  // namespace
+
+NetworkDevice::~NetworkDevice() {
+  if (impl_dispatcher_.get()) {
+    impl_dispatcher_.ShutdownAsync();
+    impl_dispatcher_shutdown_.Wait();
+  }
+  if (ifc_dispatcher_.get()) {
+    ifc_dispatcher_.ShutdownAsync();
+    ifc_dispatcher_shutdown_.Wait();
+  }
+  if (port_dispatcher_.get()) {
+    port_dispatcher_.ShutdownAsync();
+    port_dispatcher_shutdown_.Wait();
+  }
+  if (shim_dispatcher_.get()) {
+    shim_dispatcher_.ShutdownAsync();
+    shim_dispatcher_shutdown_.Wait();
+  }
+  if (shim_port_dispatcher_.get()) {
+    shim_port_dispatcher_.ShutdownAsync();
+    shim_port_dispatcher_shutdown_.Wait();
+  }
+}
+
+zx_status_t NetworkDevice::Create(void* ctx, zx_device_t* parent) {
+  fbl::AllocChecker ac;
+  std::unique_ptr netdev = fbl::make_unique_checked<NetworkDevice>(&ac, parent);
   if (!ac.check()) {
     zxlogf(ERROR, "no memory");
     return ZX_ERR_NO_MEMORY;
   }
+  auto impl_dispatcher = fdf::UnsynchronizedDispatcher::Create(
+      {}, "netdevice-impl",
+      [netdev = netdev.get()](fdf_dispatcher_t*) { netdev->impl_dispatcher_shutdown_.Signal(); });
+  if (impl_dispatcher.is_error()) {
+    zxlogf(ERROR, "failed to create impl dispatcher: %s", impl_dispatcher.status_string());
+    return impl_dispatcher.status_value();
+  }
+  netdev->impl_dispatcher_ = std::move(impl_dispatcher.value());
+
+  auto ifc_dispatcher = fdf::UnsynchronizedDispatcher::Create(
+      {}, "netdevice-ifc",
+      [netdev = netdev.get()](fdf_dispatcher_t*) { netdev->ifc_dispatcher_shutdown_.Signal(); });
+  if (ifc_dispatcher.is_error()) {
+    zxlogf(ERROR, "failed to create ifc dispatcher: %s", ifc_dispatcher.status_string());
+    return ifc_dispatcher.status_value();
+  }
+  netdev->ifc_dispatcher_ = std::move(ifc_dispatcher.value());
+  auto port_dispatcher = fdf::UnsynchronizedDispatcher::Create(
+      {}, "netdevice-port",
+      [netdev = netdev.get()](fdf_dispatcher_t*) { netdev->port_dispatcher_shutdown_.Signal(); });
+  if (port_dispatcher.is_error()) {
+    zxlogf(ERROR, "failed to create dispatcher: %s", port_dispatcher.status_string());
+    return port_dispatcher.status_value();
+  }
+  netdev->port_dispatcher_ = std::move(port_dispatcher.value());
 
   ddk::NetworkDeviceImplProtocolClient netdevice_impl(parent);
-  if (!netdevice_impl.is_valid()) {
-    zxlogf(ERROR, "bind failed, protocol not available");
-    return ZX_ERR_NOT_FOUND;
+  if (netdevice_impl.is_valid()) {
+    // We only need these dispatchers for Banjo parents.
+    auto shim_dispatcher = fdf::SynchronizedDispatcher::Create(
+        fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "netdevice-shim",
+        [netdev = netdev.get()](fdf_dispatcher_t*) { netdev->shim_dispatcher_shutdown_.Signal(); });
+    if (shim_dispatcher.is_error()) {
+      zxlogf(ERROR, "failed to create dispatcher: %s", shim_dispatcher.status_string());
+      return shim_dispatcher.status_value();
+    }
+    netdev->shim_dispatcher_ = std::move(shim_dispatcher.value());
+
+    auto shim_port_dispatcher = fdf::SynchronizedDispatcher::Create(
+        fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "netdevice-shim-port",
+        [netdev = netdev.get()](fdf_dispatcher_t*) {
+          netdev->shim_port_dispatcher_shutdown_.Signal();
+        });
+    if (shim_port_dispatcher.is_error()) {
+      zxlogf(ERROR, "failed to create dispatcher: %s", shim_port_dispatcher.status_string());
+      return shim_port_dispatcher.status_value();
+    }
+    netdev->shim_port_dispatcher_ = std::move(shim_port_dispatcher.value());
   }
 
-  zx::result device =
-      NetworkDeviceInterface::Create(netdev->dispatcher_, netdevice_impl, netdev.get());
+  zx::result<std::unique_ptr<NetworkDeviceImplBinder>> factory =
+      CreateImplFactory(netdevice_impl, netdev.get(),
+                        ShimDispatchers{&netdev->shim_dispatcher_, &netdev->shim_port_dispatcher_});
+  if (factory.is_error()) {
+    zxlogf(ERROR, "failed to create network device factory: %s", factory.status_string());
+    return factory.status_value();
+  }
+
+  zx::result device = NetworkDeviceInterface::Create(
+      DeviceInterfaceDispatchers{&netdev->impl_dispatcher_, &netdev->ifc_dispatcher_,
+                                 &netdev->port_dispatcher_},
+      std::move(factory.value()), netdev.get());
+
   if (device.is_error()) {
     zxlogf(ERROR, "failed to create inner device %s", device.status_string());
     return device.status_value();
@@ -41,14 +151,13 @@ zx_status_t NetworkDevice::Create(void* ctx, zx_device_t* parent, async_dispatch
   if (zx_status_t status = netdev->DdkAdd(
           ddk::DeviceAddArgs("network-device").set_proto_id(ZX_PROTOCOL_NETWORK_DEVICE));
       status != ZX_OK) {
-    zxlogf(ERROR, "failed to bind %s", zx_status_get_string(status));
+    zxlogf(ERROR, "failed to bind device: %s", zx_status_get_string(status));
     return status;
   }
 
   // On successful Add, Devmgr takes ownership (relinquished on DdkRelease),
   // so transfer our ownership to a local var, and let it go out of scope.
   [[maybe_unused]] auto temp_ref = netdev.release();
-
   return ZX_OK;
 }
 
@@ -96,12 +205,22 @@ void NetworkDevice::NotifyThread(zx::unowned_thread thread, ThreadType type) {
 
 static constexpr zx_driver_ops_t network_driver_ops = {
     .version = DRIVER_OPS_VERSION,
-    .bind =
-        +[](void* ctx, zx_device_t* parent) {
-          return NetworkDevice::Create(ctx, parent,
-                                       fdf::Dispatcher::GetCurrent()->async_dispatcher());
-        },
+    .bind = [](void* ctx, zx_device_t* parent) -> zx_status_t {
+      return NetworkDevice::Create(ctx, parent);
+    },
 };
+
+zx::result<fdf::ClientEnd<fuchsia_hardware_network_driver::NetworkDeviceImpl>>
+FidlNetworkDeviceImplFactory::Bind() {
+  zx::result<fdf::ClientEnd<fuchsia_hardware_network_driver::NetworkDeviceImpl>> client_end =
+      parent_->DdkConnectRuntimeProtocol<
+          fuchsia_hardware_network_driver::Service::NetworkDeviceImpl>();
+  if (client_end.is_error()) {
+    zxlogf(ERROR, "failed to connect to parent device: %s", client_end.status_string());
+    return client_end;
+  }
+  return client_end;
+}
 
 }  // namespace network
 

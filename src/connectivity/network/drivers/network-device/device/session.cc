@@ -20,6 +20,18 @@
 #include "tx_queue.h"
 
 namespace network::internal {
+namespace {
+bool IsValidFrameType(fuchsia_hardware_network::FrameType type) {
+  switch (type) {
+    case fuchsia_hardware_network::FrameType::kEthernet:
+    case fuchsia_hardware_network::FrameType::kIpv4:
+    case fuchsia_hardware_network::FrameType::kIpv6:
+      return true;
+    default:
+      return false;
+  }
+}
+}  // namespace
 
 bool Session::IsListen() const {
   return static_cast<bool>(flags_ & netdev::wire::SessionFlags::kListenTx);
@@ -264,8 +276,8 @@ zx_status_t Session::FetchTx(TxQueue::SessionTransaction& transaction) {
   transaction.AssertParentTxLock(*parent_);
   parent_->ListenSessionData(*this, descriptors);
 
-  uint16_t req_header_length = parent_->info().tx_head_length;
-  uint16_t req_tail_length = parent_->info().tx_tail_length;
+  uint16_t req_header_length = parent_->info().tx_head_length().value_or(0);
+  uint16_t req_tail_length = parent_->info().tx_tail_length().value_or(0);
 
   SharedAutoLock lock(&parent_->control_lock());
   for (uint16_t desc_idx : descriptors) {
@@ -329,7 +341,7 @@ zx_status_t Session::FetchTx(TxQueue::SessionTransaction& transaction) {
       return ZX_ERR_IO_INVALID;
     }
 
-    tx_buffer_t* buffer = transaction.GetBuffer();
+    fuchsia_hardware_network_driver::wire::TxBuffer* buffer = transaction.GetBuffer();
 
     // check header space:
     if (desc.head_length < req_header_length) {
@@ -349,21 +361,24 @@ zx_status_t Session::FetchTx(TxQueue::SessionTransaction& transaction) {
       case netdev::wire::InfoType::kNoInfo:
         break;
       default:
-        LOGF_ERROR("%s: info type (%d) not recognized, discarding information", name(),
-                   buffer->meta.info_type);
+        LOGF_ERROR("%s: info type (%u) not recognized, discarding information", name(),
+                   static_cast<uint32_t>(buffer->meta.info_type));
         info_type = netdev::wire::InfoType::kNoInfo;
         break;
     }
 
+    buffer->data.set_count(0);
+
     *buffer = {
-        .data_list = buffer->data_list,
-        .data_count = 0,
+        .data = buffer->data,
         .meta =
             {
                 .port = desc.port_id.base,
-                .info_type = static_cast<uint32_t>(info_type),
+                .info = netdriver::wire::FrameInfo::WithNoInfo(
+                    netdriver::wire::NoInfo{static_cast<uint8_t>(netdev::wire::InfoType::kNoInfo)}),
+                .info_type = info_type,
                 .flags = desc.inbound_flags,
-                .frame_type = desc.frame_type,
+                .frame_type = static_cast<netdev::wire::FrameType>(desc.frame_type),
             },
         .head_length = req_header_length,
         .tail_length = req_tail_length,
@@ -382,7 +397,7 @@ zx_status_t Session::FetchTx(TxQueue::SessionTransaction& transaction) {
     uint32_t total_length = 0;
     for (;;) {
       buffer_descriptor_t& part_desc = *part_iter;
-      auto* cur = const_cast<buffer_region_t*>(&buffer->data_list[buffer->data_count]);
+      auto* cur = &buffer->data.data()[buffer->data.count()];
       if (add_head_space) {
         *cur = {
             .vmo = vmo_id_,
@@ -400,7 +415,7 @@ zx_status_t Session::FetchTx(TxQueue::SessionTransaction& transaction) {
         cur->length += buffer->tail_length;
       }
       total_length += part_desc.data_length;
-      buffer->data_count++;
+      buffer->data.set_count(buffer->data.count() + 1);
 
       add_head_space = false;
       if (expect_chain == 0) {
@@ -421,9 +436,9 @@ zx_status_t Session::FetchTx(TxQueue::SessionTransaction& transaction) {
       expect_chain--;
     }
 
-    if (total_length < parent_->info().min_tx_buffer_length) {
+    if (total_length < parent_->info().min_tx_buffer_length().value_or(0)) {
       LOGF_ERROR("%s: tx buffer length %d less than required minimum of %d", name(), total_length,
-                 parent_->info().min_tx_buffer_length);
+                 parent_->info().min_tx_buffer_length().value_or(0));
       return ZX_ERR_IO_INVALID;
     }
 
@@ -434,7 +449,6 @@ zx_status_t Session::FetchTx(TxQueue::SessionTransaction& transaction) {
     });
     transaction.Push(desc_idx);
   }
-
   return transaction.overrun() ? ZX_ERR_IO_OVERRUN : ZX_OK;
 }
 
@@ -474,7 +488,7 @@ cpp20::span<uint8_t> Session::data_at(uint64_t offset, uint64_t len) const {
   return mapped.subspan(offset, len);
 }
 
-zx_status_t Session::AttachPort(netdev::wire::PortId port_id,
+zx_status_t Session::AttachPort(const netdev::wire::PortId& port_id,
                                 cpp20::span<const netdev::wire::FrameType> frame_types) {
   size_t attached_count;
   parent_->control_lock().Acquire();
@@ -518,7 +532,7 @@ zx_status_t Session::AttachPort(netdev::wire::PortId port_id,
   return ZX_OK;
 }
 
-zx_status_t Session::DetachPort(netdev::wire::PortId port_id) {
+zx_status_t Session::DetachPort(const netdev::wire::PortId& port_id) {
   parent_->control_lock().Acquire();
   auto result = DetachPortLocked(port_id.base, port_id.salt);
   if (result.is_error()) {
@@ -701,7 +715,8 @@ void Session::Kill() {
   }
 }
 
-zx_status_t Session::FillRxSpace(uint16_t descriptor_index, rx_space_buffer_t* buff) {
+zx_status_t Session::FillRxSpace(uint16_t descriptor_index,
+                                 fuchsia_hardware_network_driver::wire::RxSpaceBuffer* buff) {
   buffer_descriptor_t* desc_ptr = checked_descriptor(descriptor_index);
   if (!desc_ptr) {
     LOGF_ERROR("%s: received out of bounds descriptor: %d", name(), descriptor_index);
@@ -714,9 +729,9 @@ zx_status_t Session::FillRxSpace(uint16_t descriptor_index, rx_space_buffer_t* b
     LOGF_ERROR("%s: received invalid chain length for rx buffer: %d", name(), desc.chain_length);
     return ZX_ERR_INVALID_ARGS;
   }
-  if (desc.data_length < parent_->info().min_rx_buffer_length) {
+  if (desc.data_length < parent_->info().min_rx_buffer_length().value_or(0)) {
     LOGF_ERROR("netwok-device(%s): rx buffer length %d less than required minimum of %d", name(),
-               desc.data_length, parent_->info().min_rx_buffer_length);
+               desc.data_length, parent_->info().min_rx_buffer_length().value_or(0));
     return ZX_ERR_INVALID_ARGS;
   }
   *buff = {
@@ -750,7 +765,7 @@ bool Session::CompleteRx(const RxFrameInfo& frame_info) {
     // NB: Error logging happens at LoadRxInfo at a greater granularity, we only care about success
     // here.
     allow_reuse &= LoadRxInfo(frame_info) != ZX_OK;
-  } else if (frame_info.meta.frame_type == 0) {
+  } else if (!IsValidFrameType(frame_info.meta.frame_type)) {
     // Help parent driver authors to debug common contract violation.
     LOGF_WARN("%s: rx frame has unspecified frame type, dropping frame", name());
   }
@@ -765,7 +780,7 @@ bool Session::CompleteRxWith(const Session& owner, const RxFrameInfo& frame_info
   if (!IsSubscribedToFrameType(frame_info.meta.port,
                                static_cast<netdev::wire::FrameType>(frame_info.meta.frame_type)) ||
       IsPaused()) {
-    if (frame_info.meta.frame_type == 0) {
+    if (!IsValidFrameType(frame_info.meta.frame_type)) {
       // Help parent driver authors to debug common contract violation.
       LOGF_WARN("%s: rx frame has unspecified frame type, dropping frame", name());
     }
@@ -952,11 +967,13 @@ bool Session::ListenFromTx(const Session& owner, uint16_t owner_index) {
   }
   // Build frame information as if this had been received from any other session and call into
   // common routine to commit the descriptor.
-  const buffer_metadata_t frame_meta = {
+  const fuchsia_hardware_network_driver::wire::BufferMetadata frame_meta = {
       .port = owner_desc.port_id.base,
-      .info_type = static_cast<uint32_t>(info_type),
+      .info = netdriver::wire::FrameInfo::WithNoInfo(
+          netdriver::wire::NoInfo{static_cast<uint8_t>(netdev::wire::InfoType::kNoInfo)}),
+      .info_type = static_cast<fuchsia_hardware_network::wire::InfoType>(info_type),
       .flags = static_cast<uint32_t>(netdev::wire::RxFlags::kRxEchoedTx),
-      .frame_type = owner_desc.frame_type,
+      .frame_type = static_cast<fuchsia_hardware_network::wire::FrameType>(owner_desc.frame_type),
   };
 
   return CompleteRxWith(owner, RxFrameInfo{
@@ -1009,13 +1026,13 @@ zx_status_t Session::LoadRxInfo(const RxFrameInfo& info) {
         case netdev::wire::InfoType::kNoInfo:
           break;
         default:
-          LOGF_ERROR("%s: info type (%d) not recognized, discarding information", name(),
-                     info.meta.info_type);
+          LOGF_ERROR("%s: info type (%u) not recognized, discarding information", name(),
+                     static_cast<uint32_t>(info.meta.info_type));
           info_type = netdev::wire::InfoType::kNoInfo;
           break;
       }
       desc.info_type = static_cast<uint32_t>(info_type);
-      desc.frame_type = info.meta.frame_type;
+      desc.frame_type = static_cast<uint8_t>(info.meta.frame_type);
       desc.inbound_flags = info.meta.flags;
       desc.port_id = {
           .base = info.meta.port,

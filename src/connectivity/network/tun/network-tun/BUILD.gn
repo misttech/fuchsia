@@ -41,7 +41,7 @@ source_set("src") {
     "//zircon/system/ulib/async-loop:async-loop-default",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/svc",
-    "//zircon/system/ulib/sync",
+    "//zircon/system/ulib/sync:sync-cpp",
     "//zircon/system/ulib/syslog",
   ]
 
@@ -52,8 +52,14 @@ source_set("src") {
 
 executable("bin") {
   output_name = "network_tun"
-  sources = [ "main.cc" ]
-  deps = [ ":src" ]
+  sources = [
+    "main.cc",
+    "minimal_driver_runtime.cc",
+  ]
+  deps = [
+    ":src",
+    "//sdk/lib/driver/runtime:driver_runtime_env_cpp",
+  ]
 }
 
 fuchsia_component("component") {
@@ -74,6 +80,7 @@ test("network_tun_unittest") {
 
   deps = [
     ":src",
+    "//sdk/lib/driver/testing/cpp:cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
     "//src/lib/testing/predicates",

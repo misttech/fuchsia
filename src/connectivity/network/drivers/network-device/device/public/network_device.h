@@ -5,9 +5,11 @@
 #ifndef SRC_CONNECTIVITY_NETWORK_DRIVERS_NETWORK_DEVICE_DEVICE_PUBLIC_NETWORK_DEVICE_H_
 #define SRC_CONNECTIVITY_NETWORK_DRIVERS_NETWORK_DEVICE_DEVICE_PUBLIC_NETWORK_DEVICE_H_
 
+#include <fidl/fuchsia.hardware.network.driver/cpp/driver/wire.h>
 #include <fidl/fuchsia.hardware.network/cpp/wire.h>
 #include <fuchsia/hardware/network/driver/cpp/banjo.h>
 #include <lib/async/dispatcher.h>
+#include <lib/fidl_driver/cpp/transport.h>
 #include <lib/fit/function.h>
 #include <lib/zx/thread.h>
 
@@ -18,6 +20,40 @@
 namespace network {
 
 namespace netdev = fuchsia_hardware_network;
+
+// TODO(https://fxbug.dev/133736): Remove this and related artifacts once all parents have migrated
+// to FIDL.
+class NetworkDeviceImplBinder {
+ public:
+  enum class Synchronicity { Sync, Async };
+  virtual ~NetworkDeviceImplBinder() = default;
+  virtual zx::result<fdf::ClientEnd<fuchsia_hardware_network_driver::NetworkDeviceImpl>> Bind() = 0;
+  // Use this for factory specific teardown if needed. The return value indicates if the teardown
+  // is synchronous or asynchronous. Call |on_teardown_complete| when an asynchronous teardown has
+  // completed. If teardown is synchronous then |on_teardown_complete| should NOT be called, as seen
+  // in the base implementation here.
+  virtual Synchronicity Teardown(fit::callback<void()>&& on_teardown_complete) {
+    return Synchronicity::Sync;
+  }
+};
+
+struct DeviceInterfaceDispatchers {
+  // Used for the NetworkDeviceImpl client as well as some async tasks and FIDL servers.
+  const fdf::Dispatcher* const impl_ = nullptr;
+  // Used to serve the the NetworkDeviceIfc protocol to vendor drivers.
+  const fdf::Dispatcher* const ifc_ = nullptr;
+  // Used for the NetworkPort client. This MUST be a synchronous dispatcher that allows sync calls.
+  // This requirement is enforced at runtime, adding ports with an incorrect dispatcher will return
+  // an error.
+  const fdf::Dispatcher* const port_ = nullptr;
+};
+
+struct ShimDispatchers {
+  // This is used by NetworkDeviceShim to serve the NetworkDeviceImpl protocol.
+  const fdf::Dispatcher* const shim_ = nullptr;
+  // This is used by NetworkDeviceShim to serve the NetworkPort protocol.
+  const fdf::Dispatcher* const port_ = nullptr;
+};
 
 class NetworkDeviceInterface {
  public:
@@ -33,14 +69,25 @@ class NetworkDeviceInterface {
   };
 
   virtual ~NetworkDeviceInterface() = default;
-  // Creates a new NetworkDeviceInterface that will bind to the provided parent. The dispatcher is
-  // only used for slow path operations, NetworkDevice will create and manage its own threads for
-  // fast path operations. The parent_name argument is only used for diagnostic purposes.
+  // Creates a new NetworkDeviceInterface that will bind to the provided parent. This is the Banjo
+  // version of this call. The multiple dispatchers required should be owned externally so that
+  // components that use multiple instances of NetworkDeviceInterface can re-use these dispatchers
+  // between instances. Otherwise those components may run into the limitations on the number of
+  // dispatcher threads that can be created.
   //
   // |sys| is an unowned pointer to Sys that may be nullptr if thread roles are unneeded.
   static zx::result<std::unique_ptr<NetworkDeviceInterface>> Create(
-      async_dispatcher_t* dispatcher, ddk::NetworkDeviceImplProtocolClient parent,
-      Sys* sys = nullptr);
+      const DeviceInterfaceDispatchers& dispatchers, const ShimDispatchers& shim_dispatchers,
+      ddk::NetworkDeviceImplProtocolClient parent, Sys* sys = nullptr);
+
+  // Creates a new NetworkDeviceInterface that will bind to the provided parent. This is the FIDL
+  // version of this call. The multiple dispatchers required should be owned externally so that
+  // components that use multiple instances of NetworkDeviceInterface can re-use these dispatchers
+  // between instances. Otherwise those components may run into the limitations on the number of
+  // dispatcher threads that can be created.
+  static zx::result<std::unique_ptr<NetworkDeviceInterface>> Create(
+      const DeviceInterfaceDispatchers& dispatchers,
+      std::unique_ptr<NetworkDeviceImplBinder>&& factory, Sys* sys = nullptr);
 
   // Tears down the NetworkDeviceInterface.
   // A NetworkDeviceInterface must not be destroyed until the callback provided to teardown is

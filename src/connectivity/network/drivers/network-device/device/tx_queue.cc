@@ -53,17 +53,17 @@ void TxQueue::SessionTransaction::Commit() {
   if (queued_ != 0) {
     // Send buffers in batches of at most |MAX_TX_BUFFERS| at a time to stay within the FIDL
     // channel maximum.
-    tx_buffer_t* buffers = buffers_.data();
+    netdriver::wire::TxBuffer* buffers = buffers_.data();
     while (queued_ > 0) {
       const uint32_t batch = std::min(static_cast<uint32_t>(queued_), MAX_TX_BUFFERS);
-      queue_->parent_->QueueTx(buffers, batch);
+      queue_->parent_->QueueTx(cpp20::span(buffers, batch));
       buffers += batch;
       queued_ -= batch;
     }
   }
 }
 
-tx_buffer_t* TxQueue::SessionTransaction::GetBuffer() {
+fuchsia_hardware_network_driver::wire::TxBuffer* TxQueue::SessionTransaction::GetBuffer() {
   ZX_ASSERT(available_ != 0);
   return &buffers_[queued_];
 }
@@ -76,8 +76,9 @@ void TxQueue::SessionTransaction::Push(uint16_t descriptor) {
   queued_++;
 }
 
-TxQueue::SessionTransaction::SessionTransaction(cpp20::span<tx_buffer_t> buffers, TxQueue* parent,
-                                                Session* session)
+TxQueue::SessionTransaction::SessionTransaction(
+    cpp20::span<fuchsia_hardware_network_driver::wire::TxBuffer> buffers, TxQueue* parent,
+    Session* session)
     : buffers_(buffers), queue_(parent), session_(session), queued_(0) {
   // only get available slots after lock is acquired:
   // 0 available slots if parent is not enabled.
@@ -86,7 +87,7 @@ TxQueue::SessionTransaction::SessionTransaction(cpp20::span<tx_buffer_t> buffers
 
 zx::result<std::unique_ptr<TxQueue>> TxQueue::Create(DeviceInterface* parent) {
   // The Tx queue capacity is based on the underlying device's tx queue capacity.
-  auto capacity = parent->info().tx_depth;
+  auto capacity = parent->info().tx_depth().value_or(0);
 
   fbl::AllocChecker ac;
   std::unique_ptr<TxQueue> queue(new (&ac) TxQueue(parent));
@@ -107,19 +108,23 @@ zx::result<std::unique_ptr<TxQueue>> TxQueue::Create(DeviceInterface* parent) {
     return in_flight.take_error();
   }
   queue->in_flight_ = std::move(in_flight.value());
-  std::unique_ptr<tx_buffer_t[]> tx_buffers(new (&ac) tx_buffer_t[capacity]);
+  std::unique_ptr<fuchsia_hardware_network_driver::wire::TxBuffer[]> tx_buffers(
+      new (&ac) fuchsia_hardware_network_driver::wire::TxBuffer[capacity]);
   if (!ac.check()) {
     return zx::error(ZX_ERR_NO_MEMORY);
   }
   // TODO(https://github.com/llvm/llvm-project/issues/54497): remove unnecessary
   // type extraction once clang-format can deal with [] in template parameter.
-  using BufferParts_t = BufferParts<buffer_region_t>[];
-  std::unique_ptr<BufferParts_t> buffer_parts(new (&ac) BufferParts<buffer_region_t>[capacity]);
+  using BufferParts_t = BufferParts<fuchsia_hardware_network_driver::wire::BufferRegion>[];
+  std::unique_ptr<BufferParts_t> buffer_parts(
+      new (&ac) BufferParts<fuchsia_hardware_network_driver::wire::BufferRegion>[capacity]);
   if (!ac.check()) {
     return zx::error(ZX_ERR_NO_MEMORY);
   }
-  for (uint32_t i = 0; i < capacity; i++) {
-    tx_buffers[i].data_list = buffer_parts[i].data();
+  for (int i = 0; i < capacity; ++i) {
+    tx_buffers[i].data =
+        fidl::VectorView<fuchsia_hardware_network_driver::wire::BufferRegion>::FromExternal(
+            buffer_parts[i].data(), 0);
   }
 
   if (zx_status_t status = zx::port::create(0, &queue->port_); status != ZX_OK) {
@@ -128,7 +133,8 @@ zx::result<std::unique_ptr<TxQueue>> TxQueue::Create(DeviceInterface* parent) {
   }
 
   using ThreadArgs =
-      std::tuple<TxQueue*, std::unique_ptr<tx_buffer_t[]>, std::unique_ptr<BufferParts_t>, size_t>;
+      std::tuple<TxQueue*, std::unique_ptr<fuchsia_hardware_network_driver::wire::TxBuffer[]>,
+                 std::unique_ptr<BufferParts_t>, size_t>;
   auto* thread_args =
       new (&ac) ThreadArgs(queue.get(), std::move(tx_buffers), std::move(buffer_parts), capacity);
   if (!ac.check()) {
@@ -136,6 +142,7 @@ zx::result<std::unique_ptr<TxQueue>> TxQueue::Create(DeviceInterface* parent) {
   }
 
   thrd_t thread;
+  // Dispatchers don't support thread profiles at this point, create a thread instead.
   if (int result = thrd_create_with_name(
           &thread,
           [](void* ctx) {
@@ -160,7 +167,7 @@ zx::result<std::unique_ptr<TxQueue>> TxQueue::Create(DeviceInterface* parent) {
   return zx::ok(std::move(queue));
 }
 
-void TxQueue::Thread(cpp20::span<tx_buffer_t> buffers) {
+void TxQueue::Thread(cpp20::span<fuchsia_hardware_network_driver::wire::TxBuffer> buffers) {
   for (;;) {
     zx_port_packet_t packet;
     zx_status_t status = port_.wait(zx::time::infinite(), &packet);
@@ -236,10 +243,11 @@ zx_status_t TxQueue::UpdateFifoWatches() {
   return ZX_OK;
 }
 
-zx_status_t TxQueue::HandleFifoSignal(cpp20::span<tx_buffer_t> buffers, SessionKey session_key,
-                                      zx_signals_t signals) {
+zx_status_t TxQueue::HandleFifoSignal(
+    cpp20::span<fuchsia_hardware_network_driver::wire::TxBuffer> buffers, SessionKey key,
+    zx_signals_t signals) {
   fbl::AutoLock lock(&parent_->tx_lock());
-  SessionWaiter* find_session = sessions_.Get(session_key);
+  SessionWaiter* find_session = sessions_.Get(key);
   // Session already removed from Tx queue, packet was lingering in the port.
   if (find_session == nullptr) {
     return ZX_OK;
@@ -285,8 +293,7 @@ zx_status_t TxQueue::HandleFifoSignal(cpp20::span<tx_buffer_t> buffers, SessionK
     return ZX_OK;
   }
 
-  if (zx_status_t status =
-          fifo.wait_async(port_, session_key, ZX_FIFO_PEER_CLOSED | ZX_FIFO_READABLE, 0);
+  if (zx_status_t status = fifo.wait_async(port_, key, ZX_FIFO_PEER_CLOSED | ZX_FIFO_READABLE, 0);
       status != ZX_OK) {
     LOGF_ERROR("failed to start FIFO wait for session %s: %s", session.name(),
                zx_status_get_string(status));
@@ -347,16 +354,17 @@ bool TxQueue::ReturnBuffers() {
   return was_full;
 }
 
-void TxQueue::CompleteTxList(const tx_result_t* tx, size_t count) {
+void TxQueue::CompleteTxList(
+    const fidl::VectorView<::fuchsia_hardware_network_driver::wire::TxResult>& tx_results) {
   fbl::AutoLock lock(&parent_->tx_lock());
-  while (count--) {
-    InFlightBuffer& buff = in_flight_->Get(tx->id);
-    buff.result = tx->status;
-    return_queue_->Push(tx->id);
-    tx++;
+  for (const auto& tx : tx_results.get()) {
+    InFlightBuffer& buff = in_flight_->Get(tx.id);
+    buff.result = tx.status;
+    return_queue_->Push(tx.id);
   }
   bool was_full = ReturnBuffers();
   parent_->NotifyTxReturned(was_full);
+  parent_->NotifyTxComplete();
 }
 
 TxQueue::SessionKey TxQueue::AddSession(Session* session) {

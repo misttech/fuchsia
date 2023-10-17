@@ -18,6 +18,12 @@ namespace testing {
 
 constexpr zx_signals_t kConfigurationChangedEvent = ZX_USER_SIGNAL_0;
 
+constexpr inline bool IsValidMacFilterMode(netdev::MacFilterMode mode) {
+  return mode == netdev::MacFilterMode::kPromiscuous ||
+         mode == netdev::MacFilterMode::kMulticastPromiscuous ||
+         mode == netdev::MacFilterMode::kMulticastFilter;
+}
+
 class FakeMacDeviceImpl : public ddk::MacAddrProtocol<FakeMacDeviceImpl> {
  public:
   FakeMacDeviceImpl();
@@ -48,9 +54,48 @@ class FakeMacDeviceImpl : public ddk::MacAddrProtocol<FakeMacDeviceImpl> {
  private:
   fuchsia_net::wire::MacAddress mac_ = {0x00, 0x02, 0x03, 0x04, 0x05, 0x06};
   features_t features_{};
-  std::optional<mac_filter_mode_t> mode_ = std::nullopt;
+  std::optional<mode_t> mode_ = std::nullopt;
+
   std::vector<MacAddress> addresses_;
   zx::event event_;
+};
+
+class FakeMacDeviceFidlImpl : public fdf::WireServer<fuchsia_hardware_network_driver::MacAddr> {
+ public:
+  FakeMacDeviceFidlImpl();
+
+  zx::result<std::unique_ptr<MacAddrDeviceInterface>> CreateChild(
+      const fdf::Dispatcher& dispatcher);
+  fdf::ClientEnd<fuchsia_hardware_network_driver::MacAddr> Bind(const fdf::Dispatcher& dispatcher);
+
+  void GetFeatures(fdf::Arena& arena, GetFeaturesCompleter::Sync& completer) override;
+  void GetAddress(fdf::Arena& arena, GetAddressCompleter::Sync& completer) override;
+  void SetMode(fuchsia_hardware_network_driver::wire::MacAddrSetModeRequest* request,
+               fdf::Arena& arena, SetModeCompleter::Sync& completer) override;
+
+  zx_status_t WaitConfigurationChanged();
+
+  const fuchsia_net::wire::MacAddress& mac() { return mac_; }
+
+  fidl::WireTableBuilder<fuchsia_hardware_network_driver::wire::Features>& features() {
+    return features_;
+  }
+
+  netdev::wire::MacFilterMode mode() {
+    EXPECT_TRUE(mode_.has_value());
+    return mode_.value();
+  }
+
+  std::vector<MacAddress>& addresses() { return addresses_; }
+
+ private:
+  fidl::Arena<> arena_;
+  fuchsia_net::wire::MacAddress mac_ = {0x00, 0x02, 0x03, 0x04, 0x05, 0x06};
+  fidl::WireTableBuilder<fuchsia_hardware_network_driver::wire::Features> features_;
+  std::optional<netdev::wire::MacFilterMode> mode_;
+  std::vector<MacAddress> addresses_;
+  zx::event event_;
+  std::optional<fdf::ServerBindingRef<fuchsia_hardware_network_driver::MacAddr>> binding_;
 };
 }  // namespace testing
 }  // namespace network
