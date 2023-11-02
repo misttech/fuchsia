@@ -1146,7 +1146,7 @@ TEST_F(BearerTest, ResponseShutsDownBearer) {
   };
   bearer()->StartTransaction(NewBuffer(kTestRequest), cb);
 
-  RunUntilIdle();
+  RunLoopUntilIdle();
   EXPECT_TRUE(chan_cb_called);
   EXPECT_TRUE(cb_called);
 }
@@ -1190,7 +1190,7 @@ TEST_F(BearerTest, ErrorResponseShutsDownBearer) {
   };
   bearer()->StartTransaction(NewBuffer(kTestRequest), cb);
 
-  RunUntilIdle();
+  RunLoopUntilIdle();
   EXPECT_TRUE(err_cb_called);
   EXPECT_TRUE(chan_cb_called);
 }
