@@ -1,4 +1,3 @@
-
 # Fuchsia Microbenchmarks
 
 This set of tests includes microbenchmarks for core OS functionality,
