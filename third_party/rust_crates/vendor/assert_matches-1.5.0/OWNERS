@@ -41,15 +41,11 @@ include /src/developer/ffx/plugins/profile/memory/OWNERS
 include /src/developer/ffx/plugins/repository/OWNERS
 include /src/developer/ffx/plugins/scrutiny/OWNERS
 include /src/developer/remote-control/OWNERS
-include /src/developer/remote-control/diagnostics-bridge/OWNERS
 include /src/devices/lib/OWNERS
 include /src/diagnostics/OWNERS
 include /src/diagnostics/iquery/OWNERS
 include /src/fonts/OWNERS
 include /src/graphics/display/OWNERS
-include /src/identity/OWNERS
-include /src/identity/bin/password_authenticator/OWNERS
-include /src/identity/tests/OWNERS
 include /src/lib/assembly/OWNERS
 include /src/lib/async-gunzip/OWNERS
 include /src/lib/async-utils/OWNERS
