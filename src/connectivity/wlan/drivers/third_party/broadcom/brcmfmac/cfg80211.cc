@@ -729,7 +729,7 @@ void brcmf_enable_mpc(struct brcmf_if* ifp, int mpc) {
 
 static void brcmf_signal_scan_end(struct net_device* ndev, uint64_t txn_id,
                                   uint8_t scan_result_code) {
-  wlan_fullmac_scan_end_t args;
+  wlan_fullmac_scan_end_t args = {};
   args.txn_id = txn_id;
   args.code = scan_result_code;
   std::shared_lock<std::shared_mutex> guard(ndev->if_proto_lock);
@@ -1771,7 +1771,7 @@ void brcmf_return_assoc_result(struct net_device* ndev, status_code_t status_cod
   struct brcmf_if* ifp = ndev_to_if(ndev);
   struct brcmf_cfg80211_info* cfg = ifp->drvr->config;
 
-  wlan_fullmac_connect_confirm_t conf;
+  wlan_fullmac_connect_confirm_t conf = {};
   conf.result_code = status_code;
   if (conf.result_code == STATUS_CODE_SUCCESS && cfg->conn_info.resp_ie_len > 0) {
     BRCMF_DBG(TEMP, " * Hard-coding association_id to 42; this will likely break something!");
@@ -1801,7 +1801,7 @@ void brcmf_return_roam_result(struct net_device* ndev, const uint8_t* target_bss
     return;
   }
 
-  wlan_fullmac_roam_confirm_t conf;
+  wlan_fullmac_roam_confirm_t conf = {};
   conf.result_code = result_code;
   memcpy(&conf.target_bssid, target_bssid, ETH_ALEN);
   conf.selected_bss.ies_count = 0;
@@ -2291,7 +2291,7 @@ static void cfg80211_signal_ind(net_device* ndev) {
 
   // Send signal report indication only if client is in connected state
   if (brcmf_test_bit(brcmf_vif_status_bit_t::CONNECTED, &ifp->vif->sme_state)) {
-    wlan_fullmac_signal_report_indication signal_ind;
+    wlan_fullmac_signal_report_indication signal_ind = {};
     int8_t rssi, snr;
     if (brcmf_get_rssi_snr(ndev, &rssi, &snr) == ZX_OK) {
       signal_ind.rssi_dbm = rssi;
@@ -2577,7 +2577,7 @@ void brcmf_cfg80211_handle_eapol_frame(struct brcmf_if* ifp, const void* data, s
     return;
   }
   const char* const data_bytes = reinterpret_cast<const char*>(data);
-  wlan_fullmac_eapol_indication_t eapol_ind;
+  wlan_fullmac_eapol_indication_t eapol_ind = {};
   // IEEE Std. 802.1X-2010, 11.3, Figure 11-1
   memcpy(&eapol_ind.dst_addr, data_bytes, ETH_ALEN);
   memcpy(&eapol_ind.src_addr, data_bytes + 6, ETH_ALEN);
@@ -3877,7 +3877,7 @@ void brcmf_if_del_keys_req(net_device* ndev, const wlan_fullmac::WlanFullmacDelK
 
 static void brcmf_send_eapol_confirm(net_device* ndev, const wlan_fullmac::WlanFullmacEapolReq* req,
                                      zx_status_t result) {
-  wlan_fullmac_eapol_confirm_t confirm;
+  wlan_fullmac_eapol_confirm_t confirm = {};
   confirm.result_code =
       result == ZX_OK ? WLAN_EAPOL_RESULT_SUCCESS : WLAN_EAPOL_RESULT_TRANSMISSION_FAILURE;
   std::memcpy(confirm.dst_addr, req->dst_addr.data(), ETH_ALEN);
@@ -4920,7 +4920,7 @@ void brcmf_if_wmm_status_req(net_device* ndev) {
   zx_status_t status = ZX_OK;
   bcme_status_t fw_err = BCME_OK;
   edcf_acparam_t ac_params[AC_COUNT];
-  wlan_wmm_parameters_t resp;
+  wlan_wmm_parameters_t resp = {};
   uint32_t wme_bss_disable;
   brcmf_if* ifp = ndev_to_if(ndev);
 
@@ -5129,7 +5129,7 @@ zx_status_t brcmf_notify_channel_switch(struct brcmf_if* ifp, const struct brcmf
 
   uint16_t chanspec = 0;
   uint8_t ctl_chan;
-  wlan_fullmac_channel_switch_info_t info;
+  wlan_fullmac_channel_switch_info_t info = {};
   zx_status_t err = ZX_OK;
   struct brcmf_cfg80211_info* cfg = nullptr;
   struct wireless_dev* wdev = nullptr;
@@ -5179,7 +5179,7 @@ static zx_status_t brcmf_notify_start_auth(struct brcmf_if* ifp, const struct br
   zx_status_t err = ZX_OK;
   bcme_status_t fw_err = BCME_OK;
 
-  wlan_fullmac_sae_handshake_ind_t ind;
+  wlan_fullmac_sae_handshake_ind_t ind = {};
   brcmf_ext_auth* auth_start_evt = (brcmf_ext_auth*)data;
 
   if (!brcmf_test_bit(brcmf_vif_status_bit_t::CONNECTING, &ifp->vif->sme_state)) {
@@ -5486,7 +5486,7 @@ static zx_status_t brcmf_handle_assoc_ind(struct brcmf_if* ifp, const struct brc
     return ZX_ERR_INVALID_ARGS;
   }
 
-  wlan_fullmac_assoc_ind_t assoc_ind_params;
+  wlan_fullmac_assoc_ind_t assoc_ind_params = {};
   memset(&assoc_ind_params, 0, sizeof(assoc_ind_params));
   memcpy(assoc_ind_params.peer_sta_address, e->addr, ETH_ALEN);
 
@@ -5701,7 +5701,7 @@ static zx_status_t brcmf_process_auth_ind_event(struct brcmf_if* ifp,
       BRCMF_IFDBG(WLANIF, ndev, "interface stopped -- skipping auth ind callback");
       return ZX_OK;
     }
-    wlan_fullmac_auth_ind_t auth_ind_params;
+    wlan_fullmac_auth_ind_t auth_ind_params = {};
     const char* auth_type;
 
     memset(&auth_ind_params, 0, sizeof(auth_ind_params));
