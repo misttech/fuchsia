@@ -13,6 +13,5 @@ include /third_party/rust_crates/forks/notify/OWNERS
 include /third_party/rust_crates/vendor/criterion-0.2.11/OWNERS
 include /tools/auto_owners/OWNERS
 include /tools/cargo-gnaw/OWNERS
-include /tools/fvdl/OWNERS
 include /tools/pbtool/OWNERS
 include /tools/update_crates/OWNERS

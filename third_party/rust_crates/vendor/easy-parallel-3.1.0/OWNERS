@@ -3,4 +3,3 @@
 # DOCS: https://fuchsia.dev/fuchsia-src/development/languages/rust/third_party#owners_files
 
 include /src/lib/fuchsia-async/OWNERS
-include /third_party/rust_crates/vendor/async-broadcast-0.2.0/OWNERS

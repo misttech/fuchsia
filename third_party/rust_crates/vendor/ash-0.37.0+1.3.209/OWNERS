@@ -3,4 +3,3 @@
 # DOCS: https://fuchsia.dev/fuchsia-src/development/languages/rust/third_party#owners_files
 
 include /src/ui/examples/OWNERS
-include /third_party/rust_crates/vendor/gpu-allocator-0.19.1/OWNERS

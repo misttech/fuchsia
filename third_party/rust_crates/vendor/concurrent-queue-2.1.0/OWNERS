@@ -4,4 +4,3 @@
 
 include /third_party/rust_crates/vendor/async-channel-1.8.0/OWNERS
 include /third_party/rust_crates/vendor/async-executor-1.5.0/OWNERS
-include /third_party/rust_crates/vendor/async-io-1.12.0/OWNERS

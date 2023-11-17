@@ -4,6 +4,3 @@
 
 include /src/connectivity/overnet/OWNERS
 include /src/storage/OWNERS
-include /third_party/rust_crates/vendor/async-broadcast-0.2.0/OWNERS
-include /third_party/rust_crates/vendor/async-channel-1.6.1/OWNERS
-include /third_party/rust_crates/vendor/async-lock-2.3.0/OWNERS

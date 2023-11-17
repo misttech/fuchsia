@@ -20,10 +20,8 @@ include /src/sys/pkg/OWNERS
 include /src/testing/sl4f/OWNERS
 include /src/virtualization/OWNERS
 include /third_party/rust_crates/vendor/async-executor-1.5.0/OWNERS
-include /third_party/rust_crates/vendor/async-io-1.12.0/OWNERS
 include /third_party/rust_crates/vendor/blocking-1.3.0//OWNERS
 include /third_party/rust_crates/vendor/pem-0.8.3/OWNERS
-include /third_party/rust_crates/vendor/tokio-1.19.2/OWNERS
 include /tools/auto_owners/OWNERS
 include /tools/shush/OWNERS
 include /tools/update_crates/OWNERS

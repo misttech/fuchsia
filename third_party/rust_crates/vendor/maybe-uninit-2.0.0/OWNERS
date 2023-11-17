@@ -4,4 +4,3 @@
 
 include /third_party/rust_crates/vendor/crossbeam-deque-0.7.4/OWNERS
 include /third_party/rust_crates/vendor/crossbeam-epoch-0.8.2/OWNERS
-include /third_party/rust_crates/vendor/smallvec-0.6.13/OWNERS

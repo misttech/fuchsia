@@ -2,4 +2,3 @@
 # DOCS: https://fuchsia.dev/fuchsia-src/development/languages/rust/third_party#owners_files
 
 include /src/security/OWNERS
-include /src/identity/OWNERS

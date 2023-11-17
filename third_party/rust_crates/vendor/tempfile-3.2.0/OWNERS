@@ -19,16 +19,12 @@ include /src/developer/ffx/plugins/inspect/OWNERS
 include /src/developer/ffx/plugins/log/OWNERS
 include /src/developer/ffx/plugins/package/OWNERS
 include /src/developer/ffx/plugins/product/OWNERS
-include /src/developer/ffx/plugins/product_bundle/OWNERS
 include /src/developer/ffx/plugins/repository/OWNERS
 include /src/developer/ffx/plugins/test/OWNERS
-include /src/developer/ffx/plugins/triage/OWNERS
 include /src/developer/fuchsia-criterion/OWNERS
 include /src/devices/lib/OWNERS
 include /src/diagnostics/OWNERS
 include /src/fonts/OWNERS
-include /src/identity/OWNERS
-include /src/identity/bin/password_authenticator/OWNERS
 include /src/intl/OWNERS
 include /src/lib/analytics/OWNERS
 include /src/lib/assembly/OWNERS

@@ -11,10 +11,8 @@ include /src/developer/ffx/plugins/component/OWNERS
 include /src/developer/ffx/plugins/fuzz/OWNERS
 include /src/developer/ffx/plugins/package/OWNERS
 include /src/developer/ffx/plugins/product/OWNERS
-include /src/developer/ffx/plugins/product_bundle/OWNERS
 include /src/devices/OWNERS
 include /src/devices/lib/OWNERS
-include /src/experiences/session_shells/OWNERS
 include /src/lib/analytics/OWNERS
 include /src/lib/fuchsia-component-test/OWNERS
 include /src/lib/fuchsia-url/OWNERS
@@ -28,7 +26,5 @@ include /src/sys/lib/routing/OWNERS
 include /src/sys/pkg/OWNERS
 include /src/sys/pkg/lib/omaha-client/OWNERS
 include /src/sys/test_runners/starnix/OWNERS
-include /third_party/rust_crates/vendor/publicsuffix-1.5.2/OWNERS
-include /third_party/rust_crates/vendor/valico-2.4.2/OWNERS
 include /tools/doc_checker/OWNERS
 include /tools/lib/cm_fidl_analyzer/OWNERS

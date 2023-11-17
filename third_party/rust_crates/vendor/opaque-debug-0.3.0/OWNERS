@@ -2,7 +2,3 @@
 # TO MAKE CHANGES HERE, UPDATE //third_party/rust_crates/owners.toml.
 # DOCS: https://fuchsia.dev/fuchsia-src/development/languages/rust/third_party#owners_files
 
-include /third_party/rust_crates/vendor/aes-0.7.5/OWNERS
-include /third_party/rust_crates/vendor/ghash-0.4.4/OWNERS
-include /third_party/rust_crates/vendor/polyval-0.5.3/OWNERS
-include /third_party/rust_crates/vendor/sha2-0.9.8/OWNERS

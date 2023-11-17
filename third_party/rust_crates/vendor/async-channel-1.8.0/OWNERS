@@ -3,7 +3,6 @@
 # DOCS: https://fuchsia.dev/fuchsia-src/development/languages/rust/third_party#owners_files
 
 include /src/developer/ffx/OWNERS
-include /src/developer/ffx/logger/OWNERS
 include /src/lib/fuchsia-async/OWNERS
 include /src/recovery/system/OWNERS
 include /src/testing/sl4f/OWNERS

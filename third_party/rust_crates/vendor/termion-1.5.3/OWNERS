@@ -11,5 +11,4 @@ include /src/developer/ffx/plugins/platform/preflight/OWNERS
 include /src/lib/structured_ui/OWNERS
 include /src/security/lib/scrutiny/OWNERS
 include /src/sys/fuzzing/OWNERS
-include /third_party/rust_crates/vendor/tui-0.16.0/OWNERS
 include /tools/create/OWNERS

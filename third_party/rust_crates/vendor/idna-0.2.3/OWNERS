@@ -3,4 +3,3 @@
 # DOCS: https://fuchsia.dev/fuchsia-src/development/languages/rust/third_party#owners_files
 
 include /third_party/rust_crates/vendor/trust-dns-proto-0.22.0/OWNERS
-include /third_party/rust_crates/vendor/url-2.1.0/OWNERS

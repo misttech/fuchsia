@@ -5,4 +5,3 @@
 include /src/developer/ffx/OWNERS
 include /src/lib/analytics/OWNERS
 include /src/lib/gcs/OWNERS
-include /tools/fvdl/OWNERS

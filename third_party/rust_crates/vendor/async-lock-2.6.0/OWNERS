@@ -5,7 +5,6 @@
 include /src/connectivity/overnet/OWNERS
 include /src/developer/ffx/OWNERS
 include /src/developer/ffx/daemon/protocols/repo/OWNERS
-include /src/developer/ffx/logger/OWNERS
 include /src/diagnostics/OWNERS
 include /src/lib/async-utils/OWNERS
 include /src/lib/gcs/OWNERS

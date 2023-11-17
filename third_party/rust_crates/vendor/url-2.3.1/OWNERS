@@ -9,10 +9,8 @@ include /src/developer/ffx/plugins/assembly/OWNERS
 include /src/developer/ffx/plugins/component/OWNERS
 include /src/developer/ffx/plugins/fuzz/OWNERS
 include /src/developer/ffx/plugins/product/OWNERS
-include /src/developer/ffx/plugins/product_bundle/OWNERS
 include /src/devices/OWNERS
 include /src/devices/lib/OWNERS
-include /src/experiences/session_shells/OWNERS
 include /src/lib/analytics/OWNERS
 include /src/lib/fuchsia-component-test/OWNERS
 include /src/lib/fuchsia-url/OWNERS

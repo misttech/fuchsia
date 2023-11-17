@@ -3,5 +3,4 @@
 # DOCS: https://fuchsia.dev/fuchsia-src/development/languages/rust/third_party#owners_files
 
 include /src/connectivity/bluetooth/OWNERS
-include /src/identity/OWNERS
 include /third_party/rust_crates/forks/pulldown-cmark/OWNERS

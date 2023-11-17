@@ -7,4 +7,3 @@ include /src/developer/ffx/lib/pkg/OWNERS
 include /src/lib/assembly/OWNERS
 include /src/lib/testing/temp_test_env/OWNERS
 include /tools/auto_owners/OWNERS
-include /tools/fvdl/OWNERS
