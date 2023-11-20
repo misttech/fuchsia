@@ -10,6 +10,7 @@ inputs="
     performance.md
     transition-plan.md
     shareable-channels.md
+    memory-attribution.md
 "
 
 for input in $inputs; do

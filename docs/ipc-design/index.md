@@ -9,3 +9,4 @@ Contents:
 *   [Performance](performance.md)
 *   [Transition plan](transition-plan.md)
 *   [Shareable channels](shareable-channels.md)
+*   [Memory attribution](memory-attribution.md)
