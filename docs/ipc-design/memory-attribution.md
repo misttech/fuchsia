@@ -11,12 +11,11 @@ for channel messages.
 
 Zircon originally had no limit on the number of messages that could be
 enqueued on a channel.  This meant the system would sometimes be
-brought down by a misbehaving process that inadvertently enqueued too
-many request messages on a channel without waiting for them to be
-processed, allocating excessive amounts of memory.  Later a fixed
-limit was added, but that introduced a new problem.  We discuss that
-problem and potential solutions below, and relate them to the broader
-problem of memory attribution.
+brought down by a misbehaving process that sends requests faster than
+they are processed, allocating excessive amounts of memory for the
+request messages.  Later a fixed limit was added, but that introduced
+a new problem.  We discuss that problem and potential solutions below,
+and relate them to the broader problem of memory attribution.
 
 ## Memory attribution: background and goals
 
@@ -41,31 +40,31 @@ this, we may want to do the following:
 
 This may involve imposing limits on allocations, or it may involve
 finding processes to blame for high memory use and to terminate in an
-OOM situation (the "OOM killer" approach).  We may or may not want
-guarantees that we can always reclaim memory.
+OOM situation (the "OOM killer" approach, like Linux's OOM killer).
+We may or may not want guarantees that we can always reclaim memory.
 
-The draft RFC [Kernel-mediated Memory
-Attribution](https://fuchsia-review.googlesource.com/c/fuchsia/+/867858)
+The draft RFC "[Kernel-mediated Memory
+Attribution](https://fuchsia-review.googlesource.com/c/fuchsia/+/867858)"
 proposes a memory attribution system for Fuchsia that covers memory
 allocated through VMOs.  Below we describe how a system like that
 could be extended to cover channel messages.
 
 ## Problems with Fuchsia's current IPC mechanisms
 
-Zircon originally had no limit on the number of messages that may be
-enqueued on a channel.  This had the problem that a process could
-accidentally cause an out-of-memory DoS (denial of service) of the
-entire system by queuing messages onto a channel faster than they are
-processed.
+As mentioned above, Zircon originally had no limit on the number of
+messages that may be enqueued on a channel.  This had the problem that
+a process could accidentally cause an out-of-memory DoS (denial of
+service) of the entire system by queuing messages onto a channel
+faster than they are processed.
 
 That problem was partly addressed in March 2020 by the
 [introduction](https://fuchsia-review.googlesource.com/c/fuchsia/+/369103)
 of a fixed limit on the number of messages per channel, currently 3500
 ([kMaxPendingMessageCount](https://fuchsia.googlesource.com/fuchsia/+/7120a02d257174e8618fd9bfec60123b3f7e33d4/zircon/kernel/object/channel_dispatcher.cc#47)).
 When a process tries to enqueue a message on a channel that is already
-at that limit, the process receives a signal which generally kills the
-process.  (It is possible to handle that signal, but that is generally
-not done.)
+at that limit, the process receives a policy exception that usually
+kills the process.  (It is possible to handle that exception, but that
+is usually not done.)
 
 That leaves the problem that a process can still cause DoS of the
 entire system by writing many messages to multiple channels.
@@ -89,7 +88,7 @@ attribution objects, discussed below.)
 Consequently, any request message sent using the MBO is attributed to
 the client process, as one would expect.
 
-Furthermore, a reply message sent by a server to a client is
+Furthermore, a reply message sent by a server to a client is also
 attributed to the client.  This may be counterintuitive -- because the
 resource cost of allocating a reply message is attributed to the
 receiver, not the sender -- but it prevents DoS of the server by the
@@ -103,10 +102,10 @@ implications of relaxing that size limit are discussed below.)
 
 Note that MBOs are not fixed-size.  An MBO is resized dynamically when
 message contents are written into it.  This means that (for example)
-if client sends an MBO containing a request message of size 1k to a
-server (without prereserving extra space in the MBO), and the server
-writes a 64k reply into the MBO, this action by the server will cause
-a further 63k to be attributed to the client.
+if a client sends an MBO containing a request message of size 1k to a
+server (and does so without prereserving extra space in the MBO), then
+if the server writes a 64k reply into the MBO, this action by the
+server will cause a further 63k to be attributed to the client.
 
 In effect, MBOs allow a client to temporarily delegate to a server a
 limited ability to allocate memory on the client's behalf.
@@ -115,8 +114,8 @@ limited ability to allocate memory on the client's behalf.
 
 If we relax the kernel's message size limit to allow large or
 arbitrary sized messages, we get the problem that a server can cause
-DoS of a client process by allocating a large reply message on its
-behalf.
+DoS of a client process by allocating a large reply message on the
+client's behalf.
 
 There are a couple of ways we could address that:
 
