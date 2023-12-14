@@ -812,14 +812,28 @@ zx_status_t AmlogicDisplay::DisplayControllerImplSetDisplayPower(uint64_t displa
   }
   if (power_on) {
     zx::result<> power_on_result = vout_->PowerOn();
-    if (power_on_result.is_ok()) {
-      // Powering on the display panel also resets the display mode set on the
-      // display. This clears the display mode set previously to force a Vout
-      // modeset to be performed on the next ApplyConfiguration().
-      current_display_timing_ = {};
+    if (power_on_result.is_error()) {
+      zxlogf(ERROR, "Failed to power on Vout");
+      return power_on_result.status_value();
     }
-    return power_on_result.status_value();
+
+    if (vout_->supports_hpd()) {
+      zx_status_t status = SetupHotplugDisplayDetection();
+      if (status != ZX_OK) {
+        zxlogf(ERROR, "Failed to set up hotplug display detection");
+        return status;
+      }
+    }
+
+    // Powering on the display panel also resets the display mode set on the
+    // display. This clears the display mode set previously to force a Vout
+    // modeset to be performed on the next ApplyConfiguration().
+    current_display_timing_ = {};
+    return ZX_OK;
   }
+
+  // power off
+  hot_plug_detection_ = nullptr;
   return vout_->PowerOff().status_value();
 }
 
