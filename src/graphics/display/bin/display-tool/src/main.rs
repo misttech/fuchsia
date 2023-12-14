@@ -110,6 +110,17 @@ struct FrameRateTestArgs {
     grid_height: Option<u32>,
 }
 
+/// Play a double buffered animation of two flipping color frames using fence
+/// synchronization. The frame contents are pre-rendered before all the display
+/// presentations.
+#[derive(FromArgs)]
+#[argh(subcommand, name = "flipping-colors")]
+struct FlippingColorsArgs {
+    /// ID of the display to play the animation on
+    #[argh(positional)]
+    id: Option<u64>,
+}
+
 #[derive(FromArgs)]
 #[argh(subcommand)]
 enum SubCommands {
@@ -118,6 +129,7 @@ enum SubCommands {
     Color(ColorArgs),
     Squares(SquaresArgs),
     FrameRateTest(FrameRateTestArgs),
+    FlippingColors(FlippingColorsArgs),
 }
 
 #[fasync::run_singlethreaded]
@@ -152,6 +164,9 @@ async fn main() -> Result<(), Error> {
                     args.grid_height,
                 )
                 .await
+            }
+            SubCommands::FlippingColors(args) => {
+                commands::flipping_colors(&coordinator, args.id.map(DisplayId)).await
             }
         }
     };

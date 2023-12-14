@@ -9,6 +9,7 @@ use {
 
 mod bouncing_squares;
 mod display_color_layer;
+mod flipping_colors;
 mod frame_rate_test;
 mod static_config_vsync_loop;
 
@@ -124,4 +125,22 @@ pub async fn frame_rate_test(
     };
 
     frame_rate_test::run(coordinator, display, grid_width, grid_height).await
+}
+
+pub async fn flipping_colors(coordinator: &Coordinator, id: Option<DisplayId>) -> Result<()> {
+    let displays = coordinator.displays();
+    if displays.is_empty() {
+        return Err(format_err!("no displays found"));
+    }
+
+    let display = match id {
+        // Pick the first available display if no ID was specified.
+        None => &displays[0],
+        Some(id) => displays
+            .iter()
+            .find(|d| d.id() == id)
+            .ok_or_else(|| format_err!("display with id '{:?}' not found", id))?,
+    };
+
+    flipping_colors::run(coordinator, display).await
 }
