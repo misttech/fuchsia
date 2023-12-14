@@ -1437,18 +1437,99 @@ zx_status_t AmlogicDisplay::Bind() {
   return ZX_OK;
 }
 
+zx::result<> AmlogicDisplay::EnableVsync() {
+  ZX_ASSERT(!vsync_thread_.has_value());
+  ZX_ASSERT(!vsync_irq_.is_valid());
+
+  // Get VSync interrupt (IRQ_VSYNC)
+  zx::result<zx::interrupt> interrupt_result =
+      GetInterrupt(InterruptResourceIndex::kViu1Vsync, pdev_);
+  if (!interrupt_result.is_ok()) {
+    zxlogf(ERROR, "Failed to get vsync interrupt: %s", interrupt_result.status_string());
+    return interrupt_result.take_error();
+  }
+  vsync_irq_ = std::move(interrupt_result).value();
+
+  zx_status_t status = StartVsyncInterruptHandlerThread();
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "Failed to start Vsync interrupt handler threads: %s",
+           zx_status_get_string(status));
+    return zx::error(status);
+  }
+
+  return zx::ok();
+}
+
+zx::result<> AmlogicDisplay::DisableVsync() {
+  ZX_ASSERT(vsync_thread_.has_value());
+  ZX_ASSERT(vsync_irq_.is_valid());
+
+  zx_status_t status = vsync_irq_.destroy();
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "Failed to destroy Vsync IRQ");
+    return zx::error(status);
+  }
+
+  status = thrd_status_to_zx_status(thrd_join(*vsync_thread_, nullptr));
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "Vsync thread join failed: %s", zx_status_get_string(status));
+    return zx::error(status);
+  }
+
+  vsync_thread_ = std::nullopt;
+  vsync_irq_ = {};
+  return zx::ok();
+}
+
 void AmlogicDisplay::SetVsync(SetVsyncRequestView request, SetVsyncCompleter::Sync& completer) {
-  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+  zx::result<> result = request->enabled ? EnableVsync() : DisableVsync();
+  if (!result.is_ok()) {
+    completer.ReplyError(result.status_value());
+  } else {
+    completer.ReplySuccess();
+  }
 }
 
 void AmlogicDisplay::SetVoutPower(SetVoutPowerRequestView request,
                                   SetVoutPowerCompleter::Sync& completer) {
-  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+  ZX_ASSERT(vout_);
+  display::DisplayId display_id;
+  {
+    fbl::AutoLock lock(&display_mutex_);
+    display_id = display_id_;
+  }
+
+  zx_status_t status = DisplayControllerImplSetDisplayPower(display_id.value(), request->enabled);
+  if (status != ZX_OK) {
+    completer.ReplyError(status);
+  } else {
+    completer.ReplySuccess();
+  }
 }
 
 void AmlogicDisplay::SetDisplayEnginePower(SetDisplayEnginePowerRequestView request,
                                            SetDisplayEnginePowerCompleter::Sync& completer) {
-  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+  if (request->enabled) {
+    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+    return;
+  }
+
+  hot_plug_detection_ = nullptr;
+
+  if (vsync_thread_.has_value()) {
+    zx::result<> result = DisableVsync();
+    if (!result.is_ok()) {
+      zxlogf(ERROR, "Failed to disable vsync before VPU reset: %s", result.status_string());
+    }
+  }
+
+  zx::result<> result = vout_->PowerOff();
+  if (!result.is_ok()) {
+    zxlogf(ERROR, "Failed to power off Vout before VPU reset: %s", result.status_string());
+  }
+
+  vpu_->PowerOff();
+  completer.ReplySuccess();
 }
 
 AmlogicDisplay::AmlogicDisplay(zx_device_t* parent) : DeviceType(parent) {}

@@ -95,6 +95,9 @@ class AmlogicDisplay
 
   ~AmlogicDisplay();
 
+  zx::result<> EnableVsync();
+  zx::result<> DisableVsync();
+
   void SetVsync(SetVsyncRequestView request, SetVsyncCompleter::Sync& completer) override;
   void SetVoutPower(SetVoutPowerRequestView request,
                     SetVoutPowerCompleter::Sync& completer) override;
