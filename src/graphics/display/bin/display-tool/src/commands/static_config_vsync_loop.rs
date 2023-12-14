@@ -11,12 +11,9 @@ use {
         VsyncEvent,
     },
     futures::StreamExt,
-    std::io::Write,
 };
 
 use crate::{draw::MappedImage, fps::Counter, rgb::Rgb888};
-
-const CLEAR: &str = "\x1B[2K\r";
 
 pub struct Args<'a> {
     pub display: &'a DisplayInfo,
@@ -83,15 +80,9 @@ pub async fn run<'a>(coordinator: &Coordinator, args: Args<'a>) -> Result<()> {
 
     // Start sampling vsync frequency.
     let mut counter = Counter::new();
-    while let Some(VsyncEvent { id, timestamp, .. }) = vsync.next().await {
+    while let Some(VsyncEvent { id: _, timestamp, .. }) = vsync.next().await {
         counter.add(timestamp);
-        let stats = counter.stats();
-
-        print!(
-            "{}Display {} refresh rate {:.2} Hz ({:.5} ms)",
-            CLEAR, id.0, stats.sample_rate_hz, stats.sample_time_delta_ms
-        );
-        std::io::stdout().flush()?;
+        let _stats = counter.stats();
     }
 
     Err(format_err!("stopped receiving vsync events"))

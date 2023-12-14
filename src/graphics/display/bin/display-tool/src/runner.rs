@@ -13,13 +13,10 @@ use {
         LayerConfig, LayerId, PixelFormat,
     },
     fuchsia_trace::duration,
-    std::{borrow::Borrow, io::Write},
+    std::borrow::Borrow,
 };
 
 use crate::{draw::MappedImage, fps::Counter};
-
-// ANSI X3.64 (ECMA-48) escape code for clearing the terminal screen.
-const CLEAR: &str = "\x1B[2K\r";
 
 // A scene whose contents may change over time and can be rendered into
 // images mapped to the address space.
@@ -129,11 +126,6 @@ impl<'a, S: Scene> DoubleBufferedFenceLoop<'a, S> {
             // Log the frame rate.
             counter.add(fuchsia_zircon::Time::get_monotonic());
             let stats = counter.stats();
-            print!(
-                "{}Display {:.2} fps ({:.5} ms)",
-                CLEAR, stats.sample_rate_hz, stats.sample_time_delta_ms
-            );
-            std::io::stdout().flush()?;
 
             // Prepare the next image.
             // `current_config` alternates between 0 and 1.
