@@ -1,0 +1,27 @@
+// Copyright 2023 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+library fuchsia.hardware.amlogicdisplay;
+
+using zx;
+
+@discoverable
+closed protocol Device {
+    strict SetVsync(struct {
+        enabled bool;
+    }) -> () error zx.Status;
+
+    strict SetVoutPower(struct {
+        enabled bool;
+    }) -> () error zx.Status;
+
+    strict SetDisplayEnginePower(struct {
+        enabled bool;
+    }) -> () error zx.Status;
+};
+
+/// The service enables the driver framework to offer the Demo protocol to
+/// other components.
+service Service {
+    device client_end:Device;
+};

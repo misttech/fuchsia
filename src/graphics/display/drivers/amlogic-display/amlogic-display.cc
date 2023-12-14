@@ -5,6 +5,7 @@
 #include "src/graphics/display/drivers/amlogic-display/amlogic-display.h"
 
 #include <fidl/fuchsia.hardware.amlogiccanvas/cpp/wire.h>
+#include <fidl/fuchsia.hardware.amlogicdisplay/cpp/wire.h>
 #include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
 #include <fidl/fuchsia.sysmem/cpp/wire.h>
 #include <fuchsia/hardware/display/clamprgb/cpp/banjo.h>
@@ -1434,6 +1435,20 @@ zx_status_t AmlogicDisplay::Bind() {
   cleanup.cancel();
 
   return ZX_OK;
+}
+
+void AmlogicDisplay::SetVsync(SetVsyncRequestView request, SetVsyncCompleter::Sync& completer) {
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
+void AmlogicDisplay::SetVoutPower(SetVoutPowerRequestView request,
+                                  SetVoutPowerCompleter::Sync& completer) {
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
+void AmlogicDisplay::SetDisplayEnginePower(SetDisplayEnginePowerRequestView request,
+                                           SetDisplayEnginePowerCompleter::Sync& completer) {
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
 AmlogicDisplay::AmlogicDisplay(zx_device_t* parent) : DeviceType(parent) {}

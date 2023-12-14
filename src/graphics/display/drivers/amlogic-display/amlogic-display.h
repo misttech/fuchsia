@@ -6,6 +6,7 @@
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_AMLOGIC_DISPLAY_AMLOGIC_DISPLAY_H_
 
 #include <fidl/fuchsia.hardware.amlogiccanvas/cpp/wire.h>
+#include <fidl/fuchsia.hardware.amlogicdisplay/cpp/wire.h>
 #include <fidl/fuchsia.hardware.sysmem/cpp/wire.h>
 #include <fidl/fuchsia.images2/cpp/wire.h>
 #include <fidl/fuchsia.sysmem/cpp/wire.h>
@@ -75,7 +76,8 @@ class ClampRgb;
 
 // AmlogicDisplay will implement only a few subset of Device.
 using DeviceType = ddk::Device<AmlogicDisplay, ddk::GetProtocolable, ddk::Suspendable,
-                               ddk::Resumable, ddk::ChildPreReleaseable>;
+                               ddk::Resumable, ddk::ChildPreReleaseable,
+                               ddk::Messageable<fuchsia_hardware_amlogicdisplay::Device>::Mixin>;
 class AmlogicDisplay
     : public DeviceType,
       public ddk::DisplayControllerImplProtocol<AmlogicDisplay, ddk::base_protocol>,
@@ -92,6 +94,12 @@ class AmlogicDisplay
   AmlogicDisplay& operator=(AmlogicDisplay&&) = delete;
 
   ~AmlogicDisplay();
+
+  void SetVsync(SetVsyncRequestView request, SetVsyncCompleter::Sync& completer) override;
+  void SetVoutPower(SetVoutPowerRequestView request,
+                    SetVoutPowerCompleter::Sync& completer) override;
+  void SetDisplayEnginePower(SetDisplayEnginePowerRequestView request,
+                             SetDisplayEnginePowerCompleter::Sync& completer) override;
 
   // Acquires parent resources, sets up display submodules, and binds itself to
   // the device node.
