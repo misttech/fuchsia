@@ -8,10 +8,10 @@ use {
     crate::model::{
         actions::{Action, ActionKey},
         component::{
-            ComponentInstance, DictDispatcher, ExecutionState, InstanceState, Package, Runtime,
-            StartReason, WeakComponentInstance,
+            ComponentInstance, DictDispatcher, ExecutionState, InstanceState, Runtime, StartReason,
+            WeakComponentInstance,
         },
-        error::{StartActionError, StructuredConfigError},
+        error::{CreateNamespaceError, StartActionError, StructuredConfigError},
         hooks::{Event, EventPayload, RuntimeInfo},
         namespace::create_namespace,
         routing::{route_and_open_capability, OpenOptions, RouteRequest},
@@ -36,6 +36,7 @@ use {
     futures::channel::oneshot,
     moniker::Moniker,
     sandbox::Capability,
+    serve_processargs::NamespaceBuilder,
     std::string::ToString,
     std::sync::Arc,
     tracing::warn,
@@ -132,18 +133,35 @@ async fn do_start(
         None => None,
     };
 
+    // Create the component's namespace.
+    let mut namespace_builder =
+        create_namespace(resolved_component.package.as_ref(), component, &resolved_component.decl)
+            .await
+            .map_err(|err| StartActionError::CreateNamespaceError {
+                moniker: component.moniker.clone(),
+                err,
+            })?;
+    for NamespaceEntry { directory, path } in additional_namespace_entries {
+        let directory: sandbox::Directory = directory.into();
+        namespace_builder.add_entry(Box::new(directory), &path).map_err(|err| {
+            StartActionError::CreateNamespaceError {
+                moniker: component.moniker.clone(),
+                err: CreateNamespaceError::BuildNamespaceError(err),
+            }
+        })?;
+    }
+
     // Generate the Runtime which will be set in the Execution.
     let (pending_runtime, start_info, break_on_start) = make_execution_runtime(
         &component,
         component.policy_checker(),
         resolved_component.resolved_url.clone(),
-        resolved_component.package.as_ref(),
         &resolved_component.decl,
         resolved_component.config.clone(),
+        namespace_builder,
         start_reason.clone(),
         execution_controller_task,
         numbered_handles,
-        additional_namespace_entries,
     )
     .await?;
 
@@ -378,13 +396,12 @@ async fn make_execution_runtime(
     component: &Arc<ComponentInstance>,
     checker: &GlobalPolicyChecker,
     url: String,
-    package: Option<&Package>,
     decl: &cm_rust::ComponentDecl,
     config: Option<ConfigFields>,
+    namespace_builder: NamespaceBuilder,
     start_reason: StartReason,
     execution_controller_task: Option<controller::ExecutionControllerTask>,
     numbered_handles: Vec<fprocess::HandleInfo>,
-    additional_namespace_entries: Vec<NamespaceEntry>,
 ) -> Result<(Runtime, StartInfo, zx::EventPair), StartActionError> {
     // TODO(https://fxbug.dev/120713): Consider moving this check to ComponentInstance::add_child
     match component.on_terminate {
@@ -398,14 +415,6 @@ async fn make_execution_runtime(
         }
         fdecl::OnTerminate::None => {}
     }
-
-    // Create the component's namespace.
-    let namespace = create_namespace(package, component, decl, additional_namespace_entries)
-        .await
-        .map_err(|err| StartActionError::CreateNamespaceError {
-            moniker: component.moniker.clone(),
-            err,
-        })?;
 
     let logger = if let Some(logsink_decl) = get_logsink_decl(&decl) {
         match create_scoped_logger(component, logsink_decl.clone()).await {
@@ -465,7 +474,7 @@ async fn make_execution_runtime(
             .as_ref()
             .map(|p| p.info.clone())
             .unwrap_or_else(|| fdata::Dictionary::default()),
-        namespace,
+        namespace: namespace_builder,
         outgoing_dir: outgoing_dir_server,
         runtime_dir: runtime_dir_server,
         numbered_handles,

@@ -12,7 +12,6 @@ use {
         },
         sandbox_util::{DictExt, Message},
     },
-    ::namespace::Entry as NamespaceEntry,
     ::routing::{
         capability_source::ComponentCapability, component_instance::ComponentInstanceInterface,
         mapper::NoopRouteMapper, rights::Rights, route_to_storage_decl,
@@ -41,7 +40,6 @@ pub async fn create_namespace(
     package: Option<&Package>,
     component: &Arc<ComponentInstance>,
     decl: &ComponentDecl,
-    additional_entries: Vec<NamespaceEntry>,
 ) -> Result<NamespaceBuilder, CreateNamespaceError> {
     let not_found_sender = not_found_logging(component);
     let mut namespace = NamespaceBuilder::new(not_found_sender);
@@ -52,11 +50,6 @@ pub async fn create_namespace(
     }
     let uses = deduplicate_event_stream(decl.uses.iter());
     add_use_decls(&mut namespace, component, uses).await?;
-    for entry in additional_entries {
-        let directory: sandbox::Directory = entry.directory.into();
-        let path = entry.path;
-        namespace.add_entry(Box::new(directory), &path)?;
-    }
     Ok(namespace)
 }
 
