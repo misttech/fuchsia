@@ -86,6 +86,22 @@ class AdcButtonsDeviceTest : public zxtest::Test {
     loop_.Shutdown();
   }
 
+  void DrainInitialReport(fidl::WireSyncClient<fuchsia_input_report::InputReportsReader>& reader) {
+    auto result = reader->ReadInputReports();
+    ASSERT_OK(result.status());
+    ASSERT_FALSE(result.value().is_error());
+    auto& reports = result.value().value()->reports;
+
+    ASSERT_EQ(1, reports.count());
+    auto report = reports[0];
+
+    ASSERT_TRUE(report.has_event_time());
+    ASSERT_TRUE(report.has_consumer_control());
+    auto& consumer_control = report.consumer_control();
+
+    ASSERT_TRUE(consumer_control.has_pressed_buttons());
+  }
+
   uint32_t polling_rate_usec() { return device_->polling_rate_usec_; }
 
  private:
@@ -137,6 +153,7 @@ TEST_F(AdcButtonsDeviceTest, ReadInputReportsTest) {
   auto reader =
       fidl::WireSyncClient<fuchsia_input_report::InputReportsReader>(std::move(endpoints->client));
   EXPECT_TRUE(reader.is_valid());
+  DrainInitialReport(reader);
 
   adc_->SetReadValue(kChannel, 20);
   // Wait for the device to pick this up.
