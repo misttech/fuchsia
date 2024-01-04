@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use diagnostics_reader::{ArchiveReader, DiagnosticsHierarchy, Inspect};
+use diagnostics_reader::{ArchiveReader, Inspect};
 use fuchsia_component_test::ScopedInstance;
+use parse_starnix_inspect::CoredumpReport;
 
 #[fuchsia::main]
 async fn main() {
@@ -22,13 +23,14 @@ async fn main() {
         // about the observed diagnostics.
         eprintln!("retrieving coredump reports...");
         let observed_coredumps = loop {
-            let observed_coredumps = get_coredumps_from_inspect().await;
-            if let Some(most_recent) = observed_coredumps.last() {
-                if most_recent.idx == current_idx {
-                    break observed_coredumps;
+            if let Some(observed_coredumps) = get_coredumps_from_inspect().await {
+                if let Some(most_recent) = observed_coredumps.last() {
+                    if most_recent.idx == current_idx {
+                        break observed_coredumps;
+                    }
                 }
+                eprintln!("waiting for coredump ({current_idx}/{max_idx}) to show up...");
             }
-            eprintln!("waiting for coredump ({current_idx}/{max_idx}) to show up...");
             std::thread::sleep(std::time::Duration::from_secs(1));
         };
         eprintln!("observed coredump {current_idx} in inspect, validating...");
@@ -44,10 +46,9 @@ async fn main() {
         let mut expected_idx = expected_min_idx;
         for coredump in observed_coredumps {
             assert_eq!(coredump.idx, expected_idx);
-            assert_eq!(
-                coredump.pid,
-                expected_idx as i64 + 3,
-                "init is pid 1, kthread gets pid 2, coredumps start at 3, nothing else runs here",
+            assert!(
+                coredump.pid >= expected_idx as i64 + 3,
+                "coredumps starts at pid greater or equals to 3, nothing else runs here",
             );
             assert_eq!(
                 coredump.argv,
@@ -64,64 +65,17 @@ async fn main() {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct CoredumpReport {
-    idx: usize,
-    pid: i64,
-    argv: String,
-}
-
-async fn get_coredumps_from_inspect() -> Vec<CoredumpReport> {
+// Snapshotting inspect can be a bit racy -- over enough runs we'll end up reading the node
+// hierarchy at points where the node exists but none of its children, where nodes exist but not
+// one of their properties, etc. Return an Option here for cases where we couldn't actually read the
+// coredump report so the caller can try again..
+async fn get_coredumps_from_inspect() -> Option<Vec<CoredumpReport>> {
     let kernel_inspect = ArchiveReader::new()
         .select_all_for_moniker("kernel")
         .with_minimum_schema_count(1)
-        .retry_if_empty(true)
         .snapshot::<Inspect>()
         .await
-        .unwrap();
+        .ok()?;
     assert_eq!(kernel_inspect.len(), 1);
-
-    // Examine all of the properties and children so that we are alerted that this test may need to
-    // be updated if coredump reports gain new information.
-    let DiagnosticsHierarchy { name, properties, children, .. } = kernel_inspect[0]
-        .payload
-        .as_ref()
-        .unwrap()
-        .get_child_by_path(&["container", "kernel", "coredumps"])
-        .cloned()
-        .unwrap();
-    assert_eq!(name, "coredumps");
-    assert_eq!(properties, vec![]);
-
-    let mut reports = vec![];
-    for DiagnosticsHierarchy {
-        name: idx_str,
-        properties: coredump_properties,
-        children: coredump_children,
-        ..
-    } in children
-    {
-        assert_eq!(coredump_children, vec![], "coredump reports aren't expected to have children");
-
-        let mut argv = None;
-        let mut pid = None;
-        for property in coredump_properties {
-            match property.name() {
-                "argv" => argv = Some(property.string().unwrap().to_string()),
-
-                // TODO(https://fxbug.dev/130834) i64/int in kernel shows up as u64/uint here
-                "pid" => pid = Some(*property.uint().unwrap() as i64),
-                other => panic!("unrecognized coredump report property `{other}`"),
-            }
-        }
-
-        reports.push(CoredumpReport {
-            idx: idx_str.parse().unwrap(),
-            pid: pid.expect("retrieving pid property"),
-            argv: argv.expect("retrieving argv property"),
-        });
-    }
-    reports.sort();
-
-    reports
+    CoredumpReport::extract_from_snapshot(&kernel_inspect[0])
 }

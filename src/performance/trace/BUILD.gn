@@ -37,7 +37,8 @@ source_set("trace_app") {
     "//sdk/lib/fdio",
     "//sdk/lib/fit",
     "//sdk/lib/sys/cpp",
-    "//src/lib/fxl",
+    "//sdk/lib/syslog/cpp",
+    "//src/lib/fxl:fxl_cli",
     "//src/performance/lib/trace_converters:chromium",
     "//third_party/zlib:zfstream",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
@@ -55,7 +56,7 @@ source_set("options") {
   ]
 }
 
-fuchsia_shell_package("trace") {
+fuchsia_package("trace") {
   deps = [
     ":bin",
 

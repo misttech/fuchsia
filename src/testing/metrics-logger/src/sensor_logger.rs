@@ -116,20 +116,23 @@ macro_rules! log_trace {
     ( $sensor_type:expr, $trace_args:expr) => {
         match $sensor_type {
             SensorType::Temperature => {
-                fuchsia_trace::counter(
+                if let Some(context) = fuchsia_trace::TraceCategoryContext::acquire(
                     fuchsia_trace::cstr!("metrics_logger"),
-                    fuchsia_trace::cstr!("temperature"),
-                    0,
-                    $trace_args,
-                );
+                ) {
+                    fuchsia_trace::counter(
+                        &context,
+                        fuchsia_trace::cstr!("temperature"),
+                        0,
+                        $trace_args,
+                    );
+                }
             }
             SensorType::Power => {
-                fuchsia_trace::counter(
+                if let Some(context) = fuchsia_trace::TraceCategoryContext::acquire(
                     fuchsia_trace::cstr!("metrics_logger"),
-                    fuchsia_trace::cstr!("power"),
-                    0,
-                    $trace_args,
-                );
+                ) {
+                    fuchsia_trace::counter(&context, fuchsia_trace::cstr!("power"), 0, $trace_args);
+                }
             }
         }
     };
@@ -139,44 +142,52 @@ macro_rules! log_trace_statistics {
     ( $sensor_type:expr, $trace_args:expr) => {
         match $sensor_type {
             SensorType::Temperature => {
-                fuchsia_trace::counter(
+                if let Some(context) = fuchsia_trace::TraceCategoryContext::acquire(
                     fuchsia_trace::cstr!("metrics_logger"),
-                    fuchsia_trace::cstr!("temperature_min"),
-                    0,
-                    &$trace_args[Statistics::Min as usize],
-                );
-                fuchsia_trace::counter(
-                    fuchsia_trace::cstr!("metrics_logger"),
-                    fuchsia_trace::cstr!("temperature_max"),
-                    0,
-                    &$trace_args[Statistics::Max as usize],
-                );
-                fuchsia_trace::counter(
-                    fuchsia_trace::cstr!("metrics_logger"),
-                    fuchsia_trace::cstr!("temperature_avg"),
-                    0,
-                    &$trace_args[Statistics::Avg as usize],
-                );
+                ) {
+                    fuchsia_trace::counter(
+                        &context,
+                        fuchsia_trace::cstr!("temperature_min"),
+                        0,
+                        &$trace_args[Statistics::Min as usize],
+                    );
+                    fuchsia_trace::counter(
+                        &context,
+                        fuchsia_trace::cstr!("temperature_max"),
+                        0,
+                        &$trace_args[Statistics::Max as usize],
+                    );
+                    fuchsia_trace::counter(
+                        &context,
+                        fuchsia_trace::cstr!("temperature_avg"),
+                        0,
+                        &$trace_args[Statistics::Avg as usize],
+                    );
+                }
             }
             SensorType::Power => {
-                fuchsia_trace::counter(
+                if let Some(context) = fuchsia_trace::TraceCategoryContext::acquire(
                     fuchsia_trace::cstr!("metrics_logger"),
-                    fuchsia_trace::cstr!("power_min"),
-                    0,
-                    &$trace_args[Statistics::Min as usize],
-                );
-                fuchsia_trace::counter(
-                    fuchsia_trace::cstr!("metrics_logger"),
-                    fuchsia_trace::cstr!("power_max"),
-                    0,
-                    &$trace_args[Statistics::Max as usize],
-                );
-                fuchsia_trace::counter(
-                    fuchsia_trace::cstr!("metrics_logger"),
-                    fuchsia_trace::cstr!("power_avg"),
-                    0,
-                    &$trace_args[Statistics::Avg as usize],
-                );
+                ) {
+                    fuchsia_trace::counter(
+                        &context,
+                        fuchsia_trace::cstr!("power_min"),
+                        0,
+                        &$trace_args[Statistics::Min as usize],
+                    );
+                    fuchsia_trace::counter(
+                        &context,
+                        fuchsia_trace::cstr!("power_max"),
+                        0,
+                        &$trace_args[Statistics::Max as usize],
+                    );
+                    fuchsia_trace::counter(
+                        &context,
+                        fuchsia_trace::cstr!("power_avg"),
+                        0,
+                        &$trace_args[Statistics::Avg as usize],
+                    );
+                }
             }
         }
     };
@@ -536,8 +547,8 @@ pub mod tests {
     use {
         super::*,
         assert_matches::assert_matches,
+        diagnostics_assertions::assert_data_tree,
         futures::{task::Poll, FutureExt, TryStreamExt},
-        inspect::assert_data_tree,
         std::{cell::Cell, pin::Pin},
     };
 
@@ -703,7 +714,7 @@ pub mod tests {
         }
 
         fn iterate_task(&mut self, task: &mut Pin<Box<dyn futures::Future<Output = ()>>>) -> bool {
-            let Some(next_time) = self.executor.next_timer() else { return false };
+            let Some(next_time) = fasync::TestExecutor::next_timer() else { return false };
             self.executor.set_fake_time(next_time);
             let _ = self.executor.run_until_stalled(task);
             true

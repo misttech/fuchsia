@@ -5,79 +5,116 @@
 //! Defines the entry point of TCP packets, by directing them into the correct
 //! state machine.
 
+use alloc::collections::hash_map;
 use assert_matches::assert_matches;
-use core::{convert::TryFrom, fmt::Debug, num::NonZeroU16, ops::ControlFlow};
-use tracing::trace;
+use core::{convert::TryFrom, fmt::Debug, num::NonZeroU16};
+use tracing::{error, trace};
 
-use net_types::{
-    ip::{Ip, IpAddress, IpVersionMarker},
-    SpecifiedAddr,
-};
-use packet::{BufferMut, EmptyBuf, InnerPacketBuilder as _, Serializer};
+use net_types::{ip::IpAddress, SpecifiedAddr};
+use packet::{BufferMut, BufferView as _, EmptyBuf, InnerPacketBuilder as _, Serializer};
 use packet_formats::{
     ip::IpProto,
     tcp::{
-        TcpOptionsTooLongError, TcpParseArgs, TcpSegment, TcpSegmentBuilder,
+        TcpFlowAndSeqNum, TcpOptionsTooLongError, TcpParseArgs, TcpSegment, TcpSegmentBuilder,
         TcpSegmentBuilderWithOptions,
     },
 };
 use thiserror::Error;
 
 use crate::{
+    convert::BidirectionalConverter as _,
+    device,
+    error::NotFoundError,
     ip::{
-        socket::{DefaultSendOptions, DeviceIpSocketHandler, MmsError},
-        BufferIpTransportContext, BufferTransportIpContext, EitherDeviceId, IpLayerIpExt,
-        TransportReceiveError,
+        socket::{DefaultSendOptions, IpSocketHandler, MmsError},
+        EitherDeviceId, IpTransportContext, TransportIpContext, TransportReceiveError,
     },
     socket::{
-        address::{AddrVecIter, ConnAddr, ConnIpAddr, IpPortSpec, ListenerAddr},
-        AddrVec,
+        address::{
+            AddrIsMappedError, AddrVecIter, ConnAddr, ConnIpAddr, ListenerAddr, ListenerIpAddr,
+            SocketIpAddr,
+        },
+        AddrVec, InsertError,
     },
     trace_duration,
     transport::tcp::{
+        self,
         buffer::SendPayload,
         segment::{Options, Segment},
-        seqnum::UnscaledWindowSize,
+        seqnum::{SeqNum, UnscaledWindowSize},
         socket::{
-            do_send_inner, isn::IsnGenerator, Acceptor, BoundSocketState, Connection,
-            HandshakeStatus, Listener, ListenerAddrState, ListenerNotifier as _,
-            ListenerSharingState, MaybeListener, NonSyncContext, SocketId, SocketState, Sockets,
-            SyncContext, TcpIpTransportContext, TimerId,
+            do_send_inner, isn::IsnGenerator, make_connection, try_into_this_stack_conn_mut,
+            BoundSocketState, Connection, DemuxState, DeviceIpSocketHandler, DualStackIpExt,
+            EitherStack, HandshakeStatus, Listener, ListenerAddrState, ListenerSharingState,
+            MaybeDualStack, MaybeListener, PrimaryRc, SocketHandler, TcpBindingsContext,
+            TcpBindingsTypes, TcpContext, TcpDemuxContext, TcpDualStackContext,
+            TcpIpTransportContext, TcpPortSpec, TcpSocketId, TcpSocketSetEntry, TcpSocketState,
         },
-        state::{BufferProvider, Closed, Initial, State, TimeWait},
+        state::{BufferProvider, Closed, DataAcked, Initial, State, TimeWait},
         BufferSizes, ConnectionError, Control, Mss, SocketOptions,
     },
 };
 
-impl<C: NonSyncContext> BufferProvider<C::ReceiveBuffer, C::SendBuffer> for C {
-    type ActiveOpen = C::ListenerNotifierOrProvidedBuffers;
+impl<BT: TcpBindingsTypes> BufferProvider<BT::ReceiveBuffer, BT::SendBuffer> for BT {
+    type ActiveOpen = BT::ListenerNotifierOrProvidedBuffers;
 
-    type PassiveOpen = C::ReturnedBuffers;
+    type PassiveOpen = BT::ReturnedBuffers;
 
     fn new_passive_open_buffers(
         buffer_sizes: BufferSizes,
-    ) -> (C::ReceiveBuffer, C::SendBuffer, Self::PassiveOpen) {
-        <C as NonSyncContext>::new_passive_open_buffers(buffer_sizes)
+    ) -> (BT::ReceiveBuffer, BT::SendBuffer, Self::PassiveOpen) {
+        BT::new_passive_open_buffers(buffer_sizes)
     }
 }
 
-impl<I, B, C, SC> BufferIpTransportContext<I, C, SC, B> for TcpIpTransportContext
+impl<I, BC, CC> IpTransportContext<I, BC, CC> for TcpIpTransportContext
 where
-    I: IpLayerIpExt,
-    B: BufferMut,
-    C: NonSyncContext
+    I: DualStackIpExt,
+    BC: TcpBindingsContext<CC::WeakDeviceId>
         + BufferProvider<
-            C::ReceiveBuffer,
-            C::SendBuffer,
-            ActiveOpen = <C as NonSyncContext>::ListenerNotifierOrProvidedBuffers,
-            PassiveOpen = <C as NonSyncContext>::ReturnedBuffers,
+            BC::ReceiveBuffer,
+            BC::SendBuffer,
+            ActiveOpen = <BC as TcpBindingsTypes>::ListenerNotifierOrProvidedBuffers,
+            PassiveOpen = <BC as TcpBindingsTypes>::ReturnedBuffers,
         >,
-    SC: SyncContext<I, C>,
+    CC: TcpContext<I, BC> + TcpContext<I::OtherVersion, BC>,
 {
-    fn receive_ip_packet(
-        sync_ctx: &mut SC,
-        ctx: &mut C,
-        device: &SC::DeviceId,
+    fn receive_icmp_error(
+        core_ctx: &mut CC,
+        bindings_ctx: &mut BC,
+        _device: &CC::DeviceId,
+        original_src_ip: Option<SpecifiedAddr<I::Addr>>,
+        original_dst_ip: SpecifiedAddr<I::Addr>,
+        mut original_body: &[u8],
+        err: I::ErrorCode,
+    ) {
+        let mut buffer = &mut original_body;
+        let Some(flow_and_seqnum) = buffer.take_obj_front::<TcpFlowAndSeqNum>() else {
+            error!("received an ICMP error but its body is less than 8 bytes");
+            return;
+        };
+
+        let Some(original_src_ip) = original_src_ip else { return };
+        let Some(original_src_port) = NonZeroU16::new(flow_and_seqnum.src_port()) else { return };
+        let Some(original_dst_port) = NonZeroU16::new(flow_and_seqnum.dst_port()) else { return };
+        let original_seqnum = SeqNum::new(flow_and_seqnum.sequence_num());
+
+        SocketHandler::<I, _>::on_icmp_error(
+            core_ctx,
+            bindings_ctx,
+            original_src_ip,
+            original_dst_ip,
+            original_src_port,
+            original_dst_port,
+            original_seqnum,
+            err.into(),
+        );
+    }
+
+    fn receive_ip_packet<B: BufferMut>(
+        core_ctx: &mut CC,
+        bindings_ctx: &mut BC,
+        device: &CC::DeviceId,
         remote_ip: I::RecvSrcAddr,
         local_ip: SpecifiedAddr<I::Addr>,
         mut buffer: B,
@@ -90,15 +127,32 @@ where
             }
             Some(src_ip) => src_ip,
         };
-        let packet =
-            match buffer.parse_with::<_, TcpSegment<_>>(TcpParseArgs::new(*remote_ip, *local_ip)) {
-                Ok(packet) => packet,
-                Err(err) => {
-                    // TODO(https://fxbug.dev/101993): Increment the counter.
-                    trace!("tcp: failed parsing incoming packet {:?}", err);
-                    return Ok(());
-                }
-            };
+        let remote_ip: SocketIpAddr<_> = match remote_ip.try_into() {
+            Ok(remote_ip) => remote_ip,
+            Err(AddrIsMappedError {}) => {
+                // TODO(https://fxbug.dev/101993): Increment the counter.
+                trace!("tcp: source address is mapped (ipv4-mapped-ipv6), dropping the packet");
+                return Ok(());
+            }
+        };
+        let local_ip: SocketIpAddr<_> = match local_ip.try_into() {
+            Ok(local_ip) => local_ip,
+            Err(AddrIsMappedError {}) => {
+                // TODO(https://fxbug.dev/101993): Increment the counter.
+                trace!("tcp: local address is mapped (ipv4-mapped-ipv6), dropping the packet");
+                return Ok(());
+            }
+        };
+        let packet = match buffer
+            .parse_with::<_, TcpSegment<_>>(TcpParseArgs::new(remote_ip.addr(), local_ip.addr()))
+        {
+            Ok(packet) => packet,
+            Err(err) => {
+                // TODO(https://fxbug.dev/101993): Increment the counter.
+                trace!("tcp: failed parsing incoming packet {:?}", err);
+                return Ok(());
+            }
+        };
         let local_port = packet.dst_port();
         let remote_port = packet.src_port();
         let incoming = match Segment::try_from(packet) {
@@ -109,133 +163,224 @@ where
                 return Ok(());
             }
         };
-        let now = ctx.now();
-
         let conn_addr =
             ConnIpAddr { local: (local_ip, local_port), remote: (remote_ip, remote_port) };
 
-        let addrs_to_search = AddrVecIter::<I, SC::WeakDeviceId, IpPortSpec>::with_device(
-            conn_addr.into(),
-            sync_ctx.downgrade_device_id(device),
-        );
-
-        sync_ctx.with_ip_transport_ctx_isn_generator_and_tcp_sockets_mut(
-            |ip_transport_ctx, isn, sockets| {
-                handle_incoming_packet::<I, B, C, SC::IpTransportCtx<'_>>(
-                    ctx,
-                    ip_transport_ctx,
-                    isn,
-                    sockets,
-                    conn_addr,
-                    device,
-                    addrs_to_search,
-                    incoming,
-                    now,
-                )
-            },
-        );
-
+        handle_incoming_packet::<I, B, _, _>(core_ctx, bindings_ctx, conn_addr, device, incoming);
         Ok(())
     }
 }
 
-fn handle_incoming_packet<I, B, C, SC>(
-    ctx: &mut C,
-    ip_transport_ctx: &mut SC,
-    isn: &IsnGenerator<C::Instant>,
-    sockets: &mut Sockets<I, SC::WeakDeviceId, C>,
+fn handle_incoming_packet<I, B, BC, CC>(
+    core_ctx: &mut CC,
+    bindings_ctx: &mut BC,
     conn_addr: ConnIpAddr<I::Addr, NonZeroU16, NonZeroU16>,
-    incoming_device: &SC::DeviceId,
-    mut addrs_to_search: AddrVecIter<I, SC::WeakDeviceId, IpPortSpec>,
+    incoming_device: &CC::DeviceId,
     incoming: Segment<&[u8]>,
-    now: C::Instant,
 ) where
-    I: IpLayerIpExt,
+    I: DualStackIpExt,
     B: BufferMut,
-    C: NonSyncContext
+    BC: TcpBindingsContext<CC::WeakDeviceId>
         + BufferProvider<
-            C::ReceiveBuffer,
-            C::SendBuffer,
-            ActiveOpen = <C as NonSyncContext>::ListenerNotifierOrProvidedBuffers,
-            PassiveOpen = <C as NonSyncContext>::ReturnedBuffers,
+            BC::ReceiveBuffer,
+            BC::SendBuffer,
+            ActiveOpen = <BC as TcpBindingsTypes>::ListenerNotifierOrProvidedBuffers,
+            PassiveOpen = <BC as TcpBindingsTypes>::ReturnedBuffers,
         >,
-    SC: BufferTransportIpContext<I, C, EmptyBuf> + DeviceIpSocketHandler<I, C>,
+    CC: TcpContext<I, BC> + TcpContext<I::OtherVersion, BC>,
 {
-    trace_duration!(ctx, "tcp::handle_incoming_packet");
+    trace_duration!(bindings_ctx, "tcp::handle_incoming_packet");
+    let mut tw_reuse = None;
 
-    let any_usable_conn = match addrs_to_search.try_fold(None, |tw_reuse, addr| {
-        match addr {
-            // Connections are always searched before listeners because they
-            // are more specific.
-            AddrVec::Conn(conn_addr) => {
-                // It is not possible to have two same connections that share
-                // the same local and remote IPs and ports.
+    let mut addrs_to_search = AddrVecIter::<I, CC::WeakDeviceId, TcpPortSpec>::with_device(
+        conn_addr.into(),
+        core_ctx.downgrade_device_id(incoming_device),
+    );
+
+    let found_socket = loop {
+        let sock =
+            core_ctx.with_demux(|demux| lookup_socket::<I, CC, BC>(demux, &mut addrs_to_search));
+        match sock {
+            None => break false,
+            Some(SocketLookupResult::Connection((conn_id, conn_addr))) => {
+                // It is not possible to have two same connections that
+                // share the same local and remote IPs and ports.
                 assert_eq!(tw_reuse, None);
-                if let Some(conn_addr_state) = sockets.socketmap.conns().get_by_addr(&conn_addr) {
-                    let conn_id = conn_addr_state.id();
-                    match try_handle_incoming_for_connection::<I, SC, C, B>(
-                        ip_transport_ctx,
-                        ctx,
-                        sockets,
-                        conn_addr,
-                        conn_id,
-                        incoming,
-                        now,
-                    ) {
-                        ConnectionIncomingSegmentDisposition::FoundSocket => ControlFlow::Break(()),
-                        ConnectionIncomingSegmentDisposition::ReuseCandidateForListener(reuse) => {
-                            ControlFlow::Continue(Some(reuse))
+
+                match I::into_dual_stack_ip_socket(conn_id) {
+                    EitherStack::ThisStack(conn_id) => {
+                        match core_ctx.with_socket_mut_transport_demux(
+                            &conn_id,
+                            |core_ctx, socket_state| {
+                                let (core_ctx, converter) = core_ctx.into_single_stack();
+                                let (conn, _addr) = assert_matches!(
+                                    socket_state,
+                                    TcpSocketState::Bound(BoundSocketState::Connected((conn, _sharing))) => {
+                                        try_into_this_stack_conn_mut::<I, BC, CC>(conn,
+                                            &converter
+                                        ).expect(
+                                            "TODO(https://issues.fuchsia.dev/316408184): This assertion is fine because this is a socket ID from this stack."
+                                        )
+                                    },
+                                    "invalid socket ID"
+                                );
+                                try_handle_incoming_for_connection::<I, I, CC, BC, B, _>(
+                                    core_ctx,
+                                    bindings_ctx,
+                                    conn_addr.clone(),
+                                    &conn_id,
+                                    // TODO(https://issues.fuchsia.dev/316408184):
+                                    // Improve type safety to avoid clone.
+                                    I::into_demux_socket_id(conn_id.clone()),
+                                    conn,
+                                    incoming,
+                                )
+                            },
+                        ) {
+                            ConnectionIncomingSegmentDisposition::FoundSocket => break true,
+                            ConnectionIncomingSegmentDisposition::Destroy => {
+                                tcp::socket::destroy_socket(core_ctx, bindings_ctx, conn_id);
+                                break true;
+                            }
+                            ConnectionIncomingSegmentDisposition::ReuseCandidateForListener => {
+                                tw_reuse = Some((conn_id.clone(), conn_addr));
+                            }
                         }
                     }
-                } else {
-                    ControlFlow::Continue(None)
+                    EitherStack::OtherStack(conn_id) => {
+                        match core_ctx.with_socket_mut_transport_demux(
+                            &conn_id,
+                            |core_ctx, socket_state| {
+                                let (core_ctx, converter) = match core_ctx {
+                                    MaybeDualStack::DualStack(ds) => ds,
+                                    // TODO(https://issues.fuchsia.dev/316408184):
+                                    // Improve type safety to avoid unreachable.
+                                    MaybeDualStack::NotDualStack(_nds) => unreachable!("connection in other stack while it is not dual-stack elligible"),
+                                };
+                                let (conn, _addr) = assert_matches!(
+                                    socket_state,
+                                    TcpSocketState::Bound(BoundSocketState::Connected((conn, _sharing))) => assert_matches!(converter.convert(conn), EitherStack::OtherStack(conn) => conn),
+                                    "invalid socket ID"
+                                );
+                                try_handle_incoming_for_connection::<I::OtherVersion, I, CC, BC, B, _>(
+                                    core_ctx,
+                                    bindings_ctx,
+                                    conn_addr.clone(),
+                                    &conn_id,
+                                    core_ctx.into_other_demux_socket_id(conn_id.clone()),
+                                    conn,
+                                    incoming,
+                                )
+                            },
+                        ) {
+                            ConnectionIncomingSegmentDisposition::FoundSocket => break true,
+                            ConnectionIncomingSegmentDisposition::Destroy => {
+                                tcp::socket::destroy_socket(core_ctx, bindings_ctx, conn_id);
+                                break true;
+                            }
+                            ConnectionIncomingSegmentDisposition::ReuseCandidateForListener => {
+                                // TODO(https://fxbug.dev/136316): Support dual
+                                // stack listeners.
+                                unreachable!("Can't have TW state reused for dual stack listeners")
+                            }
+                        }
+                    }
                 }
             }
-            AddrVec::Listen(listener_addr) => {
-                // If we have a listener and the incoming segment is a SYN, we
-                // allocate a new connection entry in the demuxer.
-                // TODO(https://fxbug.dev/101992): Support SYN cookies.
-
-                if let Some(addr_state) = sockets.socketmap.listeners().get_by_addr(&listener_addr)
-                {
-                    let id = match addr_state {
-                        ListenerAddrState::ExclusiveListener(id) => id.clone(),
-                        ListenerAddrState::Shared { listener: Some(id), bound: _ } => id.clone(),
-                        ListenerAddrState::ExclusiveBound(_)
-                        | ListenerAddrState::Shared { listener: None, bound: _ } => {
-                            return ControlFlow::Continue(None)
+            Some(SocketLookupResult::Listener((id, _listener_addr))) => {
+                match core_ctx.with_socket_mut_isn_transport_demux(
+                    &id,
+                    |core_ctx, socket_state, isn| {
+                        let (core_ctx, converter) = core_ctx.into_single_stack();
+                        try_handle_incoming_for_listener::<I, CC, BC, B>(
+                            core_ctx,
+                            converter,
+                            bindings_ctx,
+                            isn,
+                            socket_state,
+                            incoming,
+                            conn_addr,
+                            incoming_device,
+                            &mut tw_reuse,
+                        )
+                    },
+                ) {
+                    ListenerIncomingSegmentDisposition::FoundSocket => break true,
+                    ListenerIncomingSegmentDisposition::ConflictingConnection => {
+                        // We're about to rewind the lookup. If we got a
+                        // conflicting connection it means tw_reuse has been
+                        // removed from the demux state and we need to destroy
+                        // it.
+                        if let Some((tw_reuse, _)) = tw_reuse.take() {
+                            tcp::socket::destroy_socket(core_ctx, bindings_ctx, tw_reuse);
                         }
-                    };
 
-                    match try_handle_incoming_for_listener::<I, SC, C, B>(
-                        ip_transport_ctx,
-                        ctx,
-                        sockets,
-                        isn,
-                        id,
-                        incoming,
-                        conn_addr,
-                        incoming_device,
-                        tw_reuse,
-                        now,
-                    ) {
-                        ListenerIncomingSegmentDisposition::FoundSocket => ControlFlow::Break(()),
-                        ListenerIncomingSegmentDisposition::NoMatchingSocket => {
-                            ControlFlow::Continue(tw_reuse)
-                        }
+                        // Reset the address vector iterator and go again, a
+                        // conflicting connection was found.
+                        addrs_to_search =
+                            AddrVecIter::<I, CC::WeakDeviceId, TcpPortSpec>::with_device(
+                                conn_addr.into(),
+                                core_ctx.downgrade_device_id(incoming_device),
+                            );
                     }
-                } else {
-                    ControlFlow::Continue(tw_reuse)
+                    ListenerIncomingSegmentDisposition::NoMatchingSocket => (),
+                    ListenerIncomingSegmentDisposition::NewConnection(primary) => {
+                        // If we have a new connection, we need to add it to the
+                        // set of all sockets.
+
+                        // First things first, if we got here then tw_reuse is
+                        // gone so we need to destroy it.
+                        if let Some((tw_reuse, _)) = tw_reuse.take() {
+                            tcp::socket::destroy_socket(core_ctx, bindings_ctx, tw_reuse);
+                        }
+
+                        // Now put the new connection into the socket map.
+                        //
+                        // Note that there's a possible subtle race here where
+                        // another thread could have already operated further on
+                        // this connection and marked it for destruction which
+                        // puts the entry in the DOA state, if we see that we
+                        // must immediately destroy the socket after having put
+                        // it in the map.
+                        let id = TcpSocketId(PrimaryRc::clone_strong(&primary));
+                        let to_destroy = core_ctx.with_all_sockets_mut(move |all_sockets| {
+                            let insert_entry = TcpSocketSetEntry::Primary(primary);
+                            match all_sockets.entry(id) {
+                                hash_map::Entry::Vacant(v) => {
+                                    let _: &mut _ = v.insert(insert_entry);
+                                    None
+                                }
+                                hash_map::Entry::Occupied(mut o) => {
+                                    // We're holding on to the primary ref, the
+                                    // only possible state here should be a DOA
+                                    // entry.
+                                    assert_matches!(
+                                        core::mem::replace(o.get_mut(), insert_entry),
+                                        TcpSocketSetEntry::DeadOnArrival
+                                    );
+                                    Some(o.key().clone())
+                                }
+                            }
+                        });
+                        // NB: we're releasing and reaquiring the
+                        // all_sockets_mut lock here for the convenience of not
+                        // needing different versions of `destroy_socket`. This
+                        // should be fine because the race this is solving
+                        // should not be common. If we have correct thread
+                        // attribution per flow it should effectively become
+                        // impossible so we go for code simplicity here.
+                        if let Some(to_destroy) = to_destroy {
+                            tcp::socket::destroy_socket(core_ctx, bindings_ctx, to_destroy);
+                        }
+                        break true;
+                    }
                 }
             }
         }
-    }) {
-        ControlFlow::Continue(None | Some(_)) => false,
-        ControlFlow::Break(()) => true,
     };
 
     let ConnIpAddr { local: (local_ip, _), remote: (remote_ip, _) } = conn_addr;
-    if !any_usable_conn {
+    if !found_socket {
         // There is no existing TCP state, pretend it is closed
         // and generate a RST if needed.
         // Per RFC 793 (https://tools.ietf.org/html/rfc793#page-21):
@@ -243,8 +388,9 @@ fn handle_incoming_packet<I, B, C, SC>(
         // there is no TCB, and therefore, no connection.
         if let Some(seg) = (Closed { reason: None::<Option<ConnectionError>> }.on_segment(incoming))
         {
-            match ip_transport_ctx.send_oneshot_ip_packet(
-                ctx,
+            match <CC as IpSocketHandler<I, _>>::send_oneshot_ip_packet(
+                core_ctx,
+                bindings_ctx,
                 None,
                 Some(local_ip),
                 remote_ip,
@@ -254,7 +400,7 @@ fn handle_incoming_packet<I, B, C, SC>(
                 None,
             ) {
                 Ok(()) => {}
-                Err((_body, err, DefaultSendOptions)) => {
+                Err((err, DefaultSendOptions)) => {
                     // TODO(https://fxbug.dev/101993): Increment the counter.
                     trace!("cannot construct an ip socket to respond RST: {:?}, ignoring", err);
                 }
@@ -263,14 +409,62 @@ fn handle_incoming_packet<I, B, C, SC>(
     }
 }
 
-enum ConnectionIncomingSegmentDisposition<I: Ip> {
-    FoundSocket,
-    ReuseCandidateForListener(SocketId<I>),
+enum SocketLookupResult<I: DualStackIpExt, D: device::WeakId, BT: TcpBindingsTypes> {
+    Connection((I::DemuxSocketId<D, BT>, ConnAddr<ConnIpAddr<I::Addr, NonZeroU16, NonZeroU16>, D>)),
+    Listener((TcpSocketId<I, D, BT>, ListenerAddr<ListenerIpAddr<I::Addr, NonZeroU16>, D>)),
 }
 
-enum ListenerIncomingSegmentDisposition {
+fn lookup_socket<I, CC, BC>(
+    DemuxState { socketmap, .. }: &DemuxState<I, CC::WeakDeviceId, BC>,
+    addrs_to_search: &mut AddrVecIter<I, CC::WeakDeviceId, TcpPortSpec>,
+) -> Option<SocketLookupResult<I, CC::WeakDeviceId, BC>>
+where
+    I: DualStackIpExt,
+    BC: TcpBindingsContext<CC::WeakDeviceId>,
+    CC: TcpContext<I, BC>,
+{
+    addrs_to_search.find_map(|addr| {
+        match addr {
+            // Connections are always searched before listeners because they
+            // are more specific.
+            AddrVec::Conn(conn_addr) => {
+                socketmap.conns().get_by_addr(&conn_addr).map(|conn_addr_state| {
+                    SocketLookupResult::Connection((conn_addr_state.id(), conn_addr))
+                })
+            }
+            AddrVec::Listen(listener_addr) => {
+                // If we have a listener and the incoming segment is a SYN, we
+                // allocate a new connection entry in the demuxer.
+                // TODO(https://fxbug.dev/101992): Support SYN cookies.
+
+                socketmap
+                    .listeners()
+                    .get_by_addr(&listener_addr)
+                    .and_then(|addr_state| match addr_state {
+                        ListenerAddrState::ExclusiveListener(id) => Some(id.clone()),
+                        ListenerAddrState::Shared { listener: Some(id), bound: _ } => {
+                            Some(id.clone())
+                        }
+                        ListenerAddrState::ExclusiveBound(_)
+                        | ListenerAddrState::Shared { listener: None, bound: _ } => None,
+                    })
+                    .map(|id| SocketLookupResult::Listener((id, listener_addr)))
+            }
+        }
+    })
+}
+
+enum ConnectionIncomingSegmentDisposition {
     FoundSocket,
+    ReuseCandidateForListener,
+    Destroy,
+}
+
+enum ListenerIncomingSegmentDisposition<S> {
+    FoundSocket,
+    ConflictingConnection,
     NoMatchingSocket,
+    NewConnection(S),
 }
 
 /// Tries to handle the incoming segment by providing it to a connected socket.
@@ -279,35 +473,33 @@ enum ListenerIncomingSegmentDisposition {
 /// `ReuseCandidateForListener` will be returned if there is a defunct socket
 /// that is currently in TIME_WAIT, which is ready to be reused if there is an
 /// active listener listening on the port.
-fn try_handle_incoming_for_connection<I, SC, C, B>(
-    ip_transport_ctx: &mut SC,
-    ctx: &mut C,
-    sockets: &mut Sockets<I, SC::WeakDeviceId, C>,
-    conn_addr: ConnAddr<I::Addr, SC::WeakDeviceId, NonZeroU16, NonZeroU16>,
-    conn_id: SocketId<I>,
+fn try_handle_incoming_for_connection<SockI, WireI, CC, BC, B, DC>(
+    core_ctx: &mut DC,
+    bindings_ctx: &mut BC,
+    conn_addr: ConnAddr<ConnIpAddr<WireI::Addr, NonZeroU16, NonZeroU16>, CC::WeakDeviceId>,
+    conn_id: &TcpSocketId<SockI, CC::WeakDeviceId, BC>,
+    demux_id: WireI::DemuxSocketId<CC::WeakDeviceId, BC>,
+    conn: &mut Connection<SockI, WireI, CC::WeakDeviceId, BC>,
     incoming: Segment<&[u8]>,
-    now: C::Instant,
-) -> ConnectionIncomingSegmentDisposition<I>
+) -> ConnectionIncomingSegmentDisposition
 where
-    I: IpLayerIpExt,
+    SockI: DualStackIpExt,
+    WireI: DualStackIpExt,
     B: BufferMut,
-    C: NonSyncContext
+    BC: TcpBindingsContext<CC::WeakDeviceId>
         + BufferProvider<
-            C::ReceiveBuffer,
-            C::SendBuffer,
-            ActiveOpen = <C as NonSyncContext>::ListenerNotifierOrProvidedBuffers,
-            PassiveOpen = <C as NonSyncContext>::ReturnedBuffers,
+            BC::ReceiveBuffer,
+            BC::SendBuffer,
+            ActiveOpen = <BC as TcpBindingsTypes>::ListenerNotifierOrProvidedBuffers,
+            PassiveOpen = <BC as TcpBindingsTypes>::ReturnedBuffers,
         >,
-    SC: BufferTransportIpContext<I, C, EmptyBuf> + DeviceIpSocketHandler<I, C>,
+    CC: TcpContext<SockI, BC>,
+    DC: TransportIpContext<WireI, BC, DeviceId = CC::DeviceId, WeakDeviceId = CC::WeakDeviceId>
+        + DeviceIpSocketHandler<SockI, BC>
+        + TcpDemuxContext<WireI, CC::WeakDeviceId, BC>,
 {
-    let (conn, _, addr) = assert_matches!(
-        sockets.socket_state.get_mut(conn_id.into()),
-        Some(SocketState::Bound(BoundSocketState::Connected(conn))) => conn,
-        "invalid socket ID"
-    );
-
     let Connection {
-        acceptor,
+        accept_queue,
         state,
         ip_sock,
         defunct,
@@ -336,14 +528,32 @@ where
             expiry: _,
         }) = state
         {
-            if !incoming.seq.before(*last_ack) {
-                return ConnectionIncomingSegmentDisposition::ReuseCandidateForListener(conn_id);
+            // TODO(https://fxbug.dev/136316): Enable reusing TIME-WAIT when we
+            // have dual stack listeners.
+            if !incoming.seq.before(*last_ack) && SockI::VERSION == WireI::VERSION {
+                return ConnectionIncomingSegmentDisposition::ReuseCandidateForListener;
             }
         }
     }
 
-    // Send the reply to the segment immediately.
-    let (reply, passive_open) = state.on_segment::<_, C>(incoming, now, socket_options, *defunct);
+    let (reply, passive_open, data_acked) =
+        state.on_segment::<_, BC>(incoming, bindings_ctx.now(), socket_options, *defunct);
+
+    let mut confirm_reachable = || {
+        let remote_ip = *ip_sock.remote_ip();
+        let device = ip_sock.device().and_then(|weak| core_ctx.upgrade_weak_device_id(weak));
+        <DC as TransportIpContext<WireI, _>>::confirm_reachable_with_destination(
+            core_ctx,
+            bindings_ctx,
+            remote_ip.into(),
+            device.as_ref(),
+        );
+    };
+
+    match data_acked {
+        DataAcked::Yes => confirm_reachable(),
+        DataAcked::No => {}
+    }
 
     match state {
         State::Listen(_) => {
@@ -359,8 +569,11 @@ where
         | State::CloseWait(_)
         | State::LastAck(_)
         | State::TimeWait(_) => {
-            handshake_status
-                .update_if_pending(HandshakeStatus::Completed { reported: acceptor.is_some() });
+            if handshake_status
+                .update_if_pending(HandshakeStatus::Completed { reported: accept_queue.is_some() })
+            {
+                confirm_reachable();
+            }
         }
         State::Closed(Closed { reason }) => {
             if *defunct {
@@ -368,16 +581,17 @@ where
                 // enter Closed state, and the user has already promised
                 // not to use the connection again, we can remove the
                 // connection from the socketmap.
-                let (_state, _sharing, addr) = assert_matches!(
-                    sockets.socket_state.entry(conn_id.into()).remove(),
-                    Some(SocketState::Bound(BoundSocketState::Connected(conn))) => conn
+                TcpDemuxContext::<WireI, _, _>::with_demux_mut(
+                    core_ctx,
+                    |DemuxState { socketmap, .. }| {
+                        assert_matches!(socketmap.conns_mut().remove(&demux_id, &conn_addr), Ok(()))
+                    },
                 );
-                assert_matches!(sockets.socketmap.conns_mut().remove(&conn_id, &addr), Ok(()));
-                let _: Option<_> = ctx.cancel_timer(TimerId::new::<I>(conn_id));
-                return ConnectionIncomingSegmentDisposition::FoundSocket;
+                let _: Option<_> = bindings_ctx.cancel_timer(conn_id.downgrade().into());
+                return ConnectionIncomingSegmentDisposition::Destroy;
             }
-            handshake_status.update_if_pending(match reason {
-                None => HandshakeStatus::Completed { reported: acceptor.is_some() },
+            let _: bool = handshake_status.update_if_pending(match reason {
+                None => HandshakeStatus::Completed { reported: accept_queue.is_some() },
                 Some(_err) => HandshakeStatus::Aborted,
             });
         }
@@ -385,7 +599,7 @@ where
 
     if let Some(seg) = reply {
         let body = tcp_serialize_segment(seg, conn_addr.ip);
-        match ip_transport_ctx.send_ip_packet(ctx, &ip_sock, body, None) {
+        match core_ctx.send_ip_packet(bindings_ctx, &ip_sock, body, None) {
             Ok(()) => {}
             Err((body, err)) => {
                 // TODO(https://fxbug.dev/101993): Increment the counter.
@@ -395,36 +609,13 @@ where
     }
 
     // Send any enqueued data, if there is any.
-    do_send_inner(conn_id, conn, addr, ip_transport_ctx, ctx);
+    do_send_inner(conn_id, conn, &conn_addr, core_ctx, bindings_ctx);
 
     // Enqueue the connection to the associated listener
     // socket's accept queue.
     if let Some(passive_open) = passive_open {
-        let acceptor_id = assert_matches!(conn, Connection {
-            acceptor:Some(Acceptor::Pending(listener_id)),
-            state: _,
-            ip_sock: _,
-            defunct: _,
-            socket_options: _,
-            soft_error: _,
-            handshake_status: _,
-        } => {
-            let listener_id = *listener_id;
-            conn.acceptor = Some(Acceptor::Ready(listener_id));
-            listener_id
-        });
-        let Listener { pending, ready, backlog: _, buffer_sizes: _, socket_options: _, notifier } = assert_matches!(
-            sockets.socket_state.get_mut(acceptor_id.into()),
-            Some(SocketState::Bound(BoundSocketState::Listener((MaybeListener::Listener(l), _sharing, _addr)))) => l,
-            "invalid socket ID"
-        );
-        let pos = pending
-            .iter()
-            .position(|x| *x == conn_id)
-            .expect("acceptee is not found in acceptor's pending queue");
-        let conn = pending.swap_remove(pos);
-        ready.push_back((conn, passive_open));
-        notifier.new_incoming_connections(ready.len());
+        let accept_queue = conn.accept_queue.as_ref().expect("no accept queue but passive open");
+        accept_queue.notify_ready(conn_id, passive_open);
     }
 
     // We found a valid connection for the segment.
@@ -434,53 +625,53 @@ where
 /// Tries to handle an incoming segment by passing it to a listening socket.
 ///
 /// Returns `FoundSocket` if the segment was handled, otherwise `NoMatchingSocket`.
-fn try_handle_incoming_for_listener<I, SC, C, B>(
-    ip_transport_ctx: &mut SC,
-    ctx: &mut C,
-    sockets: &mut Sockets<I, SC::WeakDeviceId, C>,
-    isn: &IsnGenerator<C::Instant>,
-    listener_id: SocketId<I>,
+fn try_handle_incoming_for_listener<I, CC, BC, B>(
+    core_ctx: &mut CC::SingleStackIpTransportAndDemuxCtx<'_>,
+    converter: MaybeDualStack<CC::DualStackConverter, CC::SingleStackConverter>,
+    bindings_ctx: &mut BC,
+    isn: &IsnGenerator<BC::Instant>,
+    socket_state: &mut TcpSocketState<I, CC::WeakDeviceId, BC>,
     incoming: Segment<&[u8]>,
     incoming_addrs: ConnIpAddr<I::Addr, NonZeroU16, NonZeroU16>,
-    incoming_device: &SC::DeviceId,
-    tw_reuse: Option<SocketId<I>>,
-    now: C::Instant,
-) -> ListenerIncomingSegmentDisposition
+    incoming_device: &CC::DeviceId,
+    tw_reuse: &mut Option<(
+        TcpSocketId<I, CC::WeakDeviceId, BC>,
+        ConnAddr<ConnIpAddr<I::Addr, NonZeroU16, NonZeroU16>, CC::WeakDeviceId>,
+    )>,
+) -> ListenerIncomingSegmentDisposition<PrimaryRc<I, CC::WeakDeviceId, BC>>
 where
-    I: IpLayerIpExt,
+    I: DualStackIpExt,
     B: BufferMut,
-    C: NonSyncContext
+    BC: TcpBindingsContext<CC::WeakDeviceId>
         + BufferProvider<
-            C::ReceiveBuffer,
-            C::SendBuffer,
-            ActiveOpen = <C as NonSyncContext>::ListenerNotifierOrProvidedBuffers,
-            PassiveOpen = <C as NonSyncContext>::ReturnedBuffers,
+            BC::ReceiveBuffer,
+            BC::SendBuffer,
+            ActiveOpen = <BC as TcpBindingsTypes>::ListenerNotifierOrProvidedBuffers,
+            PassiveOpen = <BC as TcpBindingsTypes>::ReturnedBuffers,
         >,
-    SC: BufferTransportIpContext<I, C, EmptyBuf> + DeviceIpSocketHandler<I, C>,
+    CC: TcpContext<I, BC>,
 {
-    let Sockets { port_alloc: _, socketmap, socket_state } = sockets;
     let (maybe_listener, sharing, listener_addr) = assert_matches!(
-        socket_state.get(listener_id.into()),
-        Some(SocketState::Bound(BoundSocketState::Listener(l))) => l,
+        socket_state,
+        TcpSocketState::Bound(BoundSocketState::Listener(l)) => l,
         "invalid socket ID"
     );
 
     let ConnIpAddr { local: (local_ip, local_port), remote: (remote_ip, remote_port) } =
         incoming_addrs;
 
-    let Listener { pending, backlog, buffer_sizes, ready, socket_options, notifier: _ } =
-        match maybe_listener {
-            MaybeListener::Bound(_bound) => {
-                // If the socket is only bound, but not listening.
-                return ListenerIncomingSegmentDisposition::NoMatchingSocket;
-            }
-            MaybeListener::Listener(listener) => listener,
-        };
+    let Listener { accept_queue, backlog, buffer_sizes, socket_options } = match maybe_listener {
+        MaybeListener::Bound(_bound) => {
+            // If the socket is only bound, but not listening.
+            return ListenerIncomingSegmentDisposition::NoMatchingSocket;
+        }
+        MaybeListener::Listener(listener) => listener,
+    };
 
     // Note that this checks happens at the very beginning, before we try to
     // reuse the connection in TIME-WAIT, this is because we need to store the
     // reused connection in the accept queue so we have to respect its limit.
-    if pending.len() + ready.len() == backlog.get() {
+    if accept_queue.len() == backlog.get() {
         // TODO(https://fxbug.dev/101993): Increment the counter.
         trace!("incoming SYN dropped because of the full backlog of the listener");
         return ListenerIncomingSegmentDisposition::FoundSocket;
@@ -490,15 +681,15 @@ where
     // Ensure that if the remote address requires a zone, we propagate that to
     // the address for the connected socket.
     let bound_device = bound_device.as_ref();
-    let bound_device = if crate::socket::must_have_zone(&remote_ip) {
+    let bound_device = if crate::socket::must_have_zone(remote_ip.as_ref()) {
         Some(bound_device.map_or(EitherDeviceId::Strong(incoming_device), EitherDeviceId::Weak))
     } else {
         bound_device.map(EitherDeviceId::Weak)
     };
 
     let bound_device = bound_device.as_ref().map(|d| d.as_ref());
-    let ip_sock = match ip_transport_ctx.new_ip_socket(
-        ctx,
+    let ip_sock = match core_ctx.new_ip_socket(
+        bindings_ctx,
         bound_device,
         Some(local_ip),
         remote_ip,
@@ -514,17 +705,17 @@ where
     };
 
     let isn = isn.generate(
-        now,
+        bindings_ctx.now(),
         (ip_sock.local_ip().clone(), local_port),
         (ip_sock.remote_ip().clone(), remote_port),
     );
-    let device_mms = match ip_transport_ctx.get_mms(ctx, &ip_sock) {
+    let device_mms = match core_ctx.get_mms(bindings_ctx, &ip_sock) {
         Ok(mms) => mms,
         Err(err) => {
             // If we cannot find a device or the device's MTU is too small,
             // there isn't much we can do here since sending a RST back is
             // impossible, we just need to silent drop the segment.
-            tracing::error!("Cannot find a device with large enough MTU for the connection");
+            error!("Cannot find a device with large enough MTU for the connection");
             match err {
                 MmsError::NoDevice(_) | MmsError::MTUTooSmall(_) => {
                     return ListenerIncomingSegmentDisposition::FoundSocket;
@@ -543,13 +734,127 @@ where
         Mss::default::<I>(),
         socket_options.user_timeout,
     ));
+
+    // Prepare a reply to be sent out.
+    //
+    // We might end up discarding the reply in case we can't instantiate this
+    // new connection.
     let reply = assert_matches!(
-        state.on_segment::<_, C>(incoming, now, &SocketOptions::default(), false /* defunct */),
-        (reply, None) => reply
+        state.on_segment::<_, BC>(incoming, bindings_ctx.now(), &SocketOptions::default(), false /* defunct */),
+        (reply, None, /* data_acked */ _) => reply
     );
+
+    let result = if matches!(state, State::SynRcvd(_)) {
+        let poll_send_at = state.poll_send_at().expect("no retrans timer");
+        let socket_options = socket_options.clone();
+        let ListenerSharingState { sharing, listening: _ } = *sharing;
+        let bound_device = ip_sock.device().cloned();
+
+        let addr = ConnAddr {
+            ip: ConnIpAddr { local: (local_ip, local_port), remote: (remote_ip, remote_port) },
+            device: bound_device,
+        };
+
+        let new_socket = core_ctx.with_demux_mut(|DemuxState { socketmap, .. }| {
+            // If we're reusing an entry, remove it from the demux before
+            // proceeding.
+            //
+            // We could just reuse the old allocation for the new connection but
+            // because of the restrictions on the socket map data structure (for
+            // good reasons), we can't update the sharing info unconditionally.
+            // So here we just remove the old connection and create a new one.
+            // Also this approach has the benefit of not accidentally persisting
+            // the old state that we don't want.
+            if let Some((tw_reuse, conn_addr)) = tw_reuse {
+                match socketmap
+                    .conns_mut()
+                    .remove(&I::into_demux_socket_id(tw_reuse.clone()), &conn_addr)
+                {
+                    Ok(()) => {
+                        assert_matches!(
+                            bindings_ctx.cancel_timer(tw_reuse.downgrade().into()),
+                            Some(_)
+                        );
+                    }
+                    Err(NotFoundError) => {
+                        // We could lose a race trying to reuse the tw_reuse
+                        // socket, so we just accept the loss and be happy that
+                        // the conn_addr we want to use is free.
+                    }
+                }
+            }
+
+            // Try to create and add the new socket to the demux.
+            let accept_queue_clone = accept_queue.clone();
+            let ip_sock = ip_sock.clone();
+            match socketmap.conns_mut().try_insert_with(addr, sharing, move |addr, sharing| {
+                let (id, primary) =
+                    TcpSocketId::new(TcpSocketState::Bound(BoundSocketState::Connected((
+                        make_connection::<I, BC, CC>(
+                            Connection {
+                                accept_queue: Some(accept_queue_clone),
+                                state,
+                                ip_sock,
+                                defunct: false,
+                                socket_options,
+                                soft_error: None,
+                                handshake_status: HandshakeStatus::Pending,
+                            },
+                            addr,
+                            &converter,
+                        ),
+                        sharing,
+                    ))));
+                (I::into_demux_socket_id(id), primary)
+            }) {
+                Ok((entry, primary)) => {
+                    // TODO(https://fxbug.dev/136316): This is safe because we
+                    // don't have dual stack listeners yet. So any connection
+                    // passively created must be in the current stack.
+                    let id = assert_matches!(
+                        I::as_dual_stack_ip_socket(&entry.id()),
+                        EitherStack::ThisStack(id) => id
+                    );
+                    // Make sure the new socket is in the pending accept queue
+                    // before we release the demux lock.
+                    accept_queue.push_pending(id.clone());
+                    let timer = id.downgrade().into();
+                    assert_eq!(bindings_ctx.schedule_timer_instant(poll_send_at, timer), None);
+                    Some(primary)
+                }
+                Err((e, _sharing_state)) => {
+                    // The only error we accept here is if the entry exists
+                    // fully, any indirect conflicts are unexpected because we
+                    // know the listener is still alive and installed in the
+                    // demux.
+                    assert_matches!(e, InsertError::Exists);
+                    // If we fail to insert it means we lost a race and this
+                    // packet is destined to a connection that is already
+                    // established. In that case we should tell the demux code
+                    // to retry demuxing it all over again.
+                    None
+                }
+            }
+        });
+
+        match new_socket {
+            Some(new_socket) => ListenerIncomingSegmentDisposition::NewConnection(new_socket),
+            None => {
+                // We didn't create a new connection, short circuit early and
+                // don't send out the pending segment.
+                return ListenerIncomingSegmentDisposition::ConflictingConnection;
+            }
+        }
+    } else {
+        // We found a valid listener for the segment even if the connection
+        // state is not a newly pending connection.
+        ListenerIncomingSegmentDisposition::FoundSocket
+    };
+
+    // We can send a reply now if we got here.
     if let Some(seg) = reply {
         let body = tcp_serialize_segment(seg, incoming_addrs);
-        match ip_transport_ctx.send_ip_packet(ctx, &ip_sock, body, None) {
+        match core_ctx.send_ip_packet(bindings_ctx, &ip_sock, body, None) {
             Ok(()) => {}
             Err((body, err)) => {
                 // TODO(https://fxbug.dev/101993): Increment the counter.
@@ -558,66 +863,7 @@ where
         }
     }
 
-    if matches!(state, State::SynRcvd(_)) {
-        let poll_send_at = state.poll_send_at().expect("no retrans timer");
-        let socket_options = socket_options.clone();
-        let ListenerSharingState { sharing, listening: _ } = *sharing;
-        let bound_device = ip_sock.device().cloned();
-        // We could just reuse the old allocation for the new connection but
-        // because of the restrictions on the socket map data structure (for
-        // good reasons), we can't update the sharing info unconditionally. So
-        // here we just remove the old connection and create a new one. Also
-        // this approach has the benefit of not accidentally persisting the old
-        // state that we don't want.
-        if let Some(tw_reuse) = tw_reuse {
-            let (_conn, _sharing, conn_addr) = assert_matches!(
-                socket_state.entry(tw_reuse.into()).remove(),
-                Some(SocketState::Bound(BoundSocketState::Connected(conn))) => conn
-            );
-            assert_matches!(socketmap.conns_mut().remove(&tw_reuse, &conn_addr), Ok(()));
-            assert_matches!(ctx.cancel_timer(TimerId::new::<I>(tw_reuse)), Some(_));
-        }
-        let addr = ConnAddr {
-            ip: ConnIpAddr { local: (local_ip, local_port), remote: (remote_ip, remote_port) },
-            device: bound_device,
-        };
-        let conn_id = socket_state.push(SocketState::Bound(BoundSocketState::Connected((
-            Connection {
-                acceptor: Some(Acceptor::Pending(listener_id)),
-                state,
-                ip_sock,
-                defunct: false,
-                socket_options,
-                soft_error: None,
-                handshake_status: HandshakeStatus::Pending,
-            },
-            sharing,
-            addr.clone(),
-        ))));
-        let conn_id = SocketId(conn_id, IpVersionMarker::default());
-        let _entry = socketmap
-            .conns_mut()
-            .try_insert(addr, sharing, conn_id)
-            .expect("failed to create a new connection");
-        assert_eq!(ctx.schedule_timer_instant(poll_send_at, TimerId::new::<I>(conn_id),), None);
-        let maybe_listener = assert_matches!(
-            sockets.socket_state.get_mut(listener_id.into()),
-            Some(SocketState::Bound(BoundSocketState::Listener((l, _sharing, _addr)))) => l,
-            "invalid socket ID"
-        );
-
-        match maybe_listener {
-            MaybeListener::Bound(_bound) => {
-                unreachable!("the listener must be active because we got here");
-            }
-            MaybeListener::Listener(listener) => {
-                listener.pending.push(conn_id);
-            }
-        }
-    }
-
-    // We found a valid listener for the segment.
-    ListenerIncomingSegmentDisposition::FoundSocket
+    result
 }
 
 #[derive(Error, Debug)]
@@ -664,8 +910,8 @@ where
     let Segment { seq, ack, wnd, contents, options } = segment.into();
     let ConnIpAddr { local: (local_ip, local_port), remote: (remote_ip, remote_port) } = conn_addr;
     let mut builder = TcpSegmentBuilder::new(
-        *local_ip,
-        *remote_ip,
+        local_ip.addr(),
+        remote_ip.addr(),
         local_port,
         remote_port,
         seq.into(),
@@ -742,8 +988,14 @@ mod test {
         let serializer = super::tcp_serialize_segment(
             segment,
             ConnIpAddr {
-                local: (I::FAKE_CONFIG.local_ip, SOURCE_PORT),
-                remote: (I::FAKE_CONFIG.remote_ip, DEST_PORT),
+                local: (
+                    SocketIpAddr::new_from_specified_or_panic(I::FAKE_CONFIG.local_ip),
+                    SOURCE_PORT,
+                ),
+                remote: (
+                    SocketIpAddr::new_from_specified_or_panic(I::FAKE_CONFIG.remote_ip),
+                    DEST_PORT,
+                ),
             },
         );
 

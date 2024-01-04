@@ -12,14 +12,14 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <utility>
 
 #include <fbl/alloc_checker.h>
 #include <fbl/string.h>
 
-// See note in //zircon/third_party/ulib/boringssl/BUILD.gn
+// See note in //zircon/kernel/lib/crypto/boringssl/BUILD.gn
 #define BORINGSSL_NO_CXX
-#include <utility>
-
+#include <openssl/crypto.h>
 #include <openssl/mem.h>
 #include <openssl/sha.h>
 
@@ -65,6 +65,7 @@ Digest& Digest::operator=(const Digest& other) {
 }
 
 void Digest::Init() {
+  CRYPTO_library_init();
   ctx_.reset(new Context());
   SHA256_Init(&ctx_->impl);
 }
@@ -111,8 +112,9 @@ zx_status_t Digest::Parse(const char* hex, size_t len) {
 fbl::String Digest::ToString() const {
   char hex[kSha256HexLength + 1];
   char* p = hex;
+  static_assert(sizeof(bytes_) * 2 < sizeof(hex));
   for (size_t i = 0; i < sizeof(bytes_); ++i) {
-    sprintf(p, "%02x", bytes_[i]);
+    snprintf(p, sizeof(hex) - i * 2, "%02x", bytes_[i]);
     p += 2;
   }
   return fbl::String(hex);

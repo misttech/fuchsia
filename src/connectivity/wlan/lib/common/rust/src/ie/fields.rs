@@ -9,7 +9,7 @@ use {
     static_assertions::const_assert_eq,
     std::mem::size_of,
     wlan_bitfield::bitfield,
-    zerocopy::{AsBytes, ByteSlice, FromBytes, FromZeroes, Ref, Unaligned},
+    zerocopy::{AsBytes, ByteSlice, FromBytes, FromZeros, NoCell, Ref, Unaligned},
 };
 
 macro_rules! pub_const {
@@ -24,7 +24,7 @@ macro_rules! pub_const {
     7       basic,
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Unaligned, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Unaligned, Clone, Copy)]
 pub struct SupportedRate(pub u8);
 
 impl SupportedRate {
@@ -45,7 +45,7 @@ impl SupportedRate {
 }
 
 // IEEE Std 802.11-2016, 9.4.2.4
-#[derive(FromZeroes, FromBytes, AsBytes, Unaligned)]
+#[derive(FromZeros, FromBytes, AsBytes, NoCell, Unaligned)]
 #[repr(C)]
 pub struct DsssParamSet {
     pub current_channel: u8,
@@ -57,11 +57,11 @@ pub struct DsssParamSet {
     1..=7   offset,
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Unaligned, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Unaligned, Clone, Copy)]
 pub struct BitmapControl(pub u8);
 
 // IEEE Std 802.11-2016, 9.4.2.6
-#[derive(FromZeroes, FromBytes, AsBytes, Unaligned, Clone, Copy)]
+#[derive(FromZeros, FromBytes, AsBytes, NoCell, Unaligned, Clone, Copy)]
 #[repr(C, packed)]
 pub struct TimHeader {
     pub dtim_count: u8,
@@ -82,7 +82,7 @@ pub struct TimView<B> {
             }
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Clone, Copy, AsBytes, FromZeroes, FromBytes, Unaligned, Default)]
+#[derive(PartialEq, Eq, Clone, Copy, AsBytes, FromZeros, FromBytes, NoCell, Unaligned, Default)]
 pub struct WmmInfo(pub u8);
 
 // WFA WMM v1.2, 2.2.1 Figure 6
@@ -92,7 +92,7 @@ pub struct WmmInfo(pub u8);
     7       uapsd
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Clone, Copy, AsBytes, FromZeroes, FromBytes, Unaligned)]
+#[derive(PartialEq, Eq, Clone, Copy, AsBytes, FromZeros, FromBytes, NoCell, Unaligned)]
 pub struct ApWmmInfo(pub u8);
 
 // WFA WMM v1.2, 2.2.1 Figure 7
@@ -106,12 +106,14 @@ pub struct ApWmmInfo(pub u8);
     7       _  // reserved
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Clone, Copy, AsBytes, FromZeroes, FromBytes, Unaligned)]
+#[derive(PartialEq, Eq, Clone, Copy, AsBytes, FromZeros, FromBytes, NoCell, Unaligned)]
 pub struct ClientWmmInfo(pub u8);
 
 // WFA WMM v1.2.0, 2.2.2 Table 5
 #[repr(C, packed)]
-#[derive(PartialEq, Eq, Clone, Copy, Debug, AsBytes, FromZeroes, FromBytes, Unaligned, Default)]
+#[derive(
+    PartialEq, Eq, Clone, Copy, Debug, AsBytes, FromZeros, FromBytes, NoCell, Unaligned, Default,
+)]
 pub struct WmmParam {
     pub wmm_info: WmmInfo,
     pub _reserved: u8,
@@ -123,7 +125,9 @@ pub struct WmmParam {
 
 // WFA WMM v1.2.0, 2.2.2 Figure 9
 #[repr(C, packed)]
-#[derive(PartialEq, Eq, Clone, Copy, Debug, AsBytes, FromZeroes, FromBytes, Unaligned, Default)]
+#[derive(
+    PartialEq, Eq, Clone, Copy, Debug, AsBytes, FromZeros, FromBytes, NoCell, Unaligned, Default,
+)]
 pub struct WmmAcParams {
     pub aci_aifsn: WmmAciAifsn,
     pub ecw_min_max: EcwMinMax,
@@ -141,7 +145,7 @@ pub struct WmmAcParams {
     7       _  // reserved
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Clone, Copy, AsBytes, FromZeroes, FromBytes, Unaligned, Default)]
+#[derive(PartialEq, Eq, Clone, Copy, AsBytes, FromZeros, FromBytes, NoCell, Unaligned, Default)]
 pub struct WmmAciAifsn(pub u8);
 
 // WFA WMM v1.2.0, 2.2.2 Figure 11
@@ -150,7 +154,7 @@ pub struct WmmAciAifsn(pub u8);
     4..=7   ecw_max,
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Clone, Copy, AsBytes, FromZeroes, FromBytes, Unaligned, Default)]
+#[derive(PartialEq, Eq, Clone, Copy, AsBytes, FromZeros, FromBytes, NoCell, Unaligned, Default)]
 pub struct EcwMinMax(pub u8);
 
 // IEEE Std 802.11-2016, 9.4.2.9
@@ -174,7 +178,9 @@ impl CountryEnvironment {
 
 // IEEE Std 802.11-2016, 9.4.2.56
 #[repr(C, packed)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Unaligned, Clone, Copy, Debug)]
+#[derive(
+    PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Unaligned, Clone, Copy, Debug,
+)]
 pub struct HtCapabilities {
     pub ht_cap_info: HtCapabilityInfo, // u16
     pub ampdu_params: AmpduParams,     // u8
@@ -260,7 +266,7 @@ impl From<VhtCapabilities> for fidl_ieee80211::VhtCapabilities {
     15      lsig_txop_protect,
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Clone, Copy)]
 pub struct HtCapabilityInfo(pub u16);
 
 #[derive(Debug, PartialOrd, PartialEq, Clone, Copy)]
@@ -293,7 +299,7 @@ impl MaxAmsduLen {
     5..=7 _,                                            // reserved
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Clone, Copy)]
 pub struct AmpduParams(pub u8);
 
 #[derive(Debug, PartialOrd, PartialEq, Clone, Copy)]
@@ -333,7 +339,7 @@ impl MinMpduStartSpacing {
     101..=127   _,                                  // reserved
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Clone, Copy)]
 pub struct SupportedMcsSet(pub u128);
 
 #[derive(Debug, PartialOrd, PartialEq, Clone, Copy)]
@@ -376,7 +382,7 @@ impl NumSpatialStreams {
     12..=15 _,                                          // reserved
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Clone, Copy)]
 pub struct HtExtCapabilities(pub u16);
 
 #[derive(Debug, PartialOrd, PartialEq, Clone, Copy)]
@@ -424,7 +430,7 @@ impl McsFeedback {
     29..=31 _,                                  // reserved
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Clone, Copy)]
 pub struct TxBfCapability(pub u32);
 
 #[derive(Debug, PartialOrd, PartialEq, Clone, Copy)]
@@ -529,18 +535,17 @@ impl NumSpaceTimeStreams {
     7 _,                        // reserved,
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Clone, Copy)]
 pub struct AselCapability(pub u8);
 
 // IEEE Std 802.11-2016, 9.4.2.57
 #[repr(C, packed)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Unaligned, Clone, Copy, Debug)]
+#[derive(
+    PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Unaligned, Clone, Copy, Debug,
+)]
 pub struct HtOperation {
     pub primary_channel: u8, // Primary 20 MHz channel.
-    // HT Operation Information is 40-bit field so it has to be split
-    // TODO(fxbug.dev/82503): This is a bit awkward, see if we can represent these as byte array
-    pub ht_op_info_head: HtOpInfoHead,     // u32
-    pub ht_op_info_tail: HtOpInfoTail,     // u8
+    pub ht_op_info: HtOpInfo,
     pub basic_ht_mcs_set: SupportedMcsSet, // u128
 }
 
@@ -552,7 +557,6 @@ impl From<HtOperation> for fidl_ieee80211::HtOperation {
     }
 }
 
-// TODO(fxbug.dev/43257): Move bits 8-32 into tail.
 // IEEE Std 802.11-2016, Figure 9-339
 #[bitfield(
     0..=1 secondary_chan_offset as SecChanOffset(u8),
@@ -572,14 +576,24 @@ impl From<HtOperation> for fidl_ieee80211::HtOperation {
     24..=29 _,                                  // reserved
     30      dual_beacon,                        // whether an STBC beacon is transmitted by the AP
     31      dual_cts_protection,                // whether CTS protection is required
+    32      stbc_beacon,                        // 0 indicates primary beacon, 1 STBC beacon
+    33      lsig_txop_protection,               // only true if all HT STAs in the BSS support this
+    34      pco_active,
+    35..=35 pco_phase as PcoPhase(u8),
+    36..=39 _,                                  // reserved
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Clone, Copy)]
-pub struct HtOpInfoHead(pub u32);
+#[derive(PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Clone, Copy)]
+pub struct HtOpInfo(pub [u8; 5]);
+impl HtOpInfo {
+    pub fn new() -> HtOpInfo {
+        HtOpInfo([0u8; 5])
+    }
+}
 
 #[repr(C, packed)]
 #[derive(
-    Debug, PartialOrd, PartialEq, Eq, Clone, Copy, AsBytes, FromZeroes, FromBytes, Unaligned,
+    Debug, PartialOrd, PartialEq, Eq, Clone, Copy, AsBytes, FromZeros, FromBytes, NoCell, Unaligned,
 )]
 pub struct SecChanOffset(pub u8);
 impl SecChanOffset {
@@ -596,20 +610,6 @@ impl StaChanWidth {
     pub_const!(ANY, 1); // Any in the Supported Channel Width set
 }
 
-// TODO(fxbug.dev/43257): Move bits 8-32 from head into here.
-// IEEE Std 802.11-2016, Figure 9-339, continued
-#[bitfield(
-    // bit offset in this struct starts from bit 32 in the IEEE HtOperationInformation field.
-    0     stbc_beacon,                        // 0 indicates primary beacon, 1 STBC beacon
-    1     lsig_txop_protection,               // only true if all HT STAs in the BSS support this
-    2     pco_active,
-    3..=3 pco_phase as PcoPhase(u8),
-    4..=7 _,                                  // reserved
-)]
-#[repr(C)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Clone, Copy)]
-pub struct HtOpInfoTail(pub u8);
-
 #[derive(Debug, PartialOrd, PartialEq, Eq, Clone, Copy)]
 pub struct HtProtection(pub u8);
 impl HtProtection {
@@ -620,15 +620,6 @@ impl HtProtection {
 }
 
 // IEEE Std 802.11-2016, 9.4.2.45
-#[repr(C, packed)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Unaligned, Clone, Copy, Debug)]
-pub struct RmEnabledCapabilities {
-    // Rm Enabled Capabilities is 40-bit field so it has to be split
-    // TODO(fxbug.dev/82503): This is a bit awkward, see if we can represent these as byte array
-    pub rm_enabled_caps_head: RmEnabledCapabilitiesHead, // u32
-    pub rm_enabled_caps_tail: RmEnabledCapabilitiesTail, // u8
-}
-
 #[bitfield(
     0       link_measurement_enabled,
     1       neighbor_report_enabled,
@@ -656,21 +647,15 @@ pub struct RmEnabledCapabilities {
     29      rcpi_measurement_enabled,
     30      rsni_measurement_enabled,
     31      bss_average_access_delay_enabled,
+    32      bss_available_admission_capacity_enabled,
+    33      antenna_enabled,
+    34      ftm_range_report_enabled,
+    35      civic_location_measurement_enabled,
+    36..=39 _,
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Clone, Copy)]
-pub struct RmEnabledCapabilitiesHead(pub u32);
-
-#[bitfield(
-    0       bss_available_admission_capacity_enabled,
-    1       antenna_enabled,
-    2       ftm_range_report_enabled,
-    3       civic_location_measurement_enabled,
-    4..=7   _,
-)]
-#[repr(C)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Clone, Copy)]
-pub struct RmEnabledCapabilitiesTail(pub u8);
+#[derive(PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Clone, Copy)]
+pub struct RmEnabledCapabilities(pub [u8; 5]);
 
 #[derive(Debug, PartialOrd, PartialEq, Eq, Clone, Copy)]
 pub struct PcoPhase(pub u8);
@@ -680,7 +665,7 @@ impl PcoPhase {
 }
 
 #[repr(C)]
-#[derive(PartialEq, Eq, Clone, Copy, Debug, AsBytes, FromZeroes, FromBytes)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug, AsBytes, FromZeros, FromBytes, NoCell)]
 pub struct MpmProtocol(pub u16);
 
 // IEEE Std 802.11-2016, 9.4.2.102, table 9-222
@@ -690,42 +675,6 @@ impl MpmProtocol {
     // 2-254 reserved
     pub_const!(VENDOR_SPECIFIC, 255);
     // 255-65535 reserved
-}
-
-// IEEE Std 802.11-2016, 9.4.2.102
-// The fixed part of the Mesh Peering Management header
-#[repr(C, packed)]
-#[derive(Clone, Copy, Debug, AsBytes, FromZeroes, FromBytes, Unaligned)]
-pub struct MpmHeader {
-    pub protocol: MpmProtocol,
-    pub local_link_id: u16,
-}
-
-// IEEE Std 802.11-2016, 9.4.2.102
-// The optional "PMK" part of the MPM element
-#[repr(C)]
-#[derive(Clone, Copy, Debug, AsBytes, FromZeroes, FromBytes, Unaligned)]
-pub struct MpmPmk(pub [u8; 16]);
-
-// MPM element in a "mesh peering open" frame
-pub struct MpmOpenView<B> {
-    pub header: Ref<B, MpmHeader>,
-    pub pmk: Option<Ref<B, MpmPmk>>,
-}
-
-// MPM element in a "mesh peering confirm" frame
-pub struct MpmConfirmView<B> {
-    pub header: Ref<B, MpmHeader>,
-    pub peer_link_id: UnalignedView<B, u16>,
-    pub pmk: Option<Ref<B, MpmPmk>>,
-}
-
-// MPM element in a "mesh peering close" frame
-pub struct MpmCloseView<B> {
-    pub header: Ref<B, MpmHeader>,
-    pub peer_link_id: Option<UnalignedView<B, u16>>,
-    pub reason_code: UnalignedView<B, ReasonCode>,
-    pub pmk: Option<Ref<B, MpmPmk>>,
 }
 
 // IEEE Std 802.11-2016, 9.4.2.27, Table 9-135
@@ -749,7 +698,7 @@ pub struct ExtCapabilitiesView<B> {
     7       event,
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Clone, Copy, Unaligned)]
+#[derive(PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Clone, Copy, Unaligned)]
 pub struct ExtCapabilitiesOctet1(pub u8);
 
 #[bitfield(
@@ -763,7 +712,7 @@ pub struct ExtCapabilitiesOctet1(pub u8);
     7       geospatial_location,
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Clone, Copy, Unaligned)]
+#[derive(PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Clone, Copy, Unaligned)]
 pub struct ExtCapabilitiesOctet2(pub u8);
 
 #[bitfield(
@@ -777,7 +726,7 @@ pub struct ExtCapabilitiesOctet2(pub u8);
     7       timing_measurement,
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Clone, Copy, Unaligned)]
+#[derive(PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Clone, Copy, Unaligned)]
 pub struct ExtCapabilitiesOctet3(pub u8);
 
 // IEEE Std 802.11-2016, 9.4.2.113, Figure 9-478
@@ -790,14 +739,14 @@ pub struct ExtCapabilitiesOctet3(pub u8);
     7       _, // reserved
 )]
 #[repr(C)]
-#[derive(Clone, Copy, AsBytes, FromZeroes, FromBytes, Unaligned)]
+#[derive(Clone, Copy, AsBytes, FromZeros, FromBytes, NoCell, Unaligned)]
 pub struct PreqFlags(pub u8);
 
 // Fixed-length fields of the PREQ element that precede
 // the optional Originator External Address field.
 // IEEE Std 802.11-2016, 9.4.2.113, Figure 9-477
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug, AsBytes, FromZeroes, FromBytes, Unaligned)]
+#[derive(Clone, Copy, Debug, AsBytes, FromZeros, FromBytes, NoCell, Unaligned)]
 pub struct PreqHeader {
     pub flags: PreqFlags,
     pub hop_count: u8,
@@ -811,7 +760,7 @@ pub struct PreqHeader {
 // field and precede the variable length per-target fields.
 // IEEE Std 802.11-2016, 9.4.2.113, Figure 9-477
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug, AsBytes, FromZeroes, FromBytes, Unaligned)]
+#[derive(Clone, Copy, Debug, AsBytes, FromZeros, FromBytes, NoCell, Unaligned)]
 pub struct PreqMiddle {
     pub lifetime: u32,
     pub metric: u32,
@@ -826,13 +775,13 @@ pub struct PreqMiddle {
     3..=7   _, // reserved
 )]
 #[repr(C)]
-#[derive(Clone, Copy, AsBytes, FromZeroes, FromBytes, Unaligned)]
+#[derive(Clone, Copy, AsBytes, FromZeros, FromBytes, NoCell, Unaligned)]
 pub struct PreqPerTargetFlags(pub u8);
 
 // An entry of the variable-length part of PREQ
 // IEEE Std 802.11-2016, 9.4.2.113, Figure 9-477
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug, AsBytes, FromZeroes, FromBytes, Unaligned)]
+#[derive(Clone, Copy, Debug, AsBytes, FromZeros, FromBytes, NoCell, Unaligned)]
 pub struct PreqPerTarget {
     pub flags: PreqPerTargetFlags,
     pub target_addr: MacAddr,
@@ -853,14 +802,14 @@ pub struct PreqView<B> {
     7       _, // reserved
 )]
 #[repr(C)]
-#[derive(Clone, Copy, AsBytes, FromZeroes, FromBytes, Unaligned)]
+#[derive(Clone, Copy, AsBytes, FromZeros, FromBytes, NoCell, Unaligned)]
 pub struct PrepFlags(pub u8);
 
 // Fixed-length fields of the PREP element that precede
 // the optional Target External Address field.
 // IEEE Std 802.11-2016, 9.4.2.114, Figure 9-480
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug, AsBytes, FromZeroes, FromBytes, Unaligned)]
+#[derive(Clone, Copy, Debug, AsBytes, FromZeros, FromBytes, NoCell, Unaligned)]
 pub struct PrepHeader {
     pub flags: PrepFlags,
     pub hop_count: u8,
@@ -873,7 +822,7 @@ pub struct PrepHeader {
 // the optional Target External Address field.
 // IEEE Std 802.11-2016, 9.4.2.114, Figure 9-480
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug, AsBytes, FromZeroes, FromBytes, Unaligned)]
+#[derive(Clone, Copy, Debug, AsBytes, FromZeros, FromBytes, NoCell, Unaligned)]
 pub struct PrepTail {
     pub lifetime: u32,
     pub metric: u32,
@@ -891,7 +840,7 @@ pub struct PrepView<B> {
 // per-destination fields.
 // IEEE Std 802.11-2016, 9.4.2.115
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug, AsBytes, FromZeroes, FromBytes, Unaligned)]
+#[derive(Clone, Copy, Debug, AsBytes, FromZeros, FromBytes, NoCell, Unaligned)]
 pub struct PerrHeader {
     pub element_ttl: u8,
     pub num_destinations: u8,
@@ -904,14 +853,14 @@ pub struct PerrHeader {
     7       _, // reserved
 )]
 #[repr(C)]
-#[derive(Clone, Copy, AsBytes, FromZeroes, FromBytes, Unaligned)]
+#[derive(Clone, Copy, AsBytes, FromZeros, FromBytes, NoCell, Unaligned)]
 pub struct PerrDestinationFlags(pub u8);
 
 // Fixed-length fields of the per-destination chunk of the PERR element
 // that precede the optional "Destination External Address" field.
 // IEEE Std 802.11-2016, 9.4.2.115
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug, AsBytes, FromZeroes, FromBytes, Unaligned)]
+#[derive(Clone, Copy, Debug, AsBytes, FromZeros, FromBytes, NoCell, Unaligned)]
 pub struct PerrDestinationHeader {
     pub flags: PerrDestinationFlags,
     pub dest_addr: MacAddr,
@@ -986,7 +935,7 @@ impl<B: ByteSlice> PerrDestinationIter<B> {
 // IEEE Std 802.11-2016 9.4.2.19: Channel Switch Announcement element
 // The element used to advertise a scheduled AP channel switch.
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug, AsBytes, FromZeroes, FromBytes)]
+#[derive(Clone, Copy, Debug, AsBytes, FromZeros, FromBytes, NoCell)]
 pub struct ChannelSwitchAnnouncement {
     pub mode: u8,
     pub new_channel_number: u8,
@@ -997,7 +946,7 @@ pub struct ChannelSwitchAnnouncement {
 // The extended element used to advertise a scheduled AP channel switch with
 // an operating class switch.
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug, AsBytes, FromZeroes, FromBytes)]
+#[derive(Clone, Copy, Debug, AsBytes, FromZeros, FromBytes, NoCell)]
 pub struct ExtendedChannelSwitchAnnouncement {
     pub mode: u8,
     pub new_operating_class: u8,
@@ -1007,7 +956,7 @@ pub struct ExtendedChannelSwitchAnnouncement {
 
 // IEEE Std 802.11-2016 9.4.2.161: Wide Bandwidth Channel Switch element
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug, AsBytes, FromZeroes, FromBytes)]
+#[derive(Clone, Copy, Debug, AsBytes, FromZeros, FromBytes, NoCell)]
 pub struct WideBandwidthChannelSwitch {
     pub new_width: VhtChannelBandwidth,
     pub new_center_freq_seg0: u8,
@@ -1029,13 +978,13 @@ impl MaxTransmitPowerUnitInterpretation {
     6..=7   _, // reserved
 )]
 #[repr(C)]
-#[derive(Clone, Copy, AsBytes, FromZeroes, FromBytes, Unaligned)]
+#[derive(Clone, Copy, AsBytes, FromZeros, FromBytes, NoCell, Unaligned)]
 pub struct TransmitPowerInfo(pub u8);
 
 // IEEE Std 802.11-2016 9.2.4.162: Transmit power is interpreted as an
 // 8-bit 2s complement signed integer with a step of 0.5.
 #[repr(C)]
-#[derive(Clone, Copy, AsBytes, FromZeroes, FromBytes, Unaligned, Eq, PartialEq, Debug)]
+#[derive(Clone, Copy, AsBytes, FromZeros, FromBytes, NoCell, Unaligned, Eq, PartialEq, Debug)]
 pub struct TransmitPower(pub u8);
 
 // IEEE Std 802.11-2016 9.2.4.162: Transmit Power Envelope element
@@ -1076,7 +1025,9 @@ pub enum VendorIe<B: ByteSlice> {
 
 // IEEE Std 802.11-2016, 9.4.2.57
 #[repr(C, packed)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Unaligned, Clone, Copy, Debug)]
+#[derive(
+    PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Unaligned, Clone, Copy, Debug,
+)]
 pub struct VhtCapabilities {
     pub vht_cap_info: VhtCapabilitiesInfo, // u32
     pub vht_mcs_nss: VhtMcsNssSet,         // u64
@@ -1130,12 +1081,12 @@ impl From<VhtCapabilities> for banjo_ieee80211::VhtCapabilities {
                                                         // for each BW. See Table 9-250.
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Clone, Copy)]
 pub struct VhtCapabilitiesInfo(pub u32);
 
 // IEEE Std 802.11-2016, 9.4.2.79
 #[repr(C, packed)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Unaligned, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Unaligned, Clone, Copy)]
 pub struct BssMaxIdlePeriod {
     // dot11BssMaxIdlePeriod (IEEE Std 802.11-2016, 11.24.13 and Annex C.3) is measured in
     // increments of 1000 TUs, with a range from 1-65535.
@@ -1150,7 +1101,7 @@ pub struct BssMaxIdlePeriod {
     1..=7 _, // reserved
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Clone, Copy)]
 pub struct IdleOptions(pub u8);
 
 // IEEE Std 802.11-2016, Table 9-249
@@ -1187,7 +1138,7 @@ impl VhtLinkAdaptation {
     62..=63 _,                              // reserved
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Clone, Copy)]
 pub struct VhtMcsNssSet(pub u64);
 
 // IEEE Std 802.11-2016, Figure 9-562.
@@ -1202,7 +1153,7 @@ pub struct VhtMcsNssSet(pub u64);
     14..=15 ss8 as VhtMcsSet(u8),
 )]
 #[repr(C)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Clone, Copy)]
 pub struct VhtMcsNssMap(pub u16);
 impl VhtMcsNssMap {
     const BIT_WIDTH: u8 = 2;
@@ -1241,7 +1192,9 @@ impl VhtMcsSet {
 
 // IEEE Std 802.11-2016, 9.4.2.159
 #[repr(C, packed)]
-#[derive(PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Unaligned, Clone, Copy, Debug)]
+#[derive(
+    PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Unaligned, Clone, Copy, Debug,
+)]
 // TODO(fxbug.dev/29669): Derive phy parameters based on Table 9-250 and 9-253.
 pub struct VhtOperation {
     pub vht_cbw: VhtChannelBandwidth, // u8
@@ -1261,7 +1214,9 @@ impl From<VhtOperation> for fidl_ieee80211::VhtOperation {
 
 // IEEE Std 802.11-2016, Table 9-252
 #[repr(C)]
-#[derive(Debug, PartialOrd, PartialEq, Eq, Hash, AsBytes, FromZeroes, FromBytes, Clone, Copy)]
+#[derive(
+    Debug, PartialOrd, PartialEq, Eq, Hash, AsBytes, FromZeros, FromBytes, NoCell, Clone, Copy,
+)]
 pub struct VhtChannelBandwidth(pub u8);
 impl VhtChannelBandwidth {
     pub_const!(CBW_20_40, 0);
@@ -1327,7 +1282,7 @@ mod tests {
             let target = iter.next().expect("expected first target");
             assert_eq!(0x44332211, { target.header.hwmp_seqno });
             let ext_addr = target.ext_addr.expect("expected external addr");
-            assert_eq!([0x1a, 0x2a, 0x3a, 0x4a, 0x5a, 0x6a], *ext_addr);
+            assert_eq!(MacAddr::from([0x1a, 0x2a, 0x3a, 0x4a, 0x5a, 0x6a]), *ext_addr);
             assert_eq!(0x6655, target.reason_code.get().0);
         }
 

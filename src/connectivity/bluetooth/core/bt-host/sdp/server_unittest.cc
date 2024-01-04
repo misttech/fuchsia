@@ -41,7 +41,7 @@ class ServerTest : public TestingBase {
 
  protected:
   void SetUp() override {
-    l2cap_ = std::make_unique<l2cap::testing::FakeL2cap>();
+    l2cap_ = std::make_unique<l2cap::testing::FakeL2cap>(dispatcher());
     l2cap_->set_channel_callback([this](auto fake_chan) {
       channel_ = std::move(fake_chan);
       set_fake_chan(channel_);
@@ -98,7 +98,7 @@ class ServerTest : public TestingBase {
     return handle;
   }
 
-  RegistrationHandle AddL2capService(l2cap::PSM channel,
+  RegistrationHandle AddL2capService(l2cap::Psm channel,
                                      l2cap::ChannelParameters chan_params = kChannelParams,
                                      sdp::Server::ConnectCallback cb = NopConnectCallback) {
     ServiceRecord record;
@@ -115,6 +115,22 @@ class ServerTest : public TestingBase {
         server()->RegisterService(std::move(records), chan_params, std::move(cb));
     EXPECT_TRUE(handle);
     return handle;
+  }
+
+  void TriggerInboundL2capChannelsForAllocated(size_t expected_psm_count) {
+    auto allocated = server()->AllocatedPsmsForTest();
+    // The SDP PSM is special and will always exist. Not connectable.
+    EXPECT_TRUE(allocated.erase(l2cap::kSDP));
+    EXPECT_EQ(expected_psm_count, allocated.size());
+
+    // Trigger inbound L2CAP channels for the remaining. |id|, |remote_id| aren't important.
+    auto id = 0x40;
+    for (auto it = allocated.begin(); it != allocated.end(); it++) {
+      EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, *it, id, id));
+      id++;
+    }
+
+    RunUntilIdle();
   }
 
  private:
@@ -139,7 +155,7 @@ constexpr l2cap::ChannelId kSdpChannel = 0x0041;
 //  - Answers with the same TransactionID as sent
 TEST_F(ServerTest, BasicError) {
   EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, l2cap::kSDP, kSdpChannel, 0x0bad));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(fake_chan().is_alive());
   EXPECT_TRUE(fake_chan()->activated());
 
@@ -170,7 +186,7 @@ TEST_F(ServerTest, BasicError) {
 
   EXPECT_TRUE(
       l2cap()->TriggerInboundL2capChannel(kTestHandle1, l2cap::kSDP, kSdpChannel + 1, 0x0bad));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(fake_chan().is_alive());
   EXPECT_TRUE(fake_chan()->activated());
 
@@ -221,7 +237,7 @@ TEST_F(ServerTest, RegisterService) {
 // - Tests callback correctness when inbound l2cap channels are connected.
 TEST_F(ServerTest, RegisterProtocolOnlyService) {
   ServiceRecord protocol_only;
-  l2cap::PSM test_psm = 500;
+  l2cap::Psm test_psm = 500;
   protocol_only.AddProtocolDescriptor(ServiceRecord::kPrimaryProtocolList, protocol::kL2CAP,
                                       DataElement(uint16_t{test_psm}));
 
@@ -243,14 +259,14 @@ TEST_F(ServerTest, RegisterProtocolOnlyService) {
   EXPECT_TRUE(handle);
 
   EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, test_psm, 0x40, 0x41));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_EQ(1u, protocols_discovered.size());
   // There should be one connection (and therefore protocol_list) per psm registered.
   ASSERT_EQ(test_psm, protocols_discovered[0]);
 
   EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, l2cap::kSDP, kSdpChannel, 0x0bad));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Searching for the service record doesn't work
   //
@@ -280,7 +296,7 @@ TEST_F(ServerTest, RegisterProtocolOnlyService) {
 
   fake_chan()->SetSendCallback(service_search_cb, dispatcher());
   fake_chan()->Receive(kL2capSearch);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(responded);
 
   // By asking for everything L2CAP with all attributes
@@ -318,7 +334,7 @@ TEST_F(ServerTest, RegisterProtocolOnlyService) {
 
   fake_chan()->SetSendCallback(service_search_attribute_cb, dispatcher());
   fake_chan()->Receive(kServiceSearchAttributeRequest);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(responded);
 
   // Asking for the service handle directly will also not work, and gives an InvalidRecordHandle
@@ -355,7 +371,7 @@ TEST_F(ServerTest, RegisterProtocolOnlyService) {
 
   fake_chan()->SetSendCallback(service_attribute_cb, dispatcher());
   fake_chan()->Receive(kServiceAttributeRequest);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_TRUE(responded);
 
@@ -369,7 +385,7 @@ TEST_F(ServerTest, RegisterProtocolOnlyService) {
 // - Tests registration and removal are successful.
 // - Tests callback correctness when inbound l2cap channels are connected.
 TEST_F(ServerTest, RegisterServiceWithAdditionalProtocol) {
-  std::vector<l2cap::PSM> psms{500, 27, 29};
+  std::vector<l2cap::Psm> psms{500, 27, 29};
 
   ServiceRecord psm_additional;
   psm_additional.SetServiceClassUUIDs({profile::kAVRemoteControl});
@@ -397,7 +413,7 @@ TEST_F(ServerTest, RegisterServiceWithAdditionalProtocol) {
   EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, psms[0], 0x40, 0x41));
   EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, psms[1], 0x42, 0x43));
   EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, psms[2], 0x44, 0x44));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_EQ(3u, protocols_discovered.size());
   // There should be one connection (and therefore protocol_list) per psm registered.
@@ -431,7 +447,7 @@ TEST_F(ServerTest, RegisterServiceWithIncompleteAdditionalProtocol) {
 
   EXPECT_FALSE(handle);
   EXPECT_FALSE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, 500, 0x40, 0x41));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Despite an incoming L2CAP connection, the callback should never be triggered since
   // no services should be registered.
@@ -440,7 +456,7 @@ TEST_F(ServerTest, RegisterServiceWithIncompleteAdditionalProtocol) {
   EXPECT_FALSE(server()->UnregisterService(handle));
 }
 
-TEST_F(ServerTest, PSMVerification) {
+TEST_F(ServerTest, PsmVerification) {
   ServiceRecord no_psm;
   no_psm.SetServiceClassUUIDs({profile::kAVRemoteControl});
   no_psm.AddProtocolDescriptor(ServiceRecord::kPrimaryProtocolList, protocol::kL2CAP,
@@ -552,7 +568,7 @@ TEST_F(ServerTest, RegisterServiceMultipleRecordsSuccess) {
   EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, 8, 0x42, 0x43));
   EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, 9, 0x44, 0x44));
   EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, 10, 0x45, 0x46));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(4u, cb_count);
 
@@ -565,7 +581,7 @@ TEST_F(ServerTest, RegisterServiceMultipleRecordsSuccess) {
 // - Inbound L2CAP connections on the registered PSMs trigger the same callback.
 // - Attempting to register a record with an already taken PSM will fail, and not
 // register any of the other records in the set of records.
-TEST_F(ServerTest, RegisterServiceMultipleRecordsSamePSM) {
+TEST_F(ServerTest, RegisterServiceMultipleRecordsSamePsm) {
   ServiceRecord target_browse_record;
   target_browse_record.SetServiceClassUUIDs({profile::kAVRemoteControlTarget});
   target_browse_record.AddProtocolDescriptor(ServiceRecord::kPrimaryProtocolList, protocol::kL2CAP,
@@ -597,7 +613,7 @@ TEST_F(ServerTest, RegisterServiceMultipleRecordsSamePSM) {
   EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, 25, 0x40, 0x41));
   EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, 27, 0x44, 0x44));
   EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, 25, 0x42, 0x43));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // We expect two calls to the callback for psm=25, and one for psm=27.
   ASSERT_EQ(2u, std::count(protocols_discovered.begin(), protocols_discovered.end(), 25));
@@ -634,7 +650,7 @@ TEST_F(ServerTest, RegisterObexService) {
   // It also has additional L2CAP protocols for Browsing & OBEX.
   record.AddProtocolDescriptor(1, protocol::kL2CAP, DataElement(uint16_t{l2cap::kAVCTP_Browse}));
   record.AddProtocolDescriptor(1, protocol::kAVCTP, DataElement(uint16_t{0x0104}));
-  record.AddProtocolDescriptor(2, protocol::kL2CAP, DataElement(uint16_t{57}));
+  record.AddProtocolDescriptor(2, protocol::kL2CAP, DataElement(uint16_t{Server::kDynamicPsm}));
   record.AddProtocolDescriptor(2, protocol::kOBEX, DataElement());
 
   std::vector<ServiceRecord> records;
@@ -646,11 +662,12 @@ TEST_F(ServerTest, RegisterObexService) {
   auto handle = server()->RegisterService(std::move(records), kChannelParams, std::move(cb));
   EXPECT_TRUE(handle);
 
-  EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, l2cap::kAVCTP, 0x40, 0x41));
-  EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, l2cap::kAVCTP_Browse, 0x44, 0x44));
-  EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, 57, 0x42, 0x43));
-  RunLoopUntilIdle();
-  // Expect all 3 PSMs to be registered and connectable.
+  // We expect 3 PSMs to be allocated for this service.
+  // The dynamic PSM is generated randomly and is not known in advance - therefore we trigger L2CAP
+  // channels for all allocated PSMs.
+  TriggerInboundL2capChannelsForAllocated(/*expected_psm_count=*/3);
+
+  // Expect the 3 service-specific PSMs to be connectable.
   EXPECT_EQ(3u, cb_count);
   EXPECT_TRUE(server()->UnregisterService(handle));
 }
@@ -665,7 +682,7 @@ TEST_F(ServerTest, RegisterObexServiceWithAttribute) {
                                DataElement(uint8_t{8}));
   record.AddProtocolDescriptor(ServiceRecord::kPrimaryProtocolList, protocol::kOBEX, DataElement());
   // The MNS protocol also specifies an L2CAP protocol in the attributes section.
-  record.SetAttribute(kGoepL2capPsm, DataElement(uint16_t(55)));
+  record.SetAttribute(kGoepL2capPsm, DataElement(uint16_t(Server::kDynamicPsm)));
 
   std::vector<ServiceRecord> records;
   records.emplace_back(std::move(record));
@@ -676,10 +693,38 @@ TEST_F(ServerTest, RegisterObexServiceWithAttribute) {
   auto handle = server()->RegisterService(std::move(records), kChannelParams, std::move(cb));
   EXPECT_TRUE(handle);
 
-  EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, l2cap::kRFCOMM, 0x40, 0x41));
-  EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, 55, 0x42, 0x43));
-  RunLoopUntilIdle();
+  // We expect 2 PSMs to be allocated and connectable for this service (RFCOMM & Dynamic).
+  TriggerInboundL2capChannelsForAllocated(/*expected_psm_count=*/2);
   EXPECT_EQ(2u, cb_count);
+  EXPECT_TRUE(server()->UnregisterService(handle));
+}
+
+TEST_F(ServerTest, RegisterServiceWithMultipleDynamicPsms) {
+  // This service is not defined in any Bluetooth specification.
+  ServiceRecord record;
+  record.SetServiceClassUUIDs({profile::kMessageNotificationServer});
+  // Fictional MNS service with a primary protocol with dynamic PSM.
+  record.AddProtocolDescriptor(ServiceRecord::kPrimaryProtocolList, protocol::kL2CAP,
+                               DataElement(uint16_t{Server::kDynamicPsm}));
+  record.AddProtocolDescriptor(ServiceRecord::kPrimaryProtocolList, protocol::kOBEX, DataElement());
+  // Fictional protocol also contains a dynamic PSM in the GoepL2capAttribute.
+  record.SetAttribute(kGoepL2capPsm, DataElement(uint16_t(Server::kDynamicPsm)));
+  // Additional protocol has dynamic PSM as well.
+  record.AddProtocolDescriptor(1, protocol::kL2CAP, DataElement(uint16_t{Server::kDynamicPsm}));
+  record.AddProtocolDescriptor(1, protocol::kOBEX, DataElement());
+
+  std::vector<ServiceRecord> records;
+  records.emplace_back(std::move(record));
+
+  size_t cb_count = 0;
+  auto cb = [&](auto /*channel*/, auto& protocol_list) { cb_count++; };
+
+  auto handle = server()->RegisterService(std::move(records), kChannelParams, std::move(cb));
+  EXPECT_TRUE(handle);
+
+  // The dynamic PSMs should all be unique and allocated. Can connect.
+  TriggerInboundL2capChannelsForAllocated(/*expected_psm_count=*/3);
+  EXPECT_EQ(3u, cb_count);
   EXPECT_TRUE(server()->UnregisterService(handle));
 }
 
@@ -703,7 +748,7 @@ TEST_F(ServerTest, RegisterNonObexServiceWithAttributeIsIgnored) {
 
   EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, l2cap::kAVCTP, 0x40, 0x41));
   EXPECT_FALSE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, 55, 0x42, 0x43));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1u, cb_count);
   EXPECT_TRUE(server()->UnregisterService(handle));
 }
@@ -718,7 +763,7 @@ TEST_F(ServerTest, ServiceSearchRequest) {
   RegistrationHandle a2dp_handle = AddA2DPSink();
 
   EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, l2cap::kSDP, kSdpChannel, 0x0bad));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   const StaticByteBuffer kL2capSearch(0x02,        // SDP_ServiceSearchRequest
                                       0x10, 0x01,  // Transaction ID (0x1001)
@@ -772,7 +817,7 @@ TEST_F(ServerTest, ServiceSearchRequest) {
 
   fake_chan()->SetSendCallback(cb, dispatcher());
   fake_chan()->Receive(kL2capSearch);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_TRUE(recv);
   EXPECT_EQ(0x1001, tid);
@@ -813,7 +858,7 @@ TEST_F(ServerTest, ServiceSearchRequest) {
 //  - doesn't return more than the max requested
 TEST_F(ServerTest, ServiceSearchRequestOneOfMany) {
   EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, l2cap::kSDP, kSdpChannel, 0x0bad));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   RegistrationHandle spp_handle = AddSPP();
   RegistrationHandle a2dp_handle = AddA2DPSink();
@@ -851,7 +896,7 @@ TEST_F(ServerTest, ServiceSearchRequestOneOfMany) {
 
   fake_chan()->SetSendCallback(cb, dispatcher());
   fake_chan()->Receive(kL2capSearchOne);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_TRUE(recv);
   EXPECT_EQ(0x10C1, tid);
@@ -868,7 +913,7 @@ TEST_F(ServerTest, ServiceSearchContinuationState) {
   // Set the TX MTU to the lowest that's allowed (48)
   EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, l2cap::kSDP, kSdpChannel, 0x0bad,
                                                   48 /* tx_mtu */));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Add enough services to generate a continuation state.
   AddL2capService(0x1001);
@@ -945,7 +990,7 @@ TEST_F(ServerTest, ServiceSearchContinuationState) {
 
   fake_chan()->SetSendCallback(send_cb, dispatcher());
   fake_chan()->Receive(kL2capSearch);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_GE(received, 1u);
   EXPECT_EQ(11u, rsp.service_record_handle_list().size());
@@ -969,7 +1014,7 @@ TEST_F(ServerTest, ServiceAttributeRequest) {
   EXPECT_TRUE(handle);
 
   EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, l2cap::kSDP, kSdpChannel, 0x0bad));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   const auto kRequestAttr =
       StaticByteBuffer(0x04,                        // SDP_ServiceAttributeRequest
@@ -1043,7 +1088,7 @@ TEST_F(ServerTest, ServiceAttributeRequest) {
 
   fake_chan()->SetSendCallback(send_cb, dispatcher());
   fake_chan()->Receive(kRequestAttr);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_GE(received, 1u);
   const auto& attrs = rsp.attributes();
@@ -1122,7 +1167,7 @@ TEST_F(ServerTest, SearchAttributeRequest) {
   EXPECT_TRUE(handle2);
 
   EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, l2cap::kSDP, kSdpChannel, 0x0bad));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   const auto kRequestAttr =
       StaticByteBuffer(0x06,        // SDP_ServiceAttributeRequest
@@ -1199,7 +1244,7 @@ TEST_F(ServerTest, SearchAttributeRequest) {
 
   fake_chan()->SetSendCallback(send_cb, dispatcher());
   fake_chan()->Receive(kRequestAttr);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_GE(received, 1u);
   // We should receive both of our entered records.
@@ -1257,7 +1302,7 @@ TEST_F(ServerTest, SearchAttributeRequest) {
 
 TEST_F(ServerTest, ConnectionCallbacks) {
   EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, l2cap::kSDP, kSdpChannel, 0x0bad));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   std::vector<l2cap::Channel::WeakPtr> channels;
   hci_spec::ConnectionHandle latest_handle;
@@ -1272,7 +1317,7 @@ TEST_F(ServerTest, ConnectionCallbacks) {
   // Connect to the service
   EXPECT_TRUE(
       l2cap()->TriggerInboundL2capChannel(kTestHandle1, l2cap::kAVDTP, kSdpChannel + 1, 0x0b00));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // It should get a callback with a channel
   EXPECT_EQ(1u, channels.size());
@@ -1282,7 +1327,7 @@ TEST_F(ServerTest, ConnectionCallbacks) {
   // connection, it should still work)
   EXPECT_TRUE(
       l2cap()->TriggerInboundL2capChannel(kTestHandle2, l2cap::kAVDTP, kSdpChannel + 2, 0x0b01));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_EQ(2u, channels.size());
   EXPECT_EQ(kTestHandle2, latest_handle);
@@ -1291,7 +1336,7 @@ TEST_F(ServerTest, ConnectionCallbacks) {
   // Connect to the service again, on the first connection.
   EXPECT_TRUE(
       l2cap()->TriggerInboundL2capChannel(kTestHandle1, l2cap::kAVDTP, kSdpChannel + 3, 0x0b00));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // It should get a callback with a channel
   EXPECT_EQ(3u, channels.size());
@@ -1303,7 +1348,7 @@ TEST_F(ServerTest, BrowseGroup) {
   AddA2DPSink();
 
   EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, l2cap::kSDP, kSdpChannel, 0x0bad));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   const auto kRequestAttr = StaticByteBuffer(0x06,        // SDP_ServiceAttributeRequest
                                              0x10, 0x01,  // Transaction ID (0x1001)
@@ -1332,7 +1377,7 @@ TEST_F(ServerTest, BrowseGroup) {
 
   fake_chan()->SetSendCallback(send_cb, dispatcher());
   fake_chan()->Receive(kRequestAttr);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1u, rsp.num_attribute_lists());
   auto& attributes = rsp.attributes(0);
@@ -1346,21 +1391,21 @@ TEST_F(ServerTest, BrowseGroup) {
 // Channels created for a service registered with channel parameters should be configured with that
 // service's channel parameters.
 TEST_F(ServerTest, RegisterServiceWithChannelParameters) {
-  l2cap::PSM kPSM = l2cap::kAVDTP;
+  l2cap::Psm kPsm = l2cap::kAVDTP;
 
   l2cap::ChannelParameters preferred_params;
-  preferred_params.mode = l2cap::ChannelMode::kEnhancedRetransmission;
+  preferred_params.mode = l2cap::RetransmissionAndFlowControlMode::kEnhancedRetransmission;
   preferred_params.max_rx_sdu_size = l2cap::kMinACLMTU;
 
   std::optional<l2cap::ChannelInfo> params;
   size_t chan_cb_count = 0;
-  ASSERT_TRUE(AddL2capService(kPSM, preferred_params, [&](auto chan, auto& /*protocol*/) {
+  ASSERT_TRUE(AddL2capService(kPsm, preferred_params, [&](auto chan, auto& /*protocol*/) {
     chan_cb_count++;
     params = chan->info();
   }));
 
-  EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, kPSM, 0x40, 0x41));
-  RunLoopUntilIdle();
+  EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(kTestHandle1, kPsm, 0x40, 0x41));
+  RunUntilIdle();
   EXPECT_EQ(1u, chan_cb_count);
   ASSERT_TRUE(params);
   EXPECT_EQ(*preferred_params.mode, params->mode);

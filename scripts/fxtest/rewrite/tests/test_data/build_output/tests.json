@@ -1,0 +1,66 @@
+[
+    {
+        "environments": [
+            {
+                "dimensions": {
+                    "device_type": "AEMU"
+                }
+            }
+        ],
+        "test": {
+            "name": "fuchsia-pkg://fuchsia.com/foo-test#meta/foo_test.cm",
+            "label": "//src/sys:foo_test(//build/toolchain/fuchsia:x64)",
+            "os": "fuchsia",
+            "component_label": "//src/sys:foo_test_component(//build/toolchain/fuchsia:x64)",
+            "package_label": "//src/sys:foo_test_package(//build/toolchain/fuchsia:x64)",
+            "package_url": "fuchsia-pkg://fuchsia.com/foo-test#meta/foo_test.cm"
+        }
+    },
+    {
+        "environments": [
+            {
+                "dimensions": {
+                    "cpu": "x64",
+                    "os": "Linux"
+                }
+            }
+        ],
+        "test": {
+            "name": "host_x64/bar_test",
+            "label": "//src/sys:bar_test(//build/toolchain/host:x64)",
+            "path": "host_x64/bar_test",
+            "os": "linux"
+        }
+    },
+    {
+        "environments": [
+            {
+                "dimensions": {
+                    "cpu": "x64",
+                    "os": "Linux"
+                }
+            }
+        ],
+        "test": {
+            "name": "host_x64/baz_test",
+            "label": "//src/sys:baz_test(//build/toolchain/host:x64)",
+            "path": "host_x64/baz_test",
+            "os": "linux"
+        }
+    },
+    {
+        "environments": [
+            {
+                "dimensions": {
+                    "device_type": "AEMU"
+                }
+            }
+        ],
+        "test": {
+            "name": "host_x64/example_e2e_test",
+            "label": "//src/tests/end_to_end:example_e2e_test(//build/toolchain/host:x64)",
+            "path": "host_x64/example_e2e_test",
+            "os": "linux"
+        }
+    }
+]

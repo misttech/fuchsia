@@ -15,8 +15,13 @@
 
 #include <cstring>
 
+#include <bind/fuchsia/clock/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/registers/cpp/bind.h>
+#include <bind/fuchsia/gpio/cpp/bind.h>
+#include <bind/fuchsia/hardware/usb/phy/cpp/bind.h>
+#include <bind/fuchsia/platform/cpp/bind.h>
+#include <bind/fuchsia/register/cpp/bind.h>
+#include <bind/fuchsia/usb/phy/cpp/bind.h>
 #include <ddk/usb-peripheral-config.h>
 #include <ddktl/device.h>
 #include <soc/aml-common/aml-registers.h>
@@ -30,6 +35,10 @@
 #include "src/devices/board/drivers/vim3/vim3-gpios.h"
 #include "src/devices/board/drivers/vim3/vim3.h"
 #include "src/devices/bus/lib/platform-bus-composites/platform-bus-composite.h"
+
+namespace fdf {
+using namespace fuchsia_driver_framework;
+}  // namespace fdf
 
 namespace vim3 {
 namespace fpbus = fuchsia_hardware_platform_bus;
@@ -72,6 +81,16 @@ static const uint32_t pll_settings[] = {
     0x09400414, 0x927e0000, 0xac5f69e5, 0xfe18, 0x8000fff, 0x78000, 0xe0004, 0xe000c,
 };
 
+// vim3_usb_phy manages 3 different controllers:
+//  - One USB 2.0 controller that is only supports host mode.
+//  - One USB 2.0 controller that supports OTG (both host and device mode).
+//  - One USB 3.0 controller that only supports host mode.
+// The two USB-A ports both are connected to the USB 2.0 host only controller. The USB-A port
+// closest to the ethernet port is connected also the the USB 3.0 host only controller. The USB-C
+// port is connected to the USB 2.0 OTG controller, however, we only want the USB-C port to be in
+// peripheral mode to support USB-CDC use-case. dr_mode only refers to the OTG capable USB 2.0
+// controller that is on the Vim3. We define this to be peripheral mode only because we want to
+// support the USB-CDC use-case.
 static const usb_mode_t dr_mode = USB_MODE_PERIPHERAL;
 
 static const std::vector<fpbus::Metadata> usb_phy_metadata{
@@ -103,17 +122,44 @@ static const fpbus::Node usb_phy_dev = []() {
 
 const std::vector<fuchsia_driver_framework::BindRule> kResetRegisterRules = {
     fdf::MakeAcceptBindRule(bind_fuchsia::FIDL_PROTOCOL,
-                            bind_fuchsia_hardware_registers::BIND_FIDL_PROTOCOL_DEVICE),
-    fdf::MakeAcceptBindRule(bind_fuchsia::REGISTER_ID, aml_registers::REGISTER_USB_PHY_V2_RESET)};
+                            bind_fuchsia_register::BIND_FIDL_PROTOCOL_DEVICE),
+    fdf::MakeAcceptBindRule(bind_fuchsia_register::NAME, aml_registers::REGISTER_USB_PHY_V2_RESET)};
 
 const std::vector<fuchsia_driver_framework::NodeProperty> kResetRegisterProperties = {
     fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL,
-                      bind_fuchsia_hardware_registers::BIND_FIDL_PROTOCOL_DEVICE),
-    fdf::MakeProperty(bind_fuchsia::REGISTER_ID, aml_registers::REGISTER_USB_PHY_V2_RESET)};
+                      bind_fuchsia_register::BIND_FIDL_PROTOCOL_DEVICE),
+    fdf::MakeProperty(bind_fuchsia_register::NAME, aml_registers::REGISTER_USB_PHY_V2_RESET)};
+
+const std::vector<fdf::BindRule> kGpioInitRules = std::vector{
+    fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+};
+
+const std::vector<fdf::NodeProperty> kGpioInitProperties = std::vector{
+    fdf::MakeProperty(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+};
+
+const std::vector<fdf::BindRule> kClockInitRules = std::vector{
+    fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_clock::BIND_INIT_STEP_CLOCK),
+};
+
+const std::vector<fdf::NodeProperty> kClockInitProperties = std::vector{
+    fdf::MakeProperty(bind_fuchsia::INIT_STEP, bind_fuchsia_clock::BIND_INIT_STEP_CLOCK),
+};
 
 const std::vector<fuchsia_driver_framework::ParentSpec> kUsbPhyDevParents = {
-    fuchsia_driver_framework::ParentSpec{
-        {.bind_rules = kResetRegisterRules, .properties = kResetRegisterProperties}}};
+    fuchsia_driver_framework::ParentSpec{{
+        .bind_rules = kResetRegisterRules,
+        .properties = kResetRegisterProperties,
+    }},
+    fuchsia_driver_framework::ParentSpec{{
+        .bind_rules = kGpioInitRules,
+        .properties = kGpioInitProperties,
+    }},
+    fuchsia_driver_framework::ParentSpec{{
+        .bind_rules = kClockInitRules,
+        .properties = kClockInitProperties,
+    }},
+};
 
 static const std::vector<fpbus::Mmio> dwc2_mmios{
     {{
@@ -177,19 +223,6 @@ static const fpbus::Node xhci_dev = []() {
   return dev;
 }();
 
-static const zx_bind_inst_t xhci_phy_match[] = {
-    BI_ABORT_IF(NE, BIND_PROTOCOL, ZX_PROTOCOL_USB_PHY),
-    BI_ABORT_IF(NE, BIND_PLATFORM_DEV_VID, PDEV_VID_GENERIC),
-    BI_ABORT_IF(NE, BIND_PLATFORM_DEV_PID, PDEV_PID_GENERIC),
-    BI_MATCH_IF(EQ, BIND_PLATFORM_DEV_DID, PDEV_DID_USB_XHCI_COMPOSITE),
-};
-static const device_fragment_part_t xhci_phy_fragment[] = {
-    {std::size(xhci_phy_match), xhci_phy_match},
-};
-static const device_fragment_t xhci_fragments[] = {
-    {"xhci-phy", std::size(xhci_phy_fragment), xhci_phy_fragment},
-};
-
 using FunctionDescriptor = fuchsia_hardware_usb_peripheral::wire::FunctionDescriptor;
 
 static const std::vector<fpbus::Metadata> usb_metadata{
@@ -214,9 +247,9 @@ static const std::vector<fpbus::BootMetadata> usb_boot_metadata{
 static fpbus::Node dwc2_dev = []() {
   fpbus::Node dev = {};
   dev.name() = "dwc2";
-  dev.vid() = PDEV_VID_GENERIC;
-  dev.pid() = PDEV_PID_GENERIC;
-  dev.did() = PDEV_DID_USB_DWC2;
+  dev.vid() = bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC;
+  dev.pid() = bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC;
+  dev.did() = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_USB_DWC2;
   dev.mmio() = dwc2_mmios;
   dev.irq() = dwc2_irqs;
   dev.bti() = dwc2_btis;
@@ -225,52 +258,108 @@ static fpbus::Node dwc2_dev = []() {
   return dev;
 }();
 
-static const zx_bind_inst_t dwc2_phy_match[] = {
-    BI_ABORT_IF(NE, BIND_PROTOCOL, ZX_PROTOCOL_USB_PHY),
-    BI_ABORT_IF(NE, BIND_PLATFORM_DEV_VID, PDEV_VID_GENERIC),
-    BI_ABORT_IF(NE, BIND_PLATFORM_DEV_PID, PDEV_PID_GENERIC),
-    BI_MATCH_IF(EQ, BIND_PLATFORM_DEV_DID, PDEV_DID_USB_DWC2),
-};
-static const device_fragment_part_t dwc2_phy_fragment[] = {
-    {std::size(dwc2_phy_match), dwc2_phy_match},
-};
-static const device_fragment_t dwc2_fragments[] = {
-    {"dwc2-phy", std::size(dwc2_phy_fragment), dwc2_phy_fragment},
-};
+zx_status_t AddDwc2Composite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
+                             fidl::AnyArena& fidl_arena, fdf::Arena& arena) {
+  const std::vector<fdf::BindRule> kDwc2PhyRules = std::vector{
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_usb_phy::SERVICE,
+                              bind_fuchsia_hardware_usb_phy::SERVICE_DRIVERTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
+                              bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_PID,
+                              bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_DID,
+                              bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_USB_DWC2),
+  };
+
+  const std::vector<fdf::NodeProperty> kDwc2PhyProperties = std::vector{
+      fdf::MakeProperty(bind_fuchsia_hardware_usb_phy::SERVICE,
+                        bind_fuchsia_hardware_usb_phy::SERVICE_DRIVERTRANSPORT),
+      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_VID,
+                        bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_PID,
+                        bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_DID,
+                        bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_USB_DWC2),
+  };
+
+  const std::vector<fdf::ParentSpec> kDwc2Parents{{kDwc2PhyRules, kDwc2PhyProperties}};
+  auto dwc2_result = pbus.buffer(arena)->AddCompositeNodeSpec(
+      fidl::ToWire(fidl_arena, dwc2_dev),
+      fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
+                                   {.name = "dwc2_phy", .parents = kDwc2Parents}}));
+  if (!dwc2_result.ok()) {
+    zxlogf(ERROR, "AddCompositeNodeSpec Usb(dwc2_phy) request failed: %s",
+           dwc2_result.FormatDescription().data());
+    return dwc2_result.status();
+  }
+  if (dwc2_result->is_error()) {
+    zxlogf(ERROR, "AddCompositeNodeSpec Usb(dwc2_phy) failed: %s",
+           zx_status_get_string(dwc2_result->error_value()));
+    return dwc2_result->error_value();
+  }
+  return ZX_OK;
+}
+
+zx_status_t AddXhciComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
+                             fidl::AnyArena& fidl_arena, fdf::Arena& arena) {
+  const std::vector<fuchsia_driver_framework::BindRule> kXhciCompositeRules = {
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_usb_phy::SERVICE,
+                              bind_fuchsia_hardware_usb_phy::SERVICE_DRIVERTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
+                              bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_PID,
+                              bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_DID,
+                              bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_XHCI),
+  };
+  const std::vector<fuchsia_driver_framework::NodeProperty> kXhciCompositeProperties = {
+      fdf::MakeProperty(bind_fuchsia_hardware_usb_phy::SERVICE,
+                        bind_fuchsia_hardware_usb_phy::SERVICE_DRIVERTRANSPORT),
+      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_VID,
+                        bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_PID,
+                        bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+      fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_DID,
+                        bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_XHCI),
+  };
+
+  const std::vector<fuchsia_driver_framework::ParentSpec> kXhciParents = {
+      fuchsia_driver_framework::ParentSpec{
+          {.bind_rules = kXhciCompositeRules, .properties = kXhciCompositeProperties}}};
+  auto result = pbus.buffer(arena)->AddCompositeNodeSpec(
+      fidl::ToWire(fidl_arena, xhci_dev),
+      fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
+                                   {.name = "xhci-phy", .parents = kXhciParents}}));
+  if (!result.ok()) {
+    zxlogf(ERROR, "AddCompositeNodeSpec Usb(xhci-phy) request failed: %s",
+           result.FormatDescription().data());
+    return result.status();
+  }
+  if (result->is_error()) {
+    zxlogf(ERROR, "AddCompositeNodeSpec Usb(xhci-phy) failed: %s",
+           zx_status_get_string(result->error_value()));
+    return result->error_value();
+  }
+  return ZX_OK;
+}
 
 zx_status_t Vim3::UsbInit() {
+  using fuchsia_hardware_clockimpl::wire::InitCall;
+
   // Turn on clocks.
-  auto status = clk_impl_.Enable(g12b_clk::G12B_CLK_USB);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Unable to enable G12B_CLK_USB");
-    return status;
-  }
-  status = clk_impl_.Enable(g12b_clk::G12B_CLK_USB1_TO_DDR);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Unable to enable G12B_CLK_USB1_TO_DDR");
-    return status;
-  }
+  clock_init_steps_.push_back({g12b_clk::G12B_CLK_USB, InitCall::WithEnable({})});
 
-  status = clk_impl_.Disable(g12b_clk::CLK_PCIE_PLL);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Disable(CLK_PCIE_PLL) failed: %d", status);
-    return status;
-  }
+  clock_init_steps_.push_back({g12b_clk::G12B_CLK_USB1_TO_DDR, InitCall::WithEnable({})});
 
-  status = clk_impl_.SetRate(g12b_clk::CLK_PCIE_PLL, 100000000);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "SetRate(CLK_PCIE_PLL) failed: %d", status);
-    return status;
-  }
+  clock_init_steps_.push_back({g12b_clk::CLK_PCIE_PLL, InitCall::WithDisable({})});
 
-  status = clk_impl_.Enable(g12b_clk::CLK_PCIE_PLL);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Unable to enable CLK_PCIE_PLL");
-    return status;
-  }
+  clock_init_steps_.push_back(
+      {g12b_clk::CLK_PCIE_PLL, InitCall::WithRateHz(init_arena_, 100'000'000)});
+
+  clock_init_steps_.push_back({g12b_clk::CLK_PCIE_PLL, InitCall::WithEnable({})});
 
   // Power on USB.
-  gpio_impl_.ConfigOut(VIM3_USB_PWR, 1);
+  gpio_init_steps_.push_back({VIM3_USB_PWR, GpioConfigOut(1)});
 
   // Create USB Phy Device
   fidl::Arena<> fidl_arena;
@@ -292,45 +381,21 @@ zx_status_t Vim3::UsbInit() {
 
   // Create DWC2 Device
   std::unique_ptr<usb::UsbPeripheralConfig> peripheral_config;
-  status = usb::UsbPeripheralConfig::CreateFromBootArgs(parent_, &peripheral_config);
+  auto status = usb::UsbPeripheralConfig::CreateFromBootArgs(parent_, &peripheral_config);
   if (status != ZX_OK) {
     zxlogf(ERROR, "Failed to get usb config from boot args - %d", status);
     return status;
   }
-
   dwc2_dev.metadata().value()[0].data().emplace(peripheral_config->config_data());
-
-  auto result = pbus_.buffer(arena)->AddCompositeImplicitPbusFragment(
-      fidl::ToWire(fidl_arena, dwc2_dev),
-      platform_bus_composite::MakeFidlFragment(fidl_arena, dwc2_fragments,
-                                               std::size(dwc2_fragments)),
-      "dwc2-phy");
-  if (!result.ok()) {
-    zxlogf(ERROR, "AddCompositeImplicitPbusFragment Usb(dwc2_dev) request failed: %s",
-           result.FormatDescription().data());
-    return result.status();
-  }
-  if (result->is_error()) {
-    zxlogf(ERROR, "AddCompositeImplicitPbusFragment Usb(dwc2_dev) failed: %s",
-           zx_status_get_string(result->error_value()));
-    return result->error_value();
+  status = AddDwc2Composite(pbus_, fidl_arena, arena);
+  if (status != ZX_OK) {
+    return status;
   }
 
   // Create XHCI device.
-  result = pbus_.buffer(arena)->AddCompositeImplicitPbusFragment(
-      fidl::ToWire(fidl_arena, xhci_dev),
-      platform_bus_composite::MakeFidlFragment(fidl_arena, xhci_fragments,
-                                               std::size(xhci_fragments)),
-      "xhci-phy");
-  if (!result.ok()) {
-    zxlogf(ERROR, "AddCompositeImplicitPbusFragment Usb(xhci_dev) request failed: %s",
-           result.FormatDescription().data());
-    return result.status();
-  }
-  if (result->is_error()) {
-    zxlogf(ERROR, "AddCompositeImplicitPbusFragment Usb(xhci_dev) failed: %s",
-           zx_status_get_string(result->error_value()));
-    return result->error_value();
+  status = AddXhciComposite(pbus_, fidl_arena, arena);
+  if (status != ZX_OK) {
+    return status;
   }
 
   return ZX_OK;

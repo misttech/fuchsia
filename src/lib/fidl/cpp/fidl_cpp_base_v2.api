@@ -1,10 +1,10 @@
 {
   "pkg/fidl_cpp_base_v2/include/lib/fidl/cpp/box.h": "6ad5fc22c8eb48d73cefcf81c2532acc",
-  "pkg/fidl_cpp_base_v2/include/lib/fidl/cpp/internal/natural_types.h": "11b4c6ef39a960764d1212f77df201cb",
-  "pkg/fidl_cpp_base_v2/include/lib/fidl/cpp/internal/transport_err.h": "fa8ac11e3ac899ac99d8d98475a6644f",
-  "pkg/fidl_cpp_base_v2/include/lib/fidl/cpp/natural_coding_traits.h": "18c843462b959b6fbb17a3dae5673b35",
-  "pkg/fidl_cpp_base_v2/include/lib/fidl/cpp/natural_decoder.h": "d4107e1803efb31649bd146717db5157",
+  "pkg/fidl_cpp_base_v2/include/lib/fidl/cpp/internal/framework_err.h": "812e82ef2b13a9f4c435f2b167e78aa3",
+  "pkg/fidl_cpp_base_v2/include/lib/fidl/cpp/internal/natural_types.h": "65c0c0acb97eea57d74c83dbd0fd7484",
+  "pkg/fidl_cpp_base_v2/include/lib/fidl/cpp/natural_coding_traits.h": "1d64c7a571692ee25f34547309dca48d",
+  "pkg/fidl_cpp_base_v2/include/lib/fidl/cpp/natural_decoder.h": "9cc6513a73a84cf54fc653e601a63969",
   "pkg/fidl_cpp_base_v2/include/lib/fidl/cpp/natural_encoder.h": "e7bffd334fba11ca15d32af20844192e",
-  "pkg/fidl_cpp_base_v2/include/lib/fidl/cpp/natural_types.h": "645710a309b54b6ae3b6d106981647bc",
+  "pkg/fidl_cpp_base_v2/include/lib/fidl/cpp/natural_types.h": "de09a259d20fb6bc3f0127e176ac18ee",
   "pkg/fidl_cpp_base_v2/include/lib/fidl/cpp/wire_natural_conversions.h": "4b15c8acfae77c92168e979ff7aa7e25"
 }

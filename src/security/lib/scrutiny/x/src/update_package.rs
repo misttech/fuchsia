@@ -2,17 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// TODO(fxbug.dev/111242): Exercise production update package implementations to eliminate dead code
-// warnings.
-#![allow(dead_code)]
-
 use super::api;
 use super::api::Package as _;
 use super::blob::BlobOpenError;
 use super::blob::BlobSet;
+use super::data_source as ds;
 use super::data_source::DataSource;
 use super::package::Error as PackageError;
 use super::package::Package;
+use cm_rust::ComponentDecl;
+use fuchsia_url::PackageUrl;
 use fuchsia_url::PinnedAbsolutePackageUrl;
 use std::io;
 use std::io::Read as _;
@@ -42,7 +41,7 @@ pub enum Error {
 /// https://fuchsia.dev/fuchsia-src/concepts/packages/update_pkg for details.
 #[derive(Clone)]
 pub(crate) struct UpdatePackage {
-    package: Box<dyn api::Package>,
+    package: Package,
     packages_json: Vec<PinnedAbsolutePackageUrl>,
 }
 
@@ -60,12 +59,8 @@ impl UpdatePackage {
     ) -> Result<Self, Error> {
         let update_package_blob = blob_set.blob(update_package_hash.clone())?;
 
-        let package = Package::new(
-            parent_data_source,
-            api::PackageResolverUrl::Url,
-            update_package_blob,
-            blob_set,
-        )?;
+        let package =
+            Package::new(parent_data_source, update_package_url(), update_package_blob, blob_set)?;
         let packages_json: Box<dyn api::Path> = Box::new("packages.json");
         let (_, packages_json_blob) = package
             .content_blobs()
@@ -78,9 +73,13 @@ impl UpdatePackage {
         let mut packages_json_contents = vec![];
         packages_json_reader.read_to_end(&mut packages_json_contents)?;
         Ok(Self {
-            package: Box::new(package),
+            package,
             packages_json: update_package::parse_packages_json(packages_json_contents.as_slice())?,
         })
+    }
+
+    pub fn data_source(&self) -> ds::DataSource {
+        self.package.data_source()
     }
 }
 
@@ -105,10 +104,13 @@ impl api::Package for UpdatePackage {
         self.package.meta_blobs()
     }
 
-    fn components(
+    fn component_manifests(
         &self,
-    ) -> Box<dyn Iterator<Item = (Box<dyn api::Path>, Box<dyn api::Component>)>> {
-        self.package.components()
+    ) -> Result<
+        Box<dyn Iterator<Item = (Box<dyn api::Path>, ComponentDecl)>>,
+        api::PackageComponentsError,
+    > {
+        self.package.component_manifests()
     }
 }
 
@@ -116,6 +118,12 @@ impl api::UpdatePackage for UpdatePackage {
     fn packages(&self) -> &Vec<PinnedAbsolutePackageUrl> {
         &self.packages_json
     }
+}
+
+fn update_package_url() -> api::PackageResolverUrl {
+    api::PackageResolverUrl::Package(
+        PackageUrl::parse("update").expect("relative update package url"),
+    )
 }
 
 #[cfg(test)]
@@ -133,6 +141,7 @@ pub mod test {
     use fuchsia_merkle::Hash;
     use fuchsia_pkg::PackageManifest;
     use once_cell::sync::Lazy;
+    use scrutiny_utils::zbi::test::zbi_with_empty_bootfs_bytes;
     use std::io::Write as _;
     use tempfile::NamedTempFile;
 
@@ -164,7 +173,9 @@ pub mod test {
         let mut version_file = NamedTempFile::new().expect("create version file");
         writeln!(version_file, "1.2.3.4").expect("write version file");
 
-        let zbi_file = NamedTempFile::new().expect("create zbi file");
+        let mut zbi_file = NamedTempFile::new().expect("create zbi file");
+        zbi_file.write_all(zbi_with_empty_bootfs_bytes().as_slice()).expect("write zbi");
+        let zbi_file = zbi_file;
         let zbi_path = Utf8Path::from_path(zbi_file.path()).expect("get zbi path");
 
         let mut builder = UpdatePackageBuilder::new(
@@ -178,7 +189,7 @@ pub mod test {
         builder.add_slot_images(Slot::Primary(AssemblyManifest {
             images: vec![Image::ZBI { path: zbi_path.to_path_buf(), signed: true }],
         }));
-        builder.build().expect("build update package");
+        let update_package = builder.build().expect("build update package");
 
         let pkg_manifest = PackageManifest::try_load_from(
             Utf8Path::from_path(&pkg_dir.path().join("update_package_manifest.json"))
@@ -187,13 +198,20 @@ pub mod test {
         .expect("load update package manifest");
 
         let hash = pkg_manifest.hash();
-        let blobs = pkg_manifest
-            .blobs()
-            .into_iter()
-            .map(|blob_info| {
-                std::fs::read(&blob_info.source_path).expect("read blob from package manifest")
-            })
-            .collect::<Vec<_>>();
+        let mut blobs = Vec::<Vec<u8>>::new();
+        for pkg_manifest in update_package.package_manifests {
+            blobs.extend(
+                pkg_manifest
+                    .blobs()
+                    .into_iter()
+                    .map(|blob_info| {
+                        std::fs::read(&blob_info.source_path)
+                            .expect("read blob from package manifest")
+                    })
+                    .collect::<Vec<Vec<u8>>>(),
+            );
+        }
+
         FakeUpdatePackage { hash, blobs }
     });
 }

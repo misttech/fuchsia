@@ -51,7 +51,6 @@ if (use_bringup_assembly) {
     public_deps = [
       "//:developer_universe_packages",
       "//:discoverable_packages",
-      "//:legacy_universe_packages",
     ]
   }
 
@@ -151,13 +150,15 @@ if (use_bringup_assembly) {
   ### Amber updates.
   ###
 
-  recovery_images_list = root_build_dir + "/recovery_images_list"
-  generated_file("recovery_images_list") {
-    testonly = true
-    outputs = [ recovery_images_list ]
-    output_conversion = "list lines"
-    data_keys = [ "update_target" ]
-    deps = [ recovery_label ]
+  if (!use_bazel_images_only) {
+    recovery_images_list = root_build_dir + "/recovery_images_list"
+    generated_file("recovery_images_list") {
+      testonly = true
+      outputs = [ recovery_images_list ]
+      output_conversion = "list lines"
+      data_keys = [ "update_target" ]
+      deps = [ recovery_label ]
+    }
   }
 
   generate_epoch("epoch.json") {
@@ -217,7 +218,8 @@ if (use_bringup_assembly) {
   # tool.
   cache_packages_from_product_assembler("assembly_cache_packages.list") {
     assembly_label = labels.images
-    outputs = [ "$root_build_dir/assembly_cache_packages.list" ]
+    is_bazel_assembled = use_bazel_images_only
+    outputs = [ files.assembly_cache_package_manifests ]
     testonly = true
   }
 

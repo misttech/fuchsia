@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <zxtest/zxtest.h>
+#include <zircon/types.h>
+
+#include <gtest/gtest.h>
 
 #include "tools/fidl/fidlc/include/fidl/flat_ast.h"
 #include "tools/fidl/fidlc/include/fidl/types.h"
-#include "tools/fidl/fidlc/tests/error_test.h"
 #include "tools/fidl/fidlc/tests/test_library.h"
 
 namespace fidl::flat {
@@ -189,35 +190,30 @@ type TypeDecl = struct {
 )FIDL");
   ASSERT_COMPILED(library);
   auto type_decl = library.LookupStruct("TypeDecl");
-  ASSERT_NOT_NULL(type_decl);
-  EXPECT_EQ(type_decl->members.size(), 5);
+  ASSERT_NE(type_decl, nullptr);
+  EXPECT_EQ(type_decl->members.size(), 5u);
   auto type_decl_f0 = library.LookupBits("F0");
-  ASSERT_NOT_NULL(type_decl_f0);
-  EXPECT_EQ(type_decl_f0->members.size(), 1);
+  ASSERT_NE(type_decl_f0, nullptr);
+  EXPECT_EQ(type_decl_f0->members.size(), 1u);
   auto type_decl_f1 = library.LookupEnum("F1");
-  ASSERT_NOT_NULL(type_decl_f1);
-  EXPECT_EQ(type_decl_f1->members.size(), 1);
+  ASSERT_NE(type_decl_f1, nullptr);
+  EXPECT_EQ(type_decl_f1->members.size(), 1u);
   auto type_decl_f2 = library.LookupStruct("F2");
-  ASSERT_NOT_NULL(type_decl_f2);
-  EXPECT_EQ(type_decl_f2->members.size(), 2);
+  ASSERT_NE(type_decl_f2, nullptr);
+  EXPECT_EQ(type_decl_f2->members.size(), 2u);
   auto type_decl_f3 = library.LookupTable("F3");
-  ASSERT_NOT_NULL(type_decl_f3);
-  EXPECT_EQ(type_decl_f3->members.size(), 1);
+  ASSERT_NE(type_decl_f3, nullptr);
+  EXPECT_EQ(type_decl_f3->members.size(), 1u);
   auto type_decl_f4 = library.LookupUnion("F4");
-  ASSERT_NOT_NULL(type_decl_f4);
-  EXPECT_EQ(type_decl_f4->members.size(), 1);
+  ASSERT_NE(type_decl_f4, nullptr);
+  EXPECT_EQ(type_decl_f4->members.size(), 1u);
 }
 
 TEST(NewSyntaxTests, BadTypeDeclOfNewTypeErrors) {
   TestLibrary library;
   library.AddFile("bad/fi-0062.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrNewTypesNotAllowed);
-}
-
-TEST(NewSyntaxTests, BadBoxWithDoubleOptionality) {
-  TestLibrary library;
-  library.AddFile("bad/fi-0170.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrBoxedTypeCannotBeOptional);
+  library.ExpectFail(fidl::ErrNewTypesNotAllowed, "Matrix", "array");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(NewSyntaxTests, GoodTypeParameters) {
@@ -254,18 +250,18 @@ type TypeDecl = struct {
 
   ASSERT_COMPILED(library);
   auto type_decl = library.LookupStruct("TypeDecl");
-  ASSERT_NOT_NULL(type_decl);
-  EXPECT_EQ(type_decl->members.size(), 8);
+  ASSERT_NE(type_decl, nullptr);
+  EXPECT_EQ(type_decl->members.size(), 8u);
   auto type_decl_vector_anon = library.LookupStruct("V3");
-  ASSERT_NOT_NULL(type_decl_vector_anon);
-  EXPECT_EQ(type_decl_vector_anon->members.size(), 2);
-  ASSERT_NOT_NULL(library.LookupStruct("I0"));
-  ASSERT_NOT_NULL(library.LookupStruct("I1"));
+  ASSERT_NE(type_decl_vector_anon, nullptr);
+  EXPECT_EQ(type_decl_vector_anon->members.size(), 2u);
+  ASSERT_NE(library.LookupStruct("I0"), nullptr);
+  ASSERT_NE(library.LookupStruct("I1"), nullptr);
   auto type_decl_array_anon = library.LookupStruct("A3");
-  ASSERT_NOT_NULL(type_decl_array_anon);
-  EXPECT_EQ(type_decl_array_anon->members.size(), 2);
-  ASSERT_NOT_NULL(library.LookupStruct("I2"));
-  ASSERT_NOT_NULL(library.LookupStruct("I3"));
+  ASSERT_NE(type_decl_array_anon, nullptr);
+  EXPECT_EQ(type_decl_array_anon->members.size(), 2u);
+  ASSERT_NE(library.LookupStruct("I2"), nullptr);
+  ASSERT_NE(library.LookupStruct("I3"), nullptr);
 }
 
 TEST(NewSyntaxTests, GoodLayoutMemberConstraints) {
@@ -281,8 +277,8 @@ type t1 = resource struct {
   ASSERT_COMPILED(library);
 
   auto type_decl = library.LookupStruct("t1");
-  ASSERT_NOT_NULL(type_decl);
-  EXPECT_EQ(type_decl->members.size(), 2);
+  ASSERT_NE(type_decl, nullptr);
+  EXPECT_EQ(type_decl->members.size(), 2u);
 
   size_t i = 0;
 
@@ -326,8 +322,8 @@ type TypeDecl= struct {
 
   ASSERT_COMPILED(library);
   auto type_decl = library.LookupStruct("TypeDecl");
-  ASSERT_NOT_NULL(type_decl);
-  ASSERT_EQ(type_decl->members.size(), 16);
+  ASSERT_NE(type_decl, nullptr);
+  ASSERT_EQ(type_decl->members.size(), 16u);
 
   size_t i = 0;
 
@@ -407,7 +403,7 @@ type TypeDecl= struct {
   EXPECT_EQ(s11_type->MaxSize(), 16u);
 
   auto a12_invocation = type_decl->members[i].type_ctor->resolved_params;
-  EXPECT_NULL(a12_invocation.element_type_resolved);
+  EXPECT_EQ(a12_invocation.element_type_resolved, nullptr);
   EXPECT_EQ(a12_invocation.nullability, fidl::types::Nullability::kNonnullable);
   auto a12_type_base = type_decl->members[i++].type_ctor->type;
   ASSERT_EQ(a12_type_base->kind, fidl::flat::Type::Kind::kVector);
@@ -415,10 +411,10 @@ type TypeDecl= struct {
   EXPECT_EQ(a12_type->nullability, fidl::types::Nullability::kNonnullable);
   EXPECT_EQ(a12_type->element_type->kind, fidl::flat::Type::Kind::kPrimitive);
   EXPECT_EQ(a12_type->ElementCount(), fidl::flat::Size::Max().value);
-  EXPECT_NULL(a12_invocation.size_resolved);
+  EXPECT_EQ(a12_invocation.size_resolved, nullptr);
 
   auto a13_invocation = type_decl->members[i].type_ctor->resolved_params;
-  EXPECT_NULL(a13_invocation.element_type_resolved);
+  EXPECT_EQ(a13_invocation.element_type_resolved, nullptr);
   EXPECT_EQ(a13_invocation.nullability, fidl::types::Nullability::kNonnullable);
   auto a13_type_base = type_decl->members[i++].type_ctor->type;
   ASSERT_EQ(a13_type_base->kind, fidl::flat::Type::Kind::kVector);
@@ -429,7 +425,7 @@ type TypeDecl= struct {
   EXPECT_EQ(a13_type->ElementCount(), a13_invocation.size_resolved->value);
 
   auto a14_invocation = type_decl->members[i].type_ctor->resolved_params;
-  EXPECT_NULL(a14_invocation.element_type_resolved);
+  EXPECT_EQ(a14_invocation.element_type_resolved, nullptr);
   EXPECT_EQ(a14_invocation.nullability, fidl::types::Nullability::kNullable);
   auto a14_type_base = type_decl->members[i++].type_ctor->type;
   ASSERT_EQ(a14_type_base->kind, fidl::flat::Type::Kind::kVector);
@@ -438,10 +434,10 @@ type TypeDecl= struct {
   EXPECT_EQ(a14_type->element_type->kind, fidl::flat::Type::Kind::kPrimitive);
   EXPECT_EQ(a14_type->ElementCount(), fidl::flat::Size::Max().value);
   // EXPECT_EQ(a14_type->ElementCount(), a14_invocation->maybe_size);
-  EXPECT_NULL(a14_invocation.size_resolved);
+  EXPECT_EQ(a14_invocation.size_resolved, nullptr);
 
   auto a15_invocation = type_decl->members[i].type_ctor->resolved_params;
-  EXPECT_NULL(a15_invocation.element_type_resolved);
+  EXPECT_EQ(a15_invocation.element_type_resolved, nullptr);
   EXPECT_EQ(a15_invocation.nullability, fidl::types::Nullability::kNullable);
   auto a15_type_base = type_decl->members[i++].type_ctor->type;
   ASSERT_EQ(a15_type_base->kind, fidl::flat::Type::Kind::kVector);
@@ -469,8 +465,8 @@ type TypeDecl= struct {
 
   ASSERT_COMPILED(library);
   auto type_decl = library.LookupStruct("TypeDecl");
-  ASSERT_NOT_NULL(type_decl);
-  ASSERT_EQ(type_decl->members.size(), 6);
+  ASSERT_NE(type_decl, nullptr);
+  ASSERT_EQ(type_decl->members.size(), 6u);
   size_t i = 0;
 
   auto& u0 = type_decl->members[i++];
@@ -516,8 +512,8 @@ type TypeDecl = resource struct {
 
   ASSERT_COMPILED(library);
   auto type_decl = library.LookupStruct("TypeDecl");
-  ASSERT_NOT_NULL(type_decl);
-  ASSERT_EQ(type_decl->members.size(), 6);
+  ASSERT_NE(type_decl, nullptr);
+  ASSERT_EQ(type_decl->members.size(), 6u);
 
   using types::HandleSubtype;
 
@@ -561,7 +557,8 @@ type TypeDecl = resource struct {
 TEST(NewSyntaxTests, BadTooManyLayoutParameters) {
   TestLibrary library;
   library.AddFile("bad/fi-0162-b.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrWrongNumberOfLayoutParameters);
+  library.ExpectFail(fidl::ErrWrongNumberOfLayoutParameters, "uint8", 0, 1);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(NewSyntaxTests, BadZeroParameters) {
@@ -573,21 +570,24 @@ type Foo = struct {
 };
 )FIDL");
 
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrWrongNumberOfLayoutParameters);
+  library.ExpectFail(fidl::ErrWrongNumberOfLayoutParameters, "array", 2, 0);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
   EXPECT_EQ(library.errors()[0]->span.data(), "array");
 }
 
 TEST(NewSyntaxTests, BadNotEnoughParameters) {
   TestLibrary library;
   library.AddFile("bad/fi-0162-a.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrWrongNumberOfLayoutParameters);
+  library.ExpectFail(fidl::ErrWrongNumberOfLayoutParameters, "array", 2, 1);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
   EXPECT_EQ(library.errors()[0]->span.data(), "<8>");
 }
 
 TEST(NewSyntaxTests, BadTooManyConstraints) {
   TestLibrary library;
   library.AddFile("bad/fi-0164.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrTooManyConstraints);
+  library.ExpectFail(fidl::ErrTooManyConstraints, "string", 2, 3);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
   EXPECT_EQ(library.errors()[0]->span.data(), "<0, optional, 20>");
 }
 
@@ -600,7 +600,8 @@ type Foo = struct {
 };
 )FIDL");
 
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrWrongNumberOfLayoutParameters);
+  library.ExpectFail(fidl::ErrWrongNumberOfLayoutParameters, "Bar", 0, 1);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(NewSyntaxTests, BadConstrainTwice) {
@@ -621,7 +622,8 @@ type Foo = struct {
   // TODO(fxbug.dev/74193): We plan to disallow constraints on aliases, so this
   // error message should change to that. For now, to test this we have to use
   // `zx.ObjType` above because contextual lookup is not done through aliases.
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrCannotConstrainTwice);
+  library.ExpectFail(fidl::ErrCannotConstrainTwice, "MyVmo");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(NewSyntaxTests, GoodNoOverlappingConstraints) {
@@ -645,7 +647,8 @@ type Foo = resource struct {
 TEST(NewSyntaxTests, BadWantTypeLayoutParameter) {
   TestLibrary library;
   library.AddFile("bad/fi-0165.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrExpectedType);
+  library.ExpectFail(fidl::ErrExpectedType);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(NewSyntaxTests, BadWantValueLayoutParameter) {
@@ -657,13 +660,15 @@ type Foo = struct {
 };
 )FIDL");
 
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrExpectedValueButGotType);
+  library.ExpectFail(fidl::ErrExpectedValueButGotType, "uint8");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(NewSyntaxTests, BadUnresolvableConstraint) {
   TestLibrary library;
   library.AddFile("bad/fi-0166.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrUnexpectedConstraint);
+  library.ExpectFail(fidl::ErrUnexpectedConstraint, "vector");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(NewSyntaxTests, BadShadowedOptional) {
@@ -677,7 +682,8 @@ type Foo = resource struct {
 };
 )FIDL");
 
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrUnexpectedConstraint);
+  library.ExpectFail(fidl::ErrUnexpectedConstraint, "vector");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(NewSyntaxTests, BadWrongConstraintType) {
@@ -689,8 +695,9 @@ type Foo = resource struct {
 };
 )FIDL");
 
-  ASSERT_ERRORED_TWICE_DURING_COMPILE(library, fidl::ErrTypeCannotBeConvertedToType,
-                                      fidl::ErrCouldNotResolveSizeBound);
+  library.ExpectFail(fidl::ErrTypeCannotBeConvertedToType, "\"hello\"", "string:5", "uint32");
+  library.ExpectFail(fidl::ErrCouldNotResolveSizeBound);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(InternalTypes, CannotReferToUnqualifiedInternalType) {
@@ -698,11 +705,12 @@ TEST(InternalTypes, CannotReferToUnqualifiedInternalType) {
 library example;
 
 type Foo = struct {
-    foo TransportErr;
+    foo FrameworkErr;
 };
 )FIDL");
 
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrNameNotFound);
+  library.ExpectFail(fidl::ErrNameNotFound, "FrameworkErr", "example");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(InternalTypes, CannotReferToQualifiedInternalType) {
@@ -710,32 +718,61 @@ TEST(InternalTypes, CannotReferToQualifiedInternalType) {
 library example;
 
 type Foo = struct {
-    foo fidl.TransportErr;
+    foo fidl.FrameworkErr;
 };
 )FIDL");
 
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrNameNotFound);
+  library.ExpectFail(fidl::ErrNameNotFound, "FrameworkErr", "fidl");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
-TEST(TypesTests, BadUsizeWithoutFlag) {
+TEST(TypesTests, BadUsize64WithoutFlag) {
   TestLibrary library;
   library.AddFile("bad/fi-0180.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrExperimentalZxCTypesDisallowed);
+  library.ExpectFail(fidl::ErrExperimentalZxCTypesDisallowed, "usize64");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
-TEST(TypesTests, BadExperimentalZxCTypesWithoutFlag) {
-  for (std::string type : {"usize64", "uintptr64", "uchar", "experimental_pointer<uint32>"}) {
-    TestLibrary library("library example; alias T = " + type + ";");
-    ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrExperimentalZxCTypesDisallowed);
-  }
+TEST(TypesTests, BadUintptr64WithoutFlag) {
+  TestLibrary library("library example; alias T = uintptr64;");
+  library.ExpectFail(fidl::ErrExperimentalZxCTypesDisallowed, "uintptr64");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
-TEST(TypesTests, GoodExperimentalZxCTypesWithFlag) {
-  for (std::string type : {"usize64", "uintptr64", "uchar", "experimental_pointer<uint32>"}) {
-    TestLibrary library("library example; alias T = " + type + ";");
-    library.EnableFlag(fidl::ExperimentalFlags::Flag::kZxCTypes);
-    ASSERT_COMPILED(library);
-  }
+TEST(TypesTests, BadUcharWithoutFlag) {
+  TestLibrary library("library example; alias T = uchar;");
+  library.ExpectFail(fidl::ErrExperimentalZxCTypesDisallowed, "uchar");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
+}
+
+TEST(TypesTests, BadExperimentalPointerWithoutFlag) {
+  TestLibrary library("library example; alias T = experimental_pointer<uint32>;");
+  library.ExpectFail(fidl::ErrExperimentalZxCTypesDisallowed, "experimental_pointer");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
+}
+
+TEST(TypesTests, GoodUsize64WithFlag) {
+  TestLibrary library("library example; alias T = usize64;");
+  library.EnableFlag(fidl::ExperimentalFlags::Flag::kZxCTypes);
+  ASSERT_COMPILED(library);
+}
+
+TEST(TypesTests, GoodUintptr64WithFlag) {
+  TestLibrary library("library example; alias T = uintptr64;");
+  library.EnableFlag(fidl::ExperimentalFlags::Flag::kZxCTypes);
+  ASSERT_COMPILED(library);
+}
+
+TEST(TypesTests, GoodUcharWithFlag) {
+  TestLibrary library("library example; alias T = uchar;");
+  library.EnableFlag(fidl::ExperimentalFlags::Flag::kZxCTypes);
+  ASSERT_COMPILED(library);
+}
+
+TEST(TypesTests, GoodExperimentalPointerWithFlag) {
+  TestLibrary library("library example; alias T = experimental_pointer<uint32>;");
+  library.EnableFlag(fidl::ExperimentalFlags::Flag::kZxCTypes);
+  ASSERT_COMPILED(library);
 }
 
 }  // namespace fidl::flat

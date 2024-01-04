@@ -6,13 +6,13 @@ use {
     crate::writer::{error::Error, heap::Heap, Inspector, StringReference},
     anyhow,
     derivative::Derivative,
+    fuchsia_sync::{Mutex, MutexGuard},
     futures::future::BoxFuture,
     inspect_format::{
         constants, utils, BlockAccessorExt, BlockAccessorMutExt, BlockContainer, BlockIndex,
         BlockType, Container, Error as FormatError,
         {ArrayFormat, Block, LinkNodeDisposition, PropertyFormat},
     },
-    parking_lot::{Mutex, MutexGuard},
     std::{
         collections::HashMap,
         sync::{
@@ -1189,7 +1189,6 @@ impl InnerState {
 mod tests {
     use super::*;
     use crate::{
-        assert_data_tree,
         reader::{
             snapshot::{ScannedBlock, Snapshot},
             PartialNodeHierarchy,
@@ -1197,6 +1196,7 @@ mod tests {
         writer::testing_utils::get_state,
         Inspector,
     };
+    use diagnostics_assertions::assert_data_tree;
     use futures::prelude::*;
 
     #[fuchsia::test]

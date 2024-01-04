@@ -6,14 +6,23 @@ use crate::env_context::{EnvContext, FfxConfigEntry};
 use crate::ext_buffer::ExtBuffer;
 use crate::lib_context::LibContext;
 use crate::waker::handle_notifier_waker;
-use fidl::{AsHandleRef, HandleBased, HandleDisposition, HandleOp, ObjectType, Rights, Status};
+use ffx_target::{knock_target, KnockError};
+use fidl::{
+    AsHandleRef, HandleBased, HandleDisposition, HandleOp, ObjectType, Peered, Rights, Status,
+};
+use fuchsia_async::OnSignals;
 use fuchsia_zircon_status as zx_status;
 use fuchsia_zircon_types as zx_types;
+use std::future::Future;
 use std::mem::ManuallyDrop;
 use std::mem::MaybeUninit;
+use std::net::IpAddr;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::{mpsc, Arc};
 use std::task::{Context, Poll};
+use std::time::Duration;
+use timeout::timeout;
 
 type Responder<T> = mpsc::SyncSender<T>;
 type CmdResult<T> = Result<T, zx_status::Status>;
@@ -71,11 +80,45 @@ pub(crate) enum LibraryCommand {
         handles: ExtBuffer<fidl::Handle>,
         responder: Responder<zx_status::Status>,
     },
+    ConfigGetString {
+        env_ctx: Arc<EnvContext>,
+        config_key: String,
+        out_buf: ExtBuffer<u8>,
+        responder: Responder<Result<usize, zx_status::Status>>,
+    },
     ChannelWriteEtc {
         channel: fidl::Channel,
         buf: ExtBuffer<u8>,
         handles: ExtBuffer<zx_types::zx_handle_disposition_t>,
         responder: Responder<zx_status::Status>,
+    },
+    EventCreate {
+        responder: Responder<fidl::Event>,
+    },
+    EventPairCreate {
+        responder: Responder<(fidl::EventPair, fidl::EventPair)>,
+    },
+    ObjectSignal {
+        handle: fidl::Handle,
+        clear_mask: fidl::Signals,
+        set_mask: fidl::Signals,
+        responder: Responder<zx_status::Status>,
+    },
+    ObjectSignalPeer {
+        handle: fidl::Handle,
+        clear_mask: fidl::Signals,
+        set_mask: fidl::Signals,
+        responder: Responder<zx_status::Status>,
+    },
+    ObjectSignalPoll {
+        lib: Arc<LibContext>,
+        handle: fidl::Handle,
+        signals: fidl::Signals,
+        responder: Responder<CmdResult<fidl::Signals>>,
+    },
+    SocketCreate {
+        options: fidl::SocketOpts,
+        responder: Responder<(fidl::Socket, fidl::Socket)>,
     },
     SocketRead {
         lib: Arc<LibContext>,
@@ -86,6 +129,19 @@ pub(crate) enum LibraryCommand {
     SocketWrite {
         socket: fidl::Socket,
         buf: ExtBuffer<u8>,
+        responder: Responder<zx_status::Status>,
+    },
+    TargetAdd {
+        env: Arc<EnvContext>,
+        addr: IpAddr,
+        scope_id: u32,
+        port: u16,
+        wait: bool,
+        responder: Responder<zx_status::Status>,
+    },
+    TargetWait {
+        env: Arc<EnvContext>,
+        timeout: f64,
         responder: Responder<zx_status::Status>,
     },
 }
@@ -287,6 +343,69 @@ impl LibraryCommand {
                 };
                 responder.send(status).unwrap();
             }
+            Self::ConfigGetString { env_ctx, responder, config_key, mut out_buf } => {
+                let result: String = match env_ctx.context.get(&config_key).await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        env_ctx.write_err(e);
+                        responder.send(Err(zx_status::Status::NOT_FOUND)).unwrap();
+                        return;
+                    }
+                };
+                let result_bytes = result.as_bytes();
+                if out_buf.len() < result_bytes.len() {
+                    responder.send(Err(zx_status::Status::BUFFER_TOO_SMALL)).unwrap();
+                    return;
+                }
+                out_buf[..result_bytes.len()].copy_from_slice(result_bytes);
+                responder.send(Ok(result_bytes.len())).unwrap();
+            }
+            Self::EventCreate { responder } => {
+                responder.send(fidl::Event::create()).unwrap();
+            }
+            Self::EventPairCreate { responder } => {
+                responder.send(fidl::EventPair::create()).unwrap();
+            }
+            Self::ObjectSignal { handle, clear_mask, set_mask, responder } => {
+                let handle = ManuallyDrop::new(handle);
+                let status = match handle.signal_handle(clear_mask, set_mask) {
+                    Ok(_) => zx_status::Status::OK,
+                    Err(e) => e,
+                };
+                responder.send(status).unwrap();
+            }
+            Self::ObjectSignalPeer { handle, clear_mask, set_mask, responder } => {
+                // Any handle that has a peer can be converted into an EventPair.
+                let handle: ManuallyDrop<fidl::EventPair> = ManuallyDrop::new(handle.into());
+                let status = match handle.signal_peer(clear_mask, set_mask) {
+                    Ok(_) => zx_status::Status::OK,
+                    Err(e) => e,
+                };
+                responder.send(status).unwrap();
+            }
+            Self::ObjectSignalPoll { lib, handle, signals, responder } => {
+                let mut on_signals = OnSignals::new(&handle, signals);
+                let waker =
+                    handle_notifier_waker(handle.raw_handle(), lib.notification_sender().await);
+                let task_ctx = &mut Context::from_waker(&waker);
+                let res = match Pin::new(&mut on_signals).poll(task_ctx) {
+                    Poll::Ready(res) => res,
+                    Poll::Pending => Err(zx_status::Status::SHOULD_WAIT),
+                };
+                // Prevent the handle from closing prematurely.
+                std::mem::forget(handle);
+                responder.send(res).unwrap();
+            }
+            Self::SocketCreate { options, responder } => {
+                match options {
+                    fidl::SocketOpts::STREAM => {
+                        responder.send(fidl::Socket::create_stream()).unwrap();
+                    }
+                    fidl::SocketOpts::DATAGRAM => {
+                        responder.send(fidl::Socket::create_datagram()).unwrap();
+                    }
+                };
+            }
             Self::SocketRead { lib, socket, mut out_buf, responder } => {
                 let socket = match fidl::AsyncSocket::from_socket(socket) {
                     Ok(s) => s,
@@ -344,6 +463,65 @@ impl LibraryCommand {
                     Err(e) => e,
                 };
                 responder.send(status).unwrap();
+            }
+            Self::TargetAdd { env, addr, scope_id, port, wait, responder } => {
+                let res = match env.target_add(addr, scope_id, port, wait).await {
+                    Ok(_) => zx_status::Status::OK,
+                    Err(e) => {
+                        env.write_err(e);
+                        zx_status::Status::INTERNAL
+                    }
+                };
+                responder.send(res).unwrap();
+            }
+            Self::TargetWait { env, timeout: timeout_float, responder } => {
+                let target = match env.target_proxy_factory().await {
+                    Ok(t) => t,
+                    Err(e) => {
+                        env.write_err(e);
+                        responder.send(zx_status::Status::INTERNAL).unwrap();
+                        return;
+                    }
+                };
+                let default_target = match ffx_target::resolve_default_target(&env.context).await {
+                    Ok(t) => t,
+                    Err(e) => {
+                        env.write_err(e);
+                        responder.send(zx_status::Status::INTERNAL).unwrap();
+                        return;
+                    }
+                };
+                let knock_fut = async {
+                    loop {
+                        break match knock_target(&target).await {
+                            Ok(()) => Ok(()),
+                            Err(KnockError::NonCriticalError(_)) => continue,
+                            Err(KnockError::CriticalError(e)) => Err(e),
+                        };
+                    }
+                };
+                let err = match timeout(Duration::from_secs_f64(timeout_float), knock_fut).await {
+                    Ok(res) => match res {
+                        Ok(()) => {
+                            responder.send(zx_status::Status::OK).unwrap();
+                            return;
+                        }
+                        Err(e) => e,
+                    },
+                    Err(e) => {
+                        anyhow::anyhow!(
+                            "timeout attempting to knock target {} {}: {:?}",
+                            default_target
+                                .as_ref()
+                                .map(ToString::to_string)
+                                .unwrap_or("unspecified".to_owned()),
+                            if default_target.is_none() { "(default)" } else { "" },
+                            e
+                        )
+                    }
+                };
+                env.write_err(err);
+                responder.send(zx_status::Status::INTERNAL).unwrap();
             }
         }
     }

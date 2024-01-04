@@ -31,7 +31,8 @@ class LowEnergyConnector final {
   LowEnergyConnector(PeerId peer_id, LowEnergyConnectionOptions options,
                      hci::CommandChannel::WeakPtr cmd_channel, PeerCache* peer_cache,
                      WeakSelf<LowEnergyConnectionManager>::WeakPtr conn_mgr,
-                     l2cap::ChannelManager* l2cap, gatt::GATT::WeakPtr gatt);
+                     l2cap::ChannelManager* l2cap, gatt::GATT::WeakPtr gatt,
+                     pw::async::Dispatcher& dispatcher);
 
   // Instances should only be destroyed after the result callback is called (except for stack tear
   // down). Due to the asynchronous nature of cancelling the connection process, it is NOT safe to
@@ -42,7 +43,8 @@ class LowEnergyConnector final {
 
   // Initiate an outbound connection. |cb| will be called with the result of the
   // procedure. Must only be called once.
-  void StartOutbound(zx::duration request_timeout, hci::LowEnergyConnector* connector,
+  void StartOutbound(pw::chrono::SystemClock::duration request_timeout,
+                     hci::LowEnergyConnector* connector,
                      LowEnergyDiscoveryManager::WeakPtr discovery_manager, ResultCallback cb);
 
   // Start interrogating peer using an already established |connection|. |cb| will be called with
@@ -109,6 +111,8 @@ class LowEnergyConnector final {
   // Set is_outbound_ and its Inspect property.
   void set_is_outbound(bool is_outbound);
 
+  pw::async::Dispatcher& dispatcher_;
+
   StringInspectable<State> state_{State::kDefault,
                                   /*convert=*/[](auto s) { return StateToString(s); }};
 
@@ -126,7 +130,7 @@ class LowEnergyConnector final {
 
   // Time after which an outbound HCI connection request is considered to have timed out. This
   // is configurable to allow unit tests to set a shorter value.
-  zx::duration hci_request_timeout_;
+  pw::chrono::SystemClock::duration hci_request_timeout_;
 
   LowEnergyConnectionOptions options_;
 
@@ -144,11 +148,10 @@ class LowEnergyConnector final {
   // is on.
   IntInspectable<int> connection_attempt_{0};
 
-  async::TaskClosureMethod<LowEnergyConnector, &LowEnergyConnector::RequestCreateConnection>
-      request_create_connection_task_{this};
+  SmartTask request_create_connection_task_{dispatcher_};
 
   // Task called after the scan attempt times out.
-  std::optional<async::TaskClosure> scan_timeout_task_;
+  std::optional<SmartTask> scan_timeout_task_;
 
   std::unique_ptr<LowEnergyDiscoverySession> discovery_session_;
 

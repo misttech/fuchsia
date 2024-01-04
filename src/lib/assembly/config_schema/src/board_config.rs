@@ -2,19 +2,28 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use assembly_images_config::BoardFilesystemConfig;
-use camino::Utf8PathBuf;
-use serde::{Deserialize, Serialize};
+#![deny(missing_docs)]
 
-use crate::common::PackageSet;
+use std::collections::BTreeSet;
+
+use crate::common::{PackageDetails, PackagedDriverDetails};
+use assembly_file_relative_path::{FileRelativePathBuf, SupportsFileRelativePaths};
+use assembly_images_config::BoardFilesystemConfig;
+use serde::{Deserialize, Serialize};
 
 /// This struct provides information about the "board" that a product is being
 /// assembled to run on.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, SupportsFileRelativePaths)]
 #[serde(deny_unknown_fields)]
 pub struct BoardInformation {
     /// The name of the board.
     pub name: String,
+
+    /// Metadata about the board that's provided to the 'fuchsia.hwinfo.Board'
+    /// protocol and to the Board Driver via the PlatformID and BoardInfo ZBI
+    /// items.
+    #[serde(default)]
+    pub hardware_info: HardwareInfo,
 
     /// The "features" that this board provides to the product.
     ///
@@ -26,11 +35,16 @@ pub struct BoardInformation {
     /// Configuration for the various filesystems that the product can choose to
     /// include.
     #[serde(default)]
+    #[file_relative_paths]
     pub filesystems: BoardFilesystemConfig,
 
-    /// This is the bundle of board-specific artifacts that the Fuchsia platform
-    /// needs added to the assembled system in order to be able to boot Fuchsia
-    /// on this board.
+    /// These are paths to the directories that are board input bundles that
+    /// this board configuration includes.  Product assembly will always include
+    /// these into the images that it creates.
+    ///
+    /// These are the board-specific artifacts that the Fuchsia platform needs
+    /// added to the assembled system in order to be able to boot Fuchsia on
+    /// this board.
     ///
     /// Examples:
     ///  - the "board driver"
@@ -38,36 +52,82 @@ pub struct BoardInformation {
     ///
     /// If any of these artifacts are removed, even the 'bootstrap' feature set
     /// may be unable to boot.
-    pub main_support_bundle: Option<HardwareSupportBundle>,
+    #[serde(default)]
+    #[file_relative_paths]
+    pub input_bundles: Vec<FileRelativePathBuf>,
+
+    /// Consolidated configuration from all of the BoardInputBundles.  This is
+    /// not deserialized from the BoardConfiguration, but is instead created by
+    /// parsing each of the input_bundles and merging their configuration fields.
+    #[serde(skip_deserializing)]
+    #[file_relative_paths]
+    pub configuration: BoardProvidedConfig,
+}
+
+/// This struct defines board-provided data for the 'fuchsia.hwinfo.Board' fidl
+/// protocol and for the Platform_ID and Board_Info ZBI items.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct HardwareInfo {
+    /// This is the value returned in the 'BoardInfo.name' field, if different
+    /// from the name provided for the board itself.  It's also the name that's
+    /// set in the PLATFORM_ID ZBI Item.
+    pub name: Option<String>,
+
+    /// The vendor id to add to a PLATFORM_ID ZBI Item.
+    pub vendor_id: Option<u32>,
+
+    /// The product id to add to a PLATFORM_ID ZBI Item.
+    pub product_id: Option<u32>,
+
+    /// The board revision to add to a BOARD_INFO ZBI Item.
+    pub revision: Option<u32>,
 }
 
 /// This struct defines a bundle of artifacts that can be included by the board
 /// in the assembled image.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, SupportsFileRelativePaths)]
 #[serde(deny_unknown_fields)]
-pub struct HardwareSupportBundle {
+pub struct BoardInputBundle {
     /// These are the drivers that are included by this bundle.
+    #[file_relative_paths]
     pub drivers: Vec<PackagedDriverDetails>,
+
+    /// These are the packages to include with this bundle.
+    #[file_relative_paths]
+    pub packages: Vec<PackageDetails>,
+
+    /// These are kernel boot arguments that are to be passed to the kernel when
+    /// this bundle is included in the assembled system.
+    pub kernel_boot_args: BTreeSet<String>,
+
+    /// Board-provided configuration for platform services.  Each field of this
+    /// structure can only be provided by one of the BoardInputBundles that a
+    /// BoardInformation uses.
+    #[file_relative_paths]
+    pub configuration: Option<BoardProvidedConfig>,
 }
 
-/// This defines one or more drivers in a package, and which package set they
-/// belong to.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+/// This struct defines board-provided configuration for platform services and
+/// features, used if those services are included by the product's supplied
+/// platform configuration.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, SupportsFileRelativePaths)]
 #[serde(deny_unknown_fields)]
-pub struct PackagedDriverDetails {
-    /// The package containing the driver.
-    pub package: Utf8PathBuf,
+pub struct BoardProvidedConfig {
+    /// Configuration for the power-manager service
+    #[file_relative_paths]
+    pub power_manager: Option<FileRelativePathBuf>,
 
-    /// Which set this package belongs to.
-    pub set: PackageSet,
-
-    /// The driver components within the package, e.g. meta/foo.cm.
-    pub components: Vec<Utf8PathBuf>,
+    /// Thermal configuration for the power-manager service
+    #[file_relative_paths]
+    pub thermal: Option<FileRelativePathBuf>,
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use assembly_file_relative_path::SupportsFileRelativePaths;
+    use camino::Utf8PathBuf;
 
     #[test]
     fn test_basic_board_deserialize() {
@@ -82,38 +142,47 @@ mod test {
     }
 
     #[test]
-    fn test_complete_board_deserialize() {
+    fn test_complete_board_deserialize_with_relative_paths() {
+        let board_dir = Utf8PathBuf::from("some/path/to/board");
+        let board_file = board_dir.join("board_configuration.json");
+
         let json = serde_json::json!({
             "name": "sample board",
+            "hardware_info": {
+                "name": "hwinfo_name",
+                "vendor_id": 1,
+                "product_id": 2,
+                "revision": 3,
+            },
             "provided_features": [
                 "feature_a",
                 "feature_b"
             ],
-            "main_support_bundle": {
-                "drivers": [
-                    {
-                        "package": "path/to/package_manifest.json",
-                        "set": "base",
-                        "components": [ "meta/foo.cm" ]
-                    }
-                ]
-            }
+            "input_bundles": [
+                "bundle_a",
+                "bundle_b"
+            ],
         });
 
         let parsed: BoardInformation = serde_json::from_value(json).unwrap();
+        let resolved = parsed.resolve_paths_from_file(board_file).unwrap();
+
         let expected = BoardInformation {
             name: "sample board".to_owned(),
+            hardware_info: HardwareInfo {
+                name: Some("hwinfo_name".into()),
+                vendor_id: Some(0x01),
+                product_id: Some(0x02),
+                revision: Some(0x03),
+            },
             provided_features: vec!["feature_a".into(), "feature_b".into()],
-            main_support_bundle: Some(HardwareSupportBundle {
-                drivers: vec![PackagedDriverDetails {
-                    package: "path/to/package_manifest.json".into(),
-                    set: PackageSet::Base,
-                    components: vec!["meta/foo.cm".into()],
-                }],
-            }),
+            input_bundles: vec![
+                FileRelativePathBuf::Resolved("some/path/to/board/bundle_a".into()),
+                FileRelativePathBuf::Resolved("some/path/to/board/bundle_b".into()),
+            ],
             ..Default::default()
         };
 
-        assert_eq!(parsed, expected);
+        assert_eq!(resolved, expected);
     }
 }

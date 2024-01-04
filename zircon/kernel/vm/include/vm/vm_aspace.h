@@ -57,10 +57,37 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
   //
   // The returned aspace will start at |base| and span |size|.
   //
+  // If |share_opt| is ShareOpt::Shared, we're creating a shared address space, and the underlying
+  // ArchVmAspace will be initialized using the `InitShared` method instead of the normal
+  // `Init` method.
+  //
+  // If |share_opt| is ShareOpt::Restricted, we're creating a restricted address space, and the
+  // underlying ArchVmAspace will be initialized using the `InitRestricted` method.
+  //
   // Although reference counted, the returned VmAspace must be explicitly destroyed via Destroy.
   //
   // Returns null on failure (e.g. due to resource starvation).
-  static fbl::RefPtr<VmAspace> Create(vaddr_t base, size_t size, Type type, const char* name);
+  enum class ShareOpt {
+    None,
+    Restricted,
+    Shared,
+  };
+  static fbl::RefPtr<VmAspace> Create(vaddr_t base, size_t size, Type type, const char* name,
+                                      ShareOpt share_opt);
+
+  // Create a unified address space that consists of the given constituent address spaces.
+  //
+  // The passed in address spaces must meet the following criteria:
+  // 1. They must manage non-overlapping regions.
+  // 2. The shared VmAspace must have been created with the shared argument set to true.
+  //
+  // Although reference counted, the returned VmAspace must be explicitly destroyed via Destroy.
+  // Note that it must be Destroy()'d before the shared and restricted VmAspaces; Destroy()'ing the
+  // constituent VmAspaces before Destroy()'ing this one will trigger asserts.
+  //
+  // Returns null on failure (e.g. due to resource starvation).
+  static fbl::RefPtr<VmAspace> CreateUnified(VmAspace* shared, VmAspace* restricted,
+                                             const char* name);
 
   // Destroy this address space.
   //
@@ -87,9 +114,6 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
 
   // accessor for singleton kernel address space
   static VmAspace* kernel_aspace() { return kernel_aspace_; }
-
-  // given an address, return either the kernel aspace or the current user one
-  static VmAspace* vaddr_to_aspace(uintptr_t address);
 
   // set the per thread aspace pointer to this
   void AttachToThread(Thread* t);
@@ -162,6 +186,9 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
   // SoftFault that will only resolve a potential missing access flag and nothing else.
   zx_status_t AccessedFault(vaddr_t va);
 
+  // Page fault routine. Should only be called by the hypervisor or by Thread::Current::Fault.
+  zx_status_t PageFault(vaddr_t va, uint flags);
+
   // Convenience method for traversing the tree of VMARs to find the deepest
   // VMAR in the tree that includes *va*.
   // Returns nullptr if the aspace has been destroyed or is not yet initialized.
@@ -199,11 +226,12 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
   bool IsHighMemoryPriority() const;
 
  protected:
-  // Share the aspace lock with VmAddressRegion/VmMapping so they can serialize
+  // Share the aspace lock with VmAddressRegion/VmMapping/GuestPhysicalAspace so they can serialize
   // changes to the aspace.
   friend class VmAddressRegionOrMapping;
   friend class VmAddressRegion;
   friend class VmMapping;
+  friend class hypervisor::GuestPhysicalAspace;
   Lock<CriticalMutex>* lock() const TA_RET_CAP(lock_) { return &lock_; }
   Lock<CriticalMutex>& lock_ref() const TA_RET_CAP(lock_) { return lock_; }
 
@@ -240,15 +268,11 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
   friend fbl::RefPtr<VmAspace>;
 
   // complete initialization, may fail in OOM cases
-  zx_status_t Init();
+  zx_status_t Init(ShareOpt share_opt);
 
   void InitializeAslr();
 
   static AslrConfig CreateAslrConfig(Type type);
-
-  // TODO(fxbug.dev/101641): Once priorities are applied via profiles this method can be removed.
-  // Sets this aspace as being latency sensitive. This cannot be undone.
-  void MarkAsLatencySensitive();
 
   // Increments or decrements the priority count of this aspace. The high priority count is used to
   // control active page table reclamation, and applies to the whole aspace. The count is never
@@ -268,11 +292,6 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
 
   fbl::RefPtr<VmAddressRegion> RootVmarLocked() TA_REQ(lock_);
 
-  // internal page fault routine, friended to be only called by vmm_page_fault_handler
-  zx_status_t PageFault(vaddr_t va, uint flags);
-  friend zx_status_t vmm_page_fault_handler(vaddr_t va, uint flags);
-  friend class hypervisor::GuestPhysicalAspace;
-
   // magic
   fbl::Canary<fbl::magic("VMAS")> canary_;
 
@@ -280,7 +299,7 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
   const vaddr_t base_;
   const size_t size_;
   const Type type_;
-  char name_[32] TA_GUARDED(lock_);
+  char name_[ZX_MAX_NAME_LEN] TA_GUARDED(lock_);
   bool aspace_destroyed_ TA_GUARDED(lock_) = false;
 
   // The high priority count is used to determine whether this aspace should perform page table

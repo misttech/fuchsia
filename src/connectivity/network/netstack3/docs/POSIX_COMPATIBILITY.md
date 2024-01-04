@@ -76,6 +76,35 @@ fixed-size portion of the socket's buffer.
 Note that like on other platforms, the value applied when setting these options
 is limited by system-defined minimums and maximums.
 
+### Dualstack operations on ICMP Echo sockets
+
+ICMP echo sockets do not support dual stack operations. Despite this, Linux
+still allows one to set/get various dualstack socket options on Ipv6 ICMP
+sockets, though doing so does not affect the socket's behavior in anyway.
+Netstack3 has opted to disallow setting/getting these options on IPV6 ICMP
+sockets, to more accurately reflect that dualstack operations are not supported.
+These socket options include
+  * `IPV6_V6ONLY`: Attempting to set the value will result in `ENOPROTOOPT`,
+    while getting the value unconditionally returns true.
+  * `SO_IP_TTL` & `SO_IP_MULTICAST_TTL`: Attempting to set or get the value will
+    result in `ENOPROTOOPT`.
+
+### UDP Destination Port 0
+Like Linux, Netstack3 allows UDP sockets to connect to a remote address with
+port 0. Calling [`getpeername`] on such a socket results in `ENOTCONN`. However
+unlike Linux, Netstack3 disallows:
+
+  1. Sending packets to the remote. Calling `send` on the socket results in
+    `EDESTADDRREQ`.
+  2. Receiving packets from the remote. Packets received whose source port is 0
+    are be dropped as malformed.
+
+On Linux, calling `send` on the socket is expected to succeed and generate a
+packet on the wire whose destination port is 0. When receiving traffic, Linux
+treats a destination port of 0 as a wildcard, delivering packets to the socket
+regardless of the packet's source port (note that the packet's source address
+must still match the socket's remote address).
+
 [Fuchsia RFC-0184]: /docs/contribute/governance/rfcs/0184_posix_compatibility_for_the_system_netstack
 [`fuchsia.posix.socket`]: /sdk/fidl/fuchsia.posix.socket/socket.fidl
 [core and bindings]: ./CORE_BINDINGS.md#core-and-bindings

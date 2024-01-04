@@ -1091,7 +1091,8 @@ zx_status_t AudioDriver::SetActiveChannels(uint64_t chan_bit_mask) {
 
         if (result.is_err()) {
           set_active_channels_err_ = result.err();
-          FX_LOGS(WARNING) << "ring_buffer_fidl->SetActiveChannels(0x" << std::hex << chan_bit_mask
+          FX_LOGS(WARNING) << "ring_buffer_fidl(" << (owner_->is_input() ? "in" : "out")
+                           << ")->SetActiveChannels(0x" << std::hex << chan_bit_mask
                            << ") received error " << std::dec << set_active_channels_err_;
           return;
         }
@@ -1116,8 +1117,8 @@ Reporter::AudioDriverInfo AudioDriver::info_for_reporter() const {
   return {
       .manufacturer_name = manufacturer_name(),
       .product_name = product_name(),
-      .external_delay = external_delay(),
       .internal_delay = internal_delay(),
+      .external_delay = external_delay(),
       .driver_transfer_bytes = driver_transfer_bytes_,
       .format = GetFormat(),
   };

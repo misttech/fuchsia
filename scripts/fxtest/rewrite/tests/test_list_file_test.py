@@ -22,7 +22,10 @@ class TestListFileParsingTest(unittest.TestCase):
     def test_from_file(self):
         """Test basic loading of a test-list.json file."""
         contents = TestListFile(
-            data=[TestListEntry("my_test", tags=[]), TestListEntry("my_test2", tags=[])]
+            data=[
+                TestListEntry("my_test", tags=[]),
+                TestListEntry("my_test2", tags=[]),
+            ]
         ).to_dict()  # type:ignore
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -31,7 +34,9 @@ class TestListFileParsingTest(unittest.TestCase):
                 json.dump(contents, f)
 
             entries = TestListFile.entries_from_file(path)
-            self.assertSetEqual(set(entries.keys()), set(["my_test", "my_test2"]))
+            self.assertSetEqual(
+                set(entries.keys()), set(["my_test", "my_test2"])
+            )
 
 
 class TestListFileJoiningTest(unittest.TestCase):
@@ -41,8 +46,16 @@ class TestListFileJoiningTest(unittest.TestCase):
         """Test joining the contents of tests.json and test-list.json into Test objects."""
 
         tests_file = [
-            TestEntry(test=TestSection(name="my_test", label="//src/my_test")),
-            TestEntry(test=TestSection(name="my_test2", label="//src/my_test2")),
+            TestEntry(
+                test=TestSection(
+                    name="my_test", label="//src/my_test", os="linux"
+                )
+            ),
+            TestEntry(
+                test=TestSection(
+                    name="my_test2", label="//src/my_test2", os="linux"
+                )
+            ),
         ]
         test_list_file = {
             "my_test": TestListEntry("my_test", tags=[]),
@@ -73,12 +86,17 @@ class TestListFileJoiningTest(unittest.TestCase):
         """It is an error for tests.json to contain a test test-list.json omits."""
 
         tests_file = [
-            TestEntry(test=TestSection(name="my_test", label="//src/my_test")),
+            TestEntry(
+                test=TestSection(
+                    name="my_test", label="//src/my_test", os="linux"
+                )
+            ),
         ]
         test_list_file: typing.Dict[str, TestListEntry] = {}
 
         self.assertRaises(
-            ValueError, lambda: Test.join_test_descriptions(tests_file, test_list_file)
+            ValueError,
+            lambda: Test.join_test_descriptions(tests_file, test_list_file),
         )
 
 

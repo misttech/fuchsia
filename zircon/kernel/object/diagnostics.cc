@@ -15,8 +15,10 @@
 #include <zircon/types.h>
 
 #include <fbl/auto_lock.h>
+#include <kernel/deadline.h>
 #include <ktl/span.h>
 #include <object/handle.h>
+#include <object/io_buffer_dispatcher.h>
 #include <object/job_dispatcher.h>
 #include <object/process_dispatcher.h>
 #include <object/vm_object_dispatcher.h>
@@ -294,6 +296,107 @@ void FormatHandleRightsMask(zx_rights_t rights, char* buf, size_t buf_len) {
            HasRights(rights, ZX_RIGHT_MANAGE_JOB), HasRights(rights, ZX_RIGHT_MANAGE_PROCESS),
            HasRights(rights, ZX_RIGHT_MANAGE_THREAD), HasRights(rights, ZX_RIGHT_APPLY_PROFILE),
            HasRights(rights, ZX_RIGHT_MANAGE_SOCKET));
+}
+
+struct JobPolicyNameValue {
+  const char* name;
+  uint32_t value;
+};
+
+#define ENTRY(x) \
+  JobPolicyNameValue { #x, x }
+
+constexpr ktl::array<JobPolicyNameValue, ZX_POL_MAX> kJobPolicies = {
+    ENTRY(ZX_POL_BAD_HANDLE),  ENTRY(ZX_POL_WRONG_OBJECT),
+    ENTRY(ZX_POL_VMAR_WX),     ENTRY(ZX_POL_NEW_ANY),
+    ENTRY(ZX_POL_NEW_VMO),     ENTRY(ZX_POL_NEW_CHANNEL),
+    ENTRY(ZX_POL_NEW_EVENT),   ENTRY(ZX_POL_NEW_EVENTPAIR),
+    ENTRY(ZX_POL_NEW_PORT),    ENTRY(ZX_POL_NEW_SOCKET),
+    ENTRY(ZX_POL_NEW_FIFO),    ENTRY(ZX_POL_NEW_TIMER),
+    ENTRY(ZX_POL_NEW_PROCESS), ENTRY(ZX_POL_NEW_PROFILE),
+    ENTRY(ZX_POL_NEW_PAGER),   ENTRY(ZX_POL_AMBIENT_MARK_VMO_EXEC),
+    ENTRY(ZX_POL_NEW_IOB),
+};
+
+static_assert(kJobPolicies.size() == ZX_POL_MAX, "Missing Policy Id");
+
+const char* PolicyActionToString(uint32_t action) {
+  if (action >= ZX_POL_ACTION_MAX) {
+    return "INVALID ACTION";
+  }
+
+  switch (action) {
+    case ZX_POL_ACTION_ALLOW:
+      return "Allow";
+    case ZX_POL_ACTION_DENY:
+      return "Deny";
+    case ZX_POL_ACTION_ALLOW_EXCEPTION:
+      return "Allow+Exception";
+    case ZX_POL_ACTION_DENY_EXCEPTION:
+      return "Deny+Exception";
+    case ZX_POL_ACTION_KILL:
+      return "Kill";
+    default:
+      return "Unknown";
+  }
+}
+
+const char* PolicyOverrideToString(uint32_t override_val) {
+  switch (override_val) {
+    case ZX_POL_OVERRIDE_ALLOW:
+      return "Allow override";
+    case ZX_POL_OVERRIDE_DENY:
+      return "Deny override";
+    default:
+      return "Unknown";
+  }
+}
+
+const char* SlackModeToString(slack_mode mode) {
+  switch (mode) {
+    case TIMER_SLACK_CENTER:
+      return "TIMER_SLACK_CENTER";
+    case TIMER_SLACK_EARLY:
+      return "TIMER_SLACK_EARLY";
+    case TIMER_SLACK_LATE:
+      return "TIMER_SLACK_LATE";
+    default:
+      return "Unknown";
+  }
+}
+
+void DumpJobPolicies(JobDispatcher* job) {
+  char jname[ZX_MAX_NAME_LEN] = {0};
+  [[maybe_unused]] zx_status_t status = job->get_name(jname);
+  DEBUG_ASSERT(status == ZX_OK);
+  printf("job %" PRIu64 " ('%s') Basic Policies:\n", job->get_koid(), jname);
+  printf("%-30s\t%-15s\t%-15s\n", "Policy", "Action", "Override");
+
+  JobPolicy policy = job->GetPolicy();
+
+  for (size_t i = 0; i < kJobPolicies.size(); i++) {
+    uint32_t action = policy.QueryBasicPolicy(kJobPolicies[i].value);
+    uint32_t policy_override = policy.QueryBasicPolicyOverride(kJobPolicies[i].value);
+
+    printf("%-30s\t%-15s\t%-15s\n", kJobPolicies[i].name, PolicyActionToString(action),
+           PolicyOverrideToString(policy_override));
+  }
+
+  printf("Slack Policy:\n");
+  const TimerSlack slack = policy.GetTimerSlack();
+  printf("mode: %s\n", SlackModeToString(slack.mode()));
+  printf("duration: %" PRId64 "ns\n", slack.amount());
+}
+
+void DumpJobPolicies(zx_koid_t id) {
+  auto walker = MakeJobWalker([id](JobDispatcher* job) {
+    if (job->get_koid() != id) {
+      return;
+    }
+
+    DumpJobPolicies(job);
+  });
+  GetRootJobDispatcher()->EnumerateChildrenRecursive(&walker);
 }
 
 void DumpProcessHandles(zx_koid_t id) {
@@ -824,7 +927,7 @@ class VmMapBuilder final : public RestartableVmEnumerator<zx_info_maps_t, VmMapB
  public:
   // NOTE: Code outside of the syscall layer should not typically know about
   // user_ptrs; do not use this pattern as an example.
-  VmMapBuilder(user_out_ptr<zx_info_maps_t> maps, size_t max)
+  VmMapBuilder(ProcessMapsInfoWriter& maps, size_t max)
       : RestartableVmEnumerator(max), entries_(maps) {}
 
   static void MakeVmarEntry(const VmAddressRegion* vmar, uint depth, zx_info_maps_t* entry) {
@@ -852,28 +955,27 @@ class VmMapBuilder final : public RestartableVmEnumerator<zx_info_maps_t, VmMapB
     u->mmu_flags = arch_mmu_flags_to_vm_flags(region_mmu_flags), u->vmo_koid = vmo->user_id();
     const VmObject::AttributionCounts page_counts =
         vmo->AttributedPagesInRange(region_object_offset, region_size);
-    // TODO(fxb/60238): Handle compressed page counting.
-    DEBUG_ASSERT(page_counts.compressed == 0);
     u->committed_pages = page_counts.uncompressed;
+    u->populated_pages = page_counts.uncompressed + page_counts.compressed;
     u->vmo_offset = region_object_offset;
   }
 
  protected:
   zx_status_t WriteEntry(const zx_info_maps_t& entry, size_t offset) {
-    return entries_.element_offset(offset).copy_to_user(entry);
+    return entries_.Write(entry, offset);
   }
   UserCopyCaptureFaultsResult WriteEntryCaptureFaults(const zx_info_maps_t& entry, size_t offset) {
-    return entries_.element_offset(offset).copy_to_user_capture_faults(entry);
+    return entries_.WriteCaptureFaults(entry, offset);
   }
-  const user_out_ptr<zx_info_maps_t> entries_;
+  ProcessMapsInfoWriter& entries_;
 };
 
 }  // namespace
 
 // NOTE: Code outside of the syscall layer should not typically know about
 // user_ptrs; do not use this pattern as an example.
-zx_status_t GetVmAspaceMaps(fbl::RefPtr<VmAspace> target_aspace, user_out_ptr<zx_info_maps_t> maps,
-                            size_t max, size_t* actual, size_t* available) {
+zx_status_t GetVmAspaceMaps(VmAspace* target_aspace, ProcessMapsInfoWriter& maps, size_t max,
+                            size_t* actual, size_t* available) {
   DEBUG_ASSERT(target_aspace != nullptr);
   *actual = 0;
   *available = 0;
@@ -887,14 +989,14 @@ zx_status_t GetVmAspaceMaps(fbl::RefPtr<VmAspace> target_aspace, user_out_ptr<zx
     entry.size = target_aspace->size();
     entry.depth = 0;
     entry.type = ZX_INFO_MAPS_TYPE_ASPACE;
-    if (maps.copy_array_to_user(&entry, 1, 0) != ZX_OK) {
+    if (maps.Write(entry, 0) != ZX_OK) {
       return ZX_ERR_INVALID_ARGS;
     }
   }
 
   VmMapBuilder b(maps, max);
 
-  zx_status_t status = b.Enumerate(target_aspace.get());
+  zx_status_t status = b.Enumerate(target_aspace);
   if (status != ZX_OK) {
     return status;
   }
@@ -921,8 +1023,7 @@ class AspaceVmoEnumerator final
     // We're likely to see the same VMO a couple times in a given
     // address space (e.g., somelib.so mapped as r--, r-x), but leave it
     // to userspace to do deduping.
-    *entry = VmoToInfoEntry(map->vmo_locked().get(),
-                            /*is_handle=*/false,
+    *entry = VmoToInfoEntry(map->vmo_locked().get(), VmoOwnership::kMapping,
                             /*handle_rights=*/0);
   }
 
@@ -940,7 +1041,7 @@ class AspaceVmoEnumerator final
 
 // NOTE: Code outside of the syscall layer should not typically know about
 // user_ptrs; do not use this pattern as an example.
-zx_status_t GetVmAspaceVmos(fbl::RefPtr<VmAspace> target_aspace, VmoInfoWriter& vmos, size_t max,
+zx_status_t GetVmAspaceVmos(VmAspace* target_aspace, VmoInfoWriter& vmos, size_t max,
                             size_t* actual, size_t* available) {
   DEBUG_ASSERT(target_aspace != nullptr);
   DEBUG_ASSERT(actual != nullptr);
@@ -953,7 +1054,7 @@ zx_status_t GetVmAspaceVmos(fbl::RefPtr<VmAspace> target_aspace, VmoInfoWriter& 
 
   AspaceVmoEnumerator ave(vmos, max);
 
-  zx_status_t status = ave.Enumerate(target_aspace.get());
+  zx_status_t status = ave.Enumerate(target_aspace);
   if (status != ZX_OK) {
     return status;
   }
@@ -977,19 +1078,35 @@ zx_status_t GetProcessVmos(ProcessDispatcher* process, VmoInfoWriter& vmos, size
   zx_status_t s = process->handle_table().ForEachHandleBatched(
       [&](zx_handle_t handle, zx_rights_t rights, const Dispatcher* disp) {
         auto vmod = DownCastDispatcher<const VmObjectDispatcher>(disp);
-        if (vmod == nullptr) {
-          // This handle isn't a VMO; skip it.
+        if (vmod != nullptr) {
+          available++;
+          if (actual < max) {
+            zx_info_vmo_t entry = VmoToInfoEntry(vmod->vmo().get(), VmoOwnership::kHandle, rights);
+            if (vmos.Write(entry, actual) != ZX_OK) {
+              return ZX_ERR_INVALID_ARGS;
+            }
+            actual++;
+          }
           return ZX_OK;
         }
-        available++;
-        if (actual < max) {
-          zx_info_vmo_t entry = VmoToInfoEntry(vmod->vmo().get(),
-                                               /*is_handle=*/true, rights);
-          if (vmos.Write(entry, actual) != ZX_OK) {
-            return ZX_ERR_INVALID_ARGS;
+        auto iobd = DownCastDispatcher<const IoBufferDispatcher>(disp);
+        if (iobd != nullptr) {
+          available += iobd->RegionCount();
+          for (size_t i = 0; i < iobd->RegionCount(); i++) {
+            if (actual >= max) {
+              break;
+            }
+            fbl::RefPtr<VmObject> vmo = iobd->GetVmo(i);
+            zx_rights_t region_map_rights = iobd->GetMapRights(rights, i);
+            zx_info_vmo_t entry =
+                VmoToInfoEntry(vmo.get(), VmoOwnership::kIoBuffer, region_map_rights);
+            if (vmos.Write(entry, actual) != ZX_OK) {
+              return ZX_ERR_INVALID_ARGS;
+            }
+            actual++;
           }
-          actual++;
         }
+        // We can skip this if it isn't a VMO or IOB
         return ZX_OK;
       });
   if (s != ZX_OK) {
@@ -1084,6 +1201,7 @@ int cmd_diagnostics(int argc, const cmd_args* argv, uint32_t flags) {
     printf("%s ps                : list processes\n", argv[0].str);
     printf("%s ps help           : print header label descriptions for 'ps'\n", argv[0].str);
     printf("%s jobs              : list jobs\n", argv[0].str);
+    printf("%s jobpol <koid>     : print policies for given job\n", argv[0].str);
     printf("%s mwd  <mb>         : memory watchdog\n", argv[0].str);
     printf("%s ht   <pid>        : dump process handles\n", argv[0].str);
     printf("%s ch   <koid>       : dump channels for pid or for all processes,\n", argv[0].str);
@@ -1120,6 +1238,10 @@ int cmd_diagnostics(int argc, const cmd_args* argv, uint32_t flags) {
     }
   } else if (strcmp(argv[1].str, "jobs") == 0) {
     DumpJobList();
+  } else if (strcmp(argv[1].str, "jobpol") == 0) {
+    if (argc < 3)
+      goto usage;
+    DumpJobPolicies(argv[2].u);
   } else if (strcmp(argv[1].str, "hwd") == 0) {
     if (argc == 3) {
       hwd_limit = argv[2].u;

@@ -42,6 +42,11 @@ fuchsia_driver_component("aml-ram") {
   manifest = "meta/aml-ram.cml"
 }
 
+fuchsia_driver_package("package") {
+  package_name = "aml-ram"
+  driver_components = [ ":aml-ram" ]
+}
+
 test("aml-ram-test-bin") {
   output_name = "aml-ram-test"
   sources = [
@@ -64,8 +69,8 @@ test("aml-ram-test-bin") {
 
 group("common") {
   public_deps = [
-    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.ram.metrics:fuchsia.hardware.ram.metrics_cpp_wire",
+    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+    "//sdk/fidl/fuchsia.hardware.ram.metrics:fuchsia.hardware.ram.metrics_cpp",
     "//src/devices/bus/lib/device-protocol-pdev",
     "//src/devices/lib/amlogic",
     "//src/devices/lib/mmio",

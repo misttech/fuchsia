@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//src/storage/fshost/generated_fshost_config.gni")
+import("//src/storage/fshost/fshost.gni")
 import("access_ota_blob_as_executable/access_ota_blob_as_executable.gni")
 import("bad_signature_update/bad_signature_update.gni")
 
@@ -12,6 +12,7 @@ if (is_fuchsia) {
     testonly = true
     options = {
       data_filesystem_format = "minfs"
+      fxfs_blob = false
     }
   }
 
@@ -21,9 +22,6 @@ if (is_fuchsia) {
     options = {
       data_filesystem_format = "fxfs"
       fxfs_blob = true
-
-      # TODO(fxbug.dev/122055): Don't give vmex to Fxfs.
-      fxfs_vmex = true
     }
   }
 
@@ -51,6 +49,8 @@ if (is_fuchsia) {
       "//src/security/tests/pkg_test/config:pkg_resolver_repository_config",
     ]
 
+    use_fxfs_blob = false
+
     # Inject config file for test component.
     update_domain = "test.fuchsia.com"
 
@@ -66,6 +66,8 @@ if (is_fuchsia) {
     base_packages = [
       "//src/security/tests/pkg_test/config:pkg_resolver_repository_config",
     ]
+
+    use_fxfs_blob = false
 
     # Inject config file for test component.
     update_domain = "test.fuchsia.com"

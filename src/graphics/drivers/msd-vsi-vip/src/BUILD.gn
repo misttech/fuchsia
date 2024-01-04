@@ -38,29 +38,29 @@ source_set("src") {
   public_deps = [
     "../include",
     "//sdk/lib/fit",
-    "//src/graphics/lib/magma/include:msd",
-    "//src/graphics/lib/magma/src/magma_util:short_macros",
+    "//src/graphics/magma:msd",
+    "//src/graphics/magma/lib/magma/util:short_macros",
     "//zircon/system/ulib/hwreg",
   ]
   deps = [
-    "//src/graphics/lib/magma/src/magma_util:address_space",
-    "//src/graphics/lib/magma/src/magma_util:macros",
-    "//src/graphics/lib/magma/src/magma_util:mapped_batch",
-    "//src/graphics/lib/magma/src/magma_util:registers",
-    "//src/graphics/lib/magma/src/magma_util:ringbuffer",
-    "//src/graphics/lib/magma/src/magma_util:thread",
-    "//src/graphics/lib/magma/src/magma_util/platform:barriers",
-    "//src/graphics/lib/magma/src/magma_util/platform:buffer",
-    "//src/graphics/lib/magma/src/magma_util/platform:bus_mapper",
-    "//src/graphics/lib/magma/src/magma_util/platform:device",
-    "//src/graphics/lib/magma/src/magma_util/platform:event",
-    "//src/graphics/lib/magma/src/magma_util/platform:logger",
-    "//src/graphics/lib/magma/src/magma_util/platform:semaphore",
-    "//src/graphics/lib/magma/src/magma_util/platform:thread",
+    "//src/graphics/magma/lib/magma/platform:barriers",
+    "//src/graphics/magma/lib/magma/platform:buffer",
+    "//src/graphics/magma/lib/magma/platform:bus_mapper",
+    "//src/graphics/magma/lib/magma/platform:device",
+    "//src/graphics/magma/lib/magma/platform:event",
+    "//src/graphics/magma/lib/magma/platform:logger",
+    "//src/graphics/magma/lib/magma/platform:semaphore",
+    "//src/graphics/magma/lib/magma/platform:thread",
+    "//src/graphics/magma/lib/magma/util:macros",
+    "//src/graphics/magma/lib/magma/util:thread",
+    "//src/graphics/magma/lib/magma_service/util:address_space",
+    "//src/graphics/magma/lib/magma_service/util:mapped_batch",
+    "//src/graphics/magma/lib/magma_service/util:registers",
+    "//src/graphics/magma/lib/magma_service/util:ringbuffer",
     "//zircon/system/ulib/fbl",
   ]
   if (is_fuchsia) {
-    deps += [ "//src/graphics/lib/magma/src/magma_util/platform/zircon:device" ]
+    deps += [ "//src/graphics/magma/lib/magma/platform/zircon:device" ]
   }
   friend = [
     "../tests/mock:*",

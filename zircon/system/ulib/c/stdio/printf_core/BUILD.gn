@@ -40,10 +40,13 @@ llvm_libc_source_set("converter") {
 llvm_libc_source_set("parser") {
   visibility = [ ":*" ]
 
-  functions = [ "parser" ]
+  public = [ "parser.h" ]
+  functions = []
 
-  # TODO(fxbug.dev/62780): tests need full libc framework
-  no_test_functions = [ "parser" ]
+  # TODO(fxbug.dev/62780): There are parser tests that can be built though
+  # there is no "parser" source file so the build machinery will have to be
+  # custom for those tests. But that test code requires the fancier test
+  # machinery that we don't yet support since zxtest doesn't have the features.
 }
 
 llvm_libc_source_set("writer") {

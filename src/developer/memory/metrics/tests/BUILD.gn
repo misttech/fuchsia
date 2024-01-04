@@ -29,6 +29,7 @@ executable("memory_metrics_unittests") {
   output_name = "memory_metrics_unittests"
   sources = [
     "bucket_match_unittest.cc",
+    "capture_strategy_unittest.cc",
     "capture_unittest.cc",
     "digest_unittest.cc",
     "printer_unittest.cc",
@@ -46,6 +47,9 @@ executable("memory_metrics_unittests") {
     "//third_party/rapidjson",
     "//zircon/system/public:public",
   ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 }
 
 fuchsia_unittest_component("memory_metrics_unittests_component") {

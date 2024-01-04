@@ -90,8 +90,8 @@ async fn main() -> Result<()> {
     fs.take_and_serve_directory_handle()
         .context("could not serve directory handle, this is a fatal error")?;
 
-    inspect_runtime::serve(inspector(), &mut fs)
-        .context("could not serve inspect, this is a fatal error")?;
+    let _inspect_server_task =
+        inspect_runtime::publish(inspector(), inspect_runtime::PublishOptions::default());
 
     let fs = fs;
     service.run(fs).await;
@@ -116,11 +116,19 @@ fn select_manifests_for_test(
 
     // Load a font manifest from structured config.
     let manifest_from_config = PathBuf::from(&config.font_manifest);
-    if manifest_from_config.as_os_str().len() != 0
-        && (!check_files || manifest_from_config.is_file())
-    {
-        info!("Adding manifest file: {}", &manifest_from_config.display());
-        manifest_paths.push(manifest_from_config);
+    let manifest_str = manifest_from_config.as_os_str();
+    if manifest_str.len() != 0 {
+        if !check_files || manifest_from_config.is_file() {
+            info!("Adding manifest file: {}", &manifest_from_config.display());
+            manifest_paths.push(manifest_from_config);
+        } else {
+            // A file name was specified in the structured config, but that file
+            // could not be found. This is most likely not expected.
+            warn!(
+                "Structured config requested font manifest that was not found: {}",
+                &manifest_from_config.display()
+            );
+        }
     }
 
     // Also try loading a font manifest from the command line args.

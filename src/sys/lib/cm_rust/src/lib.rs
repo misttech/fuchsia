@@ -13,12 +13,12 @@ use {
     fidl_fuchsia_process as fprocess,
     flyweights::FlyStr,
     from_enum::FromEnum,
-    std::collections::hash_map::Entry,
     std::collections::{BTreeMap, HashMap},
     std::convert::{From, TryFrom},
     std::fmt,
     std::hash::Hash,
     std::path::PathBuf,
+    std::string::ToString,
     thiserror::Error,
 };
 
@@ -154,8 +154,21 @@ pub struct ComponentDecl {
 
 impl ComponentDecl {
     /// Returns the runner used by this component, or `None` if this is a non-executable component.
-    pub fn get_runner(&self) -> Option<&Name> {
-        self.program.as_ref().and_then(|p| p.runner.as_ref())
+    pub fn get_runner(&self) -> Option<UseRunnerDecl> {
+        self.program
+            .as_ref()
+            .and_then(|p| p.runner.as_ref())
+            .map(|r| UseRunnerDecl {
+                source: UseSource::Environment,
+                source_name: r.clone(),
+                source_dictionary: None,
+            })
+            .or_else(|| {
+                self.uses.iter().find_map(|u| match u {
+                    UseDecl::Runner(r) => Some(r.clone()),
+                    _ => None,
+                })
+            })
     }
 
     /// Returns the `StorageDecl` corresponding to `storage_name`.
@@ -224,21 +237,7 @@ impl ComponentDecl {
     }
 }
 
-#[cfg_attr(feature = "serde", derive(Deserialize, Serialize), serde(rename_all = "snake_case"))]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Availability {
-    Required,
-    Optional,
-    SameAsTarget,
-    Transitional,
-}
-
-// TODO(dgonyeo): remove this once we've soft migrated to the availability field being required.
-impl Default for Availability {
-    fn default() -> Self {
-        Availability::Required
-    }
-}
+pub use cm_types::Availability;
 
 fidl_translations_symmetrical_enums!(
     fdecl::Availability,
@@ -262,6 +261,8 @@ pub enum UseDecl {
     Directory(UseDirectoryDecl),
     Storage(UseStorageDecl),
     EventStream(UseEventStreamDecl),
+    Runner(UseRunnerDecl),
+    Config(UseConfigurationDecl),
 }
 
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
@@ -270,6 +271,7 @@ pub enum UseDecl {
 pub struct UseServiceDecl {
     pub source: UseSource,
     pub source_name: Name,
+    pub source_dictionary: Option<PathBuf>,
     pub target_path: Path,
     pub dependency_type: DependencyType,
     #[fidl_decl(default)]
@@ -282,6 +284,7 @@ pub struct UseServiceDecl {
 pub struct UseProtocolDecl {
     pub source: UseSource,
     pub source_name: Name,
+    pub source_dictionary: Option<PathBuf>,
     pub target_path: Path,
     pub dependency_type: DependencyType,
     #[fidl_decl(default)]
@@ -294,6 +297,7 @@ pub struct UseProtocolDecl {
 pub struct UseDirectoryDecl {
     pub source: UseSource,
     pub source_name: Name,
+    pub source_dictionary: Option<PathBuf>,
     pub target_path: Path,
 
     #[cfg_attr(
@@ -357,6 +361,58 @@ pub struct UseEventStreamDecl {
     pub availability: Availability,
 }
 
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(FidlDecl, Debug, Clone, PartialEq, Eq)]
+#[fidl_decl(fidl_table = "fdecl::UseRunner")]
+pub struct UseRunnerDecl {
+    pub source: UseSource,
+    pub source_name: Name,
+    pub source_dictionary: Option<PathBuf>,
+}
+
+impl SourceName for UseRunnerDecl {
+    fn source_name(&self) -> &Name {
+        &self.source_name
+    }
+}
+
+impl UseDeclCommon for UseRunnerDecl {
+    fn source(&self) -> &UseSource {
+        &self.source
+    }
+
+    fn availability(&self) -> &Availability {
+        &Availability::Required
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(FidlDecl, Debug, Clone, PartialEq, Eq)]
+#[fidl_decl(fidl_table = "fdecl::UseConfiguration")]
+pub struct UseConfigurationDecl {
+    pub source: UseSource,
+    pub source_name: Name,
+    pub target_name: Name,
+    #[fidl_decl(default)]
+    pub availability: Availability,
+}
+
+impl SourceName for UseConfigurationDecl {
+    fn source_name(&self) -> &Name {
+        &self.source_name
+    }
+}
+
+impl UseDeclCommon for UseConfigurationDecl {
+    fn source(&self) -> &UseSource {
+        &self.source
+    }
+
+    fn availability(&self) -> &Availability {
+        &self.availability
+    }
+}
+
 #[cfg_attr(
     feature = "serde",
     derive(Deserialize, Serialize),
@@ -372,6 +428,8 @@ pub enum OfferDecl {
     Runner(OfferRunnerDecl),
     Resolver(OfferResolverDecl),
     EventStream(OfferEventStreamDecl),
+    Dictionary(OfferDictionaryDecl),
+    Config(OfferConfigurationDecl),
 }
 
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
@@ -394,22 +452,6 @@ pub struct NameMapping {
     pub target_name: String,
 }
 
-pub fn name_mappings_to_map(name_mappings: Vec<NameMapping>) -> HashMap<String, Vec<String>> {
-    let mut m = HashMap::<String, Vec<String>>::new();
-    for mapping in name_mappings.iter() {
-        match m.entry(mapping.clone().source_name) {
-            Entry::Occupied(mut entry) => {
-                let val = entry.get_mut();
-                val.push(mapping.clone().target_name);
-            }
-            Entry::Vacant(entry) => {
-                entry.insert(vec![mapping.clone().target_name]);
-            }
-        }
-    }
-    m
-}
-
 impl NativeIntoFidl<fdecl::NameMapping> for NameMapping {
     fn native_into_fidl(self) -> fdecl::NameMapping {
         fdecl::NameMapping { source_name: self.source_name, target_name: self.target_name }
@@ -428,6 +470,7 @@ impl FidlIntoNative<NameMapping> for fdecl::NameMapping {
 pub struct OfferServiceDecl {
     pub source: OfferSource,
     pub source_name: Name,
+    pub source_dictionary: Option<PathBuf>,
     pub target: OfferTarget,
     pub target_name: Name,
     pub source_instance_filter: Option<Vec<String>>,
@@ -442,6 +485,7 @@ pub struct OfferServiceDecl {
 pub struct OfferProtocolDecl {
     pub source: OfferSource,
     pub source_name: Name,
+    pub source_dictionary: Option<PathBuf>,
     pub target: OfferTarget,
     pub target_name: Name,
     pub dependency_type: DependencyType,
@@ -455,6 +499,7 @@ pub struct OfferProtocolDecl {
 pub struct OfferDirectoryDecl {
     pub source: OfferSource,
     pub source_name: Name,
+    pub source_dictionary: Option<PathBuf>,
     pub target: OfferTarget,
     pub target_name: Name,
     pub dependency_type: DependencyType,
@@ -486,11 +531,12 @@ pub struct OfferStorageDecl {
 }
 
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-#[derive(FidlDecl, OfferDeclCommonNoAvailability, Debug, Clone, PartialEq, Eq)]
+#[derive(FidlDecl, Debug, Clone, PartialEq, Eq)]
 #[fidl_decl(fidl_table = "fdecl::OfferRunner")]
 pub struct OfferRunnerDecl {
     pub source: OfferSource,
     pub source_name: Name,
+    pub source_dictionary: Option<PathBuf>,
     pub target: OfferTarget,
     pub target_name: Name,
 }
@@ -501,8 +547,35 @@ pub struct OfferRunnerDecl {
 pub struct OfferResolverDecl {
     pub source: OfferSource,
     pub source_name: Name,
+    pub source_dictionary: Option<PathBuf>,
     pub target: OfferTarget,
     pub target_name: Name,
+}
+
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(FidlDecl, OfferDeclCommonNoAvailability, Debug, Clone, PartialEq, Eq)]
+#[fidl_decl(fidl_table = "fdecl::OfferDictionary")]
+pub struct OfferDictionaryDecl {
+    pub source: OfferSource,
+    pub source_name: Name,
+    pub source_dictionary: Option<PathBuf>,
+    pub target: OfferTarget,
+    pub target_name: Name,
+    pub dependency_type: DependencyType,
+    #[fidl_decl(default)]
+    pub availability: Availability,
+}
+
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(FidlDecl, OfferDeclCommon, Debug, Clone, PartialEq, Eq)]
+#[fidl_decl(fidl_table = "fdecl::OfferConfiguration")]
+pub struct OfferConfigurationDecl {
+    pub source: OfferSource,
+    pub source_name: Name,
+    pub target: OfferTarget,
+    pub target_name: Name,
+    #[fidl_decl(default)]
+    pub availability: Availability,
 }
 
 impl SourceName for OfferDecl {
@@ -515,6 +588,8 @@ impl SourceName for OfferDecl {
             OfferDecl::Runner(o) => o.source_name(),
             OfferDecl::Resolver(o) => o.source_name(),
             OfferDecl::EventStream(o) => o.source_name(),
+            OfferDecl::Dictionary(o) => o.source_name(),
+            OfferDecl::Config(o) => o.source_name(),
         }
     }
 }
@@ -527,6 +602,8 @@ impl UseDeclCommon for UseDecl {
             UseDecl::Directory(u) => u.source(),
             UseDecl::Storage(u) => u.source(),
             UseDecl::EventStream(u) => u.source(),
+            UseDecl::Runner(u) => u.source(),
+            UseDecl::Config(u) => u.source(),
         }
     }
 
@@ -537,6 +614,8 @@ impl UseDeclCommon for UseDecl {
             UseDecl::Directory(u) => u.availability(),
             UseDecl::Storage(u) => u.availability(),
             UseDecl::EventStream(u) => u.availability(),
+            UseDecl::Runner(u) => u.availability(),
+            UseDecl::Config(u) => u.availability(),
         }
     }
 }
@@ -551,6 +630,8 @@ impl OfferDeclCommon for OfferDecl {
             OfferDecl::Runner(o) => o.target_name(),
             OfferDecl::Resolver(o) => o.target_name(),
             OfferDecl::EventStream(o) => o.target_name(),
+            OfferDecl::Dictionary(o) => o.target_name(),
+            OfferDecl::Config(o) => o.target_name(),
         }
     }
 
@@ -563,6 +644,8 @@ impl OfferDeclCommon for OfferDecl {
             OfferDecl::Runner(o) => o.target(),
             OfferDecl::Resolver(o) => o.target(),
             OfferDecl::EventStream(o) => o.target(),
+            OfferDecl::Dictionary(o) => o.target(),
+            OfferDecl::Config(o) => o.target(),
         }
     }
 
@@ -575,10 +658,12 @@ impl OfferDeclCommon for OfferDecl {
             OfferDecl::Runner(o) => o.source(),
             OfferDecl::Resolver(o) => o.source(),
             OfferDecl::EventStream(o) => o.source(),
+            OfferDecl::Dictionary(o) => o.source(),
+            OfferDecl::Config(o) => o.source(),
         }
     }
 
-    fn availability(&self) -> Option<&Availability> {
+    fn availability(&self) -> &Availability {
         match &self {
             OfferDecl::Service(o) => o.availability(),
             OfferDecl::Protocol(o) => o.availability(),
@@ -587,7 +672,33 @@ impl OfferDeclCommon for OfferDecl {
             OfferDecl::Runner(o) => o.availability(),
             OfferDecl::Resolver(o) => o.availability(),
             OfferDecl::EventStream(o) => o.availability(),
+            OfferDecl::Dictionary(o) => o.availability(),
+            OfferDecl::Config(o) => o.availability(),
         }
+    }
+}
+
+impl SourceName for OfferRunnerDecl {
+    fn source_name(&self) -> &Name {
+        &self.source_name
+    }
+}
+
+impl OfferDeclCommon for OfferRunnerDecl {
+    fn target_name(&self) -> &Name {
+        &self.target_name
+    }
+
+    fn target(&self) -> &OfferTarget {
+        &self.target
+    }
+
+    fn source(&self) -> &OfferSource {
+        &self.source
+    }
+
+    fn availability(&self) -> &Availability {
+        &Availability::Required
     }
 }
 
@@ -604,6 +715,8 @@ pub enum ExposeDecl {
     Directory(ExposeDirectoryDecl),
     Runner(ExposeRunnerDecl),
     Resolver(ExposeResolverDecl),
+    Dictionary(ExposeDictionaryDecl),
+    Config(ExposeConfigurationDecl),
 }
 
 impl SourceName for ExposeDecl {
@@ -614,6 +727,8 @@ impl SourceName for ExposeDecl {
             Self::Directory(e) => e.source_name(),
             Self::Runner(e) => e.source_name(),
             Self::Resolver(e) => e.source_name(),
+            Self::Dictionary(e) => e.source_name(),
+            Self::Config(e) => e.source_name(),
         }
     }
 }
@@ -626,6 +741,8 @@ impl ExposeDeclCommon for ExposeDecl {
             Self::Directory(e) => e.source(),
             Self::Runner(e) => e.source(),
             Self::Resolver(e) => e.source(),
+            Self::Dictionary(e) => e.source(),
+            Self::Config(e) => e.source(),
         }
     }
 
@@ -636,6 +753,8 @@ impl ExposeDeclCommon for ExposeDecl {
             Self::Directory(e) => e.target(),
             Self::Runner(e) => e.target(),
             Self::Resolver(e) => e.target(),
+            Self::Dictionary(e) => e.target(),
+            Self::Config(e) => e.target(),
         }
     }
 
@@ -646,6 +765,8 @@ impl ExposeDeclCommon for ExposeDecl {
             Self::Directory(e) => e.target_name(),
             Self::Runner(e) => e.target_name(),
             Self::Resolver(e) => e.target_name(),
+            Self::Dictionary(e) => e.target_name(),
+            Self::Config(e) => e.target_name(),
         }
     }
 
@@ -656,6 +777,8 @@ impl ExposeDeclCommon for ExposeDecl {
             Self::Directory(e) => e.availability(),
             Self::Runner(e) => e.availability(),
             Self::Resolver(e) => e.availability(),
+            Self::Dictionary(e) => e.availability(),
+            Self::Config(e) => e.availability(),
         }
     }
 }
@@ -666,6 +789,7 @@ impl ExposeDeclCommon for ExposeDecl {
 pub struct ExposeServiceDecl {
     pub source: ExposeSource,
     pub source_name: Name,
+    pub source_dictionary: Option<PathBuf>,
     pub target: ExposeTarget,
     pub target_name: Name,
     #[fidl_decl(default)]
@@ -678,6 +802,7 @@ pub struct ExposeServiceDecl {
 pub struct ExposeProtocolDecl {
     pub source: ExposeSource,
     pub source_name: Name,
+    pub source_dictionary: Option<PathBuf>,
     pub target: ExposeTarget,
     pub target_name: Name,
     #[fidl_decl(default)]
@@ -690,6 +815,7 @@ pub struct ExposeProtocolDecl {
 pub struct ExposeDirectoryDecl {
     pub source: ExposeSource,
     pub source_name: Name,
+    pub source_dictionary: Option<PathBuf>,
     pub target: ExposeTarget,
     pub target_name: Name,
 
@@ -714,6 +840,7 @@ pub struct ExposeDirectoryDecl {
 pub struct ExposeRunnerDecl {
     pub source: ExposeSource,
     pub source_name: Name,
+    pub source_dictionary: Option<PathBuf>,
     pub target: ExposeTarget,
     pub target_name: Name,
 }
@@ -724,8 +851,34 @@ pub struct ExposeRunnerDecl {
 pub struct ExposeResolverDecl {
     pub source: ExposeSource,
     pub source_name: Name,
+    pub source_dictionary: Option<PathBuf>,
     pub target: ExposeTarget,
     pub target_name: Name,
+}
+
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(FidlDecl, ExposeDeclCommonAlwaysRequired, Debug, Clone, PartialEq, Eq)]
+#[fidl_decl(fidl_table = "fdecl::ExposeDictionary")]
+pub struct ExposeDictionaryDecl {
+    pub source: ExposeSource,
+    pub source_name: Name,
+    pub source_dictionary: Option<PathBuf>,
+    pub target: ExposeTarget,
+    pub target_name: Name,
+    #[fidl_decl(default)]
+    pub availability: Availability,
+}
+
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(FidlDecl, ExposeDeclCommon, Debug, Clone, PartialEq, Eq)]
+#[fidl_decl(fidl_table = "fdecl::ExposeConfiguration")]
+pub struct ExposeConfigurationDecl {
+    pub source: ExposeSource,
+    pub source_name: Name,
+    pub target: ExposeTarget,
+    pub target_name: Name,
+    #[fidl_decl(default)]
+    pub availability: Availability,
 }
 
 #[cfg_attr(
@@ -743,6 +896,8 @@ pub enum CapabilityDecl {
     Runner(RunnerDecl),
     Resolver(ResolverDecl),
     EventStream(EventStreamDecl),
+    Dictionary(DictionaryDecl),
+    Config(ConfigurationDecl),
 }
 
 impl CapabilityDeclCommon for CapabilityDecl {
@@ -755,6 +910,8 @@ impl CapabilityDeclCommon for CapabilityDecl {
             Self::Runner(c) => c.name(),
             Self::Resolver(c) => c.name(),
             Self::EventStream(c) => c.name(),
+            Self::Dictionary(c) => c.name(),
+            Self::Config(c) => c.name(),
         }
     }
 }
@@ -827,6 +984,23 @@ pub struct EventStreamDecl {
     pub name: Name,
 }
 
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(FidlDecl, CapabilityDeclCommon, Debug, Clone, PartialEq, Eq)]
+#[fidl_decl(fidl_table = "fdecl::Dictionary")]
+pub struct DictionaryDecl {
+    pub name: Name,
+    pub source: Option<DictionarySource>,
+    pub source_dictionary: Option<PathBuf>,
+}
+
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(FidlDecl, CapabilityDeclCommon, Debug, Clone, PartialEq, Eq)]
+#[fidl_decl(fidl_table = "fdecl::Configuration")]
+pub struct ConfigurationDecl {
+    pub name: Name,
+    pub value: ConfigValue,
+}
+
 impl CapabilityDecl {
     pub fn name(&self) -> &Name {
         match self {
@@ -837,6 +1011,8 @@ impl CapabilityDecl {
             CapabilityDecl::Service(decl) => decl.name(),
             CapabilityDecl::Storage(decl) => decl.name(),
             CapabilityDecl::EventStream(decl) => decl.name(),
+            CapabilityDecl::Dictionary(decl) => decl.name(),
+            CapabilityDecl::Config(decl) => decl.name(),
         }
     }
 
@@ -849,6 +1025,8 @@ impl CapabilityDecl {
             CapabilityDecl::Service(decl) => decl.source_path.as_ref(),
             CapabilityDecl::Storage(_) => None,
             CapabilityDecl::EventStream(_) => None,
+            CapabilityDecl::Dictionary(_) => None,
+            CapabilityDecl::Config(_) => None,
         }
     }
 }
@@ -995,6 +1173,56 @@ pub enum ConfigValueType {
     Int64,
     String { max_size: u32 },
     Vector { nested_type: ConfigNestedValueType, max_count: u32 },
+}
+
+impl ConfigValueType {
+    pub fn get_max_size(&self) -> Option<u32> {
+        match self {
+            ConfigValueType::String { max_size } => Some(*max_size),
+            ConfigValueType::Bool
+            | ConfigValueType::Uint8
+            | ConfigValueType::Int8
+            | ConfigValueType::Uint16
+            | ConfigValueType::Int16
+            | ConfigValueType::Uint32
+            | ConfigValueType::Int32
+            | ConfigValueType::Uint64
+            | ConfigValueType::Int64
+            | ConfigValueType::Vector { .. } => None,
+        }
+    }
+
+    pub fn get_nested_type(&self) -> Option<ConfigNestedValueType> {
+        match self {
+            ConfigValueType::Vector { nested_type, .. } => Some(nested_type.clone()),
+            ConfigValueType::Bool
+            | ConfigValueType::Uint8
+            | ConfigValueType::Int8
+            | ConfigValueType::Uint16
+            | ConfigValueType::Int16
+            | ConfigValueType::Uint32
+            | ConfigValueType::Int32
+            | ConfigValueType::Uint64
+            | ConfigValueType::Int64
+            | ConfigValueType::String { .. } => None,
+        }
+    }
+
+    pub fn get_max_count(&self) -> Option<u32> {
+        match self {
+            ConfigValueType::Vector { max_count, .. } => Some(*max_count),
+            ConfigValueType::Bool
+            | ConfigValueType::Uint8
+            | ConfigValueType::Int8
+            | ConfigValueType::Uint16
+            | ConfigValueType::Int16
+            | ConfigValueType::Uint32
+            | ConfigValueType::Int32
+            | ConfigValueType::Uint64
+            | ConfigValueType::Int64
+            | ConfigValueType::String { .. } => None,
+        }
+    }
 }
 
 impl FidlIntoNative<ConfigNestedValueType> for fdecl::ConfigType {
@@ -1181,6 +1409,19 @@ impl ConfigValue {
         match self {
             Self::Single(sv) => sv.ty(),
             Self::Vector(vv) => vv.ty(),
+        }
+    }
+
+    /// Check if this value matches the type of another value.
+    pub fn matches_type(&self, other: &ConfigValue) -> bool {
+        match (self, other) {
+            (ConfigValue::Single(a), ConfigValue::Single(b)) => {
+                std::mem::discriminant(a) == std::mem::discriminant(b)
+            }
+            (ConfigValue::Vector(a), ConfigValue::Vector(b)) => {
+                std::mem::discriminant(a) == std::mem::discriminant(b)
+            }
+            _ => false,
         }
     }
 }
@@ -1481,6 +1722,8 @@ impl UseDecl {
             UseDecl::Directory(d) => Some(&d.target_path),
             UseDecl::Storage(d) => Some(&d.target_path),
             UseDecl::EventStream(d) => Some(&d.target_path),
+            UseDecl::Runner(_) => None,
+            UseDecl::Config(_) => None,
         }
     }
 
@@ -1488,7 +1731,11 @@ impl UseDecl {
         match self {
             UseDecl::Storage(storage_decl) => Some(&storage_decl.source_name),
             UseDecl::EventStream(_) => None,
-            UseDecl::Service(_) | UseDecl::Protocol(_) | UseDecl::Directory(_) => None,
+            UseDecl::Service(_)
+            | UseDecl::Protocol(_)
+            | UseDecl::Directory(_)
+            | UseDecl::Runner(_) => None,
+            UseDecl::Config(_) => None,
         }
     }
 }
@@ -1501,6 +1748,8 @@ impl SourceName for UseDecl {
             UseDecl::Protocol(protocol_decl) => &protocol_decl.source_name,
             UseDecl::Directory(directory_decl) => &directory_decl.source_name,
             UseDecl::EventStream(event_stream_decl) => &event_stream_decl.source_name,
+            UseDecl::Runner(runner_decl) => &runner_decl.source_name,
+            UseDecl::Config(u) => &u.source_name,
         }
     }
 }
@@ -1528,7 +1777,7 @@ pub trait OfferDeclCommon: SourceName + fmt::Debug + Send + Sync {
     fn target_name(&self) -> &Name;
     fn target(&self) -> &OfferTarget;
     fn source(&self) -> &OfferSource;
-    fn availability(&self) -> Option<&Availability>;
+    fn availability(&self) -> &Availability;
 }
 
 /// The common properties of an [Expose](fdecl::Expose) declaration.
@@ -1548,7 +1797,7 @@ pub trait CapabilityDeclCommon: Send + Sync {
 ///
 /// `CapabilityTypeName` provides a user friendly type encoding for a capability.
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize), serde(rename_all = "snake_case"))]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CapabilityTypeName {
     Directory,
     EventStream,
@@ -1557,6 +1806,8 @@ pub enum CapabilityTypeName {
     Runner,
     Service,
     Storage,
+    Dictionary,
+    Config,
 }
 
 impl fmt::Display for CapabilityTypeName {
@@ -1569,6 +1820,8 @@ impl fmt::Display for CapabilityTypeName {
             CapabilityTypeName::Runner => "runner",
             CapabilityTypeName::Service => "service",
             CapabilityTypeName::Storage => "storage",
+            CapabilityTypeName::Dictionary => "dictionary",
+            CapabilityTypeName::Config => "configuration",
         };
         write!(f, "{}", display_name)
     }
@@ -1582,6 +1835,8 @@ impl From<&UseDecl> for CapabilityTypeName {
             UseDecl::Directory(_) => Self::Directory,
             UseDecl::Storage(_) => Self::Storage,
             UseDecl::EventStream(_) => Self::EventStream,
+            UseDecl::Runner(_) => Self::Runner,
+            UseDecl::Config(_) => Self::Config,
         }
     }
 }
@@ -1596,6 +1851,8 @@ impl From<&OfferDecl> for CapabilityTypeName {
             OfferDecl::Runner(_) => Self::Runner,
             OfferDecl::Resolver(_) => Self::Resolver,
             OfferDecl::EventStream(_) => Self::EventStream,
+            OfferDecl::Dictionary(_) => Self::Dictionary,
+            OfferDecl::Config(_) => Self::Config,
         }
     }
 }
@@ -1608,6 +1865,24 @@ impl From<&ExposeDecl> for CapabilityTypeName {
             ExposeDecl::Directory(_) => Self::Directory,
             ExposeDecl::Runner(_) => Self::Runner,
             ExposeDecl::Resolver(_) => Self::Resolver,
+            ExposeDecl::Dictionary(_) => Self::Dictionary,
+            ExposeDecl::Config(_) => Self::Config,
+        }
+    }
+}
+
+impl From<&CapabilityDecl> for CapabilityTypeName {
+    fn from(capability: &CapabilityDecl) -> Self {
+        match capability {
+            CapabilityDecl::Service(_) => Self::Service,
+            CapabilityDecl::Protocol(_) => Self::Protocol,
+            CapabilityDecl::Directory(_) => Self::Directory,
+            CapabilityDecl::Storage(_) => Self::Storage,
+            CapabilityDecl::Runner(_) => Self::Runner,
+            CapabilityDecl::Resolver(_) => Self::Resolver,
+            CapabilityDecl::EventStream(_) => Self::EventStream,
+            CapabilityDecl::Dictionary(_) => Self::Dictionary,
+            CapabilityDecl::Config(_) => Self::Config,
         }
     }
 }
@@ -1728,6 +2003,7 @@ pub enum UseSource {
     Self_,
     Capability(Name),
     Child(String),
+    Environment,
 }
 
 impl std::fmt::Display for UseSource {
@@ -1739,6 +2015,7 @@ impl std::fmt::Display for UseSource {
             Self::Self_ => write!(f, "self"),
             Self::Capability(c) => write!(f, "capability `{}`", c),
             Self::Child(c) => write!(f, "child `#{}`", c),
+            Self::Environment => write!(f, "environment"),
         }
     }
 }
@@ -1753,6 +2030,7 @@ impl FidlIntoNative<UseSource> for fdecl::Ref {
             // cm_fidl_validator should have already validated this
             fdecl::Ref::Capability(c) => UseSource::Capability(c.name.parse().unwrap()),
             fdecl::Ref::Child(c) => UseSource::Child(c.name),
+            fdecl::Ref::Environment(_) => UseSource::Environment,
             _ => panic!("invalid UseSource variant"),
         }
     }
@@ -1769,6 +2047,7 @@ impl NativeIntoFidl<fdecl::Ref> for UseSource {
                 fdecl::Ref::Capability(fdecl::CapabilityRef { name: name.to_string() })
             }
             UseSource::Child(name) => fdecl::Ref::Child(fdecl::ChildRef { name, collection: None }),
+            UseSource::Environment => fdecl::Ref::Environment(fdecl::EnvironmentRef {}),
         }
     }
 }
@@ -2013,6 +2292,35 @@ impl NativeIntoFidl<fdecl::Ref> for StorageDirectorySource {
 
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize), serde(rename_all = "snake_case"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DictionarySource {
+    Parent,
+    Self_,
+    Child(ChildRef),
+}
+
+impl FidlIntoNative<DictionarySource> for fdecl::Ref {
+    fn fidl_into_native(self) -> DictionarySource {
+        match self {
+            Self::Parent(_) => DictionarySource::Parent,
+            Self::Self_(_) => DictionarySource::Self_,
+            Self::Child(c) => DictionarySource::Child(c.fidl_into_native()),
+            _ => panic!("invalid OfferDictionarySource variant"),
+        }
+    }
+}
+
+impl NativeIntoFidl<fdecl::Ref> for DictionarySource {
+    fn native_into_fidl(self) -> fdecl::Ref {
+        match self {
+            Self::Parent => fdecl::Ref::Parent(fdecl::ParentRef {}),
+            Self::Self_ => fdecl::Ref::Self_(fdecl::SelfRef {}),
+            Self::Child(c) => fdecl::Ref::Child(c.native_into_fidl()),
+        }
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize), serde(rename_all = "snake_case"))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegistrationSource {
     Parent,
     Self_,
@@ -2047,6 +2355,7 @@ impl NativeIntoFidl<fdecl::Ref> for RegistrationSource {
 pub enum OfferTarget {
     Child(ChildRef),
     Collection(Name),
+    Capability(Name),
 }
 impl OfferTarget {
     pub fn static_child(name: String) -> Self {
@@ -2059,6 +2368,7 @@ impl std::fmt::Display for OfferTarget {
         match self {
             Self::Child(c) => write!(f, "child `#{}`", c),
             Self::Collection(c) => write!(f, "collection `#{}`", c),
+            Self::Capability(c) => write!(f, "capability `#{}`", c),
         }
     }
 }
@@ -2069,6 +2379,7 @@ impl FidlIntoNative<OfferTarget> for fdecl::Ref {
             fdecl::Ref::Child(c) => OfferTarget::Child(c.fidl_into_native()),
             // cm_fidl_validator should have already validated this
             fdecl::Ref::Collection(c) => OfferTarget::Collection(c.name.parse().unwrap()),
+            fdecl::Ref::Capability(c) => OfferTarget::Capability(c.name.parse().unwrap()),
             _ => panic!("invalid OfferTarget variant"),
         }
     }
@@ -2081,6 +2392,11 @@ impl NativeIntoFidl<fdecl::Ref> for OfferTarget {
             OfferTarget::Collection(collection_name) => {
                 fdecl::Ref::Collection(fdecl::CollectionRef {
                     name: collection_name.native_into_fidl(),
+                })
+            }
+            OfferTarget::Capability(capability_name) => {
+                fdecl::Ref::Capability(fdecl::CapabilityRef {
+                    name: capability_name.native_into_fidl(),
                 })
             }
         }
@@ -2120,7 +2436,7 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, fidl_fuchsia_component_decl as fdecl};
+    use {super::*, difference::Changeset, fidl_fuchsia_component_decl as fdecl};
 
     macro_rules! test_try_from_decl {
         (
@@ -2136,11 +2452,19 @@ mod tests {
                 fn $test_name() {
                     {
                         let res = ComponentDecl::try_from($input).expect("try_from failed");
-                        assert_eq!(res, $result, "Conversion from FIDL type into cm_rust ComponentDecl type did not match expected result (left is expected, right is actual)");
+                        if res != $result {
+                            let a = format!("{:#?}", res);
+                            let e = format!("{:#?}", $result);
+                            panic!("Conversion from fidl to cm_rust did not yield expected result:\n{}", Changeset::new(&a, &e, "\n"));
+                        }
                     }
                     {
                         let res = fdecl::Component::try_from($result).expect("try_from failed");
-                        assert_eq!($input, res, "Conversion from cm_rust ComponentDecl type into FIDL type did not match expected result (left is expected, right is actual)");
+                        if res != $input {
+                            let a = format!("{:#?}", res);
+                            let e = format!("{:#?}", $input);
+                            panic!("Conversion from cm_rust to fidl did not yield expected result:\n{}", Changeset::new(&a, &e, "\n"));
+                        }
                     }
                 }
             )+
@@ -2254,6 +2578,7 @@ mod tests {
                         dependency_type: Some(fdecl::DependencyType::Strong),
                         source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
                         source_name: Some("netstack".to_string()),
+                        source_dictionary: Some("in/dict".to_string()),
                         target_path: Some("/svc/mynetstack".to_string()),
                         availability: Some(fdecl::Availability::Required),
                         ..Default::default()
@@ -2262,6 +2587,7 @@ mod tests {
                         dependency_type: Some(fdecl::DependencyType::Strong),
                         source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
                         source_name: Some("legacy_netstack".to_string()),
+                        source_dictionary: Some("in/dict".to_string()),
                         target_path: Some("/svc/legacy_mynetstack".to_string()),
                         availability: Some(fdecl::Availability::Optional),
                         ..Default::default()
@@ -2270,6 +2596,7 @@ mod tests {
                         dependency_type: Some(fdecl::DependencyType::Strong),
                         source: Some(fdecl::Ref::Child(fdecl::ChildRef { name: "echo".to_string(), collection: None})),
                         source_name: Some("echo_service".to_string()),
+                        source_dictionary: Some("in/dict".to_string()),
                         target_path: Some("/svc/echo_service".to_string()),
                         availability: Some(fdecl::Availability::Required),
                         ..Default::default()
@@ -2278,6 +2605,7 @@ mod tests {
                         dependency_type: Some(fdecl::DependencyType::Strong),
                         source: Some(fdecl::Ref::Framework(fdecl::FrameworkRef {})),
                         source_name: Some("dir".to_string()),
+                        source_dictionary: Some("in/dict".to_string()),
                         target_path: Some("/data".to_string()),
                         rights: Some(fio::Operations::CONNECT),
                         subdir: Some("foo/bar".to_string()),
@@ -2313,6 +2641,19 @@ mod tests {
                         availability: Some(fdecl::Availability::Optional),
                         ..Default::default()
                     }),
+                    fdecl::Use::Runner(fdecl::UseRunner {
+                        source: Some(fdecl::Ref::Environment(fdecl::EnvironmentRef {})),
+                        source_name: Some("elf".to_string()),
+                        source_dictionary: Some("in/dict".to_string()),
+                        ..Default::default()
+                    }),
+                    fdecl::Use::Config(fdecl::UseConfiguration {
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef)),
+                        source_name: Some("fuchsia.config.MyConfig".to_string()),
+                        target_name: Some("my_config".to_string()),
+                        availability: Some(fdecl::Availability::Required),
+                        ..Default::default()
+                    }),
                 ]),
                 exposes: Some(vec![
                     fdecl::Expose::Protocol(fdecl::ExposeProtocol {
@@ -2321,6 +2662,7 @@ mod tests {
                             collection: None,
                         })),
                         source_name: Some("legacy_netstack".to_string()),
+                        source_dictionary: Some("in/dict".to_string()),
                         target_name: Some("legacy_mynetstack".to_string()),
                         target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
                         availability: Some(fdecl::Availability::Required),
@@ -2332,6 +2674,7 @@ mod tests {
                             collection: None,
                         })),
                         source_name: Some("dir".to_string()),
+                        source_dictionary: Some("in/dict".to_string()),
                         target_name: Some("data".to_string()),
                         target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
                         rights: Some(fio::Operations::CONNECT),
@@ -2345,6 +2688,7 @@ mod tests {
                             collection: None,
                         })),
                         source_name: Some("elf".to_string()),
+                        source_dictionary: Some("in/dict".to_string()),
                         target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
                         target_name: Some("elf".to_string()),
                         ..Default::default()
@@ -2355,6 +2699,7 @@ mod tests {
                             collection: None,
                         })),
                         source_name: Some("pkg".to_string()),
+                        source_dictionary: Some("in/dict".to_string()),
                         target: Some(fdecl::Ref::Parent(fdecl::ParentRef{})),
                         target_name: Some("pkg".to_string()),
                         ..Default::default()
@@ -2364,6 +2709,7 @@ mod tests {
                             name: "modular".to_string(),
                         })),
                         source_name: Some("netstack1".to_string()),
+                        source_dictionary: Some("in/dict".to_string()),
                         target_name: Some("mynetstack".to_string()),
                         target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
                         availability: Some(fdecl::Availability::Required),
@@ -2374,7 +2720,20 @@ mod tests {
                             name: "modular".to_string(),
                         })),
                         source_name: Some("netstack2".to_string()),
+                        source_dictionary: None,
                         target_name: Some("mynetstack".to_string()),
+                        target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        availability: Some(fdecl::Availability::Required),
+                        ..Default::default()
+                    }),
+                    fdecl::Expose::Dictionary(fdecl::ExposeDictionary {
+                        source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                            name: "netstack".to_string(),
+                            collection: None,
+                        })),
+                        source_name: Some("bundle".to_string()),
+                        source_dictionary: Some("in/dict".to_string()),
+                        target_name: Some("mybundle".to_string()),
                         target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
                         availability: Some(fdecl::Availability::Required),
                         ..Default::default()
@@ -2384,6 +2743,7 @@ mod tests {
                     fdecl::Offer::Protocol(fdecl::OfferProtocol {
                         source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
                         source_name: Some("legacy_netstack".to_string()),
+                        source_dictionary: Some("in/dict".to_string()),
                         target: Some(fdecl::Ref::Child(
                            fdecl::ChildRef {
                                name: "echo".to_string(),
@@ -2398,6 +2758,7 @@ mod tests {
                     fdecl::Offer::Directory(fdecl::OfferDirectory {
                         source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
                         source_name: Some("dir".to_string()),
+                        source_dictionary: Some("in/dict".to_string()),
                         target: Some(fdecl::Ref::Collection(
                             fdecl::CollectionRef { name: "modular".to_string() }
                         )),
@@ -2421,6 +2782,7 @@ mod tests {
                     fdecl::Offer::Runner(fdecl::OfferRunner {
                         source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
                         source_name: Some("elf".to_string()),
+                        source_dictionary: Some("in/dict".to_string()),
                         target: Some(fdecl::Ref::Child(
                            fdecl::ChildRef {
                                name: "echo".to_string(),
@@ -2433,6 +2795,7 @@ mod tests {
                     fdecl::Offer::Resolver(fdecl::OfferResolver{
                         source: Some(fdecl::Ref::Parent(fdecl::ParentRef{})),
                         source_name: Some("pkg".to_string()),
+                        source_dictionary: Some("in/dict".to_string()),
                         target: Some(fdecl::Ref::Child(
                            fdecl::ChildRef {
                               name: "echo".to_string(),
@@ -2445,6 +2808,7 @@ mod tests {
                     fdecl::Offer::Service(fdecl::OfferService {
                         source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
                         source_name: Some("netstack1".to_string()),
+                        source_dictionary: Some("in/dict".to_string()),
                         target: Some(fdecl::Ref::Child(
                            fdecl::ChildRef {
                                name: "echo".to_string(),
@@ -2458,6 +2822,7 @@ mod tests {
                     fdecl::Offer::Service(fdecl::OfferService {
                         source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
                         source_name: Some("netstack2".to_string()),
+                        source_dictionary: None,
                         target: Some(fdecl::Ref::Child(
                            fdecl::ChildRef {
                                name: "echo".to_string(),
@@ -2471,6 +2836,7 @@ mod tests {
                     fdecl::Offer::Service(fdecl::OfferService {
                         source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
                         source_name: Some("netstack3".to_string()),
+                        source_dictionary: None,
                         target: Some(fdecl::Ref::Child(
                            fdecl::ChildRef {
                                name: "echo".to_string(),
@@ -2493,7 +2859,22 @@ mod tests {
                             availability: Some(fdecl::Availability::Optional),
                             ..Default::default()
                         }
-                    )
+                    ),
+                    fdecl::Offer::Dictionary(fdecl::OfferDictionary {
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        source_name: Some("bundle".to_string()),
+                        source_dictionary: Some("in/dict".to_string()),
+                        target: Some(fdecl::Ref::Child(
+                           fdecl::ChildRef {
+                               name: "echo".to_string(),
+                               collection: None,
+                           }
+                        )),
+                        target_name: Some("mybundle".to_string()),
+                        dependency_type: Some(fdecl::DependencyType::Weak),
+                        availability: Some(fdecl::Availability::Required),
+                        ..Default::default()
+                    }),
                 ]),
                 capabilities: Some(vec![
                     fdecl::Capability::Service(fdecl::Service {
@@ -2528,6 +2909,18 @@ mod tests {
                     fdecl::Capability::Resolver(fdecl::Resolver {
                         name: Some("pkg".to_string()),
                         source_path: Some("/pkg_resolver".to_string()),
+                        ..Default::default()
+                    }),
+                    fdecl::Capability::Dictionary(fdecl::Dictionary {
+                        name: Some("dict1".to_string()),
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        source_dictionary: Some("in/other".to_string()),
+                        ..Default::default()
+                    }),
+                    fdecl::Capability::Dictionary(fdecl::Dictionary {
+                        name: Some("dict2".to_string()),
+                        source: None,
+                        source_dictionary: None,
                         ..Default::default()
                     }),
                 ]),
@@ -2674,6 +3067,7 @@ mod tests {
                             dependency_type: DependencyType::Strong,
                             source: UseSource::Parent,
                             source_name: "netstack".parse().unwrap(),
+                            source_dictionary: Some("in/dict".parse().unwrap()),
                             target_path: "/svc/mynetstack".parse().unwrap(),
                             availability: Availability::Required,
                         }),
@@ -2681,6 +3075,7 @@ mod tests {
                             dependency_type: DependencyType::Strong,
                             source: UseSource::Parent,
                             source_name: "legacy_netstack".parse().unwrap(),
+                            source_dictionary: Some("in/dict".parse().unwrap()),
                             target_path: "/svc/legacy_mynetstack".parse().unwrap(),
                             availability: Availability::Optional,
                         }),
@@ -2688,6 +3083,7 @@ mod tests {
                             dependency_type: DependencyType::Strong,
                             source: UseSource::Child("echo".to_string()),
                             source_name: "echo_service".parse().unwrap(),
+                            source_dictionary: Some("in/dict".parse().unwrap()),
                             target_path: "/svc/echo_service".parse().unwrap(),
                             availability: Availability::Required,
                         }),
@@ -2695,6 +3091,7 @@ mod tests {
                             dependency_type: DependencyType::Strong,
                             source: UseSource::Framework,
                             source_name: "dir".parse().unwrap(),
+                            source_dictionary: Some("in/dict".parse().unwrap()),
                             target_path: "/data".parse().unwrap(),
                             rights: fio::Operations::CONNECT,
                             subdir: Some("foo/bar".into()),
@@ -2718,11 +3115,23 @@ mod tests {
                             filter: None,
                             availability: Availability::Optional,
                         }),
+                        UseDecl::Runner(UseRunnerDecl {
+                            source: UseSource::Environment,
+                            source_name: "elf".parse().unwrap(),
+                            source_dictionary: Some("in/dict".parse().unwrap()),
+                        }),
+                        UseDecl::Config(UseConfigurationDecl {
+                            source: UseSource::Parent,
+                            source_name: "fuchsia.config.MyConfig".parse().unwrap(),
+                            target_name: "my_config".parse().unwrap(),
+                            availability: Availability::Required,
+                        }),
                     ],
                     exposes: vec![
                         ExposeDecl::Protocol(ExposeProtocolDecl {
                             source: ExposeSource::Child("netstack".to_string()),
                             source_name: "legacy_netstack".parse().unwrap(),
+                            source_dictionary: Some("in/dict".parse().unwrap()),
                             target_name: "legacy_mynetstack".parse().unwrap(),
                             target: ExposeTarget::Parent,
                             availability: Availability::Required,
@@ -2730,6 +3139,7 @@ mod tests {
                         ExposeDecl::Directory(ExposeDirectoryDecl {
                             source: ExposeSource::Child("netstack".to_string()),
                             source_name: "dir".parse().unwrap(),
+                            source_dictionary: Some("in/dict".parse().unwrap()),
                             target_name: "data".parse().unwrap(),
                             target: ExposeTarget::Parent,
                             rights: Some(fio::Operations::CONNECT),
@@ -2739,18 +3149,21 @@ mod tests {
                         ExposeDecl::Runner(ExposeRunnerDecl {
                             source: ExposeSource::Child("netstack".to_string()),
                             source_name: "elf".parse().unwrap(),
+                            source_dictionary: Some("in/dict".parse().unwrap()),
                             target: ExposeTarget::Parent,
                             target_name: "elf".parse().unwrap(),
                         }),
                         ExposeDecl::Resolver(ExposeResolverDecl {
                             source: ExposeSource::Child("netstack".to_string()),
                             source_name: "pkg".parse().unwrap(),
+                            source_dictionary: Some("in/dict".parse().unwrap()),
                             target: ExposeTarget::Parent,
                             target_name: "pkg".parse().unwrap(),
                         }),
                         ExposeDecl::Service(ExposeServiceDecl {
                             source: ExposeSource::Collection("modular".parse().unwrap()),
                             source_name: "netstack1".parse().unwrap(),
+                            source_dictionary: Some("in/dict".parse().unwrap()),
                             target_name: "mynetstack".parse().unwrap(),
                             target: ExposeTarget::Parent,
                             availability: Availability::Required,
@@ -2758,7 +3171,16 @@ mod tests {
                         ExposeDecl::Service(ExposeServiceDecl {
                             source: ExposeSource::Collection("modular".parse().unwrap()),
                             source_name: "netstack2".parse().unwrap(),
+                            source_dictionary: None,
                             target_name: "mynetstack".parse().unwrap(),
+                            target: ExposeTarget::Parent,
+                            availability: Availability::Required,
+                        }),
+                        ExposeDecl::Dictionary(ExposeDictionaryDecl {
+                            source: ExposeSource::Child("netstack".to_string()),
+                            source_name: "bundle".parse().unwrap(),
+                            source_dictionary: Some("in/dict".parse().unwrap()),
+                            target_name: "mybundle".parse().unwrap(),
                             target: ExposeTarget::Parent,
                             availability: Availability::Required,
                         }),
@@ -2767,6 +3189,7 @@ mod tests {
                         OfferDecl::Protocol(OfferProtocolDecl {
                             source: OfferSource::Parent,
                             source_name: "legacy_netstack".parse().unwrap(),
+                            source_dictionary: Some("in/dict".parse().unwrap()),
                             target: OfferTarget::static_child("echo".to_string()),
                             target_name: "legacy_mynetstack".parse().unwrap(),
                             dependency_type: DependencyType::Weak,
@@ -2775,6 +3198,7 @@ mod tests {
                         OfferDecl::Directory(OfferDirectoryDecl {
                             source: OfferSource::Parent,
                             source_name: "dir".parse().unwrap(),
+                            source_dictionary: Some("in/dict".parse().unwrap()),
                             target: OfferTarget::Collection("modular".parse().unwrap()),
                             target_name: "data".parse().unwrap(),
                             rights: Some(fio::Operations::CONNECT),
@@ -2792,38 +3216,43 @@ mod tests {
                         OfferDecl::Runner(OfferRunnerDecl {
                             source: OfferSource::Parent,
                             source_name: "elf".parse().unwrap(),
+                            source_dictionary: Some("in/dict".parse().unwrap()),
                             target: OfferTarget::static_child("echo".to_string()),
                             target_name: "elf2".parse().unwrap(),
                         }),
                         OfferDecl::Resolver(OfferResolverDecl {
                             source: OfferSource::Parent,
                             source_name: "pkg".parse().unwrap(),
+                            source_dictionary: Some("in/dict".parse().unwrap()),
                             target: OfferTarget::static_child("echo".to_string()),
                             target_name: "pkg".parse().unwrap(),
                         }),
                         OfferDecl::Service(OfferServiceDecl {
-                                    source: OfferSource::Parent,
-                                    source_name: "netstack1".parse().unwrap(),
-                                    source_instance_filter: None,
-                                    renamed_instances: None,
+                            source: OfferSource::Parent,
+                            source_name: "netstack1".parse().unwrap(),
+                            source_dictionary: Some("in/dict".parse().unwrap()),
+                            source_instance_filter: None,
+                            renamed_instances: None,
                             target: OfferTarget::static_child("echo".to_string()),
                             target_name: "mynetstack1".parse().unwrap(),
                             availability: Availability::Required,
                         }),
                         OfferDecl::Service(OfferServiceDecl {
-                                    source: OfferSource::Parent,
-                                    source_name: "netstack2".parse().unwrap(),
-                                    source_instance_filter: None,
-                                    renamed_instances: None,
+                            source: OfferSource::Parent,
+                            source_name: "netstack2".parse().unwrap(),
+                            source_dictionary: None,
+                            source_instance_filter: None,
+                            renamed_instances: None,
                             target: OfferTarget::static_child("echo".to_string()),
                             target_name: "mynetstack2".parse().unwrap(),
                             availability: Availability::Optional,
                         }),
                         OfferDecl::Service(OfferServiceDecl {
-                                    source: OfferSource::Parent,
-                                    source_name: "netstack3".parse().unwrap(),
-                                    source_instance_filter: Some(vec!["allowedinstance".to_string()]),
-                                    renamed_instances: Some(vec![NameMapping{source_name: "default".to_string(), target_name: "allowedinstance".to_string()}]),
+                            source: OfferSource::Parent,
+                            source_name: "netstack3".parse().unwrap(),
+                            source_dictionary: None,
+                            source_instance_filter: Some(vec!["allowedinstance".to_string()]),
+                            renamed_instances: Some(vec![NameMapping{source_name: "default".to_string(), target_name: "allowedinstance".to_string()}]),
                             target: OfferTarget::static_child("echo".to_string()),
                             target_name: "mynetstack3".parse().unwrap(),
                             availability: Availability::Required,
@@ -2837,7 +3266,16 @@ mod tests {
                                 target_name: "diagnostics_ready".parse().unwrap(),
                                 availability: Availability::Optional,
                             }
-                        )
+                        ),
+                        OfferDecl::Dictionary(OfferDictionaryDecl {
+                            source: OfferSource::Parent,
+                            source_name: "bundle".parse().unwrap(),
+                            source_dictionary: Some("in/dict".parse().unwrap()),
+                            target: OfferTarget::static_child("echo".to_string()),
+                            target_name: "mybundle".parse().unwrap(),
+                            dependency_type: DependencyType::Weak,
+                            availability: Availability::Required,
+                        }),
                     ],
                     capabilities: vec![
                         CapabilityDecl::Service(ServiceDecl {
@@ -2867,6 +3305,16 @@ mod tests {
                         CapabilityDecl::Resolver(ResolverDecl {
                             name: "pkg".parse().unwrap(),
                             source_path: Some("/pkg_resolver".parse().unwrap()),
+                        }),
+                        CapabilityDecl::Dictionary(DictionaryDecl {
+                            name: "dict1".parse().unwrap(),
+                            source: Some(DictionarySource::Parent),
+                            source_dictionary: Some("in/other".parse().unwrap()),
+                        }),
+                        CapabilityDecl::Dictionary(DictionaryDecl {
+                            name: "dict2".parse().unwrap(),
+                            source: None,
+                            source_dictionary: None,
                         }),
                     ],
                     children: vec![
@@ -2981,6 +3429,7 @@ mod tests {
                     name: "foo".into(),
                     collection: None,
                 }),
+                fdecl::Ref::Environment(fdecl::EnvironmentRef{}),
             ],
             input_type = fdecl::Ref,
             result = vec![
@@ -2989,6 +3438,7 @@ mod tests {
                 UseSource::Debug,
                 UseSource::Capability("capability".parse().unwrap()),
                 UseSource::Child("foo".to_string()),
+                UseSource::Environment,
             ],
             result_type = UseSource,
         },
@@ -3036,6 +3486,27 @@ mod tests {
             ],
             result_type = OfferSource,
         },
+        fidl_into_and_from_dictionary_source => {
+            input = vec![
+                fdecl::Ref::Self_(fdecl::SelfRef {}),
+                fdecl::Ref::Child(fdecl::ChildRef {
+                    name: "foo".into(),
+                    collection: None,
+                }),
+                fdecl::Ref::Parent(fdecl::ParentRef {}),
+            ],
+            input_type = fdecl::Ref,
+            result = vec![
+                DictionarySource::Self_,
+                DictionarySource::Child(ChildRef {
+                    name: "foo".into(),
+                    collection: None,
+                }),
+                DictionarySource::Parent,
+            ],
+            result_type = DictionarySource,
+        },
+
         fidl_into_and_from_capability_without_path => {
             input = vec![
                 fdecl::Protocol {
@@ -3150,7 +3621,7 @@ mod tests {
                          persistent_storage: Some(true),
                          ..Default::default()
                      },
-                 fdecl::Collection {
+                     fdecl::Collection {
                          name: Some("long_child_names".to_string()),
                          durability: Some(fdecl::Durability::Transient),
                          allowed_offers: None,
@@ -3292,5 +3763,32 @@ mod tests {
             .availability(),
             Availability::Required
         );
+        assert_eq!(
+            *fdecl::ExposeDictionary {
+                source: Some(source.clone()),
+                source_name: Some(source_name.into()),
+                target: Some(target.clone()),
+                target_name: Some(target_name.into()),
+                ..Default::default()
+            }
+            .fidl_into_native()
+            .availability(),
+            Availability::Required
+        );
+    }
+
+    #[test]
+    fn config_value_matches_type() {
+        let bool_true = ConfigValue::Single(ConfigSingleValue::Bool(true));
+        let bool_false = ConfigValue::Single(ConfigSingleValue::Bool(false));
+        let uint8_zero = ConfigValue::Single(ConfigSingleValue::Uint8(0));
+        let vec_bool_true = ConfigValue::Vector(ConfigVectorValue::BoolVector(vec![true]));
+        let vec_bool_false = ConfigValue::Vector(ConfigVectorValue::BoolVector(vec![false]));
+
+        assert!(bool_true.matches_type(&bool_false));
+        assert!(vec_bool_true.matches_type(&vec_bool_false));
+
+        assert!(!bool_true.matches_type(&uint8_zero));
+        assert!(!bool_true.matches_type(&vec_bool_true));
     }
 }

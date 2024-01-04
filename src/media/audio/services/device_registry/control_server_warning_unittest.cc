@@ -47,7 +47,7 @@ class ControlServerWarningTest : public AudioDeviceRegistryServerTestBase,
     registry_client->WatchDevicesAdded().Then(
         [&added_device_id](
             fidl::Result<fuchsia_audio_device::Registry::WatchDevicesAdded>& result) mutable {
-          ASSERT_TRUE(result.is_ok());
+          ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
           ASSERT_TRUE(result->devices());
           ASSERT_EQ(result->devices()->size(), 1u);
           ASSERT_TRUE(result->devices()->at(0).token_id());
@@ -75,7 +75,7 @@ class ControlServerWarningTest : public AudioDeviceRegistryServerTestBase,
         }})
         .Then([&received_callback](
                   fidl::Result<fuchsia_audio_device::ControlCreator::Create>& result) {
-          ASSERT_TRUE(result.is_ok());
+          ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
           received_callback = true;
         });
     RunLoopUntilIdle();
@@ -178,7 +178,7 @@ TEST_F(ControlServerWarningTest, SetGainTooLow) {
                       fuchsia_audio_device::ControlSetGainError::kGainOutOfRange);
 }
 
-TEST_F(ControlServerWarningTest, BadMute) {
+TEST_F(ControlServerWarningTest, SetGainBadMute) {
   TestSetGainBadState(fuchsia_audio_device::GainState{{
                           .gain_db = 0.0f,
                           .muted = true,
@@ -187,13 +187,46 @@ TEST_F(ControlServerWarningTest, BadMute) {
                       fuchsia_audio_device::ControlSetGainError::kMuteUnavailable);
 }
 
-TEST_F(ControlServerWarningTest, BadAgc) {
+TEST_F(ControlServerWarningTest, SetGainBadAgc) {
   TestSetGainBadState(fuchsia_audio_device::GainState{{
                           .gain_db = 0.0f,
                           .muted = false,
                           .agc_enabled = true,
                       }},
                       fuchsia_audio_device::ControlSetGainError::kAgcUnavailable);
+}
+
+TEST_F(ControlServerWarningTest, GetCurrentFormatsWhilePending) {
+  auto fake_driver = CreateAndEnableDriverWithDefaults();
+  fake_driver->AllocateRingBuffer(8192);
+  auto registry = CreateTestRegistryServer();
+  auto added_id = WaitForAddedDeviceTokenId(registry->client());
+  auto control_creator = CreateTestControlCreatorServer();
+  auto control_client = ConnectToControl(control_creator->client(), *added_id);
+  RunLoopUntilIdle();
+
+  bool received_callback_1 = false, received_callback_2 = false;
+  control_client->GetCurrentlyPermittedFormats().Then(
+      [&received_callback_1](fidl::Result<Control::GetCurrentlyPermittedFormats>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+        received_callback_1 = true;
+      });
+
+  control_client->GetCurrentlyPermittedFormats().Then(
+      [&received_callback_2](fidl::Result<Control::GetCurrentlyPermittedFormats>& result) {
+        ASSERT_TRUE(result.is_error());
+        ASSERT_TRUE(result.error_value().is_domain_error())
+            << result.error_value().FormatDescription();
+        EXPECT_EQ(result.error_value().domain_error(),
+                  fuchsia_audio_device::ControlGetCurrentlyPermittedFormatsError::kAlreadyPending)
+            << result.error_value().FormatDescription();
+        received_callback_2 = true;
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(received_callback_1 && received_callback_2);
+  EXPECT_EQ(ControlServer::count(), 1u);
+  EXPECT_TRUE(control_client.is_valid());
 }
 
 void ControlServerWarningTest::TestCreateRingBufferBadOptions(
@@ -351,6 +384,62 @@ TEST_F(ControlServerWarningTest, CreateRingBufferMissingRingBufferMinBytes) {
       fuchsia_audio_device::ControlCreateRingBufferError::kInvalidMinBytes);
 }
 
+TEST_F(ControlServerWarningTest, CreateRingBufferWhilePending) {
+  auto fake_driver = CreateAndEnableDriverWithDefaults();
+  fake_driver->AllocateRingBuffer(8192);
+  auto registry = CreateTestRegistryServer();
+  auto added_id = WaitForAddedDeviceTokenId(registry->client());
+  auto control_creator = CreateTestControlCreatorServer();
+  auto control_client = ConnectToControl(control_creator->client(), *added_id);
+  RunLoopUntilIdle();
+
+  ASSERT_EQ(ControlServer::count(), 1u);
+  auto [ring_buffer_client_end1, ring_buffer_server_end1] =
+      CreateNaturalAsyncClientOrDie<fuchsia_audio_device::RingBuffer>();
+  auto [ring_buffer_client_end2, ring_buffer_server_end2] =
+      CreateNaturalAsyncClientOrDie<fuchsia_audio_device::RingBuffer>();
+
+  bool received_callback_1 = false, received_callback_2 = false;
+  auto options = fuchsia_audio_device::RingBufferOptions{{
+      .format = fuchsia_audio::Format{{
+          .sample_type = fuchsia_audio::SampleType::kInt16,
+          .channel_count = 2,
+          .frames_per_second = 48000,
+      }},
+      .ring_buffer_min_bytes = 8192,
+  }};
+  control_client
+      ->CreateRingBuffer({{
+          .options = options,
+          .ring_buffer_server =
+              fidl::ServerEnd<fuchsia_audio_device::RingBuffer>(std::move(ring_buffer_server_end1)),
+      }})
+      .Then([&received_callback_1](fidl::Result<Control::CreateRingBuffer>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+        received_callback_1 = true;
+      });
+  control_client
+      ->CreateRingBuffer({{
+          .options = options,
+          .ring_buffer_server =
+              fidl::ServerEnd<fuchsia_audio_device::RingBuffer>(std::move(ring_buffer_server_end2)),
+      }})
+      .Then([&received_callback_2](fidl::Result<Control::CreateRingBuffer>& result) {
+        ASSERT_TRUE(result.is_error());
+        ASSERT_TRUE(result.error_value().is_domain_error())
+            << result.error_value().FormatDescription();
+        EXPECT_EQ(result.error_value().domain_error(),
+                  fuchsia_audio_device::ControlCreateRingBufferError::kAlreadyPending)
+            << result.error_value().FormatDescription();
+        received_callback_2 = true;
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(received_callback_1 && received_callback_2);
+  EXPECT_EQ(ControlServer::count(), 1u);
+  EXPECT_TRUE(control_client.is_valid());
+}
+
 // TODO(fxbug.dev/117826): Enable this unittest that tests the upper limit of VMO size (4Gb).
 // This is not high-priority since even at the service's highest supported frame rate (192 kHz),
 // channel_count (8) and sample_type (float64), a 4Gb ring-buffer would be 5.8 minutes long!
@@ -404,8 +493,6 @@ TEST_F(ControlServerWarningTest, DISABLED_CreateRingBufferHugeRingBufferMinBytes
               fidl::ServerEnd<fuchsia_audio_device::RingBuffer>(std::move(ring_buffer_server_end)),
       }})
       .Then([&received_callback](fidl::Result<Control::CreateRingBuffer>& result) {
-        received_callback = true;
-
         if (result.is_ok()) {
           FX_LOGS(ERROR) << "RingBufferProperties";
           FX_LOGS(ERROR) << "    valid_bits_per_sample: "
@@ -449,6 +536,8 @@ TEST_F(ControlServerWarningTest, DISABLED_CreateRingBufferHugeRingBufferMinBytes
         EXPECT_EQ(result.error_value().domain_error(),
                   fuchsia_audio_device::ControlCreateRingBufferError::kBadRingBufferOption)
             << result.error_value().FormatDescription();
+
+        received_callback = true;
       });
 
   RunLoopUntilIdle();
@@ -484,7 +573,8 @@ TEST_F(ControlServerWarningTest, CreateRingBufferMissingRingBufferServerEnd) {
         ASSERT_TRUE(result.error_value().is_domain_error())
             << result.error_value().FormatDescription();
         EXPECT_EQ(result.error_value().domain_error(),
-                  fuchsia_audio_device::ControlCreateRingBufferError::kInvalidRingBuffer);
+                  fuchsia_audio_device::ControlCreateRingBufferError::kInvalidRingBuffer)
+            << result.error_value().FormatDescription();
         received_callback = true;
       });
 
@@ -521,7 +611,8 @@ TEST_F(ControlServerWarningTest, CreateRingBufferBadRingBufferServerEnd) {
         ASSERT_TRUE(result.is_error());
         ASSERT_TRUE(result.error_value().is_framework_error())
             << result.error_value().FormatDescription();
-        EXPECT_EQ(result.error_value().framework_error().status(), ZX_ERR_INVALID_ARGS);
+        EXPECT_EQ(result.error_value().framework_error().status(), ZX_ERR_INVALID_ARGS)
+            << result.error_value().FormatDescription();
         received_callback = true;
       });
 

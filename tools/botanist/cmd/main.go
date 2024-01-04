@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"flag"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -39,12 +40,25 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
-	ctx = streams.ContextWithStdout(ctx, botanist.NewLockedWriter(ctx, os.Stdout))
-	ctx = streams.ContextWithStderr(ctx, botanist.NewLockedWriter(ctx, os.Stderr))
+	lockedStdout := botanist.NewLockedWriter(ctx, os.Stdout)
+	defer lockedStdout.Close()
+	lockedStderr := botanist.NewLockedWriter(ctx, os.Stderr)
+	defer lockedStderr.Close()
+
+	// set up temp file for copying stdout content to a temp file
+	tempFile, _ := os.CreateTemp("", "stdout-copy-*.log")
+	multiWriter := io.MultiWriter(lockedStdout, tempFile)
+	defer func() {
+		tempFile.Close()
+	}()
+
+	ctx = streams.ContextWithStdout(ctx, multiWriter)
+	ctx = streams.ContextWithStderr(ctx, lockedStderr)
 	stdout, stderr, flush := botanist.NewStdioWriters(ctx)
 	defer flush()
 	l := logger.NewLogger(level, color.NewColor(colors), stdout, stderr, "botanist ")
 	l.SetFlags(logger.Ltime | logger.Lmicroseconds | logger.Lshortfile)
 	ctx = logger.WithLogger(ctx, l)
+
 	os.Exit(int(subcommands.Execute(ctx)))
 }

@@ -2,8 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::device::run_component_features;
-use ::runner::{get_program_string, get_program_strvec};
+use crate::{
+    device::run_component_features,
+    execution::{
+        create_filesystem_from_spec, execute_task_with_prerun_result, parse_numbered_handles,
+    },
+    fs::fuchsia::RemoteFs,
+    signals,
+    task::{CurrentTask, ExitStatus, Task},
+    vfs::{FileSystemOptions, LookupContext, NamespaceNode, WhatToMount},
+};
+use ::runner::{get_program_string, get_program_strvec, StartInfoProgramError};
 use anyhow::{anyhow, bail, Error};
 use fidl::endpoints::{ControlHandle, RequestStream, ServerEnd};
 use fidl_fuchsia_component as fcomponent;
@@ -16,20 +25,20 @@ use fuchsia_async as fasync;
 use fuchsia_zircon as zx;
 use futures::{channel::oneshot, FutureExt, StreamExt};
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
-use std::{ffi::CString, os::unix::ffi::OsStrExt, path::Path};
-
-use crate::{
-    auth::Credentials,
-    execution::{
-        container::Container, create_filesystem_from_spec, execute_task, parse_numbered_handles,
-        set_rlimits,
-    },
-    fs::{fuchsia::RemoteFs, *},
-    logging::{log_error, log_info},
-    signals,
-    task::*,
-    types::*,
+use starnix_logging::{log_error, log_info};
+use starnix_sync::Mutex;
+use starnix_uapi::{
+    auth::{Capabilities, Credentials},
+    device_type::DeviceType,
+    errno,
+    errors::{Errno, EEXIST, ENOTDIR},
+    file_mode::mode,
+    mount_flags::MountFlags,
+    open_flags::OpenFlags,
+    ownership::WeakRef,
+    signals::{SIGINT, SIGKILL},
 };
+use std::{ffi::CString, os::unix::ffi::OsStrExt, path::Path, sync::Arc};
 
 /// Component controller epitaph value used as the base value to pass non-zero error
 /// codes to the calling component.
@@ -50,33 +59,37 @@ const COMPONENT_EXIT_CODE_BASE: i32 = 1024;
 pub async fn start_component(
     mut start_info: ComponentStartInfo,
     controller: ServerEnd<ComponentControllerMarker>,
-    container: &Container,
+    system_task: &CurrentTask,
 ) -> Result<(), Error> {
     let url = start_info.resolved_url.clone().unwrap_or_else(|| "<unknown>".to_string());
     log_info!("start_component: {}", url);
 
     // TODO(fxbug.dev/125782): We leak the directory created by this function.
-    let component_path = generate_component_path(container)?;
+    let component_path = generate_component_path(system_task)?;
 
-    let mut mount_record = MountRecord::default();
+    let mount_record = Arc::new(Mutex::new(MountRecord::default()));
 
     let ns = start_info.ns.take().ok_or_else(|| anyhow!("Missing namespace"))?;
 
     let mut maybe_pkg = None;
+    let mut maybe_svc = None;
     for entry in ns {
         if let (Some(dir_path), Some(dir_handle)) = (entry.path, entry.directory) {
             match dir_path.as_str() {
-                "/svc" => continue,
+                "/svc" => {
+                    maybe_svc =
+                        Some(fio::DirectorySynchronousProxy::new(dir_handle.into_channel()));
+                }
                 "/custom_artifacts" | "/test_data" => {
                     // Mount custom_artifacts and test_data directory at root of container
                     // We may want to transition to have these directories unique per component
                     let dir_proxy = fio::DirectorySynchronousProxy::new(dir_handle.into_channel());
-                    mount_record.mount_remote(container, &dir_proxy, &dir_path)?;
+                    mount_record.lock().mount_remote(system_task, &dir_proxy, &dir_path)?;
                 }
                 _ => {
                     let dir_proxy = fio::DirectorySynchronousProxy::new(dir_handle.into_channel());
-                    mount_record.mount_remote(
-                        container,
+                    mount_record.lock().mount_remote(
+                        system_task,
                         &dir_proxy,
                         &format!("{component_path}/{dir_path}"),
                     )?;
@@ -96,99 +109,118 @@ pub async fn start_component(
     };
 
     let resolve_program_strvec = |key| {
-        get_program_strvec(&start_info, key)
-            .map(|args: &Vec<String>| {
-                args.iter()
-                    .map(|arg| CString::new(resolve_template(arg)))
-                    .collect::<Result<Vec<CString>, _>>()
+        get_program_strvec(&start_info, key)?
+            .unwrap_or(&vec![])
+            .iter()
+            .map(|arg| {
+                CString::new(resolve_template(arg))
+                    .map_err(|_| StartInfoProgramError::InvalidStrVec(key.to_string()))
             })
-            .unwrap_or(Ok(vec![]))
+            .collect::<Result<Vec<CString>, _>>()
     };
 
     let args = resolve_program_strvec("args")?;
     let environ = resolve_program_strvec("environ")?;
     let component_features =
-        get_program_strvec(&start_info, "features").cloned().unwrap_or_default();
+        get_program_strvec(&start_info, "features")?.cloned().unwrap_or_default();
 
     let binary_path = get_program_string(&start_info, "binary")
         .ok_or_else(|| anyhow!("Missing \"binary\" in manifest"))?;
     let binary_path = CString::new(binary_path.to_owned())?;
 
+    let uid = get_program_string(&start_info, "uid").unwrap_or("42").parse()?;
+    let mut credentials = Credentials::with_ids(uid, uid);
+    if let Some(caps) = get_program_strvec(&start_info, "capabilities")? {
+        let mut capabilities = Capabilities::empty();
+        for cap in caps {
+            capabilities |= cap.parse()?;
+        }
+        credentials.cap_permitted = capabilities;
+        credentials.cap_effective = capabilities;
+        credentials.cap_inheritable = capabilities;
+    }
+
+    run_component_features(
+        &component_features,
+        system_task.kernel(),
+        &mut start_info.outgoing_dir,
+        maybe_svc,
+    )
+    .unwrap_or_else(|e| {
+        log_error!("failed to set component features for {} - {:?}", url, e);
+    });
+
     let (task_complete_sender, task_complete) = oneshot::channel::<TaskResult>();
-    let mut current_task = Task::create_init_child_process(&container.kernel, &binary_path)?;
-    release_on_error!(current_task, &(), {
-        let rlimits = get_program_strvec(&start_info, "rlimits").cloned().unwrap_or_default();
-        set_rlimits(&current_task, &rlimits)?;
+    let current_task = CurrentTask::create_init_child_process(system_task.kernel(), &binary_path)?;
 
-        let cwd_path = get_program_string(&start_info, "cwd").unwrap_or(&pkg_path);
-        let cwd = current_task
-            .lookup_path(
-                &mut LookupContext::default(),
-                current_task.fs().root(),
-                cwd_path.as_bytes(),
-            )
-            .map_err(|e| anyhow!("Could not find package directory: {:?}", e))?;
-        current_task
-            .fs()
-            .chdir(&current_task, cwd)
-            .map_err(|e| anyhow!("Failed to set cwd to package directory: {:?}", e))?;
+    let weak_task = execute_task_with_prerun_result(
+        current_task,
+        {
+            let mount_record = mount_record.clone();
+            move |_, current_task| {
+                let cwd_path = get_program_string(&start_info, "cwd").unwrap_or(&pkg_path);
+                let cwd = current_task.lookup_path(
+                    &mut LookupContext::default(),
+                    current_task.fs().root(),
+                    cwd_path.as_bytes(),
+                )?;
+                current_task.fs().chdir(current_task, cwd)?;
 
-        let uid = get_program_string(&start_info, "uid").unwrap_or("42").parse()?;
-        let mut credentials = Credentials::with_ids(uid, uid);
-        if let Some(caps) = get_program_strvec(&start_info, "capabilities") {
-            let mut capabilities = Capabilities::empty();
-            for cap in caps {
-                capabilities |= cap.parse()?;
+                current_task.set_creds(credentials);
+
+                let local_mounts =
+                    get_program_strvec(&start_info, "component_mounts").map_err(|e| {
+                        log_error!("Error while reading the mounts: {e:?}");
+                        errno!(EINVAL)
+                    })?;
+                if let Some(local_mounts) = local_mounts {
+                    for mount in local_mounts.iter() {
+                        let (mount_point, child_fs) =
+                            create_filesystem_from_spec(current_task, &pkg, mount).map_err(
+                                |e| {
+                                    log_error!("Error while mounting the filesystems: {e:?}");
+                                    errno!(EINVAL)
+                                },
+                            )?;
+                        let mount_point = current_task.lookup_path_from_root(mount_point)?;
+                        mount_record.lock().mount(
+                            mount_point,
+                            WhatToMount::Fs(child_fs),
+                            MountFlags::empty(),
+                        )?;
+                    }
+                }
+
+                parse_numbered_handles(
+                    current_task,
+                    start_info.numbered_handles,
+                    &current_task.files,
+                )
+                .map_err(|e| {
+                    log_error!("Error while parsing the numbered handles: {e:?}");
+                    errno!(EINVAL)
+                })?;
+
+                let mut argv = vec![binary_path.clone()];
+                argv.extend(args);
+
+                let executable =
+                    current_task.open_file(binary_path.as_bytes(), OpenFlags::RDONLY)?;
+                current_task.exec(executable, binary_path, argv, environ)?;
+
+                Ok(WeakRef::from(&current_task.task))
             }
-            credentials.cap_permitted = capabilities;
-            credentials.cap_effective = capabilities;
-            credentials.cap_inheritable = capabilities;
-        }
-        current_task.set_creds(credentials);
-
-        if let Some(local_mounts) = get_program_strvec(&start_info, "component_mounts") {
-            for mount in local_mounts.iter() {
-                let (mount_point, child_fs) =
-                    create_filesystem_from_spec(current_task.kernel(), &pkg, mount)?;
-                let mount_point = current_task.lookup_path_from_root(mount_point)?;
-                mount_record.mount(mount_point, WhatToMount::Fs(child_fs), MountFlags::empty())?;
-            }
-        }
-
-        parse_numbered_handles(&current_task, start_info.numbered_handles, &current_task.files)?;
-
-        let mut argv = vec![binary_path.clone()];
-        argv.extend(args);
-
-        let executable = current_task.open_file(binary_path.as_bytes(), OpenFlags::RDONLY)?;
-        current_task.exec(executable, binary_path, argv, environ)?;
-
-        run_component_features(
-            &component_features,
-            &container.kernel,
-            &mut start_info.outgoing_dir,
-        )
-        .unwrap_or_else(|e| {
-            log_error!("failed to set component features for {} - {:?}", url, e);
-        });
-
-        let controller = controller.into_stream()?;
-        fasync::Task::local(serve_component_controller(
-            controller,
-            WeakRef::from(&current_task.task),
-            task_complete,
-        ))
-        .detach();
-        Ok(())
-    });
-
-    execute_task(current_task, move |result| {
-        // If the component controller server has gone away, there is nobody for us to
-        // report the result to.
-        let _ = task_complete_sender.send(result);
-        // Unmount all the directories for this component.
-        std::mem::drop(mount_record);
-    });
+        },
+        move |result| {
+            // If the component controller server has gone away, there is nobody for us to
+            // report the result to.
+            let _ = task_complete_sender.send(result);
+            // Unmount all the directories for this component.
+            std::mem::drop(mount_record);
+        },
+    )?;
+    let controller = controller.into_stream()?;
+    fasync::Task::local(serve_component_controller(controller, weak_task, task_complete)).detach();
 
     Ok(())
 }
@@ -225,27 +257,16 @@ async fn serve_component_controller(
             Event::Controller(request) => match request {
                 Ok(ComponentControllerRequest::Stop { .. }) => {
                     if let Some(task) = task.upgrade() {
-                        signals::send_signal(
+                        signals::send_standard_signal(
                             task.as_ref(),
-                            signals::SignalInfo::new(
-                                SIGINT,
-                                SI_KERNEL,
-                                signals::SignalDetail::default(),
-                            ),
+                            signals::SignalInfo::default(SIGINT),
                         );
                         log_info!("Sent SIGINT to program {:}", task.command().to_string_lossy());
                     }
                 }
                 Ok(ComponentControllerRequest::Kill { .. }) => {
                     if let Some(task) = task.upgrade() {
-                        signals::send_signal(
-                            &task,
-                            signals::SignalInfo::new(
-                                SIGKILL,
-                                SI_KERNEL,
-                                signals::SignalDetail::default(),
-                            ),
-                        );
+                        signals::send_standard_signal(&task, signals::SignalInfo::default(SIGKILL));
                         log_info!("Sent SIGKILL to program {:}", task.command().to_string_lossy());
                         controller_handle.shutdown_with_epitaph(zx::Status::from_raw(
                             fcomponent::Error::InstanceDied.into_primitive() as i32,
@@ -273,8 +294,7 @@ async fn serve_component_controller(
 }
 
 /// Returns /container/component/{random} that doesn't already exist
-fn generate_component_path(container: &Container) -> Result<String, Error> {
-    let system_task = container.kernel.kthreads.system_task();
+fn generate_component_path(system_task: &CurrentTask) -> Result<String, Error> {
     // Checking container directory already exists
     let mount_point = system_task.lookup_path_from_root(b"/container/component/")?;
 
@@ -323,11 +343,10 @@ impl MountRecord {
 
     fn mount_remote(
         &mut self,
-        container: &Container,
+        system_task: &CurrentTask,
         directory: &fio::DirectorySynchronousProxy,
         path: &str,
     ) -> Result<(), Error> {
-        let system_task = container.kernel.kthreads.system_task();
         // The incoming dir_path might not be top level, e.g. it could be /foo/bar.
         // Iterate through each component directory starting from the parent and
         // create it if it doesn't exist.
@@ -363,7 +382,7 @@ impl MountRecord {
         directory.clone(fio::OpenFlags::CLONE_SAME_RIGHTS, ServerEnd::new(server_end))?;
 
         let fs = RemoteFs::new_fs(
-            &container.kernel,
+            system_task.kernel(),
             client_end,
             FileSystemOptions { source: path.as_bytes().to_vec(), ..Default::default() },
             rights,

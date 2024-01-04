@@ -1,17 +1,63 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+@available(added=16)
 library fuchsia.debugger;
 
+using fuchsia.component;
 using zx;
 
+@available(added=HEAD)
+closed protocol AttachedProcessIterator {
+    strict GetNext() -> (struct {
+        process_names vector<string:zx.MAX_NAME_LEN>:MAX;
+    });
+};
+
 @discoverable
-closed protocol DebugAgent {
-    /// Hand the debug agent a socket that connects it to the debugger. This
-    /// will return ZX_ERR_ALREADY_BOUND if a connection already exists.
-    strict Connect(resource struct {
+open protocol DebugAgent {
+    /// Hand the DebugAgent a socket that connects it to the debugger. This
+    /// will return ZX_ERR_ALREADY_BOUND if a connection already exists. When
+    /// the socket is closed, the DebugAgent will exit.
+    flexible Connect(resource struct {
         socket zx.Handle:SOCKET;
-    }) -> (struct {
-        status zx.Status;
+    }) -> () error zx.Status;
+
+    /// Iterator over all processes that this agent is attached to. Note this is
+    /// not the same as the set of installed filters, but rather the set of
+    /// filters that matched and were later successfully attached.
+    @available(added=HEAD)
+    flexible GetAttachedProcesses(resource struct {
+        iterator server_end:AttachedProcessIterator;
+    });
+};
+
+@available(added=HEAD)
+type Agent = resource struct {
+    name fuchsia.component.child_name;
+    client_end client_end:DebugAgent;
+};
+
+@available(added=HEAD)
+closed protocol AgentIterator {
+    strict GetNext() -> (resource struct {
+        agents vector<Agent>:MAX;
+    });
+};
+
+@discoverable
+@available(added=HEAD)
+open protocol Launcher {
+    /// Launch a new instance of DebugAgent listening on |agent|. The DebugAgent
+    /// will exit upon closing the corresponding client_end of this channel.
+    /// Clients must not close the channel until the debugging session is
+    /// completed.
+    flexible Launch(resource struct {
+        agent server_end:DebugAgent;
+    }) -> () error zx.Status;
+
+    /// Iterator over all DebugAgent instances.
+    flexible GetAgents(resource struct {
+        iterator server_end:AgentIterator;
     });
 };

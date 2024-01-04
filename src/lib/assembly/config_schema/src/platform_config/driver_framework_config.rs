@@ -13,6 +13,20 @@ pub enum DriverHostCrashPolicy {
     DoNothing,
 }
 
+/// Platform configuration options for driver load testing.
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct TestFuzzingConfig {
+    #[serde(default)]
+    pub enable_load_fuzzer: bool,
+
+    #[serde(default)]
+    pub max_load_delay_ms: u64,
+
+    #[serde(default)]
+    pub enable_test_shutdown_delays: bool,
+}
+
 impl std::fmt::Display for DriverHostCrashPolicy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -35,4 +49,7 @@ pub struct DriverFrameworkConfig {
 
     #[serde(default)]
     pub driver_host_crash_policy: Option<DriverHostCrashPolicy>,
+
+    #[serde(default)]
+    pub test_fuzzing_config: Option<TestFuzzingConfig>,
 }

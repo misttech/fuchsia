@@ -10,7 +10,7 @@ use async_utils::hanging_get::client::HangingGetStream;
 use fidl_fuchsia_input as finput;
 use fidl_fuchsia_settings as fsettings;
 use fuchsia_async as fasync;
-use fuchsia_inspect;
+use fuchsia_inspect::{self, health::Reporter};
 use futures::{TryFutureExt, TryStreamExt};
 use metrics_registry::*;
 use std::cell::RefCell;
@@ -69,6 +69,14 @@ impl UnhandledInputHandler for TextSettingsHandler {
             // Pass a non-keyboard event through.
             _ => vec![input_device::InputEvent::from(unhandled_input_event)],
         }
+    }
+
+    fn set_handler_healthy(self: std::rc::Rc<Self>) {
+        self.inspect_status.health_node.borrow_mut().set_ok();
+    }
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
+        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
     }
 }
 
@@ -135,7 +143,7 @@ impl TextSettingsHandler {
                 // settings. If your tests does not need to change keymaps, or adjust
                 // key autorepeat rates, these are not relevant.
                 .unwrap_or_else(move |e: anyhow::Error| {
-                    metrics_logger_clone.log_error(
+                    metrics_logger_clone.log_warn(
                         InputPipelineErrorMetricDimensionEvent::TextSettingsHandlerCantRun,
                         std::format!("can't run: {:?}", e),
                     );
@@ -347,7 +355,7 @@ mod tests {
             &fake_handlers_node,
             metrics::MetricsLogger::default(),
         );
-        fuchsia_inspect::assert_data_tree!(inspector, root: {
+        diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_handlers_node: {
                 text_settings_handler: {
                     events_received_count: 0u64,
@@ -357,7 +365,7 @@ mod tests {
                         status: "STARTING_UP",
                         // Timestamp value is unpredictable and not relevant in this context,
                         // so we only assert that the property is present.
-                        start_timestamp_nanos: fuchsia_inspect::AnyProperty
+                        start_timestamp_nanos: diagnostics_assertions::AnyProperty
                     },
                 }
             }
@@ -427,7 +435,7 @@ mod tests {
 
         let last_event_timestamp: u64 = event_time_u64.into_nanos().try_into().unwrap();
 
-        fuchsia_inspect::assert_data_tree!(inspector, root: {
+        diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_handlers_node: {
                 text_settings_handler: {
                     events_received_count: 3u64,
@@ -437,7 +445,7 @@ mod tests {
                         status: "STARTING_UP",
                         // Timestamp value is unpredictable and not relevant in this context,
                         // so we only assert that the property is present.
-                        start_timestamp_nanos: fuchsia_inspect::AnyProperty
+                        start_timestamp_nanos: diagnostics_assertions::AnyProperty
                     },
                 }
             }

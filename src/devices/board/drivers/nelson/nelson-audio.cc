@@ -13,9 +13,10 @@
 #include <lib/driver/component/cpp/node_add_args.h>
 
 #include <bind/fuchsia/amlogic/platform/cpp/bind.h>
+#include <bind/fuchsia/clock/cpp/bind.h>
 #include <bind/fuchsia/codec/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/gpio/cpp/bind.h>
+#include <bind/fuchsia/gpio/cpp/bind.h>
 #include <bind/fuchsia/i2c/cpp/bind.h>
 #include <bind/fuchsia/ti/platform/cpp/bind.h>
 #include <ddktl/metadata/audio.h>
@@ -44,16 +45,28 @@ namespace nelson {
 namespace fpbus = fuchsia_hardware_platform_bus;
 
 // Audio out controller composite node specifications.
+const std::vector<fdf::BindRule> kGpioInitRules = std::vector{
+    fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+};
+const std::vector<fdf::NodeProperty> kGpioInitProps = std::vector{
+    fdf::MakeProperty(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+};
+
+const std::vector<fdf::BindRule> kClockInitRules = std::vector{
+    fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_clock::BIND_INIT_STEP_CLOCK),
+};
+const std::vector<fdf::NodeProperty> kClockInitProps = std::vector{
+    fdf::MakeProperty(bind_fuchsia::INIT_STEP, bind_fuchsia_clock::BIND_INIT_STEP_CLOCK),
+};
+
 const std::vector<fdf::BindRule> kAudioEnableGpioRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::FIDL_PROTOCOL,
-                            bind_fuchsia_hardware_gpio::BIND_FIDL_PROTOCOL_SERVICE),
+                            bind_fuchsia_gpio::BIND_FIDL_PROTOCOL_SERVICE),
     fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(GPIO_SOC_AUDIO_EN)),
 };
 const std::vector<fdf::NodeProperty> kAudioEnableGpioProps = std::vector{
-    fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL,
-                      bind_fuchsia_hardware_gpio::BIND_FIDL_PROTOCOL_SERVICE),
-    fdf::MakeProperty(bind_fuchsia_hardware_gpio::FUNCTION,
-                      bind_fuchsia_hardware_gpio::FUNCTION_SOC_AUDIO_ENABLE),
+    fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL, bind_fuchsia_gpio::BIND_FIDL_PROTOCOL_SERVICE),
+    fdf::MakeProperty(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_SOC_AUDIO_ENABLE),
 };
 
 const std::vector<fdf::BindRule> kOutCodecRules = std::vector{
@@ -70,57 +83,48 @@ const std::vector<fdf::NodeProperty> kOutCodecProps = std::vector{
 };
 
 const std::vector<fdf::ParentSpec> kOutControllerParents = std::vector{
+    fdf::ParentSpec{{kGpioInitRules, kGpioInitProps}},
+    fdf::ParentSpec{{kClockInitRules, kClockInitProps}},
     fdf::ParentSpec{{kAudioEnableGpioRules, kAudioEnableGpioProps}},
     fdf::ParentSpec{{kOutCodecRules, kOutCodecProps}},
 };
 
-// Codec composite node specifications.
-const ddk::BindRule kOutI2cRules[] = {
-    ddk::MakeAcceptBindRule(bind_fuchsia::FIDL_PROTOCOL,
-                            bind_fuchsia_i2c::BIND_FIDL_PROTOCOL_DEVICE),
-    ddk::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, static_cast<uint32_t>(NELSON_I2C_3)),
-    ddk::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS, static_cast<uint32_t>(I2C_AUDIO_CODEC_ADDR)),
+const std::vector<fdf::ParentSpec> kParentSpecInit = std::vector{
+    fdf::ParentSpec{{kGpioInitRules, kGpioInitProps}},
+    fdf::ParentSpec{{kClockInitRules, kClockInitProps}},
 };
-const device_bind_prop_t kOutI2cProps[] = {
-    ddk::MakeProperty(bind_fuchsia::FIDL_PROTOCOL, bind_fuchsia_i2c::BIND_FIDL_PROTOCOL_DEVICE),
-    ddk::MakeProperty(bind_fuchsia::PLATFORM_DEV_VID,
+
+// Codec composite node specifications.
+const std::vector<fdf::BindRule> kOutI2cRules = std::vector{
+    fdf::MakeAcceptBindRule(bind_fuchsia::FIDL_PROTOCOL,
+                            bind_fuchsia_i2c::BIND_FIDL_PROTOCOL_DEVICE),
+    fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, static_cast<uint32_t>(NELSON_I2C_3)),
+    fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS, static_cast<uint32_t>(I2C_AUDIO_CODEC_ADDR)),
+};
+const std::vector<fdf::NodeProperty> kOutI2cProps = std::vector{
+    fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL, bind_fuchsia_i2c::BIND_FIDL_PROTOCOL_DEVICE),
+    fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_VID,
                       bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_VID_TI),
-    ddk::MakeProperty(bind_fuchsia::PLATFORM_DEV_DID,
+    fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_DID,
                       bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_DID_TAS58XX),
 };
 
-const ddk::BindRule kFaultGpioRules[] = {
-    ddk::MakeAcceptBindRule(bind_fuchsia::PROTOCOL,
-                            bind_fuchsia_hardware_gpio::BIND_PROTOCOL_DEVICE),
-    ddk::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(GPIO_AUDIO_SOC_FAULT_L)),
+const std::vector<fdf::BindRule> kFaultGpioRules = std::vector{
+    fdf::MakeAcceptBindRule(bind_fuchsia::PROTOCOL, bind_fuchsia_gpio::BIND_PROTOCOL_DEVICE),
+    fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(GPIO_AUDIO_SOC_FAULT_L)),
 };
-const device_bind_prop_t kFaultGpioProps[] = {
-    ddk::MakeProperty(bind_fuchsia::FIDL_PROTOCOL,
-                      bind_fuchsia_hardware_gpio::BIND_FIDL_PROTOCOL_SERVICE),
-    ddk::MakeProperty(bind_fuchsia_hardware_gpio::FUNCTION,
-                      bind_fuchsia_hardware_gpio::FUNCTION_SOC_AUDIO_FAULT),
+const std::vector<fdf::NodeProperty> kFaultGpioProps = std::vector{
+    fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL, bind_fuchsia_gpio::BIND_FIDL_PROTOCOL_SERVICE),
+    fdf::MakeProperty(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_SOC_AUDIO_FAULT),
 };
 
 zx_status_t Nelson::AudioInit() {
-  zx_status_t status;
+  using fuchsia_hardware_clockimpl::wire::InitCall;
 
-  status = clk_impl_.Disable(sm1_clk::CLK_HIFI_PLL);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Disable(CLK_HIFI_PLL) failed: %s", zx_status_get_string(status));
-    return status;
-  }
-
-  status = clk_impl_.SetRate(sm1_clk::CLK_HIFI_PLL, 768000000);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "SetRate(CLK_HIFI_PLL) failed: %s", zx_status_get_string(status));
-    return status;
-  }
-
-  status = clk_impl_.Enable(sm1_clk::CLK_HIFI_PLL);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Enable(CLK_HIFI_PLL) failed: %s", zx_status_get_string(status));
-    return status;
-  }
+  clock_init_steps_.push_back({sm1_clk::CLK_HIFI_PLL, InitCall::WithDisable({})});
+  clock_init_steps_.push_back(
+      {sm1_clk::CLK_HIFI_PLL, InitCall::WithRateHz(init_arena_, 768'000'000)});
+  clock_init_steps_.push_back({sm1_clk::CLK_HIFI_PLL, InitCall::WithEnable({})});
 
   static const std::vector<fpbus::Mmio> audio_mmios{
       {{
@@ -167,30 +171,38 @@ zx_status_t Nelson::AudioInit() {
       }},
   };
 
+  auto sleep = [&arena = init_arena_](zx::duration delay) {
+    return fuchsia_hardware_gpioimpl::wire::InitCall::WithDelay(arena, delay.get());
+  };
+
   // TDM pin assignments.
-  gpio_impl_.SetAltFunction(GPIO_SOC_I2S_SCLK, S905D3_GPIOA_1_TDMB_SCLK_FN);
-  gpio_impl_.SetAltFunction(GPIO_SOC_I2S_FS, S905D3_GPIOA_2_TDMB_FS_FN);
-  gpio_impl_.SetAltFunction(GPIO_SOC_I2S_DO0, S905D3_GPIOA_3_TDMB_D0_FN);
+  gpio_init_steps_.push_back({GPIO_SOC_I2S_SCLK, GpioSetAltFunction(S905D3_GPIOA_1_TDMB_SCLK_FN)});
+  gpio_init_steps_.push_back({GPIO_SOC_I2S_FS, GpioSetAltFunction(S905D3_GPIOA_2_TDMB_FS_FN)});
+  gpio_init_steps_.push_back({GPIO_SOC_I2S_DO0, GpioSetAltFunction(S905D3_GPIOA_3_TDMB_D0_FN)});
   constexpr uint64_t ua = 3000;
-  gpio_impl_.SetDriveStrength(GPIO_SOC_I2S_SCLK, ua, nullptr);
-  gpio_impl_.SetDriveStrength(GPIO_SOC_I2S_FS, ua, nullptr);
-  gpio_impl_.SetDriveStrength(GPIO_SOC_I2S_DO0, ua, nullptr);
+  gpio_init_steps_.push_back({GPIO_SOC_I2S_SCLK, GpioSetDriveStrength(ua)});
+  gpio_init_steps_.push_back({GPIO_SOC_I2S_FS, GpioSetDriveStrength(ua)});
+  gpio_init_steps_.push_back({GPIO_SOC_I2S_DO0, GpioSetDriveStrength(ua)});
 
 #ifdef ENABLE_BT
   // PCM pin assignments.
-  gpio_impl_.SetAltFunction(GPIO_SOC_BT_PCM_IN, S905D3_GPIOX_8_TDMA_DIN1_FN);
-  gpio_impl_.SetAltFunction(GPIO_SOC_BT_PCM_OUT, S905D3_GPIOX_9_TDMA_D0_FN);
-  gpio_impl_.SetAltFunction(GPIO_SOC_BT_PCM_SYNC, S905D3_GPIOX_10_TDMA_FS_FN);
-  gpio_impl_.SetAltFunction(GPIO_SOC_BT_PCM_CLK, S905D3_GPIOX_11_TDMA_SCLK_FN);
-  gpio_impl_.SetDriveStrength(GPIO_SOC_BT_PCM_OUT, ua, nullptr);
-  gpio_impl_.SetDriveStrength(GPIO_SOC_BT_PCM_SYNC, ua, nullptr);
-  gpio_impl_.SetDriveStrength(GPIO_SOC_BT_PCM_CLK, ua, nullptr);
+  gpio_init_steps_.push_back({GPIO_SOC_BT_PCM_IN, GpioSetAltFunction(S905D3_GPIOX_8_TDMA_DIN1_FN)});
+  gpio_init_steps_.push_back({GPIO_SOC_BT_PCM_OUT, GpioSetAltFunction(S905D3_GPIOX_9_TDMA_D0_FN)});
+  gpio_init_steps_.push_back(
+      {GPIO_SOC_BT_PCM_SYNC, GpioSetAltFunction(S905D3_GPIOX_10_TDMA_FS_FN)});
+  gpio_init_steps_.push_back(
+      {GPIO_SOC_BT_PCM_CLK, GpioSetAltFunction(S905D3_GPIOX_11_TDMA_SCLK_FN)});
+  gpio_init_steps_.push_back({GPIO_SOC_BT_PCM_OUT, GpioSetDriveStrength(ua)});
+  gpio_init_steps_.push_back({GPIO_SOC_BT_PCM_SYNC, GpioSetDriveStrength(ua)});
+  gpio_init_steps_.push_back({GPIO_SOC_BT_PCM_CLK, GpioSetDriveStrength(ua)});
 #endif
 
   // PDM pin assignments
-  gpio_impl_.SetAltFunction(GPIO_SOC_MIC_DCLK, S905D3_GPIOA_7_PDM_DCLK_FN);
-  gpio_impl_.SetAltFunction(GPIO_SOC_MICLR_DIN0, S905D3_GPIOA_8_PDM_DIN0_FN);  // First 2 MICs.
-  gpio_impl_.SetAltFunction(GPIO_SOC_MICLR_DIN1, S905D3_GPIOA_9_PDM_DIN1_FN);  // Third MIC.
+  gpio_init_steps_.push_back({GPIO_SOC_MIC_DCLK, GpioSetAltFunction(S905D3_GPIOA_7_PDM_DCLK_FN)});
+  // First 2 MICs.
+  gpio_init_steps_.push_back({GPIO_SOC_MICLR_DIN0, GpioSetAltFunction(S905D3_GPIOA_8_PDM_DIN0_FN)});
+  // Third MIC.
+  gpio_init_steps_.push_back({GPIO_SOC_MICLR_DIN1, GpioSetAltFunction(S905D3_GPIOA_9_PDM_DIN1_FN)});
 
   // Board info.
   fidl::Arena<> fidl_arena;
@@ -251,8 +263,8 @@ zx_status_t Nelson::AudioInit() {
   controller_out.metadata() = tdm_metadata;
 
   // CODEC pin assignments.
-  gpio_impl_.SetAltFunction(GPIO_INRUSH_EN_SOC, 0);  // BOOST_EN_SOC as GPIO.
-  gpio_impl_.ConfigOut(GPIO_INRUSH_EN_SOC, 1);       // BOOST_EN_SOC to high.
+  gpio_init_steps_.push_back({GPIO_INRUSH_EN_SOC, GpioSetAltFunction(0)});  // BOOST_EN_SOC as GPIO.
+  gpio_init_steps_.push_back({GPIO_INRUSH_EN_SOC, GpioConfigOut(1)});       // BOOST_EN_SOC to high.
   // From the TAS5805m codec reference manual:
   // "9.5.3.1 Startup Procedures
   // 1. Configure ADR/FAULT pin with proper settings for I2C device address.
@@ -265,8 +277,8 @@ zx_status_t Nelson::AudioInit() {
   // state.
   // 6. The device is now in normal operation."
   // Step 3 PDN setup and 5ms delay is executed below.
-  gpio_impl_.ConfigOut(GPIO_SOC_AUDIO_EN, 1);  // Set PDN_N to high.
-  zx_nanosleep(zx_deadline_after(ZX_MSEC(5)));
+  gpio_init_steps_.push_back({GPIO_SOC_AUDIO_EN, GpioConfigOut(1)});  // Set PDN_N to high.
+  gpio_init_steps_.push_back({GPIO_SOC_AUDIO_EN, sleep(zx::msec(5))});
   // I2S clocks are configured by the controller and the rest of the initialization is done
   // in the codec itself.
   metadata::ti::TasConfig tas_metadata = {};
@@ -283,19 +295,36 @@ zx_status_t Nelson::AudioInit() {
     tas_metadata.init_sequence2[i].value = tas5805m_init_sequence2[i].value;
   }
 #endif
-  const device_metadata_t codec_metadata[] = {
-      {
+  fpbus::Node dev;
+  dev.name() = "tas58xx";
+  dev.vid() = PDEV_VID_TI;
+  dev.did() = PDEV_DID_TI_TAS58xx;
+  dev.metadata() = std::vector<fpbus::Metadata>{
+      {{
           .type = DEVICE_METADATA_PRIVATE,
-          .data = reinterpret_cast<uint8_t*>(&tas_metadata),
-          .length = sizeof(tas_metadata),
-      },
+          .data = std::vector<uint8_t>(
+              reinterpret_cast<const uint8_t*>(&tas_metadata),
+              reinterpret_cast<const uint8_t*>(&tas_metadata) + sizeof(tas_metadata)),
+      }},
   };
-  status = DdkAddCompositeNodeSpec("tas58xx", ddk::CompositeNodeSpec(kOutI2cRules, kOutI2cProps)
-                                                  .AddParentSpec(kFaultGpioRules, kFaultGpioProps)
-                                                  .set_metadata(codec_metadata));
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "%s DdkAddCompositeNodeSpec failed %d", __FILE__, status);
-    return status;
+  auto parents = std::vector{
+      fdf::ParentSpec{{kOutI2cRules, kOutI2cProps}},
+      fdf::ParentSpec{{kFaultGpioRules, kFaultGpioProps}},
+      fdf::ParentSpec{{kGpioInitRules, kGpioInitProps}},
+  };
+  {
+    auto composite_node_spec = fdf::CompositeNodeSpec{{.name = "tas58xx", .parents = parents}};
+    fdf::WireUnownedResult result = pbus_.buffer(arena)->AddCompositeNodeSpec(
+        fidl::ToWire(fidl_arena, dev), fidl::ToWire(fidl_arena, composite_node_spec));
+    if (!result.ok()) {
+      zxlogf(ERROR, "Failed to send AddCompositeNodeSpec request: %s", result.status_string());
+      return result.status();
+    }
+    if (result->is_error()) {
+      zxlogf(ERROR, "Failed to add composite node spec: %s",
+             zx_status_get_string(result->error_value()));
+      return result->error_value();
+    }
   }
   {
     auto controller_out_spec = fdf::CompositeNodeSpec{{
@@ -360,13 +389,21 @@ zx_status_t Nelson::AudioInit() {
     tdm_dev.mmio() = audio_mmios;
     tdm_dev.bti() = pcm_out_btis;
     tdm_dev.metadata() = tdm_metadata;
-    auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, tdm_dev));
+
+    auto tdm_spec = fdf::CompositeNodeSpec{{
+        "aml_tdm_dai_out",
+        kParentSpecInit,
+    }};
+    auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, tdm_dev),
+                                                            fidl::ToWire(fidl_arena, tdm_spec));
     if (!result.ok()) {
-      zxlogf(ERROR, "NodeAdd request failed: %s", result.FormatDescription().data());
+      zxlogf(ERROR, "AddCompositeNodeSpec Audio(tdm_dev) request failed: %s",
+             result.FormatDescription().data());
       return result.status();
     }
     if (result->is_error()) {
-      zxlogf(ERROR, "NodeAdd failed: %s", zx_status_get_string(result->error_value()));
+      zxlogf(ERROR, "AddCompositeNodeSpec Audio(tdm_dev) failed: %s",
+             zx_status_get_string(result->error_value()));
       return result->error_value();
     }
   }
@@ -417,13 +454,20 @@ zx_status_t Nelson::AudioInit() {
     tdm_dev.bti() = pcm_in_btis;
     tdm_dev.metadata() = tdm_metadata;
 
-    auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, tdm_dev));
+    auto tdm_spec = fdf::CompositeNodeSpec{{
+        "aml_tdm_dai_in",
+        kParentSpecInit,
+    }};
+    auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, tdm_dev),
+                                                            fidl::ToWire(fidl_arena, tdm_spec));
     if (!result.ok()) {
-      zxlogf(ERROR, "NodeAdd request failed: %s", result.FormatDescription().data());
+      zxlogf(ERROR, "AddCompositeNodeSpec Audio(tdm_dev) request failed: %s",
+             result.FormatDescription().data());
       return result.status();
     }
     if (result->is_error()) {
-      zxlogf(ERROR, "NodeAdd failed: %s", zx_status_get_string(result->error_value()));
+      zxlogf(ERROR, "AddCompositeNodeSpec Audio(tdm_dev) failed: %s",
+             zx_status_get_string(result->error_value()));
       return result->error_value();
     }
   }
@@ -457,13 +501,19 @@ zx_status_t Nelson::AudioInit() {
     dev_in.irq() = toddr_b_irqs;
     dev_in.metadata() = pdm_metadata;
 
-    auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, dev_in));
+    auto pdm_spec = fdf::CompositeNodeSpec{{
+        "aml_pdm",
+        kParentSpecInit,
+    }};
+    auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, dev_in),
+                                                            fidl::ToWire(fidl_arena, pdm_spec));
     if (!result.ok()) {
-      zxlogf(ERROR, "NodeAdd Audio(dev_in) request failed: %s", result.FormatDescription().data());
+      zxlogf(ERROR, "AddCompositeNodeSpec Audio(dev_in) request failed: %s",
+             result.FormatDescription().data());
       return result.status();
     }
     if (result->is_error()) {
-      zxlogf(ERROR, "NodeAdd Audio(dev_in) failed: %s",
+      zxlogf(ERROR, "AddCompositeNodeSpec Audio(dev_in) failed: %s",
              zx_status_get_string(result->error_value()));
       return result->error_value();
     }

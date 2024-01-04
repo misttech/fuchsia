@@ -53,14 +53,13 @@ source_set("button_checker") {
     "button_checker.h",
   ]
   deps = [
-    "//sdk/lib/fdio",
+    "//sdk/lib/component/incoming/cpp:cpp",
     "//sdk/lib/syslog/cpp",
-    "//zircon/system/ulib/fbl",
   ]
   public_deps = [
-    "//sdk/fidl/fuchsia.hardware.input:fuchsia.hardware.input_hlcpp",
-    "//zircon/system/ulib/hid",
-    "//zircon/system/ulib/hid-parser",
+    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
+    "//src/lib/fsl",
+    "//zircon/system/ulib/async-loop:async-loop-cpp",
   ]
 }
 
@@ -76,7 +75,7 @@ executable("fake_buffer_collection_unittest_bin") {
   deps = [
     ":fake_buffer_collection",
     "//sdk/banjo/fuchsia.sysmem:fuchsia.sysmem_banjo_c",
-    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp_wire",
+    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp",
     "//sdk/lib/fdio",
     "//sdk/lib/fit",
     "//src/devices/lib/mmio",

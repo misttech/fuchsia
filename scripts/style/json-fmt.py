@@ -11,41 +11,38 @@ on the first error.
 
 import argparse
 import json
-import os
-
-
-def sort(data):
-    if isinstance(data, dict):
-        return {
-            key: (
-                sort(value) if key not in [
-                    "args", "arguments", "children", "injected-services",
-                    "networks", "setup", "test"
-                ] else value) for key, value in data.items()
-        }
-    elif isinstance(data, list):
-        inner = (sort(datum) for datum in data)
-        if any(isinstance(datum, dict) for datum in data):
-            return list(inner)
-        return sorted(inner)
-    else:
-        return data
 
 
 def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        'file',
-        type=argparse.FileType('r+'),
-        nargs='+',
-        help='JSON file to be pretty-printed.')
+        "file",
+        type=argparse.FileType("r+"),
+        nargs="+",
+        help="JSON file to be pretty-printed.",
+    )
     parser.add_argument(
-        '--sort-keys',
+        "--sort-keys",
         default=True,
         action=argparse.BooleanOptionalAction,
-        dest='sort_keys',
-        help='Indicates whether object keys should be sorted.')
+        dest="sort_keys",
+        help="Indicates whether object keys should be sorted.",
+    )
+    parser.add_argument(
+        "--ignore-errors",
+        default=False,
+        action=argparse.BooleanOptionalAction,
+        dest="ignore_errors",
+        help="Indicates whether invalid JSON should be ignored.",
+    )
+    parser.add_argument(
+        "--quiet",
+        default=False,
+        action=argparse.BooleanOptionalAction,
+        dest="quiet",
+        help="Don't print any output.",
+    )
 
     args = parser.parse_args()
     for json_file in args.file:
@@ -53,21 +50,23 @@ def main():
             with json_file:
                 original = json_file.read()
                 data = json.loads(original)
-                (root, ext) = os.path.splitext(json_file.name)
-                if ext == '.cmx':
-                    data = sort(data)
                 formatted = json.dumps(
                     data,
                     indent=4,
                     sort_keys=args.sort_keys,
-                    separators=(',', ': '))
+                    separators=(",", ": "),
+                )
                 if original != formatted:
                     json_file.seek(0)
                     json_file.truncate()
-                    json_file.write(formatted + '\n')
+                    json_file.write(formatted + "\n")
         except json.JSONDecodeError:
-            print(f'Exception encountered while processing {json_file.name}')
-            raise
+            if not args.quiet:
+                print(
+                    f"Exception encountered while processing {json_file.name}"
+                )
+            if not args.ignore_errors:
+                raise
 
 
 if __name__ == "__main__":

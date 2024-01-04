@@ -23,15 +23,12 @@ driver_bind_rules("chromeos_acpi_bind") {
   rules = "chromeos_acpi.bind"
   bind_output = "chromeos_acpi.bindbc"
   tests = "bind-tests.json"
-  deps = [
-    "//src/devices/bind/fuchsia.acpi",
-    "//src/devices/bind/fuchsia.driver.framework",
-  ]
+  deps = [ "//src/devices/bind/fuchsia.acpi" ]
 }
 
 common_deps = [
   ":chromeos_acpi_bind",
-  "//sdk/fidl/fuchsia.acpi.chromeos:fuchsia.acpi.chromeos_cpp_wire",
+  "//sdk/fidl/fuchsia.acpi.chromeos:fuchsia.acpi.chromeos_cpp",
   "//src/devices/lib/acpi",
   "//src/devices/lib/driver",
   "//src/lib/ddktl",

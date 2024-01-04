@@ -5,28 +5,22 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/images/args.gni")
-import("//build/testing/zbi_test.gni")
+import("//build/testing/boot_tests/zbi_test.gni")
 import("//build/toolchain/toolchain_environment.gni")
 import("//zircon/kernel/phys/phys_executable.gni")
 import("//zircon/kernel/phys/qemu.gni")
-
-# Just the one for now, but will be more later.
-legacy_shims = [ "riscv64-qemu-boot-shim" ]
+import("//zircon/kernel/phys/shim_executable.gni")
 
 group("boot-shim") {
-  deps = []
-  foreach(shim, legacy_shims) {
-    deps += [ ":$shim" ]
-  }
+  deps = [ ":linux-riscv64-boot-shim" ]
 }
 
-phys_executable("linux-riscv64-boot-shim") {
+shim_executable("linux-riscv64-boot-shim") {
   sources = [ "linux-riscv64-boot-shim.cc" ]
-
   deps = [
-    "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/libc",
+    "//zircon/kernel/phys:address-space",
     "//zircon/kernel/phys:allocation",
     "//zircon/kernel/phys:arch-phys-info",
     "//zircon/kernel/phys:boot-zbi",
@@ -40,32 +34,8 @@ phys_executable("linux-riscv64-boot-shim") {
   ]
 }
 
-phys_executable("riscv64-qemu-boot-shim") {
-  sources = [ "riscv64-qemu-boot-shim.cc" ]
-  deps = [
-    "..:linuxboot",
-    "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
-    "//zircon/kernel/lib/boot-options",
-    "//zircon/kernel/lib/devicetree",
-    "//zircon/kernel/lib/ktl",
-    "//zircon/kernel/lib/libc",
-    "//zircon/kernel/phys:allocation-init",
-    "//zircon/kernel/phys:boot-zbi",
-    "//zircon/kernel/phys:exception",
-    "//zircon/kernel/phys:main",
-    "//zircon/kernel/phys:stdio",
-    "//zircon/kernel/phys:symbolize",
-    "//zircon/kernel/phys:uart",
-    "//zircon/kernel/phys/lib/boot-shim",
-  ]
-
-  if (qemu_boot_shim.name == target_name) {
-    # This marks it as the official default boot shim for using QEMU.
-    images_metadata = {
-      name = "qemu-kernel"
-      archive = add_qemu_to_build_archives
-    }
-  }
+group("tests") {
+  testonly = true
 }
 
 qemu_shim_phys_tests = [
@@ -83,37 +53,26 @@ if (current_cpu == target_cpu) {
 }
 
 template("qemu_shim_test") {
-  foreach(shim, legacy_shims) {
-    zbi_test("$shim-$target_name") {
-      foreach(qemu, qemu_boot_formats) {
-        if (qemu.name == qemu_boot_format) {
-          qemu_kernel = ":$shim(${qemu.environment})"
-          forward_variables_from(qemu, [ "timeout" ])
-        }
+  zbi_test("linux-riscv64-boot-shim-$target_name") {
+    foreach(qemu, qemu_boot_formats) {
+      if (qemu.name == qemu_boot_format) {
+        qemu_kernel = ":linux-riscv64-boot-shim(${qemu.environment})"
+        forward_variables_from(qemu, [ "timeout" ])
       }
-      assert(defined(qemu_kernel),
-             "$qemu_boot_format not in $qemu_boot_formats")
-
-      device_types = [ "QEMU" ]
-
-      forward_variables_from(invoker, "*")
     }
-  }
-}
+    assert(defined(qemu_kernel), "$qemu_boot_format not in $qemu_boot_formats")
 
-group("tests") {
-  testonly = true
-  deps = []
+    device_types = [ "QEMU" ]
+
+    forward_variables_from(invoker, "*")
+  }
 }
 
 group("boot_tests") {
   testonly = true
-  deps = []
-  foreach(shim, legacy_shims) {
-    deps += [ ":$shim" ]
-    foreach(test, qemu_shim_tests) {
-      deps += [ ":$shim-$test" ]
-    }
+  deps = [ ":boot-shim" ]
+  foreach(test, qemu_shim_tests) {
+    deps += [ ":linux-riscv64-boot-shim-$test" ]
   }
 }
 
@@ -130,10 +89,4 @@ qemu_shim_test("core-tests") {
   # isn't necessarily really quick, so don't impose the short timeout used for
   # raw phys tests.
   timeout = false
-
-  # TODO(https://fxbug.dev/126120): The Bti.DecommitRace test case takes 15
-  # to 17 minutes on RISC-V, so extend the timeout in that case.
-  if (current_cpu == "riscv64") {
-    timeout = 1800
-  }
 }

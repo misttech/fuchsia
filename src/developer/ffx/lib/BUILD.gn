@@ -7,17 +7,18 @@ assert(is_host)
 libs = [
   "addr",
   "buildid",
+  "compat_info",
   "daemonize",
-  "diagnostics",
+  "discovery",
   "doctor_utils",
   "emulator_instance",
   "errors",
   "fastboot",
   "fho",
   "fidl-fuchsia-developer-ffx-ext",
-  "fms",
   "fuchsia-controller",
   "isolate",
+  "manual_targets",
   "metrics",
   "netext",
   "pbms",
@@ -27,13 +28,14 @@ libs = [
   "rcs",
   "schema",
   "sdk",
-  "selector-maps",
   "ssh",
   "stream_util",
   "symbol-index",
   "tasks",
   "testing",
   "timeout",
+  "usb_fastboot_discovery",
+  "validation",
   "version",
   "writer",
   "target",
@@ -48,11 +50,9 @@ group("tests") {
   }
 }
 
-if (is_host) {
-  group("host_tests") {
-    testonly = true
-    deps = [ "e2e_emu:host_tests" ]
-  }
+group("host_tests") {
+  testonly = true
+  deps = [ "e2e_emu:host_tests" ]
 }
 
 group("lib") {

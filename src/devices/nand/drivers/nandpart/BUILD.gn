@@ -25,7 +25,6 @@ fuchsia_driver("nandpart-driver") {
     "bad-block.cc",
     "nandpart-utils.cc",
     "nandpart.cc",
-    "synaptics-bad-block.cc",
   ]
   deps = [
     ":nandpart-bind",
@@ -51,16 +50,19 @@ fuchsia_driver_component("nandpart") {
   manifest = "meta/nandpart.cml"
 }
 
+fuchsia_driver_package("package") {
+  package_name = "nandpart"
+  driver_components = [ ":nandpart" ]
+}
+
 test("nandpart-test-bin") {
   output_name = "nandpart-test"
   sources = [
     "aml-bad-block.cc",
     "bad-block.cc",
     "nandpart-utils.cc",
-    "synaptics-bad-block.cc",
     "test/aml-bad-block-test.cc",
     "test/nandpart-utils-test.cc",
-    "test/synaptics-bad-block-test.cc",
   ]
   include_dirs = [ "." ]
   deps = [

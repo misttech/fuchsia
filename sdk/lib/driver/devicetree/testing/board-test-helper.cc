@@ -13,6 +13,7 @@
 #include <lib/fdio/fd.h>
 #include <lib/fidl/cpp/binding_set.h>
 #include <lib/fit/defer.h>
+#include <lib/sync/cpp/completion.h>
 #include <lib/sys/component/cpp/testing/realm_builder_types.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/vfs/cpp/service.h>
@@ -155,6 +156,13 @@ class FakeBootItems final : public fidl::WireServer<fuchsia_boot::Items>,
 
 }  // namespace
 
+BoardTestHelper::~BoardTestHelper() {
+  libsync::Completion teardown_complete;
+  realm_->Teardown(
+      [&](fit::result<fuchsia::component::Error> result) { teardown_complete.Signal(); });
+  teardown_complete.Wait();
+}
+
 void BoardTestHelper::SetupRealm() {
   auto realm_builder = component_testing::RealmBuilder::Create();
   realm_builder_ = std::make_unique<component_testing::RealmBuilder>(std::move(realm_builder));
@@ -233,6 +241,7 @@ zx::result<> BoardTestHelper::WaitOnDevices(const std::vector<std::string>& devi
       FX_LOGS(ERROR) << "Failed to wait for " << path << " : " << wait_result.status_string();
       return wait_result.take_error();
     }
+    FX_LOGS(INFO) << "Found " << path;
   }
   return zx::ok();
 }

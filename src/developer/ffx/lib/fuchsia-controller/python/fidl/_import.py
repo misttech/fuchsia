@@ -4,9 +4,12 @@
 """Defines the import hooks for when a user writes `import fidl.[fidl_library]`."""
 import importlib.abc
 import sys
-import types
 
-from ._library import get_fidl_ir_map
+from ._async_socket import AsyncSocket
+from ._fidl_common import FrameworkError
+from ._fidl_common import EpitaphError
+from ._ipc import GlobalHandleWaker
+from ._ipc import HandleWaker
 from ._library import load_module
 
 
@@ -15,10 +18,15 @@ class FIDLImportFinder(importlib.abc.MetaPathFinder):
 
     def find_module(self, fullname: str, path=None):
         """Override from abc.MetaPathFinder."""
-        if fullname.startswith("fidl.") and not fullname.startswith("fidl._"):
-            return self
-        elif fullname.startswith("fidl._"):
+        # TODO(fxbug.dev/109789): Remove "TransportError".
+        if (
+            fullname.startswith("fidl._")
+            or fullname == "fidl.FrameworkError"
+            or fullname == "fidl.TransportError"
+        ):
             return __loader__
+        elif fullname.startswith("fidl."):
+            return self
 
     def load_module(self, fullname: str):
         """Override from abc.MetaPathFinder."""

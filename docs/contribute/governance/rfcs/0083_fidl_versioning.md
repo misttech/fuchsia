@@ -3,6 +3,14 @@
 # {{ rfc.name }}: {{ rfc.title }}
 <!-- SET the `rfcid` VAR ABOVE. DO NOT EDIT ANYTHING ELSE ABOVE THIS LINE. -->
 
+Note: This is a historical document describing the original design of FIDL
+versioning. Please see [FIDL versioning][versioning-docs] and [Fuchsia API
+evolution guidelines][api-evolution] for up-to-date information.
+
+Note: This RFC was amended by
+[RFC-0231: FIDL versioning replacement syntax][rfc-0231] and
+[RFC-0232: FIDL bindings for multiple API levels][rfc-0232].
+
 ## Summary
 
 This document proposes a way to annotate FIDL elements with versions and a
@@ -449,11 +457,6 @@ version selection, fidlc produces a warning/error.[^3]
 
 ## Policy {#policy}
 
-> *Note (Oct 2022)*. This section sketched out an initial policy, and is no
-> longer up to date. In particular, most new changes should be added at the
-> current in-development API level, not at `HEAD`. See [FIDL API compatibility
-> testing][api-compat-testing] for details.
-
 FIDL Versioning makes it possible to evolve APIs without breaking applications,
 but it does not guarantee it. To that end, we adopt the following policies,
 specifically for the Fuchsia Platform:
@@ -827,6 +830,8 @@ i.e. without taking action to migrate.
 [rfc-0052]: /docs/contribute/governance/rfcs/0052_type_aliasing_named_types.md
 [rfc-0086]: /docs/contribute/governance/rfcs/0086_rfc_0050_attributes.md
 [rfc-0138]: /docs/contribute/governance/rfcs/0138_handling_unknown_interactions.md
+[rfc-0231]: /docs/contribute/governance/rfcs/0231_fidl_versioning_replacement_syntax.md
+[rfc-0232]: /docs/contribute/governance/rfcs/0232_fidl_bindings_for_multiple_api_levels.md
 [language]: /docs/reference/fidl/language/language.md
 [attrs]: /docs/reference/fidl/language/attributes.md
 [swift-attr]: https://docs.swift.org/swift-book/ReferenceManual/Attributes.html#ID583
@@ -846,4 +851,5 @@ i.e. without taking action to migrate.
 [value-vs-resource]: /docs/reference/fidl/language/language.md#value-vs-resource
 [max-bound]: https://fuchsia-review.googlesource.com/c/fuchsia/+/325737
 [style]: /docs/development/languages/fidl/guides/style.md#files
-[api-compat-testing]: /docs/development/testing/ctf/fidl_api_compatibility_testing.md
+[versioning-docs]: /docs/reference/fidl/language/versioning.md
+[api-evolution]: /docs/development/api/evolution.md

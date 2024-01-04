@@ -15,47 +15,6 @@ use gcs::{
 use std::path::Path;
 use structured_ui;
 
-/// Return true if the blob is available.
-///
-/// `gcs_url` is the full GCS url, e.g. "gs://bucket/path/to/file".
-/// The resulting data will be written to a directory at `local_dir`.
-pub(crate) async fn exists_in_gcs<I>(
-    gcs_url: &str,
-    auth_flow: &AuthFlowChoice,
-    ui: &I,
-    client: &Client,
-) -> Result<bool>
-where
-    I: structured_ui::Interface + Sync,
-{
-    let (gcs_bucket, gcs_path) = split_gs_url(gcs_url).context("Splitting gs URL.")?;
-    loop {
-        match client.exists(gcs_bucket, gcs_path).await {
-            Ok(exists) => return Ok(exists),
-            Err(e) => match e.downcast_ref::<GcsError>() {
-                Some(GcsError::NeedNewAccessToken) => {
-                    tracing::debug!("exists_in_gcs got NeedNewRefreshToken");
-                    let access_token = handle_new_access_token(auth_flow, ui)
-                        .await
-                        .context("Getting new access token.")?;
-                    client.set_access_token(access_token).await;
-                }
-                Some(GcsError::NotFound(_, _)) => {
-                    // Ok(false) should be returned rather than NotFound.
-                    unreachable!();
-                }
-                Some(_) | None => bail!(
-                    "Cannot get product bundle container while \
-                    downloading from gs://{}/{}, error {:?}",
-                    gcs_bucket,
-                    gcs_path,
-                    e,
-                ),
-            },
-        }
-    }
-}
-
 /// Download from a given `gcs_url`.
 ///
 /// `gcs_url` is the full GCS url, e.g. "gs://bucket/path/to/file".
@@ -116,10 +75,7 @@ where
 {
     tracing::debug!("handle_new_access_token");
     let access_token = match auth_flow {
-        AuthFlowChoice::Default
-        | AuthFlowChoice::Pkce
-        | AuthFlowChoice::Oob
-        | AuthFlowChoice::Device => {
+        AuthFlowChoice::Default | AuthFlowChoice::Pkce | AuthFlowChoice::Device => {
             let credentials = credentials::Credentials::load_or_new().await;
             let access_token = match auth::new_access_token(&credentials.gcs_credentials()).await {
                 Ok(a) => a,
@@ -219,6 +175,50 @@ where
     Ok(String::from_utf8_lossy(&result).to_string())
 }
 
+/// List objects from GCS.
+pub async fn list_from_gcs<I>(
+    bucket: &str,
+    prefix: &str,
+    auth_flow: &AuthFlowChoice,
+    ui: &I,
+    client: &Client,
+) -> Result<Vec<String>>
+where
+    I: structured_ui::Interface + Sync,
+{
+    loop {
+        match client.list(bucket, prefix).await.context("listing all the objects.") {
+            Ok(result) => return Ok(result),
+            Err(e) => match e.downcast_ref::<GcsError>() {
+                Some(GcsError::NeedNewAccessToken) => {
+                    tracing::debug!("list_from_gcs got NeedNewAccessToken");
+                    let access_token = handle_new_access_token(auth_flow, ui)
+                        .await
+                        .context("Getting new access token.")?;
+                    client.set_access_token(access_token).await;
+                }
+                Some(GcsError::NotFound(b, p)) => {
+                    tracing::warn!("[gs://{}/{} not found]", b, p);
+                    bail!("Data not found from gs://{}/{}, error {:?}", b, p, e,);
+                }
+                Some(gcs_err) => bail!(
+                    "Cannot get data from gs://{}/{}, error {:?}, {:?}",
+                    bucket,
+                    prefix,
+                    e,
+                    gcs_err,
+                ),
+                None => bail!(
+                    "Cannot get data from gs://{}/{} to string (Non-GcsError), error {:?}",
+                    bucket,
+                    prefix,
+                    e,
+                ),
+            },
+        }
+    }
+}
+
 /// Prompt the user to visit the OAUTH2 permissions web page and enter a new
 /// authorization code, then convert that to a refresh token and write that
 /// refresh token to the ~/.boto file.
@@ -227,13 +227,9 @@ where
     I: structured_ui::Interface + Sync,
 {
     tracing::debug!("update_refresh_token");
-    println!("\nThe refresh token needs to be updated.");
     let refresh_token = match auth_flow {
         AuthFlowChoice::Default | AuthFlowChoice::Pkce => {
             auth::pkce::new_refresh_token(ui).await.context("get refresh token")?
-        }
-        AuthFlowChoice::Oob => {
-            auth::oob::new_refresh_token().await.context("get oob refresh token")?
         }
         AuthFlowChoice::Device => {
             auth::device::new_refresh_token(ui).await.context("get device refresh token")?

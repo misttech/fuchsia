@@ -4,17 +4,8 @@
 
 use {
     crate::{
-        object_handle::{
-            GetProperties, ObjectHandle, ObjectProperties, ReadObjectHandle, WriteObjectHandle,
-        },
-        object_store::{
-            journal::JournalHandle,
-            transaction::{
-                LockKey, LockManager, MetadataReservation, Options, ReadGuard, Transaction,
-                TransactionHandler, TransactionLocks, WriteGuard,
-            },
-            Timestamp,
-        },
+        object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle},
+        object_store::journal::JournalHandle,
     },
     anyhow::Error,
     async_trait::async_trait,
@@ -26,19 +17,18 @@ use {
         vec::Vec,
     },
     storage_device::{
-        buffer::{Buffer, BufferRef, MutableBufferRef},
-        buffer_allocator::{BufferAllocator, MemBufferSource},
+        buffer::{BufferFuture, BufferRef, MutableBufferRef},
+        buffer_allocator::{BufferAllocator, BufferSource},
     },
 };
 
 pub struct FakeObject {
     buf: Mutex<Vec<u8>>,
-    lock_manager: LockManager,
 }
 
 impl FakeObject {
     pub fn new() -> Self {
-        FakeObject { buf: Mutex::new(Vec::new()), lock_manager: LockManager::new() }
+        FakeObject { buf: Mutex::new(Vec::new()) }
     }
 
     fn read(&self, offset: u64, mut buf: MutableBufferRef<'_>) -> Result<usize, Error> {
@@ -69,50 +59,6 @@ impl FakeObject {
     }
 }
 
-#[async_trait]
-impl TransactionHandler for FakeObject {
-    async fn new_transaction<'a>(
-        self: Arc<Self>,
-        locks: &[LockKey],
-        _options: Options<'a>,
-    ) -> Result<Transaction<'a>, Error> {
-        Ok(Transaction::new(self, MetadataReservation::Borrowed, &[], locks).await)
-    }
-
-    async fn transaction_lock<'a>(&'a self, lock_keys: &[LockKey]) -> TransactionLocks<'a> {
-        let lock_manager: &LockManager = self.as_ref();
-        TransactionLocks(lock_manager.txn_lock(lock_keys).await)
-    }
-
-    async fn commit_transaction(
-        self: Arc<Self>,
-        transaction: &mut Transaction<'_>,
-        callback: &mut (dyn FnMut(u64) + Send),
-    ) -> Result<u64, Error> {
-        transaction.take_mutations();
-        callback(0);
-        Ok(0)
-    }
-
-    fn drop_transaction(&self, transaction: &mut Transaction<'_>) {
-        self.lock_manager.drop_transaction(transaction);
-    }
-
-    async fn read_lock<'a>(&'a self, lock_keys: &[LockKey]) -> ReadGuard<'a> {
-        self.lock_manager.read_lock(lock_keys).await
-    }
-
-    async fn write_lock<'a>(&'a self, lock_keys: &[LockKey]) -> WriteGuard<'a> {
-        self.lock_manager.write_lock(lock_keys).await
-    }
-}
-
-impl AsRef<LockManager> for FakeObject {
-    fn as_ref(&self) -> &LockManager {
-        &self.lock_manager
-    }
-}
-
 pub struct FakeObjectHandle {
     object: Arc<FakeObject>,
     allocator: BufferAllocator,
@@ -120,8 +66,7 @@ pub struct FakeObjectHandle {
 
 impl FakeObjectHandle {
     pub fn new_with_block_size(object: Arc<FakeObject>, block_size: usize) -> Self {
-        let allocator =
-            BufferAllocator::new(block_size, Box::new(MemBufferSource::new(32 * 1024 * 1024)));
+        let allocator = BufferAllocator::new(block_size, BufferSource::new(32 * 1024 * 1024));
         Self { object, allocator }
     }
     pub fn new(object: Arc<FakeObject>) -> Self {
@@ -129,7 +74,6 @@ impl FakeObjectHandle {
     }
 }
 
-#[async_trait]
 impl ObjectHandle for FakeObjectHandle {
     fn object_id(&self) -> u64 {
         0
@@ -139,24 +83,8 @@ impl ObjectHandle for FakeObjectHandle {
         self.allocator.block_size().try_into().unwrap()
     }
 
-    fn allocate_buffer(&self, size: usize) -> Buffer<'_> {
+    fn allocate_buffer(&self, size: usize) -> BufferFuture<'_> {
         self.allocator.allocate_buffer(size)
-    }
-}
-
-#[async_trait]
-impl GetProperties for FakeObjectHandle {
-    async fn get_properties(&self) -> Result<ObjectProperties, Error> {
-        let size = self.object.get_size();
-        Ok(ObjectProperties {
-            refs: 1u64,
-            allocated_size: size,
-            data_attribute_size: size,
-            creation_time: Timestamp::zero(),
-            modification_time: Timestamp::zero(),
-            sub_dirs: 0,
-            posix_attributes: None,
-        })
     }
 }
 
@@ -179,14 +107,6 @@ impl WriteObjectHandle for FakeObjectHandle {
 
     async fn truncate(&self, size: u64) -> Result<(), Error> {
         self.object.truncate(size);
-        Ok(())
-    }
-
-    async fn write_timestamps<'a>(
-        &'a self,
-        _crtime: Option<Timestamp>,
-        _mtime: Option<Timestamp>,
-    ) -> Result<(), Error> {
         Ok(())
     }
 

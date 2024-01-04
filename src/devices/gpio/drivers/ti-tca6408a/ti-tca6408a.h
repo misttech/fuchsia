@@ -5,46 +5,45 @@
 #ifndef SRC_DEVICES_GPIO_DRIVERS_TI_TCA6408A_TI_TCA6408A_H_
 #define SRC_DEVICES_GPIO_DRIVERS_TI_TCA6408A_TI_TCA6408A_H_
 
-#include <fuchsia/hardware/gpioimpl/cpp/banjo.h>
-#include <lib/ddk/device.h>
+#include <fidl/fuchsia.driver.compat/cpp/wire.h>
+#include <fidl/fuchsia.hardware.gpioimpl/cpp/driver/fidl.h>
 #include <lib/device-protocol/i2c-channel.h>
+#include <lib/driver/compat/cpp/device_server.h>
+#include <lib/driver/component/cpp/driver_base.h>
 #include <lib/zx/result.h>
-
-#include <ddktl/device.h>
-#include <ddktl/protocol/empty-protocol.h>
 
 namespace gpio {
 
-class TiTca6408a;
-using DeviceType = ddk::Device<TiTca6408a>;
-
 class TiTca6408aTest;
 
-class TiTca6408a : public DeviceType, public ddk::GpioImplProtocol<TiTca6408a, ddk::base_protocol> {
+class TiTca6408a : public fdf::Server<fuchsia_hardware_gpioimpl::GpioImpl> {
  public:
-  static zx_status_t Create(void* ctx, zx_device_t* parent);
+  TiTca6408a(ddk::I2cChannel i2c, uint32_t pin_index_offset)
+      : i2c_(std::move(i2c)), pin_index_offset_(pin_index_offset) {}
 
-  TiTca6408a(zx_device_t* parent, ddk::I2cChannel i2c, uint32_t pin_index_offset)
-      : DeviceType(parent), i2c_(std::move(i2c)), pin_index_offset_(pin_index_offset) {}
+  void ConfigIn(ConfigInRequest& request, ConfigInCompleter::Sync& completer) override;
+  void ConfigOut(ConfigOutRequest& request, ConfigOutCompleter::Sync& completer) override;
+  void SetAltFunction(SetAltFunctionRequest& request,
+                      SetAltFunctionCompleter::Sync& completer) override;
+  void Read(ReadRequest& request, ReadCompleter::Sync& completer) override;
+  void Write(WriteRequest& request, WriteCompleter::Sync& completer) override;
+  void SetPolarity(SetPolarityRequest& request, SetPolarityCompleter::Sync& completer) override;
+  void SetDriveStrength(SetDriveStrengthRequest& request,
+                        SetDriveStrengthCompleter::Sync& completer) override;
+  void GetDriveStrength(GetDriveStrengthRequest& request,
+                        GetDriveStrengthCompleter::Sync& completer) override;
+  void GetInterrupt(GetInterruptRequest& request, GetInterruptCompleter::Sync& completer) override;
+  void ReleaseInterrupt(ReleaseInterruptRequest& request,
+                        ReleaseInterruptCompleter::Sync& completer) override;
+  void GetPins(GetPinsCompleter::Sync& completer) override;
+  void GetInitSteps(GetInitStepsCompleter::Sync& completer) override;
+  void GetControllerId(GetControllerIdCompleter::Sync& completer) override;
 
-  void DdkRelease() { delete this; }
-
-  zx_status_t GpioImplConfigIn(uint32_t index, uint32_t flags);
-  zx_status_t GpioImplConfigOut(uint32_t index, uint8_t initial_value);
-  zx_status_t GpioImplSetAltFunction(uint32_t index, uint64_t function);
-  zx_status_t GpioImplSetDriveStrength(uint32_t index, uint64_t ua, uint64_t* out_actual_ua);
-  zx_status_t GpioImplGetDriveStrength(uint32_t index, uint64_t* ua);
-  zx_status_t GpioImplRead(uint32_t index, uint8_t* out_value);
-  zx_status_t GpioImplWrite(uint32_t index, uint8_t value);
-  zx_status_t GpioImplGetInterrupt(uint32_t index, uint32_t flags, zx::interrupt* out_irq);
-  zx_status_t GpioImplReleaseInterrupt(uint32_t index);
-  zx_status_t GpioImplSetPolarity(uint32_t index, gpio_polarity_t polarity);
-
- protected:
-  friend class TiTca6408aTest;
-
- private:
-  static constexpr uint32_t kPinCount = 8;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_gpioimpl::GpioImpl> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {
+    FDF_LOG(ERROR, "Unknown method %lu", metadata.method_ordinal);
+  }
 
   enum class Register : uint8_t {
     kInputPort = 0,
@@ -52,6 +51,14 @@ class TiTca6408a : public DeviceType, public ddk::GpioImplProtocol<TiTca6408a, d
     kPolarityInversion = 2,
     kConfiguration = 3,
   };
+
+ protected:
+  friend class TiTca6408aTest;
+
+ private:
+  static constexpr uint32_t kPinCount = 8;
+
+  zx_status_t Write(uint32_t index, uint8_t value);
 
   bool IsIndexInRange(uint32_t index) const {
     return index >= pin_index_offset_ && index < (pin_index_offset_ + kPinCount);
@@ -63,6 +70,27 @@ class TiTca6408a : public DeviceType, public ddk::GpioImplProtocol<TiTca6408a, d
 
   ddk::I2cChannel i2c_;
   const uint32_t pin_index_offset_;
+};
+
+class TiTca6408aDevice : public fdf::DriverBase {
+ private:
+  static constexpr char kDeviceName[] = "ti-tca6408a";
+
+ public:
+  TiTca6408aDevice(fdf::DriverStartArgs start_args,
+                   fdf::UnownedSynchronizedDispatcher driver_dispatcher)
+      : fdf::DriverBase(kDeviceName, std::move(start_args), std::move(driver_dispatcher)) {}
+  zx::result<> Start() override;
+  void Stop() override;
+
+ private:
+  zx::result<> CreateNode();
+
+  std::unique_ptr<TiTca6408a> device_;
+  fdf::ServerBindingGroup<fuchsia_hardware_gpioimpl::GpioImpl> bindings_;
+  fidl::WireSyncClient<fuchsia_driver_framework::Node> node_;
+  fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
+  std::optional<compat::DeviceServer> compat_server_;
 };
 
 }  // namespace gpio

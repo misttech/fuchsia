@@ -7,7 +7,12 @@ This is the integration tests for a number of system tests.
 In order to build the system tests, add this to your `fx set`:
 
 ```sh
-% fx set ... --with //src/sys/pkg:e2e_tests
+% fx set ... \
+  --with //src/sys/pkg:e2e_tests \
+  --with //src/testing/sl4f \
+  --with //src/sys/bin/start_sl4f \
+  --args='core_realm_shards = [ "//src/testing/sl4f:sl4f_core_shard" ]'
+
 % fx build
 ```
 
@@ -131,24 +136,13 @@ it.
 The `create-emu` script will create a Fuchsia EFI image:
 
 ```sh
-% ./bin/create-emu \
-  --image-dir some/directory/to/store/the/vm/image \
-  "$OTHER_ARGS[@]}"
+% ./bin/create-emu some/image
 ```
 
-This image can then be used by running `run-emu`:
+This image can then be used by running:
 
 ```sh
-% ./bin/run-emu \
-  --image-dir some/directory/to/store/the/vm/image \
-  "$OTHER_ARGS[@]}"
-```
-
-If you don't need to save the Fuchsia image, you can instead use
-`run-transient-emu` to avoid having to create an image:
-
-```sh
-% ./bin/run-transient-emu "$OTHER_ARGS[@]}"
+% fx qemu --uefi -D some/path/to/image
 ```
 
 Each script supports `--help` to see other supported flags.

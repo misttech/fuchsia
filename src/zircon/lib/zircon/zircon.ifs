@@ -167,6 +167,7 @@ Symbols:
   - { Name: _zx_system_mexec_payload_get, Type: Func }
   - { Name: _zx_system_powerctl, Type: Func }
   - { Name: _zx_system_set_performance_info, Type: Func }
+  - { Name: _zx_system_suspend_enter, Type: Func }
   - { Name: _zx_task_create_exception_channel, Type: Func }
   - { Name: _zx_task_kill, Type: Func }
   - { Name: _zx_task_suspend, Type: Func }
@@ -206,6 +207,7 @@ Symbols:
   - { Name: _zx_vmo_replace_as_executable, Type: Func }
   - { Name: _zx_vmo_set_cache_policy, Type: Func }
   - { Name: _zx_vmo_set_size, Type: Func }
+  - { Name: _zx_vmo_transfer_data, Type: Func }
   - { Name: _zx_vmo_write, Type: Func }
   - { Name: zx_bti_create, Type: Func, Weak: true }
   - { Name: zx_bti_pin, Type: Func, Weak: true }
@@ -372,6 +374,7 @@ Symbols:
   - { Name: zx_system_mexec_payload_get, Type: Func, Weak: true }
   - { Name: zx_system_powerctl, Type: Func, Weak: true }
   - { Name: zx_system_set_performance_info, Type: Func, Weak: true }
+  - { Name: zx_system_suspend_enter, Type: Func, Weak: true }
   - { Name: zx_task_create_exception_channel, Type: Func, Weak: true }
   - { Name: zx_task_kill, Type: Func, Weak: true }
   - { Name: zx_task_suspend, Type: Func, Weak: true }
@@ -411,5 +414,6 @@ Symbols:
   - { Name: zx_vmo_replace_as_executable, Type: Func, Weak: true }
   - { Name: zx_vmo_set_cache_policy, Type: Func, Weak: true }
   - { Name: zx_vmo_set_size, Type: Func, Weak: true }
+  - { Name: zx_vmo_transfer_data, Type: Func, Weak: true }
   - { Name: zx_vmo_write, Type: Func, Weak: true }
 ...

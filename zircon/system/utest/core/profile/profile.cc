@@ -2,13 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/fit/defer.h>
 #include <lib/standalone-test/standalone.h>
 #include <lib/zx/job.h>
 #include <lib/zx/pager.h>
 #include <lib/zx/profile.h>
+#include <lib/zx/resource.h>
+#include <lib/zx/result.h>
 #include <lib/zx/thread.h>
 #include <zircon/errors.h>
 #include <zircon/syscalls/profile.h>
+#include <zircon/syscalls/resource.h>
 #include <zircon/syscalls/types.h>
 #include <zircon/time.h>
 
@@ -19,10 +23,15 @@
 namespace profile {
 namespace {
 
-zx::unowned_job GetRootJob() {
-  zx::unowned_job root_job(zx::job::default_job());
-  EXPECT_TRUE(root_job->is_valid());
-  return root_job;
+zx::result<zx::resource> GetSystemProfileResource() {
+  zx::resource system_profile_resource;
+  const zx_status_t status =
+      zx::resource::create(*standalone::GetSystemRootResource(), ZX_RSRC_KIND_SYSTEM,
+                           ZX_RSRC_SYSTEM_PROFILE_BASE, 1, nullptr, 0, &system_profile_resource);
+  if (status != ZX_OK) {
+    return zx::error(status);
+  }
+  return zx::ok(std::move(system_profile_resource));
 }
 
 zx_profile_info_t MakeSchedulerProfileInfo(int32_t priority) {
@@ -77,166 +86,170 @@ uint32_t GetLastScheduledCpu(const zx::thread& thread) {
 
 // Tests in this file rely that the default job is the root job.
 TEST(SchedulerProfileTest, CreateProfileWithDefaultPriorityIsOk) {
-  zx::unowned_job root_job(zx::job::default_job());
-  ASSERT_TRUE(root_job->is_valid());
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
   zx_profile_info_t profile_info = MakeSchedulerProfileInfo(ZX_PRIORITY_DEFAULT);
   zx::profile profile;
 
-  ASSERT_OK(zx::profile::create(*root_job, 0u, &profile_info, &profile));
+  ASSERT_OK(zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
 }
 
 TEST(SchedulerProfileTest, CreateProfileWithLowestPriorityIsOk) {
-  zx::unowned_job root_job(zx::job::default_job());
-  ASSERT_TRUE(root_job->is_valid());
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
   zx_profile_info_t profile_info = MakeSchedulerProfileInfo(ZX_PRIORITY_LOWEST);
   zx::profile profile;
 
-  ASSERT_OK(zx::profile::create(*root_job, 0u, &profile_info, &profile));
+  ASSERT_OK(zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
 }
 
 TEST(SchedulerProfileTest, CreateProfileWithLowPriorityIsOk) {
-  zx::unowned_job root_job(zx::job::default_job());
-  ASSERT_TRUE(root_job->is_valid());
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
   zx_profile_info_t profile_info = MakeSchedulerProfileInfo(ZX_PRIORITY_LOW);
   zx::profile profile;
 
-  ASSERT_OK(zx::profile::create(*root_job, 0u, &profile_info, &profile));
+  ASSERT_OK(zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
 }
 
 TEST(SchedulerProfileTest, CreateProfileWithHighPriorityIsOk) {
-  zx::unowned_job root_job(zx::job::default_job());
-  ASSERT_TRUE(root_job->is_valid());
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
   zx_profile_info_t profile_info = MakeSchedulerProfileInfo(ZX_PRIORITY_HIGH);
   zx::profile profile;
 
-  ASSERT_OK(zx::profile::create(*root_job, 0u, &profile_info, &profile));
+  ASSERT_OK(zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
 }
 
 TEST(SchedulerProfileTest, CreateProfileWithHighestPriorityIsOk) {
-  zx::unowned_job root_job(zx::job::default_job());
-  ASSERT_TRUE(root_job->is_valid());
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
   zx_profile_info_t profile_info = MakeSchedulerProfileInfo(ZX_PRIORITY_HIGHEST);
   zx::profile profile;
 
-  ASSERT_OK(zx::profile::create(*root_job, 0u, &profile_info, &profile));
+  ASSERT_OK(zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
 }
 
 TEST(SchedulerProfileTest, CreateFairProfileWithNoInheritIsOk) {
-  zx::unowned_job root_job(zx::job::default_job());
-  ASSERT_TRUE(root_job->is_valid());
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
   zx_profile_info_t profile_info = MakeSchedulerProfileInfo(ZX_PRIORITY_DEFAULT);
   zx::profile profile;
 
   profile_info.flags |= ZX_PROFILE_INFO_FLAG_NO_INHERIT;
 
-  ASSERT_OK(zx::profile::create(*root_job, 0u, &profile_info, &profile));
+  ASSERT_OK(zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
 }
 
 TEST(SchedulerProfileTest, CreateProfileWithPriorityExceedingHighestIsInvalidArgs) {
-  zx::unowned_job root_job(zx::job::default_job());
-  ASSERT_TRUE(root_job->is_valid());
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
   zx_profile_info_t profile_info = MakeSchedulerProfileInfo(ZX_PRIORITY_HIGHEST + 1);
   zx::profile profile;
 
-  ASSERT_EQ(ZX_ERR_INVALID_ARGS, zx::profile::create(*root_job, 0u, &profile_info, &profile));
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS,
+            zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
 }
 
 TEST(SchedulerProfileTest, CreateProfileWithPriorityBelowLowestIsInvalidArgs) {
-  zx::unowned_job root_job(zx::job::default_job());
-  ASSERT_TRUE(root_job->is_valid());
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
   zx_profile_info_t profile_info = MakeSchedulerProfileInfo(ZX_PRIORITY_LOWEST - 1);
   zx::profile profile;
 
-  ASSERT_EQ(ZX_ERR_INVALID_ARGS, zx::profile::create(*root_job, 0u, &profile_info, &profile));
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS,
+            zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
 }
 
 TEST(SchedulerProfileTest, CreateProfileWithDeadlineIsOk) {
-  zx::unowned_job root_job(zx::job::default_job());
-  ASSERT_TRUE(root_job->is_valid());
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
   zx_profile_info_t profile_info = MakeSchedulerProfileInfo({ZX_MSEC(1), ZX_MSEC(8), ZX_MSEC(10)});
   zx::profile profile;
 
-  ASSERT_OK(zx::profile::create(*root_job, 0u, &profile_info, &profile));
+  ASSERT_OK(zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
 }
 
 TEST(SchedulerProfileTest, CreateProfileWithZeroCapacityIsInvalidArgs) {
-  zx::unowned_job root_job(zx::job::default_job());
-  ASSERT_TRUE(root_job->is_valid());
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
   zx_profile_info_t profile_info = MakeSchedulerProfileInfo({ZX_MSEC(0), ZX_MSEC(8), ZX_MSEC(10)});
   zx::profile profile;
 
-  ASSERT_EQ(ZX_ERR_INVALID_ARGS, zx::profile::create(*root_job, 0u, &profile_info, &profile));
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS,
+            zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
 }
 
 TEST(SchedulerProfileTest, CreateProfileWithDeadlineBelowCapacityIsInvalidArgs) {
-  zx::unowned_job root_job(zx::job::default_job());
-  ASSERT_TRUE(root_job->is_valid());
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
   zx_profile_info_t profile_info = MakeSchedulerProfileInfo({ZX_MSEC(8), ZX_MSEC(1), ZX_MSEC(10)});
   zx::profile profile;
 
-  ASSERT_EQ(ZX_ERR_INVALID_ARGS, zx::profile::create(*root_job, 0u, &profile_info, &profile));
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS,
+            zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
 }
 
 TEST(SchedulerProfileTest, CreateProfileWithPeriodBelowDeadlineIsInvalidArgs) {
-  zx::unowned_job root_job(zx::job::default_job());
-  ASSERT_TRUE(root_job->is_valid());
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
   zx_profile_info_t profile_info = MakeSchedulerProfileInfo({ZX_MSEC(8), ZX_MSEC(10), ZX_MSEC(1)});
   zx::profile profile;
 
-  ASSERT_EQ(ZX_ERR_INVALID_ARGS, zx::profile::create(*root_job, 0u, &profile_info, &profile));
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS,
+            zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
 }
 
-TEST(SchedulerProfileTest, CreateProfileOnNonRootJobIsAccessDenied) {
-  zx::unowned_job root_job(zx::job::default_job());
-  ASSERT_TRUE(root_job->is_valid());
-  zx::job child_job;
-  ASSERT_OK(zx::job::create(*root_job, 0u, &child_job));
+TEST(SchedulerProfileTest, CreateProfileOnNonProfileResourceIsAccessDenied) {
   zx_profile_info_t profile_info = MakeSchedulerProfileInfo(ZX_PRIORITY_DEFAULT);
   zx::profile profile;
+  zx::resource power_resource;
+  zx::resource::create(*standalone::GetSystemRootResource(), ZX_RSRC_KIND_SYSTEM,
+                       ZX_RSRC_SYSTEM_POWER_BASE, 1, nullptr, 0, &power_resource);
 
-  ASSERT_EQ(ZX_ERR_ACCESS_DENIED, zx::profile::create(child_job, 0u, &profile_info, &profile));
+  ASSERT_EQ(ZX_ERR_ACCESS_DENIED, zx::profile::create(power_resource, 0u, &profile_info, &profile));
 }
 
 TEST(SchedulerProfileTest, CreateProfileWithNonZeroOptionsIsInvalidArgs) {
-  zx::unowned_job root_job(zx::job::default_job());
-  ASSERT_TRUE(root_job->is_valid());
-  zx::job child_job;
-  ASSERT_OK(zx::job::create(*root_job, 0u, &child_job));
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
   zx_profile_info_t profile_info = MakeSchedulerProfileInfo(ZX_PRIORITY_DEFAULT);
   zx::profile profile;
 
-  ASSERT_EQ(ZX_ERR_INVALID_ARGS, zx::profile::create(*root_job, 1u, &profile_info, &profile));
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS,
+            zx::profile::create(maybe_profile_rsrc.value(), 1u, &profile_info, &profile));
 }
 
 TEST(SchedulerProfileTest, CreateProfileWithDeadlineAndNoInheritIsInvalidArgs) {
-  zx::unowned_job root_job(zx::job::default_job());
-  ASSERT_TRUE(root_job->is_valid());
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
   zx_profile_info_t profile_info = MakeSchedulerProfileInfo({ZX_MSEC(1), ZX_MSEC(8), ZX_MSEC(10)});
   zx::profile profile;
 
   profile_info.flags |= ZX_PROFILE_INFO_FLAG_NO_INHERIT;
 
-  ASSERT_EQ(ZX_ERR_INVALID_ARGS, zx::profile::create(*root_job, 0u, &profile_info, &profile));
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS,
+            zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
 }
 
 TEST(SchedulerProfileTest, SetThreadPriorityIsOk) {
-  zx::unowned_job root_job(zx::job::default_job());
-  ASSERT_TRUE(root_job->is_valid());
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
 
   std::atomic<const char*> error = nullptr;
   std::atomic<zx_status_t> result = ZX_OK;
 
   zx::profile profile_1;
   zx_profile_info_t info_1 = MakeSchedulerProfileInfo(ZX_PRIORITY_LOWEST);
-  ASSERT_OK(zx::profile::create(*root_job, 0u, &info_1, &profile_1));
+  ASSERT_OK(zx::profile::create(maybe_profile_rsrc.value(), 0u, &info_1, &profile_1));
 
   zx::profile profile_2;
   zx_profile_info_t info_2 = MakeSchedulerProfileInfo(ZX_PRIORITY_HIGH);
-  ASSERT_OK(zx::profile::create(*root_job, 0u, &info_2, &profile_2));
+  ASSERT_OK(zx::profile::create(maybe_profile_rsrc.value(), 0u, &info_2, &profile_2));
 
   zx::profile profile_3;
   zx_profile_info_t info_3 = MakeSchedulerProfileInfo({ZX_MSEC(8), ZX_MSEC(16), ZX_MSEC(16)});
-  ASSERT_OK(zx::profile::create(*root_job, 0u, &info_3, &profile_3));
+  ASSERT_OK(zx::profile::create(maybe_profile_rsrc.value(), 0u, &info_3, &profile_3));
 
   // Operate on a background thread, just in case a failure changes the priority of the main
   // thread.
@@ -272,36 +285,40 @@ TEST(SchedulerProfileTest, SetThreadPriorityIsOk) {
 }
 
 TEST(ProfileTest, CreateProfileWithDefaultInitializedProfileInfoIsError) {
-  zx::unowned_job root_job(zx::job::default_job());
-  ASSERT_TRUE(root_job->is_valid());
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
   zx_profile_info_t profile_info = {};
   zx::profile profile;
 
-  ASSERT_EQ(ZX_ERR_INVALID_ARGS, zx::profile::create(*root_job, 0u, &profile_info, &profile));
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS,
+            zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
 }
 
 TEST(ProfileTest, CreateProfileWithMutuallyExclusiveFlagsIsInvalidArgs) {
-  zx::unowned_job root_job(zx::job::default_job());
-  ASSERT_TRUE(root_job->is_valid());
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
   zx_profile_info_t profile_info = {};
   profile_info.flags = ZX_PROFILE_INFO_FLAG_PRIORITY | ZX_PROFILE_INFO_FLAG_DEADLINE;
   zx::profile profile;
 
-  ASSERT_EQ(ZX_ERR_INVALID_ARGS, zx::profile::create(*root_job, 0u, &profile_info, &profile));
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS,
+            zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
 }
 
 TEST(ProfileTest, CreateProfileWithNoProfileInfoIsInvalidArgs) {
-  zx::unowned_job root_job(zx::job::default_job());
-  ASSERT_TRUE(root_job->is_valid());
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
   zx::profile profile;
 
-  ASSERT_EQ(ZX_ERR_INVALID_ARGS, zx::profile::create(*root_job, 0u, nullptr, &profile));
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS,
+            zx::profile::create(maybe_profile_rsrc.value(), 0u, nullptr, &profile));
 }
 
 TEST(ProfileTest, CreateProfileWithInvalidHandleIsBadHandle) {
   zx::profile profile;
 
-  ASSERT_EQ(ZX_ERR_BAD_HANDLE, zx::profile::create(zx::job(), 0u, nullptr, &profile));
+  ASSERT_EQ(ZX_ERR_BAD_HANDLE,
+            zx::profile::create(zx::resource(ZX_HANDLE_INVALID), 0u, nullptr, &profile));
 }
 
 zx_status_t RunThreadWithProfile(const zx::profile& profile,
@@ -321,7 +338,9 @@ zx_status_t RunThreadWithProfile(const zx::profile& profile,
 TEST(CpuMaskProfile, EmptyMaskIsValid) {
   zx::profile profile;
   zx_profile_info_t profile_info = MakeCpuMaskProfile(0);
-  ASSERT_OK(zx::profile::create(*GetRootJob(), 0u, &profile_info, &profile));
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
+  ASSERT_OK(zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
 
   // Ensure that the thread can still run, despite the affinity mask
   // having no valid CPUs in it. (The kernel will just fall back to
@@ -337,10 +356,12 @@ TEST(CpuMaskProfile, ApplyProfile) {
   const size_t num_cpus = GetCpuCount();
   ASSERT_LT(num_cpus, ZX_CPU_SET_BITS_PER_WORD,
             "Test assumes system running with less than %d cores.", ZX_CPU_SET_BITS_PER_WORD);
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
   for (size_t i = 0; i < num_cpus; i++) {
     zx_profile_info_t profile_info = MakeCpuMaskProfile(1 << i);
     zx::profile profile;
-    ASSERT_OK(zx::profile::create(*GetRootJob(), 0u, &profile_info, &profile));
+    ASSERT_OK(zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
 
     // Ensure that the correct mask was applied.
     ASSERT_OK(RunThreadWithProfile(profile, [i]() {
@@ -353,27 +374,30 @@ TEST(CpuMaskProfile, ApplyProfile) {
 
 TEST(MemoryPriorityProfile, InvalidPriorities) {
   constexpr int32_t kBadPriorities[] = {ZX_PRIORITY_LOWEST, ZX_PRIORITY_LOW, ZX_PRIORITY_HIGHEST};
-
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
   for (const int32_t prio : kBadPriorities) {
     zx::profile profile;
 
     zx_profile_info_t profile_info = MakeMemoryPriorityProfile(prio);
-    EXPECT_EQ(ZX_ERR_INVALID_ARGS, zx::profile::create(*GetRootJob(), 0u, &profile_info, &profile));
+    EXPECT_EQ(ZX_ERR_INVALID_ARGS,
+              zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
   }
 }
 
 TEST(MemoryPriorityProfile, MemoryOrThread) {
   const uint32_t kInvalidWith[] = {ZX_PROFILE_INFO_FLAG_PRIORITY, ZX_PROFILE_INFO_FLAG_CPU_MASK,
                                    ZX_PROFILE_INFO_FLAG_DEADLINE};
-  zx::unowned_job root_job(zx::job::default_job());
-  ASSERT_TRUE(root_job->is_valid());
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
 
   for (const uint32_t invalid_with : kInvalidWith) {
     zx_profile_info_t profile_info = {};
     profile_info.flags = ZX_PROFILE_INFO_FLAG_MEMORY_PRIORITY | invalid_with;
     zx::profile profile;
 
-    ASSERT_EQ(ZX_ERR_INVALID_ARGS, zx::profile::create(*root_job, 0u, &profile_info, &profile));
+    ASSERT_EQ(ZX_ERR_INVALID_ARGS,
+              zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
   }
 }
 
@@ -381,9 +405,11 @@ TEST(MemoryPriorityProfile, ApplyProfile) {
   // Create the two profiles we will need.
   zx::profile profile_high, profile_default;
   zx_profile_info_t profile_info = MakeMemoryPriorityProfile(ZX_PRIORITY_HIGH);
-  ASSERT_OK(zx::profile::create(*GetRootJob(), 0u, &profile_info, &profile_high));
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
+  ASSERT_OK(zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile_high));
   profile_info = MakeMemoryPriorityProfile(ZX_PRIORITY_DEFAULT);
-  ASSERT_OK(zx::profile::create(*GetRootJob(), 0u, &profile_info, &profile_default));
+  ASSERT_OK(zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile_default));
 
   // To ensure there are some candidate reclaimable pages, create and map in a pager backed VMO.
   zx::port port;
@@ -394,6 +420,10 @@ TEST(MemoryPriorityProfile, ApplyProfile) {
   ASSERT_OK(pager.create_vmo(0, port, 0, zx_system_get_page_size(), &pager_vmo));
   zx_vaddr_t addr;
   ASSERT_OK(zx::vmar::root_self()->map(0, 0, pager_vmo, 0, zx_system_get_page_size(), &addr));
+  auto unmap = fit::defer([&addr]() {
+    // Cleanup the mapping we created.
+    zx::vmar::root_self()->unmap(addr, zx_system_get_page_size());
+  });
 
   // Helper to supply pages to the VMO. Since these pages are reclaimable there is a small chance
   // that they get evicted during the execution of the test so we re-supply at a few different
@@ -437,7 +467,9 @@ TEST(MemoryPriorityProfile, ApplyProfile) {
 TEST(MemoryPriorityProfile, Rights) {
   zx::profile profile;
   zx_profile_info_t profile_info = MakeMemoryPriorityProfile(ZX_PRIORITY_DEFAULT);
-  ASSERT_OK(zx::profile::create(*GetRootJob(), 0u, &profile_info, &profile));
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
+  ASSERT_OK(zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
 
   // Duplicate the vmar handle to have valid and invalid permissions.
   zx::vmar vmar_valid, vmar_invalid;

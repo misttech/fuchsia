@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use diagnostics_reader::{assert_data_tree, ArchiveReader, Data, Logs, Severity};
+use diagnostics_assertions::assert_data_tree;
+use diagnostics_reader::{ArchiveReader, Data, Logs, Severity};
 use fidl_fuchsia_component::{BinderMarker, BinderProxy};
 use fidl_fuchsia_logger::{LogFilterOptions, LogLevelFilter, LogMarker, LogMessage};
 use fuchsia_async::Task;
@@ -88,11 +89,8 @@ fn listen_to_logs(
     let (new_logs, mut errors) = reader.snapshot_then_subscribe::<Logs>().unwrap().split_streams();
 
     let _check_errors = Task::spawn(async move {
-        loop {
-            match errors.next().await {
-                Some(error) => panic!("log testing client encountered an error: {}", error),
-                None => break,
-            }
+        if let Some(error) = errors.next().await {
+            panic!("log testing client encountered an error: {}", error);
         }
     });
 

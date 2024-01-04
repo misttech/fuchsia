@@ -21,21 +21,25 @@ source_set("driver") {
   sources = [
     "driver.cc",
     "driver.h",
+    "driver_client.cc",
+    "driver_client.h",
   ]
 
   deps = [
     "//sdk/lib/driver/runtime:driver_runtime_env_cpp",
     "//sdk/lib/fit",
     "//src/devices/lib/log",
+    "//src/lib/driver_symbols:driver_symbols",
+    "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zircon-internal",
   ]
 
   public_deps = [
     "//sdk/fidl/fuchsia.driver.host:fuchsia.driver.host_cpp",
+    "//sdk/lib/async_patterns/cpp",
     "//sdk/lib/driver/component/cpp:cpp",
     "//sdk/lib/driver/runtime:driver_runtime_cpp",
     "//zircon/system/ulib/async:async-cpp",
-    "//zircon/system/ulib/fbl",
   ]
 }
 
@@ -47,7 +51,7 @@ source_set("lib") {
 
   public_deps = [
     ":driver",
-    "//sdk/fidl/fuchsia.device.manager:fuchsia.device.manager_cpp_wire",
+    "//sdk/fidl/fuchsia.device.manager:fuchsia.device.manager_cpp",
     "//sdk/fidl/fuchsia.driver.host:fuchsia.driver.host_cpp",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/lib/component/incoming/cpp",
@@ -57,7 +61,7 @@ source_set("lib") {
     "//sdk/lib/driver/runtime:driver_runtime_env_cpp",
     "//sdk/lib/syslog/cpp",
     "//src/devices/lib/driver:driver_runtime",
-    "//src/lib/storage/vfs/cpp",
+    "//src/storage/lib/vfs/cpp",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/inspect",
     "//zircon/system/ulib/zx",
@@ -80,7 +84,7 @@ fuchsia_driver("test_driver_driver") {
 
   deps = [
     ":bind",
-    ":fuchsia.driverhost.test_cpp_wire",
+    ":fuchsia.driverhost.test_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/driver/component/cpp:cpp",
     "//src/devices/lib/driver:driver_runtime",
@@ -115,7 +119,7 @@ executable("unittests") {
   sources = [ "driver_host_test.cc" ]
 
   deps = [
-    ":fuchsia.driverhost.test_cpp_wire",
+    ":fuchsia.driverhost.test_cpp",
     ":lib",
     "//sdk/fidl/fuchsia.io:fuchsia.io_hlcpp",
     "//sdk/lib/component/incoming/cpp",
@@ -154,7 +158,7 @@ executable("bin") {
 
   deps = [
     ":lib",
-    "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_cpp_wire",
+    "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/driver/runtime:driver_runtime_env",
     "//sdk/lib/inspect/service/cpp",

@@ -4,7 +4,7 @@
 
 #include "src/connectivity/bluetooth/core/bt-host/hci/connection.h"
 
-#include "pw_bluetooth/hci.emb.h"
+#include "pw_bluetooth/hci_common.emb.h"
 #include "src/connectivity/bluetooth/core/bt-host/hci-spec/protocol.h"
 #include "src/connectivity/bluetooth/core/bt-host/hci/bredr_connection.h"
 #include "src/connectivity/bluetooth/core/bt-host/hci/low_energy_connection.h"
@@ -34,7 +34,7 @@ const DataBufferInfo kLeBufferInfo(1024, 1);
 
 using bt::testing::CommandTransaction;
 
-using TestingBase = bt::testing::ControllerTest<bt::testing::MockController>;
+using TestingBase = bt::testing::FakeDispatcherControllerTest<bt::testing::MockController>;
 
 const StaticByteBuffer kReadEncryptionKeySizeCommand =
     StaticByteBuffer(0x08, 0x14,  // opcode: HCI_ReadEncryptionKeySize
@@ -166,8 +166,7 @@ TEST_P(LinkTypeConnectionTest, Disconnect) {
   EXPECT_CMD_PACKET_OUT(test_device(), kDisconnectCommand, &cmd_status_bytes, &disc_cmpl_bytes);
 
   bool callback_called = false;
-  test_device()->SetTransactionCallback([&callback_called] { callback_called = true; },
-                                        dispatcher());
+  test_device()->SetTransactionCallback([&callback_called] { callback_called = true; });
 
   auto connection = NewConnection();
 
@@ -180,7 +179,7 @@ TEST_P(LinkTypeConnectionTest, Disconnect) {
 
   connection->Disconnect(pw::bluetooth::emboss::StatusCode::REMOTE_USER_TERMINATED_CONNECTION);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(callback_called);
   EXPECT_EQ(1u, disconn_cb_count);
 }
@@ -221,7 +220,7 @@ TEST_P(LinkTypeConnectionTest, LinkRegistrationAndLocalDisconnection) {
                            /*payload_size=*/1);
     packet->mutable_view()->mutable_payload_data()[0] = static_cast<uint8_t>(i);
     acl_connection_0.QueuePacket(std::move(packet));
-    RunLoopUntilIdle();
+    RunUntilIdle();
   }
   // Create packet to send on |acl_connection_1|
   ACLDataPacketPtr packet =
@@ -230,7 +229,7 @@ TEST_P(LinkTypeConnectionTest, LinkRegistrationAndLocalDisconnection) {
                          /*payload_size=*/1);
   packet->mutable_view()->mutable_payload_data()[0] = static_cast<uint8_t>(1);
   acl_connection_1.QueuePacket(std::move(packet));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Packet for |acl_connection_1| should not have been sent because controller buffer is full
   EXPECT_EQ(acl_connection_0.queued_packets().size(), 0u);
@@ -242,7 +241,7 @@ TEST_P(LinkTypeConnectionTest, LinkRegistrationAndLocalDisconnection) {
                         &disconnect_status_rsp);
   hci_connection_0->Disconnect(
       pw::bluetooth::emboss::StatusCode::REMOTE_USER_TERMINATED_CONNECTION);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   acl_data_channel()->UnregisterConnection(kHandle0);
 
@@ -260,7 +259,7 @@ TEST_P(LinkTypeConnectionTest, LinkRegistrationAndLocalDisconnection) {
                                            0x01, 0x00,
                                            // payload
                                            1));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Connection handle |kHandle0| should have been unregistered with ACL Data Channel.
   // Since controller packet count was cleared, packet for |kHandle1| should have been sent.
@@ -310,7 +309,7 @@ TEST_P(LinkTypeConnectionTest, LinkRegistrationAndRemoteDisconnection) {
                            /*payload_size=*/1);
     packet->mutable_view()->mutable_payload_data()[0] = static_cast<uint8_t>(i);
     acl_connection_0.QueuePacket(std::move(packet));
-    RunLoopUntilIdle();
+    RunUntilIdle();
   }
   // Create packet to send on |acl_connection_1|
   ACLDataPacketPtr packet =
@@ -319,7 +318,7 @@ TEST_P(LinkTypeConnectionTest, LinkRegistrationAndRemoteDisconnection) {
                          /*payload_size=*/1);
   packet->mutable_view()->mutable_payload_data()[0] = static_cast<uint8_t>(1);
   acl_connection_1.QueuePacket(std::move(packet));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Packet for |acl_connection_1| should not have been sent because controller buffer is full
   EXPECT_EQ(acl_connection_0.queued_packets().size(), 0u);
@@ -350,7 +349,7 @@ TEST_P(LinkTypeConnectionTest, LinkRegistrationAndRemoteDisconnection) {
                                            1));
   test_device()->SendCommandChannelPacket(
       bt::testing::NumberOfCompletedPacketsPacket(kHandle0, 10));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Connection handle |kHandle0| should have been unregistered with ACL Data Channel.
   // Since controller packet count was cleared, packet for |kHandle1| should have been sent.
@@ -405,14 +404,13 @@ TEST_P(LinkTypeConnectionTest, DisconnectError) {
 
   // The callback should get called regardless of the procedure status.
   bool callback_called = false;
-  test_device()->SetTransactionCallback([&callback_called] { callback_called = true; },
-                                        dispatcher());
+  test_device()->SetTransactionCallback([&callback_called] { callback_called = true; });
 
   auto connection = NewConnection();
 
   connection->Disconnect(pw::bluetooth::emboss::StatusCode::REMOTE_USER_TERMINATED_CONNECTION);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(callback_called);
 }
 
@@ -455,7 +453,7 @@ TEST_F(ConnectionTest, LEStartEncryptionFailsAtStatus) {
 
   EXPECT_TRUE(conn->StartEncryption());
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(callback);
   EXPECT_CMD_PACKET_OUT(test_device(), bt::testing::DisconnectPacket(kTestHandle));
 }
@@ -486,7 +484,7 @@ TEST_F(ConnectionTest, LEStartEncryptionSendsSetLeConnectionEncryptionCommand) {
 
   // Callback shouldn't be called until the controller sends an encryption
   // changed event.
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_FALSE(callback);
   EXPECT_CMD_PACKET_OUT(test_device(), bt::testing::DisconnectPacket(kTestHandle));
 }
@@ -518,7 +516,7 @@ TEST_F(ConnectionTest, AclStartEncryptionFailsAtStatus) {
 
   EXPECT_TRUE(conn->StartEncryption());
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(callback);
   EXPECT_CMD_PACKET_OUT(test_device(), bt::testing::DisconnectPacket(kTestHandle));
 }
@@ -546,7 +544,7 @@ TEST_F(ConnectionTest, AclStartEncryptionSendsSetConnectionEncryptionCommand) {
   EXPECT_TRUE(conn->StartEncryption());
 
   // Callback shouldn't be called until the controller sends an encryption changed event.
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_FALSE(callback);
   EXPECT_CMD_PACKET_OUT(test_device(), bt::testing::DisconnectPacket(kTestHandle));
 }
@@ -577,7 +575,7 @@ TEST_P(LinkTypeConnectionTest, EncryptionChangeIgnoredEvents) {
   test_device()->SendCommandChannelPacket(kEncChangeMalformed);
   test_device()->SendCommandChannelPacket(kEncChangeWrongHandle);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_FALSE(callback);
   EXPECT_CMD_PACKET_OUT(test_device(), bt::testing::DisconnectPacket(kTestHandle));
 }
@@ -628,14 +626,14 @@ TEST_P(LinkTypeConnectionTest, EncryptionChangeEvents) {
 
   test_device()->SendCommandChannelPacket(bt::testing::EncryptionChangeEventPacket(
       pw::bluetooth::emboss::StatusCode::SUCCESS, kTestHandle, hci_spec::EncryptionStatus::kOn));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, callback_count);
   EXPECT_EQ(fit::ok(), result);
   EXPECT_TRUE(result.value_or(false));
 
   test_device()->SendCommandChannelPacket(kEncryptionChangeEventDisabled);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(2, callback_count);
   EXPECT_EQ(fit::ok(), result);
@@ -644,7 +642,7 @@ TEST_P(LinkTypeConnectionTest, EncryptionChangeEvents) {
   // The host should disconnect the link if encryption fails.
   EXPECT_CMD_PACKET_OUT(test_device(), kDisconnectCommandAuthFailure);
   test_device()->SendCommandChannelPacket(kEncryptionChangeEventFailed);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(3, callback_count);
   EXPECT_EQ(ToResult(pw::bluetooth::emboss::StatusCode::PIN_OR_KEY_MISSING).error_value(), result);
@@ -663,7 +661,7 @@ TEST_F(ConnectionTest, EncryptionFailureNotifiesPeerDisconnectCallback) {
   test_device()->SendCommandChannelPacket(bt::testing::EncryptionChangeEventPacket(
       pw::bluetooth::emboss::StatusCode::CONNECTION_TERMINATED_MIC_FAILURE, kTestHandle,
       hci_spec::EncryptionStatus::kOff));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_FALSE(peer_disconnect_callback_received);
 
   // Send the disconnection complete resulting from the encryption failure (this usually does not
@@ -671,7 +669,7 @@ TEST_F(ConnectionTest, EncryptionFailureNotifiesPeerDisconnectCallback) {
   // subsequent event).
   test_device()->SendCommandChannelPacket(bt::testing::DisconnectionCompletePacket(
       kTestHandle, pw::bluetooth::emboss::StatusCode::CONNECTION_TERMINATED_MIC_FAILURE));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(peer_disconnect_callback_received);
 }
 
@@ -698,7 +696,7 @@ TEST_F(ConnectionTest, AclEncryptionEnableCanNotReadKeySizeClosesLink) {
   EXPECT_CMD_PACKET_OUT(test_device(), kDisconnectCommandAuthFailure);
   test_device()->SendCommandChannelPacket(bt::testing::EncryptionChangeEventPacket(
       pw::bluetooth::emboss::StatusCode::SUCCESS, kTestHandle, hci_spec::EncryptionStatus::kOn));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, callback_count);
 }
@@ -726,7 +724,7 @@ TEST_F(ConnectionTest, AclEncryptionEnableKeySizeOneByteClosesLink) {
   EXPECT_CMD_PACKET_OUT(test_device(), kDisconnectCommandAuthFailure);
   test_device()->SendCommandChannelPacket(bt::testing::EncryptionChangeEventPacket(
       pw::bluetooth::emboss::StatusCode::SUCCESS, kTestHandle, hci_spec::EncryptionStatus::kOn));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, callback_count);
 }
@@ -757,7 +755,7 @@ TEST_F(ConnectionTest, SecureConnectionsSucceedsWithAESEncryptionAlgorithm) {
   test_device()->SendCommandChannelPacket(bt::testing::EncryptionChangeEventPacket(
       pw::bluetooth::emboss::StatusCode::SUCCESS, kTestHandle,
       hci_spec::EncryptionStatus::kBredrSecureConnections));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, callback_count);
   EXPECT_EQ(fit::ok(), result);
@@ -786,7 +784,7 @@ TEST_F(ConnectionTest, EncryptionSecureConnectionsWrongAlgorithmClosesLink) {
   EXPECT_CMD_PACKET_OUT(test_device(), kDisconnectCommandAuthFailure);
   test_device()->SendCommandChannelPacket(bt::testing::EncryptionChangeEventPacket(
       pw::bluetooth::emboss::StatusCode::SUCCESS, kTestHandle, hci_spec::EncryptionStatus::kOn));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, callback_count);
   EXPECT_TRUE(result.is_error());
@@ -820,7 +818,7 @@ TEST_P(LinkTypeConnectionTest, EncryptionKeyRefreshEvents) {
   });
 
   test_device()->SendCommandChannelPacket(kEncryptionKeyRefresh);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, callback_count);
   ASSERT_EQ(fit::ok(), result);
@@ -829,7 +827,7 @@ TEST_P(LinkTypeConnectionTest, EncryptionKeyRefreshEvents) {
   // The host should disconnect the link if encryption fails.
   EXPECT_CMD_PACKET_OUT(test_device(), kDisconnectCommandAuthFailure);
   test_device()->SendCommandChannelPacket(kEncryptionKeyRefreshFailed);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(2, callback_count);
   EXPECT_EQ(ToResult(pw::bluetooth::emboss::StatusCode::PIN_OR_KEY_MISSING).error_value(), result);
@@ -869,7 +867,7 @@ TEST_F(ConnectionTest, LELongTermKeyRequestIgnoredEvent) {
   test_device()->SendCommandChannelPacket(kMalformed);
   test_device()->SendCommandChannelPacket(kWrongHandle);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Test will fail if the connection sends a response without ignoring these events.
   EXPECT_CMD_PACKET_OUT(test_device(), bt::testing::DisconnectPacket(kTestHandle));
@@ -901,7 +899,7 @@ TEST_F(ConnectionTest, LELongTermKeyRequestNoKey) {
   auto conn = NewLEConnection();
 
   test_device()->SendCommandChannelPacket(kEvent);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 }
 
 // There is a link key but EDiv and Rand values don't match.
@@ -932,7 +930,7 @@ TEST_F(ConnectionTest, LELongTermKeyRequestNoMatchinKey) {
   conn->set_ltk(hci_spec::LinkKey(kLTK, 1, 1));
 
   test_device()->SendCommandChannelPacket(kEvent);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 }
 
 TEST_F(ConnectionTest, LELongTermKeyRequestReply) {
@@ -964,7 +962,7 @@ TEST_F(ConnectionTest, LELongTermKeyRequestReply) {
   conn->set_ltk(hci_spec::LinkKey(kLTK, 0x8899AABBCCDDEEFF, 0xBEEF));
 
   test_device()->SendCommandChannelPacket(kEvent);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 }
 
 TEST_F(ConnectionTest,
@@ -999,10 +997,10 @@ TEST_F(ConnectionTest,
                            /*payload_size=*/1);
     packet->mutable_view()->mutable_payload_data()[0] = static_cast<uint8_t>(i);
     acl_connection_0.QueuePacket(std::move(packet));
-    RunLoopUntilIdle();
+    RunUntilIdle();
   }
   // Run until the data is flushed out to the MockController.
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Only packets that fit in buffer should have been received.
   EXPECT_EQ(acl_connection_0.queued_packets().size(), 1u);
@@ -1019,7 +1017,7 @@ TEST_F(ConnectionTest,
   // Disconnect |hci_connection_0| by destroying it. The received disconnection complete event will
   // cause the handler to clear pending packets.
   hci_connection_0.reset();
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Register connection with same handle.
   FakeAclConnection acl_connection_1(acl_data_channel(), kHandle, bt::LinkType::kACL);
@@ -1049,10 +1047,10 @@ TEST_F(ConnectionTest,
                            /*payload_size=*/1);
     packet->mutable_view()->mutable_payload_data()[0] = static_cast<uint8_t>(i);
     acl_connection_1.QueuePacket(std::move(packet));
-    RunLoopUntilIdle();
+    RunUntilIdle();
   }
   // Run until the data is flushed out to the MockController.
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(acl_connection_1.queued_packets().size(), 1u);
   EXPECT_TRUE(test_device()->AllExpectedDataPacketsSent());
@@ -1064,7 +1062,7 @@ TEST_F(ConnectionTest,
   hci_connection_1.reset();
   EXPECT_CMD_PACKET_OUT(test_device(), bt::testing::DisconnectPacket(kHandle),
                         &disconnect_status_rsp, &disconnection_complete);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 }
 
 TEST_F(ConnectionTest, PeerDisconnectCallback) {
@@ -1081,12 +1079,12 @@ TEST_F(ConnectionTest, PeerDisconnectCallback) {
   };
   conn->set_peer_disconnect_callback(disconn_complete_cb);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(0u, cb_count);
 
   DynamicByteBuffer disconnection_complete(bt::testing::DisconnectionCompletePacket(kHandle));
   test_device()->SendCommandChannelPacket(disconnection_complete);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1u, cb_count);
 }

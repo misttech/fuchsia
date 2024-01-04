@@ -37,6 +37,8 @@ def _get_starlark_list(values, prefix = "", suffix = "", remove_prefix = ""):
     for v in values:
         if type(v) == "dict":
             values_str += "    " + _get_starlark_dict(v) + ",\n"
+        elif type(v) == "struct":
+            values_str += "    " + str(v) + ",\n"
         else:
             if len(remove_prefix) > 0 and v.startswith(remove_prefix):
                 v = v[len(remove_prefix):]
@@ -57,6 +59,8 @@ def _get_starlark_dict(entries):
         v = entries[k]
         if type(v) == "list":
             v_str = "[" + _get_starlark_list(v).replace("\n", "") + "]"
+        elif type(v) == "struct":
+            v_str += "    " + str(v) + ",\n"
         else:
             v_str = "\"" + str(v) + "\""
         entries_str += "    \"" + k + "\": " + v_str + ",\n"
@@ -144,7 +148,7 @@ def _generate_sysroot_build_rules(ctx, meta, relative_dir, build_file, process_c
         strip_prefix = "../%s/%s" % (ctx.attr.name, libs_base)
 
         per_arch_build_file = build_file.dirname.get_child(arch).get_child("BUILD.bazel")
-        ctx.file(per_arch_build_file, content = _header())
+        ctx.file(per_arch_build_file, content = _header(), executable = False)
         _merge_template(
             ctx,
             per_arch_build_file,
@@ -267,13 +271,17 @@ def _generate_companion_host_tool_build_rules(ctx, meta, relative_dir, build_fil
     process_context.files_to_copy[meta["_meta_sdk_root"]].extend(files_str)
 
 # buildifier: disable=unused-variable
-def _generate_api_version_rules(ctx, meta, relative_dir, build_file, process_context, parent_sdk_contents):  # @unused
+def _generate_api_version_rules(ctx, meta, relative_dir, build_file, process_context, parent_sdk_contents):
     tmpl = ctx.path(ctx.attr._api_version_template)
     versions = []
     max_api = -1
     if "data" in meta and "api_levels" in meta["data"]:
         for api_level, value in meta["data"]["api_levels"].items():
-            versions.append({"abi_revision": value["abi_revision"], "api_level": api_level})
+            versions.append(struct(
+                abi_revision = value["abi_revision"],
+                api_level = api_level,
+                status = value["status"],
+            ))
             max_api = max(max_api, int(api_level))
 
     # unlike other template rules that affect the corresponding BUILD.bazel file,
@@ -284,12 +292,11 @@ def _generate_api_version_rules(ctx, meta, relative_dir, build_file, process_con
     fidl_api_level_override = ctx.attr.fuchsia_api_level_override
     clang_api_level_override = ctx.attr.fuchsia_api_level_override
     if ctx.attr.fuchsia_api_level_override == "HEAD":
-        # TODO(https://fxbug.dev/104513) upstream clang support for HEAD
-        # Emulate a "HEAD" API level since it is not supported directly by clang.
-        # Fuchsia API levels are unsigned 64-bit integers, but clang stores API levels as 32-bit,
-        # so we define this as `((uint32_t)-1)`. clang expects API levels to be integer literals.
-        clang_api_level_override = 4294967295
-        fidl_api_level_override = "HEAD"
+        versions.append(struct(
+            # Do not set abi_revision or status here because they don't really
+            # exist for HEAD and we don't want to silently use them by accident.
+            api_level = "HEAD",
+        ))
 
     _merge_template(
         ctx,
@@ -297,8 +304,6 @@ def _generate_api_version_rules(ctx, meta, relative_dir, build_file, process_con
         tmpl,
         {
             "{{default_target_api}}": str(max_api),
-            "{{default_clang_target_api}}": str(clang_api_level_override) or str(max_api),
-            "{{default_fidl_target_api}}": str(fidl_api_level_override) or str(max_api),
             "{{valid_target_apis}}": _get_starlark_list(versions),
         },
     )
@@ -342,7 +347,7 @@ def _generate_component_manifest_rules(ctx, meta, relative_dir, build_file, proc
                 parts = f.partition("/%s/" % lib_name)
                 include_path = parts[0]
                 shard_name = parts[2]
-                name = shard_name.removesuffix(".cml").removesuffix(".cmx").removesuffix(".shard")
+                name = shard_name.removesuffix(".cml").removesuffix(".shard")
 
                 # Keep track of all the labels that we create to add to the toolchain
                 target_label = "//{}/{}:{}".format(include_path, lib_name, name)
@@ -427,11 +432,27 @@ _FUCHSIA_CLANG_VARIANT_MAP = {
     "asan": "@fuchsia_clang//:asan_variant",
 }
 
+# Maps a Fuchsia API level to the corresponding config_setting() label in
+# @fuchsia_sdk//fuchsia/constraints
+def _fuchsia_api_level_constraint(api_level):
+    return "//fuchsia/constraints:api_level_%s" % _to_fuchsia_api_level_name(api_level)
+
+def _to_fuchsia_api_level_name(api_level):
+    return "unspecified" if api_level == -1 else api_level
+
+# We can't just do f"//:{file}" for file srcs, since the relative dir may have a
+# BUILD.bazel file, making that subdir its own Bazel package.
+def _bazel_file_path(relative_dir, file):
+    prefix = relative_dir if file.startswith(relative_dir) else ""
+    suffix = file[len(prefix):].lstrip("/")
+    return "//%s:%s" % (prefix, suffix)
+
 def _generate_cc_prebuilt_library_build_rules(ctx, meta, relative_dir, build_file, process_context, parent_sdk_contents):
     tmpl = ctx.path(ctx.attr._cc_prebuilt_library_template)
     tmpl_linklib = ctx.path(ctx.attr._cc_prebuilt_library_linklib_subtemplate)
     tmpl_distlib = ctx.path(ctx.attr._cc_prebuilt_library_distlib_subtemplate)
     lib_base_path = meta["root"] + "/"
+
     deps = _find_dep_paths(meta["deps"], "pkg/", ctx.attr.parent_sdk, parent_sdk_contents)
     subs = {
         "{{deps}}": _get_starlark_list(deps),
@@ -459,7 +480,7 @@ def _generate_cc_prebuilt_library_build_rules(ctx, meta, relative_dir, build_fil
 
     for arch in arch_list:
         per_arch_build_file = build_file.dirname.get_child(arch).get_child("BUILD.bazel")
-        ctx.file(per_arch_build_file, content = _header())
+        ctx.file(per_arch_build_file, content = _header(), executable = False)
 
         linklib = meta["binaries"][arch]["link"]
         _merge_template(ctx, per_arch_build_file, tmpl_linklib, {
@@ -492,20 +513,86 @@ def _generate_cc_prebuilt_library_build_rules(ctx, meta, relative_dir, build_fil
     })
     _merge_template(ctx, build_file, tmpl, subs)
 
-def _merge_template(ctx, target_build_file, template_file, subs):
+# buildifier: disable=unused-variable
+def _generate_package_build_rules(ctx, meta, relative_dir, build_file, process_context, parent_sdk_contents):
+    export_all_files_template = ctx.path(ctx.attr._export_all_files_template)
+    package_template = ctx.path(ctx.attr._package_template)
+    constraint_template = ctx.path(ctx.attr._constraint_template)
+    select_alias = ctx.path(ctx.attr._select_alias)
+
+    _merge_template(ctx, build_file, export_all_files_template)
+
+    # Parse package variants from metadata.
+    name = _get_target_name(meta["name"])
+    package_variants = [
+        struct(
+            name = "%s_%s_api_%s" % (name, variant["arch"], _to_fuchsia_api_level_name(variant["api_level"])),
+            files = variant["files"],
+            manifest = variant["manifest_file"],
+            constraint = "is_%s_api_%s" % (variant["arch"], _to_fuchsia_api_level_name(variant["api_level"])),
+            os = "@platforms//os:fuchsia",
+            cpu = _FUCHSIA_CPU_CONSTRAINT_MAP[variant["arch"]],
+            api_level = _fuchsia_api_level_constraint(variant["api_level"]),
+        )
+        for variant in meta["variants"]
+    ]
+
+    # TODO(chandarren): Remove once variants in IDK metadata are deduplicated.
+    package_variants = [variant for i, variant in enumerate(package_variants) if variant.name not in [variant.name for variant in package_variants[:i]]]
+
+    for variant in package_variants:
+        # Write build defs for each package variant.
+        _merge_template(ctx, build_file, package_template, {
+            "{{name}}": variant.name,
+            "{{files}}": _get_starlark_list([_bazel_file_path(relative_dir, file) for file in variant.files]),
+            "{{manifest}}": _bazel_file_path(relative_dir, variant.manifest),
+        })
+        process_context.files_to_copy[meta["_meta_sdk_root"]].extend(variant.files)
+
+        # Write merged constraint definitions.
+        _merge_template(ctx, build_file, constraint_template, {
+            "{{name}}": variant.constraint,
+            "{{match_all}}": _get_starlark_list([
+                variant.os,
+                variant.cpu,
+                variant.api_level,
+            ]),
+        })
+
+    _merge_template(ctx, build_file, select_alias, {
+        "{{name}}": name,
+        "{{select_map}}": _get_starlark_dict({
+            ":%s" % variant.constraint: ":%s" % variant.name
+            for variant in package_variants
+        }),
+    })
+
+# buildifier: disable=unused-variable
+def _generate_config_build_rules(ctx, meta, relative_dir, build_file, process_context, parent_sdk_contents):
+    filegroup_template = ctx.path(ctx.attr._filegroup_template)
+
+    process_context.files_to_copy[meta["_meta_sdk_root"]].extend(meta["data"])
+
+    _merge_template(ctx, build_file, filegroup_template, {
+        "{{name}}": _get_target_name(meta["name"]),
+        "{{srcs}}": _get_starlark_list([_bazel_file_path(relative_dir, src) for src in meta["data"]]),
+    })
+
+def _merge_template(ctx, target_build_file, template_file, subs = {}):
     if ctx.path(target_build_file).exists:
         existing_content = ctx.read(target_build_file)
     else:
         existing_content = ""
 
-    ctx.template(target_build_file, template_file, subs)
+    ctx.template(target_build_file, template_file, subs, executable = False)
 
     if existing_content != "":
         new_content = ctx.read(target_build_file)
-        ctx.file(target_build_file, content = existing_content + "\n" + new_content)
+        ctx.file(target_build_file, content = existing_content + "\n" + new_content, executable = False)
 
 def _process_dir(ctx, relative_dir, libraries, process_context, parent_sdk_contents):
     generators = {
+        "config": _generate_config_build_rules,
         "sysroot": _generate_sysroot_build_rules,
         "fidl_library": _generate_fidl_library_build_rules,
         "companion_host_tool": _generate_companion_host_tool_build_rules,
@@ -516,6 +603,7 @@ def _process_dir(ctx, relative_dir, libraries, process_context, parent_sdk_conte
         "bind_library": _generate_bind_library_build_rules,
         "component_manifest": _generate_component_manifest_rules,
         "version_history": _generate_api_version_rules,
+        "package": _generate_package_build_rules,
     }
 
     build_file = ctx.path(relative_dir).get_child("BUILD.bazel")
@@ -527,7 +615,7 @@ def _process_dir(ctx, relative_dir, libraries, process_context, parent_sdk_conte
             continue
 
         if not build_file.exists:
-            ctx.file(build_file, content = _header())
+            ctx.file(build_file, content = _header(), executable = False)
 
         generator = generators[t]
         generator(ctx, meta, relative_dir, build_file, process_context, parent_sdk_contents)
@@ -612,6 +700,7 @@ def generate_sdk_constants(repo_ctx, manifests):
     """
     host_cpu_names_set = {}
     target_cpu_names_set = {}
+    all_cc_source_targets_map = {}
     for manifest_obj in manifests:
         root = manifest_obj.get("root")
         manifest_path = manifest_obj.get("manifest")
@@ -622,6 +711,26 @@ def generate_sdk_constants(repo_ctx, manifests):
         for cpu_name in json_obj["arch"]["target"]:
             target_cpu_names_set[cpu_name] = None
 
+        all_cc_source_metas = [
+            part["meta"]
+            for part in json_obj["parts"]
+            if part["type"] in ["cc_source_library"]
+        ]
+
+        for meta_path in all_cc_source_metas:
+            meta_obj = json.decode(repo_ctx.read(_path_in_root(repo_ctx, root, meta_path)))
+            target = "//{}:{}".format(meta_obj["root"], meta_obj["name"])
+            if meta_obj["root"].endswith("/" + meta_obj["name"]):
+                target = "//{}".format(meta_obj["root"])
+            all_cc_source_targets_map[target] = meta_obj["headers"]
+
+    # Pretty-print the cc_source_targets dictionary to make
+    # generated_constants.bzl easier to read.
+    all_cc_source_targets_map_pp = "{\n"
+    for k, v in all_cc_source_targets_map.items():
+        all_cc_source_targets_map_pp += '  "{}": {},\n'.format(k, str(v))
+    all_cc_source_targets_map_pp += "}\n"
+
     host_cpu_names = sorted(host_cpu_names_set.keys())
     target_cpu_names = sorted(target_cpu_names_set.keys())
 
@@ -630,10 +739,14 @@ def generate_sdk_constants(repo_ctx, manifests):
         target_cpus = target_cpu_names,
     )
     generated_content = "# AUTO-GENERATED - DO NOT EDIT!\n\n"
+    generated_content += "\"\"\"Fuchsia SDK constants.\"\"\"\n"
     generated_content += "# The following list of CPU names use Fuchsia conventions.\n"
     generated_content += "constants = %s\n" % constants
+    generated_content += "\n"
+    generated_content += "# List of all c++ source targets in the SDK.\n"
+    generated_content += "ALL_CC_SOURCE_TARGETS = %s\n" % all_cc_source_targets_map_pp
 
-    repo_ctx.file("generated_constants.bzl", generated_content)
+    repo_ctx.file("generated_constants.bzl", generated_content, executable = False)
 
     return constants
 

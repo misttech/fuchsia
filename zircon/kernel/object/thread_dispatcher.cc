@@ -118,7 +118,7 @@ zx_status_t ThreadDispatcher::Initialize() {
   Guard<CriticalMutex> guard{get_lock()};
   // Associate the proc's address space with this thread. All threads start off with the normal
   // address space as their active aspace.
-  fbl::RefPtr<VmAspace> aspace = process_->normal_aspace();
+  VmAspace* aspace = process_->normal_aspace();
   aspace->AttachToThread(core_thread_);
   // we've entered the initialized state
   SetStateLocked(ThreadState::Lifecycle::INITIALIZED);
@@ -133,6 +133,8 @@ zx_status_t ThreadDispatcher::set_name(const char* name, size_t len) {
     return ZX_ERR_BAD_STATE;
   }
   core_thread_->set_name({name, len});
+  KTRACE_KERNEL_OBJECT("kernel:meta", get_koid(), ZX_OBJ_TYPE_THREAD, (fxt::StringRef{name, len}),
+                       ("process", ktrace::Koid(process()->get_koid())));
   return ZX_OK;
 }
 

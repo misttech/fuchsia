@@ -21,7 +21,7 @@
 #if defined(__Fuchsia__)
 #include <lib/trace/event.h>
 
-#include "tracing.h"
+#include "src/performance/lib/test_utils/trace_controller.h"
 #endif
 
 namespace {
@@ -44,7 +44,9 @@ namespace {
 constexpr char kFakeNetstackEnvVar[] = "FAKE_NETSTACK";
 constexpr char kNetstack3EnvVar[] = "NETSTACK3";
 constexpr char kNetstack2EnvVar[] = "NETSTACK2";
+constexpr char kStarnixEnvVar[] = "STARNIX";
 #if defined(__Fuchsia__)
+constexpr char kSocketBenchmarksTracingCategory[] = "socket_benchmarks";
 constexpr char kTracingEnvVar[] = "TRACING";
 #endif
 
@@ -99,22 +101,7 @@ class Ipv4 {
   }
 };
 
-int ExpectedGetBufferSize(int set_size) {
-  // The desired return value for getting SO_SNDBUF and SO_RCVBUF on Linux
-  // and Netstack2 is double the amount of payload bytes due to the fact
-  // that the value is doubled on set to account for overhead according
-  // to the [man page].
-  //
-  // [man page]: https://man7.org/linux/man-pages/man7/socket.7.html
-#ifdef __linux__
-  set_size *= 2;
-  // NB: This minimum is a magic number and seems to contradict the stated
-  // minimum in the Linux man page of 2048 for SNDBUF.
-  if (set_size < 4608) {
-    return 4608;
-  }
-  return set_size;
-#endif
+int ExpectedGetBufferSizeFuchsia(int set_size) {
   if (std::getenv(kNetstack2EnvVar)) {
     set_size *= 2;
     // NB: Netstack 2 clamps the value on set within a certain range, and
@@ -129,6 +116,30 @@ int ExpectedGetBufferSize(int set_size) {
     return set_size;
   }
   return set_size;
+}
+
+int ExpectedGetBufferSize(int set_size) {
+  // The desired return value for getting SO_SNDBUF and SO_RCVBUF on Linux
+  // and Netstack2 is double the amount of payload bytes due to the fact
+  // that the value is doubled on set to account for overhead according
+  // to the [man page].
+  //
+  // [man page]: https://man7.org/linux/man-pages/man7/socket.7.html
+#ifdef __linux__
+  // If running on Starnix, the expected value should actually be that of
+  // Fuchsia's, and not Linux's.
+  if (std::getenv(kStarnixEnvVar)) {
+    return ExpectedGetBufferSizeFuchsia(set_size);
+  }
+  set_size *= 2;
+  // NB: This minimum is a magic number and seems to contradict the stated
+  // minimum in the Linux man page of 2048 for SNDBUF.
+  if (set_size < 4608) {
+    return 4608;
+  }
+  return set_size;
+#endif
+  return ExpectedGetBufferSizeFuchsia(set_size);
 }
 
 // Helper no-op function to assert functions abstracted over IP version are properly parameterized.
@@ -444,6 +455,11 @@ PERFTEST_CTOR(RegisterTests)
 
 int main(int argc, char** argv) {
   std::string test_suite = "fuchsia.network.socket.loopback";
+
+  if (std::getenv(kStarnixEnvVar)) {
+    test_suite += ".starnix";
+  }
+
   if (std::getenv("FAST_UDP")) {
     test_suite += ".fastudp";
   } else if (std::getenv(kFakeNetstackEnvVar)) {
@@ -455,7 +471,13 @@ int main(int argc, char** argv) {
 #if defined(__Fuchsia__)
   std::optional<Tracer> tracer;
   if (std::getenv(kTracingEnvVar)) {
-    fit::result<fit::failed, Tracer> result = StartTracing();
+    const fuchsia_tracing_controller::TraceConfig trace_config{{
+        .categories = std::vector<std::string>{"kernel:meta", "kernel:sched", "kernel:syscall",
+                                               "net", "perftest", kSocketBenchmarksTracingCategory},
+        .buffer_size_megabytes_hint = 64,
+    }};
+    fit::result<fit::failed, Tracer> result =
+        StartTracing(trace_config, "/custom_artifacts/trace.fxt");
     if (result.is_error()) {
       FX_LOGS(ERROR) << "failed to start tracing";
       return 1;

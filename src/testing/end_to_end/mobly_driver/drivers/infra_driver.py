@@ -31,23 +31,30 @@ class InfraDriver(base_mobly_driver.BaseDriver):
     Mobly test results to be plumbed to Fuchsia's result storage backend.
     """
 
-    _TESTBED_NAME = 'InfraTestbed'
+    _TESTBED_NAME = "InfraTestbed"
 
     def __init__(
-            self,
-            tb_json_path: str,
-            log_path: str,
-            params_path: Optional[str] = None) -> None:
+        self,
+        tb_json_path: str,
+        ffx_path: str,
+        log_path: Optional[str] = None,
+        params_path: Optional[str] = None,
+    ) -> None:
         """Initializes the instance.
 
         Args:
           tb_json_path: absolute path to the testbed definition JSON file.
+          ffx_path: absolute path to the FFX binary.
           log_path: absolute path to directory for storing Mobly test output.
           params_path: absolute path to the Mobly testbed params file.
+
+        Raises:
+          KeyError if required environment variables not found.
         """
-        super().__init__(params_path=params_path)
+        super().__init__(
+            ffx_path=ffx_path, log_path=log_path, params_path=params_path
+        )
         self._tb_json_path = tb_json_path
-        self._log_path = log_path
 
     def generate_test_config(self, transport: Optional[str] = None) -> str:
         """Returns a Mobly test config in YAML format.
@@ -93,24 +100,30 @@ class InfraDriver(base_mobly_driver.BaseDriver):
                 "ssh_key": "ssh_private_key",
             }
             config = api_mobly.new_testbed_config(
-                self._TESTBED_NAME, self._log_path, tb_config, test_params,
-                botanist_honeydew_translation_map)
+                self._TESTBED_NAME,
+                self._log_path,
+                self._ffx_path,
+                tb_config,
+                test_params,
+                botanist_honeydew_translation_map,
+            )
             if transport:
                 api_mobly.set_transport_in_config(config, transport)
             return yaml.dump(config)
         except (IOError, OSError) as e:
-            raise common.DriverException('Failed to open file: %')
+            raise common.DriverException("Failed to open file: %")
 
     def teardown(self) -> None:
         """Performs any required clean up upon Mobly test completion."""
         results_path = api_mobly.get_result_path(
-            self._log_path, self._TESTBED_NAME)
+            self._log_path, self._TESTBED_NAME
+        )
         try:
-            with open(results_path, 'r') as f:
+            with open(results_path, "r") as f:
                 # Write test result YAML file to stdout so that Mobly output
                 # integrates with with `testparser`.
-                print(api_infra.TESTPARSER_PREAMBLE)
-                print(f.read())
+                print(api_infra.TESTPARSER_RESULT_HEADER, flush=True)
+                print(f.read(), flush=True)
         except OSError:
             # It's possible for the Mobly result file to not exist (e.g. if the
             # test crashed). In such cases, don't print anything.
@@ -121,7 +134,8 @@ class InfraDriver(base_mobly_driver.BaseDriver):
         # bug which can be removed once the following pull request is fixed:
         # https://github.com/bazelbuild/remote-apis-sdks/pull/422
         symlink_path = api_mobly.get_latest_test_output_dir_symlink_path(
-            self._log_path, self._TESTBED_NAME)
+            self._log_path, self._TESTBED_NAME
+        )
         try:
             os.remove(symlink_path)
         except OSError:

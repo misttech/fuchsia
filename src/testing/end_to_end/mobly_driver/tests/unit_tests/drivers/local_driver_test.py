@@ -7,6 +7,9 @@
 import unittest
 from unittest.mock import ANY, patch
 
+from parameterized import parameterized
+
+import api_ffx
 import common
 import local_driver
 
@@ -14,59 +17,238 @@ import local_driver
 class LocalDriverTest(unittest.TestCase):
     """Local Driver tests"""
 
-    @patch('yaml.dump', return_value='yaml_str')
-    @patch('common.read_yaml_from_file')
-    @patch('api_mobly.get_config_with_test_params')
-    def test_generate_test_config_with_params_success(
-            self, mock_get_config, mock_read_yaml, *unused_args):
-        """Test case for successful config generation"""
+    @patch("builtins.print")
+    @patch("yaml.dump", return_value="yaml_str")
+    @patch("common.read_yaml_from_file")
+    @patch("api_mobly.get_config_with_test_params")
+    def test_generate_test_config_from_file_with_params_success(
+        self, mock_get_config, mock_read_yaml, *unused_args
+    ):
+        """Test case for successful config generation from file"""
         driver = local_driver.LocalDriver(
-            config_path='config/path', params_path='params/path')
+            ffx_path="ffx/path",
+            log_path="log/path",
+            config_path="config/path",
+            params_path="params/path",
+        )
         ret = driver.generate_test_config()
 
         mock_get_config.assert_called_once()
         self.assertEqual(mock_read_yaml.call_count, 2)
-        self.assertEqual(ret, 'yaml_str')
+        self.assertEqual(ret, "yaml_str")
 
-    @patch('yaml.dump', return_value='yaml_str')
-    @patch('common.read_yaml_from_file')
-    @patch('api_mobly.get_config_with_test_params')
-    def test_generate_test_config_without_params_success(
-            self, mock_get_config, mock_read_yaml, *unused_args):
+    @patch("builtins.print")
+    @patch("yaml.dump", return_value="yaml_str")
+    @patch("common.read_yaml_from_file")
+    @patch("api_mobly.get_config_with_test_params")
+    def test_generate_test_config_from_file_without_params_success(
+        self, mock_get_config, mock_read_yaml, *unused_args
+    ):
         """Test case for successful config without params generation"""
-        driver = local_driver.LocalDriver(config_path='config/path')
+        driver = local_driver.LocalDriver(
+            ffx_path="ffx/path", log_path="log/path", config_path="config/path"
+        )
         ret = driver.generate_test_config()
 
         mock_get_config.assert_not_called()
         mock_read_yaml.assert_called_once()
-        self.assertEqual(ret, 'yaml_str')
+        self.assertEqual(ret, "yaml_str")
 
-    @patch('yaml.dump', return_value='yaml_str')
-    @patch('common.read_yaml_from_file')
-    @patch('api_mobly.get_config_with_test_params')
-    @patch('api_mobly.set_transport_in_config')
-    def test_generate_test_config_with_transport_success(
-            self, mock_set_transport, *unused_args):
+    @patch("builtins.print")
+    @patch("yaml.dump", return_value="yaml_str")
+    @patch("common.read_yaml_from_file")
+    @patch("api_mobly.get_config_with_test_params")
+    @patch("api_mobly.set_transport_in_config")
+    def test_generate_test_config_from_file_with_transport_success(
+        self, mock_set_transport, *unused_args
+    ):
         """Test case for successful config without params generation"""
-        transport_name = 'transport'
-        driver = local_driver.LocalDriver(config_path='config/path')
+        transport_name = "transport"
+        driver = local_driver.LocalDriver(
+            ffx_path="ffx/path", log_path="log/path", config_path="config/path"
+        )
         ret = driver.generate_test_config(transport=transport_name)
 
         mock_set_transport.assert_called_with(ANY, transport_name)
 
+    @patch("builtins.print")
     @patch(
-        'common.read_yaml_from_file', side_effect=common.InvalidFormatException)
-    def test_generate_test_config_invalid_yaml_content_raises_exception(
-            self, *unused_args):
+        "common.read_yaml_from_file", side_effect=common.InvalidFormatException
+    )
+    def test_generate_test_config_from_file_invalid_yaml_content_raises_exception(
+        self, *unused_args
+    ):
         """Test case for exception being raised on invalid YAML content"""
-        driver = local_driver.LocalDriver(config_path='config/path')
+        driver = local_driver.LocalDriver(
+            ffx_path="ffx/path", log_path="log/path", config_path="config/path"
+        )
         with self.assertRaises(common.InvalidFormatException):
             driver.generate_test_config()
 
-    @patch('common.read_yaml_from_file', side_effect=OSError)
-    def test_generate_test_config_invalid_path_raises_exception(
-            self, *unused_args):
-        """Test case for execption being raised for invalid path"""
-        driver = local_driver.LocalDriver(config_path='/does/not/exist')
+    @patch("builtins.print")
+    @patch("common.read_yaml_from_file", side_effect=OSError)
+    def test_generate_test_config_from_file_invalid_path_raises_exception(
+        self, *unused_args
+    ):
+        """Test case for exception being raised for invalid path"""
+        driver = local_driver.LocalDriver(
+            ffx_path="ffx/path",
+            log_path="log/path",
+            config_path="/does/not/exist",
+        )
         with self.assertRaises(common.DriverException):
             driver.generate_test_config()
+
+    @patch("builtins.print")
+    @patch("yaml.dump", return_value="yaml_str")
+    @patch(
+        "api_ffx.FfxClient.target_list",
+        autospec=True,
+        return_value=api_ffx.TargetListResult(
+            all_nodes=["dut_1", "dut_2"], default_nodes=[]
+        ),
+    )
+    @patch("api_mobly.new_testbed_config", autospec=True)
+    def test_generate_test_config_from_env_success(
+        self,
+        mock_new_tb_config,
+        mock_ffx_target_list,
+        *unused_args,
+    ):
+        """Test case for successful env config generation"""
+        driver = local_driver.LocalDriver(
+            ffx_path="ffx/path", log_path="log/path"
+        )
+        ret = driver.generate_test_config()
+
+        mock_new_tb_config.assert_called_once()
+        controllers = mock_new_tb_config.call_args.kwargs["mobly_controllers"]
+        self.assertEqual(2, len(controllers))
+        self.assertEqual([c["name"] for c in controllers], ["dut_1", "dut_2"])
+        self.assertEqual(ret, "yaml_str")
+
+    @parameterized.expand(
+        [
+            (
+                "default_nodes exist, prefer all_nodes",
+                ["dut_1"],
+            ),
+            ("default_nodes empty, prefer all_nodes", []),
+        ]
+    )
+    @patch("builtins.print")
+    @patch("yaml.dump", return_value="yaml_str")
+    @patch("api_ffx.FfxClient.target_list", autospec=True)
+    @patch("api_mobly.new_testbed_config", autospec=True)
+    def test_multi_device_config_generation(
+        self,
+        unused_name,
+        default_nodes,
+        mock_new_tb_config,
+        mock_ffx_target_list,
+        *unused_args,
+    ):
+        """Test case for multi-device config generation."""
+        mock_ffx_target_list.return_value = api_ffx.TargetListResult(
+            all_nodes=["dut_1", "dut_2"], default_nodes=default_nodes
+        )
+
+        driver = local_driver.LocalDriver(
+            ffx_path="ffx/path", log_path="log/path", multi_device=True
+        )
+        ret = driver.generate_test_config()
+
+        mock_new_tb_config.assert_called()
+        controllers = mock_new_tb_config.call_args.kwargs["mobly_controllers"]
+        self.assertEqual([c["name"] for c in controllers], ["dut_1", "dut_2"])
+        self.assertEqual(ret, "yaml_str")
+
+    @parameterized.expand(
+        [
+            ("default_nodes exist, prefer default_nodes", ["dut_1"], ["dut_1"]),
+            ("default_nodes empty, prefer all_nodes", [], ["dut_1", "dut_2"]),
+        ]
+    )
+    @patch("builtins.print")
+    @patch("yaml.dump", return_value="yaml_str")
+    @patch("api_ffx.FfxClient.target_list", autospec=True)
+    @patch("api_mobly.new_testbed_config", autospec=True)
+    def test_single_device_config_generation(
+        self,
+        unused_name,
+        default_nodes,
+        want_nodes,
+        mock_new_tb_config,
+        mock_ffx_target_list,
+        *unused_args,
+    ):
+        """Test case for single-device config generation."""
+        mock_ffx_target_list.return_value = api_ffx.TargetListResult(
+            all_nodes=["dut_1", "dut_2"], default_nodes=default_nodes
+        )
+
+        driver = local_driver.LocalDriver(
+            ffx_path="ffx/path", log_path="log/path", multi_device=False
+        )
+        ret = driver.generate_test_config()
+
+        mock_new_tb_config.assert_called()
+        controllers = mock_new_tb_config.call_args.kwargs["mobly_controllers"]
+        self.assertEqual([c["name"] for c in controllers], want_nodes)
+        self.assertEqual(ret, "yaml_str")
+
+    @patch("builtins.print")
+    @patch(
+        "api_ffx.FfxClient.target_list",
+        autospec=True,
+        return_value=api_ffx.TargetListResult(
+            all_nodes=[],
+            default_nodes=[],
+        ),
+    )
+    def test_config_generation_no_devices_raises_exception(
+        self, mock_check_output, *unused_args
+    ):
+        """Test case for exception being raised when no devices are found"""
+        driver = local_driver.LocalDriver(
+            ffx_path="ffx/path",
+            log_path="log/path",
+        )
+        with self.assertRaises(common.DriverException):
+            ret = driver.generate_test_config()
+
+    @patch("builtins.print")
+    @patch(
+        "api_ffx.FfxClient.target_list",
+        side_effect=api_ffx.CommandException(),
+        autospec=True,
+    )
+    def test_generate_test_config_from_env_discovery_failure_raises_exception(
+        self, mock_check_output, *unused_args
+    ):
+        """Test case for exception being raised from discovery failure"""
+        driver = local_driver.LocalDriver(
+            ffx_path="ffx/path", log_path="log/path"
+        )
+        with self.assertRaises(common.DriverException):
+            ret = driver.generate_test_config()
+
+    @parameterized.expand(
+        [
+            ("Invalid JSON str", b""),
+            ("No devices JSON str", b"[]"),
+            ("Empty device JSON str", b"[{}]"),
+        ]
+    )
+    @patch("builtins.print")
+    @patch("subprocess.check_output", autospec=True)
+    def test_generate_test_config_from_env_discovery_output_raises_exception(
+        self, unused_name, discovery_output, mock_check_output, unused_print
+    ):
+        """Test case for exception being raised from invalid discovery output"""
+        mock_check_output.return_value = discovery_output
+        driver = local_driver.LocalDriver(
+            ffx_path="ffx/path", log_path="log/path"
+        )
+        with self.assertRaises(common.DriverException):
+            ret = driver.generate_test_config()

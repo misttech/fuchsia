@@ -52,7 +52,6 @@ struct {{ .WireTableFrame }} final {
 };
 
 {{ EnsureNamespace . }}
-extern "C" const fidl_type_t {{ .CodingTableType.Name }};
 {{ .Docs }}
 class {{ .Name }} {
 public:
@@ -366,17 +365,16 @@ struct TypeTraits<{{ . }}> {
   static constexpr uint32_t kMaxNumHandles = {{ .TypeShapeV2.MaxHandles }};
   static constexpr uint32_t kMaxDepth = {{ .TypeShapeV2.Depth }};
   static constexpr uint32_t kPrimarySize = {{ .TypeShapeV2.InlineSize }};
-  static constexpr uint32_t kPrimarySizeV1 = {{ .TypeShapeV1.InlineSize }};
   [[maybe_unused]]
   static constexpr uint32_t kMaxOutOfLine = {{ .TypeShapeV2.MaxOutOfLine }};
-  static constexpr uint32_t kMaxOutOfLineV1 = {{ .TypeShapeV1.MaxOutOfLine }};
   static constexpr bool kHasFlexibleEnvelope = {{ .TypeShapeV2.HasFlexibleEnvelope }};
-  static constexpr bool kHasEnvelope = {{ .TypeShapeV2.HasEnvelope }};
   static constexpr bool kHasPointer = {{ .TypeShapeV2.HasPointer }};
 };
 
 template <>
 struct IsFidlType<{{ . }}> : public std::true_type {};
+template <>
+struct IsWire<{{ . }}> : public std::true_type {};
 template <>
 struct IsTable<{{ . }}> : public std::true_type {};
 static_assert(std::is_standard_layout_v<{{ . }}>);
@@ -401,7 +399,7 @@ struct ::fidl::internal::WireCodingTraits<{{ . }}, ::fidl::internal::WireCodingC
     }
 
     fidl_vector_t* vec = reinterpret_cast<fidl_vector_t*>(value);
-    fidl_envelope_v2_t* envelopes = static_cast<fidl_envelope_v2_t*>(vec->data);
+    fidl_envelope_t* envelopes = static_cast<fidl_envelope_t*>(vec->data);
     for (size_t i = 0; i < vec->count; i++) {
       {{/* Two switches here, so they are translated to lookup tables. */}}
       size_t encode_inline_size = 0;
@@ -420,7 +418,7 @@ struct ::fidl::internal::WireCodingTraits<{{ . }}, ::fidl::internal::WireCodingC
           break;
         {{- end }}
       }
-      WirePosition envelope_position = vector_position + i * sizeof(fidl_envelope_v2_t);
+      WirePosition envelope_position = vector_position + i * sizeof(fidl_envelope_t);
       WireEncodeEnvelope(encode_inline_size, encode_fn, encoder, &envelopes[i], envelope_position, inner_depth);
     }
   }
@@ -454,7 +452,7 @@ struct ::fidl::internal::WireCodingTraits<{{ . }}, ::fidl::internal::WireCodingC
           break;
         {{- end }}
       }
-      ::fidl::internal::WireDecodeOptionalEnvelope(decode_inline_size, decode_fn, decoder, vector_position + i * sizeof(fidl_envelope_v2_t), inner_depth);
+      ::fidl::internal::WireDecodeOptionalEnvelope(decode_inline_size, decode_fn, decoder, vector_position + i * sizeof(fidl_envelope_t), inner_depth);
     }
   }
 };

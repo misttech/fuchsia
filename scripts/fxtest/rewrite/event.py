@@ -20,7 +20,7 @@ import time
 import typing
 
 from dataparse import dataparse
-import selection
+import selection_types
 import tests_json_file
 
 # Events may have a unique Id, represented as a monotonically increasing integer.
@@ -157,14 +157,17 @@ class TestSelectionPayload:
     for this command invocation.
     """
 
-    # Map of selected test names to their score that was above the threshold.
-    selected: typing.Dict[str, float]
+    # Map of selected test names to their score that was below the threshold.
+    selected: typing.Dict[str, int]
 
-    # Map of not selected test names to their score that was below the threshold.
-    not_selected: typing.Dict[str, float]
+    # Map of not selected test names to their score that was above the threshold.
+    not_selected: typing.Dict[str, int]
 
-    # The threshold this selection run was configured with. Range is [0.0, 1.0].
-    threshold: float
+    # Map of selected but not run test names to their score that was below the threshold.
+    selected_but_not_run: typing.Dict[str, int]
+
+    # The distance threshold this selection run was configured with.
+    fuzzy_distance_threshold: int
 
 
 @dataparse
@@ -178,6 +181,9 @@ class EventGroupPayload:
     # An optional count of events queued on the group.
     # If set, this value can be used to create a progress bar for this event group.
     queued_events: int | None
+
+    # If true, instructs console displays to hide children.
+    hide_children: bool = False
 
 
 class TestGroupPayload(EventGroupPayload):
@@ -231,6 +237,12 @@ class TestSuiteStatus(enum.Enum):
     # A test suite was skipped for some reason.
     SKIPPED = "SKIPPED"
 
+    # The test suite execution was aborted due to some condition.
+    ABORTED = "ABORTED"
+
+    # The test suite was aborted due to exceeding its timeout.
+    TIMEOUT = "TIMEOUT"
+
 
 @dataparse
 @dataclass
@@ -242,6 +254,18 @@ class TestSuiteEndedPayload:
 
     # Optionally, a message describing what happened.
     message: str | None = None
+
+
+@dataparse
+@dataclass
+class EnumerateTestCasesPayload:
+    """A test suite's cases were enumerated."""
+
+    # The name of the test being enumerated.
+    test_name: str
+
+    # The names of the test cases in the test.
+    test_case_names: typing.List[str]
 
 
 @dataparse
@@ -344,6 +368,11 @@ class EventPayloadUnion:
     #
     # The value provides result information.
     test_suite_ended: TestSuiteEndedPayload | None = None
+
+    # This event denotes the numeration of cases within a test suite.
+    #
+    # The value provides details on the cases that were found.
+    enumerate_test_cases: EnumerateTestCasesPayload | None = None
 
 
 @dataparse
@@ -598,7 +627,9 @@ class EventRecorder:
                 GLOBAL_RUN_ID,
                 self._monotonic_time_start,
                 starting=True,
-                payload=EventPayloadUnion(start_timestamp=self._system_time_start),
+                payload=EventPayloadUnion(
+                    start_timestamp=self._system_time_start
+                ),
             )
         )
 
@@ -656,7 +687,9 @@ class EventRecorder:
             )
         )
 
-    def _emit_user_message(self, message: str, level: MessageLevel = MessageLevel.INFO):
+    def _emit_user_message(
+        self, message: str, level: MessageLevel = MessageLevel.INFO
+    ):
         """Emit a message to display to a user.
 
         Args:
@@ -728,7 +761,9 @@ class EventRecorder:
                 self._get_timestamp(),
                 parent=parent,
                 starting=True,
-                payload=EventPayloadUnion(parsing_file=FileParsingPayload(name, path)),
+                payload=EventPayloadUnion(
+                    parsing_file=FileParsingPayload(name, path)
+                ),
             )
         )
         return id
@@ -846,7 +881,7 @@ class EventRecorder:
 
     def emit_test_selections(
         self,
-        selections: selection.TestSelections,
+        selections: selection_types.TestSelections,
     ):
         """Event with details of test selection.
 
@@ -857,6 +892,10 @@ class EventRecorder:
         selected_scores = {
             item.info.name: selections.best_score[item.info.name]
             for item in selections.selected
+        }
+        selected_but_not_run_scores = {
+            item.info.name: selections.best_score[item.info.name]
+            for item in selections.selected_but_not_run
         }
         not_selected_scores = {
             name: score
@@ -869,7 +908,10 @@ class EventRecorder:
                 self._get_timestamp(),
                 payload=EventPayloadUnion(
                     test_selections=TestSelectionPayload(
-                        selected_scores, not_selected_scores, selections.threshold
+                        selected_scores,
+                        not_selected_scores,
+                        selected_but_not_run_scores,
+                        selections.fuzzy_distance_threshold,
                     )
                 ),
             )
@@ -880,6 +922,7 @@ class EventRecorder:
         name: str,
         parent: Id | None = None,
         queued_events: int | None = None,
+        hide_children: bool = False,
     ) -> Id:
         """Create a new event group.
 
@@ -903,7 +946,9 @@ class EventRecorder:
                 parent=parent,
                 starting=True,
                 payload=EventPayloadUnion(
-                    event_group=EventGroupPayload(name, queued_events)
+                    event_group=EventGroupPayload(
+                        name, queued_events, hide_children=hide_children
+                    )
                 ),
             )
         )
@@ -948,7 +993,9 @@ class EventRecorder:
                 id,
                 self._get_timestamp(),
                 starting=True,
-                payload=EventPayloadUnion(test_group=TestGroupPayload(test_count)),
+                payload=EventPayloadUnion(
+                    test_group=TestGroupPayload(test_count)
+                ),
             )
         )
         return id
@@ -1001,6 +1048,22 @@ class EventRecorder:
                 ending=True,
                 payload=EventPayloadUnion(
                     test_suite_ended=TestSuiteEndedPayload(status, message)
+                ),
+            )
+        )
+
+    def emit_enumerate_test_cases(
+        self, test_name: str, test_case_names: typing.List[str]
+    ):
+        id = self._new_id()
+        self._emit(
+            Event(
+                id,
+                self._get_timestamp(),
+                payload=EventPayloadUnion(
+                    enumerate_test_cases=EnumerateTestCasesPayload(
+                        test_name, test_case_names
+                    )
                 ),
             )
         )

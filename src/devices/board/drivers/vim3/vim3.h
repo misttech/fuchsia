@@ -5,9 +5,10 @@
 #ifndef SRC_DEVICES_BOARD_DRIVERS_VIM3_VIM3_H_
 #define SRC_DEVICES_BOARD_DRIVERS_VIM3_VIM3_H_
 
+#include <fidl/fuchsia.hardware.clockimpl/cpp/wire.h>
+#include <fidl/fuchsia.hardware.gpioimpl/cpp/wire.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/markers.h>
-#include <fuchsia/hardware/clockimpl/cpp/banjo.h>
 #include <fuchsia/hardware/gpioimpl/cpp/banjo.h>
 #include <fuchsia/hardware/iommu/cpp/banjo.h>
 #include <lib/ddk/device.h>
@@ -39,6 +40,7 @@ enum {
   BTI_AUDIO_IN,
   BTI_AUDIO_BT_OUT,
   BTI_AUDIO_BT_IN,
+  BTI_AUDIO_COMPOSITE,
 };
 
 // MAC address metadata indices.
@@ -76,9 +78,11 @@ class Vim3 : public Vim3Type {
   // lifetime of the board driver.
   bool HasLcd();
 
+  zx::result<> AdcInit();
   zx_status_t AudioInit();
   zx_status_t BacklightInit();
   zx_status_t BluetoothInit();
+  zx::result<> ButtonsInit();
   zx_status_t CanvasInit();
   zx_status_t ClkInit();
   zx_status_t CpuInit();
@@ -87,7 +91,6 @@ class Vim3 : public Vim3Type {
   zx_status_t EmmcInit();
   zx_status_t EthInit();
   zx_status_t GpioInit();
-  zx_status_t HdmiInit();
   zx_status_t I2cInit();
   zx_status_t PowerInit();
   zx_status_t PwmInit();
@@ -105,6 +108,23 @@ class Vim3 : public Vim3Type {
 
   int Thread();
 
+  static fuchsia_hardware_gpioimpl::wire::InitCall GpioConfigIn(
+      fuchsia_hardware_gpio::GpioFlags flags) {
+    return fuchsia_hardware_gpioimpl::wire::InitCall::WithInputFlags(flags);
+  }
+
+  static fuchsia_hardware_gpioimpl::wire::InitCall GpioConfigOut(uint8_t initial_value) {
+    return fuchsia_hardware_gpioimpl::wire::InitCall::WithOutputValue(initial_value);
+  }
+
+  fuchsia_hardware_gpioimpl::wire::InitCall GpioSetAltFunction(uint64_t function) {
+    return fuchsia_hardware_gpioimpl::wire::InitCall::WithAltFunction(init_arena_, function);
+  }
+
+  fuchsia_hardware_gpioimpl::wire::InitCall GpioSetDriveStrength(uint64_t ds_ua) {
+    return fuchsia_hardware_gpioimpl::wire::InitCall::WithDriveStrengthUa(init_arena_, ds_ua);
+  }
+
   // TODO(fxbug.dev/108070): migrate to fdf::SyncClient when it is available.
   fdf::WireSyncClient<fuchsia_hardware_platform_bus::PlatformBus> pbus_;
 
@@ -112,8 +132,9 @@ class Vim3 : public Vim3Type {
 
   std::optional<ddk::InitTxn> init_txn_;
   ddk::IommuProtocolClient iommu_;
-  ddk::GpioImplProtocolClient gpio_impl_;
-  ddk::ClockImplProtocolClient clk_impl_;
+  fidl::Arena<> init_arena_;
+  std::vector<fuchsia_hardware_gpioimpl::wire::InitStep> gpio_init_steps_;
+  std::vector<fuchsia_hardware_clockimpl::wire::InitStep> clock_init_steps_;
   thrd_t thread_;
 };
 

@@ -20,16 +20,16 @@ static_library("fs_test") {
   deps = [
     ":crypt_service",
     "//sdk/fidl/fuchsia.fs:fuchsia.fs_hlcpp",
-    "//sdk/fidl/fuchsia.hardware.ramdisk:fuchsia.hardware.ramdisk_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.ramdisk:fuchsia.hardware.ramdisk_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/fdio",
     "//sdk/lib/sys/cpp",
     "//src/lib/json_parser",
-    "//src/lib/storage/block_client/cpp",
-    "//src/lib/storage/fs_management:fs_management_shard",
-    "//src/lib/storage/fs_management/cpp:mkfs_with_default",
     "//src/storage/fvm",
+    "//src/storage/lib/block_client/cpp",
+    "//src/storage/lib/fs_management:fs_management_shard",
+    "//src/storage/lib/fs_management/cpp:mkfs_with_default",
     "//src/storage/testing:storage_driver_test_support",
     "//third_party/rapidjson",
     "//zircon/system/ulib/async-loop",
@@ -39,10 +39,11 @@ static_library("fs_test") {
   ]
   public_deps = [
     # fs_test.h:
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire_testing",
-    "//sdk/lib/sys/inspect/cpp",
-    "//src/lib/storage/fs_management",
+    "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_hlcpp",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_testing",
+    "//sdk/lib/diagnostics/reader/cpp:archive_reader",
     "//src/storage/blobfs",
+    "//src/storage/lib/fs_management",
     "//src/storage/testing:storage_driver_test_support",
     "//third_party/googletest:gtest",
     "//zircon/system/ulib/fbl",
@@ -54,7 +55,7 @@ test("access_tests") {
   sources = [ "access.cc" ]
   deps = [
     ":fs_test",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//src/lib/fxl/test:gtest_main",
     "//zircon/system/ulib/fdio-caller",
   ]
@@ -67,6 +68,9 @@ test("append_tests") {
     "//src/lib/fxl/test:gtest_main",
     "//zircon/system/ulib/fbl",
   ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 }
 
 test("attr_tests") {
@@ -85,6 +89,9 @@ test("basic_tests") {
     "//src/lib/fxl/test:gtest_main",
     "//src/storage/minfs",
   ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 }
 
 test("case_sensitivity_tests") {
@@ -108,8 +115,8 @@ test("corrupt_tests") {
   sources = [ "corrupt.cc" ]
   deps = [
     ":fs_test",
-    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire",
-    "//sdk/lib/syslog/cpp:cpp-macros",
+    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+    "//sdk/lib/syslog/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//zircon/system/ulib/fbl",
   ]
@@ -128,7 +135,7 @@ test("dot_dot_tests") {
   sources = [ "dot_dot.cc" ]
   deps = [
     ":fs_test",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//src/lib/fxl/test:gtest_main",
     "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/zx",
@@ -168,9 +175,8 @@ test("inspect_tests") {
     ":fs_test",
     "//sdk/lib/fdio",
     "//sdk/lib/inspect/testing/cpp",
-    "//sdk/lib/sys/inspect/cpp",
     "//src/lib/fxl/test:gtest_main",
-    "//src/lib/storage/vfs/cpp/inspect",
+    "//src/storage/lib/vfs/cpp/inspect",
     "//third_party/googletest:gmock",
     "//zircon/system/ulib/fdio-caller",
   ]
@@ -192,6 +198,9 @@ test("lseek_tests") {
     "//src/lib/fxl/test:gtest_main",
     "//zircon/system/ulib/fbl",
   ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 }
 
 test("mmap_tests") {
@@ -260,7 +269,7 @@ test("rename_tests") {
   sources = [ "rename.cc" ]
   deps = [
     ":fs_test",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//src/lib/fxl/test:gtest_main",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fdio-caller",
@@ -271,7 +280,7 @@ test("resize_tests") {
   sources = [ "resize.cc" ]
   deps = [
     ":fs_test",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/storage/fvm",
     "//src/storage/minfs",
@@ -287,6 +296,9 @@ test("rw_tests") {
     "//src/lib/fxl/test:gtest_main",
     "//zircon/system/ulib/fbl",
   ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 }
 
 test("rw_workers_tests") {
@@ -335,6 +347,9 @@ test("truncate_tests") {
     "//src/lib/fxl/test:gtest_main",
     "//zircon/system/ulib/fbl",
   ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 }
 
 test("unicode_tests") {
@@ -359,7 +374,7 @@ test("watcher_tests") {
   sources = [ "watcher.cc" ]
   deps = [
     ":fs_test",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//src/lib/fxl/test:gtest_main",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fdio-caller",
@@ -420,8 +435,8 @@ static_library("crypt_service") {
   deps = [
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
-    "//sdk/lib/syslog/cpp:cpp-macros",
-    "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_cpp_wire",
+    "//sdk/lib/syslog/cpp",
+    "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_cpp",
     "//zircon/system/ulib/zx",
   ]
 }

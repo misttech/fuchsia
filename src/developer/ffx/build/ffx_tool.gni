@@ -84,8 +84,12 @@ template("ffx_tool") {
     assert_no_deps += invoker.assert_no_deps
   }
 
+  # TODO(b/314822328): improve this logic to cascade properly
   if (defined(invoker.sdk_category) && invoker.sdk_category != "internal") {
     assert_no_deps += [
+      "//sdk:marker-cts",
+      "//sdk:marker-excluded",
+      "//sdk:marker-experimental",
       "//sdk:marker-internal",
       "//sdk:marker-unknown",
     ]
@@ -109,7 +113,11 @@ template("ffx_tool") {
   ffx_apply_version(target_versioned_bin) {
     output_name = output_versioned
     ffx_unversioned_binary_path = "${root_out_dir}/${output_unversioned}"
-    deps = [ ":$target_unversioned" ]
+    runtime_files = [ "$root_out_dir/$output_metadata" ]
+    deps = [
+      ":$target_metadata",
+      ":$target_unversioned",
+    ]
   }
 
   # Create the metadata file for in-tree discovery

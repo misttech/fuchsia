@@ -47,7 +47,7 @@ class LogicalLink : public hci::AclDataChannel::ConnectionInterface {
   // |psm| on a given connection identified by |handle|, or nullptr if there is no service
   // registered for that PSM.
   using QueryServiceCallback = fit::function<std::optional<ChannelManager::ServiceInfo>(
-      hci_spec::ConnectionHandle handle, PSM psm)>;
+      hci_spec::ConnectionHandle handle, Psm psm)>;
 
   // Constructs a new LogicalLink and initializes the signaling fixed channel.
   // |max_payload_size| shall be the maximum "host to controller" data packet payload size for the
@@ -61,7 +61,7 @@ class LogicalLink : public hci::AclDataChannel::ConnectionInterface {
               pw::bluetooth::emboss::ConnectionRole role, uint16_t max_acl_payload_size,
               QueryServiceCallback query_service_cb, hci::AclDataChannel* acl_data_channel,
               hci::CommandChannel* cmd_channel, bool random_channel_ids,
-              A2dpOffloadManager& a2dp_offload_manager);
+              A2dpOffloadManager& a2dp_offload_manager, pw::async::Dispatcher& dispatcher);
 
   // When a logical link is destroyed it notifies all of its channels to close themselves. Data
   // packets will no longer be routed to the associated channels.
@@ -84,7 +84,7 @@ class LogicalLink : public hci::AclDataChannel::ConnectionInterface {
   // returns a channel asynchronously via |callback|.
   //
   // The link MUST not be closed when this is called.
-  void OpenChannel(PSM psm, ChannelParameters params, ChannelCallback callback);
+  void OpenChannel(Psm psm, ChannelParameters params, ChannelCallback callback);
 
   // Takes ownership of |packet| for PDU processing and routes it to its target
   // channel. This must be called on this object's creation thread.
@@ -124,9 +124,10 @@ class LogicalLink : public hci::AclDataChannel::ConnectionInterface {
   // Sets an automatic flush timeout with duration |flush_timeout|. |callback| will be called with
   // the result of the operation. This is only supported if the link type is kACL (BR/EDR).
   // |flush_timeout| must be in the range [1ms - hci_spec::kMaxAutomaticFlushTimeoutDuration]. A
-  // flush timeout of zx::duration::infinite() indicates an infinite flush timeout (no automatic
-  // flush), the default.
-  void SetBrEdrAutomaticFlushTimeout(zx::duration flush_timeout, hci::ResultCallback<> callback);
+  // flush timeout of pw::chrono::SystemClock::duration::max() indicates an infinite flush timeout
+  // (no automatic flush), the default.
+  void SetBrEdrAutomaticFlushTimeout(pw::chrono::SystemClock::duration flush_timeout,
+                                     hci::ResultCallback<> callback);
 
   // Attach LogicalLink's inspect node as a child of |parent| with the given |name|.
   void AttachInspect(inspect::Node& parent, std::string name);
@@ -173,7 +174,7 @@ class LogicalLink : public hci::AclDataChannel::ConnectionInterface {
   // return nullptr.
   //
   // This MUST not be called on a closed link.
-  std::optional<DynamicChannelRegistry::ServiceInfo> OnServiceRequest(PSM psm);
+  std::optional<DynamicChannelRegistry::ServiceInfo> OnServiceRequest(Psm psm);
 
   // Called by |dynamic_registry_| when the peer requests the closure of a
   // dynamic channel using a signaling PDU.
@@ -222,6 +223,8 @@ class LogicalLink : public hci::AclDataChannel::ConnectionInterface {
   // Returns nullptr if there are no connections with pending packets
   void RoundRobinChannels();
 
+  pw::async::Dispatcher& pw_dispatcher_;
+
   sm::SecurityProperties security_;
 
   // Information about the underlying controller logical link.
@@ -233,8 +236,8 @@ class LogicalLink : public hci::AclDataChannel::ConnectionInterface {
   uint16_t max_acl_payload_size_;
 
   // The duration after which BR/EDR packets are flushed from the controller.
-  // By default, the flush timeout is infinite (no automatic flush).
-  UintInspectable<zx::duration> flush_timeout_;
+  // By default, the flush timeout is pw::chrono::SystemClock::duration::max() (no automatic flush).
+  UintInspectable<pw::chrono::SystemClock::duration> flush_timeout_;
 
   fit::closure link_error_cb_;
 

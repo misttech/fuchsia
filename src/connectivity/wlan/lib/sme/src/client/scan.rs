@@ -111,18 +111,14 @@ impl<T> ScanScheduler<T> {
     }
 
     // Should be called for every OnScanResult event received from MLME.
-    pub fn on_mlme_scan_result(
-        &mut self,
-        msg: fidl_mlme::ScanResult,
-        sme_inspect: &Arc<inspect::SmeTree>,
-    ) -> Result<(), Error> {
+    pub fn on_mlme_scan_result(&mut self, msg: fidl_mlme::ScanResult) -> Result<(), Error> {
         match &mut self.current {
             ScanState::NotScanning => Err(Error::ScanResultNotScanning),
             ScanState::ScanningToDiscover { mlme_txn_id, .. } if *mlme_txn_id != msg.txn_id => {
                 Err(Error::ScanResultWrongTxnId)
             }
             ScanState::ScanningToDiscover { bss_map, .. } => {
-                maybe_insert_bss(bss_map, msg.bss, sme_inspect);
+                maybe_insert_bss(bss_map, msg.bss);
                 Ok(())
             }
         }
@@ -177,12 +173,11 @@ impl<T> ScanScheduler<T> {
 fn maybe_insert_bss(
     bss_map: &mut HashMap<Bssid, (fidl_internal::BssDescription, IesMerger)>,
     mut fidl_bss: fidl_internal::BssDescription,
-    sme_inspect: &Arc<inspect::SmeTree>,
 ) {
     let mut ies = vec![];
     std::mem::swap(&mut ies, &mut fidl_bss.ies);
 
-    match bss_map.entry(Bssid(fidl_bss.bssid)) {
+    match bss_map.entry(Bssid::from(fidl_bss.bssid)) {
         hash_map::Entry::Occupied(mut entry) => {
             let (ref mut existing_bss, ref mut ies_merger) = entry.get_mut();
 
@@ -196,8 +191,8 @@ fn maybe_insert_bss(
             ies_merger.merge(&ies[..]);
             if ies_merger.buffer_overflow() {
                 warn!(
-                    "Not merging some IEs due to running out of buffer. BSSID: {:?}",
-                    sme_inspect.hasher.hash_mac_addr(&fidl_bss.bssid)
+                    "Not merging some IEs due to running out of buffer. BSSID: {}",
+                    Bssid::from(fidl_bss.bssid)
                 );
             }
             *existing_bss = fidl_bss;
@@ -310,7 +305,11 @@ fn get_channels_to_scan(
         operating_channels.extend(&band.operating_channels);
     }
 
-    SUPPORTED_20_MHZ_CHANNELS
+    let requested_channels = match scan_request {
+        fidl_sme::ScanRequest::Active(options) => &options.channels[..],
+        _ => &[],
+    };
+    let channels: Vec<u8> = SUPPORTED_20_MHZ_CHANNELS
         .iter()
         .filter(|channel| operating_channels.contains(channel))
         .filter(|channel| {
@@ -325,15 +324,23 @@ fn get_channels_to_scan(
         .filter(|chan| {
             // If this is an active scan and there are any channels specified by the caller,
             // only include those channels.
-            if let &fidl_sme::ScanRequest::Active(ref options) = scan_request {
-                if !options.channels.is_empty() {
-                    return options.channels.contains(chan);
-                }
+            if !requested_channels.is_empty() {
+                return requested_channels.contains(chan);
             }
             true
         })
         .map(|chan| *chan)
-        .collect()
+        .collect();
+
+    if channels.is_empty() {
+        if !requested_channels.is_empty() {
+            warn!("All channels are filtered out. Requested channels: {:?}", requested_channels);
+        } else {
+            warn!("All channels are filtered out.");
+        };
+    }
+
+    channels
 }
 
 // TODO(65792): Evaluate options for where and how we select what channels to scan.
@@ -354,19 +361,21 @@ mod tests {
     use fuchsia_inspect::Inspector;
     use fuchsia_zircon as zx;
     use ieee80211::MacAddr;
+    use lazy_static::lazy_static;
     use regex::bytes::Regex;
     use std::{convert::TryFrom, fmt::Write};
     use test_case::test_case;
     use wlan_common::{
         assert_variant, fake_bss_description, fake_fidl_bss_description,
-        hasher::WlanHasher,
         test_utils::{
             fake_capabilities::fake_5ghz_band_capability,
             fake_features::fake_spectrum_management_support_empty,
         },
     };
 
-    const CLIENT_ADDR: MacAddr = [0x7A, 0xE7, 0x76, 0xD9, 0xF2, 0x67];
+    lazy_static! {
+        static ref CLIENT_ADDR: MacAddr = [0x7A, 0xE7, 0x76, 0xD9, 0xF2, 0x67].into();
+    }
 
     fn passive_discovery_scan(token: i32) -> DiscoveryScan<i32> {
         DiscoveryScan::new(token, fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {}))
@@ -381,44 +390,35 @@ mod tests {
             .expect("expected a ScanRequest");
         let txn_id = req.txn_id;
         sched
-            .on_mlme_scan_result(
-                fidl_mlme::ScanResult {
-                    txn_id,
-                    timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
-                    bss: fidl_internal::BssDescription {
-                        bssid: [1; 6],
-                        ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("foo").unwrap())
-                    },
+            .on_mlme_scan_result(fidl_mlme::ScanResult {
+                txn_id,
+                timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
+                bss: fidl_internal::BssDescription {
+                    bssid: [1; 6],
+                    ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("foo").unwrap())
                 },
-                &sme_inspect,
-            )
+            })
             .expect("expect scan result received");
         assert_variant!(
-            sched.on_mlme_scan_result(
-                fidl_mlme::ScanResult {
-                    txn_id: txn_id + 100, // mismatching transaction id
-                    timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
-                    bss: fidl_internal::BssDescription {
-                        bssid: [2; 6],
-                        ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("bar").unwrap())
-                    },
+            sched.on_mlme_scan_result(fidl_mlme::ScanResult {
+                txn_id: txn_id + 100, // mismatching transaction id
+                timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
+                bss: fidl_internal::BssDescription {
+                    bssid: [2; 6],
+                    ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("bar").unwrap())
                 },
-                &sme_inspect,
-            ),
+            },),
             Err(Error::ScanResultWrongTxnId)
         );
         sched
-            .on_mlme_scan_result(
-                fidl_mlme::ScanResult {
-                    txn_id,
-                    timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
-                    bss: fidl_internal::BssDescription {
-                        bssid: [3; 6],
-                        ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("qux").unwrap())
-                    },
+            .on_mlme_scan_result(fidl_mlme::ScanResult {
+                txn_id,
+                timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
+                bss: fidl_internal::BssDescription {
+                    bssid: [3; 6],
+                    ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("qux").unwrap())
                 },
-                &sme_inspect,
-            )
+            })
             .expect("expect scan result received");
         let (scan_end, mlme_req) = assert_variant!(
             sched.on_mlme_scan_end(
@@ -488,14 +488,11 @@ mod tests {
         let txn_id = req.txn_id;
         for bss in bss_description_list_from_mlme {
             sched
-                .on_mlme_scan_result(
-                    fidl_mlme::ScanResult {
-                        txn_id,
-                        timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
-                        bss,
-                    },
-                    &sme_inspect,
-                )
+                .on_mlme_scan_result(fidl_mlme::ScanResult {
+                    txn_id,
+                    timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
+                    bss,
+                })
                 .expect("expect scan result received");
         }
         let (scan_end, mlme_req) = assert_variant!(
@@ -533,14 +530,11 @@ mod tests {
         let ie_marker1 = &[0xdd, 0x07, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee];
         bss.ies.extend_from_slice(ie_marker1);
         sched
-            .on_mlme_scan_result(
-                fidl_mlme::ScanResult {
-                    txn_id,
-                    timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
-                    bss,
-                },
-                &sme_inspect,
-            )
+            .on_mlme_scan_result(fidl_mlme::ScanResult {
+                txn_id,
+                timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
+                bss,
+            })
             .expect("expect scan result received");
 
         let mut bss = fake_fidl_bss_description!(Open, ssid: Ssid::try_from("ssid").unwrap());
@@ -548,14 +542,11 @@ mod tests {
         let ie_marker2 = &[0xdd, 0x07, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
         bss.ies.extend_from_slice(ie_marker2);
         sched
-            .on_mlme_scan_result(
-                fidl_mlme::ScanResult {
-                    txn_id,
-                    timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
-                    bss,
-                },
-                &sme_inspect,
-            )
+            .on_mlme_scan_result(fidl_mlme::ScanResult {
+                txn_id,
+                timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
+                bss,
+            })
             .expect("expect scan result received");
         let (scan_end, mlme_req) = assert_variant!(
             sched.on_mlme_scan_end(
@@ -684,17 +675,14 @@ mod tests {
 
         // Report a scan result
         sched
-            .on_mlme_scan_result(
-                fidl_mlme::ScanResult {
-                    txn_id,
-                    timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
-                    bss: fidl_internal::BssDescription {
-                        bssid: [1; 6],
-                        ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("foo").unwrap())
-                    },
+            .on_mlme_scan_result(fidl_mlme::ScanResult {
+                txn_id,
+                timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
+                bss: fidl_internal::BssDescription {
+                    bssid: [1; 6],
+                    ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("foo").unwrap())
                 },
-                &sme_inspect,
-            )
+            })
             .expect("expect scan result received");
 
         // Post another command. It should not issue another request to the MLME since
@@ -703,17 +691,14 @@ mod tests {
 
         // Report another scan result and the end of the scan transaction
         sched
-            .on_mlme_scan_result(
-                fidl_mlme::ScanResult {
-                    txn_id,
-                    timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
-                    bss: fidl_internal::BssDescription {
-                        bssid: [2; 6],
-                        ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("bar").unwrap())
-                    },
+            .on_mlme_scan_result(fidl_mlme::ScanResult {
+                txn_id,
+                timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
+                bss: fidl_internal::BssDescription {
+                    bssid: [2; 6],
+                    ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("bar").unwrap())
                 },
-                &sme_inspect,
-            )
+            })
             .expect("expect scan result received");
         let (scan_end, mlme_req) = assert_variant!(
             sched.on_mlme_scan_end(
@@ -772,17 +757,14 @@ mod tests {
 
         // Report scan result and scan end
         sched
-            .on_mlme_scan_result(
-                fidl_mlme::ScanResult {
-                    txn_id,
-                    timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
-                    bss: fidl_internal::BssDescription {
-                        bssid: [1; 6],
-                        ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("foo").unwrap())
-                    },
+            .on_mlme_scan_result(fidl_mlme::ScanResult {
+                txn_id,
+                timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
+                bss: fidl_internal::BssDescription {
+                    bssid: [1; 6],
+                    ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("foo").unwrap())
                 },
-                &sme_inspect,
-            )
+            })
             .expect("expect scan result received");
         let (scan_end, mlme_req) = assert_variant!(
             sched.on_mlme_scan_end(
@@ -803,17 +785,14 @@ mod tests {
 
         // Report scan result and scan end
         sched
-            .on_mlme_scan_result(
-                fidl_mlme::ScanResult {
-                    txn_id,
-                    timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
-                    bss: fidl_internal::BssDescription {
-                        bssid: [2; 6],
-                        ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("bar").unwrap())
-                    },
+            .on_mlme_scan_result(fidl_mlme::ScanResult {
+                txn_id,
+                timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
+                bss: fidl_internal::BssDescription {
+                    bssid: [2; 6],
+                    ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("bar").unwrap())
                 },
-                &sme_inspect,
-            )
+            })
             .expect("expect scan result received");
         let (scan_end, mlme_req) = assert_variant!(
             sched.on_mlme_scan_end(
@@ -833,7 +812,6 @@ mod tests {
     #[test]
     fn test_discovery_scan_result_wrong_txn_id() {
         let mut sched = create_sched();
-        let (_inspector, sme_inspect) = sme_inspect();
 
         // Post a passive scan command, expect a message to MLME
         let mlme_req = sched
@@ -843,17 +821,14 @@ mod tests {
 
         // Report scan result with wrong txn id
         assert_variant!(
-            sched.on_mlme_scan_result(
-                fidl_mlme::ScanResult {
-                    txn_id: txn_id + 1,
-                    timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
-                    bss: fidl_internal::BssDescription {
-                        bssid: [1; 6],
-                        ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("foo").unwrap())
-                    },
+            sched.on_mlme_scan_result(fidl_mlme::ScanResult {
+                txn_id: txn_id + 1,
+                timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
+                bss: fidl_internal::BssDescription {
+                    bssid: [1; 6],
+                    ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("foo").unwrap())
                 },
-                &sme_inspect,
-            ),
+            },),
             Err(Error::ScanResultWrongTxnId)
         );
     }
@@ -861,19 +836,15 @@ mod tests {
     #[test]
     fn test_discovery_scan_result_not_scanning() {
         let mut sched = create_sched();
-        let (_inspector, sme_inspect) = sme_inspect();
         assert_variant!(
-            sched.on_mlme_scan_result(
-                fidl_mlme::ScanResult {
-                    txn_id: 0,
-                    timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
-                    bss: fidl_internal::BssDescription {
-                        bssid: [1; 6],
-                        ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("foo").unwrap())
-                    },
+            sched.on_mlme_scan_result(fidl_mlme::ScanResult {
+                txn_id: 0,
+                timestamp_nanos: zx::Time::get_monotonic().into_nanos(),
+                bss: fidl_internal::BssDescription {
+                    bssid: [1; 6],
+                    ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("foo").unwrap())
                 },
-                &sme_inspect,
-            ),
+            },),
             Err(Error::ScanResultNotScanning)
         );
     }
@@ -934,7 +905,7 @@ mod tests {
 
     fn create_sched() -> ScanScheduler<i32> {
         ScanScheduler::new(
-            Arc::new(test_utils::fake_device_info(CLIENT_ADDR)),
+            Arc::new(test_utils::fake_device_info(*CLIENT_ADDR)),
             fake_spectrum_management_support_empty(),
         )
     }
@@ -945,15 +916,17 @@ mod tests {
                 operating_channels,
                 ..fake_5ghz_band_capability()
             }],
-            ..test_utils::fake_device_info(CLIENT_ADDR)
+            ..test_utils::fake_device_info(*CLIENT_ADDR)
         }
     }
 
     fn sme_inspect() -> (Inspector, Arc<inspect::SmeTree>) {
         let inspector = Inspector::default();
-        let hasher = WlanHasher::new([88, 77, 66, 55, 44, 33, 22, 11]);
-        let sme_inspect =
-            Arc::new(inspect::SmeTree::new(inspector.root().create_child("sme"), hasher));
+        let sme_inspect = Arc::new(inspect::SmeTree::new(
+            inspector.root().create_child("usme"),
+            &test_utils::fake_device_info([1u8; 6].into()),
+            &fake_spectrum_management_support_empty(),
+        ));
         (inspector, sme_inspect)
     }
 }

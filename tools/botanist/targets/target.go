@@ -22,10 +22,12 @@ import (
 
 	"go.fuchsia.dev/fuchsia/src/sys/pkg/lib/repo"
 	"go.fuchsia.dev/fuchsia/tools/bootserver"
+	"go.fuchsia.dev/fuchsia/tools/botanist"
 	"go.fuchsia.dev/fuchsia/tools/botanist/constants"
 	"go.fuchsia.dev/fuchsia/tools/build"
 	"go.fuchsia.dev/fuchsia/tools/lib/ffxutil"
 	"go.fuchsia.dev/fuchsia/tools/lib/iomisc"
+	"go.fuchsia.dev/fuchsia/tools/lib/jsonutil"
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 	"go.fuchsia.dev/fuchsia/tools/lib/osmisc"
 	"go.fuchsia.dev/fuchsia/tools/lib/serial"
@@ -97,7 +99,7 @@ type FuchsiaTarget interface {
 	SSHKey() string
 
 	// Start starts the target.
-	Start(ctx context.Context, images []bootserver.Image, args []string) error
+	Start(ctx context.Context, images []bootserver.Image, args []string, pbPath string, isBootTest bool) error
 
 	// StartSerialServer starts the serial server for the target iff one
 	// does not exist.
@@ -120,6 +122,10 @@ type FuchsiaTarget interface {
 
 	// UseFFXExperimental returns whether to enable an experimental ffx feature.
 	UseFFXExperimental(int) bool
+
+	// UseProductBundles returns whether this target can be provisioned using
+	// product bundles.
+	UseProductBundles() bool
 
 	// FFXEnv returns the env vars that the ffx instance should run with
 	FFXEnv() []string
@@ -189,6 +195,13 @@ func (t *genericFuchsiaTarget) UseFFXExperimental(level int) bool {
 	return t.UseFFX() && t.ffx.ExperimentLevel >= level
 }
 
+// UseProductBundles returns whether this target can be provisioned using
+// product bundles. The default is false and should be overridden by each
+// target type.
+func (t *genericFuchsiaTarget) UseProductBundles() bool {
+	return false
+}
+
 // FFXEnv returns the environment to run ffx with.
 func (t *genericFuchsiaTarget) FFXEnv() []string {
 	return t.ffxEnv
@@ -230,7 +243,7 @@ func (t *genericFuchsiaTarget) StartSerialServer() error {
 func (t *genericFuchsiaTarget) resolveIP() error {
 	ctx, cancel := context.WithTimeout(t.targetCtx, 2*time.Minute)
 	defer cancel()
-	ipv4, ipv6, err := resolveIP(ctx, t.nodename)
+	ipv4, ipv6, err := ResolveIP(ctx, t.nodename)
 	if err != nil {
 		return err
 	}
@@ -276,6 +289,7 @@ func (t *genericFuchsiaTarget) CaptureSerialLog(filename string) error {
 	if err != nil {
 		return err
 	}
+	serialLogWriter := botanist.NewTimestampWriter(serialLog)
 	conn, err := net.Dial("unix", t.serialSocket)
 	if err != nil {
 		return err
@@ -297,7 +311,7 @@ func (t *genericFuchsiaTarget) CaptureSerialLog(filename string) error {
 			}
 			return nil
 		}
-		if _, err := io.WriteString(serialLog, line); err != nil {
+		if _, err := io.WriteString(serialLogWriter, line); err != nil {
 			return fmt.Errorf("failed to write line to serial log: %w", err)
 		}
 	}
@@ -394,7 +408,8 @@ func (t *genericFuchsiaTarget) CaptureSyslog(client *sshutil.Client, filename, r
 	}
 	defer f.Close()
 
-	errs := syslogger.Stream(t.targetCtx, f)
+	syslogWriter := botanist.NewLineWriter(botanist.NewTimestampWriter(f))
+	errs := syslogger.Stream(t.targetCtx, syslogWriter)
 	for range errs {
 		if !syslogger.IsRunning() {
 			return nil
@@ -600,6 +615,15 @@ type StartOptions struct {
 
 	// ZirconArgs are kernel command-line arguments to pass to zircon on boot.
 	ZirconArgs []string
+
+	// ProductBundles is a path to product_bundles.json file.
+	ProductBundles string
+
+	// ProductBundleName is a name of product bundle getting used.
+	ProductBundleName string
+
+	// IsBootTest tells whether the provided product bundle is for a boot test.
+	IsBootTest bool
 }
 
 // StartTargets starts all the targets given the opts.
@@ -620,7 +644,18 @@ func StartTargets(ctx context.Context, opts StartOptions, targets []FuchsiaTarge
 			}
 			defer closeFunc()
 
-			return t.Start(startCtx, imgs, opts.ZirconArgs)
+			// Parse the product bundles
+			var pbPath string
+			if opts.ProductBundles != "" && t.UseProductBundles() {
+				var productBundles []build.ProductBundle
+				if err := jsonutil.ReadFromFile(opts.ProductBundles, &productBundles); err != nil {
+					return err
+				}
+
+				pbPath = build.GetPbPathByName(productBundles, opts.ProductBundleName)
+			}
+
+			return t.Start(startCtx, imgs, opts.ZirconArgs, pbPath, opts.IsBootTest)
 		})
 	}
 	return eg.Wait()

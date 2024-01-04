@@ -5,6 +5,7 @@
 #ifndef SRC_STORAGE_F2FS_VNODE_H_
 #define SRC_STORAGE_F2FS_VNODE_H_
 
+#include "src/storage/f2fs/bitmap.h"
 #include "src/storage/f2fs/file_cache.h"
 #include "src/storage/f2fs/vmo_manager.h"
 
@@ -12,12 +13,6 @@ namespace f2fs {
 constexpr uint32_t kNullIno = std::numeric_limits<uint32_t>::max();
 
 class F2fs;
-// for in-memory extent cache entry
-struct ExtentInfo {
-  uint64_t fofs = 0;      // start offset in a file
-  uint32_t blk_addr = 0;  // start block address of the extent
-  uint32_t len = 0;       // length of the extent
-};
 
 // i_advise uses Fadvise:xxx bit. We can add additional hints later.
 enum class FAdvise {
@@ -27,6 +22,32 @@ enum class FAdvise {
 struct LockedPagesAndAddrs {
   std::vector<block_t> block_addrs;  // Allocated block address
   std::vector<LockedPage> pages;     // Pages matched with block address
+};
+
+// Used to track orphans and modified dirs
+enum class VnodeSet {
+  kOrphan = 0,
+  kModifiedDir,
+  kMax,
+};
+
+// InodeInfo->flags keeping only in memory
+enum class InodeInfoFlag {
+  kInit = 0,      // indicate inode is being initialized
+  kActive,        // indicate open_count > 0
+  kNewInode,      // indicate newly allocated vnode
+  kNeedCp,        // need to do checkpoint during fsync
+  kIncLink,       // need to increment i_nlink
+  kAclMode,       // indicate acl mode
+  kNoAlloc,       // should not allocate any blocks
+  kUpdateDir,     // should update inode block for consistency
+  kInlineXattr,   // used for inline xattr
+  kInlineData,    // used for inline data
+  kInlineDentry,  // used for inline dentry
+  kDataExist,     // indicate data exists
+  kBad,           // should drop this inode without purging
+  kNoExtent,      // not to use the extent cache
+  kFlagSize,
 };
 
 class VnodeF2fs : public fs::PagedVnode,
@@ -41,17 +62,12 @@ class VnodeF2fs : public fs::PagedVnode,
     return kPageSize - sizeof(NodeFooter) -
            sizeof(uint32_t) * (kAddrsPerInode + kNidsPerInode - 1) + GetExtraISize();
   }
-  uint32_t MaxInlineData() const {
-    return safemath::CheckMul<uint32_t>(sizeof(uint32_t), (GetAddrsPerInode() - 1)).ValueOrDie();
+  size_t MaxInlineData() const { return sizeof(uint32_t) * (GetAddrsPerInode() - 1); }
+  size_t MaxInlineDentry() const {
+    return GetBitSize(MaxInlineData()) / (GetBitSize(kSizeOfDirEntry + kDentrySlotLen) + 1);
   }
-  uint32_t MaxInlineDentry() const {
-    return safemath::checked_cast<uint32_t>(
-        safemath::CheckDiv(safemath::CheckMul(MaxInlineData(), kBitsPerByte).ValueOrDie(),
-                           ((kSizeOfDirEntry + kDentrySlotLen) * kBitsPerByte + 1))
-            .ValueOrDie());
-  }
-  uint32_t GetAddrsPerInode() const {
-    return safemath::checked_cast<uint32_t>(
+  size_t GetAddrsPerInode() const {
+    return safemath::checked_cast<size_t>(
         (safemath::CheckSub(kAddrsPerInode, safemath::CheckDiv(GetExtraISize(), sizeof(uint32_t))) -
          GetInlineXattrAddrs())
             .ValueOrDie());
@@ -67,7 +83,7 @@ class VnodeF2fs : public fs::PagedVnode,
   ino_t GetKey() const { return ino_; }
 
   void Sync(SyncCallback closure) override;
-  zx_status_t SyncFile(loff_t start, loff_t end, int datasync);
+  zx_status_t SyncFile(loff_t start, loff_t end, int datasync) __TA_EXCLUDES(f2fs::GetGlobalLock());
 
   void fbl_recycle() { RecycleNode(); }
 
@@ -100,55 +116,68 @@ class VnodeF2fs : public fs::PagedVnode,
 #if 0  // porting needed
   // void F2fsSetInodeFlags();
   // int F2fsIgetTest(void *data);
-  // static int CheckExtentCache(inode *inode, pgoff_t pgofs,
   // static int GetDataBlockRo(inode *inode, sector_t iblock,
   //      buffer_head *bh_result, int create);
 #endif
 
+  zx::result<LockedPage> NewInodePage();
+  zx_status_t RemoveInodePage();
   void UpdateInodePage(LockedPage &inode_page);
-  zx_status_t UpdateInodePage();
 
-  zx_status_t DoTruncate(size_t len);
-  // Caller should ensure node_page is locked.
-  int TruncateDataBlocksRange(NodePage &node_page, uint32_t ofs_in_node, uint32_t count);
-  // Caller should ensure node_page is locked.
-  void TruncateDataBlocks(NodePage &node_page);
-  zx_status_t TruncateBlocks(uint64_t from);
-  zx_status_t TruncateHole(pgoff_t pg_start, pgoff_t pg_end);
-  void TruncateToSize();
-  void EvictVnode();
+  void TruncateNode(LockedPage &page);
+
+  block_t TruncateDnodeAddrs(LockedPage &dnode, size_t offset, size_t count);
+  zx::result<size_t> TruncateDnode(nid_t nid);
+  zx::result<size_t> TruncateNodes(nid_t start_nid, size_t nofs, size_t ofs, size_t depth);
+  zx_status_t TruncatePartialNodes(const Inode &inode, const size_t (&offset)[4], size_t depth);
+  zx_status_t TruncateInodeBlocks(pgoff_t from);
+
+  zx_status_t DoTruncate(size_t len) __TA_EXCLUDES(f2fs::GetGlobalLock());
+  zx_status_t TruncateBlocks(uint64_t from) __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
+  zx_status_t TruncateHole(pgoff_t pg_start, pgoff_t pg_end, bool zero = true)
+      __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
+  void TruncateToSize() __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
+  void EvictVnode() __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
+  zx_status_t GetNewDataPage(pgoff_t index, bool new_i_size, LockedPage *out)
+      __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
 
   // Caller should ensure node_page is locked.
-  void SetDataBlkaddr(NodePage &node_page, uint32_t ofs_in_node, block_t new_addr);
+  zx_status_t ReserveNewBlock(NodePage &node_page, size_t ofs_in_node);
+
   zx::result<block_t> FindDataBlkAddr(pgoff_t index);
-  // Caller should ensure node_page is locked.
-  zx_status_t ReserveNewBlock(NodePage &node_page, uint32_t ofs_in_node);
-
-  void UpdateExtentCache(block_t blk_addr, pgoff_t file_offset);
   zx::result<LockedPage> FindDataPage(pgoff_t index, bool do_read = true);
   // This function returns block addresses and LockedPages for requested offsets. If there is no
   // node page of a offset or the block address is not assigned, this function adds null LockedPage
-  // and kNullAddr to LockedPagesAndAddrs struct. The handling of null LockedPage and kNullAddr is
-  // responsible for StorageBuffer::ReserveReadOperations().
+  // and kNullAddr to LockedPagesAndAddrs struct. A caller should consider the null LockedPage and
+  // kNullAddr.
   zx::result<LockedPagesAndAddrs> FindDataBlockAddrsAndPages(const pgoff_t start,
                                                              const pgoff_t end);
   zx_status_t GetLockedDataPage(pgoff_t index, LockedPage *out);
   zx::result<std::vector<LockedPage>> GetLockedDataPages(pgoff_t start, pgoff_t end);
-  zx_status_t GetNewDataPage(pgoff_t index, bool new_i_size, LockedPage *out);
 
-  zx::result<block_t> GetBlockAddrForDirtyDataPage(LockedPage &page, bool is_reclaim);
-  zx::result<std::vector<LockedPage>> WriteBegin(const size_t offset, const size_t len);
+  // It returns block addrs for file data blocks at |indices|. |read_only| is used to determine
+  // whether it allocates a new addr if a block of |indices| has not been assigned a valid addr.
+  zx::result<std::vector<block_t>> GetDataBlockAddresses(const std::vector<pgoff_t> &indices,
+                                                         bool read_only = false);
+  zx::result<std::vector<block_t>> GetDataBlockAddresses(pgoff_t index, size_t count,
+                                                         bool read_only = false);
 
-  virtual zx_status_t RecoverInlineData(NodePage &node_page) __TA_EXCLUDES(info_mutex_) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
+  virtual block_t GetBlockAddr(LockedPage &page);
+  zx::result<std::vector<LockedPage>> WriteBegin(const size_t offset, const size_t len)
+      __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
+
+  virtual zx_status_t RecoverInlineData(NodePage &node_page) { return ZX_ERR_NOT_SUPPORTED; }
+  virtual zx::result<PageBitmap> GetBitmap(fbl::RefPtr<Page> dentry_page);
 
   void Notify(std::string_view name, fuchsia_io::wire::WatchEvent event) final;
   zx_status_t WatchDir(fs::FuchsiaVfs *vfs, fuchsia_io::wire::WatchMask mask, uint32_t options,
                        fidl::ServerEnd<fuchsia_io::DirectoryWatcher> watcher) final;
 
-  void GetExtentInfo(const Extent &i_ext) __TA_EXCLUDES(extent_cache_mutex_);
-  void SetRawExtent(Extent &i_ext) __TA_EXCLUDES(extent_cache_mutex_);
+  ExtentTree &GetExtentTree() { return *extent_tree_; }
+  bool ExtentCacheAvailable();
+  void InitExtentTree();
+  void UpdateExtentCache(pgoff_t file_offset, block_t blk_addr, uint32_t len = 1);
+  zx::result<block_t> LookupExtentCacheBlock(pgoff_t file_offset);
 
   void InitNlink() { nlink_.store(1, std::memory_order_release); }
   void IncNlink() { nlink_.fetch_add(1); }
@@ -170,6 +199,12 @@ class VnodeF2fs : public fs::PagedVnode,
   bool HasGid() const;
   bool IsMeta() const;
   bool IsNode() const;
+
+  // Coldness identification:
+  //  - Mark cold files in InodeInfo
+  //  - Mark cold node blocks in their node footer
+  //  - Mark cold data pages in page cache
+  bool IsColdFile() { return IsAdviseSet(FAdvise::kCold); }
 
   void SetName(std::string_view name) __TA_EXCLUDES(info_mutex_) {
     std::lock_guard lock(info_mutex_);
@@ -273,12 +308,12 @@ class VnodeF2fs : public fs::PagedVnode,
   }
 
   void ClearAdvise(const FAdvise bit) __TA_EXCLUDES(info_mutex_) {
-    fs::SharedLock lock(info_mutex_);
-    ClearBit(static_cast<int>(bit), &advise_);
+    std::lock_guard lock(info_mutex_);
+    advise_ &= ~GetMask(1, static_cast<size_t>(bit));
   }
   void SetAdvise(const FAdvise bit) __TA_EXCLUDES(info_mutex_) {
     std::lock_guard lock(info_mutex_);
-    SetBit(static_cast<int>(bit), &advise_);
+    advise_ |= GetMask(1, static_cast<size_t>(bit));
   }
   uint8_t GetAdvise() __TA_EXCLUDES(info_mutex_) {
     fs::SharedLock lock(info_mutex_);
@@ -288,9 +323,9 @@ class VnodeF2fs : public fs::PagedVnode,
     std::lock_guard lock(info_mutex_);
     advise_ = bits;
   }
-  int IsAdviseSet(const FAdvise bit) __TA_EXCLUDES(info_mutex_) {
+  bool IsAdviseSet(const FAdvise bit) __TA_EXCLUDES(info_mutex_) {
     fs::SharedLock lock(info_mutex_);
-    return TestBit(static_cast<int>(bit), &advise_);
+    return (GetMask(1, static_cast<size_t>(bit)) & advise_) != 0;
   }
 
   uint64_t GetDirHashLevel() __TA_EXCLUDES(info_mutex_) {
@@ -397,28 +432,14 @@ class VnodeF2fs : public fs::PagedVnode,
     return file_cache_->GetPages(page_offsets);
   }
 
-  pgoff_t Writeback(WritebackOperation &operation) { return file_cache_->Writeback(operation); }
+  pgoff_t Writeback(WritebackOperation &operation);
 
-  std::vector<LockedPage> InvalidatePages(pgoff_t start = 0, pgoff_t end = kPgOffMax) {
-    return file_cache_->InvalidatePages(start, end);
+  std::vector<LockedPage> InvalidatePages(pgoff_t start = 0, pgoff_t end = kPgOffMax,
+                                          bool zero = true) {
+    return file_cache_->InvalidatePages(start, end, zero);
   }
   void ResetFileCache(pgoff_t start = 0, pgoff_t end = kPgOffMax) { file_cache_->Reset(); }
-  void SetOrphan() {
-    if (!file_cache_->SetOrphan()) {
-      file_cache_->ClearDirtyPages();
-      ClearDirty();
-    }
-  }
-
-  PageType GetPageType() {
-    if (IsNode()) {
-      return PageType::kNode;
-    } else if (IsMeta()) {
-      return PageType::kMeta;
-    } else {
-      return PageType::kData;
-    }
-  }
+  void SetOrphan();
 
   // For testing
   bool HasPagedVmo() __TA_EXCLUDES(mutex_) {
@@ -426,35 +447,22 @@ class VnodeF2fs : public fs::PagedVnode,
     return paged_vmo().is_valid();
   }
 
-  // Overriden methods for thread safety analysis annotations.
-  zx_status_t Read(void *data, size_t len, size_t off, size_t *out_actual) override
-      __TA_EXCLUDES(mutex_) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-  zx_status_t Write(const void *data, size_t len, size_t offset, size_t *out_actual) override
-      __TA_EXCLUDES(mutex_) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-  zx_status_t Append(const void *data, size_t len, size_t *out_end, size_t *out_actual) override
-      __TA_EXCLUDES(mutex_) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-  zx_status_t Truncate(size_t len) override __TA_EXCLUDES(mutex_) { return ZX_ERR_NOT_SUPPORTED; }
-  DirtyPageList &GetDirtyPageList() const { return file_cache_->GetDirtyPageList(); }
   VmoManager &GetVmoManager() const { return vmo_manager(); }
 
   block_t GetReadBlockSize(block_t start_block, block_t req_size, block_t end_block);
 
  protected:
+  block_t GetBlockAddrOnDataSegment(LockedPage &page);
+
   void RecycleNode() override;
   VmoManager &vmo_manager() const { return *vmo_manager_; }
   void ReportPagerError(const uint32_t op, const uint64_t offset, const uint64_t length,
                         const zx_status_t err) __TA_EXCLUDES(mutex_);
   void ReportPagerErrorUnsafe(const uint32_t op, const uint64_t offset, const uint64_t length,
                               const zx_status_t err) __TA_REQUIRES_SHARED(mutex_);
+  SuperblockInfo &superblock_info_;
 
  private:
-  zx::result<block_t> GetBlockAddrForDataPage(LockedPage &page);
   zx_status_t OpenNode(ValidatedOptions options, fbl::RefPtr<Vnode> *out_redirect) final
       __TA_EXCLUDES(mutex_);
   zx_status_t CloseNode() final;
@@ -499,8 +507,7 @@ class VnodeF2fs : public fs::PagedVnode,
   timespec mtime_ __TA_GUARDED(info_mutex_) = {0, 0};
   timespec ctime_ __TA_GUARDED(info_mutex_) = {0, 0};
 
-  fs::SharedMutex extent_cache_mutex_;                         // rwlock for consistency
-  ExtentInfo extent_cache_ __TA_GUARDED(extent_cache_mutex_);  // in-memory extent cache entry
+  std::unique_ptr<ExtentTree> extent_tree_ = nullptr;
 
   const ino_t ino_ = 0;
   F2fs *const fs_ = nullptr;

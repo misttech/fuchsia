@@ -12,6 +12,7 @@
 #include <fbl/algorithm.h>
 #include <hwreg/bitfields.h>
 
+#include "src/devices/block/drivers/ufs/transfer_command_descriptor.h"
 #include "src/devices/block/drivers/ufs/transfer_request_descriptor.h"
 
 namespace ufs {
@@ -128,17 +129,15 @@ class AbstractRequestUpiu : public AbstractUpiu {
   ~AbstractRequestUpiu() override = default;
 
   // Get the direction of the data transfer to be written to the request descriptor. The
-  // TransferRequestDescriptorDataDirection determines whether the target device will read or write
-  // the system memory area pointed to by the PRDT.
-  virtual TransferRequestDescriptorDataDirection GetDataDirection() const {
-    return TransferRequestDescriptorDataDirection::kNone;
-  }
+  // DataDirection determines whether the target device will read or write the system memory area
+  // pointed to by the PRDT.
+  virtual DataDirection GetDataDirection() const { return DataDirection::kNone; }
 
   // Get the offset that ResponseUpiu will be written to.
-  uint16_t GetResponseOffset() const { return sizeof(RequestData); }
+  static constexpr uint16_t GetResponseOffset() { return sizeof(RequestData); }
 
   // Get the length of the ResponseUpiu.
-  uint16_t GetResponseLength() const { return sizeof(ResponseData); }
+  static constexpr uint16_t GetResponseLength() { return sizeof(ResponseData); }
 
  private:
   std::unique_ptr<RequestData> data_ = nullptr;
@@ -167,6 +166,8 @@ struct ResponseUpiuData {
   DEF_SUBBIT(header.flags, 4, header_flags_d);
 } __PACKED;
 static_assert(sizeof(ResponseUpiuData) == 56, "ResponseUpiu struct, must be 56 bytes");
+static_assert(sizeof(ResponseUpiuData) <= kMaxUtpTransferResponseSize,
+              "ResponseUpiu must be kMaxUtpTransferResponseSize or less");
 static_assert(sizeof(ResponseUpiuData) % kUpiuAlignment == 0, "UPIU requires 64-bit alignment");
 
 // UFS Specification Version 3.1, section 10.7.2 "RESPONSE UPIU".
@@ -200,6 +201,8 @@ struct CommandUpiuData {
   DEF_SUBFIELD(header.flags, 1, 0, header_flags_attr);
 } __PACKED;
 static_assert(sizeof(CommandUpiuData) == 32, "CommandUpiu struct must be 32 bytes");
+static_assert(sizeof(CommandUpiuData) <= kMaxUtpTransferRequestSize,
+              "CommandUpiu must be kMaxUtpTransferRequestSize or less");
 static_assert(sizeof(CommandUpiuData) % kUpiuAlignment == 0, "UPIU requires 64-bit alignment");
 
 // UFS Specification Version 3.1, section 10.7.1 "COMMAND UPIU".
@@ -207,8 +210,15 @@ class CommandUpiu : public AbstractRequestUpiu<CommandUpiuData, ResponseUpiuData
  public:
   explicit CommandUpiu() { GetHeader().set_trans_code(UpiuTransactionCodes::kCommand); }
 
-  explicit CommandUpiu(UpiuCommandSetType command_set_type) : CommandUpiu() {
+  explicit CommandUpiu(UpiuCommandSetType command_set_type, DataDirection data_direction)
+      : CommandUpiu() {
     GetHeader().set_command_set_type(command_set_type);
+
+    if (data_direction == DataDirection::kDeviceToHost) {
+      GetData<CommandUpiuData>()->set_header_flags_r(true);
+    } else if (data_direction == DataDirection::kHostToDevice) {
+      GetData<CommandUpiuData>()->set_header_flags_w(true);
+    }
   }
 
   ~CommandUpiu() override = default;
@@ -236,6 +246,8 @@ struct TaskManagementResponseUpiuData {
 } __PACKED;
 static_assert(sizeof(TaskManagementResponseUpiuData) == 32,
               "TaskManagementResponseUpiu struct must be 32 bytes");
+static_assert(sizeof(TaskManagementResponseUpiuData) <= kMaxUtpTransferResponseSize,
+              "TaskManagementResponseUpiu must be kMaxUtpTransferResponseSize or less");
 static_assert(sizeof(TaskManagementResponseUpiuData) % kUpiuAlignment == 0,
               "UPIU requires 64-bit alignment");
 
@@ -261,6 +273,8 @@ struct TaskManagementRequestUpiuData {
 } __PACKED;
 static_assert(sizeof(TaskManagementRequestUpiuData) == 32,
               "TaskManagementRequestUpiu struct must be 32 bytes");
+static_assert(sizeof(TaskManagementRequestUpiuData) <= kMaxUtpTransferRequestSize,
+              "TaskManagementRequestUpiu must be kMaxUtpTransferRequestSize or less");
 static_assert(sizeof(TaskManagementRequestUpiuData) % kUpiuAlignment == 0,
               "UPIU requires 64-bit alignment");
 
@@ -322,6 +336,8 @@ struct QueryResponseUpiuData {
   std::array<uint8_t, 256> command_data = {0};
 } __PACKED;
 static_assert(sizeof(QueryResponseUpiuData) == 288, "QueryResponseUpiu struct must be 288 bytes");
+static_assert(sizeof(QueryResponseUpiuData) <= kMaxUtpTransferResponseSize,
+              "QueryResponseUpiu must be kMaxUtpTransferResponseSize or less");
 static_assert(sizeof(QueryResponseUpiuData) % kUpiuAlignment == 0,
               "UPIU requires 64-bit alignment");
 
@@ -375,6 +391,8 @@ struct QueryRequestUpiuData {
   std::array<uint8_t, 256> command_data = {0};
 } __PACKED;
 static_assert(sizeof(QueryRequestUpiuData) == 288, "QueryRequestUpiu struct must be 288 bytes");
+static_assert(sizeof(QueryRequestUpiuData) <= kMaxUtpTransferRequestSize,
+              "QueryRequestUpiu must be kMaxUtpTransferRequestSize or less");
 static_assert(sizeof(QueryRequestUpiuData) % kUpiuAlignment == 0, "UPIU requires 64-bit alignment");
 
 // UFS Specification Version 3.1, section 10.7.8 "QUERY REQUEST UPIU".
@@ -407,6 +425,8 @@ struct NopInUpiuData {
   uint8_t reserved[20] = {0};
 } __PACKED;
 static_assert(sizeof(NopInUpiuData) == 32, "NopInUpiu struct must be 32 bytes");
+static_assert(sizeof(NopInUpiuData) <= kMaxUtpTransferResponseSize,
+              "NopInUpiu must be kMaxUtpTransferResponseSize or less");
 static_assert(sizeof(NopInUpiuData) % kUpiuAlignment == 0, "UPIU requires 64-bit alignment");
 
 // UFS Specification Version 3.1, section 10.7.12 "NOP IN UPIU".
@@ -429,6 +449,8 @@ struct NopOutUpiuData {
   uint8_t reserved[20] = {0};
 } __PACKED;
 static_assert(sizeof(NopOutUpiuData) == 32, "NopOutUpiu struct must be 32 bytes");
+static_assert(sizeof(NopOutUpiuData) <= kMaxUtpTransferRequestSize,
+              "NopOutUpiu must be kMaxUtpTransferRequestSize or less");
 static_assert(sizeof(NopOutUpiuData) % kUpiuAlignment == 0, "UPIU requires 64-bit alignment");
 
 // UFS Specification Version 3.1, section 10.7.11 "NOP OUT UPIU".

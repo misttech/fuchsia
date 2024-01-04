@@ -12,6 +12,8 @@
 #include <queue>
 #include <unordered_set>
 
+#include <pw_async/heap_dispatcher.h>
+
 #include "src/connectivity/bluetooth/core/bt-host/common/byte_buffer.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/device_address.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/inspectable.h"
@@ -112,7 +114,8 @@ class LowEnergyDiscoveryManager final : public hci::LowEnergyScanner::Delegate,
                                         public WeakSelf<LowEnergyDiscoveryManager> {
  public:
   // |peer_cache| and |scanner| MUST out-live this LowEnergyDiscoveryManager.
-  LowEnergyDiscoveryManager(hci::LowEnergyScanner* scanner, PeerCache* peer_cache);
+  LowEnergyDiscoveryManager(hci::LowEnergyScanner* scanner, PeerCache* peer_cache,
+                            pw::async::Dispatcher& dispatcher);
   virtual ~LowEnergyDiscoveryManager();
 
   // Starts a new discovery session and reports the result via |callback|. If a
@@ -134,7 +137,7 @@ class LowEnergyDiscoveryManager final : public hci::LowEnergyScanner::Delegate,
   [[nodiscard]] PauseToken PauseDiscovery();
 
   // Sets a new scan period to any future and ongoing discovery procedures.
-  void set_scan_period(zx::duration period) { scan_period_ = period; }
+  void set_scan_period(pw::chrono::SystemClock::duration period) { scan_period_ = period; }
 
   // Returns whether there is an active scan in progress.
   bool discovering() const;
@@ -219,7 +222,8 @@ class LowEnergyDiscoveryManager final : public hci::LowEnergyScanner::Delegate,
   void DeactivateAndNotifySessions();
 
   // The dispatcher that we use for invoking callbacks asynchronously.
-  async_dispatcher_t* dispatcher_;
+  pw::async::Dispatcher& dispatcher_;
+  pw::async::HeapDispatcher heap_dispatcher_{dispatcher_};
 
   InspectProperties inspect_;
 
@@ -258,7 +262,7 @@ class LowEnergyDiscoveryManager final : public hci::LowEnergyScanner::Delegate,
   std::unordered_set<PeerId> cached_scan_results_;
 
   // The value (in ms) that we use for the duration of each scan period.
-  zx::duration scan_period_ = kLEGeneralDiscoveryScanMin;
+  pw::chrono::SystemClock::duration scan_period_ = kLEGeneralDiscoveryScanMin;
 
   // Count of the number of outstanding PauseTokens. When |paused_count_| is 0, discovery is
   // unpaused.

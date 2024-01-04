@@ -58,12 +58,13 @@ pub struct QueuedResolver {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ResolveQueueContext {
+    gc_protection: fpkg::GcProtection,
     trace_id: ftrace::Id,
 }
 
 impl ResolveQueueContext {
-    fn new(trace_id: ftrace::Id) -> Self {
-        Self { trace_id }
+    fn new(gc_protection: fpkg::GcProtection, trace_id: ftrace::Id) -> Self {
+        Self { gc_protection, trace_id }
     }
 }
 
@@ -72,8 +73,15 @@ impl work_queue::TryMerge for ResolveQueueContext {
     // active duration associated with this id is started and stopped in QueuedResolver::resolve.
     // If a resolve is merged, then to tell which blob fetches the merged resolve is waiting for you
     // need to find the trace id of the first active resolve with the same package URL.
-    fn try_merge(&mut self, _other: Self) -> Result<(), Self> {
-        Ok(())
+    //
+    // Does not merge Contexts with differing GC protection. Clients depend on the different
+    // GC protection behaviors.
+    fn try_merge(&mut self, other: Self) -> Result<(), Self> {
+        if self.gc_protection == other.gc_protection {
+            Ok(())
+        } else {
+            Err(other)
+        }
     }
 }
 
@@ -87,6 +95,7 @@ pub trait Resolver: std::fmt::Debug + Sync + Sized {
     async fn resolve(
         &self,
         url: AbsolutePackageUrl,
+        gc_protection: fpkg::GcProtection,
         eager_package_manager: Option<&AsyncRwLock<EagerPackageManager<Self>>>,
     ) -> Result<(PackageDirectory, pkg::ResolutionContext), pkg::ResolveError>;
 }
@@ -140,6 +149,7 @@ impl Resolver for QueuedResolver {
     async fn resolve(
         &self,
         pkg_url: AbsolutePackageUrl,
+        gc_protection: fpkg::GcProtection,
         eager_package_manager: Option<&AsyncRwLock<EagerPackageManager<Self>>>,
     ) -> Result<(PackageDirectory, pkg::ResolutionContext), pkg::ResolveError> {
         let trace_id = ftrace::Id::random();
@@ -151,27 +161,30 @@ impl Resolver for QueuedResolver {
             // relationship.
             "trace_id" => u64::from(trace_id)
         );
-        let resolve_res = self.resolve_with_source(pkg_url, eager_package_manager, trace_id).await;
+        let resolve_res =
+            self.resolve_with_source(pkg_url, gc_protection, eager_package_manager, trace_id).await;
         let error_string;
-        let () = guard.end(&[
-            ftrace::ArgValue::of(
-                "status",
-                match resolve_res {
-                    Ok(_) => "success",
-                    Err(ref e) => {
-                        error_string = e.to_string();
-                        error_string.as_str()
-                    }
-                },
-            ),
-            ftrace::ArgValue::of(
-                "source",
-                match resolve_res {
-                    Ok(ref package_with_source) => package_with_source.source.str_for_trace(),
-                    Err(_) => "no source because resolve failed",
-                },
-            ),
-        ]);
+        if let Some(inner) = guard {
+            inner.end(&[
+                ftrace::ArgValue::of(
+                    "status",
+                    match resolve_res {
+                        Ok(_) => "success",
+                        Err(ref e) => {
+                            error_string = e.to_string();
+                            error_string.as_str()
+                        }
+                    },
+                ),
+                ftrace::ArgValue::of(
+                    "source",
+                    match resolve_res {
+                        Ok(ref package_with_source) => package_with_source.source.str_for_trace(),
+                        Err(_) => "no source because resolve failed",
+                    },
+                ),
+            ]);
+        }
         resolve_res.map(|pkg_with_source| (pkg_with_source.package, pkg_with_source.blob_id.into()))
     }
 }
@@ -200,6 +213,7 @@ impl QueuedResolver {
                     package_from_repo(
                         &repo_manager,
                         &rewritten_url,
+                        context.gc_protection,
                         cache,
                         blob_fetcher,
                         context.trace_id,
@@ -217,11 +231,12 @@ impl QueuedResolver {
     async fn resolve_with_source(
         &self,
         pkg_url: AbsolutePackageUrl,
+        gc_protection: fpkg::GcProtection,
         eager_package_manager: Option<&AsyncRwLock<EagerPackageManager<Self>>>,
         trace_id: ftrace::Id,
     ) -> Result<PackageWithSourceAndBlobId, pkg::ResolveError> {
         // Base pin.
-        let package_inspect = self.inspect.resolve(&pkg_url);
+        let package_inspect = self.inspect.resolve(&pkg_url, gc_protection);
         if let Some(blob) = self.base_package_index.is_unpinned_base_package(&pkg_url) {
             let dir = self.cache.get_already_cached(blob).await.map_err(|e| {
                 let error = e.to_resolve_error();
@@ -255,8 +270,9 @@ impl QueuedResolver {
 
         // Fetch from TUF.
         info!("attempting to resolve {} as {} with TUF", pkg_url, rewritten_url);
-        let queued_fetch =
-            self.queue.push(rewritten_url.clone(), ResolveQueueContext::new(trace_id));
+        let queued_fetch = self
+            .queue
+            .push(rewritten_url.clone(), ResolveQueueContext::new(gc_protection, trace_id));
         match queued_fetch.await.expect("expected queue to be open") {
             Ok((hash, dir)) => {
                 info!("resolved {} as {} to {} with TUF", pkg_url, rewritten_url, hash);
@@ -276,7 +292,7 @@ impl QueuedResolver {
                     }
                     Ok(None) => {
                         let fidl_err = tuf_err.to_resolve_error();
-                        error!(
+                        warn!(
                             "failed to resolve {} as {} with TUF: {:#}",
                             pkg_url,
                             rewritten_url,
@@ -350,7 +366,8 @@ impl QueuedResolver {
             OpenPackage(..)
             | Cache(FetchContentBlob(..))
             | Cache(FetchMetaFar(..))
-            | Cache(Get(_)) => {
+            | Cache(Get(_))
+            | Cache(Open(_)) => {
                 // We could talk to TUF and we know there's a new version of this package,
                 // but we couldn't retrieve its blobs for some reason. Refuse to fall back to
                 // cache_packages and instead return an error for the resolve, which is consistent
@@ -371,7 +388,7 @@ impl QueuedResolver {
 /// Creates a mocked PackageResolver that resolves any url using the given callback.
 pub struct MockResolver {
     queue: work_queue::WorkSender<
-        AbsolutePackageUrl,
+        (AbsolutePackageUrl, fpkg::GcProtection),
         (),
         Result<(PackageDirectory, pkg::ResolutionContext), Arc<GetPackageError>>,
     >,
@@ -381,13 +398,15 @@ pub struct MockResolver {
 impl MockResolver {
     pub fn new<W, F>(callback: W) -> Self
     where
-        W: Fn(AbsolutePackageUrl) -> F + Send + 'static,
+        W: Fn(AbsolutePackageUrl, fpkg::GcProtection) -> F + Send + 'static,
         F: Future<
                 Output = Result<(PackageDirectory, pkg::ResolutionContext), Arc<GetPackageError>>,
             > + Send,
     {
         let (package_fetch_queue, queue) =
-            work_queue::work_queue(1, move |url, _: ()| callback(url));
+            work_queue::work_queue(1, move |(url, gc_protection), _: ()| {
+                callback(url, gc_protection)
+            });
         fuchsia_async::Task::spawn(package_fetch_queue.into_future()).detach();
         Self { queue }
     }
@@ -399,9 +418,10 @@ impl Resolver for MockResolver {
     async fn resolve(
         &self,
         url: AbsolutePackageUrl,
+        gc_protection: fpkg::GcProtection,
         _eager_package_manager: Option<&AsyncRwLock<EagerPackageManager<Self>>>,
     ) -> Result<(PackageDirectory, pkg::ResolutionContext), pkg::ResolveError> {
-        let queued_fetch = self.queue.push(url, ());
+        let queued_fetch = self.queue.push((url, gc_protection), ());
         queued_fetch.await.expect("expected queue to be open").map_err(|e| e.to_resolve_error())
     }
 }
@@ -414,6 +434,7 @@ pub async fn run_resolver_service(
     base_package_index: Arc<BasePackageIndex>,
     system_cache_list: Arc<CachePackages>,
     stream: PackageResolverRequestStream,
+    gc_protection: fpkg::GcProtection,
     cobalt_sender: ProtocolSender<MetricEvent>,
     inspect: Arc<ResolverServiceInspectState>,
     eager_package_manager: Arc<Option<AsyncRwLock<EagerPackageManager<QueuedResolver>>>>,
@@ -425,6 +446,7 @@ pub async fn run_resolver_service(
                 PackageResolverRequest::Resolve { package_url, dir, responder } => {
                     let response = resolve_unparsed_absolute_url_and_send_cobalt_metrics(
                         &package_url,
+                        gc_protection,
                         dir,
                         &package_resolver,
                         eager_package_manager.as_ref().as_ref(),
@@ -448,6 +470,7 @@ pub async fn run_resolver_service(
                     let response = resolve_with_context::resolve_with_context(
                         package_url.clone(),
                         context,
+                        gc_protection,
                         dir,
                         &package_resolver,
                         &pkg_cache,
@@ -504,6 +527,7 @@ pub async fn run_resolver_service(
 
 async fn resolve_unparsed_absolute_url_and_send_cobalt_metrics(
     url: &str,
+    gc_protection: fpkg::GcProtection,
     dir: ServerEnd<fio::DirectoryMarker>,
     package_resolver: &QueuedResolver,
     eager_package_manager: Option<&AsyncRwLock<EagerPackageManager<QueuedResolver>>>,
@@ -512,6 +536,7 @@ async fn resolve_unparsed_absolute_url_and_send_cobalt_metrics(
     let url = AbsolutePackageUrl::parse(url).map_err(|e| handle_bad_package_url_error(e, url))?;
     resolve_absolute_url_and_send_cobalt_metrics(
         url,
+        gc_protection,
         dir,
         package_resolver,
         eager_package_manager,
@@ -522,14 +547,21 @@ async fn resolve_unparsed_absolute_url_and_send_cobalt_metrics(
 
 async fn resolve_absolute_url_and_send_cobalt_metrics(
     package_url: AbsolutePackageUrl,
+    gc_protection: fpkg::GcProtection,
     dir: ServerEnd<fio::DirectoryMarker>,
     package_resolver: &QueuedResolver,
     eager_package_manager: Option<&AsyncRwLock<EagerPackageManager<QueuedResolver>>>,
     mut cobalt_sender: ProtocolSender<MetricEvent>,
 ) -> Result<fpkg::ResolutionContext, pkg::ResolveError> {
     let start_time = Instant::now();
-    let response =
-        resolve_and_reopen(package_resolver, package_url, dir, eager_package_manager).await;
+    let response = resolve_and_reopen(
+        package_resolver,
+        package_url,
+        gc_protection,
+        dir,
+        eager_package_manager,
+    )
+    .await;
 
     cobalt_sender.send(
         MetricEvent::builder(metrics::RESOLVE_STATUS_MIGRATED_METRIC_ID)
@@ -691,6 +723,7 @@ async fn hash_from_repo_or_cache(
 async fn package_from_repo(
     repo_manager: &AsyncRwLock<RepositoryManager>,
     rewritten_url: &AbsolutePackageUrl,
+    gc_protection: fpkg::GcProtection,
     cache: pkg::cache::Client,
     blob_fetcher: BlobFetcher,
     trace_id: ftrace::Id,
@@ -698,7 +731,13 @@ async fn package_from_repo(
     // Rust temporaries are kept alive for the duration of the innermost enclosing statement, and
     // we don't want to hold the repo_manager lock while we fetch the package, so the following two
     // lines should not be combined.
-    let fut = repo_manager.read().await.get_package(rewritten_url, &cache, &blob_fetcher, trace_id);
+    let fut = repo_manager.read().await.get_package(
+        rewritten_url,
+        gc_protection,
+        &cache,
+        &blob_fetcher,
+        trace_id,
+    );
     fut.await
 }
 
@@ -763,11 +802,12 @@ async fn get_hash(
 async fn resolve_and_reopen(
     package_resolver: &QueuedResolver,
     url: AbsolutePackageUrl,
+    gc_protection: fpkg::GcProtection,
     dir_request: ServerEnd<fio::DirectoryMarker>,
     eager_package_manager: Option<&AsyncRwLock<EagerPackageManager<QueuedResolver>>>,
 ) -> Result<fpkg::ResolutionContext, pkg::ResolveError> {
     let (pkg, resolution_context) =
-        package_resolver.resolve(url.clone(), eager_package_manager).await?;
+        package_resolver.resolve(url.clone(), gc_protection, eager_package_manager).await?;
     let () = pkg.reopen(dir_request).map_err(|e| {
         error!("failed to re-open directory for package url {}: {:#}", url, anyhow!(e));
         pkg::ResolveError::Internal

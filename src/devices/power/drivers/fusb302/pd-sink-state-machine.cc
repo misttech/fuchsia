@@ -4,7 +4,7 @@
 
 #include "src/devices/power/drivers/fusb302/pd-sink-state-machine.h"
 
-#include <lib/ddk/debug.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/inspect/cpp/vmo/types.h>
 #include <lib/zx/result.h>
 #include <lib/zx/time.h>
@@ -127,7 +127,7 @@ void SinkPolicyEngineStateMachine::EnterState(SinkPolicyEngineState state) {
       return;
   }
 
-  zxlogf(ERROR, "Invalid state: %d", static_cast<int>(state));
+  FDF_LOG(ERROR, "Invalid state: %" PRId32, static_cast<int32_t>(state));
 }
 
 SinkPolicyEngineState SinkPolicyEngineStateMachine::NextState(SinkPolicyEngineInput input,
@@ -153,18 +153,18 @@ SinkPolicyEngineState SinkPolicyEngineStateMachine::NextState(SinkPolicyEngineIn
         }
       }
       if (input == SinkPolicyEngineInput::kTimerFired) {
-        zxlogf(TRACE, "Checking if timer signal is from the source capabilities timer");
+        FDF_LOG(TRACE, "Checking if timer signal is from the source capabilities timer");
         const bool done_waiting = wait_for_source_capabilities_timer_.wait_one(
                                       ZX_TIMER_SIGNALED, zx::time(0), nullptr) == ZX_OK;
         if (done_waiting) {
-          zxlogf(WARNING, "Timed out waiting for Source_Capabilities. Trying a reset");
+          FDF_LOG(WARNING, "Timed out waiting for Source_Capabilities. Trying a reset");
           return SinkPolicyEngineState::kSendSoftReset;
         }
       }
       return current_state;
 
     case SinkPolicyEngineState::kEvaluateCapability:
-      // This state could be used to track an asynchronous FIDL exchg
+      // This state could be used to track an asynchronous FIDL exchange.
       return SinkPolicyEngineState::kSelectCapability;
 
     case SinkPolicyEngineState::kSelectCapability:
@@ -192,7 +192,7 @@ SinkPolicyEngineState SinkPolicyEngineStateMachine::NextState(SinkPolicyEngineIn
       return current_state;
 
     case SinkPolicyEngineState::kReady:
-      // TODO (rdzhuang): also accept requests from FIDL
+      // TODO(rdzhuang): also accept requests from FIDL
       if (input == SinkPolicyEngineInput::kMessageReceived &&
           device_.protocol().HasUnreadMessage()) {
         return ProcessMessageInReady();
@@ -221,7 +221,7 @@ SinkPolicyEngineState SinkPolicyEngineStateMachine::NextState(SinkPolicyEngineIn
       return SinkPolicyEngineState::kWaitForCapabilities;
   }
 
-  zxlogf(ERROR, "Invalid state: %d", static_cast<int>(current_state));
+  FDF_LOG(ERROR, "Invalid state: %" PRId32, static_cast<int32_t>(current_state));
   return current_state;
 }
 
@@ -248,7 +248,7 @@ void SinkPolicyEngineStateMachine::ExitState(SinkPolicyEngineState state) {
       return;
   }
 
-  zxlogf(ERROR, "Invalid state: %d", static_cast<int>(state));
+  FDF_LOG(ERROR, "Invalid state: %" PRId32, static_cast<int32_t>(state));
 }
 
 void SinkPolicyEngineStateMachine::InitializeProtocolLayer() {
@@ -279,8 +279,8 @@ void SinkPolicyEngineStateMachine::CreateTimersIfNeeded() {
     zx_status_t status = zx::timer::create(ZX_TIMER_SLACK_CENTER, ZX_CLOCK_MONOTONIC,
                                            &wait_for_source_capabilities_timer_);
     if (status != ZX_OK) {
-      zxlogf(ERROR, "Failed to create Source_Capabilities wait timer: %s",
-             zx_status_get_string(status));
+      FDF_LOG(ERROR, "Failed to create Source_Capabilities wait timer: %s",
+              zx_status_get_string(status));
     }
   }
 
@@ -293,7 +293,7 @@ void SinkPolicyEngineStateMachine::ArmWaitForSourceCapabilitiesTimer() {
       wait_for_source_capabilities_timer_.set(zx::deadline_after(kWaitForSourceCapabilitiesTimeout),
                                               /*slack=*/zx::duration(0));
   if (status != ZX_OK) {
-    zxlogf(ERROR, "Failed to arm timer: %s", zx_status_get_string(status));
+    FDF_LOG(ERROR, "Failed to arm timer: %s", zx_status_get_string(status));
     return;
   }
 
@@ -307,17 +307,19 @@ SinkPolicyEngineState SinkPolicyEngineStateMachine::ProcessMessageInReady() {
   const usb_pd::MessageType message_type = message.header().message_type();
 
   if (message_type == usb_pd::MessageType::kSourceCapabilities) {
-    return SinkPolicyEngineState::kEvaluateCapability;
+    // The message will be read when entering this state.
+    ForceStateTransition(SinkPolicyEngineState::kWaitForCapabilities);
   }
 
   // The MacBookPro M1 USB-C ports issue a Hard Reset if this isn't handled.
   if (message_type == usb_pd::MessageType::kGetSinkCapabilities) {
+    // The message will be read when entering this state.
     return SinkPolicyEngineState::kGiveSinkCapabilities;
   }
 
   // For now, handle every other message as an unsupported message.
-  zxlogf(WARNING, "Received unsupported PD message type %s in Ready state",
-         usb_pd::MessageTypeToString(message_type));
+  FDF_LOG(WARNING, "Received unsupported PD message type %s in Ready state",
+          usb_pd::MessageTypeToString(message_type));
 
   [[maybe_unused]] zx::result<> result = device_.protocol().MarkMessageAsRead();
 
@@ -357,19 +359,24 @@ void SinkPolicyEngineStateMachine::ProcessUnexpectedMessage() {
   const usb_pd::Message& message = device_.protocol().FirstUnreadMessage();
   const usb_pd::MessageType message_type = message.header().message_type();
 
-  zxlogf(WARNING, "Received unexpected PD message type %s in state %s",
-         usb_pd::MessageTypeToString(message_type), StateToString(current_state()));
+  FDF_LOG(WARNING, "Received unexpected PD message type %s in state %s",
+          usb_pd::MessageTypeToString(message_type), StateToString(current_state()));
 
   if (message_type == usb_pd::MessageType::kSourceCapabilities) {
-    ForceStateTransition(SinkPolicyEngineState::kEvaluateCapability);
+    // The message will be read when entering this state.
+    ForceStateTransition(SinkPolicyEngineState::kWaitForCapabilities);
     return;
   }
+
   if (message_type == usb_pd::MessageType::kGetSinkCapabilities) {
+    // The message will be read when entering this state.
     ForceStateTransition(SinkPolicyEngineState::kGiveSinkCapabilities);
     return;
   }
 
+  // The state transitions below assume that the message has been read.
   [[maybe_unused]] zx::result<> result = device_.protocol().MarkMessageAsRead();
+
   // See ProcessMessageInReady() for the rationale for ignoring VDM
   // (vendor-defined messages).
   if (message_type != usb_pd::MessageType::kVendorDefined) {
@@ -407,8 +414,9 @@ const char* SinkPolicyEngineStateMachine::StateToString(SinkPolicyEngineState st
       return "SoftReset";
   }
 
-  ZX_DEBUG_ASSERT_MSG(false, "Invalid SinkPolicyEngineState: %" PRId32, static_cast<int>(state));
-  return nullptr;
+  ZX_DEBUG_ASSERT_MSG(false, "Invalid SinkPolicyEngineState: %" PRId32,
+                      static_cast<int32_t>(state));
+  return "(invalid)";
 }
 
 }  // namespace fusb302

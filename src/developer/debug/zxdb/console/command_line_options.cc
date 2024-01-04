@@ -27,6 +27,14 @@ const char kUnixConnectHelp[] = R"(  --unix-connect=<filepath>
   -u <filepath>
       Attempts to connect to a debug_agent through a unix socket.)";
 
+const char kLocalHelp[] = R"(  --local
+  -l
+      Runs the built-in local debug_agent for debugging the local system. Only
+      supported on x64 Linux.
+
+      In this mode, any non-switch parameters (or anything after '--') will be
+      treated as the program to debug and its parameters.)";
+
 const char kConnectHelp[] = R"(  --connect=<host>:<port>
   -c <host>:<port>
       Attempts to connect to a debug_agent running on the given host/port.)";
@@ -62,7 +70,7 @@ const char kExecuteCommandHelp[] = R"(  --execute=<command>
 
 const char kSymbolIndexHelp[] = R"(  --symbol-index=<path>
       Populates --ids-txt and --build-id-dir using the given symbol-index file,
-      which defaults to ~/.fuchsia/debug/symbol-index. The file should be
+      which defaults to ~/.fuchsia/debug/symbol-index.json. The file should be
       created and maintained by the "symbol-index" host tool.)";
 
 const char kSymbolPathHelp[] = R"(  --symbol-path=<path>
@@ -119,6 +127,12 @@ const char kNoAutoAttachLimboHelp[] = R"(  --no-auto-attach-limbo
       Disables automatically attaching to all processes found in Process Limbo
       upon successful connection.)";
 
+const char kSignalWhenReadyHelp[] = R"(  --signal-when-ready=<pid>
+      Send SIGUSR1 to pid when ready for interactive commands.)";
+
+const char kStreamFileHelp[] = R"(  --stream-file=<path>
+      Stream the contents of the given file, usually a pipe, to the console.)";
+
 }  // namespace
 
 cmdline::Status ParseCommandLine(int argc, const char* argv[], CommandLineOptions* options,
@@ -130,6 +144,7 @@ cmdline::Status ParseCommandLine(int argc, const char* argv[], CommandLineOption
 
   parser.AddSwitch("connect", 'c', kConnectHelp, &CommandLineOptions::connect);
   parser.AddSwitch("unix-connect", 'u', kUnixConnectHelp, &CommandLineOptions::unix_connect);
+  parser.AddSwitch("local", 'l', kLocalHelp, &CommandLineOptions::local);
   parser.AddSwitch("core", 0, kCoreHelp, &CommandLineOptions::core);
   parser.AddSwitch("debug-mode", 'd', kDebugModeHelp, &CommandLineOptions::debug_mode);
   parser.AddSwitch("attach", 'a', kAttachHelp, &CommandLineOptions::attach);
@@ -150,6 +165,9 @@ cmdline::Status ParseCommandLine(int argc, const char* argv[], CommandLineOption
                    &CommandLineOptions::debug_adapter_port);
   parser.AddSwitch("no-auto-attach-limbo", 'n', kNoAutoAttachLimboHelp,
                    &CommandLineOptions::no_auto_attach_limbo);
+  parser.AddSwitch("signal-when-ready", 0, kSignalWhenReadyHelp,
+                   &CommandLineOptions::signal_when_ready);
+  parser.AddSwitch("stream-file", 0, kStreamFileHelp, &CommandLineOptions::stream_files);
 
   // Special --help switch which doesn't exist in the options structure.
   bool requested_help = false;
@@ -170,12 +188,10 @@ cmdline::Status ParseCommandLine(int argc, const char* argv[], CommandLineOption
       options->symbol_cache = home_str + "/.fuchsia/debug/symbol-cache";
     }
     if (options->symbol_index_files.empty()) {
-      for (const auto& path : {home_str + "/.fuchsia/debug/symbol-index.json",
-                               home_str + "/.fuchsia/debug/symbol-index"}) {
-        std::error_code ec;
-        if (std::filesystem::exists(path, ec)) {
-          options->symbol_index_files.push_back(path);
-        }
+      std::error_code ec;
+      std::string symbol_index = home_str + "/.fuchsia/debug/symbol-index.json";
+      if (std::filesystem::exists(symbol_index, ec)) {
+        options->symbol_index_files.push_back(symbol_index);
       }
     }
     std::string zxdbrc = home_str + "/.fuchsia/debug/zxdbrc";

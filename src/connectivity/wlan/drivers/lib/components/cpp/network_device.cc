@@ -4,8 +4,10 @@
 #include "src/connectivity/wlan/drivers/lib/components/cpp/include/wlan/drivers/components/network_device.h"
 
 #include <fidl/fuchsia.hardware.network/cpp/wire.h>
-#include <lib/ddk/debug.h>
+#include <lib/ddk/binding_driver.h>
 #include <lib/zx/vmar.h>
+
+#include "src/connectivity/wlan/drivers/lib/components/cpp/log.h"
 
 namespace {
 
@@ -23,6 +25,10 @@ void PopulateRxBuffer(rx_buffer_t& buffer, rx_buffer_part_t& buffer_part,
 
 }  // anonymous namespace
 
+namespace wlan::drivers::components::internal {
+extern LogMode gLogMode;
+}  // namespace wlan::drivers::components::internal
+
 namespace wlan::drivers::components {
 
 NetworkDevice::Callbacks::~Callbacks() = default;
@@ -30,13 +36,42 @@ NetworkDevice::Callbacks::~Callbacks() = default;
 NetworkDevice::NetworkDevice(zx_device_t* parent, Callbacks* callbacks)
     : parent_(parent),
       callbacks_(callbacks),
-      netdev_proto_{&this->network_device_impl_protocol_ops_, this} {}
+      netdev_proto_{&this->network_device_impl_protocol_ops_, this} {
+  internal::set_log_mode(internal::LogMode::DFv1);
+}
+
+NetworkDevice::NetworkDevice(Callbacks* callbacks)
+    : callbacks_(callbacks), netdev_proto_{&this->network_device_impl_protocol_ops_, this} {
+  internal::set_log_mode(internal::LogMode::DFv2);
+}
 
 NetworkDevice::~NetworkDevice() = default;
 
-zx_status_t NetworkDevice::Init(const char* deviceName) { return AddNetworkDevice(deviceName); }
+zx_status_t NetworkDevice::Init(const char* deviceName) {
+  ZX_ASSERT(internal::gLogMode == internal::LogMode::DFv1);
+  return AddNetworkDevice(deviceName);
+}
 
-void NetworkDevice::Remove() { device_async_remove(device_); }
+void NetworkDevice::Init(fidl::ClientEnd<NodeController> client_end,
+                         async_dispatcher_t* dispatcher) {
+  ZX_ASSERT(internal::gLogMode == internal::LogMode::DFv2);
+  controller_node_ = std::make_optional<fidl::WireClient<NodeController>>();
+  controller_node_.value().Bind(std::move(client_end), dispatcher, this);
+}
+
+void NetworkDevice::Remove() {
+  if (device_) {
+    // DFv1 case
+    device_async_remove(device_);
+  }
+  if (controller_node_) {
+    // DFv2 case
+    auto result = controller_node_.value()->Remove();
+    if (!result.ok()) {
+      LOGF(ERROR, "controller node remove failed, FIDL error: %s", result.status_string());
+    }
+  }
+}
 
 void NetworkDevice::Release() { callbacks_->NetDevRelease(); }
 
@@ -118,9 +153,11 @@ void NetworkDevice::CompleteTx(cpp20::span<Frame> frames, zx_status_t status) {
 }
 
 // NetworkDeviceImpl implementation
-zx_status_t NetworkDevice::NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface) {
+void NetworkDevice::NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
+                                          network_device_impl_init_callback callback,
+                                          void* cookie) {
   netdev_ifc_ = ::ddk::NetworkDeviceIfcProtocolClient(iface);
-  return callbacks_->NetDevInit();
+  callbacks_->NetDevInit(Callbacks::InitTxn(callback, cookie));
 }
 
 void NetworkDevice::NetworkDeviceImplStart(network_device_impl_start_callback callback,
@@ -137,7 +174,7 @@ void NetworkDevice::NetworkDeviceImplStop(network_device_impl_stop_callback call
   callbacks_->NetDevStop(Callbacks::StopTxn(callback, cookie));
 }
 
-void NetworkDevice::NetworkDeviceImplGetInfo(device_info_t* out_info) {
+void NetworkDevice::NetworkDeviceImplGetInfo(device_impl_info_t* out_info) {
   memset(out_info, 0, sizeof(*out_info));
   callbacks_->NetDevGetInfo(out_info);
 }
@@ -184,14 +221,14 @@ void NetworkDevice::NetworkDeviceImplPrepareVmo(uint8_t id, zx::vmo vmo,
     uint64_t size = 0;
     zx_status_t status = vmo.get_size(&size);
     if (status != ZX_OK) {
-      zxlogf(ERROR, "Failed to get VMO size on prepare: %s", zx_status_get_string(status));
+      LOGF(ERROR, "Failed to get VMO size on prepare: %s", zx_status_get_string(status));
       return status;
     }
 
     zx_vaddr_t addr = 0;
     status = zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0, size, &addr);
     if (status != ZX_OK) {
-      zxlogf(ERROR, "Failed to map VMO on prepare: %s", zx_status_get_string(status));
+      LOGF(ERROR, "Failed to map VMO on prepare: %s", zx_status_get_string(status));
       return status;
     }
     vmo_addrs_[id] = reinterpret_cast<uint8_t*>(addr);
@@ -209,7 +246,7 @@ void NetworkDevice::NetworkDeviceImplReleaseVmo(uint8_t id) {
   zx_status_t status =
       zx::vmar::root_self()->unmap(reinterpret_cast<zx_vaddr_t>(vmo_addrs_[id]), vmo_lengths_[id]);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "Failed to unmap VMO on release: %s", zx_status_get_string(status));
+    LOGF(ERROR, "Failed to unmap VMO on release: %s", zx_status_get_string(status));
   }
   vmo_addrs_[id] = nullptr;
   vmo_lengths_[id] = 0;
@@ -217,6 +254,14 @@ void NetworkDevice::NetworkDeviceImplReleaseVmo(uint8_t id) {
 
 void NetworkDevice::NetworkDeviceImplSetSnoop(bool snoop) {
   callbacks_->NetDevSetSnoopEnabled(snoop);
+}
+
+void NetworkDevice::on_fidl_error(fidl::UnbindInfo error) {
+  if (error.status() != ZX_OK) {
+    LOGF(ERROR, "NetworkDevice fidl error: %s", error.FormatDescription().c_str());
+    return;
+  }
+  callbacks_->NetDevRelease();
 }
 
 zx_status_t NetworkDevice::AddNetworkDevice(const char* deviceName) {

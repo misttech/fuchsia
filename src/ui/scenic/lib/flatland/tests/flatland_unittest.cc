@@ -20,15 +20,17 @@
 
 #include "fuchsia/ui/composition/cpp/fidl.h"
 #include "src/lib/fsl/handles/object_info.h"
-#include "src/lib/testing/loop_fixture/test_loop_fixture.h"
+#include "src/ui/lib/escher/util/epsilon_compare.h"
 #include "src/ui/scenic/lib/allocation/allocator.h"
 #include "src/ui/scenic/lib/allocation/buffer_collection_import_export_tokens.h"
 #include "src/ui/scenic/lib/allocation/buffer_collection_importer.h"
+#include "src/ui/scenic/lib/allocation/id.h"
 #include "src/ui/scenic/lib/allocation/mock_buffer_collection_importer.h"
 #include "src/ui/scenic/lib/flatland/flatland_display.h"
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
 #include "src/ui/scenic/lib/flatland/global_matrix_data.h"
 #include "src/ui/scenic/lib/flatland/global_topology_data.h"
+#include "src/ui/scenic/lib/flatland/tests/logging_event_loop.h"
 #include "src/ui/scenic/lib/flatland/tests/mock_flatland_presenter.h"
 #include "src/ui/scenic/lib/scenic/util/error_reporter.h"
 #include "src/ui/scenic/lib/scheduling/frame_scheduler.h"
@@ -214,7 +216,7 @@ fuchsia::ui::composition::ViewBoundProtocols NoViewProtocols() { return {}; }
 class FlatlandTest;
 using FlatlandDisplayTest = FlatlandTest;
 
-class FlatlandTest : public gtest::TestLoopFixture {
+class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
  public:
   FlatlandTest()
       : uber_struct_system_(std::make_shared<UberStructSystem>()),
@@ -312,7 +314,7 @@ class FlatlandTest : public gtest::TestLoopFixture {
                                                          uint32_t height_in_px) {
     auto session_id = scheduling::GetNextSessionId();
     auto display = std::make_shared<scenic_impl::display::Display>(
-        fuchsia::hardware::display::DisplayId{.value = 1}, width_in_px, height_in_px);
+        fuchsia::hardware::display::types::DisplayId{.value = 1}, width_in_px, height_in_px);
     flatland_displays_.push_back({});
     return FlatlandDisplay::New(
         std::make_shared<utils::UnownedDispatcherHolder>(dispatcher()),
@@ -4066,20 +4068,20 @@ TEST_F(FlatlandTest, SetImageSampleRegionTestCases) {
   std::shared_ptr<Allocator> allocator = CreateAllocator();
   const TransformId kTransformId = {1};
   const ContentId kId = {3};
-  const uint32_t kImageWidth = 300;
-  const uint32_t kImageHeight = 400;
+  const uint32_t kImageWidth = 854;
+  const uint32_t kImageHeight = 480;
 
   // Zero is not a valid content ID.
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
-    flatland->SetImageSampleRegion({0}, {0, 0, 100, 200});
+    flatland->SetImageSampleRegion({0}, {0, 0, kImageWidth, kImageHeight});
     PRESENT(flatland, false);
   }
 
   // The content id hasn't been imported yet.
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
-    flatland->SetImageSampleRegion(kId, {0, 0, 100, 200});
+    flatland->SetImageSampleRegion(kId, {0, 0, kImageWidth, kImageHeight});
     PRESENT(flatland, false);
   }
 
@@ -4102,7 +4104,16 @@ TEST_F(FlatlandTest, SetImageSampleRegionTestCases) {
     flatland->SetImageSampleRegion(kId, {0, 0, kImageWidth, kImageHeight});
     PRESENT(flatland, true);
 
-    flatland->SetImageSampleRegion(kId, {50, 60, kImageWidth - 100, kImageHeight - 200});
+    const float kYDeltaCoefficient = 0.370833f;
+    const float kHeightCoefficient = 0.629167f;
+    EXPECT_EQ(1.f, kYDeltaCoefficient + kHeightCoefficient);
+    const float kYDelta = kYDeltaCoefficient * kImageHeight;
+    const float kYHeight = kHeightCoefficient * kImageHeight;
+    // Note that comparing these values using == operator as floats fails due to the loss of
+    // precision.
+    EXPECT_GT(kYDelta + kYHeight, static_cast<float>(kImageHeight));
+    EXPECT_TRUE(escher::CompareFloat(kYDelta + kYHeight, static_cast<float>(kImageHeight), 0.01f));
+    flatland->SetImageSampleRegion(kId, {0, kYDelta, kImageWidth, kYHeight});
     PRESENT(flatland, true);
   }
 
@@ -5438,6 +5449,19 @@ TEST_F(FlatlandDisplayTest, SimpleSetContent) {
 
   EXPECT_TRUE(parent_viewport_watcher_status.has_value());
   EXPECT_EQ(parent_viewport_watcher_status.value(), ParentViewportStatus::CONNECTED_TO_DISPLAY);
+}
+
+TEST_F(FlatlandTest, CreateAndReleaseFilledRect) {
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _)).Times(0);
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(allocation::kInvalidImageId))
+      .Times(0);
+  const ContentId kFilledRectId = {1};
+  flatland->CreateFilledRect(kFilledRectId);
+  PRESENT(flatland, true);
+  flatland->ReleaseFilledRect(kFilledRectId);
+  PRESENT(flatland, true);
 }
 
 // TODO(fxbug.dev/76640): other FlatlandDisplayTests that should be written:

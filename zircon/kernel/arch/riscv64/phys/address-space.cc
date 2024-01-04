@@ -6,9 +6,20 @@
 
 #include "phys/address-space.h"
 
-void ArchSetUpAddressSpaceEarly() {
-  // TODO(mcgrathr): unclear if we need identity-mapping or can just leave
-  // translation turned off in the satp.
+#include <lib/arch/cache.h>
+#include <lib/arch/riscv64/page-table.h>
+
+void ArchSetUpAddressSpaceEarly(AddressSpace& aspace) {
+  aspace.Init();
+  aspace.SetUpIdentityMappings();
+  aspace.Install();
 }
 
-void ArchSetUpAddressSpaceLate() {}
+void ArchSetUpAddressSpaceLate(AddressSpace& aspace) {}
+
+void AddressSpace::ArchInstall() const {
+  arch::RiscvSatp::Modify([root = root_paddr()](auto& satp) {
+    satp.set_mode(arch::RiscvSatp::Mode::kSv39).set_root_address(root).set_asid(0);
+  });
+  arch::InvalidateLocalTlbs();  // Acts as a barrier as well.
+}

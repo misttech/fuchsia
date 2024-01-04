@@ -209,13 +209,31 @@ void NetdeviceMigration::EthernetIfcRecv(const uint8_t* data_buffer, size_t data
   }
 }
 
-zx_status_t NetdeviceMigration::NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface) {
+void NetdeviceMigration::NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
+                                               network_device_impl_init_callback callback,
+                                               void* cookie) {
   if (netdevice_.is_valid()) {
-    return ZX_ERR_ALREADY_BOUND;
+    callback(cookie, ZX_ERR_ALREADY_BOUND);
+    return;
   }
   netdevice_ = ddk::NetworkDeviceIfcProtocolClient(iface);
-  netdevice_.AddPort(kPortId, this, &network_port_protocol_ops_);
-  return ZX_OK;
+
+  using Context = std::pair<network_device_impl_init_callback, void*>;
+
+  std::unique_ptr context = std::make_unique<Context>(callback, cookie);
+  netdevice_.AddPort(
+      kPortId, this, &network_port_protocol_ops_,
+      [](void* ctx, zx_status_t status) {
+        std::unique_ptr<Context> context(static_cast<Context*>(ctx));
+        auto [callback, cookie] = *context;
+        if (status != ZX_OK) {
+          zxlogf(ERROR, "failed to add port: %s", zx_status_get_string(status));
+          callback(cookie, status);
+          return;
+        }
+        callback(cookie, ZX_OK);
+      },
+      context.release());
 }
 
 void NetdeviceMigration::NetworkDeviceImplStart(network_device_impl_start_callback callback,
@@ -228,18 +246,6 @@ void NetdeviceMigration::NetworkDeviceImplStart(network_device_impl_start_callba
       callback(cookie, ZX_ERR_ALREADY_BOUND);
       return;
     }
-  }
-  // Do not hold the lock across the ethernet_.Start() call because the Netdevice contract ensures
-  // that a subsequent Start() or Stop() call will not occur until after this one has returned via
-  // the callback.
-  if (zx_status_t status = ethernet_.Start(this, &ethernet_ifc_protocol_ops_); status != ZX_OK) {
-    zxlogf(WARNING, "failed to start device: %s", zx_status_get_string(status));
-    callback(cookie, status);
-    return;
-  }
-  {
-    std::lock_guard rx_lock(rx_lock_);
-    std::lock_guard tx_lock(tx_lock_);
     rx_started_ = true;
     tx_started_ = true;
   }
@@ -272,6 +278,8 @@ void NetdeviceMigration::NetworkDeviceImplStop(network_device_impl_stop_callback
           .length = 0,
       };
       *rx_buffer_iter++ = {
+          .meta = {.frame_type =
+                       static_cast<uint8_t>(fuchsia_hardware_network::FrameType::kEthernet)},
           .data_list = &part,
           .data_count = 1,
       };
@@ -297,7 +305,9 @@ void NetdeviceMigration::NetworkDeviceImplStop(network_device_impl_stop_callback
   callback(cookie);
 }
 
-void NetdeviceMigration::NetworkDeviceImplGetInfo(device_info_t* out_info) { *out_info = info_; }
+void NetdeviceMigration::NetworkDeviceImplGetInfo(device_impl_info_t* out_info) {
+  *out_info = info_;
+}
 
 void NetdeviceMigration::NetworkDeviceImplQueueTx(const tx_buffer_t* buffers_list,
                                                   size_t buffers_count)
@@ -422,40 +432,55 @@ void NetdeviceMigration::NetworkDeviceImplQueueTx(const tx_buffer_t* buffers_lis
 void NetdeviceMigration::NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buffers_list,
                                                        size_t buffers_count)
     __TA_EXCLUDES(rx_lock_) {
-  std::lock_guard rx_lock(rx_lock_);
-  if (size_t total_rx_buffers = rx_spaces_.size() + buffers_count;
-      total_rx_buffers > info_.rx_depth) {
-    // Client has violated API contract: "The total number of outstanding rx buffers given to a
-    // device will never exceed the reported [`DeviceInfo.rx_depth`] value."
-    zxlogf(ERROR, "total received rx buffers %ld > rx_depth %d", total_rx_buffers, info_.rx_depth);
-    DdkAsyncRemove();
-    return;
-  }
-  cpp20::span buffers(buffers_list, buffers_count);
-  if (!rx_started_) {
-    zxlogf(ERROR, "rx buffers queued before start call");
-    for (const rx_space_buffer_t& space : buffers) {
-      rx_buffer_part_t part = {
-          .id = space.id,
-          .length = 0,
-      };
-      rx_buffer_t buf = {
-          .data_list = &part,
-          .data_count = 1,
-      };
-      netdevice_.CompleteRx(&buf, 1);
-    }
-    return;
-  }
-  for (const rx_space_buffer_t& space : buffers) {
-    if (space.region.length < info_.min_rx_buffer_length ||
-        space.region.length > info_.max_buffer_length) {
-      zxlogf(ERROR, "rx buffer queued with length %ld, outside valid range [%du, %du]",
-             space.region.length, info_.min_rx_buffer_length, info_.max_buffer_length);
+  bool rx_space_queued = true;
+  {
+    std::lock_guard rx_lock(rx_lock_);
+    if (size_t total_rx_buffers = rx_spaces_.size() + buffers_count;
+        total_rx_buffers > info_.rx_depth) {
+      // Client has violated API contract: "The total number of outstanding rx buffers given to a
+      // device will never exceed the reported [`DeviceInfo.rx_depth`] value."
+      zxlogf(ERROR, "total received rx buffers %ld > rx_depth %d", total_rx_buffers,
+             info_.rx_depth);
       DdkAsyncRemove();
       return;
     }
-    rx_spaces_.push(space);
+    cpp20::span buffers(buffers_list, buffers_count);
+    if (!rx_started_) {
+      zxlogf(ERROR, "rx buffers queued before start call");
+      for (const rx_space_buffer_t& space : buffers) {
+        rx_buffer_part_t part = {
+            .id = space.id,
+            .length = 0,
+        };
+        rx_buffer_t buf = {
+            .meta = {.frame_type =
+                         static_cast<uint8_t>(fuchsia_hardware_network::FrameType::kEthernet)},
+            .data_list = &part,
+            .data_count = 1,
+        };
+        netdevice_.CompleteRx(&buf, 1);
+      }
+      return;
+    }
+    for (const rx_space_buffer_t& space : buffers) {
+      if (space.region.length < info_.min_rx_buffer_length ||
+          space.region.length > info_.max_buffer_length) {
+        zxlogf(ERROR, "rx buffer queued with length %ld, outside valid range [%du, %du]",
+               space.region.length, info_.min_rx_buffer_length, info_.max_buffer_length);
+        DdkAsyncRemove();
+        return;
+      }
+      rx_spaces_.push(space);
+    }
+    std::swap(rx_space_queued, rx_space_queued_);
+  }
+  if (!rx_space_queued) {
+    // Do not hold the lock across the ethernet_.Start() call because the Netdevice contract ensures
+    // that a subsequent Start() or Stop() call will not occur until after this one has returned via
+    // the callback.
+    if (zx_status_t status = ethernet_.Start(this, &ethernet_ifc_protocol_ops_); status != ZX_OK) {
+      zxlogf(WARNING, "failed to start device: %s", zx_status_get_string(status));
+    }
   }
 }
 
@@ -479,33 +504,32 @@ void NetdeviceMigration::NetworkDeviceImplReleaseVmo(uint8_t id) __TA_EXCLUDES(v
 
 void NetdeviceMigration::NetworkDeviceImplSetSnoop(bool snoop) {}
 
-void NetdeviceMigration::NetworkPortGetInfo(port_info_t* out_info) { *out_info = port_info_; }
+void NetdeviceMigration::NetworkPortGetInfo(port_base_info_t* out_info) { *out_info = port_info_; }
 
 void NetdeviceMigration::NetworkPortGetStatus(port_status_t* out_status)
     __TA_EXCLUDES(status_lock_) {
   std::lock_guard lock(status_lock_);
   *out_status = {
-      .mtu = mtu_,
       .flags = static_cast<uint32_t>(port_status_flags_),
+      .mtu = mtu_,
   };
 }
 
 void NetdeviceMigration::NetworkPortSetActive(bool active) {}
 
-void NetdeviceMigration::NetworkPortGetMac(mac_addr_protocol_t* out_mac_ifc) {
-  *out_mac_ifc = mac_addr_protocol_t{
-      .ops = &mac_addr_protocol_ops_,
-      .ctx = this,
-  };
+void NetdeviceMigration::NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc) {
+  if (out_mac_ifc) {
+    *out_mac_ifc = &mac_addr_proto_;
+  }
 }
 
 void NetdeviceMigration::NetworkPortRemoved() {
   zxlogf(INFO, "removed event for port %d", kPortId);
 }
 
-void NetdeviceMigration::MacAddrGetAddress(uint8_t out_mac[MAC_SIZE]) {
-  static_assert(sizeof(mac_) == MAC_SIZE);
-  std::copy(mac_.begin(), mac_.end(), out_mac);
+void NetdeviceMigration::MacAddrGetAddress(mac_address_t* out_mac) {
+  static_assert(sizeof(mac_) == sizeof(out_mac->octets));
+  std::copy(mac_.begin(), mac_.end(), out_mac->octets);
 }
 
 void NetdeviceMigration::MacAddrGetFeatures(features_t* out_features) {
@@ -515,7 +539,8 @@ void NetdeviceMigration::MacAddrGetFeatures(features_t* out_features) {
   };
 }
 
-void NetdeviceMigration::MacAddrSetMode(mode_t mode, const uint8_t* multicast_macs_list,
+void NetdeviceMigration::MacAddrSetMode(mac_filter_mode_t mode,
+                                        const mac_address_t* multicast_macs_list,
                                         size_t multicast_macs_count) {
   if (multicast_macs_count > kMulticastFilterMax) {
     zxlogf(ERROR, "multicast macs count exceeds maximum: %zu > %du", multicast_macs_count,
@@ -524,17 +549,17 @@ void NetdeviceMigration::MacAddrSetMode(mode_t mode, const uint8_t* multicast_ma
     return;
   }
   switch (mode) {
-    case MODE_MULTICAST_FILTER:
+    case MAC_FILTER_MODE_MULTICAST_FILTER:
       SetMacParam(ETHERNET_SETPARAM_MULTICAST_PROMISC, 0, nullptr, 0);
       SetMacParam(ETHERNET_SETPARAM_PROMISC, 0, nullptr, 0);
       SetMacParam(ETHERNET_SETPARAM_MULTICAST_FILTER, static_cast<int32_t>(multicast_macs_count),
-                  multicast_macs_list, multicast_macs_count * MAC_SIZE);
+                  multicast_macs_list, multicast_macs_count);
       break;
-    case MODE_MULTICAST_PROMISCUOUS:
+    case MAC_FILTER_MODE_MULTICAST_PROMISCUOUS:
       SetMacParam(ETHERNET_SETPARAM_PROMISC, 0, nullptr, 0);
       SetMacParam(ETHERNET_SETPARAM_MULTICAST_PROMISC, 1, nullptr, 0);
       break;
-    case MODE_PROMISCUOUS:
+    case MAC_FILTER_MODE_PROMISCUOUS:
       SetMacParam(ETHERNET_SETPARAM_PROMISC, 1, nullptr, 0);
       break;
     default:
@@ -544,9 +569,15 @@ void NetdeviceMigration::MacAddrSetMode(mode_t mode, const uint8_t* multicast_ma
   }
 }
 
-void NetdeviceMigration::SetMacParam(uint32_t param, int32_t value, const uint8_t* data_buffer,
-                                     size_t data_size) const {
-  if (zx_status_t status = ethernet_.SetParam(param, value, data_buffer, data_size);
+void NetdeviceMigration::SetMacParam(uint32_t param, int32_t value,
+                                     const mac_address_t* data_buffer, size_t data_size) const {
+  uint8_t macs[kMulticastFilterMax * MAC_SIZE];
+  for (size_t i = 0; i < data_size && i < kMulticastFilterMax; ++i) {
+    memcpy(&macs[i * MAC_SIZE], data_buffer[i].octets, MAC_SIZE);
+  }
+
+  if (zx_status_t status =
+          ethernet_.SetParam(param, value, data_buffer ? macs : nullptr, data_size * MAC_SIZE);
       status != ZX_OK) {
     zxlogf(WARNING, "failed to set ethernet parameter %du to value %d: %s", param, value,
            zx_status_get_string(status));

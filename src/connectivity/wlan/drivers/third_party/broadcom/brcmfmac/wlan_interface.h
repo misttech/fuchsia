@@ -48,7 +48,8 @@ class WlanInterface : public ddk::Device<WlanInterface, ddk::Unbindable>,
   // Static factory function.  The returned instance is unowned, since its lifecycle is managed by
   // the devhost.
   static zx_status_t Create(wlan::brcmfmac::Device* device, const char* name, wireless_dev* wdev,
-                            wlan_mac_role_t role, WlanInterface** out_interface);
+                            fuchsia_wlan_common_wire::WlanMacRole role,
+                            WlanInterface** out_interface);
 
   // Accessors.
   void set_wdev(wireless_dev* wdev);
@@ -68,9 +69,10 @@ class WlanInterface : public ddk::Device<WlanInterface, ddk::Unbindable>,
       fuchsia_wlan_common::wire::WlanMacRole
           out_supported_mac_roles_list[fuchsia_wlan_common::wire::kMaxSupportedMacRoles],
       uint8_t* out_supported_mac_roles_count);
-  static zx_status_t SetCountry(brcmf_pub* drvr, const wlan_phy_country_t* country);
+  static zx_status_t SetCountry(brcmf_pub* drvr,
+                                const fuchsia_wlan_phyimpl_wire::WlanPhyCountry* country);
   // Reads the currently configured `country` from the firmware.
-  static zx_status_t GetCountry(brcmf_pub* drvr, wlan_phy_country_t* out_country);
+  static zx_status_t GetCountry(brcmf_pub* drvr, uint8_t* cc_code);
   static zx_status_t ClearCountry(brcmf_pub* drvr);
 
   // WlanFullmacImpl implementations, dispatching FIDL requests from higher layers.
@@ -85,37 +87,33 @@ class WlanInterface : public ddk::Device<WlanInterface, ddk::Unbindable>,
       fdf::Arena& arena, QuerySpectrumManagementSupportCompleter::Sync& completer) override;
   void StartScan(StartScanRequestView request, fdf::Arena& arena,
                  StartScanCompleter::Sync& completer) override;
-  void ConnectReq(ConnectReqRequestView request, fdf::Arena& arena,
-                  ConnectReqCompleter::Sync& completer) override;
-  void ReconnectReq(ReconnectReqRequestView request, fdf::Arena& arena,
-                    ReconnectReqCompleter::Sync& completer) override;
+  void Connect(ConnectRequestView request, fdf::Arena& arena,
+               ConnectCompleter::Sync& completer) override;
+  void Reconnect(ReconnectRequestView request, fdf::Arena& arena,
+                 ReconnectCompleter::Sync& completer) override;
   void AuthResp(AuthRespRequestView request, fdf::Arena& arena,
                 AuthRespCompleter::Sync& completer) override;
-  void DeauthReq(DeauthReqRequestView request, fdf::Arena& arena,
-                 DeauthReqCompleter::Sync& completer) override;
+  void Deauth(DeauthRequestView request, fdf::Arena& arena,
+              DeauthCompleter::Sync& completer) override;
   void AssocResp(AssocRespRequestView request, fdf::Arena& arena,
                  AssocRespCompleter::Sync& completer) override;
-  void DisassocReq(DisassocReqRequestView request, fdf::Arena& arena,
-                   DisassocReqCompleter::Sync& completer) override;
-  void ResetReq(ResetReqRequestView request, fdf::Arena& arena,
-                ResetReqCompleter::Sync& completer) override;
-  void StartReq(StartReqRequestView request, fdf::Arena& arena,
-                StartReqCompleter::Sync& completer) override;
-  void StopReq(StopReqRequestView request, fdf::Arena& arena,
-               StopReqCompleter::Sync& completer) override;
+  void Disassoc(DisassocRequestView request, fdf::Arena& arena,
+                DisassocCompleter::Sync& completer) override;
+  void Reset(ResetRequestView request, fdf::Arena& arena, ResetCompleter::Sync& completer) override;
+  void StartBss(StartBssRequestView request, fdf::Arena& arena,
+                StartBssCompleter::Sync& completer) override;
+  void StopBss(StopBssRequestView request, fdf::Arena& arena,
+               StopBssCompleter ::Sync& completer) override;
   void SetKeysReq(SetKeysReqRequestView request, fdf::Arena& arena,
                   SetKeysReqCompleter::Sync& completer) override;
   void DelKeysReq(DelKeysReqRequestView request, fdf::Arena& arena,
                   DelKeysReqCompleter::Sync& completer) override;
-  void EapolReq(EapolReqRequestView request, fdf::Arena& arena,
-                EapolReqCompleter::Sync& completer) override;
+  void EapolTx(EapolTxRequestView request, fdf::Arena& arena,
+               EapolTxCompleter::Sync& completer) override;
   void GetIfaceCounterStats(fdf::Arena& arena,
                             GetIfaceCounterStatsCompleter::Sync& completer) override;
   void GetIfaceHistogramStats(fdf::Arena& arena,
                               GetIfaceHistogramStatsCompleter::Sync& completer) override;
-  void StartCaptureFrames(StartCaptureFramesRequestView request, fdf::Arena& arena,
-                          StartCaptureFramesCompleter::Sync& completer) override;
-  void StopCaptureFrames(fdf::Arena& arena, StopCaptureFramesCompleter::Sync& completer) override;
   void SetMulticastPromisc(SetMulticastPromiscRequestView request, fdf::Arena& arena,
                            SetMulticastPromiscCompleter::Sync& completer) override;
   void SaeHandshakeResp(SaeHandshakeRespRequestView request, fdf::Arena& arena,
@@ -129,9 +127,9 @@ class WlanInterface : public ddk::Device<WlanInterface, ddk::Unbindable>,
  protected:
   // NetworkPort::Callbacks implementation
   uint32_t PortGetMtu() override;
-  void MacGetAddress(uint8_t out_mac[6]) override;
+  void MacGetAddress(mac_address_t* out_mac) override;
   void MacGetFeatures(features_t* out_features) override;
-  void MacSetMode(mode_t mode, cpp20::span<const uint8_t> multicast_macs) override;
+  void MacSetMode(mac_filter_mode_t mode, cpp20::span<const mac_address_t> multicast_macs) override;
 
  private:
   WlanInterface(wlan::brcmfmac::Device* device, const network_device_ifc_protocol_t& proto,

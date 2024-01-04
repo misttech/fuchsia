@@ -31,15 +31,14 @@
 #include <zircon/status.h>
 
 #include <algorithm>
-#include <cmath>
 
 #include <gtest/gtest.h>
 
-#include "constants.h"
 #include "fuchsia/component/decl/cpp/fidl.h"
 #include "src/lib/fxl/strings/string_printf.h"
 #include "src/ui/testing/util/portable_ui_test.h"
 #include "src/ui/testing/util/screenshot_helper.h"
+#include "src/ui/tests/integration_graphics_tests/web-pixel-tests/constants.h"
 
 namespace integration_tests {
 
@@ -56,13 +55,13 @@ const int kPixelMatchThresholdInProjections = 100000;
 enum class TapLocation { kTopLeft, kTopRight };
 
 // A dot product of the coordinates of two pixels.
-double Dot(const ui_testing::Pixel& v, const ui_testing::Pixel& u) {
+double Dot(const utils::Pixel& v, const utils::Pixel& u) {
   return static_cast<double>(v.red) * u.red + static_cast<double>(v.green) * u.green +
          static_cast<double>(v.blue) * u.blue + static_cast<double>(v.alpha) * u.alpha;
 }
 
 // Project v along the direction d.  d != 0.
-double Project(const ui_testing::Pixel& v, const ui_testing::Pixel& dir) {
+double Project(const utils::Pixel& v, const utils::Pixel& dir) {
   double n = Dot(dir, dir);
   EXPECT_GT(n, 1e-10) << "Weakly conditioned result.";
   double p = Dot(v, dir);
@@ -75,8 +74,8 @@ double Project(const ui_testing::Pixel& v, const ui_testing::Pixel& dir) {
 // in the direction of the pixel v. But they don't need to be *exactly* in that
 // direction, we're fine with an approximate direction. This accounts for variations
 // in nuance up to a point. Should be enough for this test.
-double MaxSumProject(const ui_testing::Pixel& v,
-                     const std::vector<std::pair<uint32_t, ui_testing::Pixel>>& h) {
+double MaxSumProject(const utils::Pixel& v,
+                     const std::vector<std::pair<uint32_t, utils::Pixel>>& h) {
   double maxp = 0.0;
   for (const auto& elem : h) {
     auto n = elem.first;
@@ -90,7 +89,6 @@ double MaxSumProject(const ui_testing::Pixel& v,
 class WebRunnerPixelTest : public ui_testing::PortableUITest,
                            public ::testing::WithParamInterface<bool> {
  public:
-  bool use_flatland() override { return true; }
   std::string GetTestUIStackUrl() override { return "#meta/test-ui-stack.cm"; }
   bool use_vulkan() const { return GetParam(); }
 
@@ -265,7 +263,8 @@ TEST_P(StaticHtmlPixelTests, ValidPixelTest) {
   // been rendered on the display. Take screenshot until we see the web page's background color.
   ASSERT_TRUE(TakeScreenshotUntil(
       [num_pixels](const ui_testing::Screenshot& screenshot) {
-        return screenshot.Histogram()[ui_testing::Screenshot::kRed] == num_pixels;
+        screenshot.LogHistogramTopPixels();
+        return screenshot.Histogram()[utils::kRed] == num_pixels;
       },
       kPredicateTimeout));
 }
@@ -311,7 +310,8 @@ TEST_P(DynamicHtmlPixelTests, ValidPixelTest) {
   {
     ASSERT_TRUE(TakeScreenshotUntil(
         [num_pixels](const ui_testing::Screenshot& screenshot) {
-          return screenshot.Histogram()[ui_testing::Screenshot::kMagenta] == num_pixels;
+          screenshot.LogHistogramTopPixels();
+          return screenshot.Histogram()[utils::kMagenta] == num_pixels;
         },
         kPredicateTimeout));
   }
@@ -322,26 +322,11 @@ TEST_P(DynamicHtmlPixelTests, ValidPixelTest) {
   {
     ASSERT_TRUE(TakeScreenshotUntil(
         [num_pixels](const ui_testing::Screenshot& screenshot) {
-          return screenshot.Histogram()[ui_testing::Screenshot::kBlue] == num_pixels;
+          screenshot.LogHistogramTopPixels();
+          return screenshot.Histogram()[utils::kBlue] == num_pixels;
         },
         kPredicateTimeout));
   }
-}
-
-std::vector<std::pair<uint32_t, ui_testing::Pixel>> TopPixels(
-    std::map<ui_testing::Pixel, uint32_t> histogram) {
-  std::vector<std::pair<uint32_t, ui_testing::Pixel>> vec;
-  std::transform(histogram.begin(), histogram.end(), std::inserter(vec, vec.begin()),
-                 [](const std::pair<ui_testing::Pixel, uint32_t> p) {
-                   return std::make_pair(p.second, p.first);
-                 });
-  std::stable_sort(vec.begin(), vec.end(),
-                   [](const auto& a, const auto& b) { return a.first > b.first; });
-
-  std::vector<std::pair<uint32_t, ui_testing::Pixel>> top;
-  std::copy(vec.begin(), vec.begin() + std::min<ptrdiff_t>(vec.size(), 10),
-            std::back_inserter(top));
-  return top;
 }
 
 // This test renders a video in the browser and takes a screenshot to verify the pixels. The video
@@ -366,11 +351,11 @@ INSTANTIATE_TEST_SUITE_P(ParameterizedVideoHtmlPixelTests, VideoHtmlPixelTests, 
 
 TEST_P(VideoHtmlPixelTests, ValidPixelTest) {
   // BGRA values,
-  const ui_testing::Pixel kYellow = {0, 255, 255, 255};
-  const ui_testing::Pixel kRed = {0, 0, 255, 255};
-  const ui_testing::Pixel kBlue = {255, 0, 0, 255};
-  const ui_testing::Pixel kGreen = {0, 255, 0, 255};
-  const ui_testing::Pixel kBackground = {255, 255, 255, 255};
+  const utils::Pixel kYellow = {0, 255, 255, 255};
+  const utils::Pixel kRed = {0, 0, 255, 255};
+  const utils::Pixel kBlue = {255, 0, 0, 255};
+  const utils::Pixel kGreen = {0, 255, 0, 255};
+  const utils::Pixel kBackground = {255, 255, 255, 255};
 
   LaunchClient();
 
@@ -379,17 +364,10 @@ TEST_P(VideoHtmlPixelTests, ValidPixelTest) {
   // been rendered on the display.
   ASSERT_TRUE(TakeScreenshotUntil(
       [&](const ui_testing::Screenshot& screenshot) {
-        auto histogram = screenshot.Histogram();
-        // Have at least some visual feedback about the examined histogram.
-        auto top = TopPixels(histogram);
-        std::cout << "Histogram top:" << std::endl;
-        for (const auto& elems : top) {
-          std::cout << "{ " << elems.second << " value: " << elems.first << " }" << std::endl;
-        }
-        std::cout << "--------------" << std::endl;
+        const auto& top = screenshot.LogHistogramTopPixels();
 
         // Video's background color should not be visible.
-        if (histogram[kBackground] >= 10u)
+        if (screenshot.Histogram()[kBackground] >= 10u)
           return false;
 
         // Note that we do not see pure colors in the video but a shade of the colors shown in the

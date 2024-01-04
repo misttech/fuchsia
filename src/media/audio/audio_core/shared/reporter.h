@@ -8,9 +8,11 @@
 #include <fuchsia/media/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
 #include <lib/sys/inspect/cpp/component.h>
+#include <lib/zx/time.h>
 
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <queue>
 #include <set>
 #include <unordered_map>
@@ -62,8 +64,8 @@ class Reporter {
   struct AudioDriverInfo {
     std::string manufacturer_name;
     std::string product_name;
-    zx::duration external_delay;
     zx::duration internal_delay;
+    zx::duration external_delay;
     int64_t driver_transfer_bytes;
     std::optional<Format> format;
   };
@@ -80,6 +82,8 @@ class Reporter {
     virtual void SetDriverInfo(const AudioDriverInfo& driver) = 0;
     virtual void SetGainInfo(const fuchsia::media::AudioGainInfo& gain_info,
                              fuchsia::media::AudioGainValidFlags set_flags) = 0;
+    virtual void UpdateDelays(zx::time time_of_update, zx::duration internal_delay,
+                              std::optional<zx::duration> external_delay) = 0;
   };
 
   class OutputDevice : public Device {
@@ -101,19 +105,26 @@ class Reporter {
 
     virtual void SetUsage(RenderUsage usage) = 0;
     virtual void SetFormat(const Format& format) = 0;
+
     virtual void SetGain(float gain_db) = 0;
-    virtual void SetGainWithRamp(float gain_db, zx::duration duration,
-                                 fuchsia::media::audio::RampType ramp_type) = 0;
-    virtual void SetFinalGain(float gain_db) = 0;
     virtual void SetMute(bool muted) = 0;
-    virtual void SetMinLeadTime(zx::duration min_lead_time) = 0;
+    virtual void SetGainWithRamp(float gain_db, zx::duration ramp_duration,
+                                 fuchsia::media::audio::RampType ramp_type) = 0;
+    virtual void SetCompleteGain(float complete_gain_db) = 0;
+
+    virtual void SetInitialMinLeadTime(zx::duration initial_min_lead_time) = 0;
+    virtual void UpdateMinLeadTime(zx::duration new_min_lead_time,
+                                   zx::time time_of_min_lead_time_change) = 0;
     virtual void SetPtsContinuityThreshold(float threshold_seconds) = 0;
     virtual void SetPtsUnits(uint32_t numerator, uint32_t denominator) = 0;
 
     virtual void AddPayloadBuffer(uint32_t buffer_id, uint64_t size) = 0;
     virtual void RemovePayloadBuffer(uint32_t buffer_id) = 0;
     virtual void SendPacket(const fuchsia::media::StreamPacket& packet) = 0;
-    virtual void Underflow(zx::time start_time, zx::time end_time) = 0;
+
+    virtual void PacketQueueUnderflow(zx::time start_time, zx::time end_time) = 0;
+    virtual void ContinuityUnderflow(zx::time start_time, zx::time end_time) = 0;
+    virtual void TimestampUnderflow(zx::time start_time, zx::time end_time) = 0;
   };
 
   class Capturer {
@@ -127,11 +138,16 @@ class Reporter {
 
     virtual void SetUsage(CaptureUsage usage) = 0;
     virtual void SetFormat(const Format& format) = 0;
+
     virtual void SetGain(float gain_db) = 0;
-    virtual void SetGainWithRamp(float gain_db, zx::duration duration,
-                                 fuchsia::media::audio::RampType ramp_type) = 0;
     virtual void SetMute(bool muted) = 0;
-    virtual void SetMinFenceTime(zx::duration min_fence_time) = 0;
+    virtual void SetGainWithRamp(float gain_db, zx::duration ramp_duration,
+                                 fuchsia::media::audio::RampType ramp_type) = 0;
+    virtual void SetCompleteGain(float complete_gain_db) = 0;
+
+    virtual void SetInitialPresentationDelay(zx::duration initial_presentation_delay) = 0;
+    virtual void UpdatePresentationDelay(zx::duration new_presentation_delay,
+                                         zx::time time_of_presentation_delay_change) = 0;
 
     virtual void AddPayloadBuffer(uint32_t buffer_id, uint64_t size) = 0;
     virtual void SendPacket(const fuchsia::media::StreamPacket& packet) = 0;

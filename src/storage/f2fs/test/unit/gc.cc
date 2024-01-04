@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/zircon-internal/thread_annotations.h>
+
 #include <algorithm>
 #include <random>
 
 #include <gtest/gtest.h>
 
-#include "src/lib/storage/block_client/cpp/fake_block_device.h"
 #include "src/storage/f2fs/f2fs.h"
+#include "src/storage/lib/block_client/cpp/fake_block_device.h"
 #include "unit_lib.h"
 
 namespace f2fs {
@@ -53,7 +55,7 @@ class GcManagerTest : public F2fsFakeDevTestFixture {
       fs_->ScheduleWriter(&completion);
       sync_completion_wait(&completion, ZX_TIME_INFINITE);
       if (sync) {
-        fs_->WriteCheckpoint(false, false);
+        fs_->SyncFs();
       }
 
       std::shuffle(file_names.begin(), file_names.end(), prng);
@@ -65,7 +67,7 @@ class GcManagerTest : public F2fsFakeDevTestFixture {
         iter = file_names.erase(iter);
       }
       if (sync) {
-        fs_->WriteCheckpoint(false, false);
+        fs_->SyncFs();
       }
       total_file_names.insert(total_file_names.end(), file_names.begin(), file_names.end());
     }
@@ -77,12 +79,12 @@ class GcManagerTest : public F2fsFakeDevTestFixture {
 
 TEST_F(GcManagerTest, CpError) {
   fs_->GetSuperblockInfo().SetCpFlags(CpFlag::kCpErrorFlag);
-  auto result = fs_->GetGcManager().F2fsGc();
+  auto result = fs_->GetGcManager().Run();
   ASSERT_TRUE(result.is_error());
   ASSERT_EQ(result.error_value(), ZX_ERR_BAD_STATE);
 }
 
-TEST_F(GcManagerTest, CheckpointDiskReadFailOnSyncFs) {
+TEST_F(GcManagerTest, CheckpointDiskReadFailOnSyncFs) TA_NO_THREAD_SAFETY_ANALYSIS {
   DisableFsck();
 
   WritebackOperation op;
@@ -105,7 +107,7 @@ TEST_F(GcManagerTest, CheckpointDiskReadFailOnSyncFs) {
     fs_->GetSuperblockInfo().IncreasePageCount(CountType::kDirtyData);
 
     DeviceTester::SetHook(fs_.get(), hook);
-    fs_->SyncFs(true);
+    ASSERT_EQ(fs_->SyncFs(true), ZX_ERR_INTERNAL);
     ASSERT_TRUE(fs_->GetSuperblockInfo().TestCpFlags(CpFlag::kCpErrorFlag));
 
     DeviceTester::SetHook(fs_.get(), nullptr);
@@ -114,7 +116,7 @@ TEST_F(GcManagerTest, CheckpointDiskReadFailOnSyncFs) {
   }
 }
 
-TEST_F(GcManagerTest, CheckpointDiskReadFailOnGc) {
+TEST_F(GcManagerTest, CheckpointDiskReadFailOnGc) TA_NO_THREAD_SAFETY_ANALYSIS {
   DisableFsck();
 
   WritebackOperation op;
@@ -132,17 +134,17 @@ TEST_F(GcManagerTest, CheckpointDiskReadFailOnGc) {
 
   MakeGcTriggerCondition();
 
-  // Check disk peer closed exception case in F2fsGc()
+  // Check disk peer closed exception case in Run()
   {
     DeviceTester::SetHook(fs_.get(), hook);
-    ASSERT_EQ(fs_->GetGcManager().F2fsGc().error_value(), ZX_ERR_PEER_CLOSED);
+    ASSERT_EQ(fs_->GetGcManager().Run().error_value(), ZX_ERR_PEER_CLOSED);
     ASSERT_TRUE(fs_->GetSuperblockInfo().TestCpFlags(CpFlag::kCpErrorFlag));
 
     DeviceTester::SetHook(fs_.get(), nullptr);
   }
 }
 
-TEST_F(GcManagerTest, CheckpointDiskReadFailOnGcPreFree) {
+TEST_F(GcManagerTest, CheckpointDiskReadFailOnGcPreFree) TA_NO_THREAD_SAFETY_ANALYSIS {
   DisableFsck();
 
   WritebackOperation op;
@@ -163,10 +165,10 @@ TEST_F(GcManagerTest, CheckpointDiskReadFailOnGcPreFree) {
 
   fs_->GetSegmentManager().LocateDirtySegment(prefree_segno + 1, DirtyType::kPre);
 
-  // Check disk peer closed exception case in F2fsGc()
+  // Check disk peer closed exception case in Run()
   {
     DeviceTester::SetHook(fs_.get(), hook);
-    ASSERT_EQ(fs_->GetGcManager().F2fsGc().error_value(), ZX_ERR_PEER_CLOSED);
+    ASSERT_EQ(fs_->GetGcManager().Run().error_value(), ZX_ERR_PEER_CLOSED);
 
     DeviceTester::SetHook(fs_.get(), nullptr);
   }
@@ -193,6 +195,7 @@ TEST_F(GcManagerTest, PageColdData) {
   ASSERT_EQ(old_blk_addr_or.is_ok(), true);
 
   {
+    fs::SharedLock lock(f2fs::GetGlobalLock());
     auto pages_or = file->WriteBegin(0, kPageSize);
     ASSERT_TRUE(pages_or.is_ok());
     ASSERT_TRUE(pages_or->front()->IsDirty());
@@ -204,6 +207,7 @@ TEST_F(GcManagerTest, PageColdData) {
   ASSERT_NE(new_blk_addr_or.value(), old_blk_addr_or.value());
 
   {
+    fs::SharedLock lock(f2fs::GetGlobalLock());
     auto pages_or = file->WriteBegin(0, kPageSize);
     ASSERT_TRUE(pages_or.is_ok());
     ASSERT_TRUE(pages_or->front()->IsDirty());
@@ -236,14 +240,14 @@ TEST_F(GcManagerTest, OrphanFileGc) {
   auto file = fbl::RefPtr<File>::Downcast(std::move(vn));
 
   uint8_t buffer[kPageSize] = {
-      0,
+      0xAA,
   };
   FileTester::AppendToFile(file.get(), buffer, kPageSize);
   WritebackOperation op = {.bSync = true};
   file->Writeback(op);
 
   fs_->GetSegmentManager().AllocateNewSegments();
-  fs_->WriteCheckpoint(false, false);
+  fs_->SyncFs();
 
   auto block_or = file->FindDataBlkAddr(0);
   ASSERT_TRUE(block_or.is_ok());
@@ -252,9 +256,8 @@ TEST_F(GcManagerTest, OrphanFileGc) {
   auto target_segno = fs_->GetSegmentManager().GetSegmentNumber(block_or.value());
 
   // Check victim seg is dirty
-  ASSERT_TRUE(
-      TestBit(target_segno, dirty_info->dirty_segmap[static_cast<int>(DirtyType::kDirty)].get()));
-  ASSERT_TRUE(TestBit(target_segno, free_info->free_segmap.get()));
+  ASSERT_TRUE(dirty_info->dirty_segmap[static_cast<int>(DirtyType::kDirty)].GetOne(target_segno));
+  ASSERT_TRUE(free_info->free_segmap.GetOne(target_segno));
 
   // Make file orphan
   FileTester::DeleteChild(root_dir_.get(), "test", false);
@@ -263,8 +266,14 @@ TEST_F(GcManagerTest, OrphanFileGc) {
   ASSERT_EQ(GcTester::DoGarbageCollect(fs_->GetGcManager(), target_segno, GcType::kFgGc), ZX_OK);
 
   // Check victim seg is clean
-  ASSERT_FALSE(
-      TestBit(target_segno, dirty_info->dirty_segmap[static_cast<int>(DirtyType::kDirty)].get()));
+  ASSERT_FALSE(dirty_info->dirty_segmap[static_cast<int>(DirtyType::kDirty)].GetOne(target_segno));
+
+  // Check if the data is valid while the orphan |file| opens
+  uint8_t read[kPageSize] = {
+      0,
+  };
+  FileTester::ReadFromFile(file.get(), read, sizeof(read), 0);
+  ASSERT_EQ(std::memcmp(buffer, read, sizeof(read)), 0);
 
   ASSERT_EQ(file->Close(), ZX_OK);
   file = nullptr;
@@ -280,26 +289,26 @@ class GcManagerTestWithLargeSec
   }
 };
 
-TEST_P(GcManagerTestWithLargeSec, SegmentDirtyInfo) {
+TEST_P(GcManagerTestWithLargeSec, SegmentDirtyInfo) TA_NO_THREAD_SAFETY_ANALYSIS {
   MakeGcTriggerCondition();
   DirtySeglistInfo *dirty_info = &fs_->GetSegmentManager().GetDirtySegmentInfo();
 
   // Get Victim
   uint32_t last_victim =
-      fs_->GetSuperblockInfo().GetLastVictim(static_cast<int>(GcMode::kGcGreedy));
+      fs_->GetSegmentManager().GetLastVictim(static_cast<int>(GcMode::kGcGreedy));
   auto victim_seg_or = fs_->GetSegmentManager().GetVictimByDefault(
       GcType::kFgGc, CursegType::kNoCheckType, AllocMode::kLFS);
   ASSERT_FALSE(victim_seg_or.is_error());
   uint32_t victim_seg = victim_seg_or.value();
-  fs_->GetSuperblockInfo().SetLastVictim(static_cast<int>(GcMode::kGcGreedy), last_victim);
-  fs_->GetGcManager().SetCurVictimSec(kNullSecNo);
+  fs_->GetSegmentManager().SetLastVictim(static_cast<int>(GcMode::kGcGreedy), last_victim);
+  fs_->GetSegmentManager().SetCurVictimSec(kNullSecNo);
 
   // Check at least one of victim seg is dirty
   bool is_dirty = false;
   const uint32_t start_segno = victim_seg - (victim_seg % fs_->GetSuperblockInfo().GetSegsPerSec());
   for (uint32_t i = 0; i < fs_->GetSuperblockInfo().GetSegsPerSec(); ++i) {
-    is_dirty |= TestBit(start_segno + i,
-                        dirty_info->dirty_segmap[static_cast<int>(DirtyType::kDirty)].get());
+    is_dirty |=
+        dirty_info->dirty_segmap[static_cast<int>(DirtyType::kDirty)].GetOne(start_segno + i);
   }
   ASSERT_TRUE(is_dirty);
 
@@ -308,13 +317,13 @@ TEST_P(GcManagerTestWithLargeSec, SegmentDirtyInfo) {
   memcpy(prev_nr_dirty, dirty_info->nr_dirty, sizeof(prev_nr_dirty));
 
   // Trigger GC
-  auto result = fs_->GetGcManager().F2fsGc();
+  auto result = fs_->GetGcManager().Run();
   ASSERT_FALSE(result.is_error());
 
   // Check victim seg is clean
   for (uint32_t i = 0; i < fs_->GetSuperblockInfo().GetSegsPerSec(); ++i) {
-    ASSERT_FALSE(TestBit(start_segno + i,
-                         dirty_info->dirty_segmap[static_cast<int>(DirtyType::kDirty)].get()));
+    ASSERT_FALSE(
+        dirty_info->dirty_segmap[static_cast<int>(DirtyType::kDirty)].GetOne(start_segno + i));
   }
 
   // Check nr_dirty decreased
@@ -324,37 +333,37 @@ TEST_P(GcManagerTestWithLargeSec, SegmentDirtyInfo) {
   }
 }
 
-TEST_P(GcManagerTestWithLargeSec, SegmentFreeInfo) {
+TEST_P(GcManagerTestWithLargeSec, SegmentFreeInfo) TA_NO_THREAD_SAFETY_ANALYSIS {
   MakeGcTriggerCondition();
   FreeSegmapInfo *free_info = &fs_->GetSegmentManager().GetFreeSegmentInfo();
 
   // Get Victim
   uint32_t last_victim =
-      fs_->GetSuperblockInfo().GetLastVictim(static_cast<int>(GcMode::kGcGreedy));
+      fs_->GetSegmentManager().GetLastVictim(static_cast<int>(GcMode::kGcGreedy));
   auto victim_seg_or = fs_->GetSegmentManager().GetVictimByDefault(
       GcType::kFgGc, CursegType::kNoCheckType, AllocMode::kLFS);
   ASSERT_FALSE(victim_seg_or.is_error());
   uint32_t victim_seg = victim_seg_or.value();
-  fs_->GetSuperblockInfo().SetLastVictim(static_cast<int>(GcMode::kGcGreedy), last_victim);
-  fs_->GetGcManager().SetCurVictimSec(kNullSecNo);
+  fs_->GetSegmentManager().SetLastVictim(static_cast<int>(GcMode::kGcGreedy), last_victim);
+  fs_->GetSegmentManager().SetCurVictimSec(kNullSecNo);
   uint32_t victim_sec = fs_->GetSegmentManager().GetSecNo(victim_seg);
 
   // Check victim sec is not free
-  ASSERT_TRUE(TestBit(victim_sec, free_info->free_secmap.get()));
+  ASSERT_TRUE(free_info->free_secmap.GetOne(victim_sec));
 
   // Trigger GC
-  auto result = fs_->GetGcManager().F2fsGc();
+  auto result = fs_->GetGcManager().Run();
   ASSERT_FALSE(result.is_error());
 
   // Check victim sec is freed
-  ASSERT_FALSE(TestBit(victim_sec, free_info->free_secmap.get()));
+  ASSERT_FALSE(free_info->free_secmap.GetOne(victim_sec));
 }
 
 TEST_P(GcManagerTestWithLargeSec, SecureSpace) {
   MakeGcTriggerCondition();
   // Set the number of blocks to be gc'ed as 2 sections or available space of the volume.
   uint64_t blocks_to_secure =
-      std::min((safemath::CheckMul<uint64_t>(fs_->GetSuperblockInfo().GetUserBlockCount(),
+      std::min((safemath::CheckMul<uint64_t>(fs_->GetSuperblockInfo().GetTotalBlockCount(),
                                              100 - fs_->GetSegmentManager().Utilization()) /
                 100)
                    .ValueOrDie(),
@@ -375,7 +384,7 @@ TEST_P(GcManagerTestWithLargeSec, GcConsistency) {
   std::vector<std::string> file_names = MakeGcTriggerCondition();
 
   // It secures enough free sections.
-  auto secs_or = fs_->GetGcManager().F2fsGc();
+  auto secs_or = fs_->GetGcManager().Run();
   ASSERT_TRUE(secs_or.is_ok());
 
   for (auto name : file_names) {

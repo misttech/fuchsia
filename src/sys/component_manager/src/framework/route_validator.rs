@@ -4,82 +4,49 @@
 
 use {
     crate::{
-        capability::{CapabilityProvider, CapabilitySource, PERMITTED_FLAGS},
+        capability::{
+            CapabilityProvider, CapabilitySource, FrameworkCapability, InternalCapabilityProvider,
+        },
         model::{
-            component::{ComponentInstance, InstanceState, ResolvedInstanceState},
-            error::{CapabilityProviderError, ModelError},
-            hooks::{Event, EventPayload, EventType, Hook, HooksRegistration},
+            component::{
+                ComponentInstance, InstanceState, ResolvedInstanceState, WeakComponentInstance,
+            },
             model::Model,
-            routing::{self, service::CollectionServiceRoute, Route, RouteRequest, RoutingError},
+            routing::{self, service::AnonymizedServiceRoute, Route, RouteRequest, RoutingError},
         },
     },
+    ::routing::capability_source::InternalCapability,
     async_trait::async_trait,
     cm_rust::{ExposeDecl, SourceName, UseDecl},
-    cm_task_scope::TaskScope,
     cm_types::Name,
-    cm_util::channel,
     fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd},
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys,
-    fuchsia_zircon as zx,
-    futures::{future::join_all, lock::Mutex, TryStreamExt},
+    fidl_fuchsia_component as fcomponent, fidl_fuchsia_sys2 as fsys,
+    futures::{future::join_all, TryStreamExt},
     lazy_static::lazy_static,
     moniker::{ExtendedMoniker, Moniker, MonikerBase},
     std::{
         cmp::Ordering,
-        path::PathBuf,
         sync::{Arc, Weak},
     },
     tracing::warn,
 };
 
 lazy_static! {
-    pub static ref ROUTE_VALIDATOR_CAPABILITY_NAME: Name =
-        fsys::RouteValidatorMarker::PROTOCOL_NAME.parse().unwrap();
+    static ref CAPABILITY_NAME: Name = fsys::RouteValidatorMarker::PROTOCOL_NAME.parse().unwrap();
 }
 
 /// Serves the fuchsia.sys2.RouteValidator protocol.
 pub struct RouteValidator {
-    model: Arc<Model>,
+    model: Weak<Model>,
 }
 
 impl RouteValidator {
-    pub fn new(model: Arc<Model>) -> Self {
-        Self { model }
-    }
-
-    pub fn hooks(self: &Arc<Self>) -> Vec<HooksRegistration> {
-        vec![HooksRegistration::new(
-            "RouteValidator",
-            vec![EventType::CapabilityRouted],
-            Arc::downgrade(self) as Weak<dyn Hook>,
-        )]
-    }
-
-    /// Given a `CapabilitySource`, determine if it is a framework-provided
-    /// RouteValidator capability. If so, serve the capability.
-    async fn on_capability_routed_async(
-        self: Arc<Self>,
-        source: CapabilitySource,
-        capability_provider: Arc<Mutex<Option<Box<dyn CapabilityProvider>>>>,
-    ) -> Result<(), ModelError> {
-        // If this is a scoped framework directory capability, then check the source path
-        if let CapabilitySource::Framework { capability, component } = source {
-            if capability.matches_protocol(&ROUTE_VALIDATOR_CAPABILITY_NAME) {
-                // Set the capability provider, if not already set.
-                let mut capability_provider = capability_provider.lock().await;
-                if capability_provider.is_none() {
-                    *capability_provider = Some(Box::new(RouteValidatorCapabilityProvider::query(
-                        self,
-                        component.moniker.clone(),
-                    )));
-                }
-            }
-        }
-        Ok(())
+    fn new(model: Weak<Model>) -> Arc<Self> {
+        Arc::new(Self { model })
     }
 
     async fn validate(
-        self: &Arc<Self>,
+        model: &Model,
         scope_moniker: &Moniker,
         moniker_str: &str,
     ) -> Result<Vec<fsys::RouteReport>, fcomponent::Error> {
@@ -88,8 +55,7 @@ impl RouteValidator {
             Moniker::try_from(moniker_str).map_err(|_| fcomponent::Error::InvalidArguments)?;
         let moniker = scope_moniker.concat(&moniker);
 
-        let instance =
-            self.model.find(&moniker).await.ok_or(fcomponent::Error::InstanceNotFound)?;
+        let instance = model.find(&moniker).await.ok_or(fcomponent::Error::InstanceNotFound)?;
 
         // Get all use and expose declarations for this component
         let (uses, exposes) = {
@@ -116,18 +82,21 @@ impl RouteValidator {
     }
 
     async fn route(
-        &self,
+        model: &Model,
         scope_moniker: &Moniker,
         moniker_str: &str,
         targets: Vec<fsys::RouteTarget>,
     ) -> Result<Vec<fsys::RouteReport>, fsys::RouteValidatorError> {
         // Construct the complete moniker using the scope moniker and the moniker string.
+
         let moniker = Moniker::try_from(moniker_str)
             .map_err(|_| fsys::RouteValidatorError::InvalidArguments)?;
         let moniker = scope_moniker.concat(&moniker);
 
-        let instance =
-            self.model.find(&moniker).await.ok_or(fsys::RouteValidatorError::InstanceNotFound)?;
+        let instance = model
+            .find_and_maybe_resolve(&moniker)
+            .await
+            .map_err(|_| fsys::RouteValidatorError::InstanceNotFound)?;
         let state = instance.lock_state().await;
         let resolved = match *state {
             InstanceState::Resolved(ref r) => r,
@@ -178,9 +147,8 @@ impl RouteValidator {
                     name: use_.source_name().as_str().into(),
                     decl_type: fsys::DeclType::Use,
                 };
-                let request = routing::request_for_namespace_capability_use(use_.clone())
-                    .ok_or(fsys::RouteValidatorError::InvalidArguments)?;
-                Ok((target, request))
+                let request = use_.clone().into();
+                (target, request)
             });
 
             let exposes = routing::aggregate_exposes(&resolved.decl().exposes);
@@ -189,11 +157,10 @@ impl RouteValidator {
                     name: target_name.into(),
                     decl_type: fsys::DeclType::Expose,
                 };
-                let request = routing::request_for_namespace_capability_expose(e)
-                    .ok_or(fsys::RouteValidatorError::InvalidArguments)?;
-                Ok((target, request))
+                let request = e.into();
+                (target, request)
             });
-            use_requests.chain(expose_requests).collect()
+            Ok(use_requests.chain(expose_requests).collect())
         } else {
             // Return results that fuzzy match (substring match) `target.name`.
             let targets = targets
@@ -225,10 +192,8 @@ impl RouteValidator {
                                     name: u.source_name().to_string(),
                                     decl_type: target.decl_type,
                                 };
-                                let res = routing::request_for_namespace_capability_use(u.clone())
-                                    .ok_or(fsys::RouteValidatorError::InvalidArguments)
-                                    .map(|request| (target, request));
-                                Some(res)
+                                let request = u.clone().into();
+                                Some(Ok((target, request)))
                             })
                             .collect();
                         matching_requests.into_iter()
@@ -246,10 +211,8 @@ impl RouteValidator {
                                     name: target_name.into(),
                                     decl_type: target.decl_type,
                                 };
-                                let res = routing::request_for_namespace_capability_expose(e)
-                                    .ok_or(fsys::RouteValidatorError::InvalidArguments)
-                                    .map(|request| (target, request));
-                                Some(res)
+                                let request = e.into();
+                                Some(Ok((target, request)))
                             })
                             .collect();
                         matching_requests.into_iter()
@@ -272,15 +235,18 @@ impl RouteValidator {
     ) {
         let res: Result<(), fidl::Error> = async move {
             while let Some(request) = stream.try_next().await? {
+                let Some(model) = self.model.upgrade() else {
+                    return Ok(());
+                };
                 match request {
                     fsys::RouteValidatorRequest::Validate { moniker, responder } => {
-                        let result = self.validate(&scope_moniker, &moniker).await;
+                        let result = Self::validate(&model, &scope_moniker, &moniker).await;
                         if let Err(e) = responder.send(result.as_deref().map_err(|e| *e)) {
                             warn!(error = %e, "RouteValidator failed to send Validate response");
                         }
                     }
                     fsys::RouteValidatorRequest::Route { moniker, targets, responder } => {
-                        let result = self.route(&scope_moniker, &moniker, targets).await;
+                        let result = Self::route(&model, &scope_moniker, &moniker, targets).await;
                         if let Err(e) = responder.send(result.as_deref().map_err(|e| *e)) {
                             warn!(error = %e, "RouteValidator failed to send Route response");
                         }
@@ -306,18 +272,16 @@ impl RouteValidator {
         let source = request.route(target).await?;
         let source = &source.source;
         let service_dir = match source {
-            CapabilitySource::CollectionAggregate {
-                capability, component, collections, ..
-            } => {
+            CapabilitySource::AnonymizedAggregate { capability, component, members, .. } => {
                 let component = component.upgrade()?;
-                let route = CollectionServiceRoute {
+                let route = AnonymizedServiceRoute {
                     source_moniker: component.moniker.clone(),
-                    collections: collections.clone(),
+                    members: members.clone(),
                     service_name: capability.source_name().clone(),
                 };
                 let state = component.lock_state().await;
                 match &*state {
-                    InstanceState::Resolved(r) => r.collection_services.get(&route).cloned(),
+                    InstanceState::Resolved(r) => r.anonymized_services.get(&route).cloned(),
                     _ => None,
                 }
             }
@@ -365,17 +329,27 @@ impl RouteValidator {
     }
 }
 
-#[async_trait]
-impl Hook for RouteValidator {
-    async fn on(self: Arc<Self>, event: &Event) -> Result<(), ModelError> {
-        match &event.payload {
-            EventPayload::CapabilityRouted { source, capability_provider } => {
-                self.on_capability_routed_async(source.clone(), capability_provider.clone())
-                    .await?;
-            }
-            _ => {}
-        }
-        Ok(())
+pub struct RouteValidatorFrameworkCapability {
+    host: Arc<RouteValidator>,
+}
+
+impl RouteValidatorFrameworkCapability {
+    pub fn new(model: Weak<Model>) -> Self {
+        Self { host: RouteValidator::new(model) }
+    }
+}
+
+impl FrameworkCapability for RouteValidatorFrameworkCapability {
+    fn matches(&self, capability: &InternalCapability) -> bool {
+        capability.matches_protocol(&CAPABILITY_NAME)
+    }
+
+    fn new_provider(
+        &self,
+        scope: WeakComponentInstance,
+        _target: WeakComponentInstance,
+    ) -> Box<dyn CapabilityProvider> {
+        Box::new(RouteValidatorCapabilityProvider::new(self.host.clone(), scope.moniker.clone()))
     }
 }
 
@@ -385,46 +359,17 @@ pub struct RouteValidatorCapabilityProvider {
 }
 
 impl RouteValidatorCapabilityProvider {
-    pub fn query(query: Arc<RouteValidator>, scope_moniker: Moniker) -> Self {
+    fn new(query: Arc<RouteValidator>, scope_moniker: Moniker) -> Self {
         Self { query, scope_moniker }
     }
 }
 
 #[async_trait]
-impl CapabilityProvider for RouteValidatorCapabilityProvider {
-    async fn open(
-        self: Box<Self>,
-        task_scope: TaskScope,
-        flags: fio::OpenFlags,
-        relative_path: PathBuf,
-        server_end: &mut zx::Channel,
-    ) -> Result<(), CapabilityProviderError> {
-        let forbidden = flags - PERMITTED_FLAGS;
-        if !forbidden.is_empty() {
-            warn!(?forbidden, "RouteValidator capability");
-            return Err(CapabilityProviderError::BadFlags);
-        }
+impl InternalCapabilityProvider for RouteValidatorCapabilityProvider {
+    type Marker = fsys::RouteValidatorMarker;
 
-        if relative_path.components().count() != 0 {
-            warn!(
-                path=%relative_path.display(),
-                "RouteValidator capability got open request with non-empty",
-            );
-            return Err(CapabilityProviderError::BadPath);
-        }
-
-        let server_end = channel::take_channel(server_end);
-
-        let server_end = ServerEnd::<fsys::RouteValidatorMarker>::new(server_end);
-        let stream: fsys::RouteValidatorRequestStream =
-            server_end.into_stream().map_err(|_| CapabilityProviderError::StreamCreationError)?;
-        task_scope
-            .add_task(async move {
-                self.query.serve(self.scope_moniker, stream).await;
-            })
-            .await;
-
-        Ok(())
+    async fn open_protocol(self: Box<Self>, server_end: ServerEnd<Self::Marker>) {
+        self.query.serve(self.scope_moniker, server_end.into_stream().unwrap()).await;
     }
 }
 
@@ -436,15 +381,14 @@ async fn validate_uses(
     for use_ in uses {
         let capability = Some(use_.source_name().to_string());
         let decl_type = Some(fsys::DeclType::Use);
-        if let Some(route_request) = routing::request_for_namespace_capability_use(use_) {
-            let error = if let Err(e) = route_request.route(&instance).await {
-                Some(fsys::RouteError { summary: Some(e.to_string()), ..Default::default() })
-            } else {
-                None
-            };
+        let route_request = RouteRequest::from(use_);
+        let error = if let Err(e) = route_request.route(&instance).await {
+            Some(fsys::RouteError { summary: Some(e.to_string()), ..Default::default() })
+        } else {
+            None
+        };
 
-            reports.push(fsys::RouteReport { capability, decl_type, error, ..Default::default() })
-        }
+        reports.push(fsys::RouteReport { capability, decl_type, error, ..Default::default() })
     }
     reports
 }
@@ -459,15 +403,14 @@ async fn validate_exposes(
     for (target_name, e) in exposes {
         let capability = Some(target_name.to_string());
         let decl_type = Some(fsys::DeclType::Expose);
-        if let Some(route_request) = routing::request_for_namespace_capability_expose(e) {
-            let error = if let Err(e) = route_request.route(instance).await {
-                Some(fsys::RouteError { summary: Some(e.to_string()), ..Default::default() })
-            } else {
-                None
-            };
+        let route_request = RouteRequest::from(e);
+        let error = if let Err(e) = route_request.route(instance).await {
+            Some(fsys::RouteError { summary: Some(e.to_string()), ..Default::default() })
+        } else {
+            None
+        };
 
-            reports.push(fsys::RouteReport { capability, decl_type, error, ..Default::default() })
-        }
+        reports.push(fsys::RouteReport { capability, decl_type, error, ..Default::default() })
     }
     reports
 }
@@ -487,7 +430,8 @@ mod tests {
         cm_rust::*,
         cm_rust_testing::ComponentDeclBuilder,
         fidl::endpoints,
-        fidl_fuchsia_component_decl as fdecl, fuchsia_async as fasync,
+        fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio, fuchsia_async as fasync,
+        sandbox::Dict,
     };
 
     #[derive(Ord, PartialOrd, Eq, PartialEq)]
@@ -501,6 +445,7 @@ mod tests {
         let use_from_framework_decl = UseDecl::Protocol(UseProtocolDecl {
             source: UseSource::Framework,
             source_name: "fuchsia.component.Realm".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/fuchsia.component.Realm".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
@@ -509,6 +454,7 @@ mod tests {
         let use_from_child_decl = UseDecl::Protocol(UseProtocolDecl {
             source: UseSource::Child("my_child".to_string()),
             source_name: "foo.bar".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/foo.bar".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
@@ -517,6 +463,7 @@ mod tests {
         let expose_from_child_decl = ExposeDecl::Protocol(ExposeProtocolDecl {
             source: ExposeSource::Child("my_child".to_string()),
             source_name: "foo.bar".parse().unwrap(),
+            source_dictionary: None,
             target: ExposeTarget::Parent,
             target_name: "foo.bar".parse().unwrap(),
             availability: cm_rust::Availability::Required,
@@ -525,6 +472,7 @@ mod tests {
         let expose_from_self_decl = ExposeDecl::Protocol(ExposeProtocolDecl {
             source: ExposeSource::Self_,
             source_name: "foo.bar".parse().unwrap(),
+            source_dictionary: None,
             target: ExposeTarget::Parent,
             target_name: "foo.bar".parse().unwrap(),
             availability: cm_rust::Availability::Required,
@@ -554,14 +502,9 @@ mod tests {
             ),
         ];
 
-        let TestModelResult { model, builtin_environment, .. } =
+        let TestModelResult { model, builtin_environment: _b, .. } =
             TestEnvironmentBuilder::new().set_components(components).build().await;
-
-        let validator_server = {
-            let env = builtin_environment.lock().await;
-            env.route_validator.clone().unwrap()
-        };
-
+        let validator_server = RouteValidator::new(Arc::downgrade(&model));
         let (validator, request_stream) =
             endpoints::create_proxy_and_stream::<fsys::RouteValidatorMarker>().unwrap();
 
@@ -569,7 +512,7 @@ mod tests {
             validator_server.serve(Moniker::root(), request_stream).await
         });
 
-        model.start().await;
+        model.start(Dict::new()).await;
 
         // `my_child` should not be resolved right now
         let instance = model.find_resolved(&vec!["my_child"].try_into().unwrap()).await;
@@ -647,6 +590,7 @@ mod tests {
         let invalid_source_name_use_from_child_decl = UseDecl::Protocol(UseProtocolDecl {
             source: UseSource::Child("my_child".to_string()),
             source_name: "a".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/a".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
@@ -655,6 +599,7 @@ mod tests {
         let invalid_source_use_from_child_decl = UseDecl::Protocol(UseProtocolDecl {
             source: UseSource::Child("bad_child".to_string()),
             source_name: "b".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/b".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
@@ -663,6 +608,7 @@ mod tests {
         let invalid_source_name_expose_from_child_decl = ExposeDecl::Protocol(ExposeProtocolDecl {
             source: ExposeSource::Child("my_child".to_string()),
             source_name: "c".parse().unwrap(),
+            source_dictionary: None,
             target: ExposeTarget::Parent,
             target_name: "c".parse().unwrap(),
             availability: cm_rust::Availability::Required,
@@ -671,6 +617,7 @@ mod tests {
         let invalid_source_expose_from_child_decl = ExposeDecl::Protocol(ExposeProtocolDecl {
             source: ExposeSource::Child("bad_child".to_string()),
             source_name: "d".parse().unwrap(),
+            source_dictionary: None,
             target: ExposeTarget::Parent,
             target_name: "d".parse().unwrap(),
             availability: cm_rust::Availability::Required,
@@ -690,13 +637,9 @@ mod tests {
             ("my_child", ComponentDeclBuilder::new().build()),
         ];
 
-        let TestModelResult { model, builtin_environment, .. } =
+        let TestModelResult { model, builtin_environment: _b, .. } =
             TestEnvironmentBuilder::new().set_components(components).build().await;
-
-        let validator_server = {
-            let env = builtin_environment.lock().await;
-            env.route_validator.clone().unwrap()
-        };
+        let validator_server = RouteValidator::new(Arc::downgrade(&model));
 
         let (validator, validator_request_stream) =
             endpoints::create_proxy_and_stream::<fsys::RouteValidatorMarker>().unwrap();
@@ -705,7 +648,7 @@ mod tests {
             validator_server.serve(Moniker::root(), validator_request_stream).await
         });
 
-        model.start().await;
+        model.start(Dict::new()).await;
 
         // `my_child` should not be resolved right now
         let instance = model.find_resolved(&vec!["my_child"].try_into().unwrap()).await;
@@ -778,6 +721,7 @@ mod tests {
         let use_from_framework_decl = UseDecl::Protocol(UseProtocolDecl {
             source: UseSource::Framework,
             source_name: "fuchsia.component.Realm".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/fuchsia.component.Realm".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
@@ -786,6 +730,7 @@ mod tests {
         let use_from_child_decl = UseDecl::Protocol(UseProtocolDecl {
             source: UseSource::Child("my_child".into()),
             source_name: "biz.buz".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/foo.bar".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
@@ -794,6 +739,7 @@ mod tests {
         let expose_from_child_decl = ExposeDecl::Protocol(ExposeProtocolDecl {
             source: ExposeSource::Child("my_child".into()),
             source_name: "biz.buz".parse().unwrap(),
+            source_dictionary: None,
             target: ExposeTarget::Parent,
             target_name: "foo.bar".parse().unwrap(),
             availability: cm_rust::Availability::Required,
@@ -802,6 +748,7 @@ mod tests {
         let expose_from_self_decl = ExposeDecl::Protocol(ExposeProtocolDecl {
             source: ExposeSource::Self_,
             source_name: "biz.buz".parse().unwrap(),
+            source_dictionary: None,
             target: ExposeTarget::Parent,
             target_name: "biz.buz".parse().unwrap(),
             availability: cm_rust::Availability::Required,
@@ -831,20 +778,16 @@ mod tests {
             ),
         ];
 
-        let TestModelResult { model, builtin_environment, .. } =
+        let TestModelResult { model, builtin_environment: _b, .. } =
             TestEnvironmentBuilder::new().set_components(components).build().await;
-
-        let validator_server = {
-            let env = builtin_environment.lock().await;
-            env.route_validator.clone().unwrap()
-        };
+        let validator_server = RouteValidator::new(Arc::downgrade(&model));
         let (validator, request_stream) =
             endpoints::create_proxy_and_stream::<fsys::RouteValidatorMarker>().unwrap();
         let _validator_task = fasync::Task::local(async move {
             validator_server.serve(Moniker::root(), request_stream).await
         });
 
-        model.start().await;
+        model.start(Dict::new()).await;
 
         // Validate the root
         let targets = &[
@@ -925,28 +868,29 @@ mod tests {
         let use_from_framework_decl = UseDecl::Protocol(UseProtocolDecl {
             source: UseSource::Framework,
             source_name: "foo.bar".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/foo.bar".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
         });
 
-        let expose_from_child_decl = ExposeDecl::Protocol(ExposeProtocolDecl {
+        let expose_from_child_decl = ExposeDecl::Resolver(ExposeResolverDecl {
             source: ExposeSource::Child("my_child".into()),
             source_name: "qax.qux".parse().unwrap(),
+            source_dictionary: None,
             target: ExposeTarget::Parent,
             target_name: "foo.buz".parse().unwrap(),
-            availability: cm_rust::Availability::Required,
         });
 
-        let expose_from_self_decl = ExposeDecl::Protocol(ExposeProtocolDecl {
+        let expose_from_self_decl = ExposeDecl::Resolver(ExposeResolverDecl {
             source: ExposeSource::Self_,
             source_name: "qax.qux".parse().unwrap(),
+            source_dictionary: None,
             target: ExposeTarget::Parent,
             target_name: "qax.qux".parse().unwrap(),
-            availability: cm_rust::Availability::Required,
         });
 
-        let capability_decl = ProtocolDecl {
+        let capability_decl = ResolverDecl {
             name: "qax.qux".parse().unwrap(),
             source_path: Some("/svc/qax.qux".parse().unwrap()),
         };
@@ -963,26 +907,22 @@ mod tests {
             (
                 "my_child",
                 ComponentDeclBuilder::new()
-                    .protocol(capability_decl)
+                    .resolver(capability_decl)
                     .expose(expose_from_self_decl)
                     .build(),
             ),
         ];
 
-        let TestModelResult { model, builtin_environment, .. } =
+        let TestModelResult { model, builtin_environment: _b, .. } =
             TestEnvironmentBuilder::new().set_components(components).build().await;
-
-        let validator_server = {
-            let env = builtin_environment.lock().await;
-            env.route_validator.clone().unwrap()
-        };
+        let validator_server = RouteValidator::new(Arc::downgrade(&model));
         let (validator, request_stream) =
             endpoints::create_proxy_and_stream::<fsys::RouteValidatorMarker>().unwrap();
         let _validator_task = fasync::Task::local(async move {
             validator_server.serve(Moniker::root(), request_stream).await
         });
 
-        model.start().await;
+        model.start(Dict::new()).await;
 
         // Validate the root, passing an empty vector. This should match both capabilities
         let mut results = validator.route(".", &[]).await.unwrap().unwrap();
@@ -1019,6 +959,7 @@ mod tests {
         let use_from_framework_decl = UseDecl::Protocol(UseProtocolDecl {
             source: UseSource::Framework,
             source_name: "foo.bar".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/foo.bar".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
@@ -1026,6 +967,7 @@ mod tests {
         let use_from_framework_decl2 = UseDecl::Protocol(UseProtocolDecl {
             source: UseSource::Framework,
             source_name: "foo.buz".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/foo.buz".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
@@ -1033,6 +975,7 @@ mod tests {
         let use_from_framework_decl3 = UseDecl::Protocol(UseProtocolDecl {
             source: UseSource::Framework,
             source_name: "no.match".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/no.match".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
@@ -1041,6 +984,7 @@ mod tests {
         let expose_from_child_decl = ExposeDecl::Protocol(ExposeProtocolDecl {
             source: ExposeSource::Child("my_child".into()),
             source_name: "qax.qux".parse().unwrap(),
+            source_dictionary: None,
             target: ExposeTarget::Parent,
             target_name: "foo.buz".parse().unwrap(),
             availability: cm_rust::Availability::Required,
@@ -1048,6 +992,7 @@ mod tests {
         let expose_from_child_decl2 = ExposeDecl::Protocol(ExposeProtocolDecl {
             source: ExposeSource::Child("my_child".into()),
             source_name: "qax.qux".parse().unwrap(),
+            source_dictionary: None,
             target: ExposeTarget::Parent,
             target_name: "foo.biz".parse().unwrap(),
             availability: cm_rust::Availability::Required,
@@ -1055,6 +1000,7 @@ mod tests {
         let expose_from_child_decl3 = ExposeDecl::Protocol(ExposeProtocolDecl {
             source: ExposeSource::Framework,
             source_name: "no.match".parse().unwrap(),
+            source_dictionary: None,
             target: ExposeTarget::Parent,
             target_name: "no.match".parse().unwrap(),
             availability: cm_rust::Availability::Required,
@@ -1063,6 +1009,7 @@ mod tests {
         let expose_from_self_decl = ExposeDecl::Protocol(ExposeProtocolDecl {
             source: ExposeSource::Self_,
             source_name: "qax.qux".parse().unwrap(),
+            source_dictionary: None,
             target: ExposeTarget::Parent,
             target_name: "qax.qux".parse().unwrap(),
             availability: cm_rust::Availability::Required,
@@ -1095,20 +1042,16 @@ mod tests {
             ),
         ];
 
-        let TestModelResult { model, builtin_environment, .. } =
+        let TestModelResult { model, builtin_environment: _b, .. } =
             TestEnvironmentBuilder::new().set_components(components).build().await;
-
-        let validator_server = {
-            let env = builtin_environment.lock().await;
-            env.route_validator.clone().unwrap()
-        };
+        let validator_server = RouteValidator::new(Arc::downgrade(&model));
         let (validator, request_stream) =
             endpoints::create_proxy_and_stream::<fsys::RouteValidatorMarker>().unwrap();
         let _validator_task = fasync::Task::local(async move {
             validator_server.serve(Moniker::root(), request_stream).await
         });
 
-        model.start().await;
+        model.start(Dict::new()).await;
 
         // Validate the root
         let targets =
@@ -1171,6 +1114,7 @@ mod tests {
         let offer_from_collection_decl = OfferDecl::Service(OfferServiceDecl {
             source: OfferSource::Collection("coll".parse().unwrap()),
             source_name: "my_service".parse().unwrap(),
+            source_dictionary: None,
             target: OfferTarget::static_child("target".into()),
             target_name: "my_service".parse().unwrap(),
             availability: Availability::Required,
@@ -1180,6 +1124,7 @@ mod tests {
         let expose_from_self_decl = ExposeDecl::Service(ExposeServiceDecl {
             source: ExposeSource::Self_,
             source_name: "my_service".parse().unwrap(),
+            source_dictionary: None,
             target: ExposeTarget::Parent,
             target_name: "my_service".parse().unwrap(),
             availability: cm_rust::Availability::Required,
@@ -1187,6 +1132,7 @@ mod tests {
         let use_decl = UseDecl::Service(UseServiceDecl {
             source: UseSource::Parent,
             source_name: "my_service".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/foo.bar".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
@@ -1222,7 +1168,7 @@ mod tests {
             ),
         ];
 
-        let TestModelResult { model, builtin_environment, realm_proxy, mock_runner, .. } =
+        let TestModelResult { model, realm_proxy, mock_runner, builtin_environment: _b, .. } =
             TestEnvironmentBuilder::new()
                 .set_components(components)
                 .set_realm_moniker(Moniker::root())
@@ -1230,17 +1176,14 @@ mod tests {
                 .await;
         let realm_proxy = realm_proxy.unwrap();
 
-        let validator_server = {
-            let env = builtin_environment.lock().await;
-            env.route_validator.clone().unwrap()
-        };
+        let validator_server = RouteValidator::new(Arc::downgrade(&model));
         let (validator, request_stream) =
             endpoints::create_proxy_and_stream::<fsys::RouteValidatorMarker>().unwrap();
         let _validator_task = fasync::Task::local(async move {
             validator_server.serve(Moniker::root(), request_stream).await
         });
 
-        model.start().await;
+        model.start(Dict::new()).await;
 
         // Create two children in the collection, each exposing `my_service` with two instances.
         let collection_ref = fdecl::CollectionRef { name: "coll".parse().unwrap() };
@@ -1261,7 +1204,7 @@ mod tests {
             mock_runner.add_host_fn(&format!("test:///{}_resolved", name), out_dir.host_fn());
 
             let child = model
-                .look_up(&format!("coll:{}", name).as_str().try_into().unwrap())
+                .find_and_maybe_resolve(&format!("coll:{}", name).as_str().try_into().unwrap())
                 .await
                 .unwrap();
             child.start(&StartReason::Debug, None, vec![], vec![]).await.unwrap();
@@ -1269,14 +1212,16 @@ mod tests {
 
         // Open the service directory from `target` so that it gets instantiated.
         {
-            let target = model.look_up(&"target".try_into().unwrap()).await.unwrap();
+            let target = model.find_and_maybe_resolve(&"target".try_into().unwrap()).await.unwrap();
             target.start(&StartReason::Debug, None, vec![], vec![]).await.unwrap();
             let ns = mock_runner.get_namespace("test:///target_resolved").unwrap();
-            let mut ns = ns.lock().await;
+            let ns = ns.lock().await;
             // /pkg and /svc
-            assert_eq!(ns.entries.len(), 2);
-            let ns = ns.entries.remove(1);
-            assert_eq!(ns.path, "/svc");
+            let mut ns = ns.clone().flatten();
+            ns.sort();
+            assert_eq!(ns.len(), 2);
+            let ns = ns.remove(1);
+            assert_eq!(ns.path.as_str(), "/svc");
             let svc_dir = ns.directory.into_proxy().unwrap();
             fuchsia_fs::directory::open_directory(&svc_dir, "foo.bar", fio::OpenFlags::empty())
                 .await
@@ -1318,7 +1263,7 @@ mod tests {
                     ..
                 } if instance_name.len() == 32 &&
                     instance_name.chars().all(|c| c.is_ascii_hexdigit()) &&
-                    child_name == format!("coll:child_{}", child_id) &&
+                    child_name == format!("child `coll:child_{}`", child_id) &&
                     child_instance_name == format!("instance_{}", instance_id)
             );
         }
@@ -1338,6 +1283,7 @@ mod tests {
         let invalid_source_name_use_from_child_decl = UseDecl::Protocol(UseProtocolDecl {
             source: UseSource::Child("my_child".to_string()),
             source_name: "a".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/a".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
@@ -1346,6 +1292,7 @@ mod tests {
         let invalid_source_use_from_child_decl = UseDecl::Protocol(UseProtocolDecl {
             source: UseSource::Child("bad_child".to_string()),
             source_name: "b".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/b".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
@@ -1354,6 +1301,7 @@ mod tests {
         let invalid_source_name_expose_from_child_decl = ExposeDecl::Protocol(ExposeProtocolDecl {
             source: ExposeSource::Child("my_child".to_string()),
             source_name: "c".parse().unwrap(),
+            source_dictionary: None,
             target: ExposeTarget::Parent,
             target_name: "c".parse().unwrap(),
             availability: cm_rust::Availability::Required,
@@ -1362,6 +1310,7 @@ mod tests {
         let invalid_source_expose_from_child_decl = ExposeDecl::Protocol(ExposeProtocolDecl {
             source: ExposeSource::Child("bad_child".to_string()),
             source_name: "d".parse().unwrap(),
+            source_dictionary: None,
             target: ExposeTarget::Parent,
             target_name: "d".parse().unwrap(),
             availability: cm_rust::Availability::Required,
@@ -1381,20 +1330,16 @@ mod tests {
             ("my_child", ComponentDeclBuilder::new().build()),
         ];
 
-        let TestModelResult { model, builtin_environment, .. } =
+        let TestModelResult { model, builtin_environment: _b, .. } =
             TestEnvironmentBuilder::new().set_components(components).build().await;
-
-        let validator_server = {
-            let env = builtin_environment.lock().await;
-            env.route_validator.clone().unwrap()
-        };
+        let validator_server = RouteValidator::new(Arc::downgrade(&model));
         let (validator, request_stream) =
             endpoints::create_proxy_and_stream::<fsys::RouteValidatorMarker>().unwrap();
         let _validator_task = fasync::Task::local(async move {
             validator_server.serve(Moniker::root(), request_stream).await
         });
 
-        model.start().await;
+        model.start(Dict::new()).await;
 
         // `my_child` should not be resolved right now
         let instance = model.find_resolved(&vec!["my_child"].try_into().unwrap()).await;

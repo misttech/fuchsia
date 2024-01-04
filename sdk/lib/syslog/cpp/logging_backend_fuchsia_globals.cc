@@ -16,7 +16,7 @@
 namespace {
 
 std::atomic<uint32_t> dropped_count = std::atomic<uint32_t>(0);
-syslog_backend::LogState* state = nullptr;
+syslog_runtime::LogState* state = nullptr;
 std::mutex state_lock;
 // This thread's koid.
 // Initialized on first use.
@@ -34,7 +34,7 @@ zx_koid_t GetKoid(zx_handle_t handle) {
 extern "C" {
 
 EXPORT
-zx_koid_t GetCurrentThreadKoid() {
+zx_koid_t FuchsiaLogGetCurrentThreadKoid() {
   if (unlikely(tls_thread_koid == ZX_KOID_INVALID)) {
     tls_thread_koid = GetKoid(zx_thread_self());
   }
@@ -43,19 +43,23 @@ zx_koid_t GetCurrentThreadKoid() {
 }
 
 EXPORT
-void SetStateLocked(syslog_backend::LogState* new_state) { state = new_state; }
+void FuchsiaLogSetStateLocked(syslog_runtime::LogState* new_state) { state = new_state; }
 
-EXPORT void AcquireState() __TA_NO_THREAD_SAFETY_ANALYSIS { state_lock.lock(); }
+EXPORT void FuchsiaLogAcquireState() __TA_NO_THREAD_SAFETY_ANALYSIS { state_lock.lock(); }
 
-EXPORT void ReleaseState() __TA_NO_THREAD_SAFETY_ANALYSIS { state_lock.unlock(); }
-
-EXPORT
-syslog_backend::LogState* GetStateLocked() { return state; }
+EXPORT void FuchsiaLogReleaseState() __TA_NO_THREAD_SAFETY_ANALYSIS { state_lock.unlock(); }
 
 EXPORT
-uint32_t GetAndResetDropped() { return dropped_count.exchange(0, std::memory_order_relaxed); }
+syslog_runtime::LogState* FuchsiaLogGetStateLocked() { return state; }
 
 EXPORT
-void AddDropped(uint32_t count) { dropped_count.fetch_add(count, std::memory_order_relaxed); }
+uint32_t FuchsiaLogGetAndResetDropped() {
+  return dropped_count.exchange(0, std::memory_order_relaxed);
+}
+
+EXPORT
+void FuchsiaLogAddDropped(uint32_t count) {
+  dropped_count.fetch_add(count, std::memory_order_relaxed);
+}
 
 }  // extern "C"

@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/elfldltl/mmap-loader.h>
+#include <fcntl.h>
 #include <lib/elfldltl/posix.h>
 #include <lib/ld/memory.h>
+#include <lib/stdcompat/string_view.h>
 #include <lib/trivial-allocator/new.h>
 #include <lib/trivial-allocator/posix.h>
 #include <sys/mman.h>
+#include <zircon/compiler.h>
 
 #include <array>
 #include <cassert>
@@ -18,16 +20,17 @@
 #include "bootstrap.h"
 #include "diagnostics.h"
 #include "posix.h"
-#include "startup-load.h"
 
 namespace ld {
 namespace {
+
+constexpr std::string_view kLdDebugPrefix = "LD_DEBUG=";
 
 // This is defined in assembly, and doesn't actually use the C calling
 // convention.  It calls StartLd.
 extern "C" [[noreturn]] void _start();
 
-using StartupModule = StartupLoadModule<elfldltl::MmapLoader>;
+using UniqueFdFile = elfldltl::UniqueFdFile<Diagnostics>;
 
 using Module = abi::Abi<>::Module;
 
@@ -51,9 +54,10 @@ using InitialExecAllocator = decltype(MakeStartupInitialExecAllocator(SystemPage
 
 // This "loads" the executable image that's already in memory such that the
 // StartupModule returned is fully populated like loading another module does.
-StartupModule* LoadExecutable(Diagnostics& diag, StartupData& startup, ScratchAllocator& scratch,
-                              InitialExecAllocator& initial_exec, uintptr_t entry, uintptr_t phdr,
-                              uintptr_t phnum) {
+std::pair<StartupModule*, size_t> LoadExecutable(Diagnostics& diag, StartupData& startup,
+                                                 ScratchAllocator& scratch,
+                                                 InitialExecAllocator& initial_exec,
+                                                 uintptr_t entry, uintptr_t phdr, uintptr_t phnum) {
   if (entry == reinterpret_cast<uintptr_t>(&_start)) [[unlikely]] {
     // The dynamic linker was started directly as a standalone program,
     // rather than via PT_INTERP.
@@ -78,9 +82,9 @@ StartupModule* LoadExecutable(Diagnostics& diag, StartupData& startup, ScratchAl
   }
 
   // Allocate the StartupModule for the main executable.
-  StartupModule* main_executable = StartupModule::New(diag, scratch, "", startup.page_size);
+  StartupModule* main_executable = StartupModule::New(diag, scratch, {}, startup.page_size);
   fbl::AllocChecker ac;
-  main_executable->NewModule(initial_exec, ac);
+  main_executable->NewModule(abi::Abi<>::kExecutableName, 0, initial_exec, ac);
   CheckAlloc(diag, ac, "passive ABI module");
   Module& module = main_executable->module();
 
@@ -97,6 +101,9 @@ StartupModule* LoadExecutable(Diagnostics& diag, StartupData& startup, ScratchAl
   auto phdr_info = DecodeModulePhdrs(
       diag, phdrs, main_executable->load_info().GetPhdrObserver(startup.page_size),
       PhdrPhdrObserver{phdr_phdr}, elfldltl::PhdrRelroObserver<elfldltl::Elf<>>(relro_phdr));
+  if (!phdr_info) {
+    return {};
+  }
 
   main_executable->set_relro(relro_phdr);
 
@@ -119,12 +126,27 @@ StartupModule* LoadExecutable(Diagnostics& diag, StartupData& startup, ScratchAl
   // the executable image, but the object will never be destroyed anyway.
   main_executable->memory() = ModuleMemory{module};
 
-  main_executable->DecodeDynamic(diag, phdr_info.dyn_phdr);
+  // A second phdr scan is needed to decode notes now that they can be
+  // accessed in memory.
+  std::optional<elfldltl::ElfNote> build_id;
+  elfldltl::DecodePhdrs(
+      diag, phdrs,
+      elfldltl::PhdrMemoryNoteObserver(elfldltl::Elf<>{}, main_executable->memory(),
+                                       elfldltl::ObserveBuildIdNote(build_id)));
+  if (build_id) {
+    module.build_id = build_id->desc;
+  }
 
-  return main_executable;
+  if (phdr_info->tls_phdr) {
+    main_executable->SetTls(diag, main_executable->memory(), 1, *phdr_info->tls_phdr);
+  }
+
+  size_t needed_count = main_executable->DecodeDynamic(diag, phdr_info->dyn_phdr);
+
+  return {main_executable, needed_count};
 }
 
-void ProtectData(Diagnostics& diag, size_t page_size) {
+[[maybe_unused]] void ProtectData(Diagnostics& diag, size_t page_size) {
   auto [data_start, data_size] = DataBounds(page_size);
   if (mprotect(reinterpret_cast<void*>(data_start), data_size, PROT_READ) != 0) [[unlikely]] {
     diag.SystemError("cannot mprotect dynamic linker data pages", elfldltl::PosixError{errno});
@@ -182,14 +204,18 @@ extern "C" uintptr_t StartLd(StartupStack& stack) {
       elfldltl::DiagnosticsPanicFlags{},
   };
 
-  abi::Abi<>::Module vdso_module;
-  if (vdso) {
-    // If there is no vDSO, then there will just be empty symbols to link
-    // against and no references can resolve to any vDSO-defined symbols.
-    vdso_module = BootstrapVdsoModule(bootstrap_diag, vdso, startup.page_size);
+  BootstrapModule vdso_module = BootstrapVdsoModule(bootstrap_diag, vdso, startup.page_size);
+  BootstrapModule self_module = BootstrapSelfModule(bootstrap_diag, vdso_module.module);
+  CompleteBootstrapModule(self_module.module, startup.page_size);
+
+  // Check for the LD_DEBUG environment variable.
+  for (char** ep = startup.envp; *ep; ++ep) {
+    std::string_view str = *ep;
+    if (str.size() > kLdDebugPrefix.size() && cpp20::starts_with(str, kLdDebugPrefix)) {
+      startup.ld_debug = true;
+      break;
+    }
   }
-  auto self_module = BootstrapSelfModule(bootstrap_diag, vdso_module);
-  CompleteBootstrapModule(self_module, startup.page_size);
 
   // Now that things are bootstrapped, set up the main diagnostics object.
   auto diag = MakeDiagnostics(startup);
@@ -202,23 +228,33 @@ extern "C" uintptr_t StartLd(StartupStack& stack) {
   // "Load" the main executable.  It's usually already loaded by the system
   // program loader before the dynamic linker was loaded, so this really
   // consists of doing the bookkeeping that loading other modules does.
-  auto* main_executable = LoadExecutable(diag, startup, scratch, initial_exec, entry, phdr, phnum);
+  auto [main_executable, needed_count] =
+      LoadExecutable(diag, startup, scratch, initial_exec, entry, phdr, phnum);
 
-  // TODO(mcgrathr): Load deps.
+  auto open_file = [&diag](const elfldltl::Soname<>& soname) -> std::optional<UniqueFdFile> {
+    if (fbl::unique_fd fd{open(soname.c_str(), O_RDONLY)}) {
+      return UniqueFdFile{std::move(fd), diag};
+    }
+    if (errno != ENOENT) {
+      diag.SystemError("cannot open dependency ", soname.str(), ": ", elfldltl::PosixError{errno});
+    }
+    return {};
+  };
+
+  StartupModule::LinkModules(diag, scratch, initial_exec, main_executable, open_file,
+                             {vdso_module, self_module}, needed_count, startup.page_size);
 
   // Bail out before relocation if there were any loading errors.
   CheckErrors(diag);
 
-  main_executable->RelocateRelative(diag);
-
-  // Now that startup is completed, protect not only the RELRO, but also all
-  // the data and bss.
-  ProtectData(diag, startup.page_size);
+  if constexpr (kProtectData) {
+    // Now that startup is completed, protect not only the RELRO, but also all
+    // the data and bss.
+    ProtectData(diag, startup.page_size);
+  }
 
   // Bail out before handoff if any errors have been detected.
   CheckErrors(diag);
-
-  // TODO(mcgrathr): Populate _ld_abi.
 
   return entry;
 }

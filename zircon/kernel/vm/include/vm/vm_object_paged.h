@@ -84,10 +84,6 @@ class VmObjectPaged final : public VmObject {
     Guard<CriticalMutex> guard{lock()};
     return cow_pages_locked()->is_root_source_user_pager_backed_locked();
   }
-  bool is_snapshot_at_least_on_write_supported() const override {
-    Guard<CriticalMutex> guard{lock()};
-    return cow_pages_locked()->is_snapshot_at_least_on_write_supported();
-  }
   bool is_dirty_tracked_locked() const override TA_REQ(lock()) {
     return cow_pages_locked()->is_dirty_tracked_locked();
   }
@@ -171,14 +167,15 @@ class VmObjectPaged final : public VmObject {
   zx_status_t Lookup(uint64_t offset, uint64_t len, VmObject::LookupFunction lookup_fn) override;
   zx_status_t LookupContiguous(uint64_t offset, uint64_t len, paddr_t* out_paddr) override;
 
-  zx_status_t ReadUser(VmAspace* current_aspace, user_out_ptr<char> ptr, uint64_t offset,
-                       size_t len, VmObjectReadWriteOptions options, size_t* out_actual) override;
-  zx_status_t WriteUser(VmAspace* current_aspace, user_in_ptr<const char> ptr, uint64_t offset,
-                        size_t len, VmObjectReadWriteOptions options, size_t* out_actual,
+  zx_status_t ReadUser(user_out_ptr<char> ptr, uint64_t offset, size_t len,
+                       VmObjectReadWriteOptions options, size_t* out_actual) override;
+  zx_status_t WriteUser(user_in_ptr<const char> ptr, uint64_t offset, size_t len,
+                        VmObjectReadWriteOptions options, size_t* out_actual,
                         const OnWriteBytesTransferredCallback& on_bytes_transferred) override;
 
   zx_status_t TakePages(uint64_t offset, uint64_t len, VmPageSpliceList* pages) override;
-  zx_status_t SupplyPages(uint64_t offset, uint64_t len, VmPageSpliceList* pages) override;
+  zx_status_t SupplyPages(uint64_t offset, uint64_t len, VmPageSpliceList* pages,
+                          SupplyOptions options) override;
   zx_status_t FailPageRequests(uint64_t offset, uint64_t len, zx_status_t error_status) override {
     Guard<CriticalMutex> guard{lock()};
     return cow_pages_locked()->FailPageRequestsLocked(offset, len, error_status);
@@ -237,11 +234,7 @@ class VmObjectPaged final : public VmObject {
 
   zx_status_t CacheOp(uint64_t offset, uint64_t len, CacheOpType type) override;
 
-  uint32_t GetMappingCachePolicy() const override {
-    Guard<CriticalMutex> guard{lock()};
-    return GetMappingCachePolicyLocked();
-  }
-  uint32_t GetMappingCachePolicyLocked() const TA_REQ(lock()) { return cache_policy_; }
+  uint32_t GetMappingCachePolicyLocked() const override TA_REQ(lock()) { return cache_policy_; }
   zx_status_t SetMappingCachePolicy(const uint32_t cache_policy) override;
 
   void DetachSource() override {
@@ -328,6 +321,8 @@ class VmObjectPaged final : public VmObject {
   // Hint how the specified range is intended to be used, so that the hint can be taken into
   // consideration when reclaiming pages under memory pressure (if applicable).
   zx_status_t HintRange(uint64_t offset, uint64_t len, EvictionHint hint) override;
+
+  void CommitHighPriorityPages(uint64_t offset, uint64_t len) override;
 
   void ChangeHighPriorityCountLocked(int64_t delta) override TA_REQ(lock()) {
     cow_pages_locked()->ChangeHighPriorityCountLocked(delta);

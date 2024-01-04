@@ -14,7 +14,7 @@ import local_driver
 import common
 
 
-class DriverFactory():
+class DriverFactory:
     """Factory class for BaseDriver implementations.
 
     This class uses the runtime environment to determine the
@@ -24,16 +24,23 @@ class DriverFactory():
     """
 
     def __init__(
-            self,
-            config_path: Optional[str] = None,
-            params_path: Optional[str] = None) -> None:
+        self,
+        multi_device: bool = False,
+        config_path: Optional[str] = None,
+        params_path: Optional[str] = None,
+        ffx_path: Optional[str] = None,
+    ) -> None:
         """Initializes the instance.
         Args:
+          multi_device: whether the Mobly test requires 2+ devices to run.
           config_path: absolute path to the Mobly test config file.
           params_path: absolute path to the Mobly testbed params file.
+          ffx_path: absolute path to the FFX binary.
         """
+        self._multi_device = multi_device
         self._config_path = config_path
         self._params_path = params_path
+        self._ffx_path = ffx_path
 
     def get_driver(self) -> base_mobly_driver.BaseDriver:
         """Returns an environment-specific Mobly Driver implementation.
@@ -47,16 +54,18 @@ class DriverFactory():
         botanist_config_path = os.getenv(api_infra.BOT_ENV_TESTBED_CONFIG)
         if not botanist_config_path:
             return local_driver.LocalDriver(
+                ffx_path=self._ffx_path,
+                multi_device=self._multi_device,
                 config_path=self._config_path,
                 params_path=self._params_path,
             )
-
         try:
             return infra_driver.InfraDriver(
                 tb_json_path=os.environ[api_infra.BOT_ENV_TESTBED_CONFIG],
-                log_path=os.environ[api_infra.BOT_ENV_TEST_OUTDIR],
+                ffx_path=self._ffx_path,
                 params_path=self._params_path,
             )
         except KeyError as e:
             raise common.DriverException(
-                'Unexpected execution environment - missing env var: %s', e)
+                "Unexpected execution environment - missing env var: %s", e
+            )

@@ -200,7 +200,7 @@ Driver   : None
 [ 3/  6] : Key fuchsia.BIND_ACPI_BUS_TYPE     Value 0x000001
 [ 4/  6] : Key "fuchsia.hardware.acpi.Device" Value true
 [ 5/  6] : Key fuchsia.BIND_PROTOCOL          Value 0x00001e
-[ 6/  6] : Key "fuchsia.driver.framework.dfv2" Value true
+[ 6/  6] : Key "fuchsia.platform.DRIVER_FRAMEWORK_VERSION" Value 0x000002
 ```
 
 You can then write the following:
@@ -250,7 +250,7 @@ The bind language supports branching via if statements with some restrictions.
 If statements must have else blocks and are terminal. This restriction increases readability by making explicit the branches of execution. Since no statement may follow an if statement, it is easy to trace a path through the bind rules.
 
 ```
-if fuchsia.BIND_FIDL_PROTOCOL == fuchsia.hardware.tee.BIND_FIDL_PROTOCOL.DEVICE {
+if fuchsia.BIND_FIDL_PROTOCOL == fuchsia.tee.BIND_FIDL_PROTOCOL.DEVICE {
   fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC;
 } else {
   fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.QEMU;

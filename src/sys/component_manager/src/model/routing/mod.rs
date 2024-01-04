@@ -20,10 +20,10 @@ use {
     ::routing::{
         self, capability_source::ComponentCapability,
         component_instance::ComponentInstanceInterface, error::AvailabilityRoutingError,
-        mapper::NoopRouteMapper, router::RouteBundle,
+        mapper::NoopRouteMapper,
     },
     async_trait::async_trait,
-    cm_rust::{CapabilityTypeName, ExposeDecl, ExposeDeclCommon, UseDecl, UseStorageDecl},
+    cm_rust::{ExposeDecl, ExposeDeclCommon, UseStorageDecl},
     fidl::epitaph::ChannelEpitaphExt,
     fuchsia_zircon as zx,
     moniker::MonikerBase,
@@ -74,6 +74,27 @@ impl Route for RouteRequest {
     }
 }
 
+// Helper function to log and return an error if the capability is void.
+fn check_source_for_void(
+    source: &CapabilitySource,
+    moniker: &moniker::Moniker,
+) -> Result<(), RouteAndOpenCapabilityError> {
+    if let CapabilitySource::Void { ref capability, .. } = source {
+        debug!(
+            "Optional {} `{}` was not available for target component `{}`\n{}",
+            capability.type_name(),
+            capability.source_name(),
+            &moniker,
+            ROUTE_ERROR_HELP
+        );
+        return Err(RouteAndOpenCapabilityError::OpenError {
+            source: source.clone(),
+            err: crate::model::error::OpenError::SourceInstanceNotFound,
+        });
+    };
+    Ok(())
+}
+
 /// Routes a capability from `target` to its source. Opens the capability if routing succeeds.
 ///
 /// If the capability is not allowed to be routed to the `target`, per the
@@ -89,6 +110,7 @@ pub(super) async fn route_and_open_capability(
             let storage_source = r.route(target).await.map_err(|e| {
                 RouteAndOpenCapabilityError::RoutingError { request: route_request, err: e }
             })?;
+            check_source_for_void(&storage_source.source, &target.moniker)?;
 
             let backing_dir_info = storage::route_backing_directory(storage_source.source.clone())
                 .await
@@ -118,6 +140,7 @@ pub(super) async fn route_and_open_capability(
             let route_source = r.route(target).await.map_err(|e| {
                 RouteAndOpenCapabilityError::RoutingError { request: route_request, err: e }
             })?;
+            check_source_for_void(&route_source.source, &target.moniker)?;
 
             // clone the source as additional context in case of an error
             let capability_source = route_source.source.clone();
@@ -133,18 +156,6 @@ pub(super) async fn route_and_open_capability(
     }
 }
 
-/// Create a new `RouteRequest` from a `UseDecl`, checking that the capability type can
-/// be installed in a namespace.
-pub fn request_for_namespace_capability_use(use_decl: UseDecl) -> Option<RouteRequest> {
-    match use_decl {
-        UseDecl::Directory(decl) => Some(RouteRequest::UseDirectory(decl)),
-        UseDecl::Protocol(decl) => Some(RouteRequest::UseProtocol(decl)),
-        UseDecl::Service(decl) => Some(RouteRequest::UseService(decl)),
-        UseDecl::Storage(decl) => Some(RouteRequest::UseStorage(decl)),
-        _ => None,
-    }
-}
-
 /// Create a new `RouteRequest` from an `ExposeDecl`, checking that the capability type can
 /// be installed in a namespace.
 ///
@@ -153,38 +164,16 @@ pub fn request_for_namespace_capability_use(use_decl: UseDecl) -> Option<RouteRe
 /// REQUIRES: `exposes.len() > 1` only if it is a service.
 pub fn request_for_namespace_capability_expose(exposes: Vec<&ExposeDecl>) -> Option<RouteRequest> {
     let first_expose = exposes.first().expect("invalid empty expose list");
-    let first_type_name = CapabilityTypeName::from(*first_expose);
-    assert!(
-        exposes.iter().all(|e| {
-            let type_name: CapabilityTypeName = CapabilityTypeName::from(*e);
-            first_type_name == type_name && first_expose.target_name() == e.target_name()
-        }),
-        "invalid expose input: {:?}",
-        exposes
-    );
     match first_expose {
-        cm_rust::ExposeDecl::Protocol(e) => {
-            assert!(exposes.len() == 1, "multiple exposes");
-            Some(RouteRequest::ExposeProtocol(e.clone()))
-        }
-        cm_rust::ExposeDecl::Service(_) => {
-            // Gather the exposes into a bundle. Services can aggregate, in which case
-            // multiple expose declarations map to one expose directory entry.
-            let exposes: Vec<_> = exposes
-                .into_iter()
-                .filter_map(|e| match e {
-                    cm_rust::ExposeDecl::Service(e) => Some(e.clone()),
-                    _ => None,
-                })
-                .collect();
-            Some(RouteRequest::ExposeService(RouteBundle::from_exposes(exposes)))
-        }
-        cm_rust::ExposeDecl::Directory(e) => {
-            assert!(exposes.len() == 1, "multiple exposes");
-            Some(RouteRequest::ExposeDirectory(e.clone()))
-        }
-        cm_rust::ExposeDecl::Runner(_) | cm_rust::ExposeDecl::Resolver(_) => {
-            // Runners, resolvers, and event streams do not add directory entries.
+        cm_rust::ExposeDecl::Protocol(_)
+        | cm_rust::ExposeDecl::Service(_)
+        | cm_rust::ExposeDecl::Directory(_) => Some(exposes.into()),
+        // These do not add directory entries.
+        cm_rust::ExposeDecl::Runner(_)
+        | cm_rust::ExposeDecl::Resolver(_)
+        | cm_rust::ExposeDecl::Config(_) => None,
+        cm_rust::ExposeDecl::Dictionary(_) => {
+            // TODO(fxbug.dev/301674053): Support this.
             None
         }
     }
@@ -207,7 +196,7 @@ pub(super) async fn route_and_delete_storage(
         backing_dir_info,
         target.persistent_storage,
         moniker,
-        target.instance_id().as_ref(),
+        target.instance_id(),
     )
     .await
 }
@@ -234,29 +223,6 @@ pub async fn report_routing_failure(
     target
         .with_logger_as_default(|| {
             match err {
-                ModelError::RouteAndOpenCapabilityError {
-                    err:
-                        RouteAndOpenCapabilityError::RoutingError {
-                            err:
-                                RoutingError::AvailabilityRoutingError(
-                                    AvailabilityRoutingError::RouteFromVoidToOptionalTarget,
-                                ),
-                            ..
-                        },
-                } => {
-                    // If the route failed because the capability is
-                    // intentionally not provided, then this failure is expected
-                    // and the warn level is unwarranted, so use the debug level
-                    // in this case.
-                    debug!(
-                        "Optional {} `{}` was not available for target component `{}`: {}\n{}",
-                        cap.type_name(),
-                        cap.source_id(),
-                        &target.moniker,
-                        &err_str,
-                        ROUTE_ERROR_HELP
-                    );
-                }
                 ModelError::RouteAndOpenCapabilityError {
                     err:
                         RouteAndOpenCapabilityError::RoutingError {

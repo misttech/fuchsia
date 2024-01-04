@@ -30,7 +30,6 @@ use {
 
 pub mod macros;
 pub mod serialization;
-pub mod testing;
 
 /// Extra slots for a linear histogram: 2 parameter slots (floor, step size) and
 /// 2 overflow slots.
@@ -261,7 +260,7 @@ where
     }
 }
 
-macro_rules! property_type_getters {
+macro_rules! property_type_getters_ref {
     ($([$variant:ident, $fn_name:ident, $type:ty]),*) => {
         paste::item! {
           impl<Key> Property<Key> {
@@ -279,17 +278,38 @@ macro_rules! property_type_getters {
     }
 }
 
-property_type_getters!(
-    [String, string, str],
-    [Bytes, bytes, [u8]],
+macro_rules! property_type_getters_copy {
+    ($([$variant:ident, $fn_name:ident, $type:ty]),*) => {
+        paste::item! {
+          impl<Key> Property<Key> {
+              $(
+                  #[doc = "Returns the " $variant " value or `None` if the property isn't of that type"]
+                  pub fn $fn_name(&self) -> Option<$type> {
+                      match self {
+                          Property::$variant(_, value) => Some(*value),
+                          _ => None,
+                      }
+                  }
+              )*
+          }
+        }
+    }
+}
+
+property_type_getters_copy!(
     [Int, int, i64],
     [Uint, uint, u64],
     [Double, double, f64],
-    [Bool, boolean, bool],
+    [Bool, boolean, bool]
+);
+
+property_type_getters_ref!(
+    [String, string, str],
+    [Bytes, bytes, [u8]],
     [DoubleArray, double_array, ArrayContent<f64>],
     [IntArray, int_array, ArrayContent<i64>],
     [UintArray, uint_array, ArrayContent<u64>],
-    [StringList, string_list, Vec<String>]
+    [StringList, string_list, [String]]
 );
 
 struct WorkStackEntry<'a, Key> {
@@ -442,6 +462,26 @@ impl<K> Property<K> {
             Property::DoubleArray(_, _) => "DoubleArray",
             Property::Bool(_, _) => "Bool",
             Property::StringList(_, _) => "StringList",
+        }
+    }
+
+    /// Return a a numeric property as a signed integer. Useful for having a single function to call
+    /// when a property has been passed through JSON, potentially losing its original signedness.
+    ///
+    /// Note: unsigned integers larger than `isize::MAX` will be returned as `None`. If you expect
+    /// values that high, consider calling `Property::int()` and `Property::uint()` directly.
+    pub fn number_as_int(&self) -> Option<i64> {
+        match self {
+            Property::Int(_, i) => Some(*i),
+            Property::Uint(_, u) => i64::try_from(*u).ok(),
+            Property::String(..)
+            | Property::Bytes(..)
+            | Property::Double(..)
+            | Property::Bool(..)
+            | Property::DoubleArray(..)
+            | Property::IntArray(..)
+            | Property::UintArray(..)
+            | Property::StringList(..) => None,
         }
     }
 }
@@ -644,6 +684,59 @@ where
                     Cow::Owned(values)
                 } else {
                     Cow::Borrowed(&counts)
+                }
+            }
+        }
+    }
+}
+
+pub mod testing {
+    use crate::ArrayContent;
+    use num_traits::bounds::Bounded;
+    use std::ops::{Add, AddAssign, MulAssign};
+
+    // Require test code to import CondensableOnDemand to access the
+    // condense_histogram() associated function.
+    pub trait CondensableOnDemand {
+        fn condense_histogram(&mut self);
+    }
+
+    fn condense_counts<T: num_traits::Zero + Copy + PartialEq>(
+        counts: &[T],
+    ) -> (Vec<T>, Vec<usize>) {
+        let mut condensed_counts = vec![];
+        let mut indexes = vec![];
+        for (index, count) in counts.iter().enumerate() {
+            if *count != T::zero() {
+                condensed_counts.push(*count);
+                indexes.push(index);
+            }
+        }
+        (condensed_counts, indexes)
+    }
+
+    impl<T> CondensableOnDemand for ArrayContent<T>
+    where
+        T: Add<Output = T> + num_traits::Zero + AddAssign + Copy + MulAssign + PartialEq + Bounded,
+    {
+        fn condense_histogram(&mut self) {
+            match self {
+                Self::Values(_) => return,
+                Self::LinearHistogram(histogram) => {
+                    if histogram.indexes.is_some() {
+                        return;
+                    }
+                    let (counts, indexes) = condense_counts(&histogram.counts);
+                    histogram.counts = counts;
+                    histogram.indexes = Some(indexes);
+                }
+                Self::ExponentialHistogram(histogram) => {
+                    if histogram.indexes.is_some() {
+                        return;
+                    }
+                    let (counts, indexes) = condense_counts(&histogram.counts);
+                    histogram.counts = counts;
+                    histogram.indexes = Some(indexes);
                 }
             }
         }
@@ -904,7 +997,7 @@ where
     node.children.retain_mut(|child| filter_hierarchy_helper(child, &child_matchers));
     node.properties.retain_mut(|prop| eval_matchers_on_property(prop.name(), &child_matchers));
 
-    true
+    !(node.children.is_empty() && node.properties.is_empty())
 }
 
 fn eval_matchers_on_node_name<'a>(
@@ -962,51 +1055,26 @@ pub struct LinearHistogramParams<T: Clone> {
     pub buckets: usize,
 }
 
+/// A type which can function as a "view" into a diagnostics hierarchy, optionally allocating a new
+/// instance to service a request.
+pub trait DiagnosticsHierarchyGetter<K: Clone> {
+    fn get_diagnostics_hierarchy(&self) -> Cow<'_, DiagnosticsHierarchy<K>>;
+}
+
+impl<K: Clone> DiagnosticsHierarchyGetter<K> for DiagnosticsHierarchy<K> {
+    fn get_diagnostics_hierarchy(&self) -> Cow<'_, DiagnosticsHierarchy<K>> {
+        Cow::Borrowed(self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::CondensableOnDemand;
+
     use assert_matches::assert_matches;
     use selectors::VerboseError;
     use std::sync::Arc;
-
-    impl<T> ArrayContent<T>
-    where
-        T: Add<Output = T> + num_traits::Zero + AddAssign + Copy + MulAssign + PartialEq + Bounded,
-    {
-        fn condense_counts(counts: &[T]) -> (Vec<T>, Vec<usize>) {
-            let mut condensed_counts = vec![];
-            let mut indexes = vec![];
-            for (index, count) in counts.iter().enumerate() {
-                if *count != T::zero() {
-                    condensed_counts.push(*count);
-                    indexes.push(index);
-                }
-            }
-            (condensed_counts, indexes)
-        }
-
-        pub(crate) fn condense_histogram(&mut self) {
-            match self {
-                Self::Values(_) => return,
-                Self::LinearHistogram(histogram) => {
-                    if histogram.indexes.is_some() {
-                        return;
-                    }
-                    let (counts, indexes) = Self::condense_counts(&histogram.counts);
-                    histogram.counts = counts;
-                    histogram.indexes = Some(indexes);
-                }
-                Self::ExponentialHistogram(histogram) => {
-                    if histogram.indexes.is_some() {
-                        return;
-                    }
-                    let (counts, indexes) = Self::condense_counts(&histogram.counts);
-                    histogram.counts = counts;
-                    histogram.indexes = Some(indexes);
-                }
-            }
-        }
-    }
 
     fn validate_hierarchy_iteration(
         mut results_vec: Vec<(Vec<String>, Option<Property>)>,
@@ -1363,6 +1431,7 @@ mod tests {
             }
         }"#;
         let parsed: DiagnosticsHierarchy = serde_json::from_str(json)?;
+
         let mut histogram =
             ArrayContent::new(vec![2, 3, 0, 4, 5, 0, 6, 0, 0, 0], ArrayFormat::LinearHistogram)
                 .unwrap();
@@ -1393,7 +1462,8 @@ mod tests {
             }
         }"#;
         let parsed: DiagnosticsHierarchy = serde_json::from_str(json)?;
-        assert_data_tree!(parsed, root: {histogram: contains {} });
+        assert_eq!(parsed.children.len(), 1);
+        assert_eq!(&parsed.children[0].name, "histogram");
         Ok(())
     }
 
@@ -1411,7 +1481,8 @@ mod tests {
             }
         }"#;
         let parsed: DiagnosticsHierarchy = serde_json::from_str(json)?;
-        assert_data_tree!(parsed, root: {histogram: contains {} });
+        assert_eq!(parsed.children.len(), 1);
+        assert_eq!(&parsed.children[0].name, "histogram");
         Ok(())
     }
 
@@ -1429,7 +1500,8 @@ mod tests {
             }
         }"#;
         let parsed: DiagnosticsHierarchy = serde_json::from_str(json)?;
-        assert_data_tree!(parsed, root: {histogram: contains {} });
+        assert_eq!(parsed.children.len(), 1);
+        assert_eq!(&parsed.children[0].name, "histogram");
         Ok(())
     }
 
@@ -1447,7 +1519,8 @@ mod tests {
             }
         }"#;
         let parsed: DiagnosticsHierarchy = serde_json::from_str(json)?;
-        assert_data_tree!(parsed, root: {histogram: contains {} });
+        assert_eq!(parsed.children.len(), 1);
+        assert_eq!(&parsed.children[0].name, "histogram");
         Ok(())
     }
 
@@ -1692,16 +1765,12 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_filter_includes_empty_node() {
+    fn test_filter_does_not_include_empty_node() {
         let test_selectors = vec!["*:root/foo:blorg"];
 
         assert_eq!(
             parse_selectors_and_filter_hierarchy(get_test_hierarchy(), test_selectors),
-            Some(DiagnosticsHierarchy::new(
-                "root",
-                vec![],
-                vec![DiagnosticsHierarchy::new("foo", vec![], vec![],)],
-            ))
+            None,
         );
     }
 
@@ -1783,11 +1852,11 @@ mod tests {
             Some(empty_hierarchy.clone())
         );
 
-        // Selecting a property on the root, even if it doesn't exist, should produce the empty tree.
+        // Selecting a property on the root, even if it doesn't exist, should produce nothing.
         let fake_property_selector = vec!["*:root:blorp"];
         assert_eq!(
             parse_selectors_and_filter_hierarchy(empty_hierarchy.clone(), fake_property_selector),
-            Some(empty_hierarchy)
+            None,
         );
     }
 
@@ -1860,5 +1929,16 @@ mod tests {
                 ]
             )
         );
+    }
+
+    #[fuchsia::test]
+    fn filter_hierarchy_doesnt_return_partial_matches() {
+        let hierarchy = DiagnosticsHierarchy::new(
+            "root",
+            vec![],
+            vec![DiagnosticsHierarchy::new("session_started_at", vec![], vec![])],
+        );
+        let test_selectors = vec!["*:root/session_started_at/0"];
+        assert_eq!(parse_selectors_and_filter_hierarchy(hierarchy, test_selectors), None);
     }
 }

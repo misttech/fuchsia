@@ -15,7 +15,7 @@
 
 #include <gtest/gtest.h>
 
-#include "src/graphics/display/drivers/amlogic-display/osd.h"
+#include "src/graphics/display/drivers/amlogic-display/video-input-unit.h"
 #include "src/graphics/display/lib/api-types-cpp/driver-buffer-collection-id.h"
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/lib/testing/predicates/status.h"
@@ -345,9 +345,10 @@ class FakeSysmemTest : public testing::Test {
     display_->SetFormatSupportCheck([](auto) { return true; });
     display_->SetCanvasForTesting(std::move(endpoints.value().client));
 
-    auto vout = std::make_unique<Vout>();
-    vout->InitDsiForTesting(/*panel_type=*/PANEL_TV070WSM_FT, /*width=*/1024, /*height=*/600);
-    display_->SetVoutForTesting(std::move(vout));
+    zx::result<std::unique_ptr<Vout>> create_dsi_vout_result = Vout::CreateDsiVoutForTesting(
+        /*panel_type=*/PANEL_TV070WSM_FT, /*width=*/1024, /*height=*/600);
+    ASSERT_OK(create_dsi_vout_result.status_value());
+    display_->SetVoutForTesting(std::move(create_dsi_vout_result.value()));
 
     allocator_ = std::make_unique<MockAllocator>(loop_.dispatcher());
     allocator_->set_mock_buffer_collection_builder([] {
@@ -508,33 +509,36 @@ TEST_F(FakeSysmemTest, ImportImage) {
   // Invalid import: Bad image type.
   image_t invalid_config = kDefaultConfig;
   invalid_config.type = IMAGE_TYPE_CAPTURE;
+  uint64_t image_handle = 0;
   EXPECT_EQ(display_->DisplayControllerImplImportImage(&invalid_config, kBanjoBufferCollectionId,
-                                                       /*index=*/0),
+                                                       /*index=*/0, &image_handle),
             ZX_ERR_INVALID_ARGS);
 
   // Invalid import: Invalid collection ID.
   invalid_config = kDefaultConfig;
   EXPECT_EQ(
       display_->DisplayControllerImplImportImage(&invalid_config, kBanjoInvalidBufferCollectionId,
-                                                 /*index=*/0),
+                                                 /*index=*/0, &image_handle),
       ZX_ERR_NOT_FOUND);
 
   // Invalid import: Invalid buffer collection index.
   invalid_config = kDefaultConfig;
   constexpr uint64_t kInvalidBufferCollectionIndex = 100u;
-  EXPECT_EQ(display_->DisplayControllerImplImportImage(&invalid_config, kBanjoBufferCollectionId,
-                                                       kInvalidBufferCollectionIndex),
-            ZX_ERR_OUT_OF_RANGE);
+  image_handle = 0;
+  EXPECT_EQ(
+      display_->DisplayControllerImplImportImage(&invalid_config, kBanjoBufferCollectionId,
+                                                 kInvalidBufferCollectionIndex, &image_handle),
+      ZX_ERR_OUT_OF_RANGE);
 
   // Valid import.
   image_t valid_config = kDefaultConfig;
-  EXPECT_EQ(valid_config.handle, 0u);
+  image_handle = 0;
   EXPECT_OK(display_->DisplayControllerImplImportImage(&valid_config, kBanjoBufferCollectionId,
-                                                       /*index=*/0));
-  EXPECT_NE(valid_config.handle, 0u);
+                                                       /*index=*/0, &image_handle));
+  EXPECT_NE(image_handle, 0u);
 
   // Release the image.
-  display_->DisplayControllerImplReleaseImage(&valid_config);
+  display_->DisplayControllerImplReleaseImage(image_handle);
 
   EXPECT_OK(display_->DisplayControllerImplReleaseBufferCollection(kBanjoBufferCollectionId));
 }
@@ -657,30 +661,30 @@ TEST_F(FakeSysmemTest, SysmemRequirements_BgraOnly) {
 
 TEST(AmlogicDisplay, FloatToFix3_10) {
   inspect::Inspector inspector;
-  EXPECT_EQ(0x0000u, Osd::FloatToFixed3_10(0.0f));
-  EXPECT_EQ(0x0066u, Osd::FloatToFixed3_10(0.1f));
-  EXPECT_EQ(0x1f9au, Osd::FloatToFixed3_10(-0.1f));
+  EXPECT_EQ(0x0000u, VideoInputUnit::FloatToFixed3_10(0.0f));
+  EXPECT_EQ(0x0066u, VideoInputUnit::FloatToFixed3_10(0.1f));
+  EXPECT_EQ(0x1f9au, VideoInputUnit::FloatToFixed3_10(-0.1f));
   // Test for maximum positive (<4)
-  EXPECT_EQ(0x0FFFu, Osd::FloatToFixed3_10(4.0f));
-  EXPECT_EQ(0x0FFFu, Osd::FloatToFixed3_10(40.0f));
-  EXPECT_EQ(0x0FFFu, Osd::FloatToFixed3_10(3.9999f));
+  EXPECT_EQ(0x0FFFu, VideoInputUnit::FloatToFixed3_10(4.0f));
+  EXPECT_EQ(0x0FFFu, VideoInputUnit::FloatToFixed3_10(40.0f));
+  EXPECT_EQ(0x0FFFu, VideoInputUnit::FloatToFixed3_10(3.9999f));
   // Test for minimum negative (>= -4)
-  EXPECT_EQ(0x1000u, Osd::FloatToFixed3_10(-4.0f));
-  EXPECT_EQ(0x1000u, Osd::FloatToFixed3_10(-14.0f));
+  EXPECT_EQ(0x1000u, VideoInputUnit::FloatToFixed3_10(-4.0f));
+  EXPECT_EQ(0x1000u, VideoInputUnit::FloatToFixed3_10(-14.0f));
 }
 
 TEST(AmlogicDisplay, FloatToFixed2_10) {
   inspect::Inspector inspector;
-  EXPECT_EQ(0x0000u, Osd::FloatToFixed2_10(0.0f));
-  EXPECT_EQ(0x0066u, Osd::FloatToFixed2_10(0.1f));
-  EXPECT_EQ(0x0f9au, Osd::FloatToFixed2_10(-0.1f));
+  EXPECT_EQ(0x0000u, VideoInputUnit::FloatToFixed2_10(0.0f));
+  EXPECT_EQ(0x0066u, VideoInputUnit::FloatToFixed2_10(0.1f));
+  EXPECT_EQ(0x0f9au, VideoInputUnit::FloatToFixed2_10(-0.1f));
   // Test for maximum positive (<2)
-  EXPECT_EQ(0x07FFu, Osd::FloatToFixed2_10(2.0f));
-  EXPECT_EQ(0x07FFu, Osd::FloatToFixed2_10(20.0f));
-  EXPECT_EQ(0x07FFu, Osd::FloatToFixed2_10(1.9999f));
+  EXPECT_EQ(0x07FFu, VideoInputUnit::FloatToFixed2_10(2.0f));
+  EXPECT_EQ(0x07FFu, VideoInputUnit::FloatToFixed2_10(20.0f));
+  EXPECT_EQ(0x07FFu, VideoInputUnit::FloatToFixed2_10(1.9999f));
   // Test for minimum negative (>= -2)
-  EXPECT_EQ(0x0800u, Osd::FloatToFixed2_10(-2.0f));
-  EXPECT_EQ(0x0800u, Osd::FloatToFixed2_10(-14.0f));
+  EXPECT_EQ(0x0800u, VideoInputUnit::FloatToFixed2_10(-2.0f));
+  EXPECT_EQ(0x0800u, VideoInputUnit::FloatToFixed2_10(-14.0f));
 }
 
 TEST_F(FakeSysmemTest, NoLeakCaptureCanvas) {

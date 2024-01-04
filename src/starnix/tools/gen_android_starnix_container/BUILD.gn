@@ -7,7 +7,10 @@ import("//build/rust/rustc_binary.gni")
 import("//build/testing/host_test_data.gni")
 
 group("gen_android_starnix_container") {
-  deps = [ ":host" ]
+  deps = [
+    ":assembly_inputs($host_toolchain)",
+    ":host",
+  ]
 }
 
 install_host_tools("host") {
@@ -16,6 +19,35 @@ install_host_tools("host") {
 }
 
 if (is_host) {
+  # Generates an assembly_inputs.json for gen-android-starnix-container and
+  # makes it available to //:cipd_assembly_artifacts in GN. This will add this
+  # binary to the CIPD package created by infra.
+  generated_file("assembly_inputs") {
+    deps = [ ":gen_android_starnix_container_bin" ]
+    _bin_src = rebase_path("${root_out_dir}/gen-android-starnix-container",
+                           root_build_dir)
+
+    contents = [
+      {
+        source = _bin_src
+        destination = "gen-android-starnix-container"
+      },
+    ]
+    output_conversion = "json"
+
+    outputs = [
+      "${target_out_dir}/gen_android_starnix_container_assembly_inputs.json",
+    ]
+    metadata = {
+      assembly_inputs = [
+        {
+          path = rebase_path(outputs[0], root_build_dir)
+        },
+      ]
+      assembly_inputs_barrier = []
+    }
+  }
+
   host_test_data("test_ext4_image") {
     sources = [ "//src/storage/ext4/tests/test.img" ]
     outputs =
@@ -23,6 +55,7 @@ if (is_host) {
     visibility = [ ":*" ]
   }
 
+  relative_root_out_dir = rebase_path(root_out_dir, root_build_dir)
   rustc_binary("gen_android_starnix_container_bin") {
     name = "gen-android-starnix-container"
     edition = "2021"
@@ -54,6 +87,9 @@ if (is_host) {
       "src/main.rs",
       "src/remote_bundle.rs",
     ]
+    rustenv = [ "ROOT_OUT_DIR=$relative_root_out_dir" ]
+
+    configs += [ "//src/starnix/config:starnix_clippy_lints" ]
   }
 
   group("tests") {

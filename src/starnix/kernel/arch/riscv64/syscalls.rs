@@ -3,10 +3,19 @@
 // found in the LICENSE file.
 
 use crate::task::{syscalls::do_clone, CurrentTask};
-use crate::types::{clone_args, pid_t, Errno, UserAddress, UserRef, CSIGNAL};
+use starnix_uapi::{
+    clone_args,
+    errors::Errno,
+    pid_t,
+    user_address::{UserAddress, UserRef},
+    CSIGNAL,
+};
+
+use starnix_sync::{Locked, Unlocked};
 
 /// The parameter order for `clone` varies by architecture.
 pub fn sys_clone(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     flags: u64,
     user_stack: UserAddress,
@@ -17,6 +26,7 @@ pub fn sys_clone(
     // Our flags parameter uses the low 8 bits (CSIGNAL mask) of flags to indicate the exit
     // signal. The CloneArgs struct separates these as `flags` and `exit_signal`.
     do_clone(
+        locked,
         current_task,
         &clone_args {
             flags: flags & !(CSIGNAL as u64),

@@ -5,6 +5,7 @@
 #ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_COORDINATOR_CLIENT_H_
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_COORDINATOR_CLIENT_H_
 
+#include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>
 #include <fidl/fuchsia.sysmem/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
@@ -73,6 +74,13 @@ class DisplayConfig : public IdMappable<std::unique_ptr<DisplayConfig>, DisplayI
     pending_apply_layer_change_property_.Set(false);
     return ret;
   }
+
+  // Discards all the pending config (except for pending layers lists)
+  // of a Display's `config`.
+  //
+  // The display pending layers' pending config must be discarded before
+  // `DiscardNonLayerPendingConfig()` is called.
+  void DiscardNonLayerPendingConfig();
 
   int current_layer_count() const { return static_cast<int>(current_.layer_count); }
   const display_config_t* current_config() const { return &current_; }
@@ -288,16 +296,21 @@ class Client : public fidl::WireServer<fuchsia_hardware_display::Coordinator> {
   //
   // `image_id` must be unused and `image_config` contains metadata for an
   // image used for display.
-  zx_status_t ImportImageForDisplay(const fuchsia_hardware_display::wire::ImageConfig& image_config,
-                                    BufferId buffer_id, ImageId image_id);
+  zx_status_t ImportImageForDisplay(
+      const fuchsia_hardware_display_types::wire::ImageConfig& image_config, BufferId buffer_id,
+      ImageId image_id);
 
   // `fuchsia.hardware.display/Coordinator.ImportImage()` helper for capture
   // images.
   //
   // `image_id` must be unused and `image_config` contains metadata for an
   // image used for capture.
-  zx_status_t ImportImageForCapture(const fuchsia_hardware_display::wire::ImageConfig& image_config,
-                                    BufferId buffer_id, ImageId image_id);
+  zx_status_t ImportImageForCapture(
+      const fuchsia_hardware_display_types::wire::ImageConfig& image_config, BufferId buffer_id,
+      ImageId image_id);
+
+  // Discards all the pending config on all Displays and Layers.
+  void DiscardConfig();
 
   Controller* const controller_;
   ClientProxy* const proxy_;
@@ -339,13 +352,10 @@ class Client : public fidl::WireServer<fuchsia_hardware_display::Coordinator> {
   // until this issue is fixed.
   DriverLayerId next_driver_layer_id = DriverLayerId(1);
 
-  // TODO(stevensd): Delete this when client stop using SetDisplayImage
-  uint64_t display_image_layer_ = INVALID_ID;
-
   void NotifyDisplaysChanged(const int32_t* displays_added, uint32_t added_count,
                              const int32_t* displays_removed, uint32_t removed_count);
-  bool CheckConfig(fuchsia_hardware_display::wire::ConfigResult* res,
-                   std::vector<fuchsia_hardware_display::wire::ClientCompositionOp>* ops);
+  bool CheckConfig(fuchsia_hardware_display_types::wire::ConfigResult* res,
+                   std::vector<fuchsia_hardware_display_types::wire::ClientCompositionOp>* ops);
 
   // The state of the FIDL binding. See comments on
   // |DisplayControllerBindingState|.

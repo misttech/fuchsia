@@ -33,6 +33,10 @@ KCOUNTER(pq_aging_blocked_on_lru, "pq.aging.blocked_on_lru")
 KCOUNTER(pq_lru_spurious_wakeup, "pq.lru.spurious_wakeup")
 KCOUNTER(pq_lru_pages_evicted, "pq.lru.pages_evicted")
 KCOUNTER(pq_lru_pages_compressed, "pq.lru.pages_compressed")
+KCOUNTER(pq_accessed_normal, "pq.accessed.normal")
+KCOUNTER(pq_accessed_normal_same_queue, "pq.accessed.normal_same_queue")
+KCOUNTER(pq_accessed_deferred_count, "pq.accessed.deferred")
+KCOUNTER(pq_accessed_deferred_count_same_queue, "pq.accessed.deferred_same_queue")
 
 // Helper class for building an isolate list for deferred processing when acting on the LRU queues.
 // Pages are added while the page queues lock is held, and processed once the lock is dropped.
@@ -51,7 +55,7 @@ class LruIsolate {
 
   // Adds a page to be potentially replaced with a loaned page.
   // Requires PageQueues lock to be held
-  void AddLoanReplacement(vm_page_t* page, PageQueues* pq) TA_REQ(pq->get_lock()) {
+  void AddLoanReplacement(vm_page_t* page, PageQueues* pq) TA_REQ(pq -> get_lock()) {
     DEBUG_ASSERT(page);
     VmCowPages* cow = reinterpret_cast<VmCowPages*>(page->object.get_object());
     DEBUG_ASSERT(cow);
@@ -64,7 +68,7 @@ class LruIsolate {
   // Add a page to be reclaimed. Actual reclamation will only be done if the `SetLruAction` is
   // compatible with the page and its VMO owner.
   // Requires PageQueues lock to be held
-  void AddReclaimable(vm_page_t* page, PageQueues* pq) TA_REQ(pq->get_lock()) {
+  void AddReclaimable(vm_page_t* page, PageQueues* pq) TA_REQ(pq -> get_lock()) {
     DEBUG_ASSERT(page);
     if (lru_action_ == LruAction::None) {
       return;
@@ -884,6 +888,7 @@ void PageQueues::UpdateActiveInactiveLocked(PageQueue old_queue, PageQueue new_q
 }
 
 void PageQueues::MarkAccessed(vm_page_t* page) {
+  pq_accessed_normal.Add(1);
   DeferPendingSignals dps{*this};
   Guard<SpinLock, IrqSave> guard{&lock_};
 
@@ -909,7 +914,38 @@ void PageQueues::MarkAccessed(vm_page_t* page) {
     page_queue_counts_[old_queue].fetch_sub(1, ktl::memory_order_relaxed);
     page_queue_counts_[queue].fetch_add(1, ktl::memory_order_relaxed);
     UpdateActiveInactiveLocked(old_queue, queue, dps);
+  } else {
+    pq_accessed_normal_same_queue.Add(1);
   }
+}
+
+void PageQueues::MarkAccessedDeferredCount(vm_page_t* page) {
+  // Ensure that the page queues is returning the cached counts at the moment, otherwise we might
+  // race.
+  pq_accessed_deferred_count.Add(1);
+  DEBUG_ASSERT(use_cached_queue_counts_.load(ktl::memory_order_relaxed));
+  auto queue_ref = page->object.get_page_queue_ref();
+  uint8_t old_gen = queue_ref.load(ktl::memory_order_relaxed);
+  // Between loading the mru_gen and finally storing it in the queue_ref it's possible for our
+  // calculated target_queue to become invalid. This is extremely unlikely as it would require
+  // us to stall for long enough for the lru_gen to pass this point, but if it does happen then
+  // ProcessLruQueues will notice our queue is invalid and correct our age to be that of lru_gen.
+  const uint32_t target_queue = mru_gen_to_queue();
+  if (old_gen == target_queue) {
+    pq_accessed_deferred_count_same_queue.Add(1);
+    return;
+  }
+  do {
+    // If we ever find old_gen to not be in the active/inactive range then this means the page has
+    // either been racily removed from, or was never in, the reclaim queue. In which case we
+    // can return as there's nothing to be marked accessed.
+    if (!queue_is_reclaim(static_cast<PageQueue>(old_gen))) {
+      return;
+    }
+  } while (!queue_ref.compare_exchange_weak(old_gen, static_cast<uint8_t>(target_queue),
+                                            ktl::memory_order_relaxed));
+  page_queue_counts_[old_gen].fetch_sub(1, ktl::memory_order_relaxed);
+  page_queue_counts_[target_queue].fetch_add(1, ktl::memory_order_relaxed);
 }
 
 void PageQueues::SetQueueBacklinkLocked(vm_page_t* page, void* object, uintptr_t page_offset,
@@ -1277,8 +1313,7 @@ bool PageQueues::DebugPageIsSpecificQueue(const vm_page_t* page, PageQueue queue
 }
 
 bool PageQueues::DebugPageIsPagerBacked(const vm_page_t* page, size_t* queue) const {
-  return DebugPageIsSpecificReclaim(
-      page, [](auto cow) { return cow->can_evict(); }, queue);
+  return DebugPageIsSpecificReclaim(page, [](auto cow) { return cow->can_evict(); }, queue);
 }
 
 bool PageQueues::DebugPageIsPagerBackedDontNeed(const vm_page_t* page) const {
@@ -1295,8 +1330,7 @@ bool PageQueues::DebugPageIsAnonymous(const vm_page_t* page) const {
   if (ReclaimIsOnlyPagerBacked()) {
     return page->object.get_page_queue_ref().load(ktl::memory_order_relaxed) == PageQueueAnonymous;
   }
-  return DebugPageIsSpecificReclaim(
-      page, [](auto cow) { return !cow->can_evict(); }, nullptr);
+  return DebugPageIsSpecificReclaim(page, [](auto cow) { return !cow->can_evict(); }, nullptr);
 }
 
 bool PageQueues::DebugPageIsWired(const vm_page_t* page) const {
@@ -1312,8 +1346,7 @@ bool PageQueues::DebugPageIsAnonymousZeroFork(const vm_page_t* page) const {
     return page->object.get_page_queue_ref().load(ktl::memory_order_relaxed) ==
            PageQueueAnonymousZeroFork;
   }
-  return DebugPageIsSpecificReclaim(
-      page, [](auto cow) { return !cow->can_evict(); }, nullptr);
+  return DebugPageIsSpecificReclaim(page, [](auto cow) { return !cow->can_evict(); }, nullptr);
 }
 
 bool PageQueues::DebugPageIsAnyAnonymous(const vm_page_t* page) const {

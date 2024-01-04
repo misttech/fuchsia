@@ -231,6 +231,8 @@ System::System(Session* session)
   // Create the default target.
   AddNewTarget(std::make_unique<TargetImpl>(this));
 
+  session->AddObserver(this);
+
   // The system is the one holding the system symbols and is the one who will be updating the
   // symbols once we get a symbol change, so the System will be listening to its own options. We
   // don't use SystemSymbols because they live in the symbols library and we don't want it to have a
@@ -258,6 +260,8 @@ System::~System() {
   }
 
   targets_.clear();
+
+  session()->RemoveObserver(this);
 }
 
 fxl::RefPtr<SettingSchema> System::GetSchema() {
@@ -531,7 +535,9 @@ void System::CancelAllThreadControllers() {
   }
 }
 
-void System::DidConnect(bool is_local) {
+void System::DidConnect(Where where) {
+  where_ = where;
+
   // Force reload the symbol mappings after connection. This needs to be done for every connection
   // since a new image could have been compiled and launched which will have a different build ID
   // file.
@@ -542,7 +548,21 @@ void System::DidConnect(bool is_local) {
 
   // When debugging locally, fall back to using symbols from the local modules themselves if not
   // found in the normal symbol locations.
-  GetSymbols()->set_enable_local_fallback(is_local);
+  GetSymbols()->set_enable_local_fallback(where == Where::kLocal);
+
+#if defined(__linux__)
+  if (where == Where::kLocal) {
+    std::string kLocalSystemSymbolPath("/usr/lib/debug/.build-id");
+
+    // Add the default location for local system symbols if it's not already there.
+    auto build_id_dirs = settings_.GetList(ClientSettings::System::kBuildIdDirs);
+    if (std::find(build_id_dirs.begin(), build_id_dirs.end(), kLocalSystemSymbolPath) ==
+        build_id_dirs.end()) {
+      build_id_dirs.push_back(kLocalSystemSymbolPath);
+      settings_.SetList(ClientSettings::System::kBuildIdDirs, build_id_dirs);
+    }
+  }
+#endif
 }
 
 void System::DidDisconnect() {
@@ -696,6 +716,24 @@ void System::OnFilterMatches(const std::vector<uint64_t>& matched_pids) {
   }
 }
 
+Target* System::GetNextTarget() {
+  Target* open_slot = nullptr;
+
+  // See if there is a target that is not attached.
+  for (auto& target : targets_) {
+    if (target->GetState() == zxdb::Target::State::kNone) {
+      open_slot = target.get();
+      break;
+    }
+  }
+
+  // If no slot was found, we create a new target.
+  if (!open_slot)
+    open_slot = CreateNewTarget(nullptr);
+
+  return open_slot;
+}
+
 void System::AttachToProcess(uint64_t pid, Target::CallbackWithTimestamp callback) {
   // Don't allow attaching to a process more than once.
   if (Process* process = ProcessFromKoid(pid)) {
@@ -708,20 +746,13 @@ void System::AttachToProcess(uint64_t pid, Target::CallbackWithTimestamp callbac
     return;
   }
 
-  // See if there is a target that is not attached.
-  Target* open_slot = nullptr;
-  for (auto& target : targets_) {
-    if (target->GetState() == zxdb::Target::State::kNone) {
-      open_slot = target.get();
-      break;
-    }
+  GetNextTarget()->Attach(pid, std::move(callback));
+}
+
+void System::HandlePreviousConnectedProcesses(const std::vector<debug_ipc::ProcessRecord>& procs) {
+  for (const auto& proc : procs) {
+    GetNextTarget()->AssignPreviousConnectedProcess(proc);
   }
-
-  // If no slot was found, we create a new target.
-  if (!open_slot)
-    open_slot = CreateNewTarget(nullptr);
-
-  open_slot->Attach(pid, std::move(callback));
 }
 
 void System::AddSymbolServer(std::unique_ptr<SymbolServer> unique_server) {

@@ -39,8 +39,6 @@ const (
 	cloudFetchMaxAttempts  = 2
 	cloudFetchRetryBackoff = 500 * time.Millisecond
 	cloudFetchTimeout      = 60 * time.Second
-	// TODO(fxbug.dev/121303): Remove this when debuginfod is supported in Rust toolchain.
-	debuginfodSupportedVersion = "clang"
 )
 
 var (
@@ -312,7 +310,7 @@ func createEntries(ctx context.Context, profiles map[string]string, llvmProfData
 		profile := profile // capture range variable.
 		version := version
 		// Do not add the profiles that have debuginfod support because there is no need to fetch the associated binaries from symbol server for them.
-		if len(debuginfodServers) > 0 && version == debuginfodSupportedVersion {
+		if len(debuginfodServers) > 0 {
 			continue
 		}
 		sems <- struct{}{}
@@ -521,6 +519,7 @@ func showCoverageData(ctx context.Context, mergedProfileFile string, covFile str
 		"show",
 		"-format", outputFormat,
 		"-instr-profile", mergedProfileFile,
+		"-show-directory-coverage",
 		"-output-dir", outputDir,
 	}
 	if compilationDir != "" {

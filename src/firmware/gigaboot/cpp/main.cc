@@ -37,6 +37,11 @@ bool IsQemu() {
   __cpuid(0x40000000, eax, name[0], name[1], name[2]);
   std::string_view name_str(reinterpret_cast<const char*>(name), sizeof(name));
   return name_str == "TCGTCGTCGTCG"sv || name_str == "KVMKVMKVM\0\0\0"sv;
+#elif defined(__aarch64__)
+  uint64_t cpu_info;
+  __asm__ volatile("mrs %0, MIDR_EL1" : "=r"(cpu_info));
+  // Bits [31:24] define the implementor: 0x00 is "Reserved for software use".
+  return (cpu_info & 0xFF000000) == 0x0;
 #else
   return false;
 #endif
@@ -95,12 +100,6 @@ int main(int argc, char** argv) {
   // This initializes the global variables the legacy code needs. Once these needed features are
   // re-implemented, remove these dependencies.
   xefi_init(gEfiImageHandle, gEfiSystemTable);
-  // The following check/initialize network interface and generate ip6 address.
-  if (netifc_open()) {
-    printf("netifc: Failed to open network interface\n");
-  } else {
-    printf("netifc: network interface opened\n");
-  }
 
   // Log TPM info if the device has one.
   if (efi_status res = gigaboot::PrintTpm2Capability(); res != EFI_SUCCESS) {
@@ -149,14 +148,14 @@ int main(int argc, char** argv) {
     }
   }
 
-  ZirconBootMode boot_mode = reboot_mode == gigaboot::RebootMode::kRecovery
-                                 ? kZirconBootModeForceRecovery
-                                 : kZirconBootModeAbr;
+  ZirconBootFlags boot_flags = reboot_mode == gigaboot::RebootMode::kRecovery
+                                   ? kZirconBootFlagsForceRecovery
+                                   : kZirconBootFlagsNone;
 
   // TODO(b/236039205): Implement logic to construct these arguments for the API. This
   // is currently a placeholder for testing compilation/linking.
   ZirconBootOps zircon_boot_ops = gigaboot::GetZirconBootOps();
-  ZirconBootResult res = LoadAndBoot(&zircon_boot_ops, boot_mode);
+  ZirconBootResult res = LoadAndBoot(&zircon_boot_ops, boot_flags);
   if (res != kBootResultOK) {
     printf("Failed to boot zircon\n");
     return 1;

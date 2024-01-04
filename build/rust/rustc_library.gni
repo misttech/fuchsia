@@ -41,9 +41,12 @@ import("//build/rust/rustc_test.gni")
 #     macro. Only allowed when `enforce_source_listing = true`.
 #
 #   deps (optional)
-#     List of rust_library GN targets on which this crate depends.
+#     List of GN targets on which this crate depends.
 #     Third party crates can be included through paths like
 #     "//third_party/rust_crates:<cratename>",
+#
+#   public_deps (optional)
+#     List of GN targets on which this crate depends publicly.
 #
 #   test_configs (optional)
 #     List of GN config targets to pass to the compilation of this crate's
@@ -123,6 +126,10 @@ import("//build/rust/rustc_test.gni")
 #
 #   assert_no_deps (optional)
 #     Ensure no deps on these targets, see [assert_no_deps](https://gn.googlesource.com/gn/+/main/docs/reference.md#var_assert_no_deps)
+#
+#   applicable_licenses (optional)
+#     The usual GN meaning.
+#
 #
 # Example of usage:
 #
@@ -214,9 +221,6 @@ template("rustc_library") {
       output_name = _crate_name
     }
 
-    configs = []
-    configs = invoker.configs
-
     deps = []
     if (defined(invoker.deps)) {
       deps += invoker.deps
@@ -229,6 +233,7 @@ template("rustc_library") {
 
     forward_variables_from(invoker,
                            [
+                             "applicable_licenses",
                              "assert_no_deps",
                              "disable_clippy",
                              "quiet_clippy",
@@ -242,6 +247,8 @@ template("rustc_library") {
                              "testonly",
                              "visibility",
                              "disable_rbe",
+                             "configs",
+                             "public_deps",
                            ])
 
     # Avoid walking into data_deps when checking component manifest expected includes.

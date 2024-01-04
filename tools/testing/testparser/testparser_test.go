@@ -194,11 +194,13 @@ Expected: is OK and has a value that is equal to 0
 [stderr - fuchsia-pkg://fuchsia.com/starnix_gvisor_tests?hash=c7c79a3408c5c0c89f61beb738f2dd71ca1c724f8d9c9d4a72e52631c8cbaacb#meta/chroot_test.cm]
 Check failed: strcmp(buf, "/foo") == 0
 libc: Fatal signal 6 (SIGABRT), code -1 (SI_QUEUE) in tid 9 (chroot_test), pid 9 (<unknown>)
+[01447.782299][expectation-comparer] INFO: ChrootTest.ProcMemSelfFdsNoEscapeProcOpen failure is expected, so it will be reported to the test runner as having passed.
 [PASSED]	ChrootTest.Success
+[01447.649121][expectation-comparer] INFO: ChrootTest.ProcMemSelfMapsNoEscapeProcOpen skip is expected.
 [PASSED]	ChrootTest.ProcMemSelfFdsNoEscapeProcOpen
 [01447.596892][runners:chroot_test.cm_Z3b2DH8][starnix] INFO: start_component: fuchsia-pkg://fuchsia.com/starnix_gvisor_tests?hash=c7c79a3408c5c0c89f61beb738f2dd71ca1c724f8d9c9d4a72e52631c8cbaacb#meta/chroot_test.cm
 arguments: Some([])
-manifest: Some(Dictionary { entries: Some([DictionaryEntry { key: "binary", value: Some(Str("data/tests/chroot_test")) }, DictionaryEntry { key: "environ", value: Some(StrVec(["TEST_TMPDIR=/data/tmp", "TEST_ON_GVISOR=1", "TEST_SRCDIR={pkg_path}/data/tests", "BENCHMARK_FORMAT=json", "BENCHMARK_OUT=/test_data/benchmark.json"])) }, DictionaryEntry { key: "user", value: Some(Str("fuchsia:x:0:0")) }, DictionaryEntry { key: "apex_hack", value: Some(StrVec(["com.android.runtime"])) }, DictionaryEntry { key: "features", value: Some(StrVec(["binder", "test_data"])) }, DictionaryEntry { key: "init", value: Some(StrVec([])) }, DictionaryEntry { key: "init_user", value: Some(Str("root:x:0:0")) }, DictionaryEntry { key: "kernel_cmdline", value: Some(Str("androidboot.hardware=starnix")) }, DictionaryEntry { key: "mounts", value: Some(StrVec(["/:ext4:data/system.img", "/vendor:ext4:data/testcases.img", "/data:remotefs:data", "/dev:devtmpfs", "/dev/shm:tmpfs", "/data/tmp:tmpfs", "/dev/shm:tmpfs", "/dev/pts:devpts", "/proc:proc", "/sys:sysfs", "/sys/fs/selinux:selinuxfs"])) }, DictionaryEntry { key: "name", value: Some(Str("gvisor_test")) }, DictionaryEntry { key: "startup_file_path", value: Some(Str("")) }, DictionaryEntry { key: "test_type", value: Some(Str("gunit")) }, DictionaryEntry { key: "args", value: Some(StrVec(["--gunit_list_tests", "--gunit_output=json:/test_data/test_result-b2be0d31-81ff-40c4-bdb9-0cfc9e93649d.json"])) }]), __non_exhaustive: () })
+manifest: Some(Dictionary { entries: Some([DictionaryEntry { key: "binary", value: Some(Str("data/tests/chroot_test")) }, DictionaryEntry { key: "environ", value: Some(StrVec(["TEST_TMPDIR=/data/tmp", "TEST_ON_GVISOR=1", "TEST_SRCDIR={pkg_path}/data/tests", "BENCHMARK_FORMAT=json", "BENCHMARK_OUT=/test_data/benchmark.json"])) }, DictionaryEntry { key: "user", value: Some(Str("fuchsia:x:0:0")) }, DictionaryEntry { key: "apex_hack", value: Some(StrVec(["com.android.runtime"])) }, DictionaryEntry { key: "features", value: Some(StrVec(["binder", "test_data"])) }, DictionaryEntry { key: "init", value: Some(StrVec([])) }, DictionaryEntry { key: "init_user", value: Some(Str("root:x:0:0")) }, DictionaryEntry { key: "kernel_cmdline", value: Some(Str("androidboot.hardware=starnix")) }, DictionaryEntry { key: "mounts", value: Some(StrVec(["/:ext4:data/system.img", "/vendor:ext4:data/testcases.img", "/data:remotefs:data", "/dev:devtmpfs", "/dev/shm:tmpfs", "/data/tmp:tmpfs", "/dev/shm:tmpfs", "/dev/pts:devpts", "/proc:proc", "/sys:sysfs", "/sys/fs/selinux:selinuxfs"])) }, DictionaryEntry { key: "name", value: Some(Str("gvisor_test")) }, DictionaryEntry { key: "startup_file_path", value: Some(Str("")) }, DictionaryEntry { key: "test_type", value: Some(Str("gunit")) }, DictionaryEntry { key: "args", value: Some(StrVec(["--gunit_list_tests", "--gunit_output=json:/test_data/test_result-b2be0d31-81ff-40c4-bdb9-0cfc9e93649d.json"])) }]), __source_breaking: _ })
 
 [01447.598078][runners:chroot_test.cm_Z3b2DH8][starnix] INFO: start_component environment: ["TEST_TMPDIR=/data/tmp", "TEST_ON_GVISOR=1", "TEST_SRCDIR=/container/component/f169czoi4l/pkg/data/tests", "BENCHMARK_FORMAT=json", "BENCHMARK_OUT=/test_data/benchmark.json"]
 
@@ -206,9 +208,7 @@ manifest: Some(Dictionary { entries: Some([DictionaryEntry { key: "binary", valu
 	Success
 	ProcMemSelfFdsNoEscapeProcOpen
 	ProcMemSelfMapsNoEscapeProcOpen
-[01447.649121][expectation-comparer] INFO: ChrootTest.ProcMemSelfMapsNoEscapeProcOpen skip is expected.
 [01447.780791][expectation-comparer] INFO: ChrootTest.Success success is expected.
-[01447.782299][expectation-comparer] INFO: ChrootTest.ProcMemSelfFdsNoEscapeProcOpen failure is expected, so it will be reported to the test runner as having passed.
 
 2 out of 2 attempted tests passed, 1 tests skipped...
 fuchsia-pkg://fuchsia.com/starnix_gvisor_tests?hash=c7c79a3408c5c0c89f61beb738f2dd71ca1c724f8d9c9d4a72e52631c8cbaacb#meta/chroot_test.cm completed with result: PASSED
@@ -826,8 +826,8 @@ func TestFxb51327(t *testing.T) {
 [00392.026655][276880][276883][test-devmgr] INFO: Running remove task for device 0xc64fcfe910 'Virtual_Audio_Device_(default)'
 [00392.026783][276880][276883][test-devmgr] INFO: Removed device 0xc64fcfe910 'Virtual_Audio_Device_(default)': ZX_OK
 [00392.026793][276880][276883][test-devmgr] INFO: Removing device 0xc64fcfe910 'Virtual_Audio_Device_(default)' parent=0xc64fcfe610
-[00391.063831][276429][279657][audio_pipeline_test] INFO: [hermetic_audio_environment.cc(40)] Using path '/pkg/data/ultrasound' for /config/data directory for fuchsia-pkg://fuchsia.com/audio_core#meta/audio_core_nodevfs_noconfigdata.cmx.
-[00391.064291][276429][279657][audio_pipeline_test] INFO: [hermetic_audio_environment.cc(54)] No config_data provided for fuchsia-pkg://fuchsia.com/virtual_audio_service#meta/virtual_audio_service_nodevfs.cmx
+[00391.063831][276429][279657][audio_pipeline_test] INFO: [hermetic_audio_environment.cc(40)] Using path '/pkg/data/ultrasound' for /config/data directory for fuchsia-pkg://fuchsia.com/audio_core#meta/audio_core_nodevfs_noconfigdata.cm.
+[00391.064291][276429][279657][audio_pipeline_test] INFO: [hermetic_audio_environment.cc(54)] No config_data provided for fuchsia-pkg://fuchsia.com/virtual_audio_service#meta/virtual_audio_service_nodevfs.cm
 [00391.820503][280027][280029][audio_core] INFO: [main.cc(36)] AudioCore starting up
 [00391.891903][280027][280029][audio_core] INFO: [policy_loader.cc(244)] No policy found; using default.
 [00392.007930][280027][280375][audio_core] ERROR: [src/media/audio/audio_core/driver_output.cc(166)] OUTPUT UNDERFLOW: Missed mix target by (worst-case, expected) = (49, 99) ms. Cooling down for 1000 milliseconds.
@@ -937,7 +937,7 @@ func TestFxb51327(t *testing.T) {
 [----------] Global test environment tear-down
 [==========] 13 tests from 3 test suites ran. (10934 ms total)
 [  PASSED  ] 13 tests.
-ok 9 fuchsia-pkg://fuchsia.com/audio_pipeline_tests#meta/audio_pipeline_tests.cmx (12.230948553s)
+ok 9 fuchsia-pkg://fuchsia.com/audio_pipeline_tests#meta/audio_pipeline_tests.cm (12.230948553s)
 `
 	want := []runtests.TestCaseResult{
 		{
@@ -1025,7 +1025,7 @@ test listen_for_syslog ... ok
 test listen_for_klog_routed_stdio ... ok
 test test_observer_stop_api ... ok
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
-ok 61 fuchsia-pkg://fuchsia.com/archivist_integration_tests#meta/logs_integration_rust_tests.cmx (1.04732004s)
+ok 61 fuchsia-pkg://fuchsia.com/archivist_integration_tests#meta/logs_integration_rust_tests.cm (1.04732004s)
 `
 	want := []runtests.TestCaseResult{
 		{
@@ -1305,6 +1305,20 @@ func TestParseNetworkConformanceTest(t *testing.T) {
 
 func TestParseMoblyTest(t *testing.T) {
 	stdout := `
+Running [InfraDriver]
+======== Mobly config content ========
+MoblyParams:
+  LogPath: /tmp
+TestBeds:
+- Controllers:
+    FuchsiaDevice:
+    - name: fuchsia-emulator
+      transport: fuchsia-controller
+  Name: InfraTestbed
+  TestParams: {}
+
+======================================
+
 [=====MOBLY RESULTS=====]
 ---
 Requested Tests:

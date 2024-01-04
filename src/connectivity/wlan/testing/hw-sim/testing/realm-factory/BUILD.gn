@@ -9,53 +9,67 @@ rustc_binary("bin") {
   testonly = true
   edition = "2021"
   name = "realm-factory-main"
-  sources = [
-    "src/main.rs",
-    "src/realm_factory.rs",
-  ]
+  with_unit_tests = true
+  sources = [ "src/main.rs" ]
   deps = [
     "../fidl:test.wlan.realm_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//sdk/fidl/fuchsia.testing.harness:fuchsia.testing.harness_rust",
+    "//sdk/lib/driver_test_realm/realm_builder/rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test",
+    "//src/lib/zircon/rust:fuchsia-zircon-status",
     "//src/testing/realm_proxy",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:tracing",
   ]
-}
-
-fuchsia_component("wlan-hw-sim-component") {
-  testonly = true
-  component_name = "wlan-hw-sim"
-  manifest = "meta/wlan-hw-sim.cml"
-  deps = [
-    "//sdk/lib/driver_test_realm",
-    "//src/connectivity/location/regulatory_region:regulatory_region_component",
-    "//src/connectivity/wlan/testing:wlan_test_driver_deps",
-    "//src/connectivity/wlan/wlancfg:service",
-    "//src/devices/misc/drivers/test-parent",
-    "//src/sys/stash:stash_secure_v2",
+  test_deps = [
+    "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
+    "//src/lib/fidl/rust/fidl",
+    "//third_party/rust_crates:test-case",
   ]
 }
 
 fuchsia_component("realm-factory-component") {
   testonly = true
   component_name = "realm-factory"
-  manifest = "meta/default.cml"
+  manifest = "meta/realm-factory.cml"
   deps = [ ":bin" ]
 }
 
 fuchsia_package("realm-factory") {
+  validate_structured_config = false
   package_name = "wlan-hw-sim-realm-factory"
   testonly = true
   deps = [
     ":realm-factory-component",
-    ":wlan-hw-sim-component",
+
+    # Non-driver components
+    "//src/connectivity/location/regulatory_region:regulatory_region_component",
+    "//src/connectivity/wlan/wlancfg:service",
     "//src/connectivity/wlan/wlandevicemonitor:wlandevicemonitor_component",
     "//src/diagnostics/archivist:archivist-for-embedding-bundle",
+    "//src/sys/stash:stash_secure_v2",
+
+    # Driver dependencies
+    "//sdk/lib/driver_test_realm:driver_test_realm_component",
+    "//src/connectivity/ethernet/drivers/ethernet/netdevice-migration",
+    "//src/connectivity/network/drivers/network-device",
+    "//src/connectivity/wlan/drivers/wlanphy:wlanphy_driver",
+    "//src/connectivity/wlan/drivers/wlansoftmac:wlansoftmac_driver",
+    "//src/devices/misc/drivers/test-parent",
   ]
+}
+
+fuchsia_unittest_package("realm-factory-tests") {
+  deps = [ ":bin_test" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }

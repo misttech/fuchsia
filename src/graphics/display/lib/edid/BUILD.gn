@@ -8,6 +8,8 @@ import("//build/test.gni")
 
 source_set("edid") {
   sources = [
+    "cta-timing.h",
+    "dmt-timing.h",
     "edid.cc",
     "edid.h",
     "eisa_vid_lut.cc",
@@ -21,6 +23,7 @@ source_set("edid") {
     "//zircon/system/ulib/zx",
   ]
   public_deps = [
+    "//src/graphics/display/lib/api-types-cpp",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/hwreg",
   ]
@@ -28,14 +31,24 @@ source_set("edid") {
 
 fuchsia_library_fuzzer("edid-fuzzer") {
   sources = [ "edid-fuzzer.cc" ]
-  deps = [ ":edid" ]
+  deps = [
+    ":edid",
+    "//src/devices/testing/no_ddk",
+  ]
   include_dirs = [ ".." ]
 }
 
 test("edid-test") {
-  sources = [ "unit-tests.cc" ]
+  sources = [
+    "cta-timing-test.cc",
+    "dmt-timing-test.cc",
+    "timings-test.cc",
+    "unit-tests.cc",
+  ]
   deps = [
     ":edid",
+    "//src/devices/testing/no_ddk",
+    "//src/lib/fxl",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
     "//third_party/googletest:gtest",

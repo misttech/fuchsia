@@ -29,19 +29,41 @@ impl FfxMain for ProfilerTool {
     }
 }
 
-fn gather_targets(opts: &args::Start) -> Result<Vec<fidl_fuchsia_cpu_profiler::TargetConfig>> {
-    if !opts.monikers.is_empty() {
-        ffx_bail!("Monikers are not supported yet. Try a pid or tid instead.");
+fn gather_targets(opts: &args::Start) -> Result<fidl_fuchsia_cpu_profiler::TargetConfig> {
+    if let Some(url) = &opts.url {
+        if !opts.pids.is_empty() || !opts.tids.is_empty() || !opts.job_ids.is_empty() {
+            ffx_bail!(
+                "Targeting both a component and specific jobs/processes/threads is not supported"
+            )
+        }
+        let component_config = profiler::ComponentConfig {
+            url: Some(url.clone()),
+            moniker: opts.moniker.clone(),
+            ..Default::default()
+        };
+        Ok(profiler::TargetConfig::Component(component_config))
+    } else if let Some(moniker) = &opts.moniker {
+        if !opts.pids.is_empty() || !opts.tids.is_empty() || !opts.job_ids.is_empty() {
+            ffx_bail!(
+                "Targeting both a component and specific jobs/processes/threads is not supported"
+            )
+        }
+        let component_config =
+            profiler::ComponentConfig { moniker: Some(moniker.clone()), ..Default::default() };
+        Ok(profiler::TargetConfig::Component(component_config))
+    } else {
+        let tasks: Vec<_> = opts
+            .job_ids
+            .iter()
+            .map(|&id| profiler::Task::Job(id))
+            .chain(opts.pids.iter().map(|&id| profiler::Task::Process(id)))
+            .chain(opts.tids.iter().map(|&id| profiler::Task::Thread(id)))
+            .collect();
+        if tasks.is_empty() {
+            ffx_bail!("No targets were specified")
+        }
+        Ok(profiler::TargetConfig::Tasks(tasks))
     }
-    let tasks = opts
-        .job_ids
-        .iter()
-        .map(|&id| profiler::Task::Job(id))
-        .chain(opts.pids.iter().map(|&id| profiler::Task::Process(id)))
-        .chain(opts.tids.iter().map(|&id| profiler::Task::Thread(id)))
-        .map(|e| profiler::TargetConfig { task: Some(e), ..Default::default() })
-        .collect();
-    Ok(tasks)
 }
 
 pub async fn profiler(
@@ -51,10 +73,10 @@ pub async fn profiler(
 ) -> Result<()> {
     match cmd.sub_cmd {
         ProfilerSubCommand::Start(opts) => {
-            let targets = gather_targets(&opts)?;
+            let target = gather_targets(&opts)?;
             let profiler_config = profiler::Config {
                 configs: Some(vec![]),
-                targets: Some(targets),
+                target: Some(target),
                 ..Default::default()
             };
 
@@ -128,27 +150,68 @@ mod tests {
             pids: vec![1, 2, 3],
             tids: vec![4, 5, 6],
             job_ids: vec![7, 8, 9],
-            monikers: vec![],
+            url: None,
+            moniker: None,
             duration: None,
             output: String::from("output_file"),
             print_stats: false,
         };
-        let targets = gather_targets(&args);
-        assert!(targets.is_ok());
-        assert!(targets.unwrap().len() == 9);
+        let target = gather_targets(&args);
+        match target {
+            Ok(fidl_fuchsia_cpu_profiler::TargetConfig::Tasks(vec)) => assert!(vec.len() == 9),
+            _ => assert!(false),
+        }
 
         let empty_args = args::Start {
             pids: vec![],
             tids: vec![],
             job_ids: vec![],
-            monikers: vec![],
+            moniker: None,
+            url: None,
             duration: None,
             output: String::from("output_file"),
             print_stats: false,
         };
 
         let empty_targets = gather_targets(&empty_args);
-        assert!(empty_targets.is_ok());
-        assert!(empty_targets.unwrap().is_empty());
+        assert!(empty_targets.is_err());
+
+        let invalid_args1 = args::Start {
+            pids: vec![1],
+            tids: vec![],
+            job_ids: vec![],
+            moniker: Some(String::from("core/test")),
+            url: None,
+            duration: None,
+            output: String::from("output_file"),
+            print_stats: false,
+        };
+        let invalid_args2 = args::Start {
+            pids: vec![],
+            tids: vec![1],
+            job_ids: vec![],
+            moniker: Some(String::from("core/test")),
+            url: None,
+            duration: None,
+            output: String::from("output_file"),
+            print_stats: false,
+        };
+        let invalid_args3 = args::Start {
+            pids: vec![],
+            tids: vec![],
+            job_ids: vec![1],
+            moniker: Some(String::from("core/test")),
+            url: None,
+            duration: None,
+            output: String::from("output_file"),
+            print_stats: false,
+        };
+
+        let invalid_targets1 = gather_targets(&invalid_args1);
+        assert!(invalid_targets1.is_err());
+        let invalid_targets2 = gather_targets(&invalid_args2);
+        assert!(invalid_targets2.is_err());
+        let invalid_targets3 = gather_targets(&invalid_args3);
+        assert!(invalid_targets3.is_err());
     }
 }

@@ -2,18 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use {
-    fidl_fuchsia_bluetooth_avrcp as fidl_avrcp,
-    futures::channel::mpsc,
-    packet_encoding::Decodable,
-    parking_lot::Mutex,
-    std::convert::{TryFrom, TryInto},
-    std::num::NonZeroU16,
-    tracing::trace,
-};
+use fidl_fuchsia_bluetooth_avrcp as fidl_avrcp;
+use futures::channel::mpsc;
+use futures::Future;
+use packet_encoding::{Decodable, Encodable};
+use std::collections::HashSet;
+use std::convert::{TryFrom, TryInto};
+use tracing::trace;
 
-use crate::packets::*;
-use crate::peer::*;
+use crate::packets::{Error as PacketError, *};
+use crate::peer::{BrowsablePlayer, RemotePeerHandle};
 use crate::types::PeerError as Error;
 
 #[derive(Debug, Clone)]
@@ -55,42 +53,11 @@ fn into_media_element_item(
 #[derive(Debug)]
 pub struct Controller {
     peer: RemotePeerHandle,
-
-    // Information about the browsable player that is currently set, if any.
-    browsable_player: Mutex<Option<BrowsablePlayer>>,
-}
-
-/// Controller interface for a remote peer returned by the PeerManager using the
-/// ControllerRequest stream for a given ControllerRequest.
-#[allow(dead_code)]
-#[derive(Debug)]
-struct BrowsablePlayer {
-    player_id: u16,
-    // If the browsable player is not database aware, uid_counter will be none.
-    uid_counter: Option<NonZeroU16>,
-    // Number of items in the current folder.
-    num_items: u32,
-    sub_folders: Vec<String>,
-}
-
-impl BrowsablePlayer {
-    fn new(player_id: u16, params: SetBrowsedPlayerResponseParams) -> Self {
-        BrowsablePlayer {
-            player_id,
-            uid_counter: params.uid_counter().try_into().ok(),
-            num_items: params.num_items(),
-            sub_folders: params.folder_names(),
-        }
-    }
-
-    fn uid_counter(&self) -> u16 {
-        self.uid_counter.map_or(0, Into::into)
-    }
 }
 
 impl Controller {
     pub(crate) fn new(peer: RemotePeerHandle) -> Controller {
-        Controller { peer, browsable_player: Mutex::new(None) }
+        Controller { peer }
     }
 
     /// Sends a AVC key press and key release passthrough command.
@@ -288,42 +255,46 @@ impl Controller {
         self.peer.send_vendor_dependent_command(&command).await
     }
 
+    /// Sends a command over the browse channel to set the browsed player. If the peer
+    /// responded with a success code, sets the browsed player to the player ID otherwise
+    /// clears the previously set browsed player. Returns the response from from the peer
+    /// or an error. Used by the test controller and intended only for debugging.
     pub async fn set_browsed_player(
         &self,
         player_id: u16,
     ) -> Result<(), fidl_avrcp::BrowseControllerError> {
         let cmd = SetBrowsedPlayerCommand::new(player_id);
-        let buf = self.send_browse_command(PduId::SetBrowsedPlayer, &cmd).await?;
-        let response = SetBrowsedPlayerResponse::decode(&buf[..]).map_err(Error::PacketError)?;
-        let mut bp = self.browsable_player.lock();
-        match response {
-            SetBrowsedPlayerResponse::Failure(status) => {
-                // Clear any previously-set browsed player.
-                warn!("Failed to set a new browsable player (id = {}), keeping the previous browsable player ({:?})...", player_id, *bp);
-                Err(status.into())
-            }
-            SetBrowsedPlayerResponse::Success(r) => {
-                *bp = Some(BrowsablePlayer::new(player_id, r));
-                info!("Browsable player changed (id = {})", player_id);
-                Ok(())
-            }
-        }
+        let err: fidl_avrcp::BrowseControllerError =
+            match self.send_browse_command(PduId::SetBrowsedPlayer, cmd).await {
+                Ok(buf) => match SetBrowsedPlayerResponse::decode(&buf[..]) {
+                    Ok(SetBrowsedPlayerResponse::Success(r)) => {
+                        self.peer.set_browsable_player(Some(BrowsablePlayer::new(player_id, r)));
+                        return Ok(());
+                    }
+                    Ok(SetBrowsedPlayerResponse::Failure(status)) => status.into(),
+                    Err(e) => e.into(),
+                },
+                Err(e) => e.into(),
+            };
+        // Clear the previously-set browsed player if we failed to
+        // set the new browsed player.
+        self.peer.set_browsable_player(None);
+        Err(err)
     }
 
-    fn check_browsed_player(&self) -> Result<(), fidl_avrcp::BrowseControllerError> {
+    pub fn get_browsed_player(&self) -> Result<BrowsablePlayer, fidl_avrcp::BrowseControllerError> {
         // AVRCP 1.6.2 Section 6.9.3 states that `SetBrowsedPlayer` command
         // shall be sent successfully before any other commands are sent on the
         // browsing channel except GetFolderItems in the Media Player List
         // scope.
-        if self.browsable_player.lock().is_none() {
-            return Err(fidl_avrcp::BrowseControllerError::NoAvailablePlayers);
-        }
-        Ok(())
+        self.peer
+            .get_browsable_player()
+            .ok_or(fidl_avrcp::BrowseControllerError::NoAvailablePlayers)
     }
 
     pub async fn get_folder_items(
         &self,
-        cmd: &GetFolderItemsCommand,
+        cmd: GetFolderItemsCommand,
     ) -> Result<GetFolderItemsResponseParams, fidl_avrcp::BrowseControllerError> {
         let buf = self.send_browse_command(PduId::GetFolderItems, cmd).await?;
         let response = GetFolderItemsResponse::decode(&buf[..])?;
@@ -340,27 +311,39 @@ impl Controller {
         end_index: u32,
         attribute_option: fidl_avrcp::AttributeRequestOption,
     ) -> Result<Vec<fidl_avrcp::FileSystemItem>, fidl_avrcp::BrowseControllerError> {
-        let _ = self.check_browsed_player()?;
+        let _ = self.get_browsed_player()?;
 
         let cmd = GetFolderItemsCommand::new_virtual_file_system(
             start_index,
             end_index,
             attribute_option,
         );
-        let response = self.get_folder_items(&cmd).await?;
+        let response = self.get_folder_items(cmd).await?;
         response.item_list().into_iter().map(TryInto::try_into).collect()
     }
 
+    /// Returns the list of media players from `start_index` up to `end_index`.
+    /// If `update_players_info` is set to true, updates the peer with players information.
     pub async fn get_media_player_items(
-        &self,
+        &mut self,
         start_index: u32,
         end_index: u32,
+        update_players_info: bool,
     ) -> Result<Vec<fidl_avrcp::MediaPlayerItem>, fidl_avrcp::BrowseControllerError> {
         // AVRCP 1.6.2 Section 6.9.3 states that GetFolderItems in the Media Player List scope command can be sent before
         // SetBrowsedPlayer command is sent over the browse channel.
         let cmd = GetFolderItemsCommand::new_media_player_list(start_index, end_index);
-        let response = self.get_folder_items(&cmd).await?;
-        response.item_list().into_iter().map(TryInto::try_into).collect()
+        let response = self.get_folder_items(cmd).await?;
+        let players = response
+            .item_list()
+            .into_iter()
+            .map(|i| i.try_into_media_player())
+            .collect::<Result<Vec<MediaPlayerItem>, PacketError>>()
+            .map_err(|e| fidl_avrcp::BrowseControllerError::from(e))?;
+        if update_players_info {
+            self.peer.peer.write().update_available_players(&players);
+        }
+        Ok(players.into_iter().map(Into::into).collect())
     }
 
     pub async fn get_now_playing_items(
@@ -369,11 +352,11 @@ impl Controller {
         end_index: u32,
         attribute_option: fidl_avrcp::AttributeRequestOption,
     ) -> Result<Vec<fidl_avrcp::MediaElementItem>, fidl_avrcp::BrowseControllerError> {
-        let _ = self.check_browsed_player()?;
+        let _ = self.get_browsed_player()?;
 
         let cmd =
             GetFolderItemsCommand::new_now_playing_list(start_index, end_index, attribute_option);
-        let response = self.get_folder_items(&cmd).await?;
+        let response = self.get_folder_items(cmd).await?;
         response
             .item_list()
             .into_iter()
@@ -392,14 +375,11 @@ impl Controller {
         &self,
         folder_uid: Option<u64>,
     ) -> Result<u32, fidl_avrcp::BrowseControllerError> {
-        let _ = self.check_browsed_player()?;
+        let player = self.get_browsed_player()?;
 
-        let cmd = {
-            let player = self.browsable_player.lock();
-            ChangePathCommand::new(player.as_ref().unwrap().uid_counter(), folder_uid)
-                .map_err(|_| fidl_avrcp::BrowseControllerError::PacketEncoding)?
-        };
-        let buf = self.send_browse_command(PduId::ChangePath, &cmd).await?;
+        let cmd = ChangePathCommand::new(player.uid_counter(), folder_uid)
+            .map_err(|_| fidl_avrcp::BrowseControllerError::PacketEncoding)?;
+        let buf = self.send_browse_command(PduId::ChangePath, cmd).await?;
         let response = ChangePathResponse::decode(&buf[..])?;
         trace!("change_directory received response {:?}", response);
         match response {
@@ -413,14 +393,9 @@ impl Controller {
         uid: u64,
         scope: Scope,
     ) -> Result<(), fidl_avrcp::BrowseControllerError> {
-        let _ = self.check_browsed_player()?;
+        let player = self.get_browsed_player()?;
 
-        let cmd = {
-            let player = self.browsable_player.lock();
-            let p = player.as_ref().unwrap();
-            PlayItemCommand::new(scope, uid, p.uid_counter())
-        }?;
-
+        let cmd = PlayItemCommand::new(scope, uid, player.uid_counter())?;
         let buf = self
             .peer
             .send_vendor_dependent_command(&cmd)
@@ -435,23 +410,40 @@ impl Controller {
         }
     }
 
+    /// Get item attributes from the now playing list using the browse channel.
+    pub async fn get_item_attributes(
+        &self,
+        uid: u64,
+    ) -> Result<fidl_avrcp::MediaAttributes, fidl_avrcp::BrowseControllerError> {
+        let player = self.get_browsed_player()?;
+
+        let cmd =
+            GetItemAttributesCommand::from_now_playing_list(uid, player.uid_counter(), vec![]);
+        let buf = self.send_browse_command(PduId::GetItemAttributes, cmd).await?;
+        let response = GetItemAttributesResponse::decode(&buf[..])?;
+        trace!("get_item_attributes received response {:?}", response);
+        match response {
+            GetItemAttributesResponse::Failure(status) => Err(status.into()),
+            GetItemAttributesResponse::Success(attributes) => Ok(attributes.into()),
+        }
+    }
+
     async fn send_browse_command(
         &self,
         pdu_id: PduId,
-        command: &impl Encodable<Error = PacketError>,
+        command: impl Encodable<Error = PacketError>,
     ) -> Result<Vec<u8>, Error> {
-        let mut buf = vec![0; command.encoded_len()];
-        let _ = command.encode(&mut buf[..])?;
-        self.send_raw_browse_command(u8::from(&pdu_id), &buf).await
+        let mut payload = vec![0; command.encoded_len()];
+        let _ = command.encode(&mut payload[..])?;
+        self.send_raw_browse_command(u8::from(&pdu_id), &payload).await
     }
 
-    pub fn send_raw_browse_command(
-        &self,
+    pub fn send_raw_browse_command<'a>(
+        &'a self,
         pdu_id: u8,
-        payload: &[u8],
-    ) -> impl Future<Output = Result<Vec<u8>, Error>> {
-        let cmd = BrowsePreamble::new(pdu_id, payload.to_vec());
-        self.peer.send_browsing_command(pdu_id, cmd)
+        payload: &'a [u8],
+    ) -> impl Future<Output = Result<Vec<u8>, Error>> + 'a {
+        self.peer.send_browse_command(pdu_id, payload)
     }
 
     /// For the FIDL test controller. Informational only and intended for logging only. The state is
@@ -477,61 +469,28 @@ impl Controller {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+pub mod tests {
     use super::*;
 
+    use crate::peer::decode_avc_vendor_command;
+    use crate::peer::tests::*;
     use crate::peer_manager::TargetDelegate;
     use crate::profile::{AvrcpProtocolVersion, AvrcpService, AvrcpTargetFeatures};
+
     use assert_matches::assert_matches;
     use async_utils::PollExt;
-    use bt_avctp::{AvcPeer, AvctpCommand, AvctpCommandStream, AvctpPeer};
+    use bt_avctp::{AvcPeer, AvctpCommandStream, AvctpPeer};
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_bluetooth_avrcp::AttributeRequestOption;
     use fidl_fuchsia_bluetooth_bredr::ProfileMarker;
     use fuchsia_async as fasync;
-    use fuchsia_bluetooth::types::PeerId;
-    use futures::TryStreamExt;
+    use fuchsia_bluetooth::profile::Psm;
+    use fuchsia_bluetooth::types::{Channel, PeerId};
+    use futures::{pin_mut, TryStreamExt};
+    use std::sync::Arc;
 
     const PLAYER_ID: u16 = 1004;
     const UID_COUNTER: u16 = 1;
-
-    fn get_next_avctp_command(
-        exec: &mut fasync::TestExecutor,
-        command_stream: &mut AvctpCommandStream,
-    ) -> AvctpCommand {
-        exec.run_until_stalled(&mut command_stream.try_next())
-            .expect("should be ready")
-            .unwrap()
-            .expect("has valid command")
-    }
-
-    /// Helper function for decoding AVCTP command. It checks that the PduId of the message is
-    /// equal to the expected PduId.
-    #[track_caller]
-    fn decode_avctp_command(command: &AvctpCommand, expected_pdu_id: PduId) -> Vec<u8> {
-        // Decode the provided `command` into a PduId and command parameters.
-        match BrowseChannelHandler::decode_command(command) {
-            Ok((id, packet)) if id == expected_pdu_id => packet,
-            result => panic!("[Browse Channel] Received unexpected result: {:?}", result),
-        }
-    }
-
-    /// Helper function to send AVCTP response back as a remote peer.
-    fn send_avctp_response(
-        pdu_id: PduId,
-        response: &impl Encodable<Error = PacketError>,
-        command: &AvctpCommand,
-    ) {
-        let mut buf = vec![0; response.encoded_len()];
-        response.encode(&mut buf[..]).expect("should have succeeded");
-
-        // Send the response back to the remote peer.
-        let response_packet = BrowsePreamble::new(u8::from(&pdu_id), buf);
-        let mut response_buf = vec![0; response_packet.encoded_len()];
-        response_packet.encode(&mut response_buf[..]).expect("Encoding should work");
-
-        let _ = command.send_response(&response_buf[..]).expect("should have succeeded");
-    }
 
     fn set_browsed_player(
         exec: &mut fasync::TestExecutor,
@@ -588,91 +547,87 @@ pub(crate) mod tests {
         (controller, remote_avc_peer, remote_avctp_peer)
     }
 
-    // There are some browse commands that are sent out post peer-setup.
-    // Verify that those browse commands were successfully sent out and send
-    // out a mock response.
-    fn expect_initial_browse_command(
-        exec: &mut fasync::TestExecutor,
-        command_stream: &mut AvctpCommandStream,
-    ) {
-        // Expect get folder items command with media player scope.
-        let command = get_next_avctp_command(exec, command_stream);
-        let params = decode_avctp_command(&command, PduId::GetFolderItems);
-        let cmd =
-            GetFolderItemsCommand::decode(&params).expect("should have received valid command");
-        assert_matches!(cmd.scope(), Scope::MediaPlayerList);
-        let mock_resp = GetFolderItemsResponse::new_success(1, vec![]);
-        send_avctp_response(PduId::GetFolderItems, &mock_resp, &command);
-    }
+    #[fuchsia::test]
+    fn get_media_player_items() {
+        let mut exec = fasync::TestExecutor::new();
 
-    fn verify_avc_command(
-        exec: &mut fuchsia_async::TestExecutor,
-        command_stream: &mut bt_avctp::AvcCommandStream,
-        expected_pdu_id: PduId,
-    ) {
-        // When the control channel is first connected we get this.
-        assert_matches!(exec.run_until_stalled(&mut command_stream.try_next()).expect("should be ready"),
-        Ok(Some(command)) => {
-            assert!(command.is_vendor_dependent());
-            let (pdu_id, _) = decode_avc_vendor_command(&command).expect("should have succeeded");
-            assert_eq!(pdu_id, expected_pdu_id);
-        });
+        let (mut controller, remote_avc_peer, remote_avctp_peer) = set_up();
+        let mut avctp_cmd_stream = remote_avctp_peer.take_command_stream();
+        let mut avc_cmd_stream = remote_avc_peer.take_command_stream();
+        expect_outgoing_commands(&mut exec, &mut avc_cmd_stream, &mut avctp_cmd_stream);
+
+        // Mock response returning 1 player item.
+        let resp = GetFolderItemsResponse::new_success(
+            1,
+            vec![BrowseableItem::MediaPlayer(MediaPlayerItem::new(
+                1,
+                fidl_avrcp::MajorPlayerType::AUDIO.bits(),
+                0,
+                PlaybackStatus::Stopped,
+                [0, 0],
+                "player 1".to_string(),
+            ))],
+        );
+
+        // Get media player items without updating the peer.
+        {
+            let get_media_players_fut = controller.get_media_player_items(0, 5, false);
+            pin_mut!(get_media_players_fut);
+
+            exec.run_until_stalled(&mut get_media_players_fut).expect_pending("result not ready");
+            let command = get_next_avctp_command(&mut exec, &mut avctp_cmd_stream);
+            // Ensure command params are correct.
+            let params = decode_avctp_command(&command, PduId::GetFolderItems);
+            let cmd =
+                GetFolderItemsCommand::decode(&params).expect("should have received valid command");
+            assert_matches!(cmd.scope(),
+            Scope::MediaPlayerList => {
+                assert_eq!(cmd.start_item(), 0);
+                assert_eq!(cmd.end_item(), 5);
+                assert!(cmd.attribute_list().is_none());
+            });
+            // Create mock response.
+
+            send_avctp_response(PduId::GetFolderItems, &resp, &command);
+
+            assert_matches!(
+                exec.run_until_stalled(&mut get_media_players_fut).expect("should be ready"),
+                Ok(list) if list.len() == 1);
+        }
+        // Peer's available player info is not updated.
+        assert_eq!(controller.peer.peer.read().available_players.len(), 0);
+
+        // Get media player items and update the peer afterwards.
+        {
+            let get_media_players_fut = controller.get_media_player_items(0, 5, true);
+            pin_mut!(get_media_players_fut);
+
+            exec.run_until_stalled(&mut get_media_players_fut).expect_pending("result not ready");
+            let command = get_next_avctp_command(&mut exec, &mut avctp_cmd_stream);
+            send_avctp_response(PduId::GetFolderItems, &resp, &command);
+
+            assert_matches!(
+                exec.run_until_stalled(&mut get_media_players_fut).expect("should be ready"),
+                Ok(list) if list.len() == 1);
+        }
+        // Peer's available player info is updated.
+        assert!(controller.peer.peer.read().available_players.contains_key(&1));
     }
 
     #[fuchsia::test]
-    fn test_get_folder_items() {
+    fn get_file_system_items() {
         let mut exec = fasync::TestExecutor::new();
 
-        let (controller, _remote_avc_peer, remote_avctp_peer) = set_up();
+        let (controller, remote_avc_peer, remote_avctp_peer) = set_up();
         let mut avctp_cmd_stream = remote_avctp_peer.take_command_stream();
-        expect_initial_browse_command(&mut exec, &mut avctp_cmd_stream);
+        let mut avc_cmd_stream = remote_avc_peer.take_command_stream();
+        expect_outgoing_commands(&mut exec, &mut avc_cmd_stream, &mut avctp_cmd_stream);
 
-        // Test GetNowPlayingItems, which should fail since browsed player isn't set.
-        let get_now_playing_fut = controller.get_now_playing_items(
-            START_INDEX,
-            END_INDEX,
-            AttributeRequestOption::GetAll(true),
-        );
-        pin_mut!(get_now_playing_fut);
-        assert_matches!(
-            exec.run_until_stalled(&mut get_now_playing_fut).expect("should be done"),
-            Err(_)
-        );
-
-        // Test GetMediaPlayerItems. Should succeed even if browsed player isn't set.
-        const START_INDEX: u32 = 0;
-        const END_INDEX: u32 = 5;
-        let get_media_players_fut = controller.get_media_player_items(START_INDEX, END_INDEX);
-        pin_mut!(get_media_players_fut);
-
-        exec.run_until_stalled(&mut get_media_players_fut).expect_pending("result not ready");
-        let command = get_next_avctp_command(&mut exec, &mut avctp_cmd_stream);
-        // Ensure command params are correct.
-        let params = decode_avctp_command(&command, PduId::GetFolderItems);
-        let cmd =
-            GetFolderItemsCommand::decode(&params).expect("should have received valid command");
-        assert_matches!(cmd.scope(),
-        Scope::MediaPlayerList => {
-            assert_eq!(cmd.start_item(), START_INDEX);
-            assert_eq!(cmd.end_item(), END_INDEX);
-            assert!(cmd.attribute_list().is_none());
-        });
-        // Create mock response.
-        let resp = GetFolderItemsResponse::new_success(1, vec![]);
-        send_avctp_response(PduId::GetFolderItems, &resp, &command);
-
-        assert_matches!(
-            exec.run_until_stalled(&mut get_media_players_fut).expect("should be ready"),
-            Ok(list) if list.is_empty());
-
+        // Set browsed player.
         set_browsed_player(&mut exec, &controller, &mut avctp_cmd_stream);
 
-        // Test GetFileSystemItems. SetBrowsedPlayer was already called.
-        let get_file_system_fut = controller.get_file_system_items(
-            START_INDEX,
-            END_INDEX,
-            AttributeRequestOption::GetAll(false),
-        );
+        let get_file_system_fut =
+            controller.get_file_system_items(0, 5, AttributeRequestOption::GetAll(false));
         pin_mut!(get_file_system_fut);
 
         exec.run_until_stalled(&mut get_file_system_fut).expect_pending("result not ready");
@@ -683,8 +638,8 @@ pub(crate) mod tests {
             GetFolderItemsCommand::decode(&params).expect("should have received valid command");
         assert_matches!(cmd.scope(),
         Scope::MediaPlayerVirtualFilesystem => {
-            assert_eq!(cmd.start_item(), START_INDEX);
-                        assert_eq!(cmd.end_item(), END_INDEX);
+            assert_eq!(cmd.start_item(), 0);
+                        assert_eq!(cmd.end_item(), 5);
                         assert_eq!(cmd.attribute_list().unwrap().len(), 0);
         });
         // Create mock response.
@@ -695,12 +650,33 @@ pub(crate) mod tests {
     }
 
     #[fuchsia::test]
+    fn get_now_playing_items_failure() {
+        let mut exec = fasync::TestExecutor::new();
+
+        let (controller, remote_avc_peer, remote_avctp_peer) = set_up();
+        let mut avctp_cmd_stream = remote_avctp_peer.take_command_stream();
+        let mut avc_cmd_stream = remote_avc_peer.take_command_stream();
+        expect_outgoing_commands(&mut exec, &mut avc_cmd_stream, &mut avctp_cmd_stream);
+
+        let get_now_playing_fut =
+            controller.get_now_playing_items(0, 5, AttributeRequestOption::GetAll(true));
+        pin_mut!(get_now_playing_fut);
+
+        // Should fail since browsed player isn't set.
+        assert_matches!(
+            exec.run_until_stalled(&mut get_now_playing_fut).expect("should be done"),
+            Err(_)
+        );
+    }
+
+    #[fuchsia::test]
     fn test_change_directory() {
         let mut exec = fasync::TestExecutor::new();
 
-        let (controller, _remote_avc_peer, remote_avctp_peer) = set_up();
+        let (controller, remote_avc_peer, remote_avctp_peer) = set_up();
         let mut avctp_cmd_stream = remote_avctp_peer.take_command_stream();
-        expect_initial_browse_command(&mut exec, &mut avctp_cmd_stream);
+        let mut avc_cmd_stream = remote_avc_peer.take_command_stream();
+        expect_outgoing_commands(&mut exec, &mut avc_cmd_stream, &mut avctp_cmd_stream);
 
         set_browsed_player(&mut exec, &controller, &mut avctp_cmd_stream);
 
@@ -726,15 +702,57 @@ pub(crate) mod tests {
     }
 
     #[fuchsia::test]
+    fn test_get_item_attributes() {
+        let mut exec = fasync::TestExecutor::new();
+
+        let (controller, remote_avc_peer, remote_avctp_peer) = set_up();
+        let mut avctp_cmd_stream = remote_avctp_peer.take_command_stream();
+        let mut avc_cmd_stream = remote_avc_peer.take_command_stream();
+        expect_outgoing_commands(&mut exec, &mut avc_cmd_stream, &mut avctp_cmd_stream);
+
+        set_browsed_player(&mut exec, &controller, &mut avctp_cmd_stream);
+
+        let get_item_attributes_fut = controller.get_item_attributes(0xc0decafe);
+        pin_mut!(get_item_attributes_fut);
+
+        let res = exec.run_until_stalled(&mut get_item_attributes_fut);
+        let futures::task::Poll::Pending = res else {
+            panic!("Expected pending and got {res:?}");
+        };
+        let command = get_next_avctp_command(&mut exec, &mut avctp_cmd_stream);
+        // Ensure command params are correct.
+        let params = decode_avctp_command(&command, PduId::GetItemAttributes);
+        let cmd =
+            GetItemAttributesCommand::decode(&params).expect("should have received valid command");
+        assert_eq!(cmd.uid_counter(), UID_COUNTER);
+        assert_eq!(cmd.uid(), 0xc0decafe);
+        // Create mock response.
+        let resp = vec![
+            0x04, 0x05, 0x00, 0x00, 0x00, 0x01, 0x00, 0x6a, 0x00, 0x06, 0x47, 0x6c, 0x6f, 0x72,
+            0x69, 0x61, 0x00, 0x00, 0x00, 0x02, 0x00, 0x6a, 0x00, 0x0b, 0x45, 0x61, 0x72, 0x6c,
+            0x79, 0x20, 0x44, 0x6f, 0x6f, 0x72, 0x73, 0x00, 0x00, 0x00, 0x03, 0x00, 0x6a, 0x00,
+            0x0f, 0x47, 0x6c, 0x6f, 0x72, 0x69, 0x61, 0x20, 0x2d, 0x20, 0x53, 0x69, 0x6e, 0x67,
+            0x6c, 0x65, 0x00, 0x00, 0x00, 0x06, 0x00, 0x6a, 0x00, 0x04, 0x52, 0x6f, 0x63, 0x6b,
+            0x00, 0x00, 0x00, 0x07, 0x00, 0x6a, 0x00, 0x06, 0x32, 0x37, 0x37, 0x39, 0x36, 0x36,
+        ];
+
+        send_avctp_response_raw(PduId::GetItemAttributes, resp, &command);
+
+        assert_matches!(
+            exec.run_until_stalled(&mut get_item_attributes_fut).expect("result ready"),
+            Ok(_media_attributes)
+        );
+    }
+
+    #[fuchsia::test]
     fn test_play_item() {
         let mut exec = fasync::TestExecutor::new();
 
         let (controller, remote_avc_peer, remote_avctp_peer) = set_up();
         let mut avctp_cmd_stream = remote_avctp_peer.take_command_stream();
         let mut avc_cmd_stream = remote_avc_peer.take_command_stream();
-        expect_initial_browse_command(&mut exec, &mut avctp_cmd_stream);
+        expect_outgoing_commands(&mut exec, &mut avc_cmd_stream, &mut avctp_cmd_stream);
         set_browsed_player(&mut exec, &controller, &mut avctp_cmd_stream);
-        verify_avc_command(&mut exec, &mut avc_cmd_stream, PduId::GetCapabilities);
 
         // Test PlayFileSystemItem.
         let play_fut = controller.play_item(1, Scope::MediaPlayerVirtualFilesystem);
@@ -757,7 +775,7 @@ pub(crate) mod tests {
         let resp = PlayItemResponse::new(StatusCode::Success);
         let packet = resp.encode_packet().expect("unable to encode packets for event");
         let _ = command
-            .send_response(AvcResponseType::Accepted, &packet[..])
+            .send_response(bt_avctp::AvcResponseType::Accepted, &packet[..])
             .expect("should have succeeded");
 
         // Test PlayNowPlayingItem failure.
@@ -779,7 +797,7 @@ pub(crate) mod tests {
         let resp = PlayItemResponse::new(StatusCode::InternalError);
         let packet = resp.encode_packet().expect("unable to encode packets for event");
         let _ = command
-            .send_response(AvcResponseType::Rejected, &packet[..])
+            .send_response(bt_avctp::AvcResponseType::Rejected, &packet[..])
             .expect("should have succeeded");
 
         assert_matches!(exec.run_until_stalled(&mut play_fut).expect("should be ready"), Err(_));

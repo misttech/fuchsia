@@ -15,7 +15,7 @@
  */
 /* ****************** SDIO CARD Interface Functions **************************/
 
-#include <fuchsia/hardware/gpio/cpp/banjo.h>
+#include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
 #include <fuchsia/hardware/sdio/cpp/banjo.h>
 #include <inttypes.h>
 #include <lib/ddk/device.h>
@@ -82,18 +82,32 @@ static void brcmf_sdiod_dummy_irqhandler(struct brcmf_sdio_dev* sdiodev) {}
 
 zx_status_t brcmf_sdiod_configure_oob_interrupt(struct brcmf_sdio_dev* sdiodev,
                                                 wifi_config_t* config) {
-  zx_status_t ret = gpio_config_in(&sdiodev->gpios[WIFI_OOB_IRQ_GPIO_INDEX], GPIO_NO_PULL);
-  if (ret != ZX_OK) {
-    BRCMF_ERR("brcmf_sdiod_intr_register: gpio_config failed: %d", ret);
-    return ret;
+  fidl::WireResult cfg_result = sdiodev->fidl_gpios[WIFI_OOB_IRQ_GPIO_INDEX]->ConfigIn(
+      fuchsia_hardware_gpio::GpioFlags::kNoPull);
+  if (!cfg_result.ok()) {
+    BRCMF_ERR("Setting No Pull on IRQ GPIO failed: %s", cfg_result.FormatDescription().c_str());
+    return cfg_result.status();
+  }
+  if (cfg_result->is_error()) {
+    BRCMF_ERR("Failed to set No Pull on IRQ GPIO: %s",
+              zx_status_get_string(cfg_result->error_value()));
+    return cfg_result->error_value();
   }
 
-  ret = gpio_get_interrupt(&sdiodev->gpios[WIFI_OOB_IRQ_GPIO_INDEX], config->oob_irq_mode,
-                           &sdiodev->irq_handle);
-  if (ret != ZX_OK) {
-    BRCMF_ERR("brcmf_sdiod_intr_register: gpio_get_interrupt failed: %d", ret);
-    return ret;
+  fidl::WireResult irq_result =
+      sdiodev->fidl_gpios[WIFI_OOB_IRQ_GPIO_INDEX]->GetInterrupt(config->oob_irq_mode);
+  if (!irq_result.ok()) {
+    BRCMF_ERR("Get Interrupt on IRQ GPIO failed: %s", irq_result.FormatDescription().c_str());
+    return irq_result.status();
   }
+
+  if (irq_result->is_error()) {
+    BRCMF_ERR("Failed to get IRQ GPIO interrupt: %s",
+              zx_status_get_string(irq_result->error_value()));
+    return irq_result->error_value();
+  }
+  zx::interrupt gpio_irq_handle = std::move(irq_result.value()->irq);
+  sdiodev->irq_handle = gpio_irq_handle.release();
   return ZX_OK;
 }
 
@@ -104,8 +118,13 @@ zx_status_t brcmf_sdiod_get_bootloader_macaddr(struct brcmf_sdio_dev* sdiodev, u
   zx_status_t ret = sdiodev->drvr->device->DeviceGetMetadata(
       DEVICE_METADATA_MAC_ADDRESS, bootloader_macaddr, sizeof(bootloader_macaddr), &actual_len);
 
-  if (ret != ZX_OK || actual_len < ETH_ALEN) {
+  if (ret != ZX_OK) {
     return ret;
+  }
+  if (actual_len != ETH_ALEN) {
+    BRCMF_ERR("Incorrect metadata size: Expected %lu bytes but actual is %lu bytes", ETH_ALEN,
+              actual_len);
+    return ZX_ERR_INTERNAL;
   }
   memcpy(macaddr, bootloader_macaddr, 6);
   BRCMF_DBG(SDIO, "got bootloader mac address");
@@ -296,9 +315,19 @@ static zx_status_t brcmf_sdiod_transfer_vmo(struct brcmf_sdio_dev* sdiodev,
   TRACE_DURATION("brcmfmac:isr", "sdio_do_rw_txn");
   zx_status_t result = sdio_do_rw_txn(proto, &txn);
   if (result != ZX_OK) {
+    if (result == ZX_ERR_TIMED_OUT) {
+      zx_status_t err = sdiodev->drvr->recovery_trigger->sdio_timeout_.Inc();
+      if (err != ZX_OK) {
+        BRCMF_WARN("Failed to trigger, recovery likely in progress - status: %s",
+                   zx_status_get_string(err));
+      }
+    }
     BRCMF_ERR("SDIO transaction failed: %s", zx_status_get_string(result));
     return result;
   }
+
+  // Clear the TriggerCondition counter if SDIO transmission succeeded.
+  sdiodev->drvr->recovery_trigger->sdio_timeout_.Clear();
 
   if (!write) {
     result = zx_cache_flush(frame.Data(), size, ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
@@ -353,8 +382,21 @@ static zx_status_t brcmf_sdiod_transfer_vmos(struct brcmf_sdio_dev* sdiodev,
   TRACE_DURATION("brcmfmac:isr", "sdio_do_rw_txn");
   zx_status_t result = sdio_do_rw_txn(proto, &txn);
   if (result != ZX_OK) {
+    if (result == ZX_ERR_TIMED_OUT) {
+      // There could be multiple buffers being tranferred at the same time, but we regard it as a
+      // single transfer here and increase the trigger count by 1.
+      zx_status_t err = sdiodev->drvr->recovery_trigger->sdio_timeout_.Inc();
+      if (err != ZX_OK) {
+        BRCMF_WARN("Failed to trigger, recovery likely in progress - status: %s",
+                   zx_status_get_string(err));
+      }
+    }
     BRCMF_ERR("SDIO transaction failed: %s", zx_status_get_string(result));
+    return result;
   }
+
+  // Clear the TriggerCondition counter if SDIO transmission succeeded.
+  sdiodev->drvr->recovery_trigger->sdio_timeout_.Clear();
 
   if (!write) {
     for (auto frame = begin; frame != end; ++frame) {
@@ -818,7 +860,9 @@ static const struct sdio_device_id brcmf_sdmmc_ids[] = {
     {/* end: all zeroes */}};
 #endif  // TODO_ADD_SDIO_IDS
 
-zx_status_t brcmf_sdio_register(brcmf_pub* drvr, std::unique_ptr<brcmf_bus>* out_bus) {
+zx_status_t brcmf_sdio_register(
+    brcmf_pub* drvr, fidl::WireSyncClient<fuchsia_hardware_gpio::Gpio> fidl_gpios[GPIO_COUNT],
+    std::unique_ptr<brcmf_bus>* out_bus) {
   zx_status_t err;
 
   std::unique_ptr<struct brcmf_bus> bus_if;
@@ -830,7 +874,6 @@ zx_status_t brcmf_sdio_register(brcmf_pub* drvr, std::unique_ptr<brcmf_bus>* out
   // One for SDIO, one or two GPIOs.
   sdio_protocol_t sdio_proto_fn1;
   sdio_protocol_t sdio_proto_fn2;
-  gpio_protocol_t gpio_protos[GPIO_COUNT];
   bool has_debug_gpio = false;
 
   ddk::SdioProtocolClient sdio_fn1(drvr->device->parent(), "sdio-function-1");
@@ -847,18 +890,8 @@ zx_status_t brcmf_sdio_register(brcmf_pub* drvr, std::unique_ptr<brcmf_bus>* out
   }
   sdio_fn2.GetProto(&sdio_proto_fn2);
 
-  ddk::GpioProtocolClient gpio(drvr->device->parent(), "gpio-oob");
-  if (!gpio.is_valid()) {
-    BRCMF_ERR("ZX_PROTOCOL_GPIO not found");
-    return ZX_ERR_NO_RESOURCES;
-  }
-  gpio.GetProto(&gpio_protos[WIFI_OOB_IRQ_GPIO_INDEX]);
-
-  // Debug GPIO is optional
-  gpio = ddk::GpioProtocolClient(drvr->device->parent(), "gpio-debug");
-  if (gpio.is_valid()) {
+  if (fidl_gpios[DEBUG_GPIO_INDEX].is_valid()) {
     has_debug_gpio = true;
-    gpio.GetProto(&gpio_protos[DEBUG_GPIO_INDEX]);
   }
 
   sdio_hw_info_t devinfo;
@@ -917,11 +950,9 @@ zx_status_t brcmf_sdio_register(brcmf_pub* drvr, std::unique_ptr<brcmf_bus>* out
   }
   memcpy(&sdiodev->sdio_proto_fn1, &sdio_proto_fn1, sizeof(sdiodev->sdio_proto_fn1));
   memcpy(&sdiodev->sdio_proto_fn2, &sdio_proto_fn2, sizeof(sdiodev->sdio_proto_fn2));
-  memcpy(&sdiodev->gpios[WIFI_OOB_IRQ_GPIO_INDEX], &gpio_protos[WIFI_OOB_IRQ_GPIO_INDEX],
-         sizeof(gpio_protos[WIFI_OOB_IRQ_GPIO_INDEX]));
+  sdiodev->fidl_gpios[WIFI_OOB_IRQ_GPIO_INDEX] = std::move(fidl_gpios[WIFI_OOB_IRQ_GPIO_INDEX]);
   if (has_debug_gpio) {
-    memcpy(&sdiodev->gpios[DEBUG_GPIO_INDEX], &gpio_protos[DEBUG_GPIO_INDEX],
-           sizeof(gpio_protos[DEBUG_GPIO_INDEX]));
+    sdiodev->fidl_gpios[DEBUG_GPIO_INDEX] = std::move(fidl_gpios[DEBUG_GPIO_INDEX]);
     sdiodev->has_debug_gpio = true;
   }
   sdiodev->bus_if = bus_if.get();
@@ -935,9 +966,9 @@ zx_status_t brcmf_sdio_register(brcmf_pub* drvr, std::unique_ptr<brcmf_bus>* out
   sdiodev->product_id = devinfo.func_hw_info.product_id;
 
   // No need to call brcmf_sdiod_change_state here. Since the bus struct was allocated above it
-  // can't contain any meaningful previous state that we can transition from. So we just need to set
-  // the expected bus state here. This way we avoid any spurious errors messages about setting the
-  // state to the same value if they happen to match.
+  // can't contain any meaningful previous state that we can transition from. So we just need to
+  // set the expected bus state here. This way we avoid any spurious errors messages about setting
+  // the state to the same value if they happen to match.
   sdiodev->state = BRCMF_SDIOD_DOWN;
 
   BRCMF_DBG(SDIO, "F2 found, calling brcmf_sdiod_probe...");
@@ -1001,32 +1032,5 @@ void brcmf_sdio_exit(brcmf_bus* bus) {
 }
 
 zx_status_t brcmf_sdio_request_card_reset(struct brcmf_sdio_dev* sdiod) {
-  libsync::Completion completed;
-  zx_status_t status = ZX_ERR_INTERNAL;
-
-  struct Cookie {
-    libsync::Completion* completion;
-    zx_status_t* status;
-  } cookie{
-      .completion = &completed,
-      .status = &status,
-  };
-
-  auto callback = [](void* cookie, zx_status_t s) {
-    auto* c = static_cast<Cookie*>(cookie);
-    *c->status = s;
-    c->completion->Signal();
-  };
-
-  sdio_request_card_reset(&sdiod->sdio_proto_fn1, callback, &cookie);
-
-  // This timeout value was somewhat arbitrary but was empirically enough during testing to avoid
-  // any issues with timeouts during correct operation.
-  constexpr zx::duration kTimeout = zx::duration(500);
-  if (completed.Wait(kTimeout) != ZX_OK) {
-    BRCMF_ERR("Failed to reset sdio: waiting too long");
-    return ZX_ERR_TIMED_OUT;
-  }
-
-  return status;
+  return sdio_request_card_reset(&sdiod->sdio_proto_fn1);
 }

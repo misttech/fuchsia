@@ -9,23 +9,28 @@
 #include <lib/device-protocol/pci.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/inspect/cpp/inspect.h>
+#include <lib/scsi/disk.h>
 
 #include <ddktl/device.h>
+#include <fbl/array.h>
 #include <fbl/condition_variable.h>
 #include <fbl/intrusive_double_list.h>
 #include <fbl/string_printf.h>
 
 #include "registers.h"
+#include "src/devices/block/drivers/ufs/device_manager.h"
 #include "transfer_request_processor.h"
-#include "upiu/attributes.h"
-#include "upiu/descriptors.h"
-#include "upiu/flags.h"
 
 namespace ufs {
 
 constexpr uint32_t kMaxLun = 32;
 constexpr uint32_t kDeviceInitTimeoutMs = 2000;
 constexpr uint32_t kHostControllerTimeoutUs = 1000;
+constexpr uint32_t kMaxTransferSize1MiB = 1024 * 1024;
+constexpr uint8_t kPlaceholderTarget = 0;
+
+constexpr uint32_t kBlockSize = 4096;
+constexpr uint32_t kSectorSize = 512;
 
 enum WellKnownLuns {
   kReportLuns = 0x81,
@@ -45,24 +50,21 @@ enum NotifyEvent {
   kPostPowerModeChange,
 };
 
-struct BlockDevice {
-  bool is_present = false;
-  std::string name;
-  uint8_t lun = 0;
-  size_t block_size = 0;
-  uint64_t block_count = 0;
-};
-
 struct IoCommand {
-  void Complete(zx_status_t status) { completion_cb(cookie, status, &op); }
+  scsi::DiskOp disk_op;
 
-  block_op_t op;
-  block_impl_queue_callback completion_cb;
-  void *cookie;
-
-  uint8_t lun_id;
+  // Ufs::ExecuteCommandAsync() checks that the incoming CDB's size does not exceed
+  // this buffer's.
+  uint8_t cdb_buffer[16];
+  uint8_t cdb_length;
+  uint8_t lun;
   uint32_t block_size_bytes;
-  uint64_t block_count;
+  bool is_write;
+
+  // Currently, data_buffer is only used by the UNMAP command and has a maximum size of 24 byte.
+  uint8_t data_buffer[24];
+  uint8_t data_length;
+  zx::vmo data_vmo;
 
   list_node_t node;
 };
@@ -72,7 +74,7 @@ class Ufs;
 using HostControllerCallback = fit::function<zx::result<>(NotifyEvent, uint64_t data)>;
 
 using UfsDeviceType = ddk::Device<Ufs, ddk::Initializable>;
-class Ufs : public UfsDeviceType {
+class Ufs : public scsi::Controller, public UfsDeviceType {
  public:
   static constexpr char kDriverName[] = "ufs";
 
@@ -84,7 +86,7 @@ class Ufs : public UfsDeviceType {
         irq_mode_(irq_mode),
         irq_(std::move(irq)),
         bti_(std::move(bti)) {}
-  ~Ufs() = default;
+  ~Ufs() override = default;
 
   static zx_status_t Bind(void *ctx, zx_device_t *parent);
   zx_status_t AddDevice();
@@ -92,18 +94,33 @@ class Ufs : public UfsDeviceType {
   void DdkInit(ddk::InitTxn txn);
   void DdkRelease();
 
-  inspect::Inspector &inspector() { return inspector_; }
-  inspect::Node &inspect_node() { return inspect_node_; }
+  // scsi::Controller
+  size_t BlockOpSize() override { return sizeof(IoCommand); }
+  zx_status_t ExecuteCommandSync(uint8_t target, uint16_t lun, iovec cdb, bool is_write,
+                                 iovec data) override;
+  void ExecuteCommandAsync(uint8_t target, uint16_t lun, iovec cdb, bool is_write,
+                           uint32_t block_size_bytes, scsi::DiskOp *disk_op, iovec data) override;
+
+  // TODO(fxbug.dev/124835): Implement inspector.
 
   fdf::MmioBuffer &GetMmio() { return mmio_; }
 
+  DeviceManager &GetDeviceManager() const {
+    ZX_DEBUG_ASSERT(device_manager_ != nullptr);
+    return *device_manager_;
+  }
   TransferRequestProcessor &GetTransferRequestProcessor() const {
     ZX_DEBUG_ASSERT(transfer_request_processor_ != nullptr);
     return *transfer_request_processor_;
   }
 
-  // Synchronously handle block operations delivered to the logical unit.
-  void HandleBlockOp(IoCommand *io_cmd);
+  // Queue an IO command to be performed asynchronously.
+  void QueueIoCommand(IoCommand *io_cmd);
+
+  // Convert block operations to UPIU commands and submit them asynchronously.
+  void ProcessIoSubmissions();
+  // Find the completed commands in the Request List and handle their completion.
+  void ProcessCompletions();
 
   // Used to register a platform-specific NotifyEventCallback, which handles variants and quirks for
   // each host interface platform.
@@ -121,29 +138,17 @@ class Ufs : public UfsDeviceType {
   zx_status_t WaitWithTimeout(fit::function<zx_status_t()> wait_for, uint32_t timeout_us,
                               const fbl::String &timeout_message);
 
-  sync_completion_t &GetScsiEvent() { return scsi_event_; }
-
-  // Create a scsi transfer and add it to the transfer list. The added transfer is processed by the
-  // scsi thread. If |event| is nullptr, then the SCSI command is executed synchronously.
-  zx::result<> QueueScsiCommand(std::unique_ptr<ScsiCommandUpiu> upiu, uint8_t lun,
-                                std::array<zx_paddr_t, 2> buffer_phys, sync_completion_t *event);
-
   // for test
-  BlockDevice &GetBlockDevice(uint8_t lun) {
-    ZX_ASSERT_MSG(lun < kMaxLun, "Invalid lun %d", lun);
-    return block_devices_[lun];
-  }
   uint32_t GetLogicalUnitCount() const { return logical_unit_count_; }
-  DeviceDescriptor &GetDeviceDescriptor() { return device_descriptor_; }
-  GeometryDescriptor &GetGeometryDescriptor() { return geometry_descriptor_; }
+  thrd_t &GetIoThread() { return io_thread_; }
 
+  void DisableCompletion() { disable_completion_ = true; }
   void DumpRegisters();
 
  private:
   friend class UfsTest;
-  // TODO(fxbug.dev/124835): Irq threads and scsi threads will be refactored.
   int IrqLoop();
-  int ScsiLoop();
+  int IoLoop();
 
   // Interrupt service routine. Check that the request is complete.
   zx::result<> Isr();
@@ -153,10 +158,12 @@ class Ufs : public UfsDeviceType {
   zx::result<> InitController();
   zx::result<> InitDeviceInterface();
   zx::result<> GetControllerDescriptor();
-  zx::result<> ScanLogicalUnits();
+  zx::result<uint8_t> AddLogicalUnits();
 
   zx_status_t EnableHostController();
   zx_status_t DisableHostController();
+
+  zx::result<> AllocatePages(zx::vmo &vmo, fzl::VmoMapper &mapper, size_t size);
 
   ddk::Pci pci_;
   fdf::MmioBuffer mmio_;
@@ -166,18 +173,21 @@ class Ufs : public UfsDeviceType {
   inspect::Inspector inspector_;
   inspect::Node inspect_node_;
 
-  BlockDevice block_devices_[kMaxLun];
+  fbl::Mutex commands_lock_;
+  // The pending list consists of commands that have been received via QueueIoCommand() and are
+  // waiting for IO to start.
+  list_node_t pending_commands_ TA_GUARDED(commands_lock_);
 
-  // TODO(fxbug.dev/124835): Replace SCSI thread to I/O thread
-  thrd_t scsi_thread_ = 0;
+  // Notifies IoThread() that it has work to do. Signaled from QueueIoCommand() or the IRQ handler.
+  sync_completion_t io_signal_;
+
   thrd_t irq_thread_ = 0;
-  bool scsi_thread_started_ = false;
+  thrd_t io_thread_ = 0;
   bool irq_thread_started_ = false;
 
-  sync_completion_t scsi_event_;
-  std::mutex xfer_list_lock_;
-  fbl::DoublyLinkedList<std::unique_ptr<scsi_xfer>> scsi_xfer_list_ TA_GUARDED(xfer_list_lock_);
+  bool io_thread_started_ = false;
 
+  std::unique_ptr<DeviceManager> device_manager_;
   std::unique_ptr<TransferRequestProcessor> transfer_request_processor_;
 
   // Controller internal information.
@@ -186,10 +196,12 @@ class Ufs : public UfsDeviceType {
   // Callback function to perform when the host controller is notified.
   HostControllerCallback host_controller_callback_;
 
-  DeviceDescriptor device_descriptor_;
-  GeometryDescriptor geometry_descriptor_;
-
   bool driver_shutdown_ = false;
+  bool disable_completion_ = false;
+
+  // The maximum transfer size supported by UFSHCI spec is 65535 * 256 KiB. However, we limit the
+  // maximum transfer size to 1MiB for performance reason.
+  uint32_t max_transfer_bytes_ = kMaxTransferSize1MiB;
 };
 
 }  // namespace ufs

@@ -2,14 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::{task::CurrentTask, vfs::FileHandle};
 use fuchsia_zircon as zx;
-
-use crate::{fs::FileHandle, task::CurrentTask, types::*};
+use starnix_uapi::{errors::Errno, open_flags::OpenFlags};
 
 mod remote;
 mod remote_bundle;
 mod syslog;
 mod timer;
+
+pub mod zxio;
 
 pub use remote::*;
 pub use remote_bundle::RemoteBundle;
@@ -21,7 +23,7 @@ pub fn create_file_from_handle(
     current_task: &CurrentTask,
     handle: zx::Handle,
 ) -> Result<FileHandle, Errno> {
-    new_remote_file(current_task.kernel(), handle, OpenFlags::RDWR)
+    new_remote_file(current_task, handle, OpenFlags::RDWR)
 }
 
 #[cfg(test)]

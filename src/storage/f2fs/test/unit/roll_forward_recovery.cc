@@ -8,8 +8,8 @@
 
 #include <safemath/checked_math.h>
 
-#include "src/lib/storage/block_client/cpp/fake_block_device.h"
 #include "src/storage/f2fs/f2fs.h"
+#include "src/storage/lib/block_client/cpp/fake_block_device.h"
 #include "unit_lib.h"
 
 namespace f2fs {
@@ -140,15 +140,13 @@ void CheckFsyncedFile(F2fs *fs, ino_t ino, pgoff_t data_page_count, pgoff_t node
 }
 
 TEST(FsyncRecoveryTest, FsyncInode) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
 
   std::unique_ptr<F2fs> fs;
   MountOptions options{};
   // Enable roll-forward recovery
   ASSERT_EQ(options.SetValue(MountOption::kDisableRollForward, 0), ZX_OK);
-  // Disable inline data option
-  ASSERT_EQ(options.SetValue(MountOption::kInlineData, 0), ZX_OK);
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
   FileTester::MountWithOptions(loop.dispatcher(), options, &bc, &fs);
 
@@ -207,15 +205,13 @@ TEST(FsyncRecoveryTest, FsyncInode) {
 }
 
 TEST(FsyncRecoveryTest, FsyncDnode) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
 
   std::unique_ptr<F2fs> fs;
   MountOptions options{};
   // Enable roll-forward recovery
   ASSERT_EQ(options.SetValue(MountOption::kDisableRollForward, 0), ZX_OK);
-  // Disable inline data option
-  ASSERT_EQ(options.SetValue(MountOption::kInlineData, 0), ZX_OK);
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
   FileTester::MountWithOptions(loop.dispatcher(), options, &bc, &fs);
 
@@ -274,15 +270,13 @@ TEST(FsyncRecoveryTest, FsyncDnode) {
 }
 
 TEST(FsyncRecoveryTest, FsyncIndirectDnode) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
 
   std::unique_ptr<F2fs> fs;
   MountOptions options{};
   // Enable roll-forward recovery
   ASSERT_EQ(options.SetValue(MountOption::kDisableRollForward, 0), ZX_OK);
-  // Disable inline data option
-  ASSERT_EQ(options.SetValue(MountOption::kInlineData, 0), ZX_OK);
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
   FileTester::MountWithOptions(loop.dispatcher(), options, &bc, &fs);
 
@@ -342,7 +336,7 @@ TEST(FsyncRecoveryTest, FsyncIndirectDnode) {
 }
 
 TEST(FsyncRecoveryTest, FsyncCheckpoint) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
 
   std::unique_ptr<F2fs> fs;
@@ -385,7 +379,6 @@ TEST(FsyncRecoveryTest, FsyncCheckpoint) {
   ASSERT_EQ(pre_checkpoint_ver + 1, curr_checkpoint_ver);
   fsync_vnode->SetNlink(temp_nlink);
   fsync_vnode->SetDirty();
-  fsync_vnode->UpdateInodePage();
 
   ASSERT_EQ(fsync_vnode->Close(), ZX_OK);
   fsync_vnode = nullptr;
@@ -408,8 +401,8 @@ TEST(FsyncRecoveryTest, FsyncCheckpoint) {
   // 4. Not enough SpaceForRollForward
   ASSERT_EQ(root_dir->Create("fsync_file_space_for_roll_forward", S_IFREG, &file_fs_vnode), ZX_OK);
   fsync_vnode = fbl::RefPtr<VnodeF2fs>::Downcast(std::move(file_fs_vnode));
-  block_t temp_user_block_count = fs->GetSuperblockInfo().GetUserBlockCount();
-  fs->GetSuperblockInfo().SetUserBlockCount(0);
+  block_t temp_user_block_count = fs->GetSuperblockInfo().GetTotalBlockCount();
+  fs->GetSuperblockInfo().SetTotalBlockCount(0);
 
   pre_checkpoint_ver = fs->GetSuperblockInfo().GetCheckpoint().checkpoint_ver;
   ASSERT_EQ(fsync_vnode->SyncFile(0, safemath::checked_cast<loff_t>(fsync_vnode->GetSize()), 0),
@@ -417,7 +410,7 @@ TEST(FsyncRecoveryTest, FsyncCheckpoint) {
   curr_checkpoint_ver = fs->GetSuperblockInfo().GetCheckpoint().checkpoint_ver;
   // Checkpoint should be performed instead of fsync
   ASSERT_EQ(pre_checkpoint_ver + 1, curr_checkpoint_ver);
-  fs->GetSuperblockInfo().SetUserBlockCount(temp_user_block_count);
+  fs->GetSuperblockInfo().SetTotalBlockCount(temp_user_block_count);
 
   ASSERT_EQ(fsync_vnode->Close(), ZX_OK);
   fsync_vnode = nullptr;
@@ -472,15 +465,13 @@ TEST(FsyncRecoveryTest, FsyncCheckpoint) {
 }
 
 TEST(FsyncRecoveryTest, FsyncRecoveryIndirectDnode) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
 
   std::unique_ptr<F2fs> fs;
   MountOptions options{};
   // Enable roll-forward recovery
   ASSERT_EQ(options.SetValue(MountOption::kDisableRollForward, 0), ZX_OK);
-  // Disable inline data option
-  ASSERT_EQ(options.SetValue(MountOption::kInlineData, 0), ZX_OK);
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
   FileTester::MountWithOptions(loop.dispatcher(), options, &bc, &fs);
 
@@ -545,15 +536,13 @@ TEST(FsyncRecoveryTest, FsyncRecoveryIndirectDnode) {
 }
 
 TEST(FsyncRecoveryTest, FsyncRecoveryMultipleFiles) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
 
   std::unique_ptr<F2fs> fs;
   MountOptions options{};
   // Enable roll-forward recovery
   ASSERT_EQ(options.SetValue(MountOption::kDisableRollForward, 0), ZX_OK);
-  // Disable inline data option
-  ASSERT_EQ(options.SetValue(MountOption::kInlineData, 0), ZX_OK);
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
   FileTester::MountWithOptions(loop.dispatcher(), options, &bc, &fs);
 
@@ -657,15 +646,13 @@ TEST(FsyncRecoveryTest, FsyncRecoveryMultipleFiles) {
 TEST(FsyncRecoveryTest, FsyncRecoveryInlineData) {
   srand(testing::UnitTest::GetInstance()->random_seed());
 
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
 
   std::unique_ptr<F2fs> fs;
   MountOptions options{};
   // Enable roll-forward recovery
   ASSERT_EQ(options.SetValue(MountOption::kDisableRollForward, 0), ZX_OK);
-  // Enable inline data option
-  ASSERT_EQ(options.SetValue(MountOption::kInlineData, 1), ZX_OK);
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
   FileTester::MountWithOptions(loop.dispatcher(), options, &bc, &fs);
 
@@ -686,21 +673,21 @@ TEST(FsyncRecoveryTest, FsyncRecoveryInlineData) {
   fbl::RefPtr<VnodeF2fs> inline_vnode =
       fbl::RefPtr<VnodeF2fs>::Downcast(std::move(inline_raw_vnode));
   File *inline_file_ptr = static_cast<File *>(inline_vnode.get());
+  inline_vnode->SetFlag(InodeInfoFlag::kInlineData);
   FileTester::CheckInlineFile(inline_vnode.get());
 
-  fs->WriteCheckpoint(false, false);
+  fs->SyncFs();
 
   // Write until entire inline data space is written
   size_t target_size = inline_file_ptr->MaxInlineData() - 1;
-
-  char w_buf[inline_file_ptr->MaxInlineData()];
-  char r_buf[inline_file_ptr->MaxInlineData()];
+  auto w_buf = std::make_unique<char[]>(inline_file_ptr->MaxInlineData());
+  auto r_buf = std::make_unique<char[]>(inline_file_ptr->MaxInlineData());
 
   for (size_t i = 0; i < inline_file_ptr->MaxInlineData(); ++i) {
     w_buf[i] = static_cast<char>(rand());
   }
 
-  FileTester::AppendToFile(inline_file_ptr, w_buf, target_size);
+  FileTester::AppendToInline(inline_file_ptr, w_buf.get(), target_size);
   FileTester::CheckInlineFile(inline_vnode.get());
   ASSERT_EQ(inline_file_ptr->GetSize(), target_size);
 
@@ -724,15 +711,21 @@ TEST(FsyncRecoveryTest, FsyncRecoveryInlineData) {
   FileTester::CheckInlineFile(inline_vnode.get());
 
   // Check recovery inline data
-  FileTester::ReadFromFile(inline_file_ptr, r_buf, target_size, 0);
-  ASSERT_EQ(memcmp(r_buf, w_buf, target_size), 0);
+  FileTester::ReadFromFile(inline_file_ptr, r_buf.get(), target_size, 0);
+  ASSERT_EQ(memcmp(r_buf.get(), w_buf.get(), target_size), 0);
+  // As fuchsia f2fs doesn't use inlinedata, |inline_vnode| should move inline data to data block
+  // during read()
+  FileTester::CheckNonInlineFile(inline_vnode.get());
 
   // 2. remove inline_data, and then recover data blocks
   // Write one more byte, then it should be converted to noinline
-  target_size = inline_file_ptr->MaxInlineData();
-
+  inline_vnode->Truncate(0);
+  inline_vnode->SetFlag(InodeInfoFlag::kInlineData);
   FileTester::CheckInlineFile(inline_vnode.get());
-  FileTester::AppendToFile(inline_file_ptr, &(w_buf[target_size - 1]), 1);
+  FileTester::AppendToInline(inline_file_ptr, w_buf.get(), target_size);
+
+  target_size = inline_file_ptr->MaxInlineData();
+  FileTester::AppendToFile(inline_file_ptr, w_buf.get() + target_size - 1, 1);
   FileTester::CheckNonInlineFile(inline_vnode.get());
   ASSERT_EQ(inline_file_ptr->GetSize(), target_size);
 
@@ -758,8 +751,8 @@ TEST(FsyncRecoveryTest, FsyncRecoveryInlineData) {
   FileTester::CheckNonInlineFile(inline_vnode.get());
 
   ASSERT_EQ(inline_file_ptr->GetSize(), target_size);
-  FileTester::ReadFromFile(inline_file_ptr, r_buf, target_size, 0);
-  ASSERT_EQ(memcmp(r_buf, w_buf, target_size), 0);
+  FileTester::ReadFromFile(inline_file_ptr, r_buf.get(), target_size, 0);
+  ASSERT_EQ(memcmp(r_buf.get(), w_buf.get(), target_size), 0);
 
   inline_file_ptr = nullptr;
   ASSERT_EQ(inline_vnode->Close(), ZX_OK);
@@ -773,15 +766,13 @@ TEST(FsyncRecoveryTest, FsyncRecoveryInlineData) {
 }
 
 TEST(FsyncRecoveryTest, RecoveryWithoutFsync) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
 
   std::unique_ptr<F2fs> fs;
   MountOptions options{};
   // Enable roll-forward recovery
   ASSERT_EQ(options.SetValue(MountOption::kDisableRollForward, 0), ZX_OK);
-  // Disable inline data option
-  ASSERT_EQ(options.SetValue(MountOption::kInlineData, 0), ZX_OK);
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
   FileTester::MountWithOptions(loop.dispatcher(), options, &bc, &fs);
 
@@ -825,7 +816,7 @@ TEST(FsyncRecoveryTest, RecoveryWithoutFsync) {
 }
 
 TEST(FsyncRecoveryTest, RenameFileWithStrictFsync) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
 
   std::unique_ptr<F2fs> fs;
@@ -939,7 +930,7 @@ TEST(FsyncRecoveryTest, RenameFileWithStrictFsync) {
 }
 
 TEST(FsyncRecoveryTest, RenameFileToOtherDirWithStrictFsync) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
 
   std::unique_ptr<F2fs> fs;
@@ -1068,7 +1059,7 @@ TEST(FsyncRecoveryTest, RenameFileToOtherDirWithStrictFsync) {
 }
 
 TEST(FsyncRecoveryTest, RenameDirectoryWithStrictFsync) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
 
   std::unique_ptr<F2fs> fs;
@@ -1176,7 +1167,7 @@ TEST(FsyncRecoveryTest, RenameDirectoryWithStrictFsync) {
 }
 
 TEST(FsyncRecoveryTest, AtomicFsync) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
 
   std::unique_ptr<F2fs> fs;
@@ -1217,11 +1208,12 @@ TEST(FsyncRecoveryTest, AtomicFsync) {
   // 3. currupt invalid_fsync_file's last dnode page
   block_t last_dnode_blkaddr =
       fs->GetSegmentManager().NextFreeBlkAddr(CursegType::kCursegWarmNode) - 1;
-  FsBlock<Node> node_block;
+  BlockBuffer<Node> node_block;
   fs->GetBc().Readblk(last_dnode_blkaddr, &node_block);
   ASSERT_EQ(curr_checkpoint_ver, LeToCpu(node_block->footer.cp_ver));
   ASSERT_EQ(node_block->footer.ino, invalid_fsync_vnode->Ino());
-  ASSERT_TRUE(TestBit(static_cast<uint32_t>(BitShift::kFsyncBitShift), &node_block->footer.flag));
+  uint32_t mask = 1 << static_cast<uint32_t>(BitShift::kFsyncBitShift);
+  ASSERT_NE(mask & node_block->footer.flag, 0U);
 
   uint32_t dummy_buf[PAGE_SIZE / (sizeof(uint32_t) / sizeof(uint8_t))] = {0};
   fs->GetBc().Writeblk(last_dnode_blkaddr, dummy_buf);

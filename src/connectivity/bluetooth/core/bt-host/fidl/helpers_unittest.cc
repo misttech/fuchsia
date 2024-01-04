@@ -9,6 +9,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <pw_async/dispatcher.h>
 
 #include "fuchsia/bluetooth/bredr/cpp/fidl.h"
 #include "fuchsia/bluetooth/cpp/fidl.h"
@@ -21,7 +22,7 @@
 #include "src/connectivity/bluetooth/core/bt-host/common/device_address.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/uuid.h"
 #include "src/connectivity/bluetooth/core/bt-host/fidl/adapter_test_fixture.h"
-#include "src/connectivity/bluetooth/core/bt-host/gap/fake_adapter_test_fixture.h"
+#include "src/connectivity/bluetooth/core/bt-host/fidl/fake_adapter_test_fixture.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/gap.h"
 #include "src/connectivity/bluetooth/core/bt-host/sco/sco.h"
 #include "src/connectivity/bluetooth/core/bt-host/sdp/sdp.h"
@@ -75,7 +76,13 @@ const fsys::PeerKey kTestKeyFidl{
 };
 const fsys::Ltk kTestLtkFidl{.key = kTestKeyFidl, .ediv = 0, .rand = 0};
 
-using HelpersTestWithLoop = ::gtest::TestLoopFixture;
+class HelpersTestWithLoop : public ::gtest::TestLoopFixture {
+ public:
+  pw::async::Dispatcher& pw_dispatcher() { return pw_dispatcher_; }
+
+ private:
+  pw::async::fuchsia::FuchsiaDispatcher pw_dispatcher_{dispatcher()};
+};
 
 TEST(HelpersTest, HostErrorToFidl) {
   EXPECT_EQ(fsys::Error::FAILED, HostErrorToFidl(bt::HostError::kFailed));
@@ -699,6 +706,15 @@ TEST(HelpersTest, AdvertisingDataToFidlOmitsNonEnumeratedAppearance) {
   EXPECT_TRUE(AdvertisingDataToFidl(input).has_appearance());
 }
 
+TEST(HelpersTest, BrEdrSecurityModeFromFidl) {
+  EXPECT_EQ(bt::gap::BrEdrSecurityMode::Mode4,
+            BrEdrSecurityModeFromFidl(fsys::BrEdrSecurityMode::MODE_4));
+  EXPECT_EQ(bt::gap::BrEdrSecurityMode::SecureConnectionsOnly,
+            BrEdrSecurityModeFromFidl(fsys::BrEdrSecurityMode::SECURE_CONNECTIONS_ONLY));
+  auto nonexistent_security_mode = static_cast<fsys::BrEdrSecurityMode>(0xFF);
+  EXPECT_EQ(std::nullopt, BrEdrSecurityModeFromFidl(nonexistent_security_mode));
+}
+
 TEST(HelpersTest, LeSecurityModeFromFidl) {
   EXPECT_EQ(bt::gap::LESecurityMode::Mode1, LeSecurityModeFromFidl(fsys::LeSecurityMode::MODE_1));
   EXPECT_EQ(bt::gap::LESecurityMode::SecureConnectionsOnly,
@@ -729,9 +745,10 @@ TEST(HelpersTest, SecurityLevelFromBadFidlFails) {
 
 TEST(HelpersTest, PeerToFidlMandatoryFields) {
   // Required by PeerCache expiry functions.
-  async::TestLoop dispatcher;
+  async::TestLoop test_loop;
+  pw::async::fuchsia::FuchsiaDispatcher pw_dispatcher(test_loop.dispatcher());
 
-  bt::gap::PeerCache cache;
+  bt::gap::PeerCache cache(pw_dispatcher);
   bt::DeviceAddress addr(bt::DeviceAddress::Type::kLEPublic, {0, 1, 2, 3, 4, 5});
   auto* peer = cache.NewPeer(addr, /*connectable=*/true);
   auto fidl = PeerToFidl(*peer);
@@ -759,7 +776,8 @@ TEST(HelpersTest, PeerToFidlMandatoryFields) {
 
 TEST(HelpersTest, PeerToFidlOptionalFields) {
   // Required by PeerCache expiry functions.
-  async::TestLoop dispatcher;
+  async::TestLoop test_loop;
+  pw::async::fuchsia::FuchsiaDispatcher pw_dispatcher(test_loop.dispatcher());
 
   const int8_t kRssi = 5;
   const int8_t kTxPower = 6;
@@ -771,10 +789,10 @@ TEST(HelpersTest, PeerToFidlOptionalFields) {
       );
   const std::vector kBrEdrServices = {bt::UUID(uint16_t{0x110a}), bt::UUID(uint16_t{0x110b})};
 
-  bt::gap::PeerCache cache;
+  bt::gap::PeerCache cache(pw_dispatcher);
   bt::DeviceAddress addr(bt::DeviceAddress::Type::kLEPublic, {0, 1, 2, 3, 4, 5});
   auto* peer = cache.NewPeer(addr, /*connectable=*/true);
-  peer->MutLe().SetAdvertisingData(kRssi, kAdv, zx::time());
+  peer->MutLe().SetAdvertisingData(kRssi, kAdv, pw::chrono::SystemClock::time_point());
   bt::StaticPacket<pw::bluetooth::emboss::InquiryResultWriter> inquiry_result;
   auto view = inquiry_result.view();
   view.bd_addr().CopyFrom(bt::DeviceAddressBytes{{0, 1, 2, 3, 4, 5}}.view());
@@ -956,6 +974,146 @@ TEST(HelpersTest, ServiceDefinitionToServiceRecord) {
   EXPECT_TRUE(rec.value().HasAttribute(valid_att_id));
   EXPECT_TRUE(rec.value().HasAttribute(url_attr_id));
   EXPECT_EQ(*rec.value().GetAttribute(url_attr_id).GetUrl(), "foobar.dev");
+}
+
+TEST(HelpersTest, ObexServiceDefinitionToServiceRecord) {
+  // Create an OBEX definition for a successful conversion. MAP MSE uses both L2CAP and RFCOMM.
+  fuchsia::bluetooth::bredr::ServiceDefinition def;
+  def.mutable_service_class_uuids()->emplace_back(
+      fidl_helpers::UuidToFidl(bt::sdp::profile::kMessageAccessServer));
+
+  // The primary protocol contains L2CAP, RFCOMM, & OBEX.
+  fuchsia::bluetooth::bredr::ProtocolDescriptor l2cap_proto;
+  l2cap_proto.protocol = fuchsia::bluetooth::bredr::ProtocolIdentifier::L2CAP;
+  def.mutable_protocol_descriptor_list()->emplace_back(std::move(l2cap_proto));
+
+  fuchsia::bluetooth::bredr::ProtocolDescriptor rfcomm_proto;
+  rfcomm_proto.protocol = fuchsia::bluetooth::bredr::ProtocolIdentifier::RFCOMM;
+  fuchsia::bluetooth::bredr::DataElement rfcomm_data_el;
+  rfcomm_data_el.set_uint8(10);  // Random ServerChannel number
+  rfcomm_proto.params.emplace_back(std::move(rfcomm_data_el));
+  def.mutable_protocol_descriptor_list()->emplace_back(std::move(rfcomm_proto));
+
+  fuchsia::bluetooth::bredr::ProtocolDescriptor obex_proto;
+  obex_proto.protocol = fuchsia::bluetooth::bredr::ProtocolIdentifier::OBEX;
+  def.mutable_protocol_descriptor_list()->emplace_back(std::move(obex_proto));
+
+  // Profile version = 1.4.
+  fuchsia::bluetooth::bredr::ProfileDescriptor prof_desc;
+  prof_desc.profile_id =
+      fuchsia::bluetooth::bredr::ServiceClassProfileIdentifier::MESSAGE_ACCESS_PROFILE;
+  prof_desc.major_version = 1;
+  prof_desc.minor_version = 4;
+  def.mutable_profile_descriptors()->emplace_back(prof_desc);
+
+  // ServiceName = "MAP MAS"
+  fuchsia::bluetooth::bredr::Information info;
+  info.set_language("en");
+  info.set_name("MAP MAS");
+  def.mutable_information()->emplace_back(std::move(info));
+
+  // GoepL2capPsm Attribute with a dynamic PSM.
+  fuchsia::bluetooth::bredr::Attribute goep_l2cap_psm_attribute;
+  goep_l2cap_psm_attribute.id = bt::sdp::kGoepL2capPsm;
+  goep_l2cap_psm_attribute.element.set_uint16(fuchsia::bluetooth::bredr::PSM_DYNAMIC);
+  def.mutable_additional_attributes()->emplace_back(std::move(goep_l2cap_psm_attribute));
+
+  // Add MASInstanceID Attribute = 1
+  fuchsia::bluetooth::bredr::Attribute instance_id_attribute;
+  instance_id_attribute.id = 0x0315;
+  instance_id_attribute.element.set_uint16(1);
+  def.mutable_additional_attributes()->emplace_back(std::move(instance_id_attribute));
+  // Add SupportedMessagesTypes Attribute = Email (0)
+  fuchsia::bluetooth::bredr::Attribute message_types_attribute;
+  message_types_attribute.id = 0x0316;
+  message_types_attribute.element.set_uint16(0);
+  def.mutable_additional_attributes()->emplace_back(std::move(message_types_attribute));
+  // Add MapSupportedFeatures Attribute = Notification Registration only (1)
+  fuchsia::bluetooth::bredr::Attribute features_attribute;
+  features_attribute.id = 0x0317;
+  features_attribute.element.set_uint16(1);
+  def.mutable_additional_attributes()->emplace_back(std::move(features_attribute));
+
+  // Confirm converted ServiceRecord fields match ServiceDefinition
+  auto rec = ServiceDefinitionToServiceRecord(def);
+  EXPECT_TRUE(rec.is_ok());
+
+  // Confirm UUIDs match
+  std::unordered_set<bt::UUID> attribute_uuid = {bt::sdp::profile::kMessageAccessServer};
+  EXPECT_TRUE(rec.value().FindUUID(attribute_uuid));
+
+  // Confirm information fields match
+  EXPECT_TRUE(rec.value().HasAttribute(bt::sdp::kLanguageBaseAttributeIdList));
+  const bt::sdp::DataElement& lang_val =
+      rec.value().GetAttribute(bt::sdp::kLanguageBaseAttributeIdList);
+  auto triplets = lang_val.Get<std::vector<bt::sdp::DataElement>>();
+  EXPECT_TRUE(triplets);
+  EXPECT_TRUE(triplets->size() % 3 == 0);
+  EXPECT_EQ(bt::sdp::DataElement::Type::kUnsignedInt, triplets->at(0).type());
+  EXPECT_EQ(bt::sdp::DataElement::Type::kUnsignedInt, triplets->at(1).type());
+  EXPECT_EQ(bt::sdp::DataElement::Type::kUnsignedInt, triplets->at(2).type());
+  auto lang = triplets->at(0).Get<uint16_t>();
+  EXPECT_TRUE(lang);
+  EXPECT_EQ(0x656e, *lang);  // should be 'en' in ascii (but big-endian)
+  auto encoding = triplets->at(1).Get<uint16_t>();
+  EXPECT_TRUE(encoding);
+  EXPECT_EQ(106, *encoding);  // should always be UTF-8
+  auto base_attrid = triplets->at(2).Get<uint16_t>();
+  EXPECT_TRUE(base_attrid);
+  EXPECT_EQ(0x0100, *base_attrid);  // The primary language must be at 0x0100.
+  EXPECT_TRUE(rec.value().HasAttribute(*base_attrid + bt::sdp::kServiceNameOffset));
+  const bt::sdp::DataElement& name_elem =
+      rec.value().GetAttribute(*base_attrid + bt::sdp::kServiceNameOffset);
+  auto name = name_elem.Get<std::string>();
+  EXPECT_TRUE(name);
+  EXPECT_EQ("MAP MAS", *name);
+
+  // Confirm protocol +  descriptor list
+  EXPECT_TRUE(rec.value().HasAttribute(bt::sdp::kProtocolDescriptorList));
+  const bt::sdp::DataElement& protocol_val =
+      rec.value().GetAttribute(bt::sdp::kProtocolDescriptorList);
+  bt::DynamicByteBuffer protocol_block(protocol_val.WriteSize());
+  protocol_val.Write(&protocol_block);
+  auto expected_protocol_list =
+      bt::StaticByteBuffer(0x35, 0x11,  // Data Element Sequence (11 bytes)
+                           0x35, 0x03,  // Data Element Sequence (3 bytes)
+                           0x19,        // UUID (16 bits)
+                           0x01, 0x00,  // L2CAP Profile UUID
+                           0x35, 0x05,  // Data Element Sequence (5 bytes)
+                           0x19,        // UUID
+                           0x00, 0x03,  // RFCOMM Profile UUID
+                           0x08,        // uint8_t
+                           0x0a,        // ServerChannel = 10
+                           0x35, 0x03,  // Data Element Sequence (3 bytes)
+                           0x19,        // UUID
+                           0x00, 0x08   // OBEX Profile UUID
+      );
+  EXPECT_EQ(expected_protocol_list.size(), protocol_block.size());
+  EXPECT_TRUE(ContainersEqual(expected_protocol_list, protocol_block));
+
+  // Confirm profile descriptor list
+  EXPECT_TRUE(rec.value().HasAttribute(bt::sdp::kBluetoothProfileDescriptorList));
+  const bt::sdp::DataElement& profile_val =
+      rec.value().GetAttribute(bt::sdp::kBluetoothProfileDescriptorList);
+  bt::DynamicByteBuffer profile_block(profile_val.WriteSize());
+  profile_val.Write(&profile_block);
+  auto expected_profile_list = bt::StaticByteBuffer(0x35, 0x08,  // Data Element Sequence (8 bytes)
+                                                    0x35, 0x06,  // Data Element Sequence (6 bytes)
+                                                    0x19,        // UUID
+                                                    0x11, 0x34,  // Message Access Profile ID
+                                                    0x09,        // uint16_t
+                                                    0x01, 0x04   // Major and minor version
+  );
+  EXPECT_EQ(expected_profile_list.size(), profile_block.size());
+  EXPECT_TRUE(ContainersEqual(expected_profile_list, profile_block));
+
+  // Confirm additional attributes
+  EXPECT_TRUE(rec.value().HasAttribute(0x0315));
+  EXPECT_TRUE(rec.value().HasAttribute(0x0316));
+  EXPECT_TRUE(rec.value().HasAttribute(0x0317));
+  // The GoepL2capPsm value should be saved.
+  EXPECT_EQ(*rec.value().GetAttribute(bt::sdp::kGoepL2capPsm).Get<uint16_t>(),
+            fuchsia::bluetooth::bredr::PSM_DYNAMIC);
 }
 
 TEST(HelpersTest, FidlToBrEdrSecurityRequirements) {
@@ -1327,7 +1485,7 @@ TEST_F(HelpersAdapterTest, FidlToScoParameters) {
   EXPECT_EQ(view.input_pcm_sample_payload_msb_position().Read(), 0u);
 }
 
-class HelpersTestFakeAdapter : public bt::gap::testing::FakeAdapterTestFixture {
+class HelpersTestFakeAdapter : public bt::fidl::testing::FakeAdapterTestFixture {
  public:
   HelpersTestFakeAdapter() = default;
   ~HelpersTestFakeAdapter() override = default;
@@ -1437,7 +1595,8 @@ TEST(HelpersTest, DiscoveryFilterFromFidlFilter) {
 
 TEST(HelpersTest, EmptyAdvertisingDataToFidlScanData) {
   bt::AdvertisingData input;
-  fble::ScanData output = AdvertisingDataToFidlScanData(input, zx::time(1));
+  fble::ScanData output = AdvertisingDataToFidlScanData(
+      input, pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(1)));
   EXPECT_FALSE(output.has_tx_power());
   EXPECT_FALSE(output.has_appearance());
   EXPECT_FALSE(output.has_service_uuids());
@@ -1467,7 +1626,8 @@ TEST(HelpersTest, AdvertisingDataToFidlScanData) {
   const char* const kUri = "http://fuchsia.cl/461435";
   EXPECT_TRUE(input.AddUri(kUri));
 
-  fble::ScanData output = AdvertisingDataToFidlScanData(input, zx::time(1));
+  fble::ScanData output = AdvertisingDataToFidlScanData(
+      input, pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(1)));
   EXPECT_EQ(4, output.tx_power());
   EXPECT_EQ(fbt::Appearance{kAppearance}, output.appearance());
   ASSERT_EQ(1u, output.service_uuids().size());
@@ -1491,12 +1651,14 @@ TEST(HelpersTest, AdvertisingDataToFidlScanDataOmitsNonEnumeratedAppearance) {
   bt::AdvertisingData input;
   input.SetAppearance(kNonEnumeratedAppearance);
 
-  EXPECT_FALSE(AdvertisingDataToFidlScanData(input, zx::time()).has_appearance());
+  EXPECT_FALSE(
+      AdvertisingDataToFidlScanData(input, pw::chrono::SystemClock::time_point()).has_appearance());
 
   const uint16_t kKnownAppearance = 832u;  // HEART_RATE_SENSOR
   input.SetAppearance(kKnownAppearance);
 
-  EXPECT_TRUE(AdvertisingDataToFidlScanData(input, zx::time()).has_appearance());
+  EXPECT_TRUE(
+      AdvertisingDataToFidlScanData(input, pw::chrono::SystemClock::time_point()).has_appearance());
 }
 
 TEST_F(HelpersTestWithLoop, PeerToFidlLeWithAllFields) {
@@ -1507,13 +1669,14 @@ TEST_F(HelpersTestWithLoop, PeerToFidlLeWithAllFields) {
   bt::gap::PeerMetrics metrics;
   bt::gap::Peer peer([](auto&, auto) {}, [](auto&) {}, [](auto&) {}, [](auto&) { return false; },
                      kPeerId, kAddr,
-                     /*connectable=*/true, &metrics);
+                     /*connectable=*/true, &metrics, pw_dispatcher());
   peer.RegisterName("name");
   const int8_t kRssi = 1;
   auto adv_bytes = bt::StaticByteBuffer(
       // Uri: "https://abc.xyz"
       0x0B, bt::DataType::kURI, 0x17, '/', '/', 'a', 'b', 'c', '.', 'x', 'y', 'z');
-  peer.MutLe().SetAdvertisingData(kRssi, adv_bytes, zx::time(1));
+  peer.MutLe().SetAdvertisingData(kRssi, adv_bytes,
+                                  pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(1)));
 
   fble::Peer fidl_peer = PeerToFidlLe(peer);
   ASSERT_TRUE(fidl_peer.has_id());
@@ -1538,7 +1701,7 @@ TEST_F(HelpersTestWithLoop, PeerToFidlLeWithoutAdvertisingData) {
   bt::gap::PeerMetrics metrics;
   bt::gap::Peer peer([](auto&, auto) {}, [](auto&) {}, [](auto&) {}, [](auto&) { return false; },
                      kPeerId, kAddr,
-                     /*connectable=*/true, &metrics);
+                     /*connectable=*/true, &metrics, pw_dispatcher());
 
   fble::Peer fidl_peer = PeerToFidlLe(peer);
   ASSERT_TRUE(fidl_peer.has_id());

@@ -17,6 +17,15 @@ const char* TechnologyTypeToString(TechnologyType type) {
   }
 }
 
+const char* BrEdrSecurityModeToString(BrEdrSecurityMode mode) {
+  switch (mode) {
+    case BrEdrSecurityMode::Mode4:
+      return "Mode 4";
+    case BrEdrSecurityMode::SecureConnectionsOnly:
+      return "Secure Connections Only Mode";
+  }
+}
+
 const char* LeSecurityModeToString(LESecurityMode mode) {
   switch (mode) {
     case LESecurityMode::Mode1:
@@ -24,6 +33,19 @@ const char* LeSecurityModeToString(LESecurityMode mode) {
     case LESecurityMode::SecureConnectionsOnly:
       return "Secure Connections Only Mode";
   }
+}
+
+const char* EncryptionStatusToString(pw::bluetooth::emboss::EncryptionStatus status) {
+  switch (status) {
+    case pw::bluetooth::emboss::EncryptionStatus::OFF:
+      return "OFF";
+    case pw::bluetooth::emboss::EncryptionStatus::ON_WITH_E0_FOR_BREDR_OR_AES_FOR_LE:
+      return "ON WITH E0 FOR BR/EDR OR AES FOR LE";
+    case pw::bluetooth::emboss::EncryptionStatus::ON_WITH_AES_FOR_BREDR:
+      return "ON WITH AES-CCM FOR BR/EDR";
+  }
+
+  return "(Unknown)";
 }
 
 }  // namespace bt::gap

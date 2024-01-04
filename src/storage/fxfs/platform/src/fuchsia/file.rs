@@ -8,7 +8,7 @@ use {
         errors::map_to_status,
         node::{FxNode, OpenedNode},
         paged_object_handle::PagedObjectHandle,
-        pager::{PagerBackedVmo, TransferBuffers, TRANSFER_BUFFER_MAX_SIZE},
+        pager::{default_page_in, PagerBacked, PagerPacketReceiverRegistration},
         volume::{info_to_filesystem_info, FxVolume},
     },
     anyhow::Error,
@@ -16,19 +16,17 @@ use {
     fidl::endpoints::ServerEnd,
     fidl_fuchsia_io as fio,
     fuchsia_zircon::{self as zx, HandleBased, Status},
-    futures::{future::BoxFuture, join},
+    futures::future::BoxFuture,
     fxfs::{
-        async_enter,
-        filesystem::SyncOptions,
+        filesystem::{SyncOptions, MAX_FILE_SIZE},
         log::*,
-        object_handle::{ObjectHandle, ObjectProperties, ReadObjectHandle},
+        object_handle::{ObjectHandle, ReadObjectHandle},
         object_store::{
-            transaction::{LockKey, Options},
+            transaction::{lock_keys, LockKey, Options},
             DataObjectHandle, ObjectDescriptor, Timestamp,
         },
-        round::{round_down, round_up},
+        range::RangeExt,
     },
-    once_cell::sync::Lazy,
     std::{
         ops::Range,
         sync::{
@@ -36,6 +34,7 @@ use {
             Arc,
         },
     },
+    storage_device::buffer,
     vfs::{
         attributes,
         common::rights_to_posix_mode_bits,
@@ -62,6 +61,7 @@ pub struct FxFile {
     open_count: AtomicUsize,
 }
 
+#[fxfs_trace::trace]
 impl FxFile {
     pub fn new(handle: DataObjectHandle<FxVolume>) -> Arc<Self> {
         let file = Arc::new(Self {
@@ -73,16 +73,19 @@ impl FxFile {
         file
     }
 
-    pub fn open_count(&self) -> usize {
-        self.open_count.load(Ordering::Relaxed)
-    }
-
     pub fn create_connection_async(
         this: OpenedNode<FxFile>,
         scope: ExecutionScope,
         flags: impl ProtocolsExt,
         object_request: ObjectRequestRef<'_>,
     ) -> Result<BoxFuture<'static, ()>, zx::Status> {
+        if let Some(rights) = flags.rights() {
+            if rights.intersects(fio::Operations::READ_BYTES | fio::Operations::WRITE_BYTES) {
+                if let Some(fut) = this.handle.pre_fetch_keys() {
+                    this.handle.owner().scope().spawn(fut);
+                }
+            }
+        }
         object_request.create_connection(
             scope.clone(),
             this.take(),
@@ -108,6 +111,11 @@ impl FxFile {
         }
     }
 
+    pub fn verified_file(&self) -> bool {
+        self.handle.uncached_handle().verified_file()
+    }
+
+    #[trace]
     pub async fn flush(&self) -> Result<(), Error> {
         self.handle.flush().await
     }
@@ -123,7 +131,7 @@ impl FxFile {
     // TODO(fxbug.dev/89873): might be better to have a cached/uncached mode for file and call
     // this when in uncached mode
     pub async fn write_at_uncached(&self, offset: u64, content: &[u8]) -> Result<u64, Status> {
-        let mut buf = self.handle.uncached_handle().allocate_buffer(content.len());
+        let mut buf = self.handle.uncached_handle().allocate_buffer(content.len()).await;
         buf.as_mut_slice().copy_from_slice(content);
         let _ = self
             .handle
@@ -137,7 +145,7 @@ impl FxFile {
     // TODO(fxbug.dev/89873): might be better to have a cached/uncached mode for file and call
     // this when in uncached mode
     pub async fn read_at_uncached(&self, offset: u64, buffer: &mut [u8]) -> Result<u64, Status> {
-        let mut buf = self.handle.uncached_handle().allocate_buffer(buffer.len());
+        let mut buf = self.handle.uncached_handle().allocate_buffer(buffer.len()).await;
         buf.as_mut_slice().fill(0);
         let bytes_read = self
             .handle
@@ -197,11 +205,9 @@ impl Drop for FxFile {
     fn drop(&mut self) {
         let volume = self.handle.owner();
         volume.cache().remove(self);
-        volume.pager().unregister_file(self);
     }
 }
 
-#[async_trait]
 impl FxNode for FxFile {
     fn object_id(&self) -> u64 {
         self.handle.object_id()
@@ -224,8 +230,12 @@ impl FxNode for FxFile {
         self.open_count_sub_one_and_maybe_flush(true);
     }
 
-    async fn get_properties(&self) -> Result<ObjectProperties, Error> {
-        self.handle.get_properties().await
+    fn object_descriptor(&self) -> ObjectDescriptor {
+        ObjectDescriptor::File
+    }
+
+    fn terminate(&self) {
+        self.handle.pager_packet_receiver_registration().stop_watching_for_zero_children();
     }
 }
 
@@ -255,7 +265,7 @@ impl DirectoryEntry for FxFile {
 #[async_trait]
 impl vfs::node::Node for FxFile {
     async fn get_attrs(&self) -> Result<fio::NodeAttributes, Status> {
-        let props = self.get_properties().await.map_err(map_to_status)?;
+        let props = self.handle.get_properties().await.map_err(map_to_status)?;
         Ok(fio::NodeAttributes {
             mode: fio::MODE_TYPE_FILE
                 | rights_to_posix_mode_bits(/*r*/ true, /*w*/ true, /*x*/ false),
@@ -272,12 +282,15 @@ impl vfs::node::Node for FxFile {
         &self,
         requested_attributes: fio::NodeAttributesQuery,
     ) -> Result<fio::NodeAttributes2, zx::Status> {
-        let props = self.get_properties().await.map_err(map_to_status)?;
+        let props = self.handle.get_properties().await.map_err(map_to_status)?;
+        let descriptor =
+            self.handle.uncached_handle().get_descriptor().await.map_err(map_to_status)?;
         Ok(attributes!(
             requested_attributes,
             Mutable {
                 creation_time: props.creation_time.as_nanos(),
                 modification_time: props.modification_time.as_nanos(),
+                access_time: props.access_time.as_nanos(),
                 mode: props.posix_attributes.map(|a| a.mode).unwrap_or(0),
                 uid: props.posix_attributes.map(|a| a.uid).unwrap_or(0),
                 gid: props.posix_attributes.map(|a| a.gid).unwrap_or(0),
@@ -293,6 +306,10 @@ impl vfs::node::Node for FxFile {
                 storage_size: props.allocated_size,
                 link_count: props.refs,
                 id: self.handle.object_id(),
+                change_time: props.change_time.as_nanos(),
+                options: descriptor.clone().map(|a| a.0),
+                root_hash: descriptor.clone().map(|a| a.1),
+                verity_enabled: self.verified_file(),
             }
         ))
     }
@@ -313,7 +330,7 @@ impl vfs::node::Node for FxFile {
             .filesystem()
             .clone()
             .new_transaction(
-                &[
+                lock_keys![
                     LockKey::object(store.store_object_id(), object_id),
                     LockKey::object(store.store_object_id(), dir.object_id()),
                 ],
@@ -326,6 +343,16 @@ impl vfs::node::Node for FxFile {
             return Err(zx::Status::NOT_FOUND);
         }
         dir.link_object(transaction, &name, object_id, ObjectDescriptor::File).await
+    }
+
+    fn query_filesystem(&self) -> Result<fio::FilesystemInfo, Status> {
+        let store = self.handle.store();
+        Ok(info_to_filesystem_info(
+            store.filesystem().get_info(),
+            store.filesystem().block_size(),
+            store.object_count(),
+            self.handle.owner().id(),
+        ))
     }
 }
 
@@ -342,6 +369,11 @@ impl File for FxFile {
     async fn truncate(&self, length: u64) -> Result<(), Status> {
         self.handle.truncate(length).await.map_err(map_to_status)?;
         Ok(())
+    }
+
+    async fn enable_verity(&self, options: fio::VerificationOptions) -> Result<(), Status> {
+        self.flush().await.map_err(map_to_status)?;
+        self.handle.uncached_handle().enable_verity(options).await.map_err(map_to_status)
     }
 
     // Returns a VMO handle that supports paging.
@@ -457,121 +489,62 @@ impl File for FxFile {
 
         Ok(())
     }
-
-    fn query_filesystem(&self) -> Result<fio::FilesystemInfo, Status> {
-        let store = self.handle.store();
-        Ok(info_to_filesystem_info(
-            store.filesystem().get_info(),
-            store.filesystem().block_size(),
-            store.object_count(),
-            self.handle.owner().id(),
-        ))
-    }
 }
 
-impl PagerBackedVmo for FxFile {
-    fn pager_key(&self) -> u64 {
-        self.object_id()
+#[fxfs_trace::trace]
+#[async_trait]
+impl PagerBacked for FxFile {
+    fn pager(&self) -> &crate::pager::Pager {
+        self.handle.owner().pager()
+    }
+
+    fn pager_packet_receiver_registration(&self) -> &PagerPacketReceiverRegistration {
+        &self.handle.pager_packet_receiver_registration()
     }
 
     fn vmo(&self) -> &zx::Vmo {
         self.handle.vmo()
     }
 
-    fn page_in(self: Arc<Self>, mut range: Range<u64>) {
-        async_enter!("page_in");
-        const ZERO_VMO_SIZE: u64 = TRANSFER_BUFFER_MAX_SIZE;
-        static ZERO_VMO: Lazy<zx::Vmo> = Lazy::new(|| zx::Vmo::create(ZERO_VMO_SIZE).unwrap());
-
-        let volume = self.handle.owner();
-
-        let vmo = self.vmo();
-        let aligned_size =
-            round_up(self.handle.uncached_size(), zx::system_get_page_size()).unwrap();
-        let mut offset = std::cmp::max(range.start, aligned_size);
-        while offset < range.end {
-            let end = std::cmp::min(range.end, offset + ZERO_VMO_SIZE);
-            volume.pager().supply_pages(vmo, offset..end, &ZERO_VMO, 0);
-            offset = end;
-        }
-        if aligned_size < range.end {
-            range.end = aligned_size;
-        } else {
-            const READ_AHEAD: u64 = 131_072;
-            if aligned_size - range.end < READ_AHEAD {
-                range.end = aligned_size;
-            } else {
-                range.end += READ_AHEAD;
-            }
-        }
-        if range.end <= range.start {
-            return;
-        }
-
-        range.start = round_down(range.start, self.handle.block_size());
-
-        volume.clone().spawn(async move {
-            static TRANSFER_BUFFERS: Lazy<TransferBuffers> = Lazy::new(|| TransferBuffers::new());
-            let (buffer_result, transfer_buffer) =
-                join!(async { self.handle.read_uncached(range.clone()).await }, async {
-                    let buffer = TRANSFER_BUFFERS.get().await;
-                    // Committing pages in the kernel is time consuming, so we do this in parallel
-                    // to the read.  This assumes that the implementation of join! polls the other
-                    // future first (which happens to be the case for now).
-                    buffer.commit(range.end - range.start);
-                    buffer
-                });
-            let buffer = match buffer_result {
-                Ok(buffer) => buffer,
-                Err(e) => {
-                    error!(
-                        ?range,
-                        oid = self.handle.uncached_handle().object_id(),
-                        error = ?e,
-                        "Failed to page-in range"
-                    );
-                    self.handle.pager().report_failure(self.vmo(), range.clone(), zx::Status::IO);
-                    return;
-                }
-            };
-            let mut buf = buffer.as_slice();
-            while !buf.is_empty() {
-                let (source, remainder) =
-                    buf.split_at(std::cmp::min(buf.len(), TRANSFER_BUFFER_MAX_SIZE as usize));
-                buf = remainder;
-                let range_chunk = range.start..range.start + source.len() as u64;
-                match transfer_buffer.vmo().write(source, transfer_buffer.offset()) {
-                    Ok(_) => self.handle.pager().supply_pages(
-                        self.vmo(),
-                        range_chunk,
-                        transfer_buffer.vmo(),
-                        transfer_buffer.offset(),
-                    ),
-                    Err(e) => {
-                        // Failures here due to OOM will get reported as IO errors, as those are
-                        // considered transient.
-                        error!(
-                            range = ?range_chunk,
-                            error = ?e,
-                            "Failed to transfer range");
-                        self.handle.pager().report_failure(self.vmo(), range_chunk, zx::Status::IO);
-                    }
-                }
-                range.start += source.len() as u64;
-            }
-        });
+    fn page_in(self: Arc<Self>, range: Range<u64>) {
+        default_page_in(self, range)
     }
 
+    #[trace]
     fn mark_dirty(self: Arc<Self>, range: Range<u64>) {
-        self.handle.owner().clone().spawn(async move {
-            async_enter!("mark_dirty");
-            self.handle.mark_dirty(range).await;
+        let (valid_pages, invalid_pages) = range.split(MAX_FILE_SIZE);
+        if let Some(invalid_pages) = invalid_pages {
+            self.pager().report_failure(self.vmo(), invalid_pages, zx::Status::FILE_BIG);
+        }
+        let range = match valid_pages {
+            Some(range) => range,
+            None => return,
+        };
+
+        let byte_count = range.end - range.start;
+        self.handle.owner().clone().report_pager_dirty(byte_count, move || {
+            if let Err(_) = self.handle.mark_dirty(range) {
+                // Undo the report of the dirty pages since mark_dirty failed.
+                self.handle.owner().report_pager_clean(byte_count);
+            }
         });
     }
 
     fn on_zero_children(self: Arc<Self>) {
         // Drop the open count that we took in `get_backing_memory`.
         self.open_count_sub_one();
+    }
+
+    fn read_alignment(&self) -> u64 {
+        self.handle.block_size()
+    }
+    fn byte_size(&self) -> u64 {
+        self.handle.uncached_size()
+    }
+    async fn aligned_read(&self, range: Range<u64>) -> Result<(buffer::Buffer<'_>, usize), Error> {
+        let buffer = self.handle.read_uncached(range).await?;
+        let buffer_len = buffer.len();
+        Ok((buffer, buffer_len))
     }
 }
 
@@ -588,11 +561,15 @@ mod tests {
             close_file_checked, open_file_checked, TestFixture, TestFixtureOptions,
         },
         anyhow::format_err,
-        fidl_fuchsia_io as fio, fuchsia_async as fasync,
+        fidl_fuchsia_io as fio,
+        fsverity_merkle::{MerkleTreeBuilder, Sha256Struct},
+        fuchsia_async as fasync,
         fuchsia_fs::file,
         fuchsia_zircon::Status,
         futures::join,
-        fxfs::{filesystem::Filesystem, object_handle::INVALID_OBJECT_ID},
+        fxfs::object_handle::INVALID_OBJECT_ID,
+        mundane::hash::Digest,
+        rand::{thread_rng, Rng},
         std::sync::{
             atomic::{self, AtomicBool},
             Arc,
@@ -1683,6 +1660,179 @@ mod tests {
             fasync::unblock(move || vmo.write(b"hello", 0).expect("write failed")).await;
         }
 
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_get_attributes_fsverity_enabled_file() {
+        let fixture = TestFixture::new().await;
+        let root = fixture.root();
+
+        let file = open_file_checked(
+            &root,
+            fio::OpenFlags::CREATE
+                | fio::OpenFlags::RIGHT_READABLE
+                | fio::OpenFlags::RIGHT_WRITABLE
+                | fio::OpenFlags::NOT_DIRECTORY,
+            "foo",
+        )
+        .await;
+
+        let mut data: Vec<u8> = vec![0x00u8; 1052672];
+        thread_rng().fill(&mut data[..]);
+
+        for chunk in data.chunks(8192) {
+            file.write(chunk)
+                .await
+                .expect("FIDL call failed")
+                .map_err(Status::from_raw)
+                .expect("write failed");
+        }
+
+        let mut builder = MerkleTreeBuilder::new(Sha256Struct::new(vec![0xFF; 8], 4096));
+        builder.write(data.as_slice());
+        let tree = builder.finish();
+        let mut expected_root = tree.root().bytes().to_vec();
+        expected_root.extend_from_slice(&[0; 32]);
+
+        let expected_descriptor = fio::VerificationOptions {
+            hash_algorithm: Some(fio::HashAlgorithm::Sha256),
+            salt: Some(vec![0xFF; 8]),
+            ..Default::default()
+        };
+
+        file.enable_verity(&expected_descriptor)
+            .await
+            .expect("FIDL transport error")
+            .expect("enable verity failed");
+
+        let (_, immutable_attributes) = file
+            .get_attributes(fio::NodeAttributesQuery::ROOT_HASH | fio::NodeAttributesQuery::OPTIONS)
+            .await
+            .expect("FIDL call failed")
+            .map_err(Status::from_raw)
+            .expect("get_attributes failed");
+
+        assert_eq!(
+            immutable_attributes
+                .options
+                .expect("verification options not present in immutable attributes"),
+            expected_descriptor
+        );
+        assert_eq!(
+            immutable_attributes.root_hash.expect("root hash not present in immutable attributes"),
+            expected_root
+        );
+
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_get_attributes_fsverity_not_enabled() {
+        let fixture = TestFixture::new().await;
+        let root = fixture.root();
+
+        let file = open_file_checked(
+            &root,
+            fio::OpenFlags::CREATE
+                | fio::OpenFlags::RIGHT_READABLE
+                | fio::OpenFlags::RIGHT_WRITABLE
+                | fio::OpenFlags::NOT_DIRECTORY,
+            "foo",
+        )
+        .await;
+
+        let mut data: Vec<u8> = vec![0x00u8; 8192];
+        thread_rng().fill(&mut data[..]);
+
+        file.write(&data)
+            .await
+            .expect("FIDL call failed")
+            .map_err(Status::from_raw)
+            .expect("write failed");
+
+        let () = file
+            .sync()
+            .await
+            .expect("FIDL call failed")
+            .map_err(Status::from_raw)
+            .expect("sync failed");
+
+        let (_, immutable_attributes) = file
+            .get_attributes(fio::NodeAttributesQuery::ROOT_HASH | fio::NodeAttributesQuery::OPTIONS)
+            .await
+            .expect("FIDL call failed")
+            .map_err(Status::from_raw)
+            .expect("get_attributes failed");
+
+        assert_eq!(immutable_attributes.options, None);
+        assert_eq!(immutable_attributes.root_hash, None);
+
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_update_attributes_also_updates_ctime() {
+        let fixture = TestFixture::new().await;
+        let root = fixture.root();
+
+        let file = open_file_checked(
+            &root,
+            fio::OpenFlags::CREATE
+                | fio::OpenFlags::RIGHT_READABLE
+                | fio::OpenFlags::RIGHT_WRITABLE
+                | fio::OpenFlags::NOT_DIRECTORY,
+            "foo",
+        )
+        .await;
+
+        // Writing to file should update ctime
+        file.write("hello, world!".as_bytes())
+            .await
+            .expect("FIDL call failed")
+            .map_err(Status::from_raw)
+            .expect("write failed");
+        let (_mutable_attributes, immutable_attributes) = file
+            .get_attributes(fio::NodeAttributesQuery::CHANGE_TIME)
+            .await
+            .expect("FIDL call failed")
+            .map_err(Status::from_raw)
+            .expect("get_attributes failed");
+        let ctime_after_write = immutable_attributes.change_time;
+
+        // Updating file attributes updates ctime as well
+        file.update_attributes(&fio::MutableNodeAttributes {
+            mode: Some(111),
+            gid: Some(222),
+            ..Default::default()
+        })
+        .await
+        .expect("FIDL call failed")
+        .map_err(Status::from_raw)
+        .expect("update_attributes failed");
+        let (_mutable_attributes, immutable_attributes) = file
+            .get_attributes(fio::NodeAttributesQuery::CHANGE_TIME)
+            .await
+            .expect("FIDL call failed")
+            .map_err(Status::from_raw)
+            .expect("get_attributes failed");
+        let ctime_after_update = immutable_attributes.change_time;
+        assert!(ctime_after_update > ctime_after_write);
+
+        // Flush metadata
+        file.sync()
+            .await
+            .expect("FIDL call failed")
+            .map_err(Status::from_raw)
+            .expect("sync failed");
+        let (_mutable_attributes, immutable_attributes) = file
+            .get_attributes(fio::NodeAttributesQuery::CHANGE_TIME)
+            .await
+            .expect("FIDL call failed")
+            .map_err(Status::from_raw)
+            .expect("get_attributes failed");
+        let ctime_after_sync = immutable_attributes.change_time;
+        assert_eq!(ctime_after_sync, ctime_after_update);
         fixture.close().await;
     }
 }

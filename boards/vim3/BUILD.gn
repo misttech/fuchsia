@@ -1,0 +1,325 @@
+# Copyright 2023 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/assembly/board_configuration.gni")
+import("//build/assembly/board_input_bundle.gni")
+
+assert(current_toolchain == default_toolchain,
+       "The vim3 board can only be defined in the default toolchain.")
+assert(current_cpu == "arm64",
+       "The vim3 board can only be defined in an arm64 toolchain.")
+
+_base = {
+  provided_features = [
+    "fuchsia::driver_framework_v2_support",
+    "fuchsia::fan",
+    "fuchsia::mali_gpu",
+    "fuchsia::pmm_checker",
+    "fuchsia::usb_peripheral_support",
+    "fuchsia::wlan_fullmac",
+  ]
+
+  input_bundles = [
+    ":main_bundle",
+    ":vulkan_arm_mali",
+    ":rtc_driver",
+  ]
+
+  filesystems = {
+    vbmeta = {
+      key = "//src/firmware/avb_keys/vim3/vim3-dev-key/vim3_devkey_atx_psk.pem"
+      key_metadata =
+          "//src/firmware/avb_keys/vim3/vim3-dev-key/vim3_dev_atx_metadata.bin"
+    }
+    fvm = {
+      blobfs = {
+        size_checker_maximum_bytes = 5216665600
+      }
+      sparse_output = {
+      }
+      fastboot_output = {
+        # For VIM3, FVM partition uses all of the remaining eMMC.
+        # However, the total size of the eMMC storage maybe 16G or 32G
+        # depending on whether it is a basic or pro version. In
+        # addition, the actual size of the user block allocated by
+        # Fuchsia can be further different. (i.e. 'lsblk' shows a 29G
+        # size user block for the 32Gb version). To avoid the risk of
+        # overflowing available size, here we set it to be the same as
+        # sherlock (3280mb), which is clearly safe and sufficient for
+        # now.
+        truncate_to_length = 3439329280
+      }
+    }
+    fxfs = {
+      size_checker_maximum_bytes = 5216665600
+    }
+  }
+}
+
+board_configuration("vim3") {
+  forward_variables_from(_base, "*")
+  input_bundles += [ ":board_driver" ]
+}
+
+board_configuration("vim3-devicetree") {
+  forward_variables_from(_base, "*")
+  input_bundles += [ ":devicetree_board_driver" ]
+}
+
+board_input_bundle("main_bundle") {
+  configuration = {
+    power_manager =
+        "//src/power/power-manager/node_config/vim3_node_config.json5"
+    thermal = "//src/power/power-manager/thermal_config/vim3.json5"
+  }
+  base_packages = [ "//src/graphics/bin/vulkan_loader" ]
+  drivers = [
+    {
+      package_target =
+          "//src/connectivity/ethernet/drivers/aml-ethernet:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/aml-ethernet.cm" ]
+    },
+    {
+      package_target = "//src/connectivity/ethernet/drivers/dwmac:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/dwmac.cm" ]
+    },
+    {
+      package_target =
+          "//src/connectivity/ethernet/drivers/realtek-8211f:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/realtek-8211f.cm" ]
+    },
+    {
+      package_target = "//src/devices/adc/drivers/aml-saradc:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/aml-saradc.cm" ]
+    },
+    {
+      package_target = "//src/devices/block/drivers/aml-sdmmc:package-dfv2"
+      package_set = "bootfs"
+      driver_components = [ "meta/aml-sdmmc-dfv2.cm" ]
+    },
+    {
+      package_target = "//src/devices/block/drivers/bootpart:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/bootpart.cm" ]
+    },
+    {
+      package_target = "//src/devices/clock/drivers/amlogic-clk:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/amlogic-clk.cm" ]
+    },
+    {
+      package_target = "//src/devices/cpu/drivers/aml-cpu:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/aml-cpu.cm" ]
+    },
+    {
+      package_target = "//src/devices/gpio/drivers/aml-gpio:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/aml-gpio.cm" ]
+    },
+    {
+      package_target = "//src/devices/gpio/drivers/ti-tca6408a:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/ti-tca6408a.cm" ]
+    },
+    {
+      package_target = "//src/devices/i2c/drivers/aml-i2c:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/aml-i2c.cm" ]
+    },
+    {
+      package_target = "//src/devices/mcu/drivers/vim3-mcu:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/vim3-mcu.cm" ]
+    },
+    {
+      package_target = "//src/devices/ml/drivers/aml-nna:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/aml-nna.cm" ]
+    },
+    {
+      package_target = "//src/devices/power/drivers/aml-meson-power:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/aml-meson-power.cm" ]
+    },
+    {
+      package_target = "//src/devices/power/drivers/aml-pwm-regulator:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/aml-pwm-regulator.cm" ]
+    },
+    {
+      package_target = "//src/devices/power/drivers/fusb302:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/fusb302.cm" ]
+    },
+    {
+      package_target = "//src/devices/pwm/drivers/aml-pwm:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/aml-pwm.cm" ]
+    },
+    {
+      package_target = "//src/devices/pwm/drivers/aml-pwm-init:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/aml-pwm-init.cm" ]
+    },
+    {
+      package_target = "//src/devices/registers/drivers/registers:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/registers.cm" ]
+    },
+    {
+      package_target = "//src/devices/serial/drivers/aml-uart:package-dfv2"
+      package_set = "bootfs"
+      driver_components = [ "meta/aml-uart-dfv2.cm" ]
+    },
+    {
+      package_target = "//src/devices/thermal/drivers/aml-thermal:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/aml-thermal.cm" ]
+    },
+    {
+      package_target = "//src/devices/usb/drivers/dwc2:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/dwc2.cm" ]
+    },
+    {
+      package_target = "//src/devices/usb/drivers/vim3-usb-phy:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/vim3-usb-phy.cm" ]
+    },
+    {
+      package_target = "//src/graphics/display/drivers/aml-canvas:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/aml-canvas.cm" ]
+    },
+    {
+      package_target = "//src/graphics/display/drivers/amlogic-display:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/amlogic-display.cm" ]
+    },
+    {
+      package_target = "//src/graphics/display/drivers/dsi-dw:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/dsi-dw.cm" ]
+    },
+    {
+      package_target = "//src/graphics/drivers/aml-gpu:aml-gpu-package"
+      package_set = "bootfs"
+      driver_components = [ "meta/aml-gpu.cm" ]
+    },
+    {
+      package_target =
+          "//src/media/audio/drivers/aml-g12-tdm:aml-g12-composite-package"
+      package_set = "bootfs"
+      driver_components = [ "meta/aml-g12-composite.cm" ]
+    },
+    {
+      package_target = "//src/ui/backlight/drivers/vim3-pwm-backlight:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/vim3-pwm-backlight.cm" ]
+    },
+    {
+      package_target = "//src/ui/input/drivers/adc-buttons:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/adc-buttons.cm" ]
+    },
+    {
+      package_target = "//src/ui/input/drivers/focaltech:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/focaltech.cm" ]
+    },
+
+    # arm64 common drivers
+    {
+      package_target = "//src/devices/bus/drivers/pci:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/bus-pci.cm" ]
+    },
+    {
+      package_target = "//src/devices/usb/drivers/xhci:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/xhci.cm" ]
+    },
+
+    # Base drivers
+    {
+      package_target = "//src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac:brcmfmac-vim3"
+      package_set = "base"
+      driver_components = [ "meta/brcmfmac.cm" ]
+    },
+    {
+      package_target = "//src/connectivity/bluetooth/hci/vendor/broadcom"
+      package_set = "base"
+      driver_components = [ "meta/bt-hci-broadcom.cm" ]
+    },
+    {
+      package_target = "//src/graphics/drivers/msd-arm-mali:msd-arm-mali-dfv2"
+      package_set = "base"
+      driver_components = [ "meta/msd_arm_dfv2.cm" ]
+    },
+    {
+      package_target = "//src/graphics/drivers/msd-vsi-vip"
+      package_set = "base"
+      driver_components = [ "meta/libmsd_vsi.cm" ]
+    },
+    {
+      package_target = "//src/connectivity/bluetooth/hci/transport/uart"
+      package_set = "base"
+      driver_components = [ "meta/bt-transport-uart.cm" ]
+    },
+    {
+      package_target = "//src/connectivity/wlan/drivers/wlanphy:wlanphy"
+      package_set = "base"
+      driver_components = [ "meta/wlanphy.cm" ]
+    },
+  ]
+  kernel_cmdline = [
+    # Prefer using the built-in NIC to the CDC-ether interface.
+    # TODO(https://fxbug.dev/117539): Update topopath when dwmac is off
+    # netdevice migration.
+    "netsvc.interface=/dwmac/dwmac/Designware-MAC/netdevice-migration/network-device",
+
+    # Enable the Debug Access Port (DAP) for improved lockup/crash diagnostics.
+    "kernel.arm64.debug.dap-rom-soc=amlogic-a311d",
+  ]
+}
+
+board_input_bundle("board_driver") {
+  drivers = [
+    {
+      package_target = "//src/devices/board/drivers/vim3:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/vim3.cm" ]
+    },
+  ]
+}
+
+board_input_bundle("devicetree_board_driver") {
+  drivers = [
+    {
+      package_target = "//src/devices/board/drivers/vim3-devicetree:package"
+      package_set = "bootfs"
+      driver_components = [ "meta/vim3-devicetree.cm" ]
+    },
+  ]
+}
+
+board_input_bundle("vulkan_arm_mali") {
+  base_packages =
+      [ "//src/graphics/drivers/arm-mali/icd:libvulkan_arm_g52_r0p0" ]
+}
+
+board_input_bundle("rtc_driver") {
+  drivers = [
+    {
+      package_target = "//src/devices/rtc/drivers/nxp:pcf8563"
+      package_set = "base"
+      driver_components = [ "meta/pcf8563.cm" ]
+    },
+  ]
+}

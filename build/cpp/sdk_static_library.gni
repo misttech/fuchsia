@@ -175,19 +175,15 @@ template("sdk_static_library") {
       if (defined(invoker.metadata)) {
         forward_variables_from(invoker.metadata, "*")
       }
-      if (is_fuchsia) {
-        component_catalog = [
-          {
-            sdk_id = sdk_id
-            label = get_label_info(":$target_name", "label_with_toolchain")
-          },
-        ]
-      }
     }
   }
 
   # Base path for binaries of this library in SDKs.
-  prebuilt_base = "arch/$target_cpu"
+  if (override_target_api_level == -1) {
+    prebuilt_base = "arch/$target_cpu"
+  } else {
+    prebuilt_base = "obj/${target_cpu}-api-${override_target_api_level}"
+  }
 
   # Identify dependencies and their metadata files.
   sdk_deps = []
@@ -271,7 +267,10 @@ template("sdk_static_library") {
       ]
     }
 
-    verify_public_headers(target_name) {
+    verify_public_headers_target = "$target_name.verify_public_headers"
+    verify_public_headers(verify_public_headers_target) {
+      forward_variables_from(invoker, [ "testonly" ])
+      target_label = ":${target_name}"
       headers = all_headers
     }
   }
@@ -353,6 +352,12 @@ template("sdk_static_library") {
     ]
     args += [ "--deps" ] + rebase_path(sdk_metas, root_build_dir)
     args += [ "--headers" ] + sdk_metadata_headers
+    if (override_target_api_level != -1) {
+      args += [
+        "--api-level",
+        "${override_target_api_level}",
+      ]
+    }
 
     deps = sdk_deps + [ ":${main_target_name}" ]
   }
@@ -418,6 +423,9 @@ template("sdk_static_library") {
   sdk_atom_alias(sdk_target_name) {
     atom = ":${manifest_target_name}"
     non_sdk_deps = [ ":${verify_runtime_deps_target}" ]
+    if (!no_headers) {
+      non_sdk_deps += [ ":${verify_public_headers_target}" ]
+    }
     if (generate_plasa_artifacts) {
       non_sdk_deps += [ ":$_plasa_artifacts_target_name" ]
     }

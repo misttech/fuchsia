@@ -80,6 +80,7 @@ if (is_host) {
       "//src/sys/pkg/lib/fuchsia-hash",
       "//src/sys/pkg/lib/fuchsia-merkle",
       "//third_party/rust_crates:anyhow",
+      "//third_party/rust_crates:bincode",
       "//third_party/rust_crates:byteorder",
       "//third_party/rust_crates:hex",
       "//third_party/rust_crates:libc",
@@ -93,7 +94,6 @@ if (is_host) {
 
     test_deps = [
       "//src/lib/fuchsia",
-      "//third_party/rust_crates:bincode",
       "//third_party/rust_crates:maplit",
     ]
 
@@ -108,6 +108,7 @@ if (is_host) {
       "src/blobfs.rs",
       "src/blobfs_export.rs",
       "src/bootfs.rs",
+      "src/build_checks.rs",
       "src/fs.rs",
       "src/fvm.rs",
       "src/golden.rs",
@@ -122,9 +123,6 @@ if (is_host) {
       "src/zbi.rs",
       "src/zstd.rs",
     ]
-
-    # TODO(fxbug.dev/92670): Needed by test.  Remove when fixed.
-    configs += [ "//build/config/rust:output_dir_sensitive" ]
   }
 
   config("test_config") {
@@ -145,9 +143,6 @@ if (is_host) {
     ]
 
     configs += [ ":test_config" ]
-
-    # TODO(fxbug.dev/92670): Needed by test.  Remove when fixed.
-    configs += [ "//build/config/rust:output_dir_sensitive" ]
 
     deps = [
       ":testdata($host_toolchain)",

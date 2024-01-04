@@ -10,6 +10,7 @@
 #include <fidl/fuchsia.device.manager/cpp/wire_test_base.h>
 #include <fidl/fuchsia.driver.framework/cpp/wire_test_base.h>
 #include <fidl/fuchsia.io/cpp/wire_test_base.h>
+#include <fidl/fuchsia.kernel/cpp/wire_test_base.h>
 #include <fidl/fuchsia.logger/cpp/wire_test_base.h>
 #include <fidl/fuchsia.scheduler/cpp/wire_test_base.h>
 #include <lib/async-loop/cpp/loop.h>
@@ -30,10 +31,11 @@
 #include <mock-boot-arguments/server.h>
 
 #include "lib/driver/testing/cpp/driver_runtime.h"
+#include "src/devices/misc/drivers/compat/compat_driver_server.h"
 #include "src/devices/misc/drivers/compat/v1_test.h"
-#include "src/lib/storage/vfs/cpp/managed_vfs.h"
-#include "src/lib/storage/vfs/cpp/pseudo_dir.h"
-#include "src/lib/storage/vfs/cpp/service.h"
+#include "src/storage/lib/vfs/cpp/managed_vfs.h"
+#include "src/storage/lib/vfs/cpp/pseudo_dir.h"
+#include "src/storage/lib/vfs/cpp/service.h"
 
 namespace fboot = fuchsia_boot;
 namespace fdata = fuchsia_data;
@@ -41,6 +43,7 @@ namespace fdf {
 using namespace fuchsia_driver_framework;
 }
 namespace fio = fuchsia_io;
+namespace fkernel = fuchsia_kernel;
 namespace flogger = fuchsia_logger;
 namespace frunner = fuchsia_component_runner;
 
@@ -87,6 +90,222 @@ class TestRootResource : public fidl::testing::WireTestBase<fboot::RootResource>
   fidl::ServerBindingGroup<fboot::RootResource> bindings_;
 
   // An event is similar enough that we can pretend it's the root resource, in that we can
+  // send it over a FIDL channel.
+  zx::event fake_resource_;
+};
+
+class TestMmioResource : public fidl::testing::WireTestBase<fkernel::MmioResource> {
+ public:
+  TestMmioResource() { EXPECT_EQ(ZX_OK, zx::event::create(0, &fake_resource_)); }
+
+  fidl::ProtocolHandler<fkernel::MmioResource> GetHandler() {
+    return bindings_.CreateHandler(this, async_get_default_dispatcher(),
+                                   fidl::kIgnoreBindingClosure);
+  }
+
+ private:
+  void Get(GetCompleter::Sync& completer) override {
+    zx::event duplicate;
+    ASSERT_EQ(ZX_OK, fake_resource_.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate));
+    completer.Reply(zx::resource(duplicate.release()));
+  }
+
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
+    printf("Not implemented: MmioResource::%s\n", name.data());
+    completer.Close(ZX_ERR_NOT_SUPPORTED);
+  }
+  fidl::ServerBindingGroup<fkernel::MmioResource> bindings_;
+
+  // An event is similar enough that we can pretend it's the mmio resource, in that we can
+  // send it over a FIDL channel.
+  zx::event fake_resource_;
+};
+
+class TestPowerResource : public fidl::testing::WireTestBase<fkernel::PowerResource> {
+ public:
+  TestPowerResource() { EXPECT_EQ(ZX_OK, zx::event::create(0, &fake_resource_)); }
+
+  fidl::ProtocolHandler<fkernel::PowerResource> GetHandler() {
+    return bindings_.CreateHandler(this, async_get_default_dispatcher(),
+                                   fidl::kIgnoreBindingClosure);
+  }
+
+ private:
+  void Get(GetCompleter::Sync& completer) override {
+    zx::event duplicate;
+    ASSERT_EQ(ZX_OK, fake_resource_.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate));
+    completer.Reply(zx::resource(duplicate.release()));
+  }
+
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
+    printf("Not implemented: PowerResource::%s\n", name.data());
+    completer.Close(ZX_ERR_NOT_SUPPORTED);
+  }
+  fidl::ServerBindingGroup<fkernel::PowerResource> bindings_;
+
+  // An event is similar enough that we can pretend it's the power resource, in that we can
+  // send it over a FIDL channel.
+  zx::event fake_resource_;
+};
+
+class TestIommuResource : public fidl::testing::WireTestBase<fkernel::IommuResource> {
+ public:
+  TestIommuResource() { EXPECT_EQ(ZX_OK, zx::event::create(0, &fake_resource_)); }
+
+  fidl::ProtocolHandler<fkernel::IommuResource> GetHandler() {
+    return bindings_.CreateHandler(this, async_get_default_dispatcher(),
+                                   fidl::kIgnoreBindingClosure);
+  }
+
+ private:
+  void Get(GetCompleter::Sync& completer) override {
+    zx::event duplicate;
+    ASSERT_EQ(ZX_OK, fake_resource_.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate));
+    completer.Reply(zx::resource(duplicate.release()));
+  }
+
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
+    printf("Not implemented: IommuResource::%s\n", name.data());
+    completer.Close(ZX_ERR_NOT_SUPPORTED);
+  }
+  fidl::ServerBindingGroup<fkernel::IommuResource> bindings_;
+
+  // An event is similar enough that we can pretend it's the iommu resource, in that we can
+  // send it over a FIDL channel.
+  zx::event fake_resource_;
+};
+
+class TestFramebufferResource : public fidl::testing::WireTestBase<fkernel::FramebufferResource> {
+ public:
+  TestFramebufferResource() { EXPECT_EQ(ZX_OK, zx::event::create(0, &fake_resource_)); }
+
+  fidl::ProtocolHandler<fkernel::FramebufferResource> GetHandler() {
+    return bindings_.CreateHandler(this, async_get_default_dispatcher(),
+                                   fidl::kIgnoreBindingClosure);
+  }
+
+ private:
+  void Get(GetCompleter::Sync& completer) override {
+    zx::event duplicate;
+    ASSERT_EQ(ZX_OK, fake_resource_.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate));
+    completer.Reply(zx::resource(duplicate.release()));
+  }
+
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
+    printf("Not implemented: FramebufferResource::%s\n", name.data());
+    completer.Close(ZX_ERR_NOT_SUPPORTED);
+  }
+  fidl::ServerBindingGroup<fkernel::FramebufferResource> bindings_;
+
+  // An event is similar enough that we can pretend it's the framebuffer resource, in that we can
+  // send it over a FIDL channel.
+  zx::event fake_resource_;
+};
+
+class TestIoportResource : public fidl::testing::WireTestBase<fkernel::IoportResource> {
+ public:
+  TestIoportResource() { EXPECT_EQ(ZX_OK, zx::event::create(0, &fake_resource_)); }
+
+  fidl::ProtocolHandler<fkernel::IoportResource> GetHandler() {
+    return bindings_.CreateHandler(this, async_get_default_dispatcher(),
+                                   fidl::kIgnoreBindingClosure);
+  }
+
+ private:
+  void Get(GetCompleter::Sync& completer) override {
+    zx::event duplicate;
+    ASSERT_EQ(ZX_OK, fake_resource_.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate));
+    completer.Reply(zx::resource(duplicate.release()));
+  }
+
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
+    printf("Not implemented: IoportResource::%s\n", name.data());
+    completer.Close(ZX_ERR_NOT_SUPPORTED);
+  }
+  fidl::ServerBindingGroup<fkernel::IoportResource> bindings_;
+
+  // An event is similar enough that we can pretend it's the ioport resource, in that we can
+  // send it over a FIDL channel.
+  zx::event fake_resource_;
+};
+
+class TestIrqResource : public fidl::testing::WireTestBase<fkernel::IrqResource> {
+ public:
+  TestIrqResource() { EXPECT_EQ(ZX_OK, zx::event::create(0, &fake_resource_)); }
+
+  fidl::ProtocolHandler<fkernel::IrqResource> GetHandler() {
+    return bindings_.CreateHandler(this, async_get_default_dispatcher(),
+                                   fidl::kIgnoreBindingClosure);
+  }
+
+ private:
+  void Get(GetCompleter::Sync& completer) override {
+    zx::event duplicate;
+    ASSERT_EQ(ZX_OK, fake_resource_.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate));
+    completer.Reply(zx::resource(duplicate.release()));
+  }
+
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
+    printf("Not implemented: IrqResource::%s\n", name.data());
+    completer.Close(ZX_ERR_NOT_SUPPORTED);
+  }
+  fidl::ServerBindingGroup<fkernel::IrqResource> bindings_;
+
+  // An event is similar enough that we can pretend it's the irq resource, in that we can
+  // send it over a FIDL channel.
+  zx::event fake_resource_;
+};
+
+class TestSmcResource : public fidl::testing::WireTestBase<fkernel::SmcResource> {
+ public:
+  TestSmcResource() { EXPECT_EQ(ZX_OK, zx::event::create(0, &fake_resource_)); }
+
+  fidl::ProtocolHandler<fkernel::SmcResource> GetHandler() {
+    return bindings_.CreateHandler(this, async_get_default_dispatcher(),
+                                   fidl::kIgnoreBindingClosure);
+  }
+
+ private:
+  void Get(GetCompleter::Sync& completer) override {
+    zx::event duplicate;
+    ASSERT_EQ(ZX_OK, fake_resource_.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate));
+    completer.Reply(zx::resource(duplicate.release()));
+  }
+
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
+    printf("Not implemented: SmcResource::%s\n", name.data());
+    completer.Close(ZX_ERR_NOT_SUPPORTED);
+  }
+  fidl::ServerBindingGroup<fkernel::SmcResource> bindings_;
+
+  // An event is similar enough that we can pretend it's the smc resource, in that we can
+  // send it over a FIDL channel.
+  zx::event fake_resource_;
+};
+
+class TestInfoResource : public fidl::testing::WireTestBase<fkernel::InfoResource> {
+ public:
+  TestInfoResource() { EXPECT_EQ(ZX_OK, zx::event::create(0, &fake_resource_)); }
+
+  fidl::ProtocolHandler<fkernel::InfoResource> GetHandler() {
+    return bindings_.CreateHandler(this, async_get_default_dispatcher(),
+                                   fidl::kIgnoreBindingClosure);
+  }
+
+ private:
+  void Get(GetCompleter::Sync& completer) override {
+    zx::event duplicate;
+    ASSERT_EQ(ZX_OK, fake_resource_.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate));
+    completer.Reply(zx::resource(duplicate.release()));
+  }
+
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
+    printf("Not implemented: InfoResource::%s\n", name.data());
+    completer.Close(ZX_ERR_NOT_SUPPORTED);
+  }
+  fidl::ServerBindingGroup<fkernel::InfoResource> bindings_;
+
+  // An event is similar enough that we can pretend it's the info resource, in that we can
   // send it over a FIDL channel.
   zx::event fake_resource_;
 };
@@ -169,7 +388,9 @@ class TestDevice : public fidl::WireServer<fuchsia_driver_compat::Device> {
     auto iter = banjo_protocols_.find(request->proto_id);
     if (iter == banjo_protocols_.end()) {
       completer.ReplyError(ZX_ERR_PROTOCOL_NOT_SUPPORTED);
+      return;
     }
+
     auto& protocol = iter->second;
     completer.ReplySuccess(protocol.ops, protocol.ctx);
   }
@@ -345,6 +566,48 @@ class IncomingNamespace {
         return result.take_error();
       }
 
+      result = outgoing.AddUnmanagedProtocol<fkernel::MmioResource>(mmio_resource_.GetHandler());
+      if (result.is_error()) {
+        return result.take_error();
+      }
+
+      result = outgoing.AddUnmanagedProtocol<fkernel::PowerResource>(power_resource_.GetHandler());
+      if (result.is_error()) {
+        return result.take_error();
+      }
+
+      result = outgoing.AddUnmanagedProtocol<fkernel::IommuResource>(iommu_resource_.GetHandler());
+      if (result.is_error()) {
+        return result.take_error();
+      }
+
+      result = outgoing.AddUnmanagedProtocol<fkernel::FramebufferResource>(
+          framebuffer_resource_.GetHandler());
+      if (result.is_error()) {
+        return result.take_error();
+      }
+
+      result =
+          outgoing.AddUnmanagedProtocol<fkernel::IoportResource>(ioport_resource_.GetHandler());
+      if (result.is_error()) {
+        return result.take_error();
+      }
+
+      result = outgoing.AddUnmanagedProtocol<fkernel::IrqResource>(irq_resource_.GetHandler());
+      if (result.is_error()) {
+        return result.take_error();
+      }
+
+      result = outgoing.AddUnmanagedProtocol<fkernel::SmcResource>(smc_resource_.GetHandler());
+      if (result.is_error()) {
+        return result.take_error();
+      }
+
+      result = outgoing.AddUnmanagedProtocol<fkernel::InfoResource>(info_resource_.GetHandler());
+      if (result.is_error()) {
+        return result.take_error();
+      }
+
       result = outgoing.AddUnmanagedProtocol<fboot::Items>(items_.GetHandler());
       if (result.is_error()) {
         return result.take_error();
@@ -409,6 +672,14 @@ class IncomingNamespace {
  private:
   std::unordered_map<std::string, TestDevice> devices_;
   TestRootResource root_resource_;
+  TestMmioResource mmio_resource_;
+  TestPowerResource power_resource_;
+  TestIommuResource iommu_resource_;
+  TestFramebufferResource framebuffer_resource_;
+  TestIoportResource ioport_resource_;
+  TestIrqResource irq_resource_;
+  TestSmcResource smc_resource_;
+  TestInfoResource info_resource_;
   std::optional<TestProfileProvider> profile_provider_;
   mock_boot_arguments::Server boot_args_;
   TestItems items_;
@@ -499,33 +770,18 @@ class DriverTest : public testing::Test {
     });
 
     // Start driver.
-    struct Context {
-      zx_status_t* status;
-      void** driver;
-    };
-    void* driver = nullptr;
-    zx_status_t status = ZX_ERR_INTERNAL;
-    Context ctx = {
-        .status = &status,
-        .driver = &driver,
-    };
+    std::optional<zx_status_t> status = std::nullopt;
     fdf::StartCompleter start_completer(
-        [](void* context, zx_status_t status, void* driver) {
-          auto* ctx = static_cast<Context*>(context);
-          *ctx->status = status;
-          *ctx->driver = driver;
-        },
-        &ctx);
-
-    compat::DriverFactory::CreateDriver(
+        [&status](zx::result<> result) { status.emplace(result.status_value()); });
+    void* driver = compat::CompatDriverServer::CreateDriver(
         std::move(start_args),
         fdf::UnownedSynchronizedDispatcher(fdf::Dispatcher::GetCurrent()->get()),
         std::move(start_completer));
 
-    while (driver == nullptr) {
+    while (status == std::nullopt) {
       fdf_testing_run_until_idle();
     };
-    EXPECT_EQ(status, args.expected_driver_status);
+    EXPECT_EQ(status.value(), args.expected_driver_status);
     if (status != ZX_OK) {
       EXPECT_NE(driver, nullptr);
     }
@@ -536,11 +792,7 @@ class DriverTest : public testing::Test {
   void UnbindAndFreeDriver(std::unique_ptr<compat::Driver> driver) {
     libsync::Completion completion;
 
-    fdf::PrepareStopCompleter completer(
-        [](void* cookie, zx_status_t status) {
-          static_cast<libsync::Completion*>(cookie)->Signal();
-        },
-        &completion);
+    fdf::PrepareStopCompleter completer([&completion](zx::result<>) { completion.Signal(); });
     driver->PrepareStop(std::move(completer));
 
     // Keep running the test loop while we're waiting for a signal on the dispatcher thread.
@@ -715,7 +967,7 @@ TEST_F(DriverTest, Start_GetBackingMemory) {
 TEST_F(DriverTest, Start_BindFailed) {
   auto driver = StartDriver({
       .v1_driver_path = "/pkg/driver/v1_test.so",
-      .expected_driver_status = ZX_ERR_NOT_SUPPORTED,
+      .expected_driver_status = ZX_ERR_PROTOCOL_NOT_SUPPORTED,
   });
 
   // Verify that v1_test.so has set a context.
@@ -734,7 +986,7 @@ TEST_F(DriverTest, Start_BindFailed) {
   EXPECT_TRUE(node().children().empty());
 
   EXPECT_TRUE(v1_test->did_bind);
-  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, v1_test->status);
+  EXPECT_EQ(ZX_ERR_PROTOCOL_NOT_SUPPORTED, v1_test->status);
 
   EXPECT_FALSE(v1_test->did_create);
   EXPECT_FALSE(v1_test->did_release);

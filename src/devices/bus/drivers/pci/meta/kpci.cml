@@ -11,13 +11,21 @@
         runner: 'driver',
         bind: 'meta/bind/pci_bind.bindbc',
         compat: 'driver/bus-pci.so',
-        colocate: 'true',
+        colocate: 'false',
     },
     capabilities: [
         { service: 'fuchsia.hardware.pci.Service' },
     ],
     use: [
-        { protocol: "fuchsia.boot.RootResource" },
+        {
+            protocol: [
+                "fuchsia.boot.RootResource",
+                "fuchsia.kernel.IoportResource",
+                "fuchsia.kernel.IrqResource",
+                "fuchsia.kernel.MmioResource",
+            ],
+        },
+        { service: "fuchsia.hardware.platform.device.Service" },
     ],
     expose: [
         {

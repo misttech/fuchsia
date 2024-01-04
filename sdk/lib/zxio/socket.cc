@@ -10,13 +10,14 @@
 #include <lib/fit/result.h>
 #include <lib/zx/socket.h>
 #include <lib/zxio/cpp/transitional.h>
-#include <lib/zxio/cpp/vector.h>
+#include <lib/zxio/fault_catcher.h>
 #include <lib/zxio/null.h>
 #include <netinet/icmp6.h>
 #include <netinet/if_ether.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
+#include <zircon/compiler.h>
 #include <zircon/types.h>
 
 #include <algorithm>
@@ -25,9 +26,10 @@
 
 #include <safemath/safe_conversions.h>
 
-#include "dgram_cache.h"
-#include "private.h"
-#include "socket_address.h"
+#include "sdk/lib/zxio/dgram_cache.h"
+#include "sdk/lib/zxio/private.h"
+#include "sdk/lib/zxio/socket_address.h"
+#include "sdk/lib/zxio/vector.h"
 #include "src/connectivity/network/netstack/udp_serde/udp_serde.h"
 
 namespace fio = fuchsia_io;
@@ -383,6 +385,12 @@ SockOptResult GetSockOptProcessor::StoreOption(const fsocket::wire::TcpInfo& val
 
   static_assert(sizeof(info) <= std::numeric_limits<socklen_t>::max());
   return StoreRaw(&info, std::min(*optlen_, static_cast<socklen_t>(sizeof(info))));
+}
+
+template <>
+SockOptResult GetSockOptProcessor::StoreOption(const fuchsia_net::wire::SocketAddress& value) {
+  *optlen_ = fidl_to_sockaddr(value, optval_, *optlen_);
+  return SockOptResult::Ok();
 }
 
 // Used for various options that allow the caller to supply larger buffers than needed.
@@ -995,6 +1003,17 @@ struct network_socket : public base_socket<T> {
           case IP_PKTINFO:
             return proc.Process(client()->GetIpPacketInfo(),
                                 [](const auto& response) { return response.value; });
+#if __Fuchsia_API_level__ >= 15
+          case SO_ORIGINAL_DST:
+            return proc.Process(client()->GetOriginalDestination(),
+                                [](const auto& response) { return response.value; });
+          case IP_RECVORIGDSTADDR:
+            return proc.Process(client()->GetIpReceiveOriginalDestinationAddress(),
+                                [](const auto& response) { return response.value; });
+          case IP_TRANSPARENT:
+            return proc.Process(client()->GetIpTransparent(),
+                                [](const auto& response) { return response.value; });
+#endif
           default:
             return SockOptResult::Errno(ENOPROTOOPT);
         }
@@ -1186,6 +1205,15 @@ struct network_socket : public base_socket<T> {
           case IP_PKTINFO:
             return proc.Process<IntOrChar>(
                 [this](IntOrChar value) { return client()->SetIpPacketInfo(value.value != 0); });
+#if __Fuchsia_API_level__ >= 15
+          case IP_RECVORIGDSTADDR:
+            return proc.Process<IntOrChar>([this](IntOrChar value) {
+              return client()->SetIpReceiveOriginalDestinationAddress(value.value != 0);
+            });
+          case IP_TRANSPARENT:
+            return proc.Process<IntOrChar>(
+                [this](IntOrChar value) { return client()->SetIpTransparent(value.value != 0); });
+#endif
           case MCAST_JOIN_GROUP:
             return SockOptResult::Errno(ENOTSUP);
           default:
@@ -1676,6 +1704,15 @@ class FidlControlDataProcessor {
       total += StoreControlMessage(IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl));
     }
 
+#if __Fuchsia_API_level__ >= 15
+    if (requested.ip_recvorigdstaddr() && control_data.has_original_destination_address()) {
+      struct sockaddr_storage addr;
+      socklen_t addr_len =
+          fidl_to_sockaddr(control_data.original_destination_address(), &addr, sizeof(addr));
+      total += StoreControlMessage(IPPROTO_IP, IP_RECVORIGDSTADDR, &addr, addr_len);
+    }
+#endif
+
     return total;
   }
 
@@ -2039,7 +2076,12 @@ struct socket_with_event {
         iovec const& iov = msg->msg_iov[i];
         if (iov.iov_base != nullptr) {
           size_t actual = std::min(iov.iov_len, remaining);
-          memcpy(iov.iov_base, data, actual);
+          if (unlikely(!zxio_maybe_faultable_copy(static_cast<uint8_t*>(iov.iov_base), data, actual,
+                                                  true))) {
+            *out_code = EFAULT;
+            return ZX_OK;
+          }
+
           data += actual;
           remaining -= actual;
         } else if (iov.iov_len != 0) {
@@ -2099,27 +2141,43 @@ struct socket_with_event {
     }
     const typename T::FidlSendControlData& cdata = cmsg_result.value();
 
-    std::vector<uint8_t> data;
+    std::unique_ptr<uint8_t[]> data;
     auto vec = fidl::VectorView<uint8_t>();
     switch (msg->msg_iovlen) {
       case 0: {
         break;
       }
       case 1: {
-        const iovec& iov = *msg->msg_iov;
-        vec = fidl::VectorView<uint8_t>::FromExternal(static_cast<uint8_t*>(iov.iov_base),
-                                                      iov.iov_len);
-        break;
+        if (zxio_fault_catching_disabled()) {
+          const iovec& iov = *msg->msg_iov;
+          vec = fidl::VectorView<uint8_t>::FromExternal(static_cast<uint8_t*>(iov.iov_base),
+                                                        iov.iov_len);
+          break;
+        }
+
+        // We reach here if the consumer of zxio expects faults to occur when
+        // accessing the message's paylod. We need to catch the fault now so
+        // that it can be gracefully handled instead of triggering a crash later
+        // on.
+        //
+        // TODO(https://fxbug.dev/84965): avoid this copy to catch faults.
+        __FALLTHROUGH;
       }
       default: {
-        // TODO(https://fxbug.dev/84965): avoid this copy.
-        data.reserve(total);
+        // TODO(https://fxbug.dev/84965): avoid this copy to linearize the buffer.
+        data = std::unique_ptr<uint8_t[]>(new uint8_t[total]);
+        uint8_t* dest = data.get();
+
         for (int i = 0; i < msg->msg_iovlen; ++i) {
           const iovec& iov = msg->msg_iov[i];
-          std::copy_n(static_cast<const uint8_t*>(iov.iov_base), iov.iov_len,
-                      std::back_inserter(data));
+          if (unlikely(!zxio_maybe_faultable_copy(dest, static_cast<const uint8_t*>(iov.iov_base),
+                                                  iov.iov_len, false))) {
+            *out_code = EFAULT;
+            return ZX_OK;
+          }
+          dest += iov.iov_len;
         }
-        vec = fidl::VectorView<uint8_t>::FromExternal(data);
+        vec = fidl::VectorView<uint8_t>::FromExternal(data.get(), total);
       }
     }
 
@@ -2978,6 +3036,11 @@ struct stream_socket : public socket_with_zx_socket<fidl::WireSyncClient<fsocket
       }
       return err.status_value();
     }
+
+    if (msg->msg_name) {
+      msg->msg_namelen = 0;
+    }
+
     *out_code = 0;
     return ZX_OK;
   }
@@ -3160,25 +3223,26 @@ static constexpr zxio_ops_t zxio_stream_socket_ops = []() {
 
       uint8_t* data = buf.get();
       size_t remaining = actual;
-      return zxio_do_vector(vector, vector_count, out_actual,
-                            [&](void* buffer, size_t capacity, size_t* out_actual) {
-                              size_t actual = std::min(capacity, remaining);
-                              memcpy(buffer, data, actual);
-                              data += actual;
-                              remaining -= actual;
-                              *out_actual = actual;
-                              return ZX_OK;
-                            });
+      return zxio_do_vector(
+          vector, vector_count, out_actual,
+          [&](void* buffer, size_t capacity, size_t total_so_far, size_t* out_actual) {
+            size_t actual = std::min(capacity, remaining);
+            memcpy(buffer, data, actual);
+            data += actual;
+            remaining -= actual;
+            *out_actual = actual;
+            return ZX_OK;
+          });
     }
 
     if (flags) {
       return ZX_ERR_NOT_SUPPORTED;
     }
 
-    return zxio_do_vector(vector, vector_count, out_actual,
-                          [&](void* buffer, size_t capacity, size_t* out_actual) {
-                            return socket.read(0, buffer, capacity, out_actual);
-                          });
+    return zxio_stream_do_vector(vector, vector_count, out_actual,
+                                 [&](void* buffer, size_t capacity, size_t* out_actual) {
+                                   return socket.read(0, buffer, capacity, out_actual);
+                                 });
   };
   ops.writev = [](zxio_t* io, const zx_iovec_t* vector, size_t vector_count, zxio_flags_t flags,
                   size_t* out_actual) {

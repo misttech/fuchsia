@@ -13,7 +13,7 @@ use {
 };
 
 /// The results returned by gBenchmark.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct BenchmarkOutput {
     pub context: BenchmarkContextData,
     pub benchmarks: Vec<BenchmarkRunData>,
@@ -22,7 +22,7 @@ pub struct BenchmarkOutput {
 /// The context returned by gBenchmark.
 ///
 /// This struct is empty because its fields are not used in Fuchsiaperf results.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct BenchmarkContextData {}
 
 /// The benchmark results returned by gBenchmark.
@@ -37,9 +37,6 @@ pub struct BenchmarkRunData {
 }
 
 const GBENCHMARK_RESULT_FILE: &str = "benchmark.json";
-
-/// The number of benchmark iterations to report.
-const MAX_BENCHMARK_COUNT: u8 = 5;
 
 /// Runs a gbenchmark associated with a single `ftest::SuiteRequest::Run` request.
 ///
@@ -73,12 +70,13 @@ fn gbenchmark_to_fuchsiaperf(
     results: &str,
     test_suite: &str,
 ) -> Result<Vec<FuchsiaPerfBenchmarkResult>, Error> {
-    let benchmark_output: BenchmarkOutput =
-        serde_json::from_str(results).context("Failed to parse benchmark results.")?;
+    let benchmark_output: BenchmarkOutput = if results.is_empty() {
+        BenchmarkOutput::default()
+    } else {
+        serde_json::from_str(results).context("Failed to parse benchmark results.")?
+    };
 
     let mut perfs = vec![];
-    let mut benchmark_count = 0;
-    let mut previous_benchmark_name = " ".to_string();
     for benchmark in benchmark_output.benchmarks {
         // Conform benchmark names to Fuchsia performance metric naming style.
         // https://fuchsia.dev/fuchsia-src/development/performance/metric_naming_style
@@ -93,15 +91,6 @@ fn gbenchmark_to_fuchsiaperf(
             segments.push(segment.to_camel_case());
         }
         let label = segments.join("/");
-        if label.starts_with(&previous_benchmark_name) {
-            if benchmark_count >= MAX_BENCHMARK_COUNT {
-                continue;
-            }
-            benchmark_count += 1;
-        } else {
-            previous_benchmark_name = label.split('/').collect::<Vec<_>>()[0].to_string();
-            benchmark_count = 1;
-        }
 
         perfs.push(FuchsiaPerfBenchmarkResult {
             label,
@@ -265,6 +254,12 @@ mod tests {
                 test_suite: TEST_SUITE.to_owned(),
                 unit: "ns".to_string(),
                 values: vec![54292.060699663125],
+            },
+            FuchsiaPerfBenchmarkResult {
+                label: "MetricName1/Category/1024".to_string(),
+                test_suite: TEST_SUITE.to_owned(),
+                unit: "ns".to_string(),
+                values: vec![37122.060699663125],
             },
             FuchsiaPerfBenchmarkResult {
                 label: "MetricName2/Category/1".to_string(),

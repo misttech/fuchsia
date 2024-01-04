@@ -10,7 +10,6 @@
 #include <dev/init.h>
 #include <dev/interrupt/arm_gicv2_init.h>
 #include <dev/interrupt/arm_gicv3_init.h>
-#include <dev/power/as370/init.h>
 #include <dev/power/motmot/init.h>
 #include <dev/psci.h>
 #include <dev/timer/arm_generic.h>
@@ -43,12 +42,10 @@ void PlatformDriverHandoffEarly(const ArchPhysHandoff& arch_handoff) {
     ArmGenericTimerInit(arch_handoff.generic_timer_driver.value());
   }
 
+  // Initialize psci before the other power drivers, as they may decide to
+  // override the psci's power registration.
   if (arch_handoff.psci_driver) {
     PsciInit(arch_handoff.psci_driver.value());
-  }
-
-  if (arch_handoff.as370_power_driver) {
-    as370_power_init_early();
   }
 
   if (arch_handoff.motmot_power_driver) {

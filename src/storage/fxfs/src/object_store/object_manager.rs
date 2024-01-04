@@ -10,7 +10,7 @@ use {
         metrics,
         object_handle::INVALID_OBJECT_ID,
         object_store::{
-            allocator::{Allocator, Reservation, SimpleAllocator},
+            allocator::{Allocator, Reservation},
             directory::Directory,
             journal::{self, JournalCheckpoint},
             transaction::{
@@ -26,10 +26,10 @@ use {
     anyhow::{anyhow, bail, ensure, Context, Error},
     fuchsia_inspect::{Property as _, UintProperty},
     futures::FutureExt as _,
-    fxfs_crypto::Crypt,
     once_cell::sync::OnceCell,
+    rustc_hash::FxHashMap as HashMap,
     std::{
-        collections::{hash_map::Entry, HashMap},
+        collections::hash_map::Entry,
         sync::{Arc, RwLock},
     },
 };
@@ -80,7 +80,7 @@ struct Inner {
     root_parent_store_object_id: u64,
     root_store_object_id: u64,
     allocator_object_id: u64,
-    allocator: Option<Arc<SimpleAllocator>>,
+    allocator: Option<Arc<Allocator>>,
 
     // Records dependencies on the journal for objects i.e. an entry for object ID 1, would mean it
     // has a dependency on journal records from that offset.
@@ -132,13 +132,13 @@ impl ObjectManager {
     pub fn new(on_new_store: Option<Box<dyn Fn(&ObjectStore) + Send + Sync>>) -> ObjectManager {
         ObjectManager {
             inner: RwLock::new(Inner {
-                stores: HashMap::new(),
+                stores: HashMap::default(),
                 root_parent_store_object_id: INVALID_OBJECT_ID,
                 root_store_object_id: INVALID_OBJECT_ID,
                 allocator_object_id: INVALID_OBJECT_ID,
                 allocator: None,
-                journal_checkpoints: HashMap::new(),
-                reservations: HashMap::new(),
+                journal_checkpoints: HashMap::default(),
+                reservations: HashMap::default(),
                 last_end_offset: 0,
                 borrowed_metadata_space: 0,
                 max_transaction_size: (0, metrics::detail().create_uint("max_transaction_size", 0)),
@@ -147,10 +147,6 @@ impl ObjectManager {
             volume_directory: OnceCell::new(),
             on_new_store,
         }
-    }
-
-    pub fn store_object_ids(&self) -> Vec<u64> {
-        self.inner.read().unwrap().stores.keys().cloned().collect()
     }
 
     pub fn root_parent_store_object_id(&self) -> u64 {
@@ -238,20 +234,6 @@ impl ObjectManager {
         self.inner.read().unwrap().stores.get(&store_object_id).cloned()
     }
 
-    /// Tries to unlock a store.
-    pub async fn open_store(
-        &self,
-        store_object_id: u64,
-        crypt: Arc<dyn Crypt>,
-    ) -> Result<Arc<ObjectStore>, Error> {
-        let store = self.store(store_object_id).ok_or(FxfsError::NotFound)?;
-        store
-            .unlock(crypt)
-            .await
-            .context("Failed to unlock store; was the correct key provided?")?;
-        Ok(store)
-    }
-
     /// This is not thread-safe: it assumes that a store won't be forgotten whilst the loop is
     /// running.  This is to be used after replaying the journal.
     pub async fn on_replay_complete(&self) -> Result<(), Error> {
@@ -282,7 +264,7 @@ impl ObjectManager {
             store
                 .on_replay_complete()
                 .await
-                .context(format!("Store {} failed to load after replay", store_id))?;
+                .with_context(|| format!("Store {} failed to load after replay", store_id))?;
         }
 
         ensure!(
@@ -322,14 +304,14 @@ impl ObjectManager {
         inner.reservations.remove(&store_object_id);
     }
 
-    pub fn set_allocator(&self, allocator: Arc<SimpleAllocator>) {
+    pub fn set_allocator(&self, allocator: Arc<Allocator>) {
         let mut inner = self.inner.write().unwrap();
         assert!(!inner.stores.contains_key(&allocator.object_id()));
         inner.allocator_object_id = allocator.object_id();
         inner.allocator = Some(allocator.clone());
     }
 
-    pub fn allocator(&self) -> Arc<SimpleAllocator> {
+    pub fn allocator(&self) -> Arc<Allocator> {
         self.inner.read().unwrap().allocator.clone().unwrap()
     }
 
@@ -451,7 +433,7 @@ impl ObjectManager {
         let mutations = transaction.take_mutations();
         let context =
             ApplyContext { mode: ApplyMode::Live(transaction), checkpoint: checkpoint.clone() };
-        for TxnMutation { object_id, mutation, associated_object } in mutations {
+        for TxnMutation { object_id, mutation, associated_object, .. } in mutations {
             self.apply_mutation(object_id, mutation, &context, associated_object).await?;
         }
         debug!("END TXN");
@@ -535,7 +517,11 @@ impl ObjectManager {
                         .unwrap()
                         .disown_reservation(txn_reservation.owner_object_id(), txn_space);
                 }
-                *hold_amount -= txn_space;
+                if let Some(amount) = hold_amount.checked_sub(txn_space) {
+                    *hold_amount = amount;
+                } else {
+                    panic!("Transaction was larger than metadata reservation");
+                }
                 reservation.add(txn_space);
             }
             MetadataReservation::Reservation(txn_reservation) => {
@@ -570,7 +556,7 @@ impl ObjectManager {
     pub fn journal_file_offsets(&self) -> (HashMap<u64, u64>, Option<JournalCheckpoint>) {
         let inner = self.inner.read().unwrap();
         let mut min_checkpoint = None;
-        let mut offsets = HashMap::new();
+        let mut offsets = HashMap::default();
         for (&object_id, checkpoint) in &inner.journal_checkpoints {
             let checkpoint = checkpoint.earliest();
             match &mut min_checkpoint {

@@ -70,6 +70,7 @@ template("fuchsia_component_manifest") {
       output_name = "$manifest_extension/$target_name/$manifest_name"
       forward_variables_from(invoker,
                              [
+                               "applicable_licenses",
                                "deps",
                                "manifest",
                                "required_offers",
@@ -95,22 +96,17 @@ template("fuchsia_component_manifest") {
 
         component_manifest_path = [ manifest ]
         component_manifest_path_barrier = []
-
-        if (!defined(component_catalog)) {
-          component_catalog = []
-        }
-        component_catalog += [
-          {
-            component_manifest_path = manifest
-            label = get_label_info(":$target_name", "label_with_toolchain")
-          },
-        ]
       }
     }
 
     # Add the manifest
     resource(manifest_resource_target) {
-      forward_variables_from(invoker, [ "data_deps" ])
+      forward_variables_from(invoker,
+                             [
+                               "applicable_licenses",
+                               "data_deps",
+                               "testonly",
+                             ])
       sources = get_target_outputs(":${invoker.target_name}")
       outputs = [ "meta/$manifest_name" ]
       visibility = [ ":*" ]
@@ -119,6 +115,7 @@ template("fuchsia_component_manifest") {
     group(target_name) {
       forward_variables_from(invoker,
                              [
+                               "applicable_licenses",
                                "testonly",
                                "visibility",
                              ])
@@ -231,6 +228,7 @@ template("fuchsia_component_manifest") {
 #   visibility
 template("fuchsia_component") {
   forwarded = [
+    "applicable_licenses",
     "data_deps",
     "deps",
     "component_name",
@@ -286,7 +284,11 @@ template("fuchsia_component") {
     if (check_includes) {
       _find_manifest_target = "${target_name}_find_manifest"
       generated_file(_find_manifest_target) {
-        forward_variables_from(invoker, [ "testonly" ])
+        forward_variables_from(invoker,
+                               [
+                                 "applicable_licenses",
+                                 "testonly",
+                               ])
         visibility = [ ":*" ]
         outputs = [ "$target_out_dir/$_find_manifest_target.json" ]
         data_keys = [ "component_manifest_path" ]
@@ -301,6 +303,7 @@ template("fuchsia_component") {
       cmc_check_includes(_check_includes_target) {
         forward_variables_from(invoker,
                                [
+                                 "applicable_licenses",
                                  "deps",
                                  "testonly",
                                ])
@@ -330,6 +333,7 @@ template("fuchsia_component") {
       cmc_validate_references(_check_references_target) {
         forward_variables_from(invoker,
                                [
+                                 "applicable_licenses",
                                  "deps",
                                  "testonly",
                                ])
@@ -344,35 +348,23 @@ template("fuchsia_component") {
       _check_references_target = ":$_check_references_target"
     }
 
-    component_catalog_target = "${target_name}.component_catalog"
-    generated_file(component_catalog_target) {
+    # We want to adopt the outputs of the cm_label, so we
+    # copy them to a new directory.
+    copy(target_name) {
       forward_variables_from(invoker,
                              [
+                               "applicable_licenses",
                                "testonly",
                                "deps",
                                "public_deps",
                              ])
-      outputs = [ "$target_out_dir/${component_catalog_target}.json" ]
-      output_conversion = "json"
-      data_keys = [ "component_catalog" ]
-      visibility = [ ":*" ]
+      sources = _manifest_outputs
+      outputs = [ "$target_out_dir/${target_name}_component_manifest/{{source_file_part}}" ]
+
       if (!defined(deps)) {
         deps = []
       }
       deps += [ cm_label ]
-    }
-
-    # We want to adopt the outputs of the cm_label, so we
-    # copy them to a new directory.
-    copy(target_name) {
-      forward_variables_from(invoker, [ "testonly" ])
-      sources = _manifest_outputs
-      outputs = [ "$target_out_dir/${target_name}_component_manifest/{{source_file_part}}" ]
-
-      deps = [
-        ":$component_catalog_target",
-        cm_label,
-      ]
       if (check_references) {
         deps += [ _check_references_target ]
       }

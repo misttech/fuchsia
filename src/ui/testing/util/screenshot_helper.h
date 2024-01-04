@@ -12,59 +12,16 @@
 #include <map>
 #include <vector>
 
+#include "src/ui/scenic/lib/utils/pixel.h"
+
 namespace ui_testing {
 
-static uint8_t linear_to_srgb(const float val) {
-  // Function to convert from linear RGB to sRGB.
-  // (https://en.wikipedia.org/wiki/SRGB#From_CIE_XYZ_to_sRGB)
-  if (0.f <= val && val <= 0.0031308f) {
-    return static_cast<uint8_t>(roundf((val * 12.92f) * 255U));
-  } else {
-    return static_cast<uint8_t>(roundf(((std::powf(val, 1.0f / 2.4f) * 1.055f) - 0.055f) * 255U));
-  }
-}
-
-// Represents a Pixel in BGRA format.
-// Uses the sRGB color space.
-struct Pixel {
-  uint8_t blue = 0;
-  uint8_t green = 0;
-  uint8_t red = 0;
-  uint8_t alpha = 0;
-
-  Pixel(uint8_t blue, uint8_t green, uint8_t red, uint8_t alpha)
-      : blue(blue), green(green), red(red), alpha(alpha) {}
-
-  static Pixel from_unorm_bgra(float blue, float green, float red, float alpha) {
-    return Pixel{linear_to_srgb(blue), linear_to_srgb(green), linear_to_srgb(red),
-                 static_cast<uint8_t>(roundf(alpha * 255U))};
-  }
-
-  bool operator==(const Pixel& rhs) const {
-    return blue == rhs.blue && green == rhs.green && red == rhs.red && alpha == rhs.alpha;
-  }
-
-  inline bool operator!=(const Pixel& rhs) const { return !(*this == rhs); }
-
-  bool operator<(const Pixel& other) const {
-    return std::tie(blue, green, red, alpha) <
-           std::tie(other.blue, other.green, other.red, other.alpha);
-  }
-};
-
-std::ostream& operator<<(std::ostream& stream, const Pixel& pixel);
+using Pixel = utils::Pixel;
 
 // Helper class to get information about a screenshot returned by
 // |fuchsia.ui.composition.Screenshot| protocol.
 class Screenshot {
  public:
-  // BGRA format.
-  inline static const Pixel kBlack = Pixel(0, 0, 0, 255);
-  inline static const Pixel kBlue = Pixel(255, 0, 0, 255);
-  inline static const Pixel kRed = Pixel(0, 0, 255, 255);
-  inline static const Pixel kMagenta = Pixel(255, 0, 255, 255);
-  inline static const Pixel kGreen = Pixel(0, 255, 0, 255);
-
   // Params:-
   // |screenshot_vmo| - The VMO returned by |fuchsia.ui.composition.Screenshot.Take| representing
   //                    the screenshot data in BGRA.
@@ -74,6 +31,9 @@ class Screenshot {
   //              are flipped if this value is 90 or 270 degrees as the screenshot shows how content
   //              is seen by the user.
   Screenshot(const zx::vmo& screenshot_vmo, uint64_t width, uint64_t height, int rotation);
+
+  // An empty screenshot.
+  Screenshot();
 
   // Returns the |Pixel| located at (x,y) coordinates. |x| and |y| should range from [0,width_) and
   // [0,height_) respectively.
@@ -99,6 +59,13 @@ class Screenshot {
   // the screenshots do not match.
   float ComputeSimilarity(const Screenshot& other) const;
 
+  // Returns percentage of pixels that match by comparing the histograms of two screenshots,
+  // allowing for pixel movement (e.g. shift, rotation) in the image. The comparison is
+  // performed by measuring the percentage of the area of the histograms that overlaps,
+  // i.e. the number of pixels that are both histograms.
+  // Returns 0 if the sizes of the screenshots do not match.
+  float ComputeHistogramSimilarity(const Screenshot& other) const;
+
   // Returns a 2D vector of size |height_ * width_|. Each value in the vector corresponds to a pixel
   // in the screenshot.
   std::vector<std::vector<Pixel>> screenshot() const { return screenshot_; }
@@ -106,6 +73,25 @@ class Screenshot {
   uint64_t width() const { return width_; }
 
   uint64_t height() const { return height_; }
+
+  // Loads the screenshot from a PNG file.
+  bool LoadFromPng(const std::string& png_filename);
+
+  // Dumps the screenshot as a BGRA raw file to /custom_artifacts. Returns true if it is successful.
+  // Note that the custom_artifacts storage capability needs to be added to the test. See
+  // https://fuchsia.dev/fuchsia-src/development/testing/components/test_runner_framework?hl=en#custom-artifacts
+  // for more details.
+  bool DumpToCustomArtifacts(const std::string& filename = "screenshot.bgra") const;
+
+  // Dumps the screenshot as a PNG file to /custom_artifacts. Returns true if it is successful.
+  // Note that the custom_artifacts storage capability needs to be added to the test. See
+  // https://fuchsia.dev/fuchsia-src/development/testing/components/test_runner_framework?hl=en#custom-artifacts
+  // for more details.
+  bool DumpPngToCustomArtifacts(const std::string& filename = "screenshot.png") const;
+
+  // Returns the top pixels in the histogram and prints logs.
+  std::vector<std::pair<uint32_t, utils::Pixel>> LogHistogramTopPixels(
+      int num_top_pixels = 10) const;
 
  private:
   // Populates |screenshot_| by converting the linear array of bytes in |screenshot_vmo| of size |4

@@ -3,29 +3,36 @@
 // found in the LICENSE file.
 
 use crate::{
-    auth::FsCred,
-    device::{simple_device_ops, DeviceMode},
-    fs::{
-        buffers::{InputBuffer, OutputBuffer},
-        kobject::{KObjectDeviceAttribute, KType},
-        sysfs::SysFsDirectory,
-        *,
+    device::{kobject::DeviceMetadata, simple_device_ops, DeviceMode},
+    fs::sysfs::DeviceDirectory,
+    mm::{
+        create_anonymous_mapping_vmo, DesiredAddress, MappingName, MappingOptions,
+        MemoryAccessorExt, ProtectionFlags,
     },
-    logging::*,
-    mm::*,
-    task::*,
-    types::*,
+    task::{CurrentTask, EventHandler, LogSubscription, Syslog, WaitCanceler, Waiter},
+    vfs::{
+        buffers::{InputBuffer, InputBufferExt as _, OutputBuffer},
+        fileops_impl_seekless, Anon, FdEvents, FileHandle, FileObject, FileOps, FileWriteGuardRef,
+        FsNode, FsNodeInfo, NamespaceNode, SeekTarget,
+    },
 };
-
-use fuchsia_zircon::{self as zx, cprng_draw};
-use std::sync::Arc;
+use fuchsia_zircon::{
+    cprng_draw_uninit, {self as zx},
+};
+use starnix_logging::{log_info, not_implemented};
+use starnix_sync::Mutex;
+use starnix_uapi::{
+    auth::FsCred, device_type::DeviceType, error, errors::Errno, file_mode::FileMode,
+    open_flags::OpenFlags, user_address::UserAddress,
+};
+use std::mem::MaybeUninit;
 
 #[derive(Default)]
 pub struct DevNull;
 
-pub fn new_null_file(kernel: &Arc<Kernel>, flags: OpenFlags) -> FileHandle {
+pub fn new_null_file(current_task: &CurrentTask, flags: OpenFlags) -> FileHandle {
     Anon::new_file_extended(
-        kernel,
+        current_task,
         Box::new(DevNull),
         flags,
         FsNodeInfo::new_factory(FileMode::from_bits(0o666), FsCred::root()),
@@ -50,14 +57,15 @@ impl FileOps for DevNull {
         // For debugging log up to 4096 bytes from the input buffer. We don't care about errors when
         // trying to read data to log. The amount of data logged is chosen arbitrarily.
         let bytes_to_log = std::cmp::min(4096, data.available());
-        let mut log_buffer = vec![0; bytes_to_log];
-        let bytes_logged = match data.read(&mut log_buffer) {
+        let log_buffer = data.read_to_vec_limited(bytes_to_log);
+        let bytes_logged = match log_buffer {
             Ok(bytes) => {
-                log_info!("write to devnull: {:?}", String::from_utf8_lossy(&log_buffer[0..bytes]));
-                bytes
+                log_info!("write to devnull: {:?}", String::from_utf8_lossy(&bytes));
+                bytes.len()
             }
             Err(_) => 0,
         };
+
         Ok(bytes_logged + data.drain())
     }
 
@@ -73,7 +81,7 @@ impl FileOps for DevNull {
 
     fn to_handle(
         &self,
-        _file: &FileHandle,
+        _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<Option<zx::Handle>, Errno> {
         Ok(None)
@@ -95,7 +103,7 @@ impl FileOps for DevZero {
         prot_flags: ProtectionFlags,
         mut options: MappingOptions,
         filename: NamespaceNode,
-    ) -> Result<MappedVmo, Errno> {
+    ) -> Result<UserAddress, Errno> {
         // All /dev/zero mappings behave as anonymous mappings.
         //
         // This means that we always create a new zero-filled VMO for this mmap request.
@@ -109,7 +117,7 @@ impl FileOps for DevZero {
 
         options |= MappingOptions::ANONYMOUS;
 
-        let addr = current_task.mm.map(
+        current_task.mm().map_vmo(
             addr,
             vmo.clone(),
             vmo_offset,
@@ -122,8 +130,7 @@ impl FileOps for DevZero {
             // file-based.
             MappingName::File(filename),
             FileWriteGuardRef(None),
-        )?;
-        Ok(MappedVmo::new(vmo, addr))
+        )
     }
 
     fn write(
@@ -170,7 +177,7 @@ impl FileOps for DevFull {
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
         data.write_each(&mut |bytes| {
-            bytes.fill(0);
+            bytes.fill(MaybeUninit::new(0));
             Ok(bytes.len())
         })
     }
@@ -199,25 +206,137 @@ impl FileOps for DevRandom {
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
         data.write_each(&mut |bytes| {
-            cprng_draw(bytes);
-            Ok(bytes.len())
+            let read_bytes = cprng_draw_uninit(bytes);
+            Ok(read_bytes.len())
         })
+    }
+
+    fn ioctl(
+        &self,
+        file: &FileObject,
+        current_task: &CurrentTask,
+        request: u32,
+        arg: starnix_syscalls::SyscallArg,
+    ) -> Result<starnix_syscalls::SyscallResult, Errno> {
+        match request {
+            starnix_uapi::RNDGETENTCNT => {
+                let addr = starnix_uapi::user_address::UserRef::<i32>::new(UserAddress::from(arg));
+                // Linux just returns 256 no matter what (as observed on 6.5.6).
+                let result = 256;
+                current_task.write_object(addr, &result).map(|_| starnix_syscalls::SUCCESS)
+            }
+            _ => crate::vfs::default_ioctl(file, current_task, request, arg),
+        }
     }
 }
 
-#[derive(Default)]
-struct DevKmsg;
-impl FileOps for DevKmsg {
-    fileops_impl_seekless!();
+pub fn open_kmsg(
+    current_task: &CurrentTask,
+    _id: DeviceType,
+    _node: &FsNode,
+    flags: OpenFlags,
+) -> Result<Box<dyn FileOps>, Errno> {
+    Syslog::validate_access(current_task)?;
+    let subscription = if flags.can_read() {
+        Some(Mutex::new(Syslog::snapshot_then_subscribe(&current_task)?))
+    } else {
+        None
+    };
+    Ok(Box::new(DevKmsg(subscription)))
+}
 
-    fn read(
+struct DevKmsg(Option<Mutex<LogSubscription>>);
+
+impl FileOps for DevKmsg {
+    fn has_persistent_offsets(&self) -> bool {
+        false
+    }
+
+    fn is_seekable(&self) -> bool {
+        true
+    }
+
+    fn seek(
+        &self,
+        _file: &crate::vfs::FileObject,
+        current_task: &crate::task::CurrentTask,
+        _current_offset: starnix_uapi::off_t,
+        target: crate::vfs::SeekTarget,
+    ) -> Result<starnix_uapi::off_t, starnix_uapi::errors::Errno> {
+        match target {
+            SeekTarget::Set(0) => {
+                let Some(ref subscription) = self.0 else {
+                    return Ok(0);
+                };
+                let mut guard = subscription.lock();
+                *guard = Syslog::snapshot_then_subscribe(current_task)?;
+                Ok(0)
+            }
+            SeekTarget::End(0) => {
+                let Some(ref subscription) = self.0 else {
+                    return Ok(0);
+                };
+                let mut guard = subscription.lock();
+                *guard = Syslog::subscribe(current_task)?;
+                Ok(0)
+            }
+            SeekTarget::Data(0) => {
+                not_implemented!("/dev/kmsg: SEEK_DATA");
+                Ok(0)
+            }
+            // The following are implemented as documented on:
+            // https://www.kernel.org/doc/Documentation/ABI/testing/dev-kmsg
+            // The only accepted seek targets are "SEEK_END,0", "SEEK_SET,0" and "SEEK_DATA,0"
+            // When given an invalid offset, ESPIPE is expected.
+            SeekTarget::End(_) | SeekTarget::Set(_) | SeekTarget::Data(_) => {
+                error!(ESPIPE, "Unsupported offset")
+            }
+            // According to the docs above and observations, this should be EINVAL, but dprintf
+            // fails if we make it EINVAL.
+            SeekTarget::Cur(_) => error!(ESPIPE),
+            SeekTarget::Hole(_) => error!(EINVAL, "Unsupported seek target"),
+        }
+    }
+
+    fn wait_async(
         &self,
         _file: &FileObject,
         _current_task: &CurrentTask,
+        waiter: &Waiter,
+        events: FdEvents,
+        handler: EventHandler,
+    ) -> Option<WaitCanceler> {
+        self.0.as_ref().map(|subscription| subscription.lock().wait(waiter, events, handler))
+    }
+
+    fn query_events(
+        &self,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+    ) -> Result<FdEvents, Errno> {
+        let mut events = FdEvents::empty();
+        if let Some(subscription) = self.0.as_ref() {
+            if subscription.lock().available()? > 0 {
+                events |= FdEvents::POLLIN;
+            }
+        }
+        Ok(events)
+    }
+
+    fn read(
+        &self,
+        file: &FileObject,
+        current_task: &CurrentTask,
         _offset: usize,
-        _data: &mut dyn OutputBuffer,
+        data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        Ok(0)
+        file.blocking_op(current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, || {
+            match self.0.as_ref().unwrap().lock().next() {
+                Some(Ok(log)) => data.write(&log),
+                Some(Err(err)) => Err(err),
+                None => Ok(0),
+            }
+        })
     }
 
     fn write(
@@ -228,80 +347,62 @@ impl FileOps for DevKmsg {
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
         let bytes = data.read_all()?;
-        log!(
-            level = info,
-            tag = "kmsg",
-            "{}",
-            String::from_utf8_lossy(&bytes).trim_end_matches('\n')
-        );
+        log_info!(tag = "kmsg", "{}", String::from_utf8_lossy(&bytes).trim_end_matches('\n'));
         Ok(bytes.len())
     }
 }
 
-pub fn mem_device_init(kernel: &Arc<Kernel>) {
-    let mem_class = kernel.device_registry.virtual_bus().get_or_create_child(
-        b"mem",
-        KType::Class,
-        SysFsDirectory::new,
-    );
-    kernel.add_and_register_device(
-        KObjectDeviceAttribute::new(
-            Some(mem_class.clone()),
-            b"null",
-            b"null",
-            DeviceType::NULL,
-            DeviceMode::Char,
-        ),
+pub fn mem_device_init(system_task: &CurrentTask) {
+    let kernel = system_task.kernel();
+    let registry = &kernel.device_registry;
+
+    let mem_class = registry.get_or_create_class(b"mem", registry.virtual_bus());
+    registry.add_and_register_device(
+        system_task,
+        b"null",
+        DeviceMetadata::new(b"null", DeviceType::NULL, DeviceMode::Char),
+        mem_class.clone(),
+        DeviceDirectory::new,
         simple_device_ops::<DevNull>,
     );
-    kernel.add_and_register_device(
-        KObjectDeviceAttribute::new(
-            Some(mem_class.clone()),
-            b"zero",
-            b"zero",
-            DeviceType::ZERO,
-            DeviceMode::Char,
-        ),
+    registry.add_and_register_device(
+        system_task,
+        b"zero",
+        DeviceMetadata::new(b"zero", DeviceType::ZERO, DeviceMode::Char),
+        mem_class.clone(),
+        DeviceDirectory::new,
         simple_device_ops::<DevZero>,
     );
-    kernel.add_and_register_device(
-        KObjectDeviceAttribute::new(
-            Some(mem_class.clone()),
-            b"full",
-            b"full",
-            DeviceType::FULL,
-            DeviceMode::Char,
-        ),
+    registry.add_and_register_device(
+        system_task,
+        b"full",
+        DeviceMetadata::new(b"full", DeviceType::FULL, DeviceMode::Char),
+        mem_class.clone(),
+        DeviceDirectory::new,
         simple_device_ops::<DevFull>,
     );
-    kernel.add_and_register_device(
-        KObjectDeviceAttribute::new(
-            Some(mem_class.clone()),
-            b"random",
-            b"random",
-            DeviceType::RANDOM,
-            DeviceMode::Char,
-        ),
+    registry.add_and_register_device(
+        system_task,
+        b"random",
+        DeviceMetadata::new(b"random", DeviceType::RANDOM, DeviceMode::Char),
+        mem_class.clone(),
+        DeviceDirectory::new,
         simple_device_ops::<DevRandom>,
     );
-    kernel.add_and_register_device(
-        KObjectDeviceAttribute::new(
-            Some(mem_class.clone()),
-            b"urandom",
-            b"urandom",
-            DeviceType::URANDOM,
-            DeviceMode::Char,
-        ),
+    registry.add_and_register_device(
+        system_task,
+        b"urandom",
+        DeviceMetadata::new(b"urandom", DeviceType::URANDOM, DeviceMode::Char),
+        mem_class.clone(),
+        DeviceDirectory::new,
         simple_device_ops::<DevRandom>,
     );
-    kernel.add_and_register_device(
-        KObjectDeviceAttribute::new(
-            Some(mem_class),
-            b"kmsg",
-            b"kmsg",
-            DeviceType::KMSG,
-            DeviceMode::Char,
-        ),
-        simple_device_ops::<DevKmsg>,
+    registry.add_and_register_device(
+        system_task,
+        b"kmsg",
+        DeviceMetadata::new(b"kmsg", DeviceType::KMSG, DeviceMode::Char),
+        mem_class,
+        DeviceDirectory::new,
+        open_kmsg,
     );
 }

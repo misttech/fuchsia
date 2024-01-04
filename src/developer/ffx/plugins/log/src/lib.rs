@@ -2,22 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use diagnostics_data::{LogTextColor, LogTextDisplayOptions, LogTimeDisplayFormat, Timezone};
 use error::LogError;
-use ffx_log_args::FfxLogCommand;
+use ffx_log_args::LogCommand;
 use fho::{daemon_protocol, FfxMain, FfxTool, MachineWriter, ToolIO};
-use fidl::endpoints::create_proxy;
 use fidl_fuchsia_developer_ffx::{TargetCollectionProxy, TargetQuery};
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use fidl_fuchsia_diagnostics::{LogSettingsMarker, LogSettingsProxy, StreamParameters};
 use fidl_fuchsia_diagnostics_host::ArchiveAccessorMarker;
 use log_command::{
-    filter::LogFilterCriteria,
     log_formatter::{
-        dump_logs_from_socket, BootTimeAccessor, DefaultLogFormatter, DeviceOrLocalTimestamp,
-        LogEntry, LogFormatter, LogFormatterOptions, WriterContainer,
+        dump_logs_from_socket, BootTimeAccessor, DefaultLogFormatter, LogEntry, LogFormatter,
+        WriterContainer,
     },
-    LogCommand, LogSubCommand, TimeFormat, WatchCommand,
+    InstanceGetter, LogSubCommand, WatchCommand,
 };
 use log_symbolizer::{LogSymbolizer, Symbolizer};
 use std::io::Write;
@@ -32,7 +29,7 @@ mod symbolizer;
 #[cfg(test)]
 mod testing_utils;
 
-const ARCHIVIST_MONIKER: &str = "/bootstrap/archivist";
+const ARCHIVIST_MONIKER: &str = "bootstrap/archivist";
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 #[derive(FfxTool)]
@@ -41,7 +38,7 @@ pub struct LogTool {
     target_collection: TargetCollectionProxy,
     rcs_proxy: RemoteControlProxy,
     #[command]
-    cmd: FfxLogCommand,
+    cmd: LogCommand,
 }
 
 fho::embedded_plugin!(LogTool);
@@ -51,14 +48,7 @@ impl FfxMain for LogTool {
     type Writer = MachineWriter<LogEntry>;
 
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
-        log_main(
-            writer,
-            self.rcs_proxy,
-            self.target_collection,
-            self.cmd.cmd,
-            LogSymbolizer::new(),
-        )
-        .await?;
+        log_impl(writer, self.rcs_proxy, self.target_collection, self.cmd).await?;
         Ok(())
     }
 }
@@ -70,58 +60,28 @@ pub async fn log_impl(
     target_collection_proxy: TargetCollectionProxy,
     cmd: LogCommand,
 ) -> Result<(), LogError> {
-    log_main(writer, rcs_proxy, target_collection_proxy, cmd, LogSymbolizer::new()).await
+    let instance_getter = rcs::root_realm_query(&rcs_proxy, TIMEOUT).await?;
+    log_main(writer, rcs_proxy, target_collection_proxy, cmd, LogSymbolizer::new(), instance_getter)
+        .await
 }
 
 // Main logging event loop.
-async fn log_main(
-    writer: impl ToolIO<OutputItem = LogEntry> + Write + 'static,
+async fn log_main<W>(
+    writer: W,
     rcs_proxy: RemoteControlProxy,
     target_collection_proxy: TargetCollectionProxy,
     cmd: LogCommand,
     symbolizer: impl Symbolizer,
-) -> Result<(), LogError> {
-    let is_json = writer.is_machine();
+    instance_getter: impl InstanceGetter,
+) -> Result<(), LogError>
+where
+    W: ToolIO<OutputItem = LogEntry> + Write + 'static,
+{
     let node_name = rcs_proxy.identify_host().await??.nodename;
     let target_query = TargetQuery { string_matcher: node_name, ..Default::default() };
-    let formatter = DefaultLogFormatter::new(
-        LogFilterCriteria::try_from(&cmd)?,
-        writer,
-        LogFormatterOptions {
-            // TODO(https://fxbug.dev/121413): Add support for log options.
-            display: if is_json {
-                None
-            } else {
-                Some(LogTextDisplayOptions {
-                    show_tags: !cmd.hide_tags,
-                    color: if cmd.no_color { LogTextColor::None } else { LogTextColor::BySeverity },
-                    show_metadata: cmd.show_metadata,
-                    time_format: match cmd.clock {
-                        TimeFormat::Monotonic => LogTimeDisplayFormat::Original,
-                        TimeFormat::Local => LogTimeDisplayFormat::WallTime {
-                            tz: Timezone::Local,
-                            // This will receive a correct value when logging actually starts,
-                            // see `set_boot_timestamp()` method on the log formatter.
-                            offset: 0,
-                        },
-                        TimeFormat::Utc => LogTimeDisplayFormat::WallTime {
-                            tz: Timezone::Utc,
-                            // This will receive a correct value when logging actually starts,
-                            // see `set_boot_timestamp()` method on the log formatter.
-                            offset: 0,
-                        },
-                    },
-                    show_file: !cmd.hide_file,
-                    show_full_moniker: cmd.show_full_moniker,
-                    ..Default::default()
-                })
-            },
-            since: DeviceOrLocalTimestamp::new(cmd.since.as_ref(), cmd.since_monotonic.as_ref()),
-            until: DeviceOrLocalTimestamp::new(cmd.until.as_ref(), cmd.until_monotonic.as_ref()),
-            ..Default::default()
-        },
-    );
-    log_loop(target_collection_proxy, target_query, cmd, formatter, symbolizer).await?;
+    let formatter = DefaultLogFormatter::<W>::new_from_args(&cmd, writer);
+    log_loop(target_collection_proxy, target_query, cmd, formatter, symbolizer, &instance_getter)
+        .await?;
     Ok(())
 }
 
@@ -136,28 +96,34 @@ struct DeviceConnection {
 async fn connect_to_target(
     target_collection_proxy: &TargetCollectionProxy,
     query: &TargetQuery,
-    stream_mode: fidl_fuchsia_diagnostics::StreamMode,
+    stream_mode: &mut fidl_fuchsia_diagnostics::StreamMode,
+    prev_timestamp: Option<u64>,
 ) -> Result<DeviceConnection, LogError> {
     // Connect to device
     let rcs_client = connect_to_rcs(target_collection_proxy, query).await?;
     let boot_timestamp =
         rcs_client.identify_host().await??.boot_timestamp_nanos.ok_or(LogError::NoBootTimestamp)?;
+    // If we detect a reboot we want to SnapshotThenSubscribe so
+    // we get all of the logs from the reboot. If not, we use Snapshot
+    // to avoid getting duplicate logs.
+    match prev_timestamp {
+        Some(timestamp) if timestamp != boot_timestamp => {
+            *stream_mode = fidl_fuchsia_diagnostics::StreamMode::SnapshotThenSubscribe;
+        }
+        _ => {}
+    }
     // Connect to ArchiveAccessor
-    let (diagnostics_client, diagnostics_server) = create_proxy::<ArchiveAccessorMarker>()?;
-    rcs::connect_with_timeout::<ArchiveAccessorMarker>(
-        TIMEOUT,
-        ARCHIVIST_MONIKER,
+    let diagnostics_client = rcs::toolbox::connect_with_timeout::<ArchiveAccessorMarker>(
         &rcs_client,
-        diagnostics_server.into_channel(),
+        Some(ARCHIVIST_MONIKER),
+        TIMEOUT,
     )
     .await?;
     // Connect to LogSettings
-    let (log_settings_client, log_settings_server) = create_proxy::<LogSettingsMarker>()?;
-    rcs::connect_with_timeout::<LogSettingsMarker>(
-        TIMEOUT,
-        ARCHIVIST_MONIKER,
+    let log_settings_client = rcs::toolbox::connect_with_timeout::<LogSettingsMarker>(
         &rcs_client,
-        log_settings_server.into_channel(),
+        Some(ARCHIVIST_MONIKER),
+        TIMEOUT,
     )
     .await?;
     // Setup stream
@@ -166,7 +132,7 @@ async fn connect_to_target(
         .stream_diagnostics(
             &StreamParameters {
                 data_type: Some(fidl_fuchsia_diagnostics::DataType::Logs),
-                stream_mode: Some(stream_mode),
+                stream_mode: Some(*stream_mode),
                 format: Some(fidl_fuchsia_diagnostics::Format::Json),
                 client_selector_configuration: Some(
                     fidl_fuchsia_diagnostics::ClientSelectorConfiguration::SelectAll(true),
@@ -187,9 +153,9 @@ async fn connect_to_rcs(
     target_collection_proxy: &TargetCollectionProxy,
     query: &TargetQuery,
 ) -> Result<RemoteControlProxy, LogError> {
-    let (client, server) = create_proxy()?;
+    let (client, server) = fidl::endpoints::create_proxy()?;
     target_collection_proxy.open_target(query, server).await??;
-    let (rcs_client, rcs_server) = create_proxy()?;
+    let (rcs_client, rcs_server) = fidl::endpoints::create_proxy()?;
     client.open_remote_control(rcs_server).await??;
     Ok(rcs_client)
 }
@@ -200,6 +166,7 @@ async fn log_loop<W>(
     cmd: LogCommand,
     mut formatter: impl LogFormatter + BootTimeAccessor + WriterContainer<W>,
     symbolizer: impl Symbolizer,
+    realm_query: &impl InstanceGetter,
 ) -> Result<(), LogError>
 where
     W: ToolIO<OutputItem = LogEntry> + Write,
@@ -213,19 +180,45 @@ where
     // handle reconnects manually.
     let mut prev_timestamp = None;
     loop {
-        let connection =
-            connect_to_target(&target_collection_proxy, &target_query, stream_mode).await?;
-        if !cmd.select.is_empty() {
-            connection.log_settings_client.set_interest(&cmd.select).await?;
-        }
-        formatter.set_boot_timestamp(connection.boot_timestamp as i64);
-        match prev_timestamp {
-            Some(timestamp) if timestamp != connection.boot_timestamp => {
-                stream_mode = fidl_fuchsia_diagnostics::StreamMode::SnapshotThenSubscribe;
+        let connection;
+        // Linear backoff up to 10 seconds.
+        let mut backoff = 0;
+        let mut last_error = None;
+        loop {
+            let maybe_connection = connect_to_target(
+                &target_collection_proxy,
+                &target_query,
+                &mut stream_mode,
+                prev_timestamp,
+            )
+            .await;
+            if let Ok(connected) = maybe_connection {
+                connection = connected;
+                break;
             }
-            _ => {}
+            backoff += 1;
+            if backoff > 10 {
+                backoff = 10;
+            }
+            let err = format!("{}", anyhow::Error::from(maybe_connection.err().unwrap()));
+            if matches!(&last_error, Some(value) if *value == err) {
+                eprintln!("Error connecting to device, retrying in {backoff} seconds.");
+            } else {
+                eprintln!(
+                    "Error connecting to device, retrying in {backoff} seconds. Error: {err}",
+                );
+                last_error = Some(err);
+            }
+            fuchsia_async::Timer::new(std::time::Duration::from_secs(backoff)).await;
         }
         prev_timestamp = Some(connection.boot_timestamp);
+        cmd.maybe_set_interest(
+            &connection.log_settings_client,
+            realm_query,
+            formatter.writer().is_machine(),
+        )
+        .await?;
+        formatter.set_boot_timestamp(connection.boot_timestamp as i64);
         let maybe_err =
             dump_logs_from_socket(connection.log_socket, &mut formatter, &symbolizer_channel).await;
         if stream_mode == fidl_fuchsia_diagnostics::StreamMode::Snapshot {
@@ -268,6 +261,7 @@ mod tests {
         TestEvent,
     };
     use assert_matches::assert_matches;
+    use async_trait::async_trait;
     use chrono::{Local, TimeZone};
     use diagnostics_data::{BuilderArgs, LogsDataBuilder, Severity, Timestamp};
     use ffx_writer::{Format, TestBuffers};
@@ -277,9 +271,10 @@ mod tests {
     use futures::{future::poll_fn, Future, StreamExt};
     use log_command::{
         log_formatter::{LogData, TIMESTAMP_FORMAT},
-        parse_seconds_string_as_duration, parse_time, DumpCommand,
+        parse_seconds_string_as_duration, parse_time, DumpCommand, InstanceGetter, TimeFormat,
     };
     use log_symbolizer::{FakeSymbolizerForTest, NoOpSymbolizer};
+    use moniker::Moniker;
     use selectors::parse_log_interest_selector;
     use std::{
         pin::{pin, Pin},
@@ -289,15 +284,32 @@ mod tests {
 
     const TEST_STR: &str = "[1980-01-01 00:00:03.000][ffx] INFO: Hello world 2!\u{1b}[m\n";
 
+    #[derive(Default)]
+    struct FakeInstanceGetter {
+        output: Vec<Moniker>,
+        expected_selector: Option<String>,
+    }
+
+    #[async_trait(?Send)]
+    impl InstanceGetter for FakeInstanceGetter {
+        async fn get_monikers_from_query(
+            &self,
+            query: &str,
+        ) -> Result<Vec<Moniker>, log_command::LogError> {
+            if let Some(expected) = &self.expected_selector {
+                assert_eq!(expected, query);
+            }
+            Ok(self.output.clone())
+        }
+    }
+
     #[fuchsia::test]
     async fn symbolizer_replaces_markers_with_symbolized_logs() {
-        let (rcs_proxy, rcs_server) = create_proxy::<RemoteControlMarker>().unwrap();
+        let (rcs_proxy, rcs_server) = fidl::endpoints::create_proxy().unwrap();
         let (target_collection_proxy, target_collection_server) =
-            create_proxy::<TargetCollectionMarker>().unwrap();
+            fidl::endpoints::create_proxy().unwrap();
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {
-                session: log_command::SessionSpec::Relative(0),
-            })),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
             ..LogCommand::default()
         };
         let symbolizer = FakeSymbolizerForTest::new("prefix", vec![]);
@@ -350,6 +362,7 @@ mod tests {
             target_collection_proxy,
             cmd,
             symbolizer,
+            FakeInstanceGetter::default(),
         ));
         // Run all tasks until exit.
         task_manager.run().await;
@@ -370,13 +383,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn json_logger_test() {
-        let (rcs_proxy, rcs_server) = create_proxy::<RemoteControlMarker>().unwrap();
+        let (rcs_proxy, rcs_server) = fidl::endpoints::create_proxy().unwrap();
         let (target_collection_proxy, target_collection_server) =
-            create_proxy::<TargetCollectionMarker>().unwrap();
+            fidl::endpoints::create_proxy().unwrap();
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {
-                session: log_command::SessionSpec::Relative(0),
-            })),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
             ..LogCommand::default()
         };
         let symbolizer = NoOpSymbolizer::new();
@@ -394,6 +405,7 @@ mod tests {
             target_collection_proxy,
             cmd,
             symbolizer,
+            FakeInstanceGetter::default(),
         ));
         // Run all tasks until exit.
         task_manager.run().await;
@@ -420,14 +432,112 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn logger_prints_error_if_both_dump_and_since_now_are_combined() {
-        let (rcs_proxy, rcs_server) = create_proxy::<RemoteControlMarker>().unwrap();
+    async fn logger_prints_error_if_ambiguous_selector() {
+        let (rcs_proxy, rcs_server) =
+            fidl::endpoints::create_proxy::<RemoteControlMarker>().unwrap();
         let (target_collection_proxy, target_collection_server) =
-            create_proxy::<TargetCollectionMarker>().unwrap();
+            fidl::endpoints::create_proxy::<TargetCollectionMarker>().unwrap();
+
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {
-                session: log_command::SessionSpec::Relative(0),
-            })),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
+            select: vec![parse_log_interest_selector("ambiguous_selector#INFO").unwrap()],
+            ..LogCommand::default()
+        };
+        let symbolizer = NoOpSymbolizer::new();
+        let task_manager = TaskManager::new();
+        let scheduler = task_manager.get_scheduler();
+        task_manager.spawn(handle_rcs_connection(rcs_server, scheduler.clone()));
+        task_manager.spawn(handle_target_collection_connection(
+            target_collection_server,
+            scheduler.clone(),
+        ));
+        let test_buffers = TestBuffers::default();
+        let mut getter = FakeInstanceGetter::default();
+        getter.expected_selector = Some("ambiguous_selector".into());
+        getter.output = vec![
+            Moniker::try_from("core/some/ambiguous_selector:thing/test").unwrap(),
+            Moniker::try_from("core/other/ambiguous_selector:thing/test").unwrap(),
+        ];
+        let mut main_result = task_manager.spawn_result(log_main(
+            MachineWriter::<LogEntry>::new_test(None, &test_buffers),
+            rcs_proxy,
+            target_collection_proxy,
+            cmd,
+            symbolizer,
+            getter,
+        ));
+
+        // Run all tasks until exit.
+        task_manager.run().await;
+        // Main should return an error
+        let error = format!("{}", main_result.next().await.unwrap().unwrap_err());
+        const EXPECTED_INTEREST_ERROR: &str = r#"WARN: One or more of your selectors appears to be ambiguous
+and may not match any components on your system.
+
+If this is unintentional you can explicitly match using the
+following command:
+
+ffx log \
+	--select core/some/ambiguous_selector\\:thing/test#INFO \
+	--select core/other/ambiguous_selector\\:thing/test#INFO
+
+If this is intentional, you can disable this with
+ffx log --force-select.
+"#;
+        assert_eq!(error, EXPECTED_INTEREST_ERROR);
+    }
+
+    #[fuchsia::test]
+    async fn logger_translates_selector_if_one_match() {
+        let (rcs_proxy, rcs_server) =
+            fidl::endpoints::create_proxy::<RemoteControlMarker>().unwrap();
+        let (target_collection_proxy, target_collection_server) =
+            fidl::endpoints::create_proxy::<TargetCollectionMarker>().unwrap();
+
+        let cmd = LogCommand {
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
+            select: vec![parse_log_interest_selector("ambiguous_selector#INFO").unwrap()],
+            ..LogCommand::default()
+        };
+        let symbolizer = NoOpSymbolizer::new();
+        let mut task_manager = TaskManager::new();
+        let mut event_stream = task_manager.take_event_stream().unwrap();
+        let scheduler = task_manager.get_scheduler();
+        task_manager.spawn(handle_rcs_connection(rcs_server, scheduler.clone()));
+        task_manager.spawn(handle_target_collection_connection(
+            target_collection_server,
+            scheduler.clone(),
+        ));
+        let test_buffers = TestBuffers::default();
+        let mut getter = FakeInstanceGetter::default();
+        getter.expected_selector = Some("ambiguous_selector".into());
+        getter.output = vec![Moniker::try_from("core/some/ambiguous_selector").unwrap()];
+        let mut main_result = task_manager.spawn_result(log_main(
+            MachineWriter::<LogEntry>::new_test(None, &test_buffers),
+            rcs_proxy,
+            target_collection_proxy,
+            cmd,
+            symbolizer,
+            getter,
+        ));
+
+        // Run all tasks until exit.
+        task_manager.run().await;
+        // Main should return OK
+        main_result.next().await.unwrap().unwrap();
+
+        let severity =
+            vec![parse_log_interest_selector("core/some/ambiguous_selector#INFO").unwrap()];
+        assert_matches!(event_stream.next().await, Some(TestEvent::SeverityChanged(s)) if s == severity);
+    }
+
+    #[fuchsia::test]
+    async fn logger_prints_error_if_both_dump_and_since_now_are_combined() {
+        let (rcs_proxy, rcs_server) = fidl::endpoints::create_proxy().unwrap();
+        let (target_collection_proxy, target_collection_server) =
+            fidl::endpoints::create_proxy().unwrap();
+        let cmd = LogCommand {
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
             since: Some(parse_time("now").unwrap()),
             ..LogCommand::default()
         };
@@ -446,6 +556,7 @@ mod tests {
             target_collection_proxy,
             cmd,
             symbolizer,
+            FakeInstanceGetter::default(),
         ));
 
         // Run all tasks until exit.
@@ -456,13 +567,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn logger_prints_hello_world_message_and_exits_in_snapshot_mode() {
-        let (rcs_proxy, rcs_server) = create_proxy::<RemoteControlMarker>().unwrap();
+        let (rcs_proxy, rcs_server) = fidl::endpoints::create_proxy().unwrap();
         let (target_collection_proxy, target_collection_server) =
-            create_proxy::<TargetCollectionMarker>().unwrap();
+            fidl::endpoints::create_proxy().unwrap();
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {
-                session: log_command::SessionSpec::Relative(0),
-            })),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
             ..LogCommand::default()
         };
         let symbolizer = NoOpSymbolizer::new();
@@ -481,6 +590,7 @@ mod tests {
             target_collection_proxy,
             cmd,
             symbolizer,
+            FakeInstanceGetter::default(),
         ));
         // Run all tasks until exit.
         task_manager.run().await;
@@ -496,13 +606,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn logger_does_not_color_logs_if_disabled() {
-        let (rcs_proxy, rcs_server) = create_proxy::<RemoteControlMarker>().unwrap();
+        let (rcs_proxy, rcs_server) = fidl::endpoints::create_proxy().unwrap();
         let (target_collection_proxy, target_collection_server) =
-            create_proxy::<TargetCollectionMarker>().unwrap();
+            fidl::endpoints::create_proxy().unwrap();
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {
-                session: log_command::SessionSpec::Relative(0),
-            })),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
             no_color: true,
             ..LogCommand::default()
         };
@@ -522,6 +630,7 @@ mod tests {
             target_collection_proxy,
             cmd,
             symbolizer,
+            FakeInstanceGetter::default(),
         ));
         // Run all tasks until exit.
         task_manager.run().await;
@@ -537,13 +646,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn logger_shows_metadata_if_enabled() {
-        let (rcs_proxy, rcs_server) = create_proxy::<RemoteControlMarker>().unwrap();
+        let (rcs_proxy, rcs_server) = fidl::endpoints::create_proxy().unwrap();
         let (target_collection_proxy, target_collection_server) =
-            create_proxy::<TargetCollectionMarker>().unwrap();
+            fidl::endpoints::create_proxy().unwrap();
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {
-                session: log_command::SessionSpec::Relative(0),
-            })),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
             show_metadata: true,
             no_color: true,
             ..LogCommand::default()
@@ -564,6 +671,7 @@ mod tests {
             target_collection_proxy,
             cmd,
             symbolizer,
+            FakeInstanceGetter::default(),
         ));
         // Run all tasks until exit.
         task_manager.run().await;
@@ -579,13 +687,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn logger_shows_utc_time_if_enabled() {
-        let (rcs_proxy, rcs_server) = create_proxy::<RemoteControlMarker>().unwrap();
+        let (rcs_proxy, rcs_server) = fidl::endpoints::create_proxy().unwrap();
         let (target_collection_proxy, target_collection_server) =
-            create_proxy::<TargetCollectionMarker>().unwrap();
+            fidl::endpoints::create_proxy().unwrap();
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {
-                session: log_command::SessionSpec::Relative(0),
-            })),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
             clock: TimeFormat::Utc,
             ..LogCommand::default()
         };
@@ -617,6 +723,7 @@ mod tests {
             target_collection_proxy,
             cmd,
             symbolizer,
+            FakeInstanceGetter::default(),
         ));
         // Run all tasks until exit.
         task_manager.run().await;
@@ -632,13 +739,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn logger_shows_logs_filtered_by_severity() {
-        let (rcs_proxy, rcs_server) = create_proxy::<RemoteControlMarker>().unwrap();
+        let (rcs_proxy, rcs_server) = fidl::endpoints::create_proxy().unwrap();
         let (target_collection_proxy, target_collection_server) =
-            create_proxy::<TargetCollectionMarker>().unwrap();
+            fidl::endpoints::create_proxy().unwrap();
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {
-                session: log_command::SessionSpec::Relative(0),
-            })),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
             clock: TimeFormat::Utc,
             severity: Severity::Error,
             ..LogCommand::default()
@@ -693,6 +798,7 @@ mod tests {
             target_collection_proxy,
             cmd,
             symbolizer,
+            FakeInstanceGetter::default(),
         ));
         // Run all tasks until exit.
         task_manager.run().await;
@@ -727,9 +833,9 @@ mod tests {
 
     #[fuchsia::test]
     async fn logger_shows_logs_since_specific_timestamp_across_reboots() {
-        let (rcs_proxy, rcs_server) = create_proxy::<RemoteControlMarker>().unwrap();
+        let (rcs_proxy, rcs_server) = fidl::endpoints::create_proxy().unwrap();
         let (target_collection_proxy, target_collection_server) =
-            create_proxy::<TargetCollectionMarker>().unwrap();
+            fidl::endpoints::create_proxy().unwrap();
         let cmd = LogCommand {
             sub_command: Some(LogSubCommand::Watch(WatchCommand {})),
             clock: TimeFormat::Local,
@@ -742,40 +848,18 @@ mod tests {
         };
         let symbolizer = NoOpSymbolizer::new();
         let mut task_manager = TaskManager::new_with_config(Rc::new(Configuration {
-            messages: vec![
-                LogsDataBuilder::new(BuilderArgs {
-                    component_url: Some("ffx".into()),
-                    moniker: "ffx".into(),
-                    severity: Severity::Info,
-                    timestamp_nanos: Timestamp::from(
-                        parse_time("1980-01-01T00:00:00")
-                            .unwrap()
-                            .time
-                            .naive_utc()
-                            .timestamp_nanos(),
-                    ),
-                })
-                .set_pid(1)
-                .set_tid(2)
-                .set_message("Hello world!")
-                .build(),
-                LogsDataBuilder::new(BuilderArgs {
-                    component_url: Some("ffx".into()),
-                    moniker: "ffx".into(),
-                    severity: Severity::Info,
-                    timestamp_nanos: Timestamp::from(
-                        parse_time("1980-01-01T00:00:03")
-                            .unwrap()
-                            .time
-                            .naive_utc()
-                            .timestamp_nanos(),
-                    ),
-                })
-                .set_pid(1)
-                .set_tid(2)
-                .set_message("Hello world 2!")
-                .build(),
-            ],
+            messages: vec![LogsDataBuilder::new(BuilderArgs {
+                component_url: Some("ffx".into()),
+                moniker: "ffx".into(),
+                severity: Severity::Info,
+                timestamp_nanos: Timestamp::from(
+                    parse_time("1980-01-01T00:00:03").unwrap().time.naive_utc().timestamp_nanos(),
+                ),
+            })
+            .set_pid(1)
+            .set_tid(2)
+            .set_message("Hello world 2!")
+            .build()],
             send_mode_event: true,
             ..Default::default()
         }));
@@ -795,6 +879,7 @@ mod tests {
             target_collection_proxy,
             cmd,
             symbolizer,
+            FakeInstanceGetter::default(),
         ));
 
         // Run the stream until we get the expected message.
@@ -811,11 +896,82 @@ mod tests {
         // polling the future.
         assert_matches!(event_stream.next().await, Some(TestEvent::LogSettingsConnectionClosed));
 
-        // This sets the boot timestamp for the third boot because once we've
-        // gotten the connection closed, but haven't polled the 3rd one yet,
-        // the 3rd connect request is in-flight but not yet ack'd so any configuration
-        // changes impacting that must be set here.
         scheduler.config.boot_timestamp.set(42);
+        check_for_message(&mut runner, &test_buffers, TEST_STR).await;
+        // Second connection has a different timestamp so should be treated
+        // as a reboot.
+        assert_matches!(
+            event_stream.next().await,
+            Some(TestEvent::Connected(StreamMode::SnapshotThenSubscribe))
+        );
+        assert_matches!(event_stream.next().await, Some(TestEvent::LogSettingsConnectionClosed));
+    }
+
+    #[fuchsia::test]
+    async fn logger_shows_logs_since_specific_timestamp_across_reboots_heuristic() {
+        let (rcs_proxy, rcs_server) = fidl::endpoints::create_proxy().unwrap();
+        let (target_collection_proxy, target_collection_server) =
+            fidl::endpoints::create_proxy().unwrap();
+        let cmd = LogCommand {
+            sub_command: Some(LogSubCommand::Watch(WatchCommand {})),
+            clock: TimeFormat::Local,
+            since: Some(log_command::DetailedDateTime {
+                is_now: true,
+                ..parse_time("1980-01-01T00:00:01").unwrap()
+            }),
+            until: None,
+            ..LogCommand::default()
+        };
+        let symbolizer = NoOpSymbolizer::new();
+        let mut task_manager = TaskManager::new_with_config(Rc::new(Configuration {
+            messages: vec![LogsDataBuilder::new(BuilderArgs {
+                component_url: Some("ffx".into()),
+                moniker: "ffx".into(),
+                severity: Severity::Info,
+                timestamp_nanos: Timestamp::from(
+                    parse_time("1980-01-01T00:00:03").unwrap().time.naive_utc().timestamp_nanos(),
+                ),
+            })
+            .set_pid(1)
+            .set_tid(2)
+            .set_message("Hello world 2!")
+            .build()],
+            send_mode_event: true,
+            ..Default::default()
+        }));
+        let mut event_stream = task_manager.take_event_stream().unwrap();
+        let scheduler = task_manager.get_scheduler();
+        task_manager.spawn(handle_rcs_connection(rcs_server, scheduler.clone()));
+        task_manager.spawn(handle_target_collection_connection(
+            target_collection_server,
+            scheduler.clone(),
+        ));
+        let test_buffers = TestBuffers::default();
+
+        // Intentionally unused. When in streaming mode, this should never return a value.
+        let _result = task_manager.spawn_result(log_main(
+            MachineWriter::<LogEntry>::new_test(None, &test_buffers),
+            rcs_proxy,
+            target_collection_proxy,
+            cmd,
+            symbolizer,
+            FakeInstanceGetter::default(),
+        ));
+
+        // Run the stream until we get the expected message.
+        let mut runner = pin!(task_manager.run());
+        check_for_message(&mut runner, &test_buffers, TEST_STR).await;
+
+        // First connection should have used Subscribe mode.
+        assert_matches!(
+            event_stream.next().await,
+            Some(TestEvent::Connected(StreamMode::Subscribe))
+        );
+
+        // Device is paused when we exit the loop because there's nothing
+        // polling the future.
+        assert_matches!(event_stream.next().await, Some(TestEvent::LogSettingsConnectionClosed));
+
         check_for_message(&mut runner, &test_buffers, TEST_STR).await;
 
         // Second connection has a matching timestamp to the first one, so we should
@@ -829,6 +985,7 @@ mod tests {
         // For the third connection, we should get a
         // SnapshotThenSubscribe request because the timestamp
         // changed and it's clear it's actually a separate boot not a disconnect/reconnect
+        scheduler.config.boot_timestamp.set(42);
         check_for_message(&mut runner, &test_buffers, TEST_STR).await;
         assert_matches!(
             event_stream.next().await,
@@ -838,13 +995,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn logger_shows_logs_since_specific_timestamp() {
-        let (rcs_proxy, rcs_server) = create_proxy::<RemoteControlMarker>().unwrap();
+        let (rcs_proxy, rcs_server) = fidl::endpoints::create_proxy().unwrap();
         let (target_collection_proxy, target_collection_server) =
-            create_proxy::<TargetCollectionMarker>().unwrap();
+            fidl::endpoints::create_proxy().unwrap();
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {
-                session: log_command::SessionSpec::Relative(0),
-            })),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
             clock: TimeFormat::Local,
             since: Some(parse_time("1980-01-01T00:00:01").unwrap()),
             until: Some(parse_time("1980-01-01T00:00:05").unwrap()),
@@ -918,6 +1073,7 @@ mod tests {
             target_collection_proxy,
             cmd,
             symbolizer,
+            FakeInstanceGetter::default(),
         ));
         // Run all tasks until exit.
         task_manager.run().await;
@@ -933,13 +1089,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn logger_shows_logs_since_specific_timestamp_monotonic() {
-        let (rcs_proxy, rcs_server) = create_proxy::<RemoteControlMarker>().unwrap();
+        let (rcs_proxy, rcs_server) = fidl::endpoints::create_proxy().unwrap();
         let (target_collection_proxy, target_collection_server) =
-            create_proxy::<TargetCollectionMarker>().unwrap();
+            fidl::endpoints::create_proxy().unwrap();
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {
-                session: log_command::SessionSpec::Relative(0),
-            })),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
             clock: TimeFormat::Utc,
             since_monotonic: Some(parse_seconds_string_as_duration("1").unwrap()),
             until_monotonic: Some(parse_seconds_string_as_duration("5").unwrap()),
@@ -995,6 +1149,7 @@ mod tests {
             target_collection_proxy,
             cmd,
             symbolizer,
+            FakeInstanceGetter::default(),
         ));
         // Run all tasks until exit.
         task_manager.run().await;
@@ -1010,13 +1165,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn logger_shows_local_time_if_enabled() {
-        let (rcs_proxy, rcs_server) = create_proxy::<RemoteControlMarker>().unwrap();
+        let (rcs_proxy, rcs_server) = fidl::endpoints::create_proxy().unwrap();
         let (target_collection_proxy, target_collection_server) =
-            create_proxy::<TargetCollectionMarker>().unwrap();
+            fidl::endpoints::create_proxy().unwrap();
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {
-                session: log_command::SessionSpec::Relative(0),
-            })),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
             clock: TimeFormat::Local,
             ..LogCommand::default()
         };
@@ -1048,6 +1201,7 @@ mod tests {
             target_collection_proxy,
             cmd,
             symbolizer,
+            FakeInstanceGetter::default(),
         ));
         // Run all tasks until exit.
         task_manager.run().await;
@@ -1066,13 +1220,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn logger_shows_tags_by_default() {
-        let (rcs_proxy, rcs_server) = create_proxy::<RemoteControlMarker>().unwrap();
+        let (rcs_proxy, rcs_server) = fidl::endpoints::create_proxy().unwrap();
         let (target_collection_proxy, target_collection_server) =
-            create_proxy::<TargetCollectionMarker>().unwrap();
+            fidl::endpoints::create_proxy().unwrap();
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {
-                session: log_command::SessionSpec::Relative(0),
-            })),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
             ..LogCommand::default()
         };
         let symbolizer = NoOpSymbolizer::new();
@@ -1104,6 +1256,7 @@ mod tests {
             target_collection_proxy,
             cmd,
             symbolizer,
+            FakeInstanceGetter::default(),
         ));
         // Run all tasks until exit.
         task_manager.run().await;
@@ -1119,13 +1272,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn logger_hides_full_moniker_by_default() {
-        let (rcs_proxy, rcs_server) = create_proxy::<RemoteControlMarker>().unwrap();
+        let (rcs_proxy, rcs_server) = fidl::endpoints::create_proxy().unwrap();
         let (target_collection_proxy, target_collection_server) =
-            create_proxy::<TargetCollectionMarker>().unwrap();
+            fidl::endpoints::create_proxy().unwrap();
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {
-                session: log_command::SessionSpec::Relative(0),
-            })),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
             ..LogCommand::default()
         };
         let symbolizer = NoOpSymbolizer::new();
@@ -1157,6 +1308,7 @@ mod tests {
             target_collection_proxy,
             cmd,
             symbolizer,
+            FakeInstanceGetter::default(),
         ));
         // Run all tasks until exit.
         task_manager.run().await;
@@ -1172,13 +1324,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn logger_hides_full_moniker_when_enabled() {
-        let (rcs_proxy, rcs_server) = create_proxy::<RemoteControlMarker>().unwrap();
+        let (rcs_proxy, rcs_server) = fidl::endpoints::create_proxy().unwrap();
         let (target_collection_proxy, target_collection_server) =
-            create_proxy::<TargetCollectionMarker>().unwrap();
+            fidl::endpoints::create_proxy().unwrap();
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {
-                session: log_command::SessionSpec::Relative(0),
-            })),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
             show_full_moniker: true,
             ..LogCommand::default()
         };
@@ -1211,6 +1361,7 @@ mod tests {
             target_collection_proxy,
             cmd,
             symbolizer,
+            FakeInstanceGetter::default(),
         ));
         // Run all tasks until exit.
         task_manager.run().await;
@@ -1226,13 +1377,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn logger_hides_tag_when_hidden() {
-        let (rcs_proxy, rcs_server) = create_proxy::<RemoteControlMarker>().unwrap();
+        let (rcs_proxy, rcs_server) = fidl::endpoints::create_proxy().unwrap();
         let (target_collection_proxy, target_collection_server) =
-            create_proxy::<TargetCollectionMarker>().unwrap();
+            fidl::endpoints::create_proxy().unwrap();
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {
-                session: log_command::SessionSpec::Relative(0),
-            })),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
             hide_tags: true,
             ..LogCommand::default()
         };
@@ -1265,6 +1414,7 @@ mod tests {
             target_collection_proxy,
             cmd,
             symbolizer,
+            FakeInstanceGetter::default(),
         ));
         // Run all tasks until exit.
         task_manager.run().await;
@@ -1280,14 +1430,12 @@ mod tests {
 
     #[fuchsia::test]
     async fn logger_sets_severity_appropriately_then_exits() {
-        let (rcs_proxy, rcs_server) = create_proxy::<RemoteControlMarker>().unwrap();
+        let (rcs_proxy, rcs_server) = fidl::endpoints::create_proxy().unwrap();
         let (target_collection_proxy, target_collection_server) =
-            create_proxy::<TargetCollectionMarker>().unwrap();
+            fidl::endpoints::create_proxy().unwrap();
         let severity = vec![parse_log_interest_selector("archivist.cm#TRACE").unwrap()];
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {
-                session: log_command::SessionSpec::Relative(0),
-            })),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
             select: severity.clone(),
             ..LogCommand::default()
         };
@@ -1307,6 +1455,7 @@ mod tests {
             target_collection_proxy,
             cmd,
             symbolizer,
+            FakeInstanceGetter::default(),
         ));
         // Run all tasks until exit.
         task_manager.run().await;
@@ -1323,13 +1472,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn logger_shows_file_names_by_default() {
-        let (rcs_proxy, rcs_server) = create_proxy::<RemoteControlMarker>().unwrap();
+        let (rcs_proxy, rcs_server) = fidl::endpoints::create_proxy().unwrap();
         let (target_collection_proxy, target_collection_server) =
-            create_proxy::<TargetCollectionMarker>().unwrap();
+            fidl::endpoints::create_proxy().unwrap();
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {
-                session: log_command::SessionSpec::Relative(0),
-            })),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
             ..LogCommand::default()
         };
         let symbolizer = NoOpSymbolizer::new();
@@ -1363,6 +1510,7 @@ mod tests {
             target_collection_proxy,
             cmd,
             symbolizer,
+            FakeInstanceGetter::default(),
         ));
         // Run all tasks until exit.
         task_manager.run().await;
@@ -1379,13 +1527,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn logger_hides_filename_if_disabled() {
-        let (rcs_proxy, rcs_server) = create_proxy::<RemoteControlMarker>().unwrap();
+        let (rcs_proxy, rcs_server) = fidl::endpoints::create_proxy().unwrap();
         let (target_collection_proxy, target_collection_server) =
-            create_proxy::<TargetCollectionMarker>().unwrap();
+            fidl::endpoints::create_proxy().unwrap();
         let cmd = LogCommand {
-            sub_command: Some(LogSubCommand::Dump(DumpCommand {
-                session: log_command::SessionSpec::Relative(0),
-            })),
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
             hide_file: true,
             ..LogCommand::default()
         };
@@ -1420,6 +1566,7 @@ mod tests {
             target_collection_proxy,
             cmd,
             symbolizer,
+            FakeInstanceGetter::default(),
         ));
         // Run all tasks until exit.
         task_manager.run().await;

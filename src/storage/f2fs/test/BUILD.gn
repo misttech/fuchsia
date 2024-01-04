@@ -17,17 +17,16 @@ group("test") {
 }
 
 test_deps = [
-  "//sdk/fidl/fuchsia.fs:fuchsia.fs_cpp_wire",
-  "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+  "//sdk/fidl/fuchsia.fs:fuchsia.fs_cpp",
+  "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
   "//sdk/fidl/fuchsia.io:fuchsia.io_hlcpp",
   "//sdk/lib/fdio",
-  "//sdk/lib/sys/inspect/cpp",
   "//sdk/lib/syslog/cpp",
   "//src/lib/chunked-compression",
   "//src/lib/fxl/test:gtest_main",
-  "//src/lib/storage/block_client/cpp:fake_device",
-  "//src/lib/storage/fs_management",
   "//src/storage/f2fs",
+  "//src/storage/lib/block_client/cpp:fake_device",
+  "//src/storage/lib/fs_management",
   "//third_party/googletest:gmock",
   "//third_party/googletest:gtest",
   "//zircon/system/ulib/async-loop:async-loop-cpp",
@@ -42,10 +41,11 @@ test_deps = [
 test("f2fs_unit") {
   sources = [
     "unit/bcache.cc",
+    "unit/bitmap.cc",
     "unit/checkpoint.cc",
     "unit/dir.cc",
     "unit/dir_entry_cache.cc",
-    "unit/dirty_page_list.cc",
+    "unit/extent_cache.cc",
     "unit/f2fs.cc",
     "unit/file.cc",
     "unit/file_cache.cc",
@@ -119,7 +119,7 @@ test("f2fs_component_runner_test") {
   sources = [ "unit/component_runner_test.cc" ]
   deps = test_deps + [
            "//sdk/lib/component/incoming/cpp",
-           "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_cpp_wire",
+           "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_cpp",
            "//zircon/system/ulib/id_allocator",
            "//zircon/system/ulib/zx",
          ]
@@ -157,20 +157,41 @@ fs_test_config("f2fs") {
 fs_test_suite("f2fs") {
   deps = [
     ":f2fs_fs_test_config",
-    "//src/storage/bin/f2fs:f2fs-component",
+    "//src/storage/f2fs/bin:f2fs-component",
   ]
   extra_components = [
-    ":f2fs-unittest",
+    # TODO(b/317855955): Fix flakes and re-enable
+    # ":f2fs-unittest",
     ":f2fs-gc-unittest",
     ":f2fs-large-volume-unittest",
     ":f2fs-slow-unittest",
     ":f2fs-component-runner-test",
   ]
+
+  # TODO(b/297201368): These tests timeout on RISC-V builders currently.
+  if (current_cpu == "riscv64") {
+    extra_components -= [
+      # TODO(b/317855955): Fix flakes and re-enable
+      # ":f2fs-unittest",
+      ":f2fs-large-volume-unittest",
+      ":f2fs-gc-unittest",
+    ]
+  }
 }
 
 slow_fs_test_suite("f2fs") {
   deps = [
     ":f2fs_fs_test_config",
-    "//src/storage/bin/f2fs:f2fs-component",
+    "//src/storage/f2fs/bin:f2fs-component",
   ]
+
+  # TODO(b/297201368): These tests are disabled in the regular test suite above due to timeouts.
+  if (current_cpu == "riscv64") {
+    extra_components = [
+      # TODO(b/317855955): Fix flakes and re-enable
+      # ":f2fs-unittest",
+      ":f2fs-large-volume-unittest",
+      ":f2fs-gc-unittest",
+    ]
+  }
 }

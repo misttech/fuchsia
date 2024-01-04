@@ -102,6 +102,9 @@ pub struct TargetCfg {
     configs: Option<Vec<String>>,
     /// GN Visibility that controls which targets can depend on this target.
     visibility: Option<Vec<String>>,
+
+    // Whether the package uses the Fuchsia license.
+    uses_fuchsia_license: Option<bool>,
 }
 
 /// Configuration for a single GN executable target to generate from a Cargo binary target.
@@ -189,6 +192,8 @@ pub struct PackageCfg {
 pub struct GlobalTargetCfgs {
     remove_cfgs: Vec<String>,
     add_cfgs: Vec<String>,
+    /// When true, crates must have license files.
+    require_licenses: Option<bool>,
 }
 
 /// Extra metadata in the Cargo.toml file that feeds into the
@@ -743,8 +748,9 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
             testonly_targets.contains(target),
             false,
             renamed_rules.get(target).copied(),
+            true,
         )
-        .context(format!("writing rule for: {} {}", target.name(), target.version()))?;
+        .with_context(|| format!("writing rule for: {} {}", target.name(), target.version()))?;
 
         if targets_with_tests.contains(target) {
             gn::write_rule(
@@ -757,12 +763,9 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                 true,
                 true,
                 renamed_rules.get(&target).copied(),
+                true,
             )
-            .context(format!(
-                "writing rule for: {} {}",
-                target.name(),
-                target.version()
-            ))?;
+            .with_context(|| format!("writing rule for: {} {}", target.name(), target.version()))?;
         }
     }
 

@@ -44,10 +44,14 @@
         },
         {
             protocol: [
+                "fuchsia.buildinfo.Provider",
+                "fuchsia.kernel.CpuResource",
                 "fuchsia.kernel.Stats",
                 "fuchsia.kernel.VmexResource",
+                "fuchsia.sysinfo.SysInfo",
                 "fuchsia.sysmem.Allocator",
                 "fuchsia.sysmem2.Allocator",
+                "fuchsia.tracing.controller.Controller",
                 "fuchsia.vulkan.loader.Loader",
             ],
             from: "parent",
@@ -58,6 +62,15 @@
             from: "parent",
             to: [ "#starnix-tests" ],
             rights: [ "r*" ],
+        },
+        {
+            // TODO(https://fxbug.dev/304290346): In an ideal world, we would
+            // mock bluetooth hardware in tests.
+            directory: "dev-class",
+            from: "parent",
+            as: "dev-bt-hci",
+            to: [ "#starnix-tests" ],
+            subdir: "bt-hci",
         },
         {
             storage: "fxfs_tests_data",

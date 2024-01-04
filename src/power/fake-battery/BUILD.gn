@@ -56,10 +56,19 @@ executable("cpp_test") {
   output_name = "fake-battery-driver-unittests"
   sources = [ "fake-battery-driver-unittest.cc" ]
 
+  metadata = {
+    test_component_manifest_cml = [
+      {
+        include = [ "//sdk/lib/syslog/use.shard.cml" ]
+      },
+    ]
+  }
+
   deps = [
     ":fake_battery_driver_lib",
     "//sdk/lib/async_patterns/testing/cpp",
     "//sdk/lib/driver/testing/cpp",
+    "//sdk/lib/syslog/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//zircon/system/ulib/async-loop:async-loop",
   ]
@@ -79,6 +88,7 @@ test("driver_integration_test") {
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/driver_test_realm/realm_builder/cpp",
+    "//sdk/lib/syslog/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
   ]

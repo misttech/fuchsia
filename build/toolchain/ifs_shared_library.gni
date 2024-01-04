@@ -41,12 +41,13 @@ _llvm_ifs = "$clang_tool_dir/llvm-ifs"
 #     - Type: string
 #     - Default: $target_name
 #
-#   * public, public_configs, public_deps
+#   * data_deps, public, public_configs, public_deps
 #     - Optional: As for shared_library().
 #
 #   * deps
 #     - Optional: Any dependencies that went into the creation of the supplied
 #       `.ifs` file.
+#     - Type: list(label)
 #
 template("ifs_shared_library") {
   main_target = target_name
@@ -66,17 +67,18 @@ template("ifs_shared_library") {
 
   gen_dir = "$gen_dir_base$clang_cpu"
   gen_stub_file = "$gen_dir/lib$output_name.so"
-  public_stub_file = "$root_out_dir/lib$output_name.so"
+  public_stub_file = "$target_out_dir/lib$output_name.so"
 
   source_set(main_target) {
     public_configs = []
     forward_variables_from(invoker,
                            [
-                             "visibility",
+                             "data_deps",
                              "public",
                              "public_configs",
                              "public_deps",
                              "testonly",
+                             "visibility",
                            ])
     public_configs += [ ":$config_target" ]
     libs = [ gen_stub_file ]

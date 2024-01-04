@@ -5,18 +5,14 @@
 load(
     "@fuchsia_sdk//fuchsia:assembly.bzl",
     "ARCH",
-    "PARTITION_TYPE",
-    "SLOT",
-    "fuchsia_bootloader_partition",
     "fuchsia_elf_sizes",
-    "fuchsia_partition",
-    "fuchsia_partitions_configuration",
     "fuchsia_prebuilt_package",
     "fuchsia_product_bundle",
     "fuchsia_product_configuration",
     "fuchsia_product_image",
     "fuchsia_virtual_device",
 )
+load("//build/info:info.bzl", "DEFAULT_PRODUCT_BUILD_INFO")
 load("//products/workbench:platform_config.bzl", "workbench_platform_config")
 
 package(default_visibility = [
@@ -57,6 +53,18 @@ fuchsia_product_bundle(
 )
 
 fuchsia_product_bundle(
+    name = "product_bundle_eng.arm64",
+    board_name = "arm64",
+    partitions_config = "//build/bazel/assembly/partitions_configurations:arm64",
+    product_image = ":assembly_eng.arm64",
+    product_name = "workbench_eng",
+    recovery = "//products/zedboot:arm64",
+    repository_keys = "//src/sys/pkg/repositories/devhost/keys",
+    update_epoch = "1",
+    update_version_file = "@legacy_ninja_build_outputs//:build_info_version.txt",
+)
+
+fuchsia_product_bundle(
     name = "product_bundle_eng.vim3",
     board_name = "vim3",
     partitions_config = "//build/bazel/assembly/partitions_configurations:vim3",
@@ -66,78 +74,6 @@ fuchsia_product_bundle(
     repository_keys = "//src/sys/pkg/repositories/devhost/keys",
     update_epoch = "1",
     update_version_file = "@legacy_ninja_build_outputs//:build_info_version.txt",
-)
-
-fuchsia_partitions_configuration(
-    name = "partitions.x64",
-    bootloader_partitions = [
-        ":fuchsia_esp",
-    ],
-    hardware_revision = "x64",
-    partitions = [
-        ":zircon_a",
-        ":zircon_b",
-        ":zircon_r",
-        ":vbmeta_a",
-        ":vbmeta_b",
-        ":vbmeta_r",
-        ":fvm",
-    ],
-)
-
-fuchsia_bootloader_partition(
-    name = "fuchsia_esp",
-    image = "@legacy_ninja_build_outputs//:fuchsia.esp.blk",
-    partition_name = "fuchsia-esp",
-    type = "esp",
-)
-
-fuchsia_partition(
-    name = "vbmeta_a",
-    partition_name = "vbmeta_a",
-    slot = SLOT.A,
-    type = PARTITION_TYPE.VBMETA,
-)
-
-fuchsia_partition(
-    name = "zircon_a",
-    partition_name = "zircon-a",
-    slot = SLOT.A,
-    type = PARTITION_TYPE.ZBI,
-)
-
-fuchsia_partition(
-    name = "vbmeta_b",
-    partition_name = "vbmeta_b",
-    slot = SLOT.B,
-    type = PARTITION_TYPE.VBMETA,
-)
-
-fuchsia_partition(
-    name = "zircon_b",
-    partition_name = "zircon-b",
-    slot = SLOT.B,
-    type = PARTITION_TYPE.ZBI,
-)
-
-fuchsia_partition(
-    name = "fvm",
-    partition_name = "fvm",
-    type = PARTITION_TYPE.FVM,
-)
-
-fuchsia_partition(
-    name = "zircon_r",
-    partition_name = "zircon-r",
-    slot = SLOT.R,
-    type = PARTITION_TYPE.ZBI,
-)
-
-fuchsia_partition(
-    name = "vbmeta_r",
-    partition_name = "vbmeta_r",
-    slot = SLOT.R,
-    type = PARTITION_TYPE.VBMETA,
 )
 
 fuchsia_product_image(
@@ -157,6 +93,14 @@ fuchsia_product_image(
 )
 
 fuchsia_product_image(
+    name = "assembly_eng.arm64",
+    board_config = "//boards:arm64",
+    legacy_aib = "//build/bazel/assembly/assembly_input_bundles:legacy_fuchsia",
+    platform_aibs = "//build/bazel/assembly/assembly_input_bundles:platform_eng",
+    product_config = ":assembly_config_eng",
+)
+
+fuchsia_product_image(
     name = "assembly_eng.vim3",
     board_config = "//boards:vim3",
     legacy_aib = "//build/bazel/assembly/assembly_input_bundles:legacy_fuchsia",
@@ -167,6 +111,11 @@ fuchsia_product_image(
 fuchsia_elf_sizes(
     name = "elf_sizes.x64",
     product_image = ":assembly_eng.x64",
+)
+
+fuchsia_elf_sizes(
+    name = "elf_sizes.arm64",
+    product_image = ":assembly_eng.arm64",
 )
 
 fuchsia_elf_sizes(
@@ -190,17 +139,18 @@ fuchsia_virtual_device(
 fuchsia_product_configuration(
     name = "assembly_config_eng",
     cache_packages = [
-        ":tiles_session",
+        ":workbench_session",
     ],
     json_config = {
         "platform": workbench_platform_config,
         "product": {
-            "session_url": "fuchsia-pkg://fuchsia.com/tiles-session#meta/tiles-session.cm",
+            "session_url": "fuchsia-pkg://fuchsia.com/workbench_session#meta/workbench_session.cm",
+            "build_info": DEFAULT_PRODUCT_BUILD_INFO,
         },
     },
 )
 
 fuchsia_prebuilt_package(
-    name = "tiles_session",
-    archive = "@legacy_ninja_build_outputs//:tiles-session.far",
+    name = "workbench_session",
+    archive = "@legacy_ninja_build_outputs//:workbench_session.far",
 )

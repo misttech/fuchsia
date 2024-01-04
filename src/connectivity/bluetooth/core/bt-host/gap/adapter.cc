@@ -6,6 +6,8 @@
 
 #include <endian.h>
 
+#include <pw_async/dispatcher.h>
+
 #include "bredr_connection_manager.h"
 #include "bredr_discovery_manager.h"
 #include "event_masks.h"
@@ -19,6 +21,7 @@
 #include "src/connectivity/bluetooth/core/bt-host/common/log.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/metrics.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/random.h"
+#include "src/connectivity/bluetooth/core/bt-host/gap/gap.h"
 #include "src/connectivity/bluetooth/core/bt-host/hci-spec/util.h"
 #include "src/connectivity/bluetooth/core/bt-host/hci/android_extended_low_energy_advertiser.h"
 #include "src/connectivity/bluetooth/core/bt-host/hci/connection.h"
@@ -31,7 +34,7 @@
 #include "src/connectivity/bluetooth/core/bt-host/transport/emboss_control_packets.h"
 #include "src/connectivity/bluetooth/core/bt-host/transport/transport.h"
 
-#include <pw_bluetooth/hci.emb.h>
+#include <pw_bluetooth/hci_commands.emb.h>
 
 namespace bt::gap {
 
@@ -48,11 +51,8 @@ static constexpr const char* kInspectBrEdrDiscoveryManagerNodeName = "bredr_disc
 // instance is created.
 class AdapterImpl final : public Adapter {
  public:
-  // There must be an async_t dispatcher registered as a default when an AdapterImpl
-  // instance is created. The Adapter instance will use it for all of its
-  // asynchronous tasks.
-  explicit AdapterImpl(hci::Transport::WeakPtr hci, gatt::GATT::WeakPtr gatt,
-                       std::unique_ptr<l2cap::ChannelManager> l2cap);
+  explicit AdapterImpl(pw::async::Dispatcher& pw_dispatcher, hci::Transport::WeakPtr hci,
+                       gatt::GATT::WeakPtr gatt, std::unique_ptr<l2cap::ChannelManager> l2cap);
   ~AdapterImpl() override;
 
   AdapterId identifier() const override { return identifier_; }
@@ -87,7 +87,7 @@ class AdapterImpl final : public Adapter {
       adapter_->metrics_.le.pair_requests.Add();
     }
 
-    void SetSecurityMode(LESecurityMode mode) override {
+    void SetLESecurityMode(LESecurityMode mode) override {
       adapter_->le_connection_manager_->SetSecurityMode(mode);
     }
 
@@ -156,11 +156,11 @@ class AdapterImpl final : public Adapter {
 
     std::optional<UInt128> irk() const override { return adapter_->le_address_manager_->irk(); }
 
-    void set_request_timeout_for_testing(zx::duration value) override {
+    void set_request_timeout_for_testing(pw::chrono::SystemClock::duration value) override {
       adapter_->le_connection_manager_->set_request_timeout_for_testing(value);
     }
 
-    void set_scan_period_for_testing(zx::duration period) override {
+    void set_scan_period_for_testing(pw::chrono::SystemClock::duration period) override {
       adapter_->le_discovery_manager_->set_scan_period(period);
     }
 
@@ -183,7 +183,7 @@ class AdapterImpl final : public Adapter {
       return adapter_->bredr_connection_manager_->Disconnect(peer_id, reason);
     }
 
-    void OpenL2capChannel(PeerId peer_id, l2cap::PSM psm,
+    void OpenL2capChannel(PeerId peer_id, l2cap::Psm psm,
                           BrEdrSecurityRequirements security_requirements,
                           l2cap::ChannelParameters params, l2cap::ChannelCallback cb) override {
       adapter_->metrics_.bredr.open_l2cap_channel_requests.Add();
@@ -209,6 +209,14 @@ class AdapterImpl final : public Adapter {
               hci::ResultFunction<> callback) override {
       adapter_->bredr_connection_manager_->Pair(peer_id, security, std::move(callback));
       adapter_->metrics_.bredr.pair_requests.Add();
+    }
+
+    void SetBrEdrSecurityMode(BrEdrSecurityMode mode) override {
+      adapter_->bredr_connection_manager_->SetSecurityMode(mode);
+    }
+
+    BrEdrSecurityMode security_mode() const override {
+      return adapter_->bredr_connection_manager_->security_mode();
     }
 
     void SetConnectable(bool connectable, hci::ResultFunction<> status_cb) override {
@@ -338,7 +346,7 @@ class AdapterImpl final : public Adapter {
     constexpr hci_spec::LESupportedFeature feature =
         hci_spec::LESupportedFeature::kLEExtendedAdvertising;
     if (state().low_energy_state.IsFeatureSupported(feature)) {
-      bt_log(INFO, "gap", "controller supports extended advertising, using extended LE commands");
+      bt_log(INFO, "gap", "controller supports extended advertising, using extended LE advertiser");
       return std::make_unique<hci::ExtendedLowEnergyAdvertiser>(hci_);
     }
 
@@ -351,7 +359,7 @@ class AdapterImpl final : public Adapter {
       return std::make_unique<hci::AndroidExtendedLowEnergyAdvertiser>(hci_, max_advt);
     }
 
-    bt_log(INFO, "gap", "controller supports only legacy advertising, using legacy LE commands");
+    bt_log(INFO, "gap", "controller supports only legacy advertising, using legacy LE advertiser");
     return std::make_unique<hci::LegacyLowEnergyAdvertiser>(hci_);
   }
 
@@ -398,7 +406,6 @@ class AdapterImpl final : public Adapter {
   // Uniquely identifies this adapter on the current system.
   AdapterId identifier_;
 
-  async_dispatcher_t* dispatcher_;
   hci::Transport::WeakPtr hci_;
 
   // Callback invoked to notify clients when the underlying transport is closed.
@@ -437,8 +444,7 @@ class AdapterImpl final : public Adapter {
   // for service discovery.
   gatt::GATT::WeakPtr gatt_;
 
-  // Objects that abstract the controller for connection and advertising
-  // procedures.
+  // Objects that abstract the controller for connection and advertising procedures.
   std::unique_ptr<hci::LowEnergyAdvertiser> hci_le_advertiser_;
   std::unique_ptr<hci::LowEnergyConnector> hci_le_connector_;
   std::unique_ptr<hci::LowEnergyScanner> hci_le_scanner_;
@@ -459,6 +465,8 @@ class AdapterImpl final : public Adapter {
   // Callback to propagate ownership of an auto-connected LE link.
   AutoConnectCallback auto_conn_cb_;
 
+  pw::async::Dispatcher& dispatcher_;
+
   // This must remain the last member to make sure that all weak pointers are
   // invalidating before other members are destroyed.
   WeakSelf<AdapterImpl> weak_self_;
@@ -467,19 +475,19 @@ class AdapterImpl final : public Adapter {
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(AdapterImpl);
 };
 
-AdapterImpl::AdapterImpl(hci::Transport::WeakPtr hci, gatt::GATT::WeakPtr gatt,
-                         std::unique_ptr<l2cap::ChannelManager> l2cap)
+AdapterImpl::AdapterImpl(pw::async::Dispatcher& pw_dispatcher, hci::Transport::WeakPtr hci,
+                         gatt::GATT::WeakPtr gatt, std::unique_ptr<l2cap::ChannelManager> l2cap)
     : identifier_(Random<AdapterId>()),
-      dispatcher_(async_get_default_dispatcher()),
       hci_(std::move(hci)),
       init_state_(State::kNotInitialized),
+      peer_cache_(pw_dispatcher),
       l2cap_(std::move(l2cap)),
       gatt_(std::move(gatt)),
+      dispatcher_(pw_dispatcher),
       weak_self_(this),
       weak_self_adapter_(this) {
   BT_DEBUG_ASSERT(hci_.is_alive());
   BT_DEBUG_ASSERT(gatt_.is_alive());
-  BT_DEBUG_ASSERT_MSG(dispatcher_, "must create on a thread with a dispatcher");
 
   auto self = weak_self_.GetWeakPtr();
   hci_->SetTransportErrorCallback([self] {
@@ -961,7 +969,7 @@ void AdapterImpl::InitializeStep3() {
     // Initialize ChannelManager to make it available for the next initialization step. The
     // AclDataChannel must be initialized before creating ChannelManager.
     l2cap_ = l2cap::ChannelManager::Create(hci_->acl_data_channel(), hci_->command_channel(),
-                                           /*random_channel_ids=*/true);
+                                           /*random_channel_ids=*/true, dispatcher_);
     l2cap_->AttachInspect(adapter_node_, l2cap::ChannelManager::kInspectNodeName);
   }
 
@@ -1015,7 +1023,7 @@ void AdapterImpl::InitializeStep4() {
   // Initialize the LE local address manager.
   le_address_manager_ = std::make_unique<LowEnergyAddressManager>(
       adapter_identity, fit::bind_member<&AdapterImpl::IsLeRandomAddressChangeAllowed>(this),
-      hci_->command_channel()->AsWeakPtr());
+      hci_->command_channel()->AsWeakPtr(), dispatcher_);
 
   // Initialize the HCI adapters.
   hci_le_advertiser_ = CreateAdvertiser();
@@ -1027,7 +1035,7 @@ void AdapterImpl::InitializeStep4() {
 
   // Initialize the LE manager objects
   le_discovery_manager_ =
-      std::make_unique<LowEnergyDiscoveryManager>(hci_le_scanner_.get(), &peer_cache_);
+      std::make_unique<LowEnergyDiscoveryManager>(hci_le_scanner_.get(), &peer_cache_, dispatcher_);
   le_discovery_manager_->AttachInspect(adapter_node_, kInspectLowEnergyDiscoveryManagerNodeName);
   le_discovery_manager_->set_peer_connectable_callback(
       fit::bind_member<&AdapterImpl::OnLeAutoConnectRequest>(this));
@@ -1035,7 +1043,7 @@ void AdapterImpl::InitializeStep4() {
   le_connection_manager_ = std::make_unique<LowEnergyConnectionManager>(
       hci_->command_channel()->AsWeakPtr(), le_address_manager_.get(), hci_le_connector_.get(),
       &peer_cache_, l2cap_.get(), gatt_, le_discovery_manager_->GetWeakPtr(),
-      sm::SecurityManager::Create);
+      sm::SecurityManager::Create, dispatcher_);
   le_connection_manager_->AttachInspect(adapter_node_, kInspectLowEnergyConnectionManagerNodeName);
 
   le_advertising_manager_ = std::make_unique<LowEnergyAdvertisingManager>(
@@ -1049,7 +1057,7 @@ void AdapterImpl::InitializeStep4() {
     bredr_connection_manager_ = std::make_unique<BrEdrConnectionManager>(
         hci_, &peer_cache_, local_bredr_address, l2cap_.get(),
         state_.features.HasBit(/*page=*/0, hci_spec::LMPFeature::kInterlacedPageScan),
-        state_.IsLocalSecureConnectionsSupported());
+        state_.IsLocalSecureConnectionsSupported(), dispatcher_);
     bredr_connection_manager_->AttachInspect(adapter_node_, kInspectBrEdrConnectionManagerNodeName);
 
     pw::bluetooth::emboss::InquiryMode mode = pw::bluetooth::emboss::InquiryMode::STANDARD;
@@ -1060,7 +1068,7 @@ void AdapterImpl::InitializeStep4() {
     }
 
     bredr_discovery_manager_ = std::make_unique<BrEdrDiscoveryManager>(
-        hci_->command_channel()->AsWeakPtr(), mode, &peer_cache_);
+        dispatcher_, hci_->command_channel()->AsWeakPtr(), mode, &peer_cache_);
     bredr_discovery_manager_->AttachInspect(adapter_node_, kInspectBrEdrDiscoveryManagerNodeName);
 
     sdp_server_ = std::make_unique<sdp::Server>(l2cap_.get());
@@ -1276,9 +1284,10 @@ bool AdapterImpl::IsLeRandomAddressChangeAllowed() {
          hci_le_connector_->AllowsRandomAddressChange();
 }
 
-std::unique_ptr<Adapter> Adapter::Create(hci::Transport::WeakPtr hci, gatt::GATT::WeakPtr gatt,
+std::unique_ptr<Adapter> Adapter::Create(pw::async::Dispatcher& pw_dispatcher,
+                                         hci::Transport::WeakPtr hci, gatt::GATT::WeakPtr gatt,
                                          std::unique_ptr<l2cap::ChannelManager> l2cap) {
-  return std::make_unique<AdapterImpl>(hci, gatt, std::move(l2cap));
+  return std::make_unique<AdapterImpl>(pw_dispatcher, hci, gatt, std::move(l2cap));
 }
 
 }  // namespace bt::gap

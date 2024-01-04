@@ -20,8 +20,8 @@ ConsumeStep::ConsumeStep(Compiler* compiler, std::unique_ptr<raw::File> file)
       file_(std::move(file)),
       default_underlying_type_(
           all_libraries()->root_library()->declarations.LookupBuiltin(Builtin::Identity::kUint32)),
-      transport_err_type_(all_libraries()->root_library()->declarations.LookupBuiltin(
-          Builtin::Identity::kTransportErr)) {}
+      framework_err_type_(all_libraries()->root_library()->declarations.LookupBuiltin(
+          Builtin::Identity::kFrameworkErr)) {}
 
 void ConsumeStep::RunImpl() {
   // All fidl files in a library should agree on the library name.
@@ -34,7 +34,8 @@ void ConsumeStep::RunImpl() {
     library()->arbitrary_name_span = file_->library_decl->span();
   } else {
     if (new_name != library()->name) {
-      Fail(ErrFilesDisagreeOnLibraryName, file_->library_decl->path->components[0]->span());
+      reporter()->Fail(ErrFilesDisagreeOnLibraryName,
+                       file_->library_decl->path->components[0]->span());
       return;
     }
     // Prefer setting arbitrary_name_span to a file which has attributes on the
@@ -77,12 +78,12 @@ Decl* ConsumeStep::RegisterDecl(std::unique_ptr<Decl> decl) {
   if (name.span()) {
     if (library()->dependencies.Contains(name.span()->source_file().filename(),
                                          {name.span()->data()})) {
-      Fail(ErrDeclNameConflictsWithLibraryImport, name.span().value(), name);
+      reporter()->Fail(ErrDeclNameConflictsWithLibraryImport, name.span().value(), name);
     } else if (auto canonical_decl_name = utils::canonicalize(name.decl_name());
                library()->dependencies.Contains(name.span()->source_file().filename(),
                                                 {canonical_decl_name})) {
-      Fail(ErrDeclNameConflictsWithLibraryImportCanonical, name.span().value(), name,
-           canonical_decl_name);
+      reporter()->Fail(ErrDeclNameConflictsWithLibraryImportCanonical, name.span().value(), name,
+                       canonical_decl_name);
     }
   }
   return decl_ptr;
@@ -122,8 +123,7 @@ void ConsumeStep::ConsumeAttribute(std::unique_ptr<raw::Attribute> raw_attribute
       name = raw_arg->maybe_name->span();
     }
     all_named = all_named && name.has_value();
-    args.emplace_back(std::make_unique<AttributeArg>(raw_arg->source_signature(), name,
-                                                     std::move(constant), raw_arg->span()));
+    args.emplace_back(std::make_unique<AttributeArg>(name, std::move(constant), raw_arg->span()));
   }
   ZX_ASSERT_MSG(all_named || args.size() == 1,
                 "parser should not allow an anonymous arg with other args");
@@ -136,8 +136,7 @@ void ConsumeStep::ConsumeAttribute(std::unique_ptr<raw::Attribute> raw_attribute
       name = generated_source_file()->AddLine(Attribute::kDocCommentName);
       break;
   }
-  *out_attribute = std::make_unique<Attribute>(raw_attribute->source_signature(), name,
-                                               std::move(args), raw_attribute->span());
+  *out_attribute = std::make_unique<Attribute>(name, std::move(args), raw_attribute->span());
   all_libraries()->WarnOnAttributeTypo(out_attribute->get());
 }
 
@@ -146,8 +145,8 @@ bool ConsumeStep::ConsumeConstant(std::unique_ptr<raw::Constant> raw_constant,
   switch (raw_constant->kind) {
     case raw::Constant::Kind::kIdentifier: {
       auto identifier = static_cast<raw::IdentifierConstant*>(raw_constant.get());
-      *out_constant = std::make_unique<IdentifierConstant>(
-          identifier->source_signature(), *identifier->identifier, identifier->span());
+      *out_constant =
+          std::make_unique<IdentifierConstant>(*identifier->identifier, identifier->span());
       break;
     }
     case raw::Constant::Kind::kLiteral: {
@@ -174,8 +173,7 @@ bool ConsumeStep::ConsumeConstant(std::unique_ptr<raw::Constant> raw_constant,
         return false;
       }
       *out_constant = std::make_unique<BinaryOperatorConstant>(
-          binary_operator_constant->source_signature(), std::move(left_operand),
-          std::move(right_operand), op, binary_operator_constant->span());
+          std::move(left_operand), std::move(right_operand), op, binary_operator_constant->span());
       break;
     }
   }
@@ -184,14 +182,14 @@ bool ConsumeStep::ConsumeConstant(std::unique_ptr<raw::Constant> raw_constant,
 
 void ConsumeStep::ConsumeLiteralConstant(raw::LiteralConstant* raw_constant,
                                          std::unique_ptr<LiteralConstant>* out_constant) {
-  *out_constant = std::make_unique<LiteralConstant>(
-      raw_constant->source_signature(), ConsumeLiteral(std::move(raw_constant->literal)));
+  *out_constant =
+      std::make_unique<LiteralConstant>(ConsumeLiteral(std::move(raw_constant->literal)));
 }
 
 void ConsumeStep::ConsumeUsing(std::unique_ptr<raw::Using> using_directive) {
   if (using_directive->attributes != nullptr) {
-    Fail(ErrAttributesNotAllowedOnLibraryImport, using_directive->span(),
-         using_directive->attributes.get());
+    reporter()->Fail(ErrAttributesNotAllowedOnLibraryImport, using_directive->span(),
+                     using_directive->attributes.get());
     return;
   }
 
@@ -202,7 +200,8 @@ void ConsumeStep::ConsumeUsing(std::unique_ptr<raw::Using> using_directive) {
 
   Library* dep_library = all_libraries()->Lookup(library_name);
   if (!dep_library) {
-    Fail(ErrUnknownLibrary, using_directive->using_path->components[0]->span(), library_name);
+    reporter()->Fail(ErrUnknownLibrary, using_directive->using_path->components[0]->span(),
+                     library_name);
     return;
   }
 
@@ -213,15 +212,15 @@ void ConsumeStep::ConsumeUsing(std::unique_ptr<raw::Using> using_directive) {
     case Dependencies::RegisterResult::kSuccess:
       break;
     case Dependencies::RegisterResult::kDuplicate:
-      Fail(ErrDuplicateLibraryImport, using_directive->span(), library_name);
+      reporter()->Fail(ErrDuplicateLibraryImport, using_directive->span(), library_name);
       return;
     case Dependencies::RegisterResult::kCollision:
       if (using_directive->maybe_alias) {
-        Fail(ErrConflictingLibraryImportAlias, using_directive->span(), library_name,
-             using_directive->maybe_alias->span().data());
+        reporter()->Fail(ErrConflictingLibraryImportAlias, using_directive->span(), library_name,
+                         using_directive->maybe_alias->span().data());
         return;
       }
-      Fail(ErrConflictingLibraryImport, using_directive->span(), library_name);
+      reporter()->Fail(ErrConflictingLibraryImport, using_directive->span(), library_name);
       return;
   }
 }
@@ -240,8 +239,8 @@ void ConsumeStep::ConsumeAliasDeclaration(
                               NamingContext::Create(alias_name), &type_ctor_))
     return;
 
-  RegisterDecl(std::make_unique<Alias>(alias_declaration->source_signature(), std::move(attributes),
-                                       std::move(alias_name), std::move(type_ctor_)));
+  RegisterDecl(
+      std::make_unique<Alias>(std::move(attributes), std::move(alias_name), std::move(type_ctor_)));
 }
 
 void ConsumeStep::ConsumeConstDeclaration(
@@ -260,48 +259,46 @@ void ConsumeStep::ConsumeConstDeclaration(
   if (!ConsumeConstant(std::move(const_declaration->constant), &constant))
     return;
 
-  RegisterDecl(std::make_unique<Const>(const_declaration->source_signature(), std::move(attributes),
-                                       std::move(name), std::move(type_ctor), std::move(constant)));
+  RegisterDecl(std::make_unique<Const>(std::move(attributes), std::move(name), std::move(type_ctor),
+                                       std::move(constant)));
 }
 
 // Create a type constructor pointing to an anonymous layout.
 static std::unique_ptr<TypeConstructor> IdentifierTypeForDecl(Decl* decl) {
-  return std::make_unique<TypeConstructor>(
-      decl->maybe_source_signature(), Reference(Reference::Target(decl)),
-      std::make_unique<LayoutParameterList>(), std::make_unique<TypeConstraints>());
+  return std::make_unique<TypeConstructor>(Reference(Reference::Target(decl)),
+                                           std::make_unique<LayoutParameterList>(),
+                                           std::make_unique<TypeConstraints>());
 }
 
 bool ConsumeStep::CreateMethodResult(
     const std::shared_ptr<NamingContext>& success_variant_context,
     const std::shared_ptr<NamingContext>& err_variant_context,
-    const std::shared_ptr<NamingContext>& transport_err_variant_context, bool has_err,
-    bool has_transport_err, SourceSpan response_span, raw::ProtocolMethod* method,
+    const std::shared_ptr<NamingContext>& framework_err_variant_context, bool has_err,
+    bool has_framework_err, SourceSpan response_span, raw::ProtocolMethod* method,
     std::unique_ptr<TypeConstructor> success_variant,
     std::unique_ptr<TypeConstructor>* out_payload) {
   ZX_ASSERT_MSG(
-      has_err || has_transport_err,
+      has_err || has_framework_err,
       "method should only use a result union if it has a result union and/or is flexible");
   ZX_ASSERT(err_variant_context != nullptr);
-  ZX_ASSERT(transport_err_variant_context != nullptr);
+  ZX_ASSERT(framework_err_variant_context != nullptr);
 
-  auto ordinal_source = raw::TokenChain(fidl::Token(), fidl::Token());
+  auto ordinal_source = raw::SourceElement(fidl::Token(), fidl::Token());
   std::vector<Union::Member> result_members;
 
   enum {
     kSuccessOrdinal = 1,
     kErrorOrdinal = 2,
-    kTransportErrorOrdinal = 3,
+    kFrameworkErrorOrdinal = 3,
   };
 
   result_members.emplace_back(
-      method->source_signature(),
       ConsumeOrdinal(std::make_unique<raw::Ordinal64>(ordinal_source, kSuccessOrdinal)),
       std::move(success_variant), success_variant_context->name(),
       std::make_unique<AttributeList>());
 
   if (has_err) {
     std::unique_ptr<TypeConstructor> error_type_ctor;
-    raw::SourceElement::Signature error_sig = method->maybe_error_ctor->source_signature();
     // Compile the error type.
     if (!ConsumeTypeConstructor(std::move(method->maybe_error_ctor), err_variant_context,
                                 &error_type_ctor))
@@ -310,33 +307,31 @@ bool ConsumeStep::CreateMethodResult(
     ZX_ASSERT_MSG(error_type_ctor != nullptr, "missing err type ctor");
 
     result_members.emplace_back(
-        error_sig, ConsumeOrdinal(std::make_unique<raw::Ordinal64>(ordinal_source, kErrorOrdinal)),
+        ConsumeOrdinal(std::make_unique<raw::Ordinal64>(ordinal_source, kErrorOrdinal)),
         std::move(error_type_ctor), err_variant_context->name(), std::make_unique<AttributeList>());
   } else {
     // If there's no error, the error variant is reserved.
     result_members.emplace_back(Union::Member::Reserved(
-        method->source_signature(),
         ConsumeOrdinal(std::make_unique<raw::Ordinal64>(ordinal_source, kErrorOrdinal)),
         err_variant_context->name(), std::make_unique<AttributeList>()));
   }
 
-  if (has_transport_err) {
-    std::unique_ptr<TypeConstructor> error_type_ctor = IdentifierTypeForDecl(transport_err_type_);
-    ZX_ASSERT_MSG(error_type_ctor != nullptr, "missing transport_err type ctor");
+  if (has_framework_err) {
+    std::unique_ptr<TypeConstructor> error_type_ctor = IdentifierTypeForDecl(framework_err_type_);
+    ZX_ASSERT_MSG(error_type_ctor != nullptr, "missing framework_err type ctor");
     result_members.emplace_back(
-        method->source_signature(),
-        ConsumeOrdinal(std::make_unique<raw::Ordinal64>(ordinal_source, kTransportErrorOrdinal)),
-        std::move(error_type_ctor), transport_err_variant_context->name(),
+        ConsumeOrdinal(std::make_unique<raw::Ordinal64>(ordinal_source, kFrameworkErrorOrdinal)),
+        std::move(error_type_ctor), framework_err_variant_context->name(),
         std::make_unique<AttributeList>());
   }
-  // transport_err is not defined if the method is not flexible.
+  // framework_err is not defined if the method is not flexible.
 
   auto result_context = err_variant_context->parent();
   auto result_name = Name::CreateAnonymous(library(), response_span, result_context,
                                            Name::Provenance::kGeneratedResultUnion);
   auto union_decl = std::make_unique<Union>(
-      method->source_signature(), std::make_unique<AttributeList>(), std::move(result_name),
-      std::move(result_members), types::Strictness::kStrict, std::nullopt /* resourceness */);
+      std::make_unique<AttributeList>(), std::move(result_name), std::move(result_members),
+      types::Strictness::kStrict, std::nullopt /* resourceness */);
   auto result_decl = union_decl.get();
   if (!RegisterDecl(std::move(union_decl)))
     return false;
@@ -354,8 +349,7 @@ void ConsumeStep::ConsumeProtocolDeclaration(
   for (auto& raw_composed : protocol_declaration->composed_protocols) {
     std::unique_ptr<AttributeList> attributes;
     ConsumeAttributeList(std::move(raw_composed->attributes), &attributes);
-    composed_protocols.emplace_back(raw_composed->source_signature(), std::move(attributes),
-                                    Reference(*raw_composed->protocol_name));
+    composed_protocols.emplace_back(std::move(attributes), Reference(*raw_composed->protocol_name));
   }
 
   std::vector<Protocol::Method> methods;
@@ -365,17 +359,9 @@ void ConsumeStep::ConsumeProtocolDeclaration(
 
     SourceSpan method_name = method->identifier->span();
 
-    auto strictness = types::Strictness::kStrict;
-    if (experimental_flags().IsFlagEnabled(ExperimentalFlags::Flag::kUnknownInteractions)) {
-      if (method->modifiers != nullptr && method->modifiers->maybe_strictness.has_value()) {
-        strictness = method->modifiers->maybe_strictness->value;
-      } else if (experimental_flags().IsFlagEnabled(
-                     ExperimentalFlags::Flag::kUnknownInteractionsMandate)) {
-        Fail(ErrMethodMustDefineStrictness, method_name, method_name.data());
-      } else if (experimental_flags().IsFlagEnabled(
-                     ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults)) {
-        strictness = types::Strictness::kFlexible;
-      }
+    auto strictness = types::Strictness::kFlexible;
+    if (method->modifiers != nullptr && method->modifiers->maybe_strictness.has_value()) {
+      strictness = method->modifiers->maybe_strictness->value;
     }
 
     bool has_request = method->maybe_request != nullptr;
@@ -393,18 +379,18 @@ void ConsumeStep::ConsumeProtocolDeclaration(
     bool has_error = false;
     if (has_response) {
       has_error = method->maybe_error_ctor != nullptr;
-      // has_transport_error is true for flexible two-way methods. We already
+      // has_framework_error is true for flexible two-way methods. We already
       // checked has_response in the outer if block, so to see whether this is a
       // two-way method or an event, we check has_request here.
-      bool has_transport_error = has_request && strictness == types::Strictness::kFlexible;
+      bool has_framework_error = has_request && strictness == types::Strictness::kFlexible;
 
       const auto response_context = has_request ? protocol_context->EnterResponse(method_name)
                                                 : protocol_context->EnterEvent(method_name);
 
-      if (has_error || has_transport_error) {
+      if (has_error || has_framework_error) {
         SourceSpan response_span = method->maybe_response->span();
         std::shared_ptr<NamingContext> success_variant_context, err_variant_context,
-            transport_err_variant_context;
+            framework_err_variant_context;
 
         // In protocol P, if method M is flexible or uses the error syntax, its
         // response is the following compiler-generated union:
@@ -415,7 +401,7 @@ void ConsumeStep::ConsumeProtocolDeclaration(
         //       // The "error variant". Marked `reserved` if there is no error.
         //       2: err @generated_name("P_M_Error") [user specified error type];
         //       // Omitted for strict methods.
-        //       3: transport_err fidl.TransportErr;
+        //       3: framework_err fidl.FrameworkErr;
         //     };
         //
         // This naming scheme is inconsistent with other compiler-generated
@@ -435,8 +421,8 @@ void ConsumeStep::ConsumeProtocolDeclaration(
             response_context->EnterMember(generated_source_file()->AddLine("err"));
         err_variant_context->set_name_override(
             utils::StringJoin({protocol_name.decl_name(), method_name.data(), "Error"}, "_"));
-        transport_err_variant_context =
-            response_context->EnterMember(generated_source_file()->AddLine("transport_err"));
+        framework_err_variant_context =
+            response_context->EnterMember(generated_source_file()->AddLine("framework_err"));
 
         std::unique_ptr<TypeConstructor> result_payload;
 
@@ -446,10 +432,10 @@ void ConsumeStep::ConsumeProtocolDeclaration(
           return;
         }
 
-        ZX_ASSERT_MSG(err_variant_context != nullptr && transport_err_variant_context != nullptr,
+        ZX_ASSERT_MSG(err_variant_context != nullptr && framework_err_variant_context != nullptr,
                       "error type contexts should have been computed");
         if (!CreateMethodResult(success_variant_context, err_variant_context,
-                                transport_err_variant_context, has_error, has_transport_error,
+                                framework_err_variant_context, has_error, has_framework_error,
                                 response_span, method.get(), std::move(result_payload),
                                 &maybe_response))
           return;
@@ -464,7 +450,7 @@ void ConsumeStep::ConsumeProtocolDeclaration(
       }
     }
     ZX_ASSERT(has_request || has_response);
-    methods.emplace_back(method->source_signature(), std::move(attributes), strictness,
+    methods.emplace_back(std::move(attributes), strictness,
                          ConsumeIdentifier(std::move(method->identifier)), method_name, has_request,
                          std::move(maybe_request), has_response, std::move(maybe_response),
                          has_error);
@@ -473,21 +459,13 @@ void ConsumeStep::ConsumeProtocolDeclaration(
   std::unique_ptr<AttributeList> attributes;
   ConsumeAttributeList(std::move(protocol_declaration->attributes), &attributes);
 
-  auto openness =
-      experimental_flags().IsFlagEnabled(ExperimentalFlags::Flag::kUnknownInteractionsNewDefaults)
-          ? types::Openness::kOpen
-          : types::Openness::kClosed;
+  auto openness = types::Openness::kOpen;
   if (protocol_declaration->modifiers != nullptr &&
       protocol_declaration->modifiers->maybe_openness.has_value()) {
     openness = protocol_declaration->modifiers->maybe_openness->value;
-  } else if (experimental_flags().IsFlagEnabled(
-                 ExperimentalFlags::Flag::kUnknownInteractionsMandate)) {
-    Fail(ErrProtocolMustDefineOpenness, protocol_declaration->identifier->span(),
-         protocol_declaration->identifier->span().data());
   }
 
-  RegisterDecl(std::make_unique<Protocol>(protocol_declaration->source_signature(),
-                                          std::move(attributes), openness, std::move(protocol_name),
+  RegisterDecl(std::make_unique<Protocol>(std::move(attributes), openness, std::move(protocol_name),
                                           std::move(composed_protocols), std::move(methods)));
 }
 
@@ -505,7 +483,7 @@ bool ConsumeStep::ConsumeParameterList(const SourceSpan method_name,
     // We have an empty success variant, like `Foo(...) -> () error uint32`.
     // Synthesize an empty struct for the result union.
     auto empty_struct = std::make_unique<Struct>(
-        parameter_layout->source_signature(), std::make_unique<AttributeList>(),
+        std::make_unique<AttributeList>(),
         Name::CreateAnonymous(library(), parameter_layout->span(), context,
                               Name::Provenance::kGeneratedEmptySuccessStruct),
         std::vector<Struct::Member>(), types::Resourceness::kValue);
@@ -538,8 +516,8 @@ void ConsumeStep::ConsumeResourceDeclaration(
     if (!ConsumeTypeConstructor(std::move(property->type_ctor),
                                 context->EnterMember(property->identifier->span()), &type_ctor))
       return;
-    properties.emplace_back(property->source_signature(), std::move(type_ctor),
-                            property->identifier->span(), std::move(attributes));
+    properties.emplace_back(std::move(type_ctor), property->identifier->span(),
+                            std::move(attributes));
   }
 
   std::unique_ptr<AttributeList> attributes;
@@ -554,8 +532,7 @@ void ConsumeStep::ConsumeResourceDeclaration(
     type_ctor = IdentifierTypeForDecl(default_underlying_type_);
   }
 
-  RegisterDecl(std::make_unique<Resource>(resource_declaration->source_signature(),
-                                          std::move(attributes), std::move(name),
+  RegisterDecl(std::make_unique<Resource>(std::move(attributes), std::move(name),
                                           std::move(type_ctor), std::move(properties)));
 }
 
@@ -571,15 +548,14 @@ void ConsumeStep::ConsumeServiceDeclaration(std::unique_ptr<raw::ServiceDeclarat
     if (!ConsumeTypeConstructor(std::move(member->type_ctor), context->EnterMember(member->span()),
                                 &type_ctor))
       return;
-    members.emplace_back(member->source_signature(), std::move(type_ctor),
-                         member->identifier->span(), std::move(attributes));
+    members.emplace_back(std::move(type_ctor), member->identifier->span(), std::move(attributes));
   }
 
   std::unique_ptr<AttributeList> attributes;
   ConsumeAttributeList(std::move(service_decl->attributes), &attributes);
 
-  RegisterDecl(std::make_unique<Service>(service_decl->source_signature(), std::move(attributes),
-                                         std::move(name), std::move(members)));
+  RegisterDecl(
+      std::make_unique<Service>(std::move(attributes), std::move(name), std::move(members)));
 }
 
 void ConsumeStep::MaybeOverrideName(AttributeList& attributes, NamingContext* context) {
@@ -598,7 +574,7 @@ void ConsumeStep::MaybeOverrideName(AttributeList& attributes, NamingContext* co
   if (utils::IsValidIdentifierComponent(str)) {
     context->set_name_override(std::move(str));
   } else {
-    Fail(ErrInvalidGeneratedName, arg->span);
+    reporter()->Fail(ErrInvalidGeneratedName, arg->span);
   }
 }
 
@@ -619,7 +595,7 @@ bool ConsumeStep::ConsumeValueLayout(std::unique_ptr<raw::Layout> layout,
     if (!ConsumeConstant(std::move(member->value), &value))
       return false;
 
-    members.emplace_back(member->source_signature(), span, std::move(value), std::move(attributes));
+    members.emplace_back(span, std::move(value), std::move(attributes));
   }
 
   std::unique_ptr<TypeConstructor> subtype_ctor;
@@ -640,12 +616,12 @@ bool ConsumeStep::ConsumeValueLayout(std::unique_ptr<raw::Layout> layout,
 
   if (layout->members.empty()) {
     if (strictness != types::Strictness::kFlexible)
-      return Fail(ErrMustHaveOneMember, layout->span());
+      return reporter()->Fail(ErrMustHaveOneMember, layout->span());
   }
 
-  Decl* decl = RegisterDecl(std::make_unique<T>(
-      layout->source_signature(), std::move(attributes), context->ToName(library(), layout->span()),
-      std::move(subtype_ctor), std::move(members), strictness));
+  Decl* decl = RegisterDecl(
+      std::make_unique<T>(std::move(attributes), context->ToName(library(), layout->span()),
+                          std::move(subtype_ctor), std::move(members), strictness));
   if (out_decl) {
     *out_decl = decl;
   }
@@ -663,8 +639,7 @@ bool ConsumeStep::ConsumeOrdinaledLayout(std::unique_ptr<raw::Layout> layout,
     std::unique_ptr<AttributeList> attributes;
     ConsumeAttributeList(std::move(member->attributes), &attributes);
     if (member->reserved) {
-      members.emplace_back(T::Member::Reserved(member->source_signature(),
-                                               ConsumeOrdinal(std::move(member->ordinal)),
+      members.emplace_back(T::Member::Reserved(ConsumeOrdinal(std::move(member->ordinal)),
                                                member->span(), std::move(attributes)));
       continue;
     }
@@ -674,8 +649,8 @@ bool ConsumeStep::ConsumeOrdinaledLayout(std::unique_ptr<raw::Layout> layout,
                                 context->EnterMember(member->identifier->span()), &type_ctor))
       return false;
 
-    members.emplace_back(member->source_signature(), ConsumeOrdinal(std::move(member->ordinal)),
-                         std::move(type_ctor), member->identifier->span(), std::move(attributes));
+    members.emplace_back(ConsumeOrdinal(std::move(member->ordinal)), std::move(type_ctor),
+                         member->identifier->span(), std::move(attributes));
   }
 
   std::unique_ptr<AttributeList> attributes;
@@ -690,7 +665,7 @@ bool ConsumeStep::ConsumeOrdinaledLayout(std::unique_ptr<raw::Layout> layout,
   if (layout->modifiers != nullptr && layout->modifiers->maybe_resourceness.has_value())
     resourceness = layout->modifiers->maybe_resourceness->value;
 
-  Decl* decl = RegisterDecl(std::make_unique<T>(layout->source_signature(), std::move(attributes),
+  Decl* decl = RegisterDecl(std::make_unique<T>(std::move(attributes),
                                                 context->ToName(library(), layout->span()),
                                                 std::move(members), strictness, resourceness));
   if (out_decl) {
@@ -722,11 +697,10 @@ bool ConsumeStep::ConsumeStructLayout(std::unique_ptr<raw::Layout> layout,
 
     Attribute* allow_struct_defaults = attributes->Get("allow_deprecated_struct_defaults");
     if (!allow_struct_defaults && default_value != nullptr) {
-      Fail(ErrDeprecatedStructDefaults, mem->span());
+      reporter()->Fail(ErrDeprecatedStructDefaults, mem->span());
     }
 
-    members.emplace_back(member->source_signature(), std::move(type_ctor),
-                         member->identifier->span(), std::move(default_value),
+    members.emplace_back(std::move(type_ctor), member->identifier->span(), std::move(default_value),
                          std::move(attributes));
   }
 
@@ -738,9 +712,9 @@ bool ConsumeStep::ConsumeStructLayout(std::unique_ptr<raw::Layout> layout,
   if (layout->modifiers != nullptr && layout->modifiers->maybe_resourceness.has_value())
     resourceness = layout->modifiers->maybe_resourceness->value;
 
-  Decl* decl = RegisterDecl(std::make_unique<Struct>(
-      layout->source_signature(), std::move(attributes), context->ToName(library(), layout->span()),
-      std::move(members), resourceness));
+  Decl* decl = RegisterDecl(std::make_unique<Struct>(std::move(attributes),
+                                                     context->ToName(library(), layout->span()),
+                                                     std::move(members), resourceness));
   if (out_decl) {
     *out_decl = decl;
   }
@@ -786,11 +760,8 @@ bool ConsumeStep::ConsumeTypeConstructor(std::unique_ptr<raw::TypeConstructor> r
                                          Decl** out_inline_decl) {
   std::vector<std::unique_ptr<LayoutParameter>> params;
   std::optional<SourceSpan> params_span;
-  std::optional<raw::SourceElement::Signature> params_signature;
-
   if (raw_type_ctor->parameters) {
     params_span = raw_type_ctor->parameters->span();
-    params_signature = raw_type_ctor->parameters->source_signature();
     for (auto& p : raw_type_ctor->parameters->items) {
       auto param = std::move(p);
       auto span = param->span();
@@ -800,8 +771,8 @@ bool ConsumeStep::ConsumeTypeConstructor(std::unique_ptr<raw::TypeConstructor> r
           std::unique_ptr<LiteralConstant> constant;
           ConsumeLiteralConstant(literal_param->literal.get(), &constant);
 
-          std::unique_ptr<LayoutParameter> consumed = std::make_unique<LiteralLayoutParameter>(
-              literal_param->source_signature(), std::move(constant), span);
+          std::unique_ptr<LayoutParameter> consumed =
+              std::make_unique<LiteralLayoutParameter>(std::move(constant), span);
           params.push_back(std::move(consumed));
           break;
         }
@@ -813,15 +784,15 @@ bool ConsumeStep::ConsumeTypeConstructor(std::unique_ptr<raw::TypeConstructor> r
                                       /*out_inline_decl=*/nullptr))
             return false;
 
-          std::unique_ptr<LayoutParameter> consumed = std::make_unique<TypeLayoutParameter>(
-              type_param->source_signature(), std::move(type_ctor), span);
+          std::unique_ptr<LayoutParameter> consumed =
+              std::make_unique<TypeLayoutParameter>(std::move(type_ctor), span);
           params.push_back(std::move(consumed));
           break;
         }
         case raw::LayoutParameter::Kind::kIdentifier: {
           auto id_param = static_cast<raw::IdentifierLayoutParameter*>(param.get());
-          std::unique_ptr<LayoutParameter> consumed = std::make_unique<IdentifierLayoutParameter>(
-              id_param->source_signature(), Reference(*id_param->identifier), span);
+          std::unique_ptr<LayoutParameter> consumed =
+              std::make_unique<IdentifierLayoutParameter>(Reference(*id_param->identifier), span);
           params.push_back(std::move(consumed));
           break;
         }
@@ -831,11 +802,8 @@ bool ConsumeStep::ConsumeTypeConstructor(std::unique_ptr<raw::TypeConstructor> r
 
   std::vector<std::unique_ptr<Constant>> constraints;
   std::optional<SourceSpan> constraints_span;
-  std::optional<raw::SourceElement::Signature> constraints_signature;
-
   if (raw_type_ctor->constraints) {
     constraints_span = raw_type_ctor->constraints->span();
-    constraints_signature = raw_type_ctor->constraints->source_signature();
     for (auto& c : raw_type_ctor->constraints->items) {
       std::unique_ptr<Constant> constraint;
       if (!ConsumeConstant(std::move(c), &constraint))
@@ -858,10 +826,9 @@ bool ConsumeStep::ConsumeTypeConstructor(std::unique_ptr<raw::TypeConstructor> r
     }
     if (out_type_ctor) {
       *out_type_ctor = std::make_unique<TypeConstructor>(
-          raw_type_ctor->source_signature(), Reference(Reference::Target(inline_decl)),
-          std::make_unique<LayoutParameterList>(params_signature, std::move(params), params_span),
-          std::make_unique<TypeConstraints>(constraints_signature, std::move(constraints),
-                                            constraints_span));
+          Reference(Reference::Target(inline_decl)),
+          std::make_unique<LayoutParameterList>(std::move(params), params_span),
+          std::make_unique<TypeConstraints>(std::move(constraints), constraints_span));
     }
     return true;
   }
@@ -869,10 +836,9 @@ bool ConsumeStep::ConsumeTypeConstructor(std::unique_ptr<raw::TypeConstructor> r
   auto named_ref = static_cast<raw::NamedLayoutReference*>(raw_type_ctor->layout_ref.get());
   ZX_ASSERT_MSG(out_type_ctor, "out type ctors should always be provided for a named type ctor");
   *out_type_ctor = std::make_unique<TypeConstructor>(
-      raw_type_ctor->source_signature(), Reference(*named_ref->identifier),
-      std::make_unique<LayoutParameterList>(params_signature, std::move(params), params_span),
-      std::make_unique<TypeConstraints>(constraints_signature, std::move(constraints),
-                                        constraints_span));
+      Reference(*named_ref->identifier),
+      std::make_unique<LayoutParameterList>(std::move(params), params_span),
+      std::make_unique<TypeConstraints>(std::move(constraints), constraints_span));
   return true;
 }
 
@@ -893,7 +859,7 @@ void ConsumeStep::ConsumeTypeDeclaration(std::unique_ptr<raw::TypeDeclaration> t
       return;
     }
     auto named_ref = static_cast<raw::NamedLayoutReference*>(layout_ref.get());
-    Fail(ErrNewTypesNotAllowed, type_decl->span(), name, named_ref->span().data());
+    reporter()->Fail(ErrNewTypesNotAllowed, type_decl->span(), name, named_ref->span().data());
     return;
   }
 
@@ -916,8 +882,8 @@ void ConsumeStep::ConsumeNewType(std::unique_ptr<raw::TypeDeclaration> type_decl
                               &new_type_ctor))
     return;
 
-  RegisterDecl(std::make_unique<NewType>(type_decl->source_signature(), std::move(attributes),
-                                         std::move(new_type_name), std::move(new_type_ctor)));
+  RegisterDecl(std::make_unique<NewType>(std::move(attributes), std::move(new_type_name),
+                                         std::move(new_type_ctor)));
 }
 
 const raw::Literal* ConsumeStep::ConsumeLiteral(std::unique_ptr<raw::Literal> raw_literal) {

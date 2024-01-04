@@ -7,12 +7,10 @@
 /// different types of packages when blobfs is in various intermediate states.
 use {
     assert_matches::assert_matches,
-    cobalt_sw_delivery_registry as metrics, fidl_fuchsia_pkg_ext as pkg, fuchsia_async as fasync,
-    fuchsia_inspect::assert_data_tree,
-    fuchsia_pkg_testing::{
-        serve::{responder, Domain},
-        Package, PackageBuilder, RepositoryBuilder,
-    },
+    cobalt_sw_delivery_registry as metrics,
+    diagnostics_assertions::assert_data_tree,
+    fidl_fuchsia_io as fio, fidl_fuchsia_pkg_ext as pkg, fuchsia_async as fasync,
+    fuchsia_pkg_testing::{serve::responder, Package, PackageBuilder, RepositoryBuilder},
     futures::{join, prelude::*},
     http_uri_ext::HttpUriExt as _,
     lib::{
@@ -23,11 +21,17 @@ use {
     std::{
         collections::HashSet,
         io::{self, Read},
-        net::{IpAddr, Ipv4Addr, Ipv6Addr},
         path::Path,
         sync::Arc,
         time::Duration,
     },
+};
+
+// TODO(b/308158482): re-enable when ring works on riscv64
+#[cfg(not(target_arch = "riscv64"))]
+use {
+    fuchsia_pkg_testing::serve::Domain,
+    std::net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
 
 #[fuchsia::test]
@@ -438,11 +442,11 @@ async fn handles_429_responses() {
     let served_repository = repo
         .server()
         .response_overrider(responder::ForPath::new(
-            format!("/blobs/{}", pkg1.hash()),
+            format!("/blobs/1/{}", pkg1.hash()),
             responder::ForRequestCount::new(2, responder::StaticResponseCode::too_many_requests()),
         ))
         .response_overrider(responder::ForPath::new(
-            format!("/blobs/{}", pkg2.meta_contents().unwrap().contents()["data/bar"]),
+            format!("/blobs/1/{}", pkg2.meta_contents().unwrap().contents()["data/bar"]),
             responder::ForRequestCount::new(2, responder::StaticResponseCode::too_many_requests()),
         ))
         .start()
@@ -601,7 +605,7 @@ async fn test_concurrent_blob_writes() {
     // Create the responder and the channel to communicate with it
     let (blocking_responder, unblocking_closure_receiver) = responder::BlockResponseBodyOnce::new();
     let blocking_responder =
-        responder::ForPath::new(format!("/blobs/{}", duplicate_blob_merkle), blocking_responder);
+        responder::ForPath::new(format!("/blobs/1/{}", duplicate_blob_merkle), blocking_responder);
 
     // Construct the repo
     let env = TestEnvBuilder::new().build().await;
@@ -631,7 +635,10 @@ async fn test_concurrent_blob_writes() {
     // Wait for duplicate blob to be truncated -- we know it is truncated when we get a
     // permission denied error when trying to update the blob in blobfs.
     let blobfs_dir = env.blobfs.root_dir().expect("blobfs has root dir");
-    while blobfs_dir.update_file(Path::new(&duplicate_blob_merkle), 0).is_ok() {
+    while blobfs_dir
+        .update_file(Path::new(&delivery_blob::delivery_blob_path(&duplicate_blob_merkle)), 0)
+        .is_ok()
+    {
         fasync::Timer::new(Duration::from_millis(10)).await;
     }
 
@@ -642,7 +649,10 @@ async fn test_concurrent_blob_writes() {
         resolve_package(&resolver_proxy_2, &"fuchsia-pkg://test/package2");
 
     // Wait for the unique blob to exist in blobfs.
-    while blobfs_dir.update_file(Path::new(&unique_blob_merkle), 0).is_ok() {
+    while blobfs_dir
+        .update_file(Path::new(&delivery_blob::delivery_blob_path(&unique_blob_merkle)), 0)
+        .is_ok()
+    {
         fasync::Timer::new(Duration::from_millis(10)).await;
     }
 
@@ -700,7 +710,7 @@ async fn dedup_concurrent_content_blob_fetches() {
             .contents()
             .values()
             .chain(pkg2_meta_contents.contents().values())
-            .map(|blob| format!("/blobs/{}", blob).into())
+            .map(|blob| format!("/blobs/1/{}", blob).into())
             .collect::<HashSet<_>>()
     };
     let (request_responder, mut incoming_requests) = responder::BlockResponseHeaders::new();
@@ -757,6 +767,8 @@ async fn dedup_concurrent_content_blob_fetches() {
     env.stop().await;
 }
 
+// TODO(b/308158482): re-enable when ring works on riscv64
+#[cfg(not(target_arch = "riscv64"))]
 async fn test_https_endpoint(pkg_name: &str, bind_addr: impl Into<IpAddr>) {
     let env = TestEnvBuilder::new().build().await;
 
@@ -791,11 +803,15 @@ async fn test_https_endpoint(pkg_name: &str, bind_addr: impl Into<IpAddr>) {
     env.stop().await;
 }
 
+// TODO(b/308158482): re-enable when ring works on riscv64
+#[cfg(not(target_arch = "riscv64"))]
 #[fuchsia::test]
 async fn https_endpoint_ipv6_only() {
     test_https_endpoint("https_endpoint_ipv6", Ipv6Addr::LOCALHOST).await
 }
 
+// TODO(b/308158482): re-enable when ring works on riscv64
+#[cfg(not(target_arch = "riscv64"))]
 #[fuchsia::test]
 async fn https_endpoint_ipv4_only() {
     test_https_endpoint("https_endpoint_ipv4", Ipv4Addr::LOCALHOST).await
@@ -821,7 +837,7 @@ async fn verify_concurrent_resolve() {
     let pkg1_url = "fuchsia-pkg://test/first_concurrent_resolve_pkg";
     let pkg2_url = "fuchsia-pkg://test/second_concurrent_resolve_pkg";
 
-    let path = format!("/blobs/{}", pkg1.content_blob_files().next().unwrap().merkle);
+    let path = format!("/blobs/1/{}", pkg1.content_blob_files().next().unwrap().merkle);
     let (blocker, mut chan) = responder::BlockResponseHeaders::new();
     let responder = responder::ForPath::new(path, blocker);
 
@@ -930,34 +946,6 @@ async fn superpackage() {
 }
 
 #[fuchsia::test]
-async fn fetch_delivery_blob() {
-    let env = TestEnvBuilder::new().fetch_delivery_blob(true).build().await;
-
-    let pkg = make_pkg_with_extra_blobs("fetch_delivery_blob", 1).await;
-    let repo = Arc::new(
-        RepositoryBuilder::from_template_dir(EMPTY_REPO_PATH)
-            .add_package(&pkg)
-            .delivery_blob_type(1)
-            .build()
-            .await
-            .unwrap(),
-    );
-    let served_repository = Arc::clone(&repo).server().start().unwrap();
-
-    let repo_url = "fuchsia-pkg://test".parse().unwrap();
-    let repo_config = served_repository.make_repo_config(repo_url);
-
-    let () = env.proxies.repo_manager.add(&repo_config.into()).await.unwrap().unwrap();
-
-    let (resolved_pkg, _resolved_context) =
-        env.resolve_package("fuchsia-pkg://test/fetch_delivery_blob").await.unwrap();
-
-    pkg.verify_contents(&resolved_pkg).await.unwrap();
-
-    env.stop().await;
-}
-
-#[fuchsia::test]
 async fn fetch_delivery_blob_fallback() {
     let env =
         TestEnvBuilder::new().fetch_delivery_blob(true).delivery_blob_fallback(true).build().await;
@@ -965,6 +953,7 @@ async fn fetch_delivery_blob_fallback() {
     let pkg = make_pkg_with_extra_blobs("delivery_blob_fallback", 1).await;
     let repo = Arc::new(
         RepositoryBuilder::from_template_dir(EMPTY_REPO_PATH)
+            .delivery_blob_type(None)
             .add_package(&pkg)
             .build()
             .await
@@ -999,7 +988,6 @@ async fn fxblob() {
     let repo = Arc::new(
         RepositoryBuilder::from_template_dir(EMPTY_REPO_PATH)
             .add_package(&pkg)
-            .delivery_blob_type(1)
             .build()
             .await
             .unwrap(),
@@ -1013,6 +1001,102 @@ async fn fxblob() {
         env.resolve_package("fuchsia-pkg://test/using-fx-blob").await.unwrap();
 
     pkg.verify_contents(&resolved_pkg).await.unwrap();
+
+    env.stop().await;
+}
+
+#[fuchsia::test]
+async fn ota_resolver_does_not_protect_blobs_from_gc() {
+    let env = TestEnvBuilder::new().build().await;
+    let pkg = PackageBuilder::new("unprotected-package")
+        .add_resource_at("unprotected-blob", &b"unprotected-blob-contents"[..])
+        .build()
+        .await
+        .unwrap();
+    let repo = Arc::new(
+        RepositoryBuilder::from_template_dir(EMPTY_REPO_PATH)
+            .add_package(&pkg)
+            .build()
+            .await
+            .unwrap(),
+    );
+    let served_repository = Arc::clone(&repo).server().start().unwrap();
+    let repo_url = "fuchsia-pkg://test".parse().unwrap();
+    let repo_config = served_repository.make_repo_config(repo_url);
+    let () = env.proxies.repo_manager.add(&repo_config.into()).await.unwrap().unwrap();
+
+    let (resolved_pkg, _resolved_context) =
+        lib::resolve_package(&env.proxies.resolver_ota, "fuchsia-pkg://test/unprotected-package")
+            .await
+            .unwrap();
+    pkg.verify_contents(&resolved_pkg).await.unwrap();
+
+    let () = env.proxies.space_manager.gc().await.unwrap().unwrap();
+
+    assert_matches!(
+        pkg.verify_contents(&resolved_pkg).await,
+        Err(fuchsia_pkg_testing::VerificationError::MissingFile{path}) if path == "unprotected-blob"
+    );
+
+    env.stop().await;
+}
+
+#[fuchsia::test]
+async fn resolve_of_already_cached_package_is_not_blocked_by_in_progress_blob_fetches() {
+    let env = TestEnvBuilder::new().blob_download_concurrency_limit(1).build().await;
+
+    let blocking_pkg = PackageBuilder::new("blocking-package").build().await.unwrap();
+    let already_cached_subpackage = PackageBuilder::new("already-cached-subpackage")
+        .add_resource_at(
+            "already-cached-subpackage-blob",
+            &b"already-cached-subpackage-blob-content"[..],
+        )
+        .build()
+        .await
+        .unwrap();
+    let already_cached_superpackage = PackageBuilder::new("already-cached-superpackage")
+        .add_subpackage("subpackage", &already_cached_subpackage)
+        .add_resource_at(
+            "already-cached-superpackage-blob",
+            &b"already-cached-superpackage-blob-content"[..],
+        )
+        .build()
+        .await
+        .unwrap();
+    let () = already_cached_superpackage.write_to_blobfs(&env.blobfs).await;
+
+    let repo = Arc::new(
+        RepositoryBuilder::from_template_dir(EMPTY_REPO_PATH)
+            .add_package(&blocking_pkg)
+            .add_package(&already_cached_superpackage)
+            .build()
+            .await
+            .unwrap(),
+    );
+    let (blocker, mut blocked_fetches) = responder::BlockResponseHeaders::new();
+    let responder = responder::ForPathPrefix::new("/blobs/1/", blocker);
+    let served_repository = repo.server().response_overrider(responder).start().unwrap();
+    env.register_repo(&served_repository).await;
+
+    // Wait for the meta.far to be blocked.
+    let mut blocking_pkg_resolve =
+        std::pin::pin!(env.resolve_package("fuchsia-pkg://test/blocking-package").fuse());
+    let blocked_meta_far = blocked_fetches.next().await.unwrap();
+
+    // Already cached package should resolve even with a full blob fetch queue,
+    // and the blocking resolve should not complete.
+    futures::select_biased! {
+        _  = blocking_pkg_resolve => panic!("blocking resolve should not complete"),
+        already_cached_resolve = env
+            .resolve_package("fuchsia-pkg://test/already-cached-superpackage").fuse() => {
+            let _: (fio::DirectoryProxy, _) = already_cached_resolve.unwrap();
+        }
+    }
+
+    // Finish the blocked resolve to make sure it completes successfully and didn't get canceled by
+    // timeout.
+    let () = blocked_meta_far.unblock();
+    let _: (fio::DirectoryProxy, _) = blocking_pkg_resolve.await.unwrap();
 
     env.stop().await;
 }

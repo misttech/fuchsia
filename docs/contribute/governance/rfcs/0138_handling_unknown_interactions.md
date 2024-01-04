@@ -408,7 +408,7 @@ union (ordinal 2) is marked `reserved`.[^abi-implication-of-result-union]
 [^abi-implication-of-result-union]: It is worth noting that adding an `error` to
     a `flexible` interaction can be made as a soft ABI compatible change.
 
-Some precisions:
+Some precisions:[^rename-to-framework-err]
 
 * We are choosing the name `transport_err` since from an application standpoint,
   where that error came from should be indistinguishable. There are application
@@ -454,6 +454,10 @@ Some precisions:
   ordinals, first variant is unconstrained (the success type can be anything),
   second variant must be `int32`, `uint32`, or an enum thereof, and the third
   variant must be a `fidl.transport_err`.
+
+[^rename-to-framework-err]: We later renamed `transport_err` and `TransportErr`
+    to `framework_err` and `FrameworkErr`, respectively. See
+    https://fxbug.dev/109789 for details.
 
 ### Changes to the JSON IR
 
@@ -992,8 +996,8 @@ can receive both one way and two way interactions:
 
 <!-- link labels -->
 
-[`zx_channel_call`]: /docs/reference/syscalls/channel_call.md
-[`zx_channel_write`]: /docs/reference/syscalls/channel_write.md
+[`zx_channel_call`]: /reference/syscalls/channel_call.md
+[`zx_channel_write`]: /reference/syscalls/channel_write.md
 [RFC-0024]: 0024_mandatory_source_compatibility.md
 [RFC-0033]: 0033_handling_unknown_fields_strictness.md
 [RFC-0037-transactional-message-header-v3]: 0037_transactional_message_header_v3.md#transactional-message-header-v3

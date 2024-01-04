@@ -57,7 +57,7 @@ void DataProvider::GetSnapshot(fuchsia::feedback::GetSnapshotParameters params,
 }
 
 void DataProvider::GetSnapshotInternal(
-    zx::duration timeout,
+    zx::duration timeout, const std::string& uuid,
     fit::callback<void(feedback::Annotations, fuchsia::feedback::Attachment)> callback) {
   callback(BuildFeedbackAnnotations(annotations_), BuildAttachment(snapshot_key_));
 }
@@ -68,7 +68,7 @@ void DataProviderReturnsNoAnnotation::GetSnapshot(fuchsia::feedback::GetSnapshot
 }
 
 void DataProviderReturnsNoAnnotation::GetSnapshotInternal(
-    zx::duration timeout,
+    zx::duration timeout, const std::string& uuid,
     fit::callback<void(feedback::Annotations, fuchsia::feedback::Attachment)> callback) {
   callback({}, BuildAttachment(snapshot_key_));
 }
@@ -79,7 +79,7 @@ void DataProviderReturnsNoAttachment::GetSnapshot(fuchsia::feedback::GetSnapshot
 }
 
 void DataProviderReturnsNoAttachment::GetSnapshotInternal(
-    zx::duration timeout,
+    zx::duration timeout, const std::string& uuid,
     fit::callback<void(feedback::Annotations, fuchsia::feedback::Attachment)> callback) {
   callback(BuildFeedbackAnnotations(annotations_), {});
 }
@@ -90,7 +90,7 @@ void DataProviderReturnsEmptySnapshot::GetSnapshot(fuchsia::feedback::GetSnapsho
 }
 
 void DataProviderReturnsEmptySnapshot::GetSnapshotInternal(
-    zx::duration timeout,
+    zx::duration timeout, const std::string& uuid,
     fit::callback<void(feedback::Annotations, fuchsia::feedback::Attachment)> callback) {
   callback({}, {});
 }
@@ -107,7 +107,7 @@ void DataProviderTracksNumConnections::GetSnapshot(fuchsia::feedback::GetSnapsho
 }
 
 void DataProviderTracksNumConnections::GetSnapshotInternal(
-    zx::duration timeout,
+    zx::duration timeout, const std::string& uuid,
     fit::callback<void(feedback::Annotations, fuchsia::feedback::Attachment)> callback) {
   FX_LOGS(FATAL) << "Unexpected call to GetSnapshotInternal";
 }
@@ -124,7 +124,7 @@ void DataProviderTracksNumCalls::GetSnapshot(fuchsia::feedback::GetSnapshotParam
 }
 
 void DataProviderTracksNumCalls::GetSnapshotInternal(
-    zx::duration timeout,
+    zx::duration timeout, const std::string& uuid,
     fit::callback<void(feedback::Annotations, fuchsia::feedback::Attachment)> callback) {
   ++num_calls_;
   callback({}, {});
@@ -136,10 +136,13 @@ void DataProviderReturnsOnDemand::GetSnapshot(fuchsia::feedback::GetSnapshotPara
 }
 
 void DataProviderReturnsOnDemand::GetSnapshotInternal(
-    const zx::duration timeout,
+    const zx::duration timeout, const std::string& uuid,
     fit::callback<void(feedback::Annotations, fuchsia::feedback::Attachment)> callback) {
   snapshot_internal_callbacks_.push(std::move(callback));
+  pending_uuids_.push_back(uuid);
 }
+
+std::deque<std::string> DataProviderReturnsOnDemand::GetPendingUuids() { return pending_uuids_; }
 
 void DataProviderReturnsOnDemand::PopSnapshotCallback() {
   FX_CHECK(!snapshot_callbacks_.empty());
@@ -158,6 +161,7 @@ void DataProviderReturnsOnDemand::PopSnapshotInternalCallback() {
   snapshot_internal_callbacks_.front()(BuildFeedbackAnnotations(annotations_),
                                        BuildAttachment(snapshot_key_));
   snapshot_internal_callbacks_.pop();
+  pending_uuids_.pop_front();
 }
 
 void DataProviderSnapshotOnly::GetSnapshot(fuchsia::feedback::GetSnapshotParameters params,
@@ -166,7 +170,7 @@ void DataProviderSnapshotOnly::GetSnapshot(fuchsia::feedback::GetSnapshotParamet
 }
 
 void DataProviderSnapshotOnly::GetSnapshotInternal(
-    zx::duration timeout,
+    zx::duration timeout, const std::string& uuid,
     fit::callback<void(feedback::Annotations, fuchsia::feedback::Attachment)> callback) {
   callback({}, std::move(snapshot_));
 }

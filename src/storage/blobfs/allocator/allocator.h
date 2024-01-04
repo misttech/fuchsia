@@ -5,7 +5,6 @@
 #ifndef SRC_STORAGE_BLOBFS_ALLOCATOR_ALLOCATOR_H_
 #define SRC_STORAGE_BLOBFS_ALLOCATOR_ALLOCATOR_H_
 
-#include <fidl/fuchsia.blobfs/cpp/wire.h>
 #include <lib/fzl/resizeable-vmo-mapper.h>
 #include <lib/zx/vmo.h>
 #include <zircon/types.h>
@@ -19,12 +18,12 @@
 #include <id_allocator/id_allocator.h>
 #include <storage/buffer/vmoid_registry.h>
 
-#include "src/lib/storage/vfs/cpp/transaction/device_transaction_handler.h"
 #include "src/storage/blobfs/allocator/base_allocator.h"
 #include "src/storage/blobfs/allocator/extent_reserver.h"
 #include "src/storage/blobfs/allocator/node_reserver.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/node_finder.h"
+#include "src/storage/lib/vfs/cpp/transaction/device_transaction_handler.h"
 
 namespace blobfs {
 

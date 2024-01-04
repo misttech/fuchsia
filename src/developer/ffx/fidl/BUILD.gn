@@ -1,0 +1,42 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/fidl/fidl.gni")
+
+assert(is_host || current_toolchain == fidl_toolchain,
+       "fuchsia.developer.ffx is only to be used for host tool communication")
+
+fidl("fuchsia.developer.ffx") {
+  sources = [
+    "agis.fidl",
+    "daemon.fidl",
+    "echo.fidl",
+    "fastboot.fidl",
+    "mdns.fidl",
+    "overview.fidl",
+    "repo.fidl",
+    "target.fidl",
+    "testing.fidl",
+    "tracing.fidl",
+    "tunnel.fidl",
+  ]
+  public_deps = [
+    "//sdk/fidl/fuchsia.buildinfo",
+    "//sdk/fidl/fuchsia.developer.ffxdaemonlifecycle",
+    "//sdk/fidl/fuchsia.developer.remotecontrol",
+    "//sdk/fidl/fuchsia.gpu.agis",
+    "//sdk/fidl/fuchsia.io",
+    "//sdk/fidl/fuchsia.net",
+    "//sdk/fidl/fuchsia.tracing.controller",
+    "//sdk/fidl/fuchsia.version",
+    "//zircon/vdso/zx",
+  ]
+
+  visibility = [
+    "//build/sdk/meta:*",
+    "//src/developer/ffx/*",
+    "//src/sys/pkg/lib/*",
+    "//tools/funnel/*",
+  ]
+}

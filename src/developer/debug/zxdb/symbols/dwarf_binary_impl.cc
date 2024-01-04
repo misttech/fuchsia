@@ -24,7 +24,6 @@
 
 #include "src/developer/debug/shared/logging/logging.h"
 #include "src/developer/debug/zxdb/common/file_util.h"
-#include "src/developer/debug/zxdb/symbols/dwarf_context.h"
 #include "src/developer/debug/zxdb/symbols/dwarf_unit_impl.h"
 #include "src/lib/elflib/elflib.h"
 
@@ -65,6 +64,21 @@ std::map<std::string, elflib::Elf64_Sym> GetMergedElfSymbols(elflib::ElfLib& elf
   }
 
   return result;
+}
+
+// This function exists to filter out specific errors when decompressing
+// .debug_gdb_scripts sections from compressed debuginfo files which fail in
+// LLVM.
+void LLVMErrorHandler(llvm::Error error) {
+  llvm::handleAllErrors(std::move(error), [](llvm::ErrorInfoBase& info) {
+    if (info.message().find("gdb_scripts")) {
+      // Suppress errors for decompressing the "debug_gdb_scripts" section in rust binaries.
+      return;
+    }
+
+    // Otherwise just pass through to the console like the defaut error handler.
+    LOGS(Error) << info.message();
+  });
 }
 
 }  // namespace
@@ -198,14 +212,19 @@ Err DwarfBinaryImpl::Load() {
   binary_buffer_ = std::move(binary_pair.second);
   binary_ = std::move(binary_pair.first);
 
-  context_ = GetDwarfContext(object_file());
+  // Overwrite the default Error handler object, but leave everything else default.
+  context_ = llvm::DWARFContext::create(*GetLLVMObjectFile(),
+                                        llvm::DWARFContext::ProcessDebugRelocations::Process,
+                                        nullptr, "", &LLVMErrorHandler);
 
   return Err();
 }
 
-llvm::object::ObjectFile* DwarfBinaryImpl::GetLLVMObjectFile() { return object_file(); }
+llvm::object::ObjectFile* DwarfBinaryImpl::GetLLVMObjectFile() {
+  return static_cast<llvm::object::ObjectFile*>(binary_.get());
+}
 
-llvm::DWARFContext* DwarfBinaryImpl::GetLLVMContext() { return context(); }
+llvm::DWARFContext* DwarfBinaryImpl::GetLLVMContext() { return context_.get(); }
 
 uint64_t DwarfBinaryImpl::GetMappedLength() const { return mapped_length_; }
 
@@ -217,14 +236,26 @@ const std::map<std::string, uint64_t> DwarfBinaryImpl::GetPLTSymbols() const {
   return plt_symbols_;
 }
 
-size_t DwarfBinaryImpl::GetUnitCount() const {
+uint32_t DwarfBinaryImpl::GetNormalUnitCount() const {
   auto unit_range = context_->normal_units();
   return unit_range.end() - unit_range.begin();
 }
 
-fxl::RefPtr<DwarfUnit> DwarfBinaryImpl::GetUnitAtIndex(size_t i) {
-  FX_DCHECK(i < GetUnitCount());
-  return FromLLVMUnit(context_->getUnitAtIndex(i));
+uint32_t DwarfBinaryImpl::GetDWOUnitCount() const {
+  auto unit_range = context_->dwo_info_section_units();
+  return unit_range.end() - unit_range.begin();
+}
+
+fxl::RefPtr<DwarfUnit> DwarfBinaryImpl::GetUnitAtIndex(UnitIndex i) {
+  llvm::DWARFUnit* unit = nullptr;
+  if (i.is_dwo) {
+    FX_DCHECK(i.index < context_->getNumDWOCompileUnits());
+    unit = context_->getDWOUnitAtIndex(i.index);
+  } else {
+    FX_DCHECK(i.index < context_->getNumCompileUnits());
+    unit = context_->getUnitAtIndex(i.index);
+  }
+  return FromLLVMUnit(unit);
 }
 
 fxl::RefPtr<DwarfUnit> DwarfBinaryImpl::UnitForRelativeAddress(uint64_t relative_address) {
@@ -268,6 +299,10 @@ std::optional<uint64_t> DwarfBinaryImpl::GetDebugAddrEntry(uint64_t addr_base,
   uint64_t result;
   memcpy(&result, string_ref.bytes_begin() + offset, kTargetPointerSize);
   return result;
+}
+
+llvm::DWARFDie DwarfBinaryImpl::GetLLVMDieAtOffset(uint64_t offset) const {
+  return context_->getDIEForOffset(offset);
 }
 
 }  // namespace zxdb

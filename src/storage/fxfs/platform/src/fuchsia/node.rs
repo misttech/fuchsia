@@ -4,10 +4,8 @@
 
 use {
     crate::fuchsia::{directory::FxDirectory, file::FxFile},
-    anyhow::Error,
-    async_trait::async_trait,
     futures::future::poll_fn,
-    fxfs::object_handle::ObjectProperties,
+    fxfs::object_store::ObjectDescriptor,
     std::{
         any::TypeId,
         collections::{btree_map::Entry, BTreeMap},
@@ -20,14 +18,17 @@ use {
 };
 
 /// FxNode is a node in the filesystem hierarchy (either a file or directory).
-#[async_trait]
 pub trait FxNode: IntoAny + Send + Sync + 'static {
     fn object_id(&self) -> u64;
     fn parent(&self) -> Option<Arc<FxDirectory>>;
     fn set_parent(&self, parent: Arc<FxDirectory>);
     fn open_count_add_one(&self);
     fn open_count_sub_one(self: Arc<Self>);
-    async fn get_properties(&self) -> Result<ObjectProperties, Error>;
+    fn object_descriptor(&self) -> ObjectDescriptor;
+
+    /// Called when the filesystem is shutting down. Implementations should break any strong
+    /// reference cycles that would prevent the node from being dropped.
+    fn terminate(&self) {}
 }
 
 struct PlaceholderInner {
@@ -38,7 +39,6 @@ struct PlaceholderInner {
 
 struct Placeholder(Mutex<PlaceholderInner>);
 
-#[async_trait]
 impl FxNode for Placeholder {
     fn object_id(&self) -> u64 {
         self.0.lock().unwrap().object_id
@@ -51,8 +51,9 @@ impl FxNode for Placeholder {
     }
     fn open_count_add_one(&self) {}
     fn open_count_sub_one(self: Arc<Self>) {}
-    async fn get_properties(&self) -> Result<ObjectProperties, Error> {
-        unreachable!();
+
+    fn object_descriptor(&self) -> ObjectDescriptor {
+        ObjectDescriptor::File
     }
 }
 
@@ -214,8 +215,14 @@ impl NodeCache {
         FileIter { cache: self, object_id: None }
     }
 
-    /// Does nothing anymore, but may again in the future.
-    pub fn clear(&self) {}
+    pub fn terminate(&self) {
+        let nodes = std::mem::take(&mut self.0.lock().unwrap().map);
+        for (_, node) in nodes {
+            if let Some(node) = node.upgrade() {
+                node.terminate();
+            }
+        }
+    }
 
     fn commit(&self, node: Arc<dyn FxNode>) {
         let mut this = self.0.lock().unwrap();
@@ -276,11 +283,9 @@ mod tests {
             directory::FxDirectory,
             node::{FxNode, GetResult, NodeCache},
         },
-        anyhow::Error,
-        async_trait::async_trait,
         fuchsia_async as fasync,
         futures::future::join_all,
-        fxfs::object_handle::ObjectProperties,
+        fxfs::object_store::ObjectDescriptor,
         std::{
             sync::{
                 atomic::{AtomicU64, Ordering},
@@ -291,7 +296,6 @@ mod tests {
     };
 
     struct FakeNode(u64, Arc<NodeCache>);
-    #[async_trait]
     impl FxNode for FakeNode {
         fn object_id(&self) -> u64 {
             self.0
@@ -304,8 +308,9 @@ mod tests {
         }
         fn open_count_add_one(&self) {}
         fn open_count_sub_one(self: Arc<Self>) {}
-        async fn get_properties(&self) -> Result<ObjectProperties, Error> {
-            unreachable!();
+
+        fn object_descriptor(&self) -> ObjectDescriptor {
+            ObjectDescriptor::Directory
         }
     }
     impl Drop for FakeNode {

@@ -2,10 +2,15 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import json
 import os
 import subprocess
 import tempfile
+import typing
 import unittest
+import unittest.mock as mock
+
+from parameterized import parameterized
 
 import args
 import environment
@@ -13,9 +18,26 @@ import event
 import execution
 import test_list_file
 import tests_json_file
+import util.command as command
 
 
 class TestExecution(unittest.IsolatedAsyncioTestCase):
+    def assertContainsSublist(
+        self, target: typing.List[typing.Any], data: typing.List[typing.Any]
+    ):
+        """Helper method to assert that one list is contained in the other, in order.
+
+        Args:
+            target (typing.List[typing.Any]): The sublist to search for.
+            data (typing.List[typing.Any]): The list to search in.
+        """
+        self.assertNotEqual(len(target), 0, "Target list cannot be empty")
+        starts = [i for i, v in enumerate(data) if v == target[0]]
+        for start_index in starts:
+            if data[start_index : start_index + len(target)] == target:
+                return
+        self.assertTrue(False, f"List {target} is not a sublist of {data}")
+
     async def test_run_command(self):
         """Test that run_command works with and without events"""
         with tempfile.TemporaryDirectory() as tmp:
@@ -56,7 +78,77 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(output)
         self.assertTrue(any([e.error is not None for e in events]))
 
-    async def test_test_execution_component(self):
+    @parameterized.expand(
+        [
+            (
+                "with default log severity",
+                [],
+                [["--max-severity-logs", "INFO"]],
+                [],
+            ),
+            (
+                "with min log severity override",
+                ["--min-severity-logs", "DEBUG"],
+                [["--min-severity-logs", "DEBUG"]],
+                [],
+            ),
+            (
+                "without log restriction",
+                ["--no-restrict-logs"],
+                [["--min-severity-logs", "TRACE"]],
+                ["--max-severity-logs"],
+            ),
+            (
+                "with default to not run disabled tests",
+                [],
+                [["--min-severity-logs", "TRACE"]],
+                ["--run-disabled"],
+            ),
+            (
+                "with disabled tests running",
+                ["--also-run-disabled-tests"],
+                [["--run-disabled"], ["--min-severity-logs", "TRACE"]],
+                [],
+            ),
+            (
+                "with full moniker in logs",
+                ["--show-full-moniker-in-logs"],
+                [["--show-full-moniker-in-logs"]],
+                [],
+            ),
+            (
+                "without full moniker in logs",
+                ["--no-show-full-moniker-in-logs"],
+                [],
+                ["--show-full-moniker-in-logs"],
+            ),
+            (
+                "without ffx output directory",
+                [],
+                [],
+                ["--output-directory"],
+            ),
+            (
+                "with ffx output directory",
+                ["--ffx-output-directory", "foo"],
+                [["--output-directory", "foo/0"]],
+                [],
+            ),
+            (
+                "with extra args",
+                ["--", "--foo"],
+                [["--", "--foo"]],
+                [],
+            ),
+        ]
+    )
+    async def test_test_execution_component(
+        self,
+        _unused_name,
+        flag_list: typing.List[str],
+        expected_present_flag_lists: typing.List[typing.List[str]],
+        expected_not_present_flags: typing.List[str],
+    ):
         """Test the usage of the TestExecution wrapper on a component test"""
 
         exec_env = environment.ExecutionEnvironment(
@@ -65,7 +157,9 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
 
         test = execution.TestExecution(
             test_list_file.Test(
-                tests_json_file.TestEntry(tests_json_file.TestSection("foo", "//foo")),
+                tests_json_file.TestEntry(
+                    tests_json_file.TestSection("foo", "//foo", "fuchsia")
+                ),
                 test_list_file.TestListEntry(
                     "foo",
                     [],
@@ -78,6 +172,56 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
                 ),
             ),
             exec_env,
+            args.parse_args(["--no-use-package-hash"] + flag_list),
+        )
+
+        command_line = test.command_line()
+        self.assertContainsSublist(
+            ["fx", "ffx", "test", "run", "--realm", "foo_tests"], command_line
+        )
+        self.assertContainsSublist(
+            ["fuchsia-pkg://fuchsia.com/foo#meta/foo_test.cm"], command_line
+        )
+
+        for expected_flag_list in expected_present_flag_lists:
+            self.assertContainsSublist(expected_flag_list, command_line)
+        for not_present_flag in expected_not_present_flags:
+            self.assertFalse(
+                not_present_flag in command_line,
+                f"Expected {not_present_flag} to not be in {command_line}",
+            )
+
+        self.assertFalse(test.is_hermetic())
+        self.assertIsNone(test.environment())
+        self.assertTrue(test.should_symbolize())
+
+    async def test_test_execution_component_parallel(self):
+        """Test the usage of the TestExecution wrapper on a component test with a parallel override"""
+
+        exec_env = environment.ExecutionEnvironment(
+            "/fuchsia", "/out/fuchsia", None, "", ""
+        )
+
+        test = execution.TestExecution(
+            test_list_file.Test(
+                tests_json_file.TestEntry(
+                    tests_json_file.TestSection(
+                        "foo", "//foo", "fuchsia", parallel=1
+                    )
+                ),
+                test_list_file.TestListEntry(
+                    "foo",
+                    [],
+                    test_list_file.TestListExecutionEntry(
+                        "fuchsia-pkg://fuchsia.com/foo#meta/foo_test.cm",
+                        realm="foo_tests",
+                        max_severity_logs="INFO",
+                        min_severity_logs="TRACE",
+                    ),
+                ),
+            ),
+            exec_env,
+            args.parse_args(["--no-use-package-hash"]),
         )
 
         self.assertListEqual(
@@ -93,6 +237,8 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
                 "INFO",
                 "--min-severity-logs",
                 "TRACE",
+                "--parallel",
+                "1",
                 "fuchsia-pkg://fuchsia.com/foo#meta/foo_test.cm",
             ],
         )
@@ -112,16 +258,23 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(os.path.isfile, f"{ls_path} is not a file")
             os.symlink(ls_path, os.path.join(tmp, "ls"))
 
-            exec_env = environment.ExecutionEnvironment("/fuchsia", tmp, None, "", "")
+            exec_env = environment.ExecutionEnvironment(
+                "/fuchsia", tmp, None, "", ""
+            )
+
+            flags = args.parse_args([])
 
             test = execution.TestExecution(
                 test_list_file.Test(
                     tests_json_file.TestEntry(
-                        tests_json_file.TestSection("foo", "//foo", path="ls")
+                        tests_json_file.TestSection(
+                            "foo", "//foo", "linux", path="ls"
+                        )
                     ),
                     test_list_file.TestListEntry("foo", [], execution=None),
                 ),
                 exec_env,
+                flags,
             )
 
             self.assertFalse(test.is_hermetic())
@@ -133,11 +286,306 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
             recorder = event.EventRecorder()
             recorder.emit_init()
 
-            flags = args.parse_args([])
-
             output = await test.run(recorder, flags, event.GLOBAL_RUN_ID)
             recorder.emit_end()
 
             assert output is not None
 
-            self.assertFalse(any([e.error is not None async for e in recorder.iter()]))
+            self.assertFalse(
+                any([e.error is not None async for e in recorder.iter()])
+            )
+
+    @parameterized.expand(
+        [
+            ("without --e2e enabled", ["--no-e2e"], execution.TestSkipped),
+            ("with --e2e enabled", ["--e2e"], execution.TestFailed),
+        ]
+    )
+    @mock.patch("execution.run_command", return_value=None)
+    async def test_test_execution_e2e(
+        self, _unused_name, extra_flags, expected_exception, command_mock
+    ):
+        """Test that execution of e2e depends on the --e2e flag"""
+
+        exec_env = environment.ExecutionEnvironment(
+            "/fuchsia", "/some_temp", None, "", ""
+        )
+
+        flags = args.parse_args(extra_flags)
+
+        test = execution.TestExecution(
+            test_list_file.Test(
+                tests_json_file.TestEntry(
+                    tests_json_file.TestSection(
+                        "foo", "//foo", "linux", path="ls"
+                    ),
+                    environments=[
+                        tests_json_file.EnvironmentEntry(
+                            dimensions=tests_json_file.DimensionsEntry(
+                                device_type="AEMU"
+                            )
+                        )
+                    ],
+                ),
+                test_list_file.TestListEntry("foo", [], execution=None),
+            ),
+            exec_env,
+            flags,
+        )
+
+        self.assertTrue(test._test.is_e2e_test())
+        self.assertFalse(test.is_hermetic())
+        env = test.environment()
+        assert env is not None
+        # TODO: Add environment checking when added.
+        self.assertDictEqual(env, {"CWD": "/some_temp"})
+        self.assertFalse(test.should_symbolize())
+
+        recorder = event.EventRecorder()
+        recorder.emit_init()
+
+        try:
+            await test.run(recorder, flags, event.GLOBAL_RUN_ID)
+            self.assertTrue(False, "No exception was raised")
+        except Exception as e:
+            self.assertIsInstance(e, expected_exception)
+        recorder.emit_end()
+
+    async def test_test_execution_with_package_hash(self):
+        """Ensure that test execution respects --use-package-hash"""
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, "package-repositories.json"), "w") as f:
+                json.dump(
+                    [
+                        {
+                            "targets": "targets.json",
+                        }
+                    ],
+                    f,
+                )
+            with open(os.path.join(tmp, "targets.json"), "w") as f:
+                json.dump(
+                    {
+                        "signed": {
+                            "targets": {
+                                "foo_test/0": {
+                                    "custom": {
+                                        "merkle": "f00",
+                                    }
+                                },
+                                "bar_test/0": {},
+                            }
+                        }
+                    },
+                    f,
+                )
+
+            def make_test(name: str) -> test_list_file.Test:
+                name = f"fuchsia-pkg://fuchsia.com/{name}#meta/test.cm"
+                return test_list_file.Test(
+                    tests_json_file.TestEntry(
+                        tests_json_file.TestSection(name, "//foo", "linux")
+                    ),
+                    test_list_file.TestListEntry(
+                        name,
+                        [],
+                        execution=test_list_file.TestListExecutionEntry(name),
+                    ),
+                )
+
+            def assertTestExecutionFailsUsingMerkleHash(
+                error_regex: str,
+                test: test_list_file.Test,
+                exec_env: environment.ExecutionEnvironment,
+            ):
+                self.assertRaisesRegex(
+                    execution.TestCouldNotRun,
+                    error_regex,
+                    lambda: execution.TestExecution(
+                        test, exec_env, args.parse_args([])
+                    ).command_line(),
+                )
+                self.assertIsNotNone(
+                    execution.TestExecution(
+                        test,
+                        exec_env,
+                        args.parse_args(["--no-use-package-hash"]),
+                    ).command_line()
+                )
+
+            # This environment is missing a package-repository.json file, so attempts
+            # to match a merkle root will fail.
+            missing_exec_env = environment.ExecutionEnvironment(
+                "/fuchsia", "", "", "", ""
+            )
+
+            assertTestExecutionFailsUsingMerkleHash(
+                "Could not load a Merkle hash",
+                make_test("foo_test"),
+                missing_exec_env,
+            )
+
+            # This environment contains a package repository, so we need to
+            # ensure the merkle hash argument is respected.
+            exec_env = environment.ExecutionEnvironment(
+                "/fuchsia",
+                "",
+                "",
+                "",
+                "",
+                package_repositories_file=os.path.join(
+                    tmp, "package-repositories.json"
+                ),
+            )
+
+            # Hash is present only when use_merkle_hash is True, absent otherwise.
+            self.assertIn(
+                "fuchsia-pkg://fuchsia.com/foo_test?hash=f00#meta/test.cm",
+                execution.TestExecution(
+                    make_test("foo_test"), exec_env, args.parse_args([])
+                ).command_line(),
+            )
+            self.assertIn(
+                "fuchsia-pkg://fuchsia.com/foo_test#meta/test.cm",
+                execution.TestExecution(
+                    make_test("foo_test"),
+                    exec_env,
+                    args.parse_args(["--no-use-package-hash"]),
+                ).command_line(),
+            )
+
+            # Mangle the component URL such that a name cannot be extracted,
+            # and expect an error.
+            broken_test = make_test("foo_test")
+            assert broken_test.info is not None
+            assert broken_test.info.execution is not None
+            broken_test.info.execution.component_url = "foo_test"
+
+            assertTestExecutionFailsUsingMerkleHash(
+                "Failed to parse package name", broken_test, exec_env
+            )
+
+            # This test has an entry, but no merkle.
+            assertTestExecutionFailsUsingMerkleHash(
+                "Could not find a Merkle hash for this test",
+                make_test("bar_test"),
+                exec_env,
+            )
+
+            # This test has no entry.
+            assertTestExecutionFailsUsingMerkleHash(
+                "Could not find a Merkle hash for this test",
+                make_test("baz_test"),
+                exec_env,
+            )
+
+
+class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
+    def _make_command_output(
+        self, stdout: str, return_code: int = 0
+    ) -> command.CommandOutput:
+        return command.CommandOutput(stdout, "", return_code, 0.2, None)
+
+    def setUp(self) -> None:
+        self._temp_dir = tempfile.TemporaryDirectory()
+        self._env = environment.ExecutionEnvironment(
+            self._temp_dir.name, "", None, "", "", None
+        )
+        with open(os.path.join(self._temp_dir.name, ".fx-ssh-path"), "w") as f:
+            f.write("/foo/path")
+        return super().setUp()
+
+    def tearDown(self) -> None:
+        self._temp_dir.cleanup()
+        return super().tearDown()
+
+    @mock.patch("execution.run_command")
+    async def test_get_device_environment_success(
+        self, command_patch: mock.AsyncMock
+    ):
+        command_patch.side_effect = [
+            self._make_command_output("127.0.0.1:6000"),
+            self._make_command_output("foo-bar"),
+        ]
+        device_env = await execution.get_device_environment_from_exec_env(
+            self._env
+        )
+        self.assertDictContainsSubset(
+            {
+                "address": "127.0.0.1",
+                "port": "6000",
+                "name": "foo-bar",
+                "private_key_path": "/foo/path",
+            },
+            vars(device_env),
+        )
+
+    @mock.patch("execution.run_command")
+    async def test_get_device_environment_ipv6(
+        self, command_patch: mock.AsyncMock
+    ):
+        command_patch.side_effect = [
+            self._make_command_output("[::1]:6000"),
+            self._make_command_output("foo-bar"),
+        ]
+        device_env = await execution.get_device_environment_from_exec_env(
+            self._env
+        )
+        self.assertDictContainsSubset(
+            {
+                "address": "[::1]",
+                "port": "6000",
+                "name": "foo-bar",
+                "private_key_path": "/foo/path",
+            },
+            vars(device_env),
+        )
+
+    @mock.patch("execution.run_command")
+    async def test_get_device_environment_ssh_error(
+        self, command_patch: mock.AsyncMock
+    ):
+        command_patch.side_effect = [
+            self._make_command_output("", return_code=1),
+        ]
+
+        try:
+            device_env = await execution.get_device_environment_from_exec_env(
+                self._env
+            )
+            self.assertTrue(False, f"Should have failed, got {device_env}")
+        except execution.DeviceConfigError as e:
+            self.assertRegex(str(e), "Failed to get the ssh address")
+
+    @mock.patch("execution.run_command")
+    async def test_get_device_environment_bad_ip_format(
+        self, command_patch: mock.AsyncMock
+    ):
+        command_patch.side_effect = [
+            self._make_command_output("foo"),
+        ]
+
+        try:
+            device_env = await execution.get_device_environment_from_exec_env(
+                self._env
+            )
+            self.assertTrue(False, f"Should have failed, got {device_env}")
+        except execution.DeviceConfigError as e:
+            self.assertRegex(str(e), "Could not parse")
+
+    @mock.patch("execution.run_command")
+    async def test_get_device_environment_no_target_name(
+        self, command_patch: mock.AsyncMock
+    ):
+        command_patch.side_effect = [
+            self._make_command_output("127.0.0.1:6000"),
+            self._make_command_output("", return_code=1),
+        ]
+
+        try:
+            device_env = await execution.get_device_environment_from_exec_env(
+                self._env
+            )
+            self.assertTrue(False, f"Should have failed, got {device_env}")
+        except execution.DeviceConfigError as e:
+            self.assertRegex(str(e), "Failed to get the target name")

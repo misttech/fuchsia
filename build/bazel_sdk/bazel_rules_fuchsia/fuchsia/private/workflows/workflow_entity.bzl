@@ -9,7 +9,6 @@ load(
     "alias",
     "collect_runfiles",
     "rule_variants",
-    "with_fuchsia_transition",
     "wrap_executable",
 )
 
@@ -102,8 +101,8 @@ def workflow_entity_rule(*, implementation, attrs = {}, **kwargs):
             ),
             "default_argument_scope": attr.string(
                 doc = "The scope of arguments to use for the workflow entity.",
-                default = "explicit",
-                values = ["explicit", "workflow", "global"],
+                default = "",
+                values = ["", "explicit", "workflow", "global"],
             ),
             "inputs": attr.label_list(
                 doc = "Task dependencies. Use `$location(path/to/file)` to reference these in arguments.",
@@ -115,7 +114,6 @@ def workflow_entity_rule(*, implementation, attrs = {}, **kwargs):
     def macro(
             *,
             name,
-            apply_fuchsia_transition = False,
             testonly = False,
             tags = None,
             visibility = None,
@@ -128,7 +126,7 @@ def workflow_entity_rule(*, implementation, attrs = {}, **kwargs):
             **kwargs
         )
 
-        (with_fuchsia_transition if apply_fuchsia_transition else alias)(
+        alias(
             name = name,
             actual = name + "_base",
             executable = True,

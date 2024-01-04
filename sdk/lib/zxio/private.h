@@ -14,7 +14,6 @@
 #include <lib/zx/channel.h>
 #include <lib/zx/debuglog.h>
 #include <lib/zx/event.h>
-#include <lib/zxio/cpp/vector.h>
 #include <lib/zxio/ops.h>
 #include <lib/zxio/zxio.h>
 #include <zircon/availability.h>
@@ -22,6 +21,8 @@
 
 #include <algorithm>
 #include <functional>
+
+#include "sdk/lib/zxio/vector.h"
 
 template <typename F>
 zx_status_t zxio_vmo_do_vector(size_t start, size_t length, size_t* offset,
@@ -115,6 +116,9 @@ zx_status_t zxio_pipe_init(zxio_storage_t* pipe, zx::socket socket, zx_info_sock
 #if __Fuchsia_API_level__ >= FUCHSIA_HEAD
 zx_status_t zxio_symlink_init(zxio_storage_t* storage, fidl::ClientEnd<fuchsia_io::Symlink> client,
                               std::vector<uint8_t> target);
+
+zx_status_t zxio_attr_from_wire(const fuchsia_io::wire::NodeAttributes2& in,
+                                zxio_node_attributes_t* out);
 #endif
 
 // debuglog --------------------------------------------------------------------

@@ -5,8 +5,8 @@
 #ifndef MSD_INTEL_SEMAPHORE_H
 #define MSD_INTEL_SEMAPHORE_H
 
-#include "msd.h"
-#include "platform_semaphore.h"
+#include <lib/magma/platform/platform_semaphore.h>
+#include <lib/magma_service/msd.h>
 
 class MsdIntelAbiSemaphore : public msd::Semaphore {
  public:

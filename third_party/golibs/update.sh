@@ -91,6 +91,8 @@ if [ $UPDATE -eq 1 ]; then
   # The following two lines used to be in the opposite order, which incorrectly
   # caused `go get -u` to fetch gvisor from the default branch instead of the
   # go branch.
+  echo "WARNING(fxb/137140): Before the go version update, build will fail if \
+we try to update gVisor. Remove this line once go version is updated."
   $GO get -u gvisor.dev/gvisor@go
   $GO get -u
   # Starting with https://github.com/theupdateframework/go-tuf/commit/1e35084,
@@ -105,7 +107,7 @@ fi
 $GO mod tidy
 $GO mod vendor
 
-"${PREBUILT_PYTHON3_DIR}/bin/python3.8" update_sources.py \
+"$FUCHSIA_DIR/scripts/fuchsia-vendored-python" update_sources.py \
   --build-file='BUILD.gn' \
   --golibs-dir='.' > "${TMP}/BUILD.gn"
 mv "${TMP}/BUILD.gn" 'BUILD.gn'

@@ -5,6 +5,7 @@
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 
@@ -40,9 +41,13 @@ def main():
     with open(args.golden, "r") as f:
         golden = json.load(f)
     if sorting(gen) != sorting(golden):
-        print("Comparison failure!. \n Golden:\n" + str(golden) +
-              "\nGenerated:\n" + str(gen))
-        exit(1)
+        print(
+            "Comparison failure!. \n Golden:\n"
+            + str(golden)
+            + "\nGenerated:\n"
+            + str(gen)
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":

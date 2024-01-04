@@ -34,19 +34,6 @@
 #include <fbl/algorithm.h>
 #include <zxtest/zxtest.h>
 
-#if defined(__x86_64__)
-#include <cpuid.h>
-namespace {
-// See fxbug.dev/66978.
-bool IsQemuTcg() {
-  uint32_t eax;
-  uint32_t name[3];
-  __cpuid(0x40000000, eax, name[0], name[1], name[2]);
-  return !memcmp(reinterpret_cast<const char *>(name), "TCGTCGTCGTCG", sizeof(name));
-}
-}  // namespace
-#endif
-
 #include "helpers.h"
 
 namespace {
@@ -256,16 +243,7 @@ TEST(VmoTestCase, MapRead) {
 //
 // See fxbug.dev/66978 for more details.
 TEST(VmoTestCase, ParallelWriteAndDecommit) {
-  // TODO(fxbug.dev/66978): This test triggers a QEMU TCG bug on x86. Once the bug is fixed, the
-  // test should be renabled for this configuration.
-#if defined(__x86_64__)
-  if (IsQemuTcg()) {
-    printf("skipping test when running on QEMU TCG x86 (fxbug.dev/66978)\n");
-    return;
-  }
-#endif
-
-  constexpr size_t kVmoSize = 8 * (1UL << 30);
+  const size_t kVmoSize = zx_system_get_page_size();
 
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(kVmoSize, 0, &vmo));
@@ -280,9 +258,10 @@ TEST(VmoTestCase, ParallelWriteAndDecommit) {
 
   ASSERT_OK(vmo.op_range(ZX_VMO_OP_DECOMMIT, 0, kVmoSize, nullptr, 0));
 
-  constexpr size_t kNumThreads = 2;
+  constexpr size_t kNumWriters = 2;
+  constexpr size_t kNumDecommitters = 2;
 
-  void *dst = reinterpret_cast<void *>(base + kVmoSize / 2);
+  void *dst = reinterpret_cast<void *>(base);
 
   std::atomic<size_t> running = 0;
   std::atomic<bool> start = false;
@@ -292,29 +271,31 @@ TEST(VmoTestCase, ParallelWriteAndDecommit) {
     while (!start) {
       sched_yield();
     }
-    for (int i = 0; i < 100000; i++) {
+    for (size_t i = 0; i < 100000; i++) {
       mandatory_memset(dst, 0x1, 128);
     }
   };
 
-  auto decommitter = [&vmo, &running, &start] {
+  auto decommitter = [&vmo, &running, &start, kVmoSize] {
     running++;
     while (!start) {
       sched_yield();
     }
-    for (int i = 0; i < 100000; i++) {
-      EXPECT_OK(vmo.op_range(ZX_VMO_OP_DECOMMIT, kVmoSize / 2, 4096, nullptr, 0));
+    for (size_t i = 0; i < 100000; i++) {
+      EXPECT_OK(vmo.op_range(ZX_VMO_OP_DECOMMIT, 0, kVmoSize, nullptr, 0));
     }
   };
 
   std::vector<std::thread> threads;
 
-  for (size_t i = 0; i < kNumThreads; i++) {
-    threads.push_back(std::thread(writer));
+  for (size_t i = 0; i < kNumDecommitters; i++) {
     threads.push_back(std::thread(decommitter));
   }
+  for (size_t i = 0; i < kNumWriters; i++) {
+    threads.push_back(std::thread(writer));
+  }
 
-  while (running < kNumThreads * 2) {
+  while (running < kNumDecommitters + kNumWriters) {
     sched_yield();
   }
   start = true;
@@ -2289,6 +2270,76 @@ TEST(VmoTestCase, OpOutOfBounds) {
             vmo.op_range(ZX_VMO_OP_LOCK, 0, kOpSize, &lock_state, sizeof(lock_state)));
   EXPECT_EQ(ZX_ERR_OUT_OF_RANGE, vmo.op_range(ZX_VMO_OP_TRY_LOCK, 0, kOpSize, nullptr, 0));
   EXPECT_EQ(ZX_ERR_OUT_OF_RANGE, vmo.op_range(ZX_VMO_OP_UNLOCK, 0, kOpSize, nullptr, 0));
+}
+
+// Regression test for a race allowing multiple mappings to a VMO with different cache policies. As
+// this is a race this test does not reliably trigger the race, and even if it does it needs to be
+// running on a platform where mixing uncached and cached mappings can produce a data access
+// discrepancy to the user.
+TEST(VmoTestCase, CachePolicyRace) {
+  for (int iterations = 0; iterations < 10; iterations++) {
+    zx::vmo vmo;
+    ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+
+    std::atomic<bool> running = false;
+
+    auto policy = [&] {
+      running = true;
+      uint32_t cache_policy = ZX_CACHE_POLICY_UNCACHED;
+      // Rapidly alternate the cache policy of the VMO with the goal to change the policy mid way
+      // through the vmar_map below, causing the mapping and vmo cache policy to disagree.
+      while (vmo.set_cache_policy(cache_policy) == ZX_OK) {
+        cache_policy = cache_policy == ZX_CACHE_POLICY_UNCACHED ? ZX_CACHE_POLICY_CACHED
+                                                                : ZX_CACHE_POLICY_UNCACHED;
+      }
+    };
+
+    // Spin up the policy thread and wait until we know it's running.
+    std::thread policy_thread = std::thread(policy);
+    while (!running) {
+      zx_nanosleep(zx_deadline_after(ZX_MSEC(10)));
+    }
+
+    // Create the first mapping. This will get some random cache policy depending on where the other
+    // thread got to.
+    zx_vaddr_t ptr;
+    ASSERT_OK(zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0,
+                                         zx_system_get_page_size(), &ptr));
+    // As there is a mapping, setting the policy will error so we can wait for that thread to
+    // finish.
+    policy_thread.join();
+
+    // Create a second mapping. This should be the same cache policy as the first mapping, unless
+    // we managed to trigger the race condition.
+    zx_vaddr_t ptr2;
+    ASSERT_OK(zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0,
+                                         zx_system_get_page_size(), &ptr2));
+
+    // Check the final VMO cache policy. Our next test will involve reading and writing to our two
+    // mappings in a way that, depending on the architecture and uncached mapping type, would not be
+    // well defined if our mappings were uncached.
+    // If the vmo claims it is of the cached policy then, unless we have hit the bug, both our
+    // mappings should be cached, and our attempts to read and write should have well defined
+    // semantics.
+    zx_info_vmo_t vmo_info;
+    EXPECT_OK(vmo.get_info(ZX_INFO_VMO, &vmo_info, sizeof(vmo_info), nullptr, nullptr));
+    if (vmo_info.cache_policy == ZX_CACHE_POLICY_CACHED) {
+      // There's no way to query the caching policy of the mapping, since it's suppose to be the
+      // same as the VMO. However if we read and write to the two pointers and get a disagreement,
+      // then at least one of them us uncached, while the VMO is claiming to be cached.
+      volatile uint64_t *p1 = reinterpret_cast<volatile uint64_t *>(ptr);
+      volatile uint64_t *p2 = reinterpret_cast<volatile uint64_t *>(ptr2);
+      for (uint64_t i = 0; i < 10; i++) {
+        *p1 = i;
+        ASSERT_EQ(i, *p2);
+        i++;
+        *p2 = i;
+        ASSERT_EQ(i, *p1);
+      }
+    }
+    ASSERT_OK(zx::vmar::root_self()->unmap(ptr, zx_system_get_page_size()));
+    ASSERT_OK(zx::vmar::root_self()->unmap(ptr2, zx_system_get_page_size()));
+  }
 }
 
 }  // namespace

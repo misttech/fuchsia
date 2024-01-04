@@ -57,6 +57,8 @@ namespace {
 KCOUNTER(vm_aspace_high_priority, "vm.aspace.high_priority")
 KCOUNTER(vm_aspace_accessed_harvests_performed, "vm.aspace.accessed_harvest.performed")
 KCOUNTER(vm_aspace_accessed_harvests_skipped, "vm.aspace.accessed_harvest.skipped")
+KCOUNTER(vm_aspace_last_fault_hit, "vm.aspace.last_fault.hit")
+KCOUNTER(vm_aspace_last_fault_miss, "vm.aspace.last_fault.miss")
 
 // the singleton kernel address space
 lazy_init::LazyInit<VmAspace, lazy_init::CheckType::None, lazy_init::Destructor::Disabled>
@@ -118,7 +120,7 @@ void VmAspace::KernelAspaceInitPreHeap() TA_NO_THREAD_SAFETY_ANALYSIS {
   g_kernel_root_vmar.Initialize(g_kernel_aspace.Get());
   g_kernel_aspace->root_vmar_ = fbl::AdoptRef(&g_kernel_root_vmar.Get());
 
-  zx_status_t status = g_kernel_aspace->Init();
+  zx_status_t status = g_kernel_aspace->Init(ShareOpt::None);
   ASSERT(status == ZX_OK);
 
   // save a pointer to the singleton kernel address space
@@ -134,21 +136,25 @@ VmAspace::VmAspace(vaddr_t base, size_t size, Type type, AslrConfig aslr_config,
       aslr_prng_(nullptr, 0),
       aslr_config_(aslr_config),
       arch_aspace_(base, size, arch_aspace_flags_from_type(type)) {
-  DEBUG_ASSERT(size != 0);
-  DEBUG_ASSERT(base + size - 1 >= base);
-
   Rename(name);
 
   LTRACEF("%p '%s'\n", this, name_);
 }
 
-zx_status_t VmAspace::Init() {
+zx_status_t VmAspace::Init(ShareOpt share_opt) {
   canary_.Assert();
 
   LTRACEF("%p '%s'\n", this, name_);
 
   // initialize the architecturally specific part
-  zx_status_t status = arch_aspace_.Init();
+  zx_status_t status;
+  if (share_opt == ShareOpt::Shared) {
+    status = arch_aspace_.InitShared();
+  } else if (share_opt == ShareOpt::Restricted) {
+    status = arch_aspace_.InitRestricted();
+  } else {
+    status = arch_aspace_.Init();
+  }
   if (status != ZX_OK) {
     return status;
   }
@@ -163,7 +169,38 @@ zx_status_t VmAspace::Init() {
   return ZX_OK;
 }
 
-fbl::RefPtr<VmAspace> VmAspace::Create(vaddr_t base, size_t size, Type type, const char* name) {
+fbl::RefPtr<VmAspace> VmAspace::CreateUnified(VmAspace* shared, VmAspace* restricted,
+                                              const char* name) {
+  const VmAspace::Type type = VmAspace::Type::User;
+  fbl::AllocChecker ac;
+  // Unified aspaces are initialized with a base and size of 0 to signify that they do not manage
+  // any mappings themselves. It also provides an extra layer of security in that any operation on
+  // a unified aspace will fail to do a range check.
+  auto aspace = fbl::AdoptRef(new (&ac) VmAspace(0, 0, type, CreateAslrConfig(type), name));
+  if (!ac.check()) {
+    return nullptr;
+  }
+
+  // Initialize the arch specific component to our address space.
+  zx_status_t status =
+      aspace->arch_aspace_.InitUnified(shared->arch_aspace(), restricted->arch_aspace());
+  if (status != ZX_OK) {
+    status = aspace->Destroy();
+    DEBUG_ASSERT(status == ZX_OK);
+    return nullptr;
+  }
+
+  // Add it to the global list.
+  {
+    Guard<Mutex> guard{AspaceListLock::Get()};
+    aspaces_list_.push_back(aspace.get());
+  }
+
+  return aspace;
+}
+
+fbl::RefPtr<VmAspace> VmAspace::Create(vaddr_t base, size_t size, Type type, const char* name,
+                                       ShareOpt share_opt) {
   LTRACEF("type %u, name '%s'\n", static_cast<uint>(type), name);
 
   if (!is_valid_for_type(base, size, type)) {
@@ -177,7 +214,7 @@ fbl::RefPtr<VmAspace> VmAspace::Create(vaddr_t base, size_t size, Type type, con
   }
 
   // initialize the arch specific component to our address space
-  zx_status_t status = aspace->Init();
+  zx_status_t status = aspace->Init(share_opt);
   if (status != ZX_OK) {
     status = aspace->Destroy();
     DEBUG_ASSERT(status == ZX_OK);
@@ -218,7 +255,7 @@ fbl::RefPtr<VmAspace> VmAspace::Create(Type type, const char* name) {
       panic("Invalid aspace type");
   }
 
-  return Create(base, size, type, name);
+  return Create(base, size, type, name, ShareOpt::None);
 }
 
 void VmAspace::Rename(const char* name) {
@@ -354,17 +391,16 @@ zx_status_t VmAspace::MapObjectInternal(fbl::RefPtr<VmObject> vmo, const char* n
   }
 
   // allocate a region and put it in the aspace list
-  fbl::RefPtr<VmMapping> r(nullptr);
-  status = RootVmar()->CreateVmMapping(vmar_offset, size, align_pow2, vmar_flags, vmo, offset,
-                                       arch_mmu_flags, name, &r);
-  if (status != ZX_OK) {
-    return status;
+  zx::result<VmAddressRegion::MapResult> r = RootVmar()->CreateVmMapping(
+      vmar_offset, size, align_pow2, vmar_flags, vmo, offset, arch_mmu_flags, name);
+  if (r.is_error()) {
+    return r.status_value();
   }
 
   // if we're committing it, map the region now
   // TODO: Enforce all callers to be passing VMM_FLAG_COMMIT.
   if (vmm_flags & VMM_FLAG_COMMIT) {
-    status = r->MapRange(0, size, true);
+    status = r->mapping->MapRange(0, size, true);
     if (status != ZX_OK) {
       return status;
     }
@@ -372,7 +408,7 @@ zx_status_t VmAspace::MapObjectInternal(fbl::RefPtr<VmObject> vmo, const char* n
 
   // return the vaddr if requested
   if (ptr) {
-    *ptr = (void*)r->base_locking();
+    *ptr = (void*)r->base;
   }
 
   return ZX_OK;
@@ -530,7 +566,7 @@ void VmAspace::AttachToThread(Thread* t) {
   Guard<MonitoredSpinLock, IrqSave> thread_lock_guard{ThreadLock::Get(), SOURCE_TAG};
 
   // not prepared to handle setting a new address space or one on a running thread
-  DEBUG_ASSERT(!t->aspace());
+  DEBUG_ASSERT(!t->active_aspace());
   DEBUG_ASSERT(t->state() != THREAD_RUNNING);
 
   t->switch_aspace(this);
@@ -549,26 +585,35 @@ zx_status_t VmAspace::PageFault(vaddr_t va, uint flags) {
   zx_status_t status = ZX_OK;
   __UNINITIALIZED LazyPageRequest page_request;
   do {
+    // For now, hold the aspace lock across the page fault operation, which stops any other
+    // operations on the address space from moving the region out from underneath it.
     {
-      // for now, hold the aspace lock across the page fault operation,
-      // which stops any other operations on the address space from moving
-      // the region out from underneath it
       Guard<CriticalMutex> guard{&lock_};
       DEBUG_ASSERT(!aspace_destroyed_);
       // First check if we're faulting on the same mapping as last time to short-circuit the vmar
       // walk.
+      bool found = false;
       if (likely(last_fault_)) {
         AssertHeld(last_fault_->lock_ref());
         if (last_fault_->is_in_range_locked(va, 1)) {
-          status = last_fault_->PageFault(va, flags, &page_request);
-        } else {
-          AssertHeld(root_vmar_->lock_ref());
-          status = root_vmar_->PageFault(va, flags, &page_request);
+          vm_aspace_last_fault_hit.Add(1);
+          found = true;
         }
-      } else {
-        AssertHeld(root_vmar_->lock_ref());
-        status = root_vmar_->PageFault(va, flags, &page_request);
       }
+      if (!found) {
+        vm_aspace_last_fault_miss.Add(1);
+        AssertHeld(root_vmar_->lock_ref());
+        // Stash the mapping we found as the most recent fault. As we just found this mapping in the
+        // VMAR tree we know it's in the ALIVE state (or is a nullptr), satisfying that requirement
+        // that allows us to record this as a raw pointer.
+        last_fault_ = root_vmar_->FindMappingLocked(va);
+        if (unlikely(!last_fault_)) {
+          return ZX_ERR_NOT_FOUND;
+        }
+      }
+      DEBUG_ASSERT(last_fault_);
+      AssertHeld(last_fault_->lock_ref());
+      status = last_fault_->PageFaultLocked(va, flags, &page_request);
     }
 
     if (status == ZX_ERR_SHOULD_WAIT) {
@@ -650,16 +695,6 @@ void VmAspace::DumpAllAspaces(bool verbose) {
 
   for (const auto& a : aspaces_list_) {
     a.Dump(verbose);
-  }
-}
-
-VmAspace* VmAspace::vaddr_to_aspace(uintptr_t address) {
-  if (is_kernel_address(address)) {
-    return kernel_aspace();
-  } else if (is_user_accessible(address)) {
-    return Thread::Current::Get()->aspace();
-  } else {
-    return nullptr;
   }
 }
 
@@ -745,43 +780,13 @@ void VmAspace::ChangeHighPriorityCountLocked(int64_t delta) {
   DEBUG_ASSERT(delta + old >= 0);
 }
 
-void VmAspace::MarkAsLatencySensitive() {
-  if (IsHighMemoryPriority()) {
-    return;
-  }
-  fbl::RefPtr<VmAddressRegion> root_vmar;
-  {
-    Guard<CriticalMutex> guard{&lock_};
-    if (root_vmar_ == nullptr || aspace_destroyed_) {
-      // Aspace hasn't been initialized or has already been destroyed.
-      return;
-    }
-
-    // TODO(fxb/101641): Need a better mechanism than checking for the process name here. See
-    // fxbug.dev/85056 for more context.
-    char name[ZX_MAX_NAME_LEN];
-    if (Thread::Current::Get()->aspace() != this) {
-      return;
-    }
-    ProcessDispatcher* up = ProcessDispatcher::GetCurrent();
-    [[maybe_unused]] zx_status_t status = up->get_name(name);
-    DEBUG_ASSERT(status == ZX_OK);
-    if (strncmp(name, "audio_core.cm", ZX_MAX_NAME_LEN) != 0 &&
-        strncmp(name, "waves_host.cm", ZX_MAX_NAME_LEN) != 0) {
-      return;
-    }
-    root_vmar = root_vmar_;
-  }
-  root_vmar->SetMemoryPriority(VmAddressRegion::MemoryPriority::HIGH);
-}
-
 void VmAspace::HarvestAllUserAccessedBits(NonTerminalAction non_terminal_action,
                                           TerminalAction terminal_action) {
   VM_KTRACE_DURATION(2, "VmAspace::HarvestAllUserAccessedBits");
   Guard<Mutex> guard{AspaceListLock::Get()};
 
   for (auto& a : aspaces_list_) {
-    if (a.is_user()) {
+    if (a.is_user() && a.size() > 0) {
       // Forbid PT reclamation and accessed bit harvesting on high priority aspaces.
       const NonTerminalAction apply_non_terminal_action =
           a.IsHighMemoryPriority() ? NonTerminalAction::Retain : non_terminal_action;

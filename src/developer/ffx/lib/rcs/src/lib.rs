@@ -2,26 +2,40 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{Context as _, Result};
 use errors;
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_developer_ffx as ffx;
 use fidl_fuchsia_developer_remotecontrol::{
-    ConnectCapabilityError, IdentifyHostError, RemoteControlMarker, RemoteControlProxy,
+    ConnectCapabilityError, IdentifyHostError, IdentifyHostResponse, RemoteControlMarker,
+    RemoteControlProxy,
 };
-use fidl_fuchsia_io::OpenFlags;
 use fidl_fuchsia_overnet_protocol::NodeId;
+use fidl_fuchsia_sys2::{
+    LifecycleControllerMarker, LifecycleControllerProxy, RealmQueryMarker, RealmQueryProxy,
+    RouteValidatorMarker, RouteValidatorProxy,
+};
 use futures::{StreamExt, TryFutureExt};
-use hoist::{Hoist, OvernetInstance};
 use std::{
     hash::{Hash, Hasher},
+    sync::Arc,
     time::Duration,
 };
 use timeout::{timeout, TimeoutError};
 
+pub use fidl_fuchsia_io::OpenFlags;
+pub use fidl_fuchsia_sys2::OpenDirType;
+
+pub mod port_forward;
+pub mod toolbox;
+
+const REMOTE_CONTROL_MONIKER: &str = "core/remote-control";
+
+const IDENTIFY_HOST_TIMEOUT_MILLIS: u64 = 10000;
+
 #[derive(Debug, Clone)]
 pub struct RcsConnection {
-    pub hoist: Hoist,
+    pub node: Arc<overnet_core::Router>,
     pub proxy: RemoteControlProxy,
     pub overnet_id: NodeId,
 }
@@ -44,33 +58,69 @@ impl PartialEq for RcsConnection {
 impl Eq for RcsConnection {}
 
 impl RcsConnection {
-    pub fn new(hoist: Hoist, id: &mut NodeId) -> Result<Self> {
+    pub fn new(node: Arc<overnet_core::Router>, id: &mut NodeId) -> Result<Self> {
         let (s, p) = fidl::Channel::create();
-        let _result = RcsConnection::connect_to_service(&hoist, id, s)?;
+        let _result = RcsConnection::connect_to_service(Arc::clone(&node), id, s)?;
         let proxy = RemoteControlProxy::new(
             fidl::AsyncChannel::from_channel(p).context("failed to make async channel")?,
         );
 
-        Ok(Self { hoist, proxy, overnet_id: id.clone() })
+        Ok(Self { node, proxy, overnet_id: id.clone() })
     }
 
     pub fn copy_to_channel(&mut self, channel: fidl::Channel) -> Result<()> {
-        RcsConnection::connect_to_service(&self.hoist, &mut self.overnet_id, channel)
+        RcsConnection::connect_to_service(Arc::clone(&self.node), &mut self.overnet_id, channel)
     }
 
     fn connect_to_service(
-        hoist: &Hoist,
+        node: Arc<overnet_core::Router>,
         overnet_id: &mut NodeId,
         channel: fidl::Channel,
     ) -> Result<()> {
-        let svc = hoist.connect_as_service_consumer()?;
-        svc.connect_to_service(overnet_id, RemoteControlMarker::PROTOCOL_NAME, channel)
-            .map_err(|e| anyhow!("Error connecting to Rcs: {}", e))
+        let overnet_id = (*overnet_id).into();
+        // TODO(b/302394849): If this method were async we could return the
+        // error instead of just logging it. This task used to be managed by
+        // Hoist where we couldn't get to it, but now we have it right here
+        // where it would be easy to factor out.
+        fuchsia_async::Task::spawn(async move {
+            if let Err(e) = node
+                .connect_to_service(overnet_id, RemoteControlMarker::PROTOCOL_NAME, channel)
+                .await
+            {
+                tracing::warn!("Error connecting to Rcs: {}", e)
+            }
+        })
+        .detach();
+        Ok(())
     }
 
     // Primarily For testing.
-    pub fn new_with_proxy(hoist: &Hoist, proxy: RemoteControlProxy, id: &NodeId) -> Self {
-        Self { hoist: hoist.clone(), proxy, overnet_id: id.clone() }
+    pub fn new_with_proxy(
+        node: Arc<overnet_core::Router>,
+        proxy: RemoteControlProxy,
+        id: &NodeId,
+    ) -> Self {
+        Self { node, proxy, overnet_id: id.clone() }
+    }
+
+    pub async fn identify_host(&self) -> Result<IdentifyHostResponse, RcsConnectionError> {
+        tracing::debug!("Requesting host identity from overnet id {}", self.overnet_id.id);
+        let identify_result = timeout(
+            Duration::from_millis(IDENTIFY_HOST_TIMEOUT_MILLIS),
+            self.proxy.identify_host(),
+        )
+        .await
+        .map_err(|e| RcsConnectionError::ConnectionTimeoutError(e))?;
+
+        let identify = match identify_result {
+            Ok(res) => match res {
+                Ok(target) => target,
+                Err(e) => return Err(RcsConnectionError::RemoteControlError(e)),
+            },
+            Err(e) => return Err(RcsConnectionError::FidlConnectionError(e)),
+        };
+
+        Ok(identify)
     }
 }
 
@@ -141,8 +191,9 @@ async fn knock_rcs_impl(rcs_proxy: &RemoteControlProxy) -> Result<(), KnockRcsEr
     let knock_client = fuchsia_async::Channel::from_channel(knock_client)?;
     let knock_client = fidl::client::Client::new(knock_client, "knock_client");
     rcs_proxy
-        .connect_capability(
+        .open_capability(
             "/core/remote-control",
+            OpenDirType::ExposedDir,
             RemoteControlMarker::PROTOCOL_NAME,
             knock_remote,
             OpenFlags::empty(),
@@ -152,21 +203,29 @@ async fn knock_rcs_impl(rcs_proxy: &RemoteControlProxy) -> Result<(), KnockRcsEr
     let mut event_receiver = knock_client.take_event_receiver();
     let res = timeout(KNOCK_TIMEOUT, event_receiver.next()).await;
     match res {
-        Err(_) => Ok(()), // timeout is fine here, it means the connection wasn't lost.
+        // no events are expected -- the only reason we'll get an event is if
+        // channel closes. So the only valid response here is a timeout.
+        Err(_) => Ok(()),
         Ok(r) => r.ok_or(KnockRcsError::FailedToKnock).map(drop),
     }
 }
 
-pub async fn connect_with_timeout_at(
+pub async fn open_with_timeout_at(
     dur: Duration,
     moniker: &str,
+    capability_set: OpenDirType,
     capability_name: &str,
     rcs_proxy: &RemoteControlProxy,
     server_end: fidl::Channel,
 ) -> Result<()> {
-    let connect_capability_fut =
-        rcs_proxy.connect_capability(moniker, capability_name, server_end, OpenFlags::empty());
-    timeout::timeout(dur, connect_capability_fut
+    let open_capability_fut = rcs_proxy.open_capability(
+        moniker,
+        capability_set,
+        capability_name,
+        server_end,
+        OpenFlags::empty(),
+    );
+    timeout::timeout(dur, open_capability_fut
         .map_ok_or_else(|e| Result::<(), anyhow::Error>::Err(anyhow::anyhow!(e)), |fidl_result| {
             fidl_result.map(|_| ()).map_err(|e| {
                     match e {
@@ -205,11 +264,114 @@ If you have encountered what you think is a bug, Please report it at http://fxbu
 To diagnose the issue, use `ffx doctor`.").into()).and_then(|r| r)
 }
 
+pub async fn connect_with_timeout_at(
+    dur: Duration,
+    moniker: &str,
+    capability_name: &str,
+    rcs_proxy: &RemoteControlProxy,
+    server_end: fidl::Channel,
+) -> Result<()> {
+    open_with_timeout_at(
+        dur,
+        moniker,
+        OpenDirType::ExposedDir,
+        capability_name,
+        rcs_proxy,
+        server_end,
+    )
+    .await
+}
+
 pub async fn connect_with_timeout<P: DiscoverableProtocolMarker>(
     dur: Duration,
     moniker: &str,
     rcs_proxy: &RemoteControlProxy,
     server_end: fidl::Channel,
 ) -> Result<()> {
-    connect_with_timeout_at(dur, moniker, P::PROTOCOL_NAME, rcs_proxy, server_end).await
+    open_with_timeout_at(
+        dur,
+        moniker,
+        OpenDirType::ExposedDir,
+        P::PROTOCOL_NAME,
+        rcs_proxy,
+        server_end,
+    )
+    .await
+}
+
+pub async fn connect_to_protocol<P: DiscoverableProtocolMarker>(
+    dur: Duration,
+    moniker: &str,
+    rcs_proxy: &RemoteControlProxy,
+) -> Result<P::Proxy> {
+    let (proxy, server_end) =
+        fidl::endpoints::create_proxy::<P>().context("failed to create proxy")?;
+    connect_with_timeout::<P>(dur, moniker, rcs_proxy, server_end.into_channel()).await?;
+    Ok(proxy)
+}
+
+pub async fn open_with_timeout<P: DiscoverableProtocolMarker>(
+    dur: Duration,
+    moniker: &str,
+    capability_set: OpenDirType,
+    rcs_proxy: &RemoteControlProxy,
+    server_end: fidl::Channel,
+) -> Result<()> {
+    open_with_timeout_at(dur, moniker, capability_set, P::PROTOCOL_NAME, rcs_proxy, server_end)
+        .await
+}
+
+async fn get_cf_root_from_namespace<M: fidl::endpoints::DiscoverableProtocolMarker>(
+    rcs_proxy: &RemoteControlProxy,
+    timeout: Duration,
+) -> Result<M::Proxy> {
+    let (proxy, server_end) = fidl::endpoints::create_proxy::<M>()?;
+    open_with_timeout_at(
+        timeout,
+        REMOTE_CONTROL_MONIKER,
+        OpenDirType::NamespaceDir,
+        &format!("svc/{}.root", M::PROTOCOL_NAME),
+        rcs_proxy,
+        server_end.into_channel(),
+    )
+    .await?;
+    Ok(proxy)
+}
+
+pub async fn kernel_stats(
+    rcs_proxy: &RemoteControlProxy,
+    timeout: Duration,
+) -> Result<fidl_fuchsia_kernel::StatsProxy> {
+    let (proxy, server_end) = fidl::endpoints::create_proxy::<fidl_fuchsia_kernel::StatsMarker>()?;
+    open_with_timeout_at(
+        timeout,
+        REMOTE_CONTROL_MONIKER,
+        OpenDirType::NamespaceDir,
+        &format!("svc/{}", fidl_fuchsia_kernel::StatsMarker::PROTOCOL_NAME),
+        rcs_proxy,
+        server_end.into_channel(),
+    )
+    .await?;
+    Ok(proxy)
+}
+
+pub async fn root_realm_query(
+    rcs_proxy: &RemoteControlProxy,
+    timeout: Duration,
+) -> Result<RealmQueryProxy> {
+    get_cf_root_from_namespace::<RealmQueryMarker>(rcs_proxy, timeout).await
+}
+
+pub async fn root_lifecycle_controller(
+    rcs_proxy: &RemoteControlProxy,
+    timeout: Duration,
+) -> Result<LifecycleControllerProxy> {
+    get_cf_root_from_namespace::<LifecycleControllerMarker>(rcs_proxy, timeout).await
+}
+
+pub async fn root_route_validator(
+    rcs_proxy: &RemoteControlProxy,
+    timeout: Duration,
+) -> Result<RouteValidatorProxy> {
+    get_cf_root_from_namespace::<RouteValidatorMarker>(rcs_proxy, timeout).await
 }

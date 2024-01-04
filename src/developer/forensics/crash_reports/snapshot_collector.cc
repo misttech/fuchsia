@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "src/developer/forensics/crash_reports/constants.h"
@@ -52,7 +53,7 @@ SnapshotCollector::SnapshotCollector(async_dispatcher_t* dispatcher, timekeeper:
       queue_(queue),
       shared_request_window_(shared_request_window) {}
 
-feedback::Annotations SnapshotCollector::GetMissingSnapshotAnnotations(const SnapshotUuid& uuid) {
+feedback::Annotations SnapshotCollector::GetMissingSnapshotAnnotations(const std::string& uuid) {
   const auto missing_snapshot = snapshot_store_->GetMissingSnapshot(uuid);
 
   feedback::Annotations combined_annotations = missing_snapshot.Annotations();
@@ -67,12 +68,12 @@ feedback::Annotations SnapshotCollector::GetMissingSnapshotAnnotations(const Sna
     const zx::duration timeout, fuchsia::feedback::CrashReport fidl_report,
     const ReportId report_id, const std::optional<timekeeper::time_utc> current_utc_time,
     const Product& product, const bool is_hourly_snapshot, const ReportingPolicy reporting_policy) {
-  auto GetReport =
-      [fidl_report = std::move(fidl_report), report_id, current_utc_time, product,
-       is_hourly_snapshot](
-          const SnapshotUuid& uuid,
-          const feedback::Annotations& annotations) mutable -> ::fpromise::result<Report> {
-    return MakeReport(std::move(fidl_report), report_id, uuid, annotations, current_utc_time,
+  auto GetReport = [fidl_report = std::move(fidl_report), report_id, current_utc_time, product,
+                    is_hourly_snapshot](
+                       const std::string& actual_uuid, const std::string& request_uuid,
+                       feedback::Annotations annotations) mutable -> ::fpromise::result<Report> {
+    AddAnnotation(feedback::kSnapshotUuid, request_uuid, annotations);
+    return MakeReport(std::move(fidl_report), report_id, actual_uuid, annotations, current_utc_time,
                       product, is_hourly_snapshot);
   };
 
@@ -80,12 +81,13 @@ feedback::Annotations SnapshotCollector::GetMissingSnapshotAnnotations(const Sna
   // order to save time during crash report creation.
   if (reporting_policy == ReportingPolicy::kArchive) {
     return fpromise::make_result_promise(
-        GetReport(kNoUuidSnapshotUuid, GetMissingSnapshotAnnotations(kNoUuidSnapshotUuid)));
+        GetReport(/*actual_uuid=*/kNoUuidSnapshotUuid, /*request_uuid=*/kNoUuidSnapshotUuid,
+                  GetMissingSnapshotAnnotations(kNoUuidSnapshotUuid)));
   }
 
   const zx::time current_time{clock_->Now()};
 
-  SnapshotUuid uuid;
+  std::string uuid;
 
   if (UseLatestRequest()) {
     uuid = snapshot_requests_.back()->uuid;
@@ -108,7 +110,7 @@ feedback::Annotations SnapshotCollector::GetMissingSnapshotAnnotations(const Sna
             fit::defer([this, report_id] { report_results_.erase(report_id); });
 
         if (shutdown_) {
-          return GetReport(kShutdownSnapshotUuid,
+          return GetReport(/*actual_uuid=*/kShutdownSnapshotUuid, /*request_uuid=*/uuid,
                            GetMissingSnapshotAnnotations(kShutdownSnapshotUuid));
         }
 
@@ -116,12 +118,12 @@ feedback::Annotations SnapshotCollector::GetMissingSnapshotAnnotations(const Sna
         // snapshot is dropped immediately after it is received because its annotations and archive
         // are too large and it is one of the oldest in the FIFO.
         if (snapshot_store_->IsGarbageCollected(uuid)) {
-          return GetReport(kGarbageCollectedSnapshotUuid,
+          return GetReport(/*actual_uuid=*/kGarbageCollectedSnapshotUuid, /*request_uuid=*/uuid,
                            GetMissingSnapshotAnnotations(kGarbageCollectedSnapshotUuid));
         }
 
         if (report_results_.find(report_id) != report_results_.end()) {
-          return GetReport(report_results_[report_id].uuid,
+          return GetReport(/*actual_uuid=*/uuid, /*request_uuid=*/uuid,
                            *report_results_[report_id].annotations);
         }
 
@@ -138,8 +140,8 @@ void SnapshotCollector::Shutdown() {
   snapshot_requests_.clear();
 }
 
-SnapshotUuid SnapshotCollector::MakeNewSnapshotRequest(const zx::time start_time,
-                                                       const zx::duration timeout) {
+std::string SnapshotCollector::MakeNewSnapshotRequest(const zx::time start_time,
+                                                      const zx::duration timeout) {
   const auto uuid = uuid::Generate();
   snapshot_requests_.emplace_back(std::unique_ptr<SnapshotRequest>(new SnapshotRequest{
       .uuid = uuid,
@@ -151,7 +153,7 @@ SnapshotUuid SnapshotCollector::MakeNewSnapshotRequest(const zx::time start_time
   snapshot_requests_.back()->delayed_get_snapshot.set_handler([this, timeout, uuid]() {
     zx::duration collection_timeout_per_data = timeout;
     data_provider_->GetSnapshotInternal(
-        collection_timeout_per_data,
+        collection_timeout_per_data, uuid,
         [this, uuid](feedback::Annotations annotations, fuchsia::feedback::Attachment archive) {
           CompleteWithSnapshot(uuid, std::move(annotations), std::move(archive));
         });
@@ -162,7 +164,7 @@ SnapshotUuid SnapshotCollector::MakeNewSnapshotRequest(const zx::time start_time
   return uuid;
 }
 
-void SnapshotCollector::CompleteWithSnapshot(const SnapshotUuid& uuid,
+void SnapshotCollector::CompleteWithSnapshot(const std::string& uuid,
                                              feedback::Annotations annotations,
                                              fuchsia::feedback::Attachment archive) {
   // We clear snapshot_requests_ as soon as we receive the shutdown signal.
@@ -177,7 +179,6 @@ void SnapshotCollector::CompleteWithSnapshot(const SnapshotUuid& uuid,
   // they're unchanging and not the result of the SnapshotManager's data management.
   AddAnnotation("debug.snapshot.shared-request.num-clients", request->promise_ids.size(),
                 annotations);
-  AddAnnotation("debug.snapshot.shared-request.uuid", uuid, annotations);
 
   if (archive.key.empty() || !archive.value.vmo.is_valid()) {
     AddAnnotation(feedback::kDebugSnapshotPresentKey, std::string("false"), annotations);
@@ -214,7 +215,7 @@ bool SnapshotCollector::UseLatestRequest() const {
 }
 
 SnapshotCollector::SnapshotRequest* SnapshotCollector::FindSnapshotRequest(
-    const SnapshotUuid& uuid) {
+    const std::string& uuid) {
   auto request = std::find_if(
       snapshot_requests_.begin(), snapshot_requests_.end(),
       [uuid](const std::unique_ptr<SnapshotRequest>& request) { return uuid == request->uuid; });

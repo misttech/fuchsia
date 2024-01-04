@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/toolchain/rbe.gni")
 import("//build/toolchain/restat.gni")
 import("//build/tracer/tracer.gni")
 
@@ -50,8 +51,6 @@ current_platform = "${current_os}-${current_cpu}"
 
 host_platform = "${host_os}-${host_cpu}"
 
-import("//build/toolchain/rbe.gni")
-
 if (target_os == "fuchsia") {
   target_toolchain = "//build/toolchain/fuchsia:${target_cpu}"
 } else {
@@ -71,8 +70,6 @@ linux_x64_toolchain = "//build/toolchain:linux_x64"
 win_x64_toolchain = "//build/toolchain:win_x64"
 linux_arm64_toolchain = "//build/toolchain:linux_arm64"
 unknown_wasm32_toolchain = "//build/toolchain:unknown_wasm32-shared"
-
-host_out_dir = get_label_info("//anything($host_toolchain)", "root_out_dir")
 
 set_default_toolchain(target_toolchain)
 
@@ -98,12 +95,6 @@ restat_wrapper_inputs = [
 restat_rust_wrapper_inputs = []
 if (restat_rust) {
   restat_rust_wrapper_inputs += restat_wrapper_inputs
-  if (rust_rbe_enable) {
-    # reclient supports a single-token --local_wrapper prefix
-    # for the local execution case (local-fallback or racing strategies).
-    # Used in build/toolchain/clang_toolchain.gni.
-    restat_rust_wrapper_inputs += [ restat_wrapper_local_wrapper ]
-  }
 }
 
 declare_args() {
@@ -257,6 +248,9 @@ if (toolchain_variant.base == host_x64_toolchain ||
   is_host = true
   host_toolchain += toolchain_variant.suffix
 }
+
+# Set `host_out_dir` once we're done modifying `host_toolchain`.
+host_out_dir = get_label_info("//anything($host_toolchain)", "root_out_dir")
 
 # Whether we are in the context of the GCC toolchain.
 is_gcc =
@@ -419,6 +413,7 @@ if (zircon_toolchain == false) {
     "//build/config:no_rtti",
     "//build/config:symbol_visibility_hidden",
     "//build/config:libcpp_remove_transitive_includes",
+    "//build/config/rust:default_debug_assertions",
     "//build/config/rust:incremental",
     "//build/config/rust:no_features",
     "//build/config/rust:target",
@@ -608,9 +603,6 @@ default_rust_configs = [
   "//build/config/rust/lints:deny_unused_crate_dependencies",
   "//build/config/rust/lints:deny_unused_results",
   "//build/config/rust/lints:allow_unused_results",
-
-  # TODO(fxbug.dev/131835) Remove once lints cleaned up
-  "//build/config/rust:allow_noop_method_call",
 ]
 
 set_defaults("rustc_binary") {
@@ -648,6 +640,188 @@ set_defaults("rustc_staticlib") {
   configs = default_common_binary_configs + default_rust_configs
 }
 
+# For each built-in target type `foo`, create a wrapping template `_foo_interal_wrapper`.
+# Throughout the rest of BUILDCONFIG.gn, all other templates should call `_foo_interal_wrapper`
+# until a public `foo` template is declared. That is because templates can only invoke other
+# templates declared before them.
+#
+# All built-in target types:
+_built_in_target_types_with_internal_wrapper = [
+  "action",
+  "action_foreach",
+  "copy",
+  "executable",
+  "generated_file",
+  "group",
+  "loadable_module",
+  "rust_library",
+  "rust_proc_macro",
+  "shared_library",
+  "source_set",
+  "static_library",
+]
+
+# All built-in target types that don't have a wrapper. The list shrinks after
+# each declaration and is asserted to be empty at the end of this file.
+_built_in_target_types_without_public_wrapper =
+    _built_in_target_types_with_internal_wrapper
+
+foreach(_target_type, _built_in_target_types_with_internal_wrapper) {
+  # Wraps built-in target types (e.g. source_set, executable, etc.) to add additional
+  # parameters common to all of them.
+  #
+  # Additional parameters:
+  #
+  #   applicable_licenses (optional):
+  #     A list of 1 or more `license` targets (see //build/licenses/license.gni) that
+  #     define licensing information for this target.
+  #
+  #     Results with the declaration of target metadata named 'applicable_licenses'
+  #     following scope:
+  #
+  #       {
+  #         target_label: The target for which this metadata applies.
+  #         target_type: The type of the target (e.g. "group", "source_set")
+  #         license_labels: A list of license (see license.gni) targets that are applicable
+  #             to this target.
+  #         third_party_resources (Optional): List of potential 3p resources used
+  #             directly by this target. This info is used in generated_licenses_spdx
+  #             to search for additional applicable licenses.
+  #       }
+  #
+  #     The metadata is processed by `generated_licenses_spdx` targets
+  #     (see //build/licenses/generated_licenses_spdx.gni).
+  #
+  template("_${_target_type}_internal_wrapper") {
+    target(_target_type, target_name) {
+      # Capture the target name prior to forwarding variables. See fxb/133723.
+      _target_label = get_label_info(":${target_name}", "label_with_toolchain")
+
+      forward_variables_from(invoker,
+                             "*",
+                             [
+                               "applicable_licenses",
+                               "metadata",
+                               "testonly",
+                               "visibility",
+                             ])
+      forward_variables_from(invoker,
+                             [
+                               "testonly",
+                               "visibility",
+                             ])
+
+      _applicable_licenses = []
+      if (defined(invoker.applicable_licenses)) {
+        foreach(license_label, invoker.applicable_licenses) {
+          _applicable_licenses +=
+              [ get_label_info(license_label, "label_with_toolchain") ]
+        }
+      }
+
+      if (defined(deps)) {
+        deps += _applicable_licenses
+      } else {
+        deps = _applicable_licenses
+      }
+
+      _resources = []
+      if (defined(sources)) {
+        _resources += sources
+      }
+      if (defined(inputs)) {
+        _resources += inputs
+      }
+
+      _metadata = {
+      }
+      if (defined(invoker.metadata)) {
+        _metadata = invoker.metadata
+
+        # Additional resource may be defined through distribution_entries metadata
+        # such as by resource.gni targets.
+        if (defined(_metadata.distribution_entries)) {
+          foreach(distribution_entry, _metadata.distribution_entries) {
+            if (defined(distribution_entry.source)) {
+              # The source is relative to root_build_dir, and need to be converted into
+              # an absolute label for downstream processing.
+              _resources += [ "//" + rebase_path(distribution_entry.source,
+                                                 "//",
+                                                 root_build_dir) ]
+            }
+          }
+        }
+      }
+
+      _root_build_dir_filter =
+          "//" + rebase_path(root_build_dir, "//", root_build_dir) + "/*"
+
+      # Record all resources that have "third_party" or "prebuilt" in their name
+      # but ignore anything under out/default, because these are generated via
+      # an explicit dependency on a target which will have its own applicable_licenses
+      # metadata.
+      _third_party_resources =
+          filter_include(filter_exclude(_resources, [ _root_build_dir_filter ]),
+                         [
+                           "*third_party*",
+                           "*thirdparty*",
+                           "*prebuilt*",
+                         ])
+
+      metadata = {
+        forward_variables_from(_metadata, "*")
+
+        if (is_host) {
+          applicable_licenses_host_barrier = []
+        }
+
+        applicable_licenses = [
+          {
+            target_label = _target_label
+            target_type = _target_type
+            license_labels = _applicable_licenses
+            if (_third_party_resources != []) {
+              third_party_resources = _third_party_resources
+            }
+          },
+        ]
+      }
+    }
+  }
+}
+
+# Declare public wrappers for copy, group, generated_file that redirects to
+# their internal wrapper.
+foreach(_target_type,
+        [
+          "copy",
+          "group",
+          "generated_file",
+        ]) {
+  template(_target_type) {
+    target("_${_target_type}_internal_wrapper", target_name) {
+      forward_variables_from(invoker,
+                             "*",
+                             [
+                               "applicable_licenses",
+                               "testonly",
+                               "visibility",
+                             ])
+      forward_variables_from(invoker,
+                             [
+                               "applicable_licenses",
+                               "testonly",
+                               "visibility",
+                             ])
+    }
+  }
+}
+_built_in_target_types_without_public_wrapper -= [
+  "copy",
+  "group",
+  "generated_file",
+]
+
 # `hermetic_inputs_action()` and `hermetic_inputs_action_foreach()` are used
 # to run an action that generates a list of implicit inputs, as required
 # by the `hermetics_inputs_target` argument of our `action()` and `action_foreach()`
@@ -670,15 +844,17 @@ foreach(_target_type,
            "An hermetic_inputs_action() script should have a single output!")
     assert(!defined(invoker.depfile),
            "An hermetic_inputs_action() cannot have a depfile!")
-    target(_target_type, target_name) {
+    target("_${_target_type}_internal_wrapper", target_name) {
       forward_variables_from(invoker,
                              "*",
                              [
+                               "applicable_licenses",
                                "testonly",
                                "visibility",
                              ])
       forward_variables_from(invoker,
                              [
+                               "applicable_licenses",
                                "testonly",
                                "visibility",
                              ])
@@ -868,6 +1044,7 @@ foreach(_target_type,
                _hermetic_inputs_target_name) {
           forward_variables_from(invoker,
                                  [
+                                   "applicable_licenses",
                                    "deps",
                                    "public_deps",
                                    "inputs",
@@ -917,10 +1094,11 @@ foreach(_target_type,
       }
     }
 
-    target(_target_type, target_name) {
+    target("_${_target_type}_internal_wrapper", target_name) {
       forward_variables_from(invoker,
                              "*",
                              [
+                               "applicable_licenses",
                                "args",
                                "hermetic_action_ignored_prefixes",
                                "hermetic_deps",
@@ -939,6 +1117,7 @@ foreach(_target_type,
 
       forward_variables_from(invoker,
                              [
+                               "applicable_licenses",
                                "hermetic_action_ignored_prefixes",
                                "testonly",
                                "visibility",
@@ -1272,6 +1451,10 @@ foreach(_target_type,
     }
   }
 }
+_built_in_target_types_without_public_wrapper -= [
+  "action",
+  "action_foreach",
+]
 
 # This is the basic "asan" variant.  Others start with this and modify.
 # See `known_variants` (below) for the meaning of fields in this scope.
@@ -1934,6 +2117,26 @@ is_asan = select_variant + [
             "hwasan-ubsan",
           ] != select_variant
 
+# Whether h/w sanitizer instrumentation is enabled.
+is_hwasan = select_variant + [
+              "hwasan",
+              "hwasan-ubsan",
+            ] -
+            [
+              "hwasan",
+              "hwasan-ubsan",
+            ] != select_variant
+
+# Whether fuzzer is enabled.
+is_fuzzer = select_variant + [
+              "asan-fuzzer",
+              "ubsan-fuzzer",
+            ] -
+            [
+              "asan-fuzzer",
+              "ubsan-fuzzer",
+            ] != select_variant
+
 # Do this only once, in the default toolchain context.    Then
 # clang_toolchain_suite will just pass the results through to every
 # other toolchain via toolchain_args so the work is not repeated.
@@ -2143,16 +2346,28 @@ if (in_default_toolchain) {
 template("_fuchsia_binary") {
   target_type = invoker.target_type
 
-  target(target_type, target_name) {
+  # Use the internal _*_internal_wrapper target type, if the public
+  # wrapper is not declared yet.
+  _maybe_target_type_internal_wrapper = target_type
+  foreach(_built_in_target_type,
+          _built_in_target_types_without_public_wrapper) {
+    if (target_type == _built_in_target_type) {
+      _maybe_target_type_internal_wrapper = "_${target_type}_internal_wrapper"
+    }
+  }
+
+  target(_maybe_target_type_internal_wrapper, target_name) {
     forward_variables_from(invoker,
                            "*",
                            [
+                             "applicable_licenses",
                              "target_type",
                              "testonly",
                              "visibility",
                            ])
     forward_variables_from(invoker,
                            [
+                             "applicable_licenses",
                              "testonly",
                              "visibility",
                            ])
@@ -2315,12 +2530,18 @@ template("variant_target") {
   target_type = target_name
   target_name = invoker.target_name
   target_invoker = {
-    # Explicitly forward visibility, implicitly forward everything else.
+    # Explicitly forward applicable_licenses and visibility, implicitly
+    # forward everything else.
     # See comment in template("shared_library") above for details.
-    forward_variables_from(invoker, [ "visibility" ])
+    forward_variables_from(invoker,
+                           [
+                             "applicable_licenses",
+                             "visibility",
+                           ])
     forward_variables_from(invoker,
                            "*",
                            [
+                             "applicable_licenses",
                              "exclude_toolchain_tags",
                              "target_name",
                              "target_type",
@@ -2650,6 +2871,7 @@ template("variant_target") {
     copy(target_name) {
       forward_variables_from(target_invoker,
                              [
+                               "applicable_licenses",
                                "testonly",
                                "visibility",
                              ])
@@ -2797,12 +3019,14 @@ if (toolchain_variant.with_shared || toolchain_variant.is_pic_default) {
           forward_variables_from(invoker,
                                  "*",
                                  [
+                                   "applicable_licenses",
+                                   "metadata",
                                    "testonly",
                                    "visibility",
-                                   "metadata",
                                  ])
           forward_variables_from(invoker,
                                  [
+                                   "applicable_licenses",
                                    "testonly",
                                    "visibility",
                                  ])
@@ -2828,6 +3052,7 @@ if (toolchain_variant.with_shared || toolchain_variant.is_pic_default) {
           public_deps = [ ":$target_name(${current_toolchain}-shared)" ]
           forward_variables_from(invoker,
                                  [
+                                   "applicable_licenses",
                                    "testonly",
                                    "visibility",
                                  ])
@@ -2848,18 +3073,24 @@ if (toolchain_variant.with_shared || toolchain_variant.is_pic_default) {
         # to forward_variables_from below.
         original_target_name = target_name
 
-        # Explicitly forward visibility, implicitly forward everything
-        # else.  Forwarding "*" doesn't recurse into nested scopes (to
+        # Explicitly forward applicable_licenses and visibility, implicitly
+        # forward everything else.
+        # Forwarding "*" doesn't recurse into nested scopes (to
         # avoid copying all globals into each template invocation), so
         # won't pick up file-scoped variables.  Normally this isn't too
         # bad, but visibility is commonly defined at the file scope.
         # Explicitly forwarding visibility and then excluding it from the
         # "*" set works around this problem.  See http://crbug.com/594610
         # for rationale on why this GN behavior is not considered a bug.
-        forward_variables_from(invoker, [ "visibility" ])
+        forward_variables_from(invoker,
+                               [
+                                 "applicable_licenses",
+                                 "visibility",
+                               ])
         forward_variables_from(invoker,
                                "*",
                                [
+                                 "applicable_licenses",
                                  "metadata",
                                  "visibility",
                                ])
@@ -3004,7 +3235,27 @@ if (toolchain_variant.with_shared || toolchain_variant.is_pic_default) {
       }
     }
   }
+} else {
+  # Wrap shared_library with the private impl that has applicable licenses.
+  template("shared_library") {
+    _shared_library_internal_wrapper(target_name) {
+      forward_variables_from(invoker,
+                             "*",
+                             [
+                               "applicable_licenses",
+                               "testonly",
+                               "visibility",
+                             ])
+      forward_variables_from(invoker,
+                             [
+                               "applicable_licenses",
+                               "testonly",
+                               "visibility",
+                             ])
+    }
+  }
 }
+_built_in_target_types_without_public_wrapper -= [ "shared_library" ]
 
 # This wraps the built-in GN executable() template, adding a few more features:
 #
@@ -3065,17 +3316,20 @@ template("executable") {
       disable_syslog_backend = true
     }
 
-    # Explicitly forward visibility, implicitly forward everything else
+    # Explicitly forward applicable_licenses and visibility,
+    # implicitly forward everything else
     # (except metadata, handled below).
     # See comment in template("shared_library") above for details.
     forward_variables_from(invoker,
                            [
+                             "applicable_licenses",
                              "visibility",
                              "pool",
                            ])
     forward_variables_from(invoker,
                            "*",
                            [
+                             "applicable_licenses",
                              "metadata",
                              "pool",
                              "target_name",
@@ -3127,21 +3381,6 @@ template("executable") {
 
     if (disable_syslog_backend) {
       assert_no_deps += [ "//sdk/lib/syslog/cpp" ]
-    } else {
-      has_syslog_backend = false
-
-      foreach(dep, deps) {
-        dep = get_label_info(dep, "label_no_toolchain")
-        has_syslog_backend =
-            has_syslog_backend || dep == "//sdk/lib/syslog/cpp:backend" ||
-            dep == "//sdk/lib/syslog/cpp:backend_fuchsia_lib" ||
-            dep == "//sdk/lib/syslog/cpp:backend_fuchsia_compat"
-      }
-
-      if (!has_syslog_backend) {
-        # All executables automatically get the structured backend.
-        deps += [ "//sdk/lib/syslog/cpp:backend" ]
-      }
     }
 
     if (defined(crate_root)) {
@@ -3217,15 +3456,6 @@ template("executable") {
             test_component_manifest_program_barrier = []
           }
         }
-
-        if (!defined(component_catalog)) {
-          component_catalog = [
-            {
-              has_cxx = true
-              label = get_label_info(":$target_name", "label_with_toolchain")
-            },
-          ]
-        }
       } else {
         tool_paths = [
           {
@@ -3243,6 +3473,7 @@ template("executable") {
     }
   }
 }
+_built_in_target_types_without_public_wrapper -= [ "executable" ]
 
 # This wraps the GN built-in loadable_module() template, adding a few more features.
 # See the documentation for executable() to see them.
@@ -3281,13 +3512,18 @@ template("loadable_module") {
   variant_target("loadable_module") {
     target_name = _module_name
 
-    # Explicitly forward visibility, implicitly forward everything else
-    # (except metadata, handled below).
+    # Explicitly forward applicable_licenses and visibility,
+    # implicitly forward everything else (except metadata, handled below).
     # See comment in template("shared_library") above for details.
-    forward_variables_from(invoker, [ "visibility" ])
+    forward_variables_from(invoker,
+                           [
+                             "applicable_licenses",
+                             "visibility",
+                           ])
     forward_variables_from(invoker,
                            "*",
                            [
+                             "applicable_licenses",
                              "metadata",
                              "visibility",
                              "target_name",
@@ -3369,6 +3605,7 @@ template("loadable_module") {
     }
   }
 }
+_built_in_target_types_without_public_wrapper -= [ "loadable_module" ]
 
 # Some targets we share with Chromium declare themselves to be components,
 # which means they can build either as shared libraries or as static libraries.
@@ -3377,16 +3614,29 @@ template("component") {
   if (!defined(invoker.sources)) {
     # When there are no sources defined, use a source set to avoid creating
     # an empty static library (which generally don't work).
-    _component_mode = "source_set"
+
+    # public `source_set` is not defined yet so use private impl first
+    _component_mode = "_source_set_internal_wrapper"
   } else {
-    _component_mode = "static_library"
+    # public `static_library` is not defined yet so use private impl first
+    _component_mode = "_static_library_internal_wrapper"
   }
 
   target(_component_mode, target_name) {
-    # Explicitly forward visibility, implicitly forward everything else.
+    # Explicitly forward applicable_licenses and visibility,
+    # implicitly forward everything else.
     # See comment in template("shared_library") above for details.
-    forward_variables_from(invoker, [ "visibility" ])
-    forward_variables_from(invoker, "*", [ "visibility" ])
+    forward_variables_from(invoker,
+                           [
+                             "applicable_licenses",
+                             "visibility",
+                           ])
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "applicable_licenses",
+                             "visibility",
+                           ])
   }
 }
 
@@ -3394,47 +3644,60 @@ set_defaults("component") {
   configs = default_common_binary_configs
 }
 
-# When generating Fuchsia user binaries, ensure the right sysroot-related
-# dependencies are added to source_set() and static_library() instances
-# automatically.
-if (is_fuchsia && zircon_toolchain == false) {
-  template("source_set") {
-    source_set(target_name) {
-      forward_variables_from(invoker,
-                             "*",
-                             [
-                               "testonly",
-                               "visibility",
-                             ])
-      forward_variables_from(invoker,
-                             [
-                               "testonly",
-                               "visibility",
-                             ])
+template("source_set") {
+  _source_set_internal_wrapper(target_name) {
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "applicable_licenses",
+                             "testonly",
+                             "visibility",
+                           ])
+    forward_variables_from(invoker,
+                           [
+                             "applicable_licenses",
+                             "testonly",
+                             "visibility",
+                           ])
+    if (is_fuchsia && zircon_toolchain == false) {
       if (!defined(deps)) {
         deps = []
       }
+
+      # When generating Fuchsia user binaries, ensure the right sysroot-related
+      # dependencies are added to source_set() and static_library() instances
+      # automatically.
       deps += [ "//zircon/public/sysroot:headers" ]
     }
   }
+}
+_built_in_target_types_without_public_wrapper -= [ "source_set" ]
 
-  template("static_library") {
-    static_library(target_name) {
-      forward_variables_from(invoker,
-                             "*",
-                             [
-                               "testonly",
-                               "visibility",
-                               "metadata",
-                             ])
-      forward_variables_from(invoker,
-                             [
-                               "testonly",
-                               "visibility",
-                             ])
+template("static_library") {
+  _static_library_internal_wrapper(target_name) {
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "applicable_licenses",
+                             "metadata",
+                             "testonly",
+                             "visibility",
+                           ])
+    forward_variables_from(invoker,
+                           [
+                             "applicable_licenses",
+                             "testonly",
+                             "visibility",
+                           ])
+
+    if (is_fuchsia && zircon_toolchain == false) {
       if (!defined(deps)) {
         deps = []
       }
+
+      # When generating Fuchsia user binaries, ensure the right sysroot-related
+      # dependencies are added to source_set() and static_library() instances
+      # automatically.
       deps += [ "//zircon/public/sysroot:headers" ]
 
       if (defined(crate_root)) {
@@ -3454,6 +3717,7 @@ if (is_fuchsia && zircon_toolchain == false) {
     }
   }
 }
+_built_in_target_types_without_public_wrapper -= [ "static_library" ]
 
 # This wraps the GN built-in rust_library template:
 #
@@ -3463,8 +3727,14 @@ if (is_fuchsia && zircon_toolchain == false) {
 #   direct and transitive dependencies.
 #
 template("rust_library") {
-  rust_library(target_name) {
-    forward_variables_from(invoker, "*", [ "metadata" ])
+  _rust_library_internal_wrapper(target_name) {
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "applicable_licenses",
+                             "metadata",
+                           ])
+    forward_variables_from(invoker, [ "applicable_licenses" ])
     if (!defined(inputs)) {
       inputs = []
     }
@@ -3484,6 +3754,7 @@ template("rust_library") {
     }
   }
 }
+_built_in_target_types_without_public_wrapper -= [ "rust_library" ]
 
 # This wraps the GN built-in rust_proc_macro template:
 #
@@ -3506,14 +3777,19 @@ template("rust_proc_macro") {
     }
     not_needed(invoker, "*")
   } else {
-    rust_proc_macro(target_name) {
+    _rust_proc_macro_internal_wrapper(target_name) {
       forward_variables_from(invoker,
                              "*",
                              [
+                               "applicable_licenses",
                                "crate_name",
                                "metadata",
                              ])
-      forward_variables_from(invoker, [ "crate_name" ])
+      forward_variables_from(invoker,
+                             [
+                               "applicable_licenses",
+                               "crate_name",
+                             ])
       if (!defined(inputs)) {
         inputs = []
       }
@@ -3539,3 +3815,8 @@ template("rust_proc_macro") {
     }
   }
 }
+_built_in_target_types_without_public_wrapper -= [ "rust_proc_macro" ]
+
+assert(
+    _built_in_target_types_without_public_wrapper == [],
+    "${_built_in_target_types_without_public_wrapper} are missing a public wrapper")

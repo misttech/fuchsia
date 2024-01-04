@@ -125,7 +125,7 @@ closed protocol CombinedBufferCollectionToken {
     });
     @selector("fuchsia.sysmem2/Node.SetDebugClientInfo")
     strict SetDebugClientInfoV2(table {
-        1: name string:64;
+        1: name string:fuchsia.sysmem2.MAX_CLIENT_NAME_LENGTH;
         2: id uint64;
     });
     @selector("fuchsia.sysmem2/Node.SetDebugTimeoutLogDeadline")
@@ -144,6 +144,16 @@ closed protocol CombinedBufferCollectionToken {
     }) -> (table {
         1: is_alternate bool;
     }) error zx.Status;
+    @selector("fuchsia.sysmem2/Node.GetBufferCollectionId")
+    strict GetBufferCollectionIdV2() -> (table {
+        1: buffer_collection_id uint64;
+    });
+    @selector("fuchsia.sysmem2/Node.SetWeak")
+    strict SetWeakV2();
+    @selector("fuchsia.sysmem2/Node.SetWeakOk")
+    strict SetWeakOkV2(resource table {
+        1: for_child_nodes_also bool;
+    });
 
     // fuchsia.sysmem2/BufferCollectionToken, with de-conflicted names:
     @selector("fuchsia.sysmem2/BufferCollectionToken.DuplicateSync")

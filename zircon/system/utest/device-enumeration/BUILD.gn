@@ -18,14 +18,14 @@ source_set("common") {
     "common.h",
   ]
   public_deps = [
-    "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_cpp_wire",
+    "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//src/lib/fsl",
     "//zircon/system/ulib/zxtest",
   ]
   deps = [
     ":device-enumeration-shard",
-    "//sdk/fidl/fuchsia.driver.development:fuchsia.driver.development_cpp_wire",
+    "//sdk/fidl/fuchsia.driver.development:fuchsia.driver.development_cpp",
     "//zircon/system/ulib/async:async-cpp",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
@@ -58,8 +58,8 @@ test("device-enumeration") {
 
   deps = [
     ":common",
-    "//sdk/fidl/fuchsia.acpi.tables:fuchsia.acpi.tables_cpp_wire",
-    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire",
+    "//sdk/fidl/fuchsia.acpi.tables:fuchsia.acpi.tables_cpp",
+    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
   ]
 }
 
@@ -133,12 +133,17 @@ _boards = [
   ],
 ]
 
+config("include_packaged_drivers") {
+  cflags = [ "-Dinclude_packaged_drivers" ]
+}
+
 foreach(board_info, _boards) {
   board = board_info[0]
   test_env = {
   }
   test_env = board_info[1]
   test("device-enumeration-test-${board}-bin") {
+    configs += [ ":include_packaged_drivers" ]
     sources = [ "boards/${board}.cc" ]
     deps = [ ":common" ]
   }

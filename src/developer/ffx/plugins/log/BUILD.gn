@@ -16,16 +16,15 @@ ffx_plugin("ffx_log") {
   config_data = [ "data/config.json" ]
 
   deps = [
-    "//sdk/fidl/fuchsia.developer.ffx:fuchsia.developer.ffx_rust",
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust",
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
     "//sdk/fidl/fuchsia.diagnostics.host:fuchsia.diagnostics.host_rust",
     "//src/developer/ffx/config:lib",
+    "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/rcs:lib",
     "//src/diagnostics/lib/log-command",
     "//src/diagnostics/lib/log_symbolizer",
-    "//src/lib/diagnostics/data/rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:anyhow",
@@ -47,8 +46,10 @@ ffx_plugin("ffx_log") {
   test_deps = [
     "//src/developer/ffx/lib/writer:lib",
     "//src/diagnostics/lib/log-command",
+    "//src/lib/diagnostics/data/rust",
     "//src/lib/diagnostics/selectors",
     "//src/lib/fuchsia",
+    "//src/sys/lib/moniker",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:chrono",
     "//third_party/rust_crates:futures",
@@ -65,4 +66,23 @@ ffx_tool("ffx_log_tool") {
     "//src/lib/fuchsia-async",
   ]
   sources = [ "src/main.rs" ]
+
+  sdk_target_name = "sdk"
+  sdk_category = "partner"
+}
+
+group("log") {
+  public_deps = [
+    ":ffx_log_tool",
+    ":ffx_log_tool_host_tool",
+  ]
+}
+
+group("bin") {
+  public_deps = [ ":ffx_log_tool_versioned" ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":ffx_log_tests($host_toolchain)" ]
 }

@@ -5,13 +5,18 @@
 #[cfg(target_arch = "x86_64")]
 pub mod x86_64;
 
+#[cfg(not(target_arch = "x86_64"))]
+// Rustdoc struggles in our build with conditional dependencies. Allow this to be unconditionally
+// specified in BUILD.gn without triggering unused dep warnings on other architectures.
+use once_cell as _;
+
 #[cfg(target_arch = "aarch64")]
 mod aarch64;
 
 #[cfg(target_arch = "riscv64")]
 mod riscv64;
 
-#[derive(Default)]
+#[derive(Clone, Copy, Default)]
 pub struct ExtendedPstateState {
     #[cfg(target_arch = "x86_64")]
     state: x86_64::State,
@@ -65,6 +70,43 @@ impl ExtendedPstateState {
 
     pub fn reset(&mut self) {
         self.state.reset()
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn get_arm64_qregs(&self) -> &[u128; 32] {
+        &self.state.q
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn get_arm64_fpsr(&self) -> u32 {
+        self.state.fpsr
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn get_arm64_fpcr(&self) -> u32 {
+        self.state.fpcr
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn set_arm64_state(&mut self, qregs: &[u128; 32], fpsr: u32, fpcr: u32) {
+        self.state.q = *qregs;
+        self.state.fpsr = fpsr;
+        self.state.fpcr = fpcr;
+    }
+
+    #[cfg(target_arch = "riscv64")]
+    pub fn get_riscv64_fp_registers(&self) -> &[u64; 32] {
+        &self.state.fp_registers
+    }
+
+    #[cfg(target_arch = "riscv64")]
+    pub fn get_riscv64_fcsr(&self) -> u32 {
+        self.state.fcsr
+    }
+
+    #[cfg(target_arch = "riscv64")]
+    pub fn set_riscv64_fp(&mut self, fp_registers: &[u64; 32], fcsr: u32) {
+        self.state = riscv64::State { fp_registers: *fp_registers, fcsr }
     }
 }
 

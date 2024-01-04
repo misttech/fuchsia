@@ -14,15 +14,12 @@
 #include <zircon/time.h>
 
 #include <algorithm>
-#include <limits>
 #include <memory>
-#include <string_view>
 
 #include <fbl/algorithm.h>
 #include <safemath/checked_math.h>
 
-#include "src/lib/storage/vfs/cpp/debug.h"
-#include "src/lib/storage/vfs/cpp/vfs_types.h"
+#include "src/storage/lib/vfs/cpp/vfs_types.h"
 #include "zircon/assert.h"
 
 #ifdef __Fuchsia__

@@ -181,8 +181,9 @@ mod tests {
             model::{Model, ModelParams},
             testing::mocks::MockResolver,
         },
-        ::routing::{config::RuntimeConfig, environment::DebugRegistration},
+        ::routing::environment::DebugRegistration,
         assert_matches::assert_matches,
+        cm_config::RuntimeConfig,
         cm_rust::{RegistrationSource, RunnerRegistration},
         cm_rust_testing::{
             ChildDeclBuilder, CollectionDeclBuilder, ComponentDeclBuilder, EnvironmentDeclBuilder,
@@ -191,11 +192,12 @@ mod tests {
         fidl_fuchsia_component as fcomponent,
         maplit::hashmap,
         moniker::{Moniker, MonikerBase},
+        sandbox::Dict,
         std::{collections::HashMap, sync::Weak},
     };
 
     #[fuchsia::test]
-    fn test_from_decl() {
+    async fn test_from_decl() {
         let component = ComponentInstance::new_root(
             Environment::empty(),
             Arc::new(ModelContext::new_for_test()),
@@ -313,6 +315,7 @@ mod tests {
         })
         .await
         .unwrap();
+        model.discover_root_component(Dict::new()).await;
         let component =
             model.start_instance(&vec!["a", "b"].try_into().unwrap(), &StartReason::Eager).await?;
         assert_eq!(component.component_url, "test:///b");
@@ -409,6 +412,7 @@ mod tests {
             top_instance,
         })
         .await?;
+        model.discover_root_component(Dict::new()).await;
         let component =
             model.start_instance(&vec!["a", "b"].try_into().unwrap(), &StartReason::Eager).await?;
         assert_eq!(component.component_url, "test:///b");
@@ -509,6 +513,7 @@ mod tests {
             top_instance,
         })
         .await?;
+        model.discover_root_component(Dict::new()).await;
         // Add instance to collection.
         {
             let parent =
@@ -519,7 +524,6 @@ mod tests {
                     "coll".into(),
                     &child_decl,
                     fcomponent::CreateChildArgs::default(),
-                    false,
                 )
                 .await
                 .expect("failed to add child");
@@ -613,6 +617,7 @@ mod tests {
         })
         .await
         .unwrap();
+        model.discover_root_component(Dict::new()).await;
 
         let component =
             model.start_instance(&vec!["a", "b"].try_into().unwrap(), &StartReason::Eager).await?;
@@ -684,6 +689,7 @@ mod tests {
             top_instance,
         })
         .await?;
+        model.discover_root_component(Dict::new()).await;
         assert_matches!(
             model.start_instance(&vec!["a", "b"].try_into().unwrap(), &StartReason::Eager).await,
             Err(ModelError::ResolveActionError { .. })

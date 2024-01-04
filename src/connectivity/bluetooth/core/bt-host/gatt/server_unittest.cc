@@ -49,12 +49,12 @@ class ServerTest : public l2cap::testing::MockChannelTest {
 
     ChannelOptions options(l2cap::kATTChannelId);
     fake_att_chan_ = CreateFakeChannel(options);
-    att_ = att::Bearer::Create(fake_att_chan_->GetWeakPtr());
+    att_ = att::Bearer::Create(fake_att_chan_->GetWeakPtr(), dispatcher());
     server_ = gatt::Server::Create(kTestPeerId, local_services_->GetWeakPtr(), att_->GetWeakPtr());
   }
 
   void TearDown() override {
-    RunLoopUntilIdle();
+    RunUntilIdle();
     server_ = nullptr;
     att_ = nullptr;
     fake_att_chan_ = l2cap::testing::FakeChannel::WeakPtr();
@@ -132,7 +132,7 @@ class ServerTest : public l2cap::testing::MockChannelTest {
                               [&](fit::result<att::ErrorCode> status) { write_status = status; }));
           // Not strictly necessary with the current WriteAsync implementation, but running the loop
           // here makes this more future-proof.
-          test_loop().RunUntilIdle();
+          RunUntilIdle();
           EXPECT_EQ(fit::ok(), write_status);
           modified_attrs.push_back(matching_chrc_value_handle);
         }
@@ -2773,7 +2773,7 @@ class ServerTestSecurity : public ServerTest {
                                           LowerBits(handle), UpperBits(handle),  // handle
                                           't', 'e', 's', 't'                     // value: "test"
                                           ));
-    RunLoopUntilIdle();
+    RunUntilIdle();
     return true;
   }
 

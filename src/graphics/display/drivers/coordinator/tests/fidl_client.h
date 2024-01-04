@@ -5,6 +5,7 @@
 #ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_COORDINATOR_TESTS_FIDL_CLIENT_H_
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_COORDINATOR_TESTS_FIDL_CLIENT_H_
 
+#include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/fidl/cpp/message.h>
@@ -38,13 +39,13 @@ class TestFidlClient {
     DisplayId id_;
     fbl::Vector<fuchsia_images2::wire::PixelFormat> pixel_formats_;
     fbl::Vector<fuchsia_hardware_display::wire::Mode> modes_;
-    fbl::Vector<fuchsia_hardware_display::wire::CursorInfo> cursors_;
+    fbl::Vector<fuchsia_hardware_display_types::wire::CursorInfo> cursors_;
 
     fbl::String manufacturer_name_;
     fbl::String monitor_name_;
     fbl::String monitor_serial_;
 
-    fuchsia_hardware_display::wire::ImageConfig image_config_;
+    fuchsia_hardware_display_types::wire::ImageConfig image_config_;
   };
 
   explicit TestFidlClient(const fidl::WireSyncClient<fuchsia_sysmem::Allocator>& sysmem)
@@ -63,13 +64,13 @@ class TestFidlClient {
   };
 
   zx::result<ImageId> ImportImageWithSysmem(
-      const fuchsia_hardware_display::wire::ImageConfig& image_config) TA_EXCL(mtx());
+      const fuchsia_hardware_display_types::wire::ImageConfig& image_config) TA_EXCL(mtx());
 
   zx::result<ImageId> CreateImage() TA_EXCL(mtx());
   zx::result<LayerId> CreateLayer() TA_EXCL(mtx());
   zx::result<EventInfo> CreateEvent() TA_EXCL(mtx());
 
-  fuchsia_hardware_display::wire::ConfigStamp GetRecentAppliedConfigStamp() TA_EXCL(mtx());
+  fuchsia_hardware_display_types::wire::ConfigStamp GetRecentAppliedConfigStamp() TA_EXCL(mtx());
 
   struct PresentLayerInfo {
     LayerId layer_id;
@@ -109,11 +110,11 @@ class TestFidlClient {
   uint64_t vsync_count_ TA_GUARDED(mtx()) = 0;
   VsyncAckCookie vsync_ack_cookie_ = kInvalidVsyncAckCookie;
   ImageId next_image_id_ TA_GUARDED(mtx()) = ImageId(1);
-  fuchsia_hardware_display::wire::ConfigStamp recent_presented_config_stamp_;
+  fuchsia_hardware_display_types::wire::ConfigStamp recent_presented_config_stamp_;
   const fidl::WireSyncClient<fuchsia_sysmem::Allocator>& sysmem_;
 
   zx::result<ImageId> ImportImageWithSysmemLocked(
-      const fuchsia_hardware_display::wire::ImageConfig& image_config) TA_REQ(mtx());
+      const fuchsia_hardware_display_types::wire::ImageConfig& image_config) TA_REQ(mtx());
   zx::result<LayerId> CreateLayerLocked() TA_REQ(mtx());
   zx::result<EventInfo> CreateEventLocked() TA_REQ(mtx());
 

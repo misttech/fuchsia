@@ -3,59 +3,127 @@
 // found in the LICENSE file.
 
 use crate::{
-    fastboot::{get_var, network::tcp::TcpNetworkFactory},
-    logger::{streamer::DiagnosticsStreamer, Logger},
     overnet::host_pipe::{spawn, HostAddr, LogBuffer},
     FASTBOOT_MAX_AGE, MDNS_MAX_AGE, ZEDBOOT_MAX_AGE,
 };
 use addr::TargetAddr;
-use anyhow::{anyhow, bail, Context, Error, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use compat_info::{CompatibilityInfo, CompatibilityState};
 use ffx::{TargetAddrInfo, TargetIpPort};
 use ffx_daemon_core::events::{self, EventSynthesizer};
-use ffx_daemon_events::{FastbootInterface, TargetConnectionState, TargetEvent, TargetInfo};
-use ffx_fastboot::common::find::open_interface_with_serial;
+use ffx_daemon_events::{FastbootInterface, TargetConnectionState, TargetEvent, TargetEventInfo};
+use ffx_fastboot::common::fastboot::tcp_proxy;
+use ffx_fastboot_interface::fastboot_interface::Fastboot;
 use fidl_fuchsia_developer_ffx as ffx;
 use fidl_fuchsia_developer_ffx::TargetState;
 use fidl_fuchsia_developer_remotecontrol::{IdentifyHostResponse, RemoteControlProxy};
-use fidl_fuchsia_net::{IpAddress, Ipv4Address, Ipv6Address, Subnet};
+use fidl_fuchsia_net::{IpAddress, Ipv4Address, Ipv6Address};
 use fuchsia_async::Task;
 use netext::IsLocalAddr;
 use rand::random;
-use rcs::{knock_rcs, RcsConnection, RcsConnectionError};
+use rcs::{knock_rcs, RcsConnection};
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     cmp::Ordering,
     collections::{BTreeSet, HashSet},
     default::Default,
     fmt,
     fmt::Debug,
     hash::{Hash, Hasher},
-    net::{IpAddr, Ipv6Addr, SocketAddr},
+    net::{IpAddr, SocketAddr},
     rc::{Rc, Weak},
     sync::Arc,
     time::{Duration, Instant, SystemTime},
 };
-use timeout::timeout;
 use usb_bulk::AsyncInterface as Interface;
+use usb_fastboot_discovery::open_interface_with_serial;
 
-const IDENTIFY_HOST_TIMEOUT_MILLIS: u64 = 10000;
+mod identity;
+mod update;
+pub use self::{
+    identity::{Identity, IdentityCmp},
+    update::{TargetUpdate, TargetUpdateBuilder},
+};
+
 const DEFAULT_SSH_PORT: u16 = 22;
+const CONFIG_HOST_PIPE_SSH_TIMEOUT: &str = "daemon.host_pipe_ssh_timeout";
 
-#[derive(Debug, Clone, Hash)]
-pub enum TargetAddrType {
-    Ssh,
-    Manual(Option<SystemTime>),
-    Netsvc,
-    Fastboot(FastbootInterface),
+pub(crate) type SharedIdentity = Rc<Identity>;
+pub(crate) type WeakIdentity = Weak<Identity>;
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct TargetAddrStatus {
+    // TODO(b/308703153): Add timestamp once the address is turned into a map key.
+    pub(crate) protocol: TargetProtocol,
+    pub(crate) transport: TargetTransport,
+    pub(crate) source: TargetSource,
+}
+
+impl TargetAddrStatus {
+    pub fn ssh() -> Self {
+        Self {
+            protocol: TargetProtocol::Ssh,
+            transport: TargetTransport::Network,
+            source: TargetSource::Discovered,
+        }
+    }
+
+    pub fn fastboot(interface: TargetTransport) -> Self {
+        Self {
+            protocol: TargetProtocol::Fastboot,
+            transport: interface,
+            source: TargetSource::Discovered,
+        }
+    }
+
+    pub fn netsvc() -> Self {
+        Self {
+            protocol: TargetProtocol::Netsvc,
+            transport: TargetTransport::Network,
+            source: TargetSource::Discovered,
+        }
+    }
+
+    pub fn manually_added(self) -> Self {
+        Self { source: TargetSource::Manual, ..self }
+    }
+
+    pub fn manually_added_until(self, expires_after: SystemTime) -> Self {
+        Self { source: TargetSource::Ephemeral { expires_after }, ..self }
+    }
+
+    pub fn protocol(&self) -> TargetProtocol {
+        self.protocol
+    }
+
+    pub fn transport(&self) -> TargetTransport {
+        self.transport
+    }
+
+    pub fn source(&self) -> TargetSource {
+        self.source
+    }
+
+    pub fn is_manual(&self) -> bool {
+        !matches!(self.source, TargetSource::Discovered)
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct TargetAddrEntry {
     pub addr: TargetAddr,
     pub timestamp: DateTime<Utc>,
-    pub addr_type: TargetAddrType,
+    pub(crate) status: TargetAddrStatus,
+}
+
+impl std::ops::Deref for TargetAddrEntry {
+    type Target = TargetAddrStatus;
+
+    fn deref(&self) -> &Self::Target {
+        &self.status
+    }
 }
 
 impl Hash for TargetAddrEntry {
@@ -76,15 +144,15 @@ impl PartialEq for TargetAddrEntry {
 impl Eq for TargetAddrEntry {}
 
 impl TargetAddrEntry {
-    pub fn new(addr: TargetAddr, timestamp: DateTime<Utc>, addr_type: TargetAddrType) -> Self {
-        Self { addr, timestamp, addr_type }
+    pub fn new(addr: TargetAddr, timestamp: DateTime<Utc>, status: TargetAddrStatus) -> Self {
+        Self { addr, timestamp, status }
     }
 }
 
 /// This imple is intended mainly for testing.
 impl From<TargetAddr> for TargetAddrEntry {
     fn from(addr: TargetAddr) -> Self {
-        Self { addr, timestamp: Utc::now(), addr_type: TargetAddrType::Ssh }
+        Self { addr, timestamp: Utc::now(), status: TargetAddrStatus::ssh() }
     }
 }
 
@@ -97,6 +165,53 @@ impl Ord for TargetAddrEntry {
 impl PartialOrd for TargetAddrEntry {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum TargetProtocol {
+    Ssh,
+    Netsvc,
+    Fastboot,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum TargetTransport {
+    Network,
+    // Kept to describe Fastboot over UDP.
+    // Otherwise we don't need this granularity.
+    NetworkUdp,
+    Usb,
+}
+
+impl Into<FastbootInterface> for TargetTransport {
+    fn into(self) -> FastbootInterface {
+        match self {
+            TargetTransport::Network => FastbootInterface::Tcp,
+            TargetTransport::NetworkUdp => FastbootInterface::Udp,
+            TargetTransport::Usb => FastbootInterface::Usb,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum TargetSource {
+    Manual,
+    Discovered,
+    Ephemeral { expires_after: SystemTime },
+}
+
+impl TargetSource {
+    fn merge(&mut self, other: Self) {
+        use TargetSource::*;
+        *self = match (*self, other) {
+            (Discovered, _) => other,
+            (Manual, _) | (_, Manual) => Manual,
+            (Ephemeral { expires_after: a }, Ephemeral { expires_after: b }) => {
+                Ephemeral { expires_after: std::cmp::max(a, b) }
+            }
+            (_, Discovered) => return,
+        };
     }
 }
 
@@ -126,30 +241,44 @@ impl EventSynthesizer<TargetEvent> for TargetEventSynthesizer {
     }
 }
 
+pub(crate) struct HostPipeState {
+    pub task: Task<()>,
+    pub overnet_node: Arc<overnet_core::Router>,
+    pub(crate) ssh_addr: Option<SocketAddr>,
+}
+
 pub struct Target {
     pub events: events::Queue<TargetEvent>,
 
-    pub(crate) host_pipe: RefCell<Option<Task<()>>>,
-    logger: Rc<RefCell<Option<Task<()>>>>,
+    pub(crate) host_pipe: RefCell<Option<HostPipeState>>,
 
     // id is the locally created "primary identifier" for this target.
     id: u64,
     // ids keeps track of additional ids discovered over Overnet, these could
     // come from old Daemons, or other Daemons. The set should be used
     ids: RefCell<HashSet<u64>>,
-    nodename: RefCell<Option<String>>,
+    // Shared identity across duplicated targets. Not all targets have an identity.
+    identity: Cell<Option<SharedIdentity>>,
     state: RefCell<TargetConnectionState>,
+    // Discovered targets default to disabled and are marked as enabled during OpenTarget.
+    // Manually added targets are always considered enabled.
+    // Disabled targets are filtered by default in the public facing TargetCollection API,
+    // except within `discover_target`.
+    enabled: Cell<bool>,
+    // Indicates a target was manually added for a single ffx invocation and can be immediately
+    // disabled when not actively used.
+    // This transient bit is cleared when the target next transitions out of the `Disconnected`
+    // state.
+    transient: Cell<bool>,
+    keep_alive: Cell<Weak<KeepAliveHandle>>,
     pub(crate) last_response: RefCell<DateTime<Utc>>,
     pub(crate) addrs: RefCell<BTreeSet<TargetAddrEntry>>,
     // ssh_port if set overrides the global default configuration for ssh port,
     // for this target.
     ssh_port: RefCell<Option<u16>>,
-    // used for Fastboot
-    pub(crate) serial: RefCell<Option<String>>,
     pub(crate) fastboot_interface: RefCell<Option<FastbootInterface>>,
     pub(crate) build_config: RefCell<Option<BuildConfig>>,
     boot_timestamp_nanos: RefCell<Option<u64>>,
-    diagnostics_info: Arc<DiagnosticsStreamer<'static>>,
     host_pipe_log_buffer: Rc<LogBuffer>,
 
     // The event synthesizer is retained on the target as a strong
@@ -158,40 +287,46 @@ pub struct Target {
     pub(crate) ssh_host_address: RefCell<Option<HostAddr>>,
     // A user provided address that should be used to SSH.
     preferred_ssh_address: RefCell<Option<TargetAddr>>,
+
+    compatibility_status: RefCell<Option<CompatibilityInfo>>,
 }
 
 impl Target {
-    pub fn new() -> Rc<Self> {
+    pub(crate) fn new_with_id(id: u64) -> Rc<Self> {
         let target_event_synthesizer = Rc::new(TargetEventSynthesizer::default());
         let events = events::Queue::new(&target_event_synthesizer);
 
-        let id = random::<u64>();
         let mut ids = HashSet::new();
-        ids.insert(id.clone());
+        ids.insert(id);
 
         let target = Rc::new(Self {
-            id: id.clone(),
+            id,
             ids: RefCell::new(ids),
-            nodename: RefCell::new(None),
+            identity: None.into(),
             last_response: RefCell::new(Utc::now()),
             state: RefCell::new(Default::default()),
+            enabled: Cell::new(false),
+            transient: Cell::new(false),
+            keep_alive: Cell::new(Weak::new()),
             addrs: RefCell::new(BTreeSet::new()),
             ssh_port: RefCell::new(None),
-            serial: RefCell::new(None),
             boot_timestamp_nanos: RefCell::new(None),
             build_config: Default::default(),
-            diagnostics_info: Arc::new(DiagnosticsStreamer::default()),
             events,
             host_pipe: Default::default(),
             host_pipe_log_buffer: Rc::new(LogBuffer::new(5)),
-            logger: Default::default(),
             target_event_synthesizer,
             fastboot_interface: RefCell::new(None),
             ssh_host_address: RefCell::new(None),
             preferred_ssh_address: RefCell::new(None),
+            compatibility_status: RefCell::new(None),
         });
         target.target_event_synthesizer.target.replace(Rc::downgrade(&target));
         target
+    }
+
+    pub fn new() -> Rc<Self> {
+        Self::new_with_id(random::<u64>())
     }
 
     pub fn new_named<S>(nodename: S) -> Rc<Self>
@@ -199,7 +334,7 @@ impl Target {
         S: Into<String>,
     {
         let target = Self::new();
-        target.nodename.replace(Some(nodename.into()));
+        target.replace_identity(Identity::from_name(nodename.into()));
         target
     }
 
@@ -217,10 +352,14 @@ impl Target {
         S: Into<String>,
     {
         let target = Self::new();
-        target.nodename.replace(nodename.map(Into::into));
+        if let Some(nodename) = nodename {
+            target.replace_identity(Identity::from_name(nodename));
+        }
         let now = Utc::now();
         target.addrs_extend(
-            addrs.iter().map(|addr| TargetAddrEntry::new(*addr, now.clone(), TargetAddrType::Ssh)),
+            addrs
+                .iter()
+                .map(|addr| TargetAddrEntry::new(*addr, now.clone(), TargetAddrStatus::ssh())),
         );
         target
     }
@@ -231,7 +370,9 @@ impl Target {
         I: Iterator<Item = TargetAddrEntry>,
     {
         let target = Self::new();
-        target.nodename.replace(nodename.map(Into::into));
+        if let Some(nodename) = nodename {
+            target.replace_identity(Identity::from_name(nodename));
+        }
         target.addrs.replace(BTreeSet::from_iter(entries));
         target
     }
@@ -246,17 +387,24 @@ impl Target {
         S: Into<String>,
     {
         let target = Self::new();
-        target.nodename.replace(nodename.map(Into::into));
-        target.serial.replace(serial);
+
+        let identity = Identity::try_from_name_serial(nodename, serial);
+
+        if let Some(identity) = identity {
+            target.replace_identity(identity);
+        }
+
+        let transport = match interface {
+            FastbootInterface::Tcp => TargetTransport::Network,
+            FastbootInterface::Udp => TargetTransport::NetworkUdp,
+            FastbootInterface::Usb => TargetTransport::Usb,
+        };
+
         target.addrs.replace(
             addrs
                 .iter()
                 .map(|e| {
-                    TargetAddrEntry::new(
-                        *e,
-                        Utc::now(),
-                        TargetAddrType::Fastboot(interface.clone()),
-                    )
+                    TargetAddrEntry::new(*e, Utc::now(), TargetAddrStatus::fastboot(transport))
                 })
                 .collect(),
         );
@@ -270,20 +418,25 @@ impl Target {
         S: Into<String>,
     {
         let target = Self::new();
-        target.nodename.replace(nodename.map(Into::into));
+        if let Some(nodename) = nodename {
+            target.replace_identity(Identity::from_name(nodename));
+        }
         target.addrs.replace(
             addrs
                 .iter()
-                .map(|e| TargetAddrEntry::new(*e, Utc::now(), TargetAddrType::Netsvc))
+                .map(|e| TargetAddrEntry::new(*e, Utc::now(), TargetAddrStatus::netsvc()))
                 .collect(),
         );
         target.update_connection_state(|_| TargetConnectionState::Zedboot(Instant::now()));
         target
     }
 
-    pub fn new_with_serial(serial: &str) -> Rc<Self> {
+    /// Constructs a Target based on the given serial number.
+    /// Assumes the Target is in Fastboot mode and connected via USB
+    pub fn new_for_usb(serial: &str) -> Rc<Self> {
         let target = Self::new();
-        target.serial.replace(Some(serial.to_string()));
+        target.replace_identity(Identity::from_serial(serial));
+        target.fastboot_interface.replace(Some(FastbootInterface::Usb));
         target.update_connection_state(|_| TargetConnectionState::Fastboot(Instant::now()));
         target
     }
@@ -301,9 +454,9 @@ impl Target {
         target
     }
 
-    pub fn from_target_info(mut t: TargetInfo) -> Rc<Self> {
+    pub fn from_target_event_info(mut t: TargetEventInfo) -> Rc<Self> {
         if let Some(s) = t.serial {
-            Self::new_with_serial(&s)
+            Self::new_for_usb(&s)
         } else {
             let res = Self::new_with_addrs(t.nodename.take(), t.addresses.drain(..).collect());
             *res.ssh_host_address.borrow_mut() = t.ssh_host_address.take().map(HostAddr::from);
@@ -312,11 +465,11 @@ impl Target {
         }
     }
 
-    pub fn from_netsvc_target_info(mut t: TargetInfo) -> Rc<Self> {
+    pub fn from_netsvc_target_info(mut t: TargetEventInfo) -> Rc<Self> {
         Self::new_with_netsvc_addrs(t.nodename.take(), t.addresses.drain(..).collect())
     }
 
-    pub fn from_fastboot_target_info(mut t: TargetInfo) -> Result<Rc<Self>> {
+    pub fn from_fastboot_target_info(mut t: TargetEventInfo) -> Result<Rc<Self>> {
         Ok(Self::new_with_fastboot_addrs(
             t.nodename.take(),
             t.serial.take(),
@@ -325,13 +478,45 @@ impl Target {
         ))
     }
 
-    pub fn target_info(&self) -> TargetInfo {
-        TargetInfo {
+    fn infer_fastboot_interface(&self) -> Option<FastbootInterface> {
+        match self.fastboot_interface() {
+            None => {
+                // We take the first address which is of type Fastboot as
+                // Fuchsia devices expose only one Fastboot interface
+                // at a time.
+                if let Some(f_addr) = self
+                    .addrs
+                    .borrow()
+                    .clone()
+                    .into_iter()
+                    .filter(|addr| matches!(addr.protocol, TargetProtocol::Fastboot))
+                    .take(1)
+                    .next()
+                {
+                    Some(f_addr.transport.into())
+                } else {
+                    // We did not get any addresses that were fastboot addresses
+                    // do we have a serial number? If so throw it as USB
+                    if self.identity().as_deref().map(Identity::serial).flatten().is_some() {
+                        Some(FastbootInterface::Usb)
+                    } else {
+                        None
+                    }
+                }
+            }
+            Some(s) => Some(s),
+        }
+    }
+
+    pub fn target_info(&self) -> TargetEventInfo {
+        let fastboot_interface = self.infer_fastboot_interface();
+
+        TargetEventInfo {
             nodename: self.nodename(),
             addresses: self.addrs(),
             serial: self.serial(),
             ssh_port: self.ssh_port(),
-            fastboot_interface: self.fastboot_interface(),
+            fastboot_interface,
             ssh_host_address: self.ssh_host_address.borrow().as_ref().map(|h| h.to_string()),
         }
     }
@@ -369,6 +554,51 @@ impl Target {
         }
     }
 
+    fn clear_ids(&self) {
+        let mut ids = self.ids.borrow_mut();
+        ids.clear();
+        ids.insert(self.id);
+    }
+
+    pub(crate) fn replace_identity(&self, ident: Identity) {
+        self.identity.replace(Some(Rc::new(ident.into())));
+    }
+
+    pub(crate) fn take_identity(&self) -> Option<SharedIdentity> {
+        self.identity.take()
+    }
+
+    pub(crate) fn replace_shared_identity(&self, ident: SharedIdentity) {
+        self.identity.replace(Some(ident));
+    }
+
+    pub(crate) fn try_with_identity<F: FnOnce(&SharedIdentity) -> T, T>(&self, f: F) -> Option<T> {
+        let id = self.identity.take()?;
+        let res = f(&id);
+        self.identity.replace(Some(id));
+        Some(res)
+    }
+
+    pub fn has_identity(&self) -> bool {
+        self.try_with_identity(|_| ()).is_some()
+    }
+
+    pub fn identity(&self) -> Option<SharedIdentity> {
+        self.try_with_identity(Rc::clone)
+    }
+
+    pub fn identity_matches(&self, other: &Target) -> bool {
+        self.try_with_identity(|self_id| {
+            other.try_with_identity(|other_id| self_id.is_same(other_id))
+        })
+        .flatten()
+        .unwrap_or(false)
+    }
+
+    pub fn rcs_address(&self) -> Option<SocketAddr> {
+        self.host_pipe.borrow().as_ref().and_then(|hp| hp.ssh_addr)
+    }
+
     /// ssh_address returns the SocketAddr of the next SSH address to connect to for this target.
     ///
     /// The sort algorithm for SSH address priority is in order of:
@@ -383,6 +613,10 @@ impl Target {
     /// connection attempt.
     pub fn ssh_address(&self) -> Option<SocketAddr> {
         use itertools::Itertools;
+
+        if let Some(addr) = self.rcs_address() {
+            return Some(addr);
+        }
 
         // Order e1 & e2 by most recent timestamp
         let recency = |e1: &TargetAddrEntry, e2: &TargetAddrEntry| e2.timestamp.cmp(&e1.timestamp);
@@ -409,14 +643,13 @@ impl Target {
                 }
             }
 
-            match (&e1.addr_type, &e2.addr_type) {
+            match (e1.is_manual(), e2.is_manual()) {
                 // Note: for manually added addresses, they are ordered strictly
                 // by recency, not link-local first.
-                (TargetAddrType::Manual(_), TargetAddrType::Manual(_)) => recency(e1, e2),
-                (TargetAddrType::Manual(_), TargetAddrType::Ssh) => Ordering::Less,
-                (TargetAddrType::Ssh, TargetAddrType::Manual(_)) => Ordering::Greater,
-                (TargetAddrType::Ssh, TargetAddrType::Ssh) => link_local_recency(e1, e2),
-                _ => Ordering::Less, // Should not get here due to filtering in next line.
+                (true, true) => recency(e1, e2),
+                (true, false) => Ordering::Less,
+                (false, true) => Ordering::Greater,
+                (false, false) => link_local_recency(e1, e2),
             }
         };
 
@@ -424,10 +657,7 @@ impl Target {
             .addrs
             .borrow()
             .iter()
-            .filter(|t| match t.addr_type {
-                TargetAddrType::Manual(_) | TargetAddrType::Ssh => true,
-                _ => false,
-            })
+            .filter(|t| matches!(t.protocol, TargetProtocol::Ssh))
             .sorted_by(|e1, e2| manual_link_local_recency(e1, e2))
             .next()
             .map(|e| e.addr);
@@ -447,10 +677,7 @@ impl Target {
             .borrow()
             .iter()
             .sorted_by(|e1, e2| recency(e1, e2))
-            .find(|t| match t.addr_type {
-                TargetAddrType::Netsvc => true,
-                _ => false,
-            })
+            .find(|t| matches!(t.protocol, TargetProtocol::Netsvc))
             .map(|addr_entry| addr_entry.addr.clone())
     }
 
@@ -462,14 +689,8 @@ impl Target {
             .borrow()
             .iter()
             .sorted_by(|e1, e2| recency(e1, e2))
-            .find(|t| match t.addr_type {
-                TargetAddrType::Fastboot(_) => true,
-                _ => false,
-            })
-            .map(|addr_entry| match addr_entry.addr_type {
-                TargetAddrType::Fastboot(ref f) => (addr_entry.addr.clone(), f.clone()),
-                _ => unreachable!(),
-            })
+            .find(|t| matches!(t.protocol, TargetProtocol::Fastboot))
+            .map(|addr_entry| (addr_entry.addr, addr_entry.transport.into()))
     }
 
     pub fn ssh_address_info(&self) -> Option<ffx::TargetAddrInfo> {
@@ -505,23 +726,11 @@ impl Target {
     }
 
     pub fn nodename(&self) -> Option<String> {
-        self.nodename.borrow().clone()
+        self.try_with_identity(|id| id.name().map(String::from)).flatten()
     }
 
     pub fn nodename_str(&self) -> String {
-        self.nodename.borrow().clone().unwrap_or("<unknown>".to_owned())
-    }
-
-    pub fn set_nodename(&self, nodename: String) {
-        if let Some(current_name) = self.nodename() {
-            if nodename != current_name {
-                tracing::debug!(
-                    "Changing target {} nodename from {current_name} to {nodename}",
-                    self.id()
-                );
-            }
-        }
-        self.nodename.borrow_mut().replace(nodename);
+        self.nodename().unwrap_or("<unknown>".to_owned())
     }
 
     pub fn boot_timestamp_nanos(&self) -> Option<u64> {
@@ -532,12 +741,34 @@ impl Target {
         self.boot_timestamp_nanos.replace(ts);
     }
 
-    pub fn stream_info(&self) -> Arc<DiagnosticsStreamer<'static>> {
-        self.diagnostics_info.clone()
+    pub fn serial(&self) -> Option<String> {
+        self.try_with_identity(|id| id.serial().map(String::from)).flatten()
     }
 
-    pub fn serial(&self) -> Option<String> {
-        self.serial.borrow().clone()
+    pub fn get_compatibility_status(&self) -> Option<CompatibilityInfo> {
+        self.compatibility_status.borrow().clone()
+    }
+
+    pub fn set_compatibility_status(&self, status: &Option<CompatibilityInfo>) {
+        let current_status = self.get_compatibility_status();
+        let new_status = match current_status {
+            Some(_) => {
+                println!(
+                    "ignoring status change from id:{} {:?} to {:?}",
+                    self.id(),
+                    current_status,
+                    status
+                );
+                return;
+            }
+            None if status.is_some() => {
+                println!("status change from None to id: {} {:?}", self.id(), status);
+                status.clone()
+            }
+            _ => None,
+        };
+
+        self.compatibility_status.replace(new_status);
     }
 
     pub fn state(&self) -> TargetConnectionState {
@@ -584,6 +815,7 @@ impl Target {
             // a call to .disconnect(). If the target is a manual target, it actually transitions to
             // the manual state.
             TargetConnectionState::Disconnected => {
+                self.clear_ids();
                 if self.is_manual() {
                     let timeout = self.get_manual_timeout();
                     let last_seen = if timeout.is_some() { Some(Instant::now()) } else { None };
@@ -593,7 +825,19 @@ impl Target {
                     } else {
                         let current = SystemTime::now();
                         if timeout.is_none() || current < timeout.unwrap() {
-                            new_state = TargetConnectionState::Manual(last_seen)
+                            new_state = match former_state {
+                                TargetConnectionState::Fastboot(old_last_seen) => {
+                                    TargetConnectionState::Fastboot(
+                                        last_seen.unwrap_or(old_last_seen),
+                                    )
+                                }
+                                TargetConnectionState::Zedboot(old_last_seen) => {
+                                    TargetConnectionState::Zedboot(
+                                        last_seen.unwrap_or(old_last_seen),
+                                    )
+                                }
+                                _ => TargetConnectionState::Manual(last_seen),
+                            };
                         }
                     }
                 }
@@ -618,8 +862,9 @@ impl Target {
             // The following states are unconditional transitions, as they're states that are
             // difficult to otherwise interrogate, but also states that are known to invalidate all
             // other states.
-            TargetConnectionState::Fastboot(_) => {}
-            TargetConnectionState::Zedboot(_) => {}
+            TargetConnectionState::Fastboot(_) | TargetConnectionState::Zedboot(_) => {
+                self.update_last_response(Utc::now());
+            }
         }
 
         if former_state == new_state {
@@ -631,6 +876,7 @@ impl Target {
             );
             return;
         }
+
         tracing::debug!(
             "Updating state for {}@{} from {:?} to {:?}",
             self.nodename_str(),
@@ -638,7 +884,23 @@ impl Target {
             former_state,
             new_state
         );
+
+        let rediscovered = matches!(former_state, TargetConnectionState::Disconnected);
+        let expired = matches!(new_state, TargetConnectionState::Disconnected);
+
         self.state.replace(new_state);
+
+        if rediscovered {
+            // If the target is going from the disconnected state to discovered, clear the transient
+            // flag.
+            if self.transient.get() {
+                tracing::debug!("Cleared transient flag for target connection state transition");
+                self.transient.set(false);
+            }
+        } else if expired && self.transient.get() && self.is_enabled() {
+            tracing::debug!("Enabled transient target expired, closing...");
+            self.disable();
+        }
 
         if self.get_connection_state().is_rcs() {
             self.events.push(TargetEvent::RcsActivated).unwrap_or_else(|err| {
@@ -663,13 +925,16 @@ impl Target {
                 TargetAddrEntry::new(
                     e.addr,
                     Utc::now(),
-                    TargetAddrType::Fastboot(interface.clone()),
+                    TargetAddrStatus::fastboot(TargetTransport::Network).manually_added(),
                 )
             })
             .collect();
         self.addrs.replace(repl_addr);
         self.fastboot_interface().replace(interface);
         self.update_connection_state(|_| TargetConnectionState::Fastboot(Instant::now()));
+
+        // Persist the enabled bit since the target is no longer "manually added" at this point.
+        self.enable();
     }
 
     pub fn rcs(&self) -> Option<RcsConnection> {
@@ -680,7 +945,12 @@ impl Target {
     }
 
     pub async fn usb(&self) -> Result<(String, Interface)> {
-        match self.serial.borrow().as_ref() {
+        if !self.is_enabled() {
+            return Err(anyhow!("Cannot open USB interface for disabled target"));
+        }
+
+        let id = self.identity();
+        match id.as_ref().and_then(|i| i.serial()) {
             Some(s) => Ok((
                 s.to_string(),
                 open_interface_with_serial(s).await.with_context(|| {
@@ -711,8 +981,8 @@ impl Target {
         *addrs = addrs
             .clone()
             .into_iter()
-            .filter(|entry| match (&entry.addr_type, &entry.addr.ip()) {
-                (TargetAddrType::Manual(_), _) => true,
+            .filter(|entry| match (entry.is_manual(), &entry.addr.ip()) {
+                (true, _) => true,
                 (_, IpAddr::V6(v)) => entry.addr.scope_id() != 0 || !v.is_link_local_addr(),
                 _ => true,
             })
@@ -726,8 +996,8 @@ impl Target {
         *addrs = addrs
             .clone()
             .into_iter()
-            .filter(|entry| match (&entry.addr_type, &entry.addr.ip(), entry.addr.port()) {
-                (TargetAddrType::Manual(_), _, _) => true,
+            .filter(|entry| match (entry.is_manual(), &entry.addr.ip(), entry.addr.port()) {
+                (true, _, _) => true,
                 (_, IpAddr::V4(v), p) => !(v.is_loopback() && p == 0),
                 _ => true,
             })
@@ -766,10 +1036,7 @@ impl Target {
         self.addrs
             .borrow()
             .iter()
-            .filter_map(|entry| match entry.addr_type {
-                TargetAddrType::Manual(_) => Some(entry.addr.clone()),
-                _ => None,
-            })
+            .filter_map(|entry| entry.is_manual().then(|| entry.addr))
             .collect()
     }
 
@@ -785,6 +1052,7 @@ impl Target {
             assert_eq!(s, TargetConnectionState::Disconnected);
             TargetConnectionState::Mdns(Instant::now())
         });
+        s.enable();
         s
     }
 
@@ -800,15 +1068,6 @@ impl Target {
         let mut addrs = self.addrs.borrow_mut();
 
         for mut addr in new_addrs.into_iter() {
-            // Do not add localhost to the collection during extend.
-            // Note: localhost addresses are added sometimes by direct
-            // insertion, in the manual add case.
-            // IPv4 is allowed so that emulators and tunneled devices are handled correctly.
-            let localhost_v6 = IpAddr::V6(Ipv6Addr::LOCALHOST);
-            if addr.addr.ip() == localhost_v6 {
-                continue;
-            }
-
             // Subtle:
             // Some sources of addresses can not be scoped, such as those which come from queries
             // over Overnet.
@@ -829,6 +1088,12 @@ impl Target {
                     continue;
                 }
             }
+
+            if let Some(entry) = addrs.get(&addr) {
+                // If the existing entry was not from discovery, unmark the incoming entry as well.
+                addr.status.source.merge(entry.source);
+            }
+
             addrs.replace(addr);
         }
     }
@@ -838,70 +1103,6 @@ impl Target {
         if *last_response < other {
             *last_response = other;
         }
-    }
-
-    #[tracing::instrument]
-    pub fn from_identify(identify: IdentifyHostResponse) -> Result<Rc<Self>, Error> {
-        // TODO(raggi): allow targets to truly be created without a nodename.
-        let nodename = match identify.nodename {
-            Some(n) => n,
-            None => bail!("Target identification missing a nodename: {:?}", identify),
-        };
-
-        let target = Target::new_named(nodename);
-        target.update_last_response(Utc::now().into());
-        if let Some(ids) = identify.ids {
-            target.merge_ids(ids.iter());
-        }
-        *target.build_config.borrow_mut() =
-            if identify.board_config.is_some() || identify.product_config.is_some() {
-                let p = identify.product_config.unwrap_or("<unknown>".to_string());
-                let b = identify.board_config.unwrap_or("<unknown>".to_string());
-                Some(BuildConfig { product_config: p, board_config: b })
-            } else {
-                None
-            };
-
-        if let Some(serial) = identify.serial_number {
-            target.serial.borrow_mut().replace(serial);
-        }
-        if let Some(t) = identify.boot_timestamp_nanos {
-            target.boot_timestamp_nanos.borrow_mut().replace(t);
-        }
-        if let Some(addrs) = identify.addresses {
-            let mut taddrs = target.addrs.borrow_mut();
-            let now = Utc::now();
-            for addr in addrs.iter().copied().map(|Subnet { addr, prefix_len: _ }| {
-                let addr = match addr {
-                    IpAddress::Ipv4(Ipv4Address { addr }) => addr.into(),
-                    IpAddress::Ipv6(Ipv6Address { addr }) => addr.into(),
-                };
-                TargetAddrEntry::new(TargetAddr::new(addr, 0, 0), now.clone(), TargetAddrType::Ssh)
-            }) {
-                taddrs.insert(addr);
-            }
-        }
-        Ok(target)
-    }
-
-    #[tracing::instrument]
-    pub async fn from_rcs_connection(rcs: RcsConnection) -> Result<Rc<Self>, RcsConnectionError> {
-        let identify_result =
-            timeout(Duration::from_millis(IDENTIFY_HOST_TIMEOUT_MILLIS), rcs.proxy.identify_host())
-                .await
-                .map_err(|e| RcsConnectionError::ConnectionTimeoutError(e))?;
-
-        let identify = match identify_result {
-            Ok(res) => match res {
-                Ok(target) => target,
-                Err(e) => return Err(RcsConnectionError::RemoteControlError(e)),
-            },
-            Err(e) => return Err(RcsConnectionError::FidlConnectionError(e)),
-        };
-        let target =
-            Target::from_identify(identify).map_err(|e| RcsConnectionError::TargetError(e))?;
-        target.update_connection_state(move |_| TargetConnectionState::Rcs(rcs));
-        Ok(target)
     }
 
     /// Sets the preferred SSH address.
@@ -928,9 +1129,10 @@ impl Target {
     /// `HostPipe`.
     pub fn maybe_reconnect(self: &Rc<Self>) {
         if self.host_pipe.borrow().is_some() {
-            drop(self.host_pipe.take());
+            let HostPipeState { task, overnet_node, ssh_addr: _ } = self.host_pipe.take().unwrap();
+            drop(task);
             tracing::debug!("Reconnecting host_pipe for {}@{}", self.nodename_str(), self.id());
-            self.run_host_pipe();
+            self.run_host_pipe(&overnet_node);
         }
     }
 
@@ -939,53 +1141,93 @@ impl Target {
     }
 
     #[tracing::instrument]
-    pub fn run_host_pipe(self: &Rc<Self>) {
+    pub fn run_host_pipe(self: &Rc<Self>, overnet_node: &Arc<overnet_core::Router>) {
+        if !self.is_enabled() {
+            tracing::error!("Cannot run host pipe for device not in use");
+            return;
+        }
+
         if self.host_pipe.borrow().is_some() {
-            tracing::debug!("Host pipe is already set for {}@{}.", self.nodename_str(), self.id());
+            // tracing::debug!("Host pipe is already set for {}@{}.", self.nodename_str(), self.id());
             return;
         }
 
         let weak_target = Rc::downgrade(self);
         let target_name_str = format!("{}@{}", self.nodename_str(), self.id());
-        self.host_pipe.borrow_mut().replace(Task::local(async move {
-            // The purpose of a host pipe is to ultimately get us connected to RCS and let us transition
-            // to the RCS connected state. If we're already in that state, and the RCS connection is
-            // active, we don't need a host pipe. This will start happening more as we introduce USB
-            // links, where the first thing we hear about a target is its appearance as an Overnet peer,
-            // and thus we have an RCS connection from inception.
-            {
-                let Some(target) = weak_target.upgrade() else {
-                    // weird that self is already gone, but ¯\_(ツ)_/¯
-                    return;
-                };
-                let state = target.state.borrow().clone();
-                if let TargetConnectionState::Rcs(rcs) = state {
-                    if knock_rcs(&rcs.proxy).await.is_ok() {
+        let node = Arc::clone(overnet_node);
+        let overnet_node = Arc::clone(overnet_node);
+        self.host_pipe.borrow_mut().replace(HostPipeState {
+            task: Task::local(async move {
+                // The purpose of a host pipe is to ultimately get us connected to RCS and let us transition
+                // to the RCS connected state. If we're already in that state, and the RCS connection is
+                // active, we don't need a host pipe. This will start happening more as we introduce USB
+                // links, where the first thing we hear about a target is its appearance as an Overnet peer,
+                // and thus we have an RCS connection from inception.
+                {
+                    let Some(target) = weak_target.upgrade() else {
+                        // weird that self is already gone, but ¯\_(ツ)_/¯
                         return;
+                    };
+                    let state = target.state.borrow().clone();
+                    if let TargetConnectionState::Rcs(rcs) = state {
+                        if knock_rcs(&rcs.proxy).await.is_ok() {
+                            return;
+                        }
                     }
                 }
-            }
 
-            let watchdogs: bool =
-                ffx_config::get("watchdogs.host_pipe.enabled").await.unwrap_or(false);
-            let nr = spawn(weak_target.clone(), watchdogs).await;
-            match nr {
-                Ok(mut hp) => {
-                    tracing::debug!("host pipe spawn returned OK for {target_name_str}");
-                    let r = hp.wait().await;
-                    // XXX(raggi): decide what to do with this log data:
-                    tracing::info!("HostPipeConnection returned: {:?}", r);
-                }
-                Err(e) => {
-                    tracing::warn!("Host pipe spawn {:?}", e);
-                }
-            }
+                let watchdogs: bool =
+                    ffx_config::get("watchdogs.host_pipe.enabled").await.unwrap_or(false);
 
-            weak_target.upgrade().and_then(|target| {
-                tracing::debug!("Exiting run_host_pipe for {target_name_str}");
-                target.host_pipe.borrow_mut().take()
-            });
-        }));
+                let ssh_timeout: u16 =
+                    ffx_config::get(CONFIG_HOST_PIPE_SSH_TIMEOUT).await.unwrap_or(50);
+                let nr = spawn(
+                    weak_target.clone(),
+                    watchdogs,
+                    ssh_timeout,
+                    std::sync::Arc::clone(&node),
+                )
+                .await;
+
+                match nr {
+                    Ok(mut hp) => {
+                        tracing::debug!("host pipe spawn returned OK for {target_name_str}");
+                        let compatibility_status = hp.get_compatibility_status();
+
+                        if let Some(target) = weak_target.upgrade() {
+                            target.set_compatibility_status(&compatibility_status);
+
+                            if let Some(host_pipe) = target.host_pipe.borrow_mut().as_mut() {
+                                host_pipe.ssh_addr = Some(hp.get_address());
+                            }
+                        }
+
+                        // wait for the host pipe to exit.
+                        let r = hp.wait(&node).await;
+                        // XXX(raggi): decide what to do with this log data:
+                        tracing::info!("HostPipeConnection returned: {:?}", r);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Host pipe spawn {:?}", e);
+                        let compatibility_status = Some(CompatibilityInfo {
+                            status: CompatibilityState::Error,
+                            platform_abi: 0,
+                            message: format!("Host connection failed: {e}"),
+                        });
+                        if let Some(target) = weak_target.upgrade() {
+                            target.set_compatibility_status(&compatibility_status);
+                        }
+                    }
+                }
+
+                weak_target.upgrade().and_then(|target| {
+                    tracing::debug!("Exiting run_host_pipe for {target_name_str}");
+                    target.host_pipe.borrow_mut().take()
+                });
+            }),
+            overnet_node,
+            ssh_addr: None,
+        });
     }
 
     pub fn is_host_pipe_running(&self) -> bool {
@@ -993,27 +1235,16 @@ impl Target {
     }
 
     #[tracing::instrument]
-    pub fn run_logger(self: &Rc<Self>) {
-        if self.logger.borrow().is_none() {
-            let logger = Rc::downgrade(&self.logger);
-            let weak_target = Rc::downgrade(self);
-            self.logger.replace(Some(Task::local(async move {
-                let r = Logger::new(weak_target).start().await;
-                // XXX(raggi): decide what to do with this log data:
-                tracing::info!("Logger returned: {:?}", r);
-                logger.upgrade().and_then(|logger| logger.replace(None));
-            })));
+    pub async fn init_remote_proxy(
+        self: &Rc<Self>,
+        overnet_node: &Arc<overnet_core::Router>,
+    ) -> Result<RemoteControlProxy> {
+        if !self.is_enabled() {
+            return Err(anyhow!("Cannot open RCS for disabled target"));
         }
-    }
 
-    pub fn is_logger_running(&self) -> bool {
-        self.logger.borrow().is_some()
-    }
-
-    #[tracing::instrument]
-    pub async fn init_remote_proxy(self: &Rc<Self>) -> Result<RemoteControlProxy> {
         // Ensure auto-connect has at least started.
-        self.run_host_pipe();
+        self.run_host_pipe(overnet_node);
         match self.events.wait_for(None, |e| e == TargetEvent::RcsActivated).await {
             Ok(()) => (),
             Err(e) => {
@@ -1025,11 +1256,15 @@ impl Target {
     }
 
     pub async fn is_fastboot_tcp(&self) -> Result<bool> {
-        let mut factory = TcpNetworkFactory::new();
-        let mut interface = factory.open_with_retry(self, 1, 1).await?;
-        // Dont care what the result is, just need to get it
-        let _result = get_var(&mut interface, &"version".to_string()).await?;
-        Ok(true)
+        match self.fastboot_address() {
+            None => Ok(false),
+            Some(addr) => {
+                let mut fastboot_interface = tcp_proxy(&SocketAddr::from(addr.0)).await?;
+                // Dont care what the result is, just need to get it
+                let _result = fastboot_interface.get_var(&"version".to_string()).await?;
+                Ok(true)
+            }
+        }
     }
 
     /// Check the current target state, and if it is a state that expires (such
@@ -1062,6 +1297,11 @@ impl Target {
                 _ => None,
             };
 
+            if new_state.is_some() && self.is_transient() && self.has_keep_alive() {
+                tracing::debug!("Not expiring state for transient target with keep alive");
+                return current_state;
+            }
+
             if let Some(ref new_state) = new_state {
                 tracing::debug!(
                     "Target {:?} state {:?} => {:?} due to expired state after {:?}.",
@@ -1076,26 +1316,65 @@ impl Target {
         });
     }
 
+    pub fn keep_alive(self: &Rc<Target>) -> Rc<KeepAliveHandle> {
+        let weak = self.keep_alive.replace(Weak::new());
+        if let Some(handle) = Weak::upgrade(&weak) {
+            self.keep_alive.set(weak);
+            return handle;
+        }
+
+        let handle = Rc::new(KeepAliveHandle { target: Rc::downgrade(self) });
+        self.keep_alive.set(Rc::downgrade(&handle));
+        handle
+    }
+
+    pub fn has_keep_alive(&self) -> bool {
+        let weak = self.keep_alive.replace(Weak::new());
+        let has_keep_alive = Weak::upgrade(&weak).is_some();
+        self.keep_alive.set(weak);
+        has_keep_alive
+    }
+
     pub fn is_connected(&self) -> bool {
-        self.state.borrow().is_connected()
+        // Only enabled targets are considered connected.
+        self.is_enabled() && self.state.borrow().is_connected()
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.get() || self.state.borrow().is_manual() || self.is_manual()
+    }
+
+    pub(crate) fn enable(&self) {
+        self.enabled.set(true)
+    }
+
+    pub(crate) fn disable(&self) {
+        self.disconnect();
+        self.enabled.set(false);
+    }
+
+    pub fn is_transient(&self) -> bool {
+        self.transient.get()
+    }
+
+    pub fn mark_transient(&self) {
+        self.transient.set(true)
     }
 
     pub fn is_manual(&self) -> bool {
-        self.addrs
-            .borrow()
-            .iter()
-            .any(|addr_entry| matches!(addr_entry.addr_type, TargetAddrType::Manual(_)))
+        self.addrs.borrow().iter().any(|addr_entry| addr_entry.is_manual())
     }
 
     pub fn get_manual_timeout(&self) -> Option<SystemTime> {
         let addrs = self.addrs.borrow();
-        let entry = addrs
-            .iter()
-            .find(|addr_entry| matches!(addr_entry.addr_type, TargetAddrType::Manual(_)))?;
-        match entry.addr_type {
-            TargetAddrType::Manual(timeout) => timeout,
+        addrs.iter().find_map(|addr_entry| match addr_entry.source {
+            TargetSource::Ephemeral { expires_after } => Some(expires_after),
             _ => None,
-        }
+        })
+    }
+
+    pub fn is_waiting_for_rcs_identity(&self) -> bool {
+        self.is_manual() && self.is_host_pipe_running() && self.identity().is_none()
     }
 
     pub fn disconnect(&self) {
@@ -1112,6 +1391,9 @@ impl From<&Target> for ffx::TargetInfo {
             .build_config()
             .map(|b| (Some(b.product_config), Some(b.board_config)))
             .unwrap_or((None, None));
+
+        let fastboot_interface = target.infer_fastboot_interface();
+        let info = target.get_compatibility_status();
 
         Self {
             nodename: target.nodename(),
@@ -1143,9 +1425,17 @@ impl From<&Target> for ffx::TargetInfo {
                 TargetConnectionState::Zedboot(_) => TargetState::Zedboot,
             }),
             ssh_address: target.ssh_address_info(),
-            // TODO(awdavies): Gather more information here when possible.
-            target_type: Some(ffx::TargetType::Unknown),
             ssh_host_address: target.ssh_host_address_info(),
+            fastboot_interface: match fastboot_interface {
+                None => None,
+                Some(FastbootInterface::Usb) => Some(ffx::FastbootInterface::Usb),
+                Some(FastbootInterface::Udp) => Some(ffx::FastbootInterface::Udp),
+                Some(FastbootInterface::Tcp) => Some(ffx::FastbootInterface::Tcp),
+            },
+            compatibility: match info {
+                Some(data) => Some(data.into()),
+                None => None,
+            },
             ..Default::default()
         }
     }
@@ -1156,15 +1446,44 @@ impl Debug for Target {
         f.debug_struct("Target")
             .field("id", &self.id)
             .field("ids", &self.ids.borrow().clone())
-            .field("nodename", &self.nodename.borrow().clone())
+            .field("identity", &self.identity())
+            .field("enabled", &self.enabled.get())
+            .field("transient", &self.transient.get())
             .field("state", &self.state.borrow().clone())
             .field("last_response", &self.last_response.borrow().clone())
             .field("addrs", &self.addrs.borrow().clone())
             .field("ssh_port", &self.ssh_port.borrow().clone())
-            .field("serial", &self.serial.borrow().clone())
             .field("boot_timestamp_nanos", &self.boot_timestamp_nanos.borrow().clone())
-            // TODO(raggi): add task fields
+            .field("compatibility_status", &self.compatibility_status.borrow().clone())
             .finish()
+    }
+}
+
+/// A handle to a discovered target.
+///
+/// Allows basic info to be queried about a target. Use `TargetCollection::use_target` to declare
+/// consent to use the target on behalf of an explicit ffx invocation.
+#[derive(Clone, Debug)]
+pub struct DiscoveredTarget(pub(crate) Rc<Target>);
+
+impl DiscoveredTarget {
+    pub fn id(&self) -> u64 {
+        self.0.id()
+    }
+    pub fn nodename(&self) -> Option<String> {
+        self.0.nodename()
+    }
+    pub fn nodename_str(&self) -> String {
+        self.0.nodename_str()
+    }
+    pub fn is_enabled(&self) -> bool {
+        self.0.is_enabled()
+    }
+}
+
+impl From<Rc<Target>> for DiscoveredTarget {
+    fn from(target: Rc<Target>) -> Self {
+        Self(target)
     }
 }
 
@@ -1181,26 +1500,6 @@ pub fn target_addr_info_to_socketaddr(tai: TargetAddrInfo) -> SocketAddr {
 }
 
 #[cfg(test)]
-pub(crate) fn clone_target(target: &Target) -> Rc<Target> {
-    let new = Target::new();
-    new.nodename.replace(target.nodename());
-    // Note: ID is omitted deliberately, as ID merging is unconditional on
-    // match, which breaks some uses of this helper function.
-    new.ids.replace(target.ids.borrow().clone());
-    new.state.replace(target.state.borrow().clone());
-    new.addrs.replace(target.addrs.borrow().clone());
-    new.ssh_port.replace(target.ssh_port.borrow().clone());
-    new.serial.replace(target.serial.borrow().clone());
-    new.boot_timestamp_nanos.replace(target.boot_timestamp_nanos.borrow().clone());
-    new.build_config.replace(target.build_config.borrow().clone());
-    new.last_response.replace(target.last_response.borrow().clone());
-    // TODO(raggi): there are missing fields here, as there were before the
-    // refactor in which I introduce this comment. It should be a goal to
-    // remove this helper function over time.
-    new
-}
-
-#[cfg(test)]
 impl PartialEq for Target {
     fn eq(&self, o: &Target) -> bool {
         self.nodename() == o.nodename()
@@ -1212,19 +1511,58 @@ impl PartialEq for Target {
 }
 
 #[cfg(test)]
+impl PartialEq for DiscoveredTarget {
+    fn eq(&self, o: &DiscoveredTarget) -> bool {
+        self.0 == o.0
+    }
+}
+
+#[cfg(test)]
+impl PartialEq<Target> for DiscoveredTarget {
+    fn eq(&self, o: &Target) -> bool {
+        (&*self.0) == o
+    }
+}
+
+#[cfg(test)]
+impl PartialEq<Rc<Target>> for DiscoveredTarget {
+    fn eq(&self, o: &Rc<Target>) -> bool {
+        (&self.0) == o
+    }
+}
+
+/// Prevents a transient target from expiring until dropped.
+pub struct KeepAliveHandle {
+    target: Weak<Target>,
+}
+
+impl Drop for KeepAliveHandle {
+    fn drop(&mut self) {
+        if let Some(target) = Weak::upgrade(&self.target) {
+            // Immediately expire target state in case it was already stale.
+            target.expire_state();
+        }
+    }
+}
+
+#[cfg(test)]
 mod test {
     use super::*;
+    use anyhow::Context;
     use assert_matches::assert_matches;
     use chrono::TimeZone;
     use ffx::TargetIp;
     use fidl;
     use fidl_fuchsia_developer_remotecontrol as rcs;
     use fidl_fuchsia_developer_remotecontrol::RemoteControlMarker;
+    use fidl_fuchsia_net::Subnet;
     use fidl_fuchsia_overnet_protocol::NodeId;
     use fuchsia_async::Timer;
     use futures::{channel, prelude::*};
-    use hoist::Hoist;
-    use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
+    use std::{
+        borrow::Borrow,
+        net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
+    };
 
     const DEFAULT_PRODUCT_CONFIG: &str = "core";
     const DEFAULT_BOARD_CONFIG: &str = "x64";
@@ -1296,77 +1634,10 @@ mod test {
         proxy
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn test_target_from_rcs_connection_internal_err() {
-        let local_hoist = Hoist::new().unwrap();
-
-        // TODO(awdavies): Do some form of PartialEq implementation for
-        // the RcsConnectionError enum to avoid the nested matches.
-        let conn = RcsConnection::new_with_proxy(
-            &local_hoist,
-            setup_fake_remote_control_service(true, "foo".to_owned()),
-            &NodeId { id: 123 },
-        );
-        match Target::from_rcs_connection(conn).await {
-            Ok(_) => assert!(false),
-            Err(e) => match e {
-                RcsConnectionError::RemoteControlError(rce) => match rce {
-                    rcs::IdentifyHostError::ListInterfacesFailed => (),
-                    _ => assert!(false),
-                },
-                _ => assert!(false),
-            },
-        }
-    }
-
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn test_target_from_rcs_connection_nodename_none() {
-        let local_hoist = Hoist::new().unwrap();
-
-        let conn = RcsConnection::new_with_proxy(
-            &local_hoist,
-            setup_fake_remote_control_service(false, "".to_owned()),
-            &NodeId { id: 123456 },
-        );
-        match Target::from_rcs_connection(conn).await {
-            Ok(_) => assert!(false),
-            Err(e) => match e {
-                RcsConnectionError::TargetError(_) => (),
-                _ => assert!(false),
-            },
-        }
-    }
-
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn test_target_from_rcs_connection_no_err() {
-        let local_hoist = Hoist::new().unwrap();
-
-        let conn = RcsConnection::new_with_proxy(
-            &local_hoist,
-            setup_fake_remote_control_service(false, "foo".to_owned()),
-            &NodeId { id: 1234 },
-        );
-        match Target::from_rcs_connection(conn).await {
-            Ok(t) => {
-                assert_eq!(t.nodename().unwrap(), "foo".to_string());
-                assert_eq!(t.rcs().unwrap().overnet_id.id, 1234u64);
-                assert_eq!(t.addrs().len(), 1);
-                assert_eq!(
-                    t.build_config().unwrap(),
-                    BuildConfig {
-                        product_config: DEFAULT_PRODUCT_CONFIG.to_string(),
-                        board_config: DEFAULT_BOARD_CONFIG.to_string()
-                    }
-                );
-                assert_eq!(t.serial().unwrap(), String::from(TEST_SERIAL));
-            }
-            Err(_) => assert!(false),
-        }
-    }
-
     // Most of this is now handled in `task.rs`
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_target_disconnect_multiple_invocations() {
+        let node = overnet_core::Router::new(None).unwrap();
         let t = Rc::new(Target::new_named("flabbadoobiedoo"));
         {
             let addr: TargetAddr = TargetAddr::new(IpAddr::from([192, 168, 0, 1]), 0, 0);
@@ -1374,9 +1645,9 @@ mod test {
         }
         // Assures multiple "simultaneous" invocations to start the target
         // doesn't put it into a bad state that would hang.
-        t.run_host_pipe();
-        t.run_host_pipe();
-        t.run_host_pipe();
+        t.run_host_pipe(&node);
+        t.run_host_pipe(&node);
+        t.run_host_pipe(&node);
     }
 
     struct RcsStateTest {
@@ -1387,7 +1658,7 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_target_rcs_states() {
-        let local_hoist = Hoist::new().unwrap();
+        let local_node = overnet_core::Router::new(None).unwrap();
 
         for test in vec![
             RcsStateTest {
@@ -1412,17 +1683,18 @@ mod test {
             },
         ] {
             let t = Target::new_named("schlabbadoo");
+            t.enable();
             let a2 = IpAddr::V6(Ipv6Addr::new(
                 0xfe80, 0xcafe, 0xf00d, 0xf000, 0xb412, 0xb455, 0x1337, 0xfeed,
             ));
             t.addrs_insert(TargetAddr::new(a2, 2, 0));
             if test.loop_started {
-                t.run_host_pipe();
+                t.run_host_pipe(&local_node);
             }
             {
                 *t.state.borrow_mut() = if test.rcs_is_some {
                     TargetConnectionState::Rcs(RcsConnection::new_with_proxy(
-                        &local_hoist,
+                        Arc::clone(&local_node),
                         setup_fake_remote_control_service(true, "foobiedoo".to_owned()),
                         &NodeId { id: 123 },
                     ))
@@ -1465,33 +1737,26 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_target_event_synthesis_wait() {
-        let local_hoist = Hoist::new().unwrap();
+        let local_node = overnet_core::Router::new(None).unwrap();
 
         let conn = RcsConnection::new_with_proxy(
-            &local_hoist,
+            local_node,
             setup_fake_remote_control_service(false, "foo".to_owned()),
             &NodeId { id: 1234 },
         );
-        let t = match Target::from_rcs_connection(conn).await {
-            Ok(t) => {
-                assert_eq!(t.nodename().unwrap(), "foo".to_string());
-                assert_eq!(t.rcs().unwrap().overnet_id.id, 1234u64);
-                assert_eq!(t.addrs().len(), 1);
-                t
-            }
-            Err(_) => unimplemented!("this branch should never happen"),
-        };
+        let t = Target::new();
+        t.update_connection_state(|_| TargetConnectionState::Rcs(conn));
         // This will hang forever if no synthesis happens.
         t.events.wait_for(None, |e| e == TargetEvent::RcsActivated).await.unwrap();
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_target_event_fire() {
-        let local_hoist = Hoist::new().unwrap();
+        let local_node = overnet_core::Router::new(None).unwrap();
 
         let t = Target::new_named("balaowihf");
         let conn = RcsConnection::new_with_proxy(
-            &local_hoist,
+            local_node,
             setup_fake_remote_control_service(false, "balaowihf".to_owned()),
             &NodeId { id: 1234 },
         );
@@ -1516,11 +1781,11 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_target_connection_state_will_not_drop_rcs_on_mdns_events() {
-        let local_hoist = Hoist::new().unwrap();
+        let local_node = overnet_core::Router::new(None).unwrap();
 
         let t = Target::new_named("hello-kitty");
         let rcs_state = TargetConnectionState::Rcs(
-            RcsConnection::new(local_hoist.clone(), &mut NodeId { id: 1234 }).unwrap(),
+            RcsConnection::new(local_node.clone(), &mut NodeId { id: 1234 }).unwrap(),
         );
         t.set_state(rcs_state.clone());
 
@@ -1533,11 +1798,11 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_target_connection_state_will_not_drop_rcs_on_manual_events() {
-        let local_hoist = Hoist::new().unwrap();
+        let local_node = overnet_core::Router::new(None).unwrap();
 
         let t = Target::new_named("hello-kitty");
         let rcs_state = TargetConnectionState::Rcs(
-            RcsConnection::new(local_hoist.clone(), &mut NodeId { id: 1234 }).unwrap(),
+            RcsConnection::new(local_node.clone(), &mut NodeId { id: 1234 }).unwrap(),
         );
         t.set_state(rcs_state.clone());
 
@@ -1606,6 +1871,27 @@ mod test {
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_expire_state_manual_fastboot() {
+        let t = Target::new_with_addr_entries(
+            Some("platypodes-are-venomous"),
+            [TargetAddrEntry::new(
+                TargetAddr::new("::1".parse::<IpAddr>().unwrap().into(), 0, 0),
+                Utc::now(),
+                TargetAddrStatus::fastboot(TargetTransport::Network).manually_added(),
+            )]
+            .into_iter(),
+        );
+        assert!(t.is_manual());
+
+        let then = Instant::now() - (FASTBOOT_MAX_AGE + Duration::from_secs(1));
+        t.update_connection_state(|_| TargetConnectionState::Fastboot(then));
+
+        t.expire_state();
+
+        assert_eq!(t.get_connection_state(), TargetConnectionState::Fastboot(then));
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
     async fn test_target_addresses_order_preserved() {
         let t = Target::new_named("this-is-a-target-i-guess");
         let addrs_pre = vec![
@@ -1624,7 +1910,7 @@ mod test {
                 TargetAddrEntry::new(
                     TargetAddr::from(e),
                     Utc.ymd(2014 + (i as i32), 10, 31).and_hms(9, 10, 12),
-                    TargetAddrType::Ssh,
+                    TargetAddrStatus::ssh(),
                 )
             })
             .collect::<Vec<TargetAddrEntry>>();
@@ -1662,7 +1948,7 @@ mod test {
                 TargetAddrEntry::new(
                     TargetAddr::from(e),
                     Utc.ymd(2014 + (i as i32), 10, 31).and_hms(9, 10, 12),
-                    TargetAddrType::Ssh,
+                    TargetAddrStatus::ssh(),
                 )
             })
             .collect::<Vec<TargetAddrEntry>>();
@@ -1677,7 +1963,8 @@ mod test {
         let target_addr: TargetAddr = TargetAddr::new("fe80::2".parse().unwrap(), 1, 0);
         let target = Target::new_with_addr_entries(
             Some("foo"),
-            vec![TargetAddrEntry::new(target_addr, Utc::now(), TargetAddrType::Ssh)].into_iter(),
+            vec![TargetAddrEntry::new(target_addr, Utc::now(), TargetAddrStatus::ssh())]
+                .into_iter(),
         );
 
         assert!(target.set_preferred_ssh_address(target_addr));
@@ -1690,7 +1977,7 @@ mod test {
             vec![TargetAddrEntry::new(
                 TargetAddr::new("::1".parse::<IpAddr>().unwrap().into(), 0, 0),
                 Utc::now(),
-                TargetAddrType::Ssh,
+                TargetAddrStatus::ssh(),
             )]
             .into_iter(),
         );
@@ -1717,12 +2004,12 @@ mod test {
             TargetAddrEntry::new(
                 TargetAddr::new("2000::1".parse().unwrap(), 0, 0),
                 start.into(),
-                TargetAddrType::Ssh,
+                TargetAddrStatus::ssh(),
             ),
             TargetAddrEntry::new(
                 TargetAddr::new("fe80::1".parse().unwrap(), 2, 0),
                 start.into(),
-                TargetAddrType::Ssh,
+                TargetAddrStatus::ssh(),
             ),
         ]);
         assert_eq!(
@@ -1735,12 +2022,12 @@ mod test {
             TargetAddrEntry::new(
                 TargetAddr::new("2000::1".parse().unwrap(), 0, 0),
                 start.into(),
-                TargetAddrType::Ssh,
+                TargetAddrStatus::ssh(),
             ),
             TargetAddrEntry::new(
                 TargetAddr::new("fe80::1".parse().unwrap(), 2, 0),
                 (start - Duration::from_secs(1)).into(),
-                TargetAddrType::Ssh,
+                TargetAddrStatus::ssh(),
             ),
         ]);
         assert_eq!(
@@ -1753,12 +2040,12 @@ mod test {
             TargetAddrEntry::new(
                 TargetAddr::new("fe80::2".parse().unwrap(), 1, 0),
                 start.into(),
-                TargetAddrType::Ssh,
+                TargetAddrStatus::ssh(),
             ),
             TargetAddrEntry::new(
                 TargetAddr::new("fe80::1".parse().unwrap(), 2, 0),
                 (start - Duration::from_secs(1)).into(),
-                TargetAddrType::Ssh,
+                TargetAddrStatus::ssh(),
             ),
         ]);
         assert_eq!(
@@ -1771,12 +2058,12 @@ mod test {
             TargetAddrEntry::new(
                 TargetAddr::new("fe80::2".parse().unwrap(), 1, 0),
                 start.into(),
-                TargetAddrType::Ssh,
+                TargetAddrStatus::ssh(),
             ),
             TargetAddrEntry::new(
                 TargetAddr::new("2000::1".parse().unwrap(), 0, 0),
                 (start - Duration::from_secs(1)).into(),
-                TargetAddrType::Manual(None),
+                TargetAddrStatus::ssh().manually_added(),
             ),
         ]);
         assert_eq!(
@@ -1789,12 +2076,12 @@ mod test {
             TargetAddrEntry::new(
                 TargetAddr::new("2000::1".parse().unwrap(), 0, 0),
                 start.into(),
-                TargetAddrType::Ssh,
+                TargetAddrStatus::ssh(),
             ),
             TargetAddrEntry::new(
                 TargetAddr::new("2000::2".parse().unwrap(), 0, 0),
                 (start + Duration::from_secs(1)).into(),
-                TargetAddrType::Ssh,
+                TargetAddrStatus::ssh(),
             ),
         ]);
         assert_eq!(
@@ -1806,11 +2093,11 @@ mod test {
         // User expressed a preferred SSH address. Prefer it over all other
         // addresses (even manual).
         let addrs = BTreeSet::from_iter(vec![
-            TargetAddrEntry::new(preferred_target_addr, start.into(), TargetAddrType::Ssh),
+            TargetAddrEntry::new(preferred_target_addr, start.into(), TargetAddrStatus::ssh()),
             TargetAddrEntry::new(
                 TargetAddr::new("2000::1".parse().unwrap(), 0, 0),
                 (start - Duration::from_secs(1)).into(),
-                TargetAddrType::Manual(None),
+                TargetAddrStatus::ssh().manually_added(),
             ),
         ]);
 
@@ -1826,7 +2113,7 @@ mod test {
             vec![TargetAddrEntry::new(
                 TargetAddr::new("::1".parse::<IpAddr>().unwrap().into(), 0, 0),
                 Utc::now(),
-                TargetAddrType::Ssh,
+                TargetAddrStatus::ssh(),
             )]
             .into_iter(),
         );
@@ -1850,7 +2137,7 @@ mod test {
             vec![TargetAddrEntry::new(
                 TargetAddr::new("::1".parse::<IpAddr>().unwrap().into(), 0, 0),
                 Utc::now(),
-                TargetAddrType::Ssh,
+                TargetAddrStatus::ssh(),
             )]
             .into_iter(),
         );
@@ -1941,7 +2228,7 @@ mod test {
             TargetAddrEntry::new(
                 TargetAddr::new("2000::1".parse().unwrap(), 0, 0),
                 Utc::now().into(),
-                TargetAddrType::Netsvc,
+                TargetAddrStatus::netsvc(),
             )
             .into(),
         );
@@ -1949,7 +2236,7 @@ mod test {
             TargetAddrEntry::new(
                 TargetAddr::new("fe80::1".parse().unwrap(), 0, 0),
                 Utc::now().into(),
-                TargetAddrType::Ssh,
+                TargetAddrStatus::ssh(),
             )
             .into(),
         );
@@ -1972,7 +2259,7 @@ mod test {
         target.addrs_insert_entry(TargetAddrEntry::new(
             TargetAddr::new("::1".parse().unwrap(), 0, 0),
             Utc::now(),
-            TargetAddrType::Manual(None),
+            TargetAddrStatus::ssh().manually_added(),
         ));
         assert!(target.is_manual());
 
@@ -1988,7 +2275,7 @@ mod test {
         target.addrs_insert_entry(TargetAddrEntry::new(
             TargetAddr::new("::1".parse().unwrap(), 0, 0),
             Utc::now(),
-            TargetAddrType::Manual(None),
+            TargetAddrStatus::ssh().manually_added(),
         ));
         assert!(target.is_manual());
         assert_eq!(target.get_manual_timeout(), None);
@@ -1998,7 +2285,7 @@ mod test {
         target.addrs_insert_entry(TargetAddrEntry::new(
             TargetAddr::new("::1".parse().unwrap(), 0, 0),
             Utc::now(),
-            TargetAddrType::Manual(Some(now)),
+            TargetAddrStatus::ssh().manually_added_until(now),
         ));
         assert!(target.is_manual());
         assert_eq!(target.get_manual_timeout(), Some(now));
@@ -2006,13 +2293,13 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_update_connection_state_manual_disconnect() {
-        let local_hoist = Hoist::new().unwrap();
+        let local_node = overnet_core::Router::new(None).unwrap();
 
         let target = Target::new();
         target.addrs_insert_entry(TargetAddrEntry::new(
             TargetAddr::new("::1".parse().unwrap(), 0, 0),
             Utc::now(),
-            TargetAddrType::Manual(None),
+            TargetAddrStatus::ssh().manually_added(),
         ));
         target.set_state(TargetConnectionState::Manual(None));
 
@@ -2022,7 +2309,7 @@ mod test {
         assert_matches!(target.get_connection_state(), TargetConnectionState::Manual(_));
 
         let conn = RcsConnection::new_with_proxy(
-            &local_hoist,
+            local_node,
             setup_fake_remote_control_service(false, "abc".to_owned()),
             &NodeId { id: 1234 },
         );
@@ -2037,13 +2324,14 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_update_connection_state_expired_ephemeral_disconnect() {
-        let local_hoist = Hoist::new().unwrap();
+        let local_node = overnet_core::Router::new(None).unwrap();
 
         let target = Target::new();
         target.addrs_insert_entry(TargetAddrEntry::new(
             TargetAddr::new("::1".parse().unwrap(), 0, 0),
             Utc::now(),
-            TargetAddrType::Manual(Some(SystemTime::now() - Duration::from_secs(3600))),
+            TargetAddrStatus::ssh()
+                .manually_added_until(SystemTime::now() - Duration::from_secs(3600)),
         ));
         target.set_state(TargetConnectionState::Manual(Some(Instant::now())));
 
@@ -2053,7 +2341,7 @@ mod test {
         assert_matches!(target.get_connection_state(), TargetConnectionState::Disconnected);
 
         let conn = RcsConnection::new_with_proxy(
-            &local_hoist,
+            local_node,
             setup_fake_remote_control_service(false, "abc".to_owned()),
             &NodeId { id: 1234 },
         );
@@ -2068,13 +2356,14 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_update_connection_state_ephemeral_disconnect() {
-        let local_hoist = Hoist::new().unwrap();
+        let local_node = overnet_core::Router::new(None).unwrap();
 
         let target = Target::new();
         target.addrs_insert_entry(TargetAddrEntry::new(
             TargetAddr::new("::1".parse().unwrap(), 0, 0),
             Utc::now(),
-            TargetAddrType::Manual(Some(SystemTime::now() + Duration::from_secs(3600))),
+            TargetAddrStatus::ssh()
+                .manually_added_until(SystemTime::now() + Duration::from_secs(3600)),
         ));
         target.set_state(TargetConnectionState::Manual(Some(Instant::now())));
 
@@ -2084,7 +2373,7 @@ mod test {
         assert_matches!(target.get_connection_state(), TargetConnectionState::Manual(_));
 
         let conn = RcsConnection::new_with_proxy(
-            &local_hoist,
+            local_node,
             setup_fake_remote_control_service(false, "abc".to_owned()),
             &NodeId { id: 1234 },
         );
@@ -2099,9 +2388,14 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_target_disconnect() {
+        let local_node = overnet_core::Router::new(None).unwrap();
         let target = Target::new();
         target.set_state(TargetConnectionState::Mdns(Instant::now()));
-        target.host_pipe.borrow_mut().replace(Task::local(future::pending()));
+        target.host_pipe.borrow_mut().replace(HostPipeState {
+            task: Task::local(future::pending()),
+            overnet_node: local_node,
+            ssh_addr: None,
+        });
 
         target.disconnect();
 
@@ -2111,23 +2405,197 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_host_pipe_state_borrow() {
-        let local_hoist = Hoist::new().unwrap();
+        let local_node = overnet_core::Router::new(None).unwrap();
         let (done_send, done_recv) = channel::oneshot::channel::<()>();
 
         let target = Target::new();
         // We want run_host_pipe() to reach the point of knock_rcs(), so we
         // need to set up an RCS first. But we'll set it up so it doesn't respond
         let conn = RcsConnection::new_with_proxy(
-            &local_hoist,
+            Arc::clone(&local_node),
             setup_fake_unresponsive_remote_control_service(done_recv),
             &NodeId { id: 1234 },
         );
         target.set_state(TargetConnectionState::Rcs(conn));
-        target.run_host_pipe();
+        target.run_host_pipe(&local_node);
         // Let run_host_pipe()'s spawned task run
         Timer::new(Duration::from_millis(50)).await;
         target.update_connection_state(|_| TargetConnectionState::Disconnected);
         done_send.send(()).expect("send failed")
         // No assertion -- we are making sure run_host_pipe() doesn't panic
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_from_target_for_targetinfo() {
+        {
+            let target = Target::new_for_usb("IANTHE");
+
+            let info: ffx::TargetInfo = ffx::TargetInfo::from(target.borrow());
+            assert_eq!(info.fastboot_interface, Some(ffx::FastbootInterface::Usb));
+        }
+        {
+            let mut addrs = BTreeSet::new();
+            addrs.insert(TargetAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0, 0));
+            let interface = FastbootInterface::Tcp;
+            let target = Target::new_with_fastboot_addrs(Some("Babs"), None, addrs, interface);
+
+            let info: ffx::TargetInfo = ffx::TargetInfo::from(target.borrow());
+            assert_eq!(info.fastboot_interface, Some(ffx::FastbootInterface::Tcp));
+        }
+        {
+            let mut addrs = BTreeSet::new();
+            addrs.insert(TargetAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0, 0));
+            let interface = FastbootInterface::Udp;
+            let target =
+                Target::new_with_fastboot_addrs(Some("Coronabeth"), None, addrs, interface);
+
+            let info: ffx::TargetInfo = ffx::TargetInfo::from(target.borrow());
+            assert_eq!(info.fastboot_interface, Some(ffx::FastbootInterface::Udp));
+        }
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_infer_fastboot_interface() {
+        {
+            let target = Target::new();
+
+            let interface = target.infer_fastboot_interface();
+            assert!(interface.is_none());
+        }
+        {
+            let mut addrs = BTreeSet::new();
+            addrs.insert(TargetAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0, 0));
+            let interface = FastbootInterface::Tcp;
+            let target = Target::new_with_fastboot_addrs(Some("Babs"), None, addrs, interface);
+
+            // Purposefully remove the interface
+            target.fastboot_interface.replace(None);
+
+            assert_eq!(target.infer_fastboot_interface(), Some(FastbootInterface::Tcp));
+        }
+        {
+            let mut addrs = BTreeSet::new();
+            addrs.insert(TargetAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0, 0));
+            let interface = FastbootInterface::Udp;
+            let target =
+                Target::new_with_fastboot_addrs(Some("Coronabeth"), None, addrs, interface);
+
+            // Purposefully remove the interface
+            target.fastboot_interface.replace(None);
+
+            assert_eq!(target.infer_fastboot_interface(), Some(FastbootInterface::Udp));
+        }
+    }
+
+    mod enabled {
+        use super::*;
+
+        #[fuchsia_async::run_singlethreaded(test)]
+        async fn test_enable() {
+            let target = Target::new();
+
+            assert!(!target.is_enabled());
+            target.enable();
+            assert!(target.is_enabled());
+        }
+
+        #[fuchsia_async::run_singlethreaded(test)]
+        async fn test_manual_targets_always_enable() {
+            let target = Target::new_with_addr_entries(
+                Some("foo"),
+                std::iter::once(TargetAddrEntry::new(
+                    SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 22).into(),
+                    chrono::MIN_DATETIME,
+                    TargetAddrStatus::ssh().manually_added(),
+                )),
+            );
+
+            assert!(target.is_enabled());
+            assert!(target.is_manual());
+            target.disable();
+            assert!(target.is_enabled());
+        }
+
+        #[fuchsia_async::run_singlethreaded(test)]
+        async fn test_disable() {
+            let target = Target::new_autoconnected("foo");
+
+            assert!(target.is_enabled());
+            target.disable();
+            assert!(!target.is_enabled());
+            assert!(!target.is_connected());
+        }
+
+        // Instant::now() - Duration panics on macOS builders.
+        #[cfg(not(target_os = "macos"))]
+        #[fuchsia_async::run_singlethreaded(test)]
+        async fn test_transient_expire() {
+            let target = Target::new_autoconnected("foo");
+
+            target.mark_transient();
+            assert!(target.is_transient());
+
+            // A call to expire_state should not disable when not expired.
+            assert!(target.is_enabled());
+            target.expire_state();
+            assert!(target.is_connected());
+            assert!(target.is_enabled());
+
+            target.update_connection_state(|_| {
+                TargetConnectionState::Mdns(Instant::now() - Duration::from_secs(60 * 60))
+            });
+
+            // Should not expire with active keep alive handle.
+            let handle = target.keep_alive();
+            assert!(target.is_enabled());
+            target.expire_state();
+            assert!(target.is_connected());
+            assert!(target.is_enabled());
+
+            // But should disable when expired.
+            drop(handle);
+            assert!(!target.is_enabled());
+            assert!(!target.is_connected());
+        }
+
+        // Instant::now() - Duration panics on macOS builders.
+        #[cfg(not(target_os = "macos"))]
+        #[fuchsia_async::run_singlethreaded(test)]
+        async fn test_non_transient_expire() {
+            let target = Target::new_autoconnected("foo");
+
+            assert!(!target.is_transient());
+
+            // A call to expire_state should not disable when not expired.
+            assert!(target.is_enabled());
+            target.expire_state();
+            assert!(target.is_connected());
+            assert!(target.is_enabled());
+
+            target.update_connection_state(|_| {
+                TargetConnectionState::Mdns(Instant::now() - Duration::from_secs(60 * 60))
+            });
+
+            // And should not disable when expired.
+            assert!(target.is_enabled());
+            target.expire_state();
+            assert!(target.is_enabled());
+        }
+
+        #[fuchsia_async::run_singlethreaded(test)]
+        async fn test_reset_transient_on_rediscovery() {
+            let target = Target::new_autoconnected("foo");
+
+            target.mark_transient();
+            assert!(target.is_transient());
+
+            target.disable();
+
+            assert!(target.is_transient());
+
+            target.update_connection_state(|_| TargetConnectionState::Mdns(Instant::now()));
+
+            assert!(!target.is_transient());
+        }
     }
 }

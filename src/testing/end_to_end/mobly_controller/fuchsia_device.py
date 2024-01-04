@@ -5,13 +5,14 @@
 """Mobly Controller for Fuchsia Device"""
 
 import logging
+import ipaddress
 from typing import Any, Dict, List, Optional
 
 import honeydew
-from honeydew import custom_types
-from honeydew import transports
-from honeydew.interfaces.device_classes import \
-    fuchsia_device as fuchsia_device_interface
+from honeydew import custom_types, transports
+from honeydew.interfaces.device_classes import (
+    fuchsia_device as fuchsia_device_interface,
+)
 from honeydew.transports import ffx
 from honeydew.utils import properties
 
@@ -21,8 +22,8 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 def create(
-    configs: List[Dict[str,
-                       Any]]) -> List[fuchsia_device_interface.FuchsiaDevice]:
+    configs: List[Dict[str, Any]]
+) -> List[fuchsia_device_interface.FuchsiaDevice]:
     """Create Fuchsia device controller(s) and returns them.
 
     Required for Mobly controller registration.
@@ -38,20 +39,23 @@ def create(
             * ssh_user - Username to be used to SSH into fuchsia device.
             * transport - Transport to be used to perform the host-target
                 interactions.
+            * ffx_path - Abosolute path to FFX binary to use for the device.
 
     Returns:
         A list of FuchsiaDevice objects.
     """
     _LOGGER.debug(
         "FuchsiaDevice controller configs received in testbed yml file is '%s'",
-        configs)
+        configs,
+    )
 
     test_logs_dir: Optional[str] = _get_log_directory()
+    ffx_path: str = _get_ffx_path(configs)
     if test_logs_dir:
         # Call `ffx.setup` before calling `create_device` as
         # `create_device` results in calling an FFX command and we
         # don't want to miss those FFX logs
-        ffx.setup(logs_dir=f"{test_logs_dir}/ffx/")
+        ffx.setup(binary_path=ffx_path, logs_dir=f"{test_logs_dir}/ffx/")
 
     fuchsia_devices: List[fuchsia_device_interface.FuchsiaDevice] = []
     for config in configs:
@@ -59,15 +63,18 @@ def create(
         fuchsia_devices.append(
             honeydew.create_device(
                 device_name=device_config["name"],
+                transport=device_config["transport"],
+                device_ip_port=device_config.get("device_ip_port"),
                 ssh_private_key=device_config.get("ssh_private_key"),
                 ssh_user=device_config.get("ssh_user"),
-                transport=device_config.get("transport"),
-                device_ip_port=device_config.get("device_ip_port")))
+            )
+        )
     return fuchsia_devices
 
 
 def destroy(
-        fuchsia_devices: List[fuchsia_device_interface.FuchsiaDevice]) -> None:
+    fuchsia_devices: List[fuchsia_device_interface.FuchsiaDevice],
+) -> None:
     """Closes all created fuchsia devices.
 
     Required for Mobly controller registration.
@@ -85,7 +92,7 @@ def destroy(
 
 
 def get_info(
-    fuchsia_devices: List[fuchsia_device_interface.FuchsiaDevice]
+    fuchsia_devices: List[fuchsia_device_interface.FuchsiaDevice],
 ) -> List[Dict[str, Any]]:
     """Gets information from a list of FuchsiaDevice objects.
 
@@ -104,7 +111,7 @@ def get_info(
 
 
 def _get_fuchsia_device_info(
-        fuchsia_device: fuchsia_device_interface.FuchsiaDevice
+    fuchsia_device: fuchsia_device_interface.FuchsiaDevice,
 ) -> Dict[str, Any]:
     """Returns information of a specific fuchsia device object.
 
@@ -151,7 +158,8 @@ def _parse_device_config(config: Dict[str, str]) -> Dict[str, Any]:
     """
     _LOGGER.debug(
         "FuchsiaDevice controller config received in testbed yml file is '%s'",
-        config)
+        config,
+    )
 
     # Sample testbed file format for FuchsiaDevice controller used in infra...
     # - Controllers:
@@ -166,36 +174,52 @@ def _parse_device_config(config: Dict[str, str]) -> Dict[str, Any]:
     if "name" not in config:
         raise RuntimeError("Missing fuchsia device name in the config")
 
+    if "transport" not in config:
+        raise RuntimeError("Missing transport field in the config")
+
     device_config: Dict[str, Any] = {}
 
     for config_key, config_value in config.items():
         if config_key == "transport":
             if config["transport"] == "sl4f":
                 device_config["transport"] = transports.TRANSPORT.SL4F
-            elif config[
-                    "transport"] in transports.FUCHSIA_CONTROLLER_TRANSPORTS:
+            elif (
+                config["transport"] in transports.FUCHSIA_CONTROLLER_TRANSPORTS
+            ):
                 device_config[
-                    "transport"] = transports.TRANSPORT.FUCHSIA_CONTROLLER
+                    "transport"
+                ] = transports.TRANSPORT.FUCHSIA_CONTROLLER
             else:
                 raise ValueError(
-                    f"Invalid transport `{config_value}` passed for " \
+                    f"Invalid transport `{config_value}` passed for "
                     f"{config['name']}"
                 )
         elif config_key == "device_ip_port":
             try:
-                device_config["device_ip_port"] = custom_types.IpPort.parse(
-                    config_value)
+                device_config[
+                    "device_ip_port"
+                ] = custom_types.IpPort.create_using_ip_and_port(config_value)
             except Exception as err:  # pylint: disable=broad-except
                 raise ValueError(
-                    f"Invalid device_ip_port `{config_value}` passed for " \
+                    f"Invalid device_ip_port `{config_value}` passed for "
                     f"{config['name']}"
                 ) from err
+        elif config_key in ["ipv4", "ipv6"]:
+            if config.get("ipv4"):
+                device_config[
+                    "device_ip_port"
+                ] = custom_types.IpPort.create_using_ip(config["ipv4"])
+            if config.get("ipv6"):
+                device_config[
+                    "device_ip_port"
+                ] = custom_types.IpPort.create_using_ip(config["ipv6"])
         else:
             device_config[config_key] = config_value
 
     _LOGGER.debug(
         "Updated FuchsiaDevice controller config after the validation is '%s'",
-        device_config)
+        device_config,
+    )
 
     return device_config
 
@@ -210,4 +234,23 @@ def _get_log_directory() -> Optional[str]:
     return getattr(
         logging,
         "log_path",  # Set by Mobly in base_test.BaseTestClass.run.
-        None)
+        None,
+    )
+
+
+def _get_ffx_path(configs: List[Dict[str, Any]]) -> str:
+    """Returns the path to the FFX binary to use.
+
+    Args:
+      configs: List of dicts. Each dict representing a configuration for a
+            Fuchsia device.
+
+    Returns:
+        Absolute path to FFX.
+    """
+    # FFX CLI is currently global and not localized to the individual devices so
+    # just return the the first "ffx_path" encountered.
+    for config in configs:
+        if "ffx_path" in config:
+            return config["ffx_path"]
+    raise RuntimeError("No FFX path found in any device config")

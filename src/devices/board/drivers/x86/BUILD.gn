@@ -35,8 +35,8 @@ driver_bind_rules("x64-bind") {
   bind_output = "platform-bus-x64.bindbc"
   tests = "bind-tests.json"
   deps = [
-    "//src/devices/bind/fuchsia.hardware.platform.bus",
     "//src/devices/bind/fuchsia.intel.platform",
+    "//src/devices/bind/fuchsia.platform",
   ]
 }
 
@@ -47,6 +47,7 @@ driver_bind_rules("goldfish_control_2_bind") {
   deps = [
     "//src/devices/bind/fuchsia.goldfish.platform",
     "//src/devices/bind/fuchsia.google.platform",
+    "//src/devices/bind/fuchsia.sysmem",
   ]
 }
 
@@ -59,7 +60,6 @@ fuchsia_driver("platform-bus-x86-driver") {
 
   sources = [
     "acpi-dev/dev-ec.cc",
-    "acpi-dev/dev-pwrbtn.cc",
     "acpi-nswalk.cc",
     "debug.cc",
     "goldfish-control.cc",
@@ -87,11 +87,10 @@ fuchsia_driver("platform-bus-x86-driver") {
     "//sdk/banjo/fuchsia.hardware.pciroot:fuchsia.hardware.pciroot_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.sysmem:fuchsia.hardware.sysmem_banjo_cpp",
     "//sdk/banjo/fuchsia.sysmem:fuchsia.sysmem_banjo_c",
-    "//sdk/fidl/fuchsia.acpi.tables:fuchsia.acpi.tables_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.acpi:fuchsia.hardware.acpi_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.gpt.metadata:fuchsia.hardware.gpt.metadata_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp_driver",
-    "//sdk/fidl/fuchsia.hardware.powersource:fuchsia.hardware.powersource_cpp_wire",
+    "//sdk/fidl/fuchsia.acpi.tables:fuchsia.acpi.tables_cpp",
+    "//sdk/fidl/fuchsia.hardware.acpi:fuchsia.hardware.acpi_cpp",
+    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
+    "//sdk/fidl/fuchsia.hardware.powersource:fuchsia.hardware.powersource_cpp",
     "//sdk/lib/driver/runtime:driver_runtime_cpp",
     "//src/devices/board/lib/acpi",
     "//src/devices/board/lib/smbios",
@@ -105,11 +104,11 @@ fuchsia_driver("platform-bus-x86-driver") {
     "//sdk/lib/fit",
     "//src/lib/ddk:ddk-deprecated-binding-headers",
     "//src/lib/ddktl",
+    "//src/ui/input/lib/hid",
     "//third_party/acpica",
     "//zircon/system/ulib/async:async-cpp",
     "//zircon/system/ulib/driver-unit-test",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/hid",
     "//zircon/system/ulib/inspect",
     "//zircon/system/ulib/lazy_init",
     "//zircon/system/ulib/region-alloc",
@@ -128,6 +127,11 @@ fuchsia_driver_component("platform-bus-x86") {
   deps = [ ":platform-bus-x86-driver" ]
   info = "platform-bus-x86-info.json"
   manifest = "meta/platform-bus-x86.cml"
+}
+
+fuchsia_driver_package("package") {
+  package_name = "platform-bus-x86"
+  driver_components = [ ":platform-bus-x86" ]
 }
 
 test("x86-ec-test-bin") {

@@ -4,6 +4,7 @@
 
 #include "src/graphics/display/testing/client-utils/display.h"
 
+#include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>
 #include <zircon/syscalls.h>
 
@@ -14,6 +15,7 @@
 #include "src/graphics/display/lib/api-types-cpp/display-id.h"
 
 namespace fhd = fuchsia_hardware_display;
+namespace fhdt = fuchsia_hardware_display_types;
 
 namespace display_test {
 
@@ -30,7 +32,7 @@ Display::Display(const fhd::wire::Info& info) {
     modes_.push_back(mode[i]);
   }
 
-  auto cursors = reinterpret_cast<const fhd::wire::CursorInfo*>(info.cursor_configs.data());
+  auto cursors = reinterpret_cast<const fhdt::wire::CursorInfo*>(info.cursor_configs.data());
   for (unsigned i = 0; i < info.cursor_configs.count(); i++) {
     cursors_.push_back(cursors[i]);
   }
@@ -77,7 +79,7 @@ void Display::Dump() {
 
 void Display::Init(const fidl::WireSyncClient<fhd::Coordinator>& dc,
                    ColorCorrectionArgs color_correction_args) {
-  fhd::wire::DisplayId fidl_display_id = ToFidlDisplayId(id_);
+  fhdt::wire::DisplayId fidl_display_id = ToFidlDisplayId(id_);
   if (mode_idx_ != 0) {
     ZX_ASSERT(dc->SetDisplayMode(fidl_display_id, modes_[mode_idx_]).ok());
   }

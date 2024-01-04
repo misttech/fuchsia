@@ -4,6 +4,7 @@
 
 import("//build/images/custom_signing.gni")
 import("//build/images/vbmeta.gni")
+import("//build/info/info.gni")
 
 declare_args() {
   # Use vboot images
@@ -93,11 +94,6 @@ declare_args() {
   # This is primarily meant to be used by the clang canary builders.
   check_vtables_in_rodata = false
 
-  # A list of labels for packages that are appended to the set of base packages,
-  # but depend on all the other base, cache, and universe packages, therefore
-  # they must be separated into their own list.
-  meta_package_labels = []
-
   # Arguments to `fx flash` script (along with any `firmware_prebuilts` which
   # specify a partition).
   #
@@ -177,10 +173,6 @@ declare_args() {
   # assembled_system().  See documentation there.
   include_shell_commands_package = false
 
-  # Skip configuring fshost in GN and do it via Assembly instead.
-  # Used as a parameter to assembled_system().
-  assembly_fshost = false
-
   # If true, the images.json build API modules will only include images
   # identified by bazel_product_bundle_target and its dependencies.
   #
@@ -208,6 +200,11 @@ declare_args() {
   #   //build/bazel/assembly:minimal.x64
   bazel_product_bundle_prefix = false
   bazel_product_bundle_board = false
+
+  # If these are defined, bazel_product_bundle path will be overwritten
+  # accordingly.
+  vendor_product_dir = false
+  vendor_board_dir = false
 
   # Extra GN targets to include when Bazel assembly is enabled. This list is
   # useful for including verification and other Bazel assembly specific targets.
@@ -255,4 +252,13 @@ if (bazel_product_bundle_prefix != false &&
       bazel_product_bundle_prefix + "." + bazel_product_bundle_board
 } else {
   bazel_product_bundle_target = ""
+}
+
+if (vendor_product_dir != false || vendor_board_dir != false) {
+  if (vendor_product_dir != false) {
+    product_bundle_dir = vendor_product_dir
+  } else {
+    product_bundle_dir = vendor_board_dir
+  }
+  bazel_product_bundle_target = "//${product_bundle_dir}/${build_info_product}:product_bundle.${build_info_board}"
 }

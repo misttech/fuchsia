@@ -23,15 +23,6 @@ std::string Display(const std::string& s) { return s; }
 
 std::string Display(std::string_view s) { return std::string(s); }
 
-// {'A', 'B', 'C'} -> "A, B, C"
-std::string Display(const std::set<std::string>& s) {
-  std::set<std::string_view> sv;
-  for (const auto& str : s) {
-    sv.insert(str);
-  }
-  return Display(sv);
-}
-
 std::string Display(const std::set<std::string_view>& s) {
   std::stringstream ss;
   for (auto it = s.begin(); it != s.end(); it++) {
@@ -43,11 +34,11 @@ std::string Display(const std::set<std::string_view>& s) {
   return ss.str();
 }
 
-std::string Display(const SourceSpan& s) { return s.position_str(); }
+std::string Display(SourceSpan s) { return s.position_str(); }
 
-std::string Display(const Token::KindAndSubkind& t) { return std::string(Token::Name(t)); }
+std::string Display(Token::KindAndSubkind t) { return std::string(Token::Name(t)); }
 
-std::string Display(const types::Openness o) {
+std::string Display(types::Openness o) {
   switch (o) {
     case types::Openness::kOpen:
       return "open";
@@ -240,7 +231,7 @@ std::string Display(const flat::Element* e) {
 
 // Display a list of nested types with arrows indicating what includes what:
 // ['A', 'B', 'C'] -> "A -> B -> C"
-std::string Display(std::vector<const flat::Decl*>& d) {
+std::string Display(const std::vector<const flat::Decl*>& d) {
   std::stringstream ss;
   for (auto it = d.cbegin(); it != d.cend(); it++) {
     if (it != d.cbegin()) {
@@ -260,9 +251,9 @@ std::string Display(const Platform& p) {
   return p.name();
 }
 
-std::string Display(const Version& v) { return v.ToString(); }
+std::string Display(Version v) { return v.ToString(); }
 
-std::string Display(const VersionRange& r) {
+std::string Display(VersionRange r) {
   // Here we assume the version range is for an error about a versioned element.
   // We handle 4 special cases (-inf, +inf, HEAD, LEGACY) for each endpoint.
   auto [a, b] = r.pair();
@@ -314,29 +305,12 @@ std::string DiagnosticDef::FormatId() const {
   return id_str;
 }
 
-std::string Diagnostic::Format(const ProgramInvocation& program_invocation) const {
+std::string Diagnostic::Format() const {
   std::ostringstream out;
   out << msg;
   if (def.opts.documented) {
     out << " [https://fuchsia.dev/error/" << def.FormatId() << "]";
   }
-
-  if (auto fixable = def.opts.fixable) {
-    ZX_ASSERT(program_invocation.is_populated());
-    std::ostringstream fixme;
-    fixme << "\n\n  This is a fixable error.\n"
-          << "  Please run the following command to update your FIDL files and fix the issue:\n\n"
-          << "    [[[ FIXME ]]]\n\n"
-          << "    >>> " << program_invocation.binary_path()
-          << "/fidl-fix --fix=" << Fixable::Get(fixable.value()).name
-          << program_invocation.ExperimentsAsString(" --experimental=", " ")
-          << program_invocation.VersionSelectionAsString(" --available=", " ")
-          << program_invocation.DependenciesAsString(" --dep=", ",") << " "
-          << program_invocation.LibraryFilesAsString(" ").value() << "\n\n"
-          << "    [[[ /FIXME ]]]\n\n";
-    out << fixme.str();
-  }
-
   return out.str();
 }
 

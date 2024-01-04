@@ -17,17 +17,17 @@
 #define RISCV64_CSR_TIMEH (0xc81)
 #define RISCV64_CSR_INSRETH (0xc82)
 
-#define RISCV64_CSR_SATP (0x180)
-
 #define RISCV64_CSR_SSTATUS (0x000 | RISCV64_CSR_SMODE_BITS)
 #define RISCV64_CSR_SIE (0x004 | RISCV64_CSR_SMODE_BITS)
 #define RISCV64_CSR_STVEC (0x005 | RISCV64_CSR_SMODE_BITS)
 #define RISCV64_CSR_SCOUNTEREN (0x006 | RISCV64_CSR_SMODE_BITS)
+#define RISCV64_CSR_SENVCFG (0x00a | RISCV64_CSR_SMODE_BITS)
 #define RISCV64_CSR_SSCRATCH (0x040 | RISCV64_CSR_SMODE_BITS)
 #define RISCV64_CSR_SEPC (0x041 | RISCV64_CSR_SMODE_BITS)
 #define RISCV64_CSR_SCAUSE (0x042 | RISCV64_CSR_SMODE_BITS)
 #define RISCV64_CSR_STVAL (0x043 | RISCV64_CSR_SMODE_BITS)
 #define RISCV64_CSR_SIP (0x044 | RISCV64_CSR_SMODE_BITS)
+#define RISCV64_CSR_SATP (0x080 | RISCV64_CSR_SMODE_BITS)
 
 #define RISCV64_CSR_SSTATUS_IE (1ul << 1)
 #define RISCV64_CSR_SSTATUS_PIE (1ul << 5)
@@ -59,6 +59,14 @@
 #define RISCV64_CSR_SCOUNTEREN_TM (1ul << 1)
 #define RISCV64_CSR_SCOUNTEREN_IR (1ul << 2)
 
+#define RISCV64_CSR_SENVCFG_FIOM (1ul << 0)
+#define RISCV64_CSR_SENVCFG_CBIE_MASK (3ul << 4)
+#define RISCV64_CSR_SENVCFG_CBIE_ILLEGAL (0ul << 4)
+#define RISCV64_CSR_SENVCFG_CBIE_FLUSH (1ul << 4)
+#define RISCV64_CSR_SENVCFG_CBIE_INVAL (3ul << 4)
+#define RISCV64_CSR_SENVCFG_CBCFE (1ul << 6)
+#define RISCV64_CSR_SENVCFG_CBZE (1ul << 7)
+
 // Interrupts, top bit set in cause register
 #define RISCV64_INTERRUPT_SSWI 1  // software interrupt
 #define RISCV64_INTERRUPT_STIM 5  // timer interrupt
@@ -81,7 +89,7 @@
 #define RISCV64_EXCEPTION_STORE_PAGE_FAULT 15
 
 // Byte offsets corresponding to the fields of riscv64_context_switch_frame.
-#define REGOFF(x) ((x)*8)
+#define REGOFF(x) ((x) * 8)
 #define CONTEXT_SWITCH_FRAME_OFFSET_RA REGOFF(0)
 #define CONTEXT_SWITCH_FRAME_OFFSET_TP REGOFF(1)
 #define CONTEXT_SWITCH_FRAME_OFFSET_GP REGOFF(2)
@@ -184,6 +192,8 @@ extern void riscv64_software_exception();
 void platform_irq(iframe_t* frame);
 
 void riscv64_init_percpu();
+
+#define __wfi() __asm__ volatile("wfi" ::: "memory")
 
 #endif  // __ASSEMBLER__
 

@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/magma_service/mock/mock_bus_mapper.h>
+#include <lib/magma_service/mock/mock_mmio.h>
+
 #include <thread>
 
 #include <gtest/gtest.h>
 
-#include "mock/mock_bus_mapper.h"
-#include "mock/mock_mmio.h"
+#include "driver_logger_harness.h"
 #include "src/graphics/drivers/msd-arm-mali/src/address_manager.h"
 #include "src/graphics/drivers/msd-arm-mali/src/performance_counters.h"
 #include "src/graphics/drivers/msd-arm-mali/tests/unit_tests/fake_connection_owner_base.h"
@@ -252,10 +254,15 @@ class PerformanceCounterTest {
   }
 };
 
-TEST(PerfCounters, StateChange) { PerformanceCounterTest::TestStateChange(); }
+class PerfCounters : public testing::Test {
+  void SetUp() override { logger_harness_ = DriverLoggerHarness::Create(); }
+  std::unique_ptr<DriverLoggerHarness> logger_harness_;
+};
 
-TEST(PerfCounters, Enabled) { PerformanceCounterTest::TestEnabled(); }
+TEST_F(PerfCounters, StateChange) { PerformanceCounterTest::TestStateChange(); }
 
-TEST(PerfCounters, ForceDisable) { PerformanceCounterTest::TestForceDisable(); }
+TEST_F(PerfCounters, Enabled) { PerformanceCounterTest::TestEnabled(); }
 
-TEST(PerfCounters, TriggerWhileDisabled) { PerformanceCounterTest::TestTriggerWhileDisabled(); }
+TEST_F(PerfCounters, ForceDisable) { PerformanceCounterTest::TestForceDisable(); }
+
+TEST_F(PerfCounters, TriggerWhileDisabled) { PerformanceCounterTest::TestTriggerWhileDisabled(); }

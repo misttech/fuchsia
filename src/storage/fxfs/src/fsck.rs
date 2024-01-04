@@ -4,31 +4,30 @@
 
 use {
     crate::{
-        filesystem::Filesystem,
+        filesystem::FxFilesystem,
         fsck::errors::{FsckError, FsckFatal, FsckIssue, FsckWarning},
         log::*,
         lsm_tree::{
-            simple_persistent_layer::SimplePersistentLayer,
             skip_list_layer::SkipListLayer,
             types::{
                 BoxedLayerIterator, Item, Key, Layer, LayerIterator, OrdUpperBound, RangeKey, Value,
             },
         },
-        object_handle::{ReadObjectHandle, INVALID_OBJECT_ID},
+        object_handle::INVALID_OBJECT_ID,
         object_store::{
-            allocator::{Allocator, AllocatorKey, AllocatorValue, CoalescingIterator},
+            allocator::{AllocatorKey, AllocatorValue, CoalescingIterator},
             journal::super_block::SuperBlockInstance,
             load_store_info,
-            transaction::LockKey,
+            transaction::{lock_keys, LockKey},
             volume::root_volume,
-            HandleOptions, ObjectKey, ObjectStore, ObjectValue,
         },
     },
     anyhow::{anyhow, Context, Error},
     futures::try_join,
     fxfs_crypto::Crypt,
+    rustc_hash::FxHashSet as HashSet,
     std::{
-        collections::{BTreeMap, HashSet},
+        collections::BTreeMap,
         iter::zip,
         ops::Bound,
         sync::{
@@ -44,6 +43,36 @@ mod store_scanner;
 
 #[cfg(test)]
 mod tests;
+
+/// General stats about filesystem fragmentation
+pub const NUM_FRAGMENTATION_HISTOGRAM_SLOTS: usize = 12;
+#[derive(Default, Debug)]
+pub struct FragmentationStats {
+    /// Histogram of extent size in bytes. Buckets are fixed as 0, <=4kB, <=8kB, ... <=2MiB, >2MiB.
+    pub extent_size: [u64; NUM_FRAGMENTATION_HISTOGRAM_SLOTS],
+    /// Histogram of extents per file. Buckets are fixed as 0, <=1, <=2, ... <=512, >512.
+    pub extent_count: [u64; NUM_FRAGMENTATION_HISTOGRAM_SLOTS],
+    /// Histogram of free space in bytes. Buckets are fixed as 0, <=4kB, <=8kB, ... <=2MiB, >2MiB.
+    pub free_space: [u64; NUM_FRAGMENTATION_HISTOGRAM_SLOTS],
+}
+
+impl FragmentationStats {
+    /// Returns the histogram bucket for extent_size and free_space given size in bytes.
+    pub fn get_histogram_bucket_for_size(size: u64) -> usize {
+        return Self::get_histogram_bucket_for_count(size / 4096);
+    }
+    /// Returns the histogram bucket for extent_count.
+    pub fn get_histogram_bucket_for_count(count: u64) -> usize {
+        let log_count = (64 - count.leading_zeros()) as usize;
+        return log_count.clamp(0, NUM_FRAGMENTATION_HISTOGRAM_SLOTS - 1);
+    }
+}
+
+/// Filesystem statistics gathered on during an fsck run.
+#[derive(Default, Debug)]
+pub struct FsckResult {
+    pub fragmentation: FragmentationStats,
+}
 
 pub struct FsckOptions<'a> {
     /// Whether to fail fsck if any warnings are encountered.
@@ -83,14 +112,16 @@ impl Default for FsckOptions<'_> {
 //
 // TODO(fxbug.dev/96075): This currently takes a write lock on the filesystem.  It would be nice if
 // we could take a snapshot.
-pub async fn fsck(filesystem: Arc<dyn Filesystem>) -> Result<(), Error> {
+pub async fn fsck(filesystem: Arc<FxFilesystem>) -> Result<FsckResult, Error> {
     fsck_with_options(filesystem, &FsckOptions::default()).await
 }
 
 pub async fn fsck_with_options(
-    filesystem: Arc<dyn Filesystem>,
+    filesystem: Arc<FxFilesystem>,
     options: &FsckOptions<'_>,
-) -> Result<(), Error> {
+) -> Result<FsckResult, Error> {
+    let mut result = FsckResult::default();
+
     if !options.quiet {
         info!("Starting fsck");
     }
@@ -98,7 +129,7 @@ pub async fn fsck_with_options(
     let _guard = if options.no_lock {
         None
     } else {
-        Some(filesystem.write_lock(&[LockKey::Filesystem]).await)
+        Some(filesystem.lock_manager().write_lock(lock_keys![LockKey::Filesystem]).await)
     };
 
     let mut fsck = Fsck::new(options);
@@ -108,7 +139,7 @@ pub async fn fsck_with_options(
 
     // Keep track of all things that might exist in journal checkpoints so we can check for
     // unexpected entries.
-    let mut journal_checkpoint_ids: HashSet<u64> = HashSet::new();
+    let mut journal_checkpoint_ids: HashSet<u64> = HashSet::default();
     journal_checkpoint_ids.insert(super_block_header.allocator_object_id);
     journal_checkpoint_ids.insert(super_block_header.root_store_object_id);
 
@@ -117,8 +148,13 @@ pub async fn fsck_with_options(
         vec![super_block_header.root_store_object_id, super_block_header.journal_object_id];
     root_objects.append(&mut object_manager.root_store().parent_objects());
     fsck.verbose("Scanning root parent store...");
-    store_scanner::scan_store(&fsck, object_manager.root_parent_store().as_ref(), &root_objects)
-        .await?;
+    store_scanner::scan_store(
+        &fsck,
+        object_manager.root_parent_store().as_ref(),
+        &root_objects,
+        &mut result,
+    )
+    .await?;
     fsck.verbose("Scanning root parent store done");
 
     let root_store = &object_manager.root_store();
@@ -175,15 +211,16 @@ pub async fn fsck_with_options(
 
     // Finally scan the root object store.
     fsck.verbose("Scanning root object store...");
-    store_scanner::scan_store(&fsck, root_store.as_ref(), &root_store_root_objects).await?;
+    store_scanner::scan_store(&fsck, root_store.as_ref(), &root_store_root_objects, &mut result)
+        .await?;
     fsck.verbose("Scanning root object store done");
 
     // Now compare our regenerated allocation map with what we actually have.
     fsck.verbose("Verifying allocations...");
-    let mut store_ids = HashSet::new();
+    let mut store_ids = HashSet::default();
     store_ids.insert(root_store.store_object_id());
     store_ids.insert(object_manager.root_parent_store().store_object_id());
-    fsck.verify_allocations(filesystem.as_ref(), &store_ids).await?;
+    fsck.verify_allocations(filesystem.as_ref(), &store_ids, &mut result).await?;
     fsck.verbose("Verifying allocations done");
 
     // Every key in journal_file_offsets should map to an lsm tree (ObjectStore or Allocator).
@@ -208,7 +245,7 @@ pub async fn fsck_with_options(
                 info!("No issues detected");
             }
         }
-        Ok(())
+        Ok(result)
     }
 }
 
@@ -216,19 +253,20 @@ pub async fn fsck_with_options(
 // TODO(fxbug.dev/96075): This currently takes a write lock on the filesystem.  It would be nice if
 // we could take a snapshot.
 pub async fn fsck_volume(
-    filesystem: &dyn Filesystem,
+    filesystem: &FxFilesystem,
     store_id: u64,
     crypt: Option<Arc<dyn Crypt>>,
-) -> Result<(), Error> {
+) -> Result<FsckResult, Error> {
     fsck_volume_with_options(filesystem, &FsckOptions::default(), store_id, crypt).await
 }
 
 pub async fn fsck_volume_with_options(
-    filesystem: &dyn Filesystem,
+    filesystem: &FxFilesystem,
     options: &FsckOptions<'_>,
     store_id: u64,
     crypt: Option<Arc<dyn Crypt>>,
-) -> Result<(), Error> {
+) -> Result<FsckResult, Error> {
+    let mut result = FsckResult::default();
     if !options.quiet {
         info!(?store_id, "Starting volume fsck");
     }
@@ -236,14 +274,14 @@ pub async fn fsck_volume_with_options(
     let _guard = if options.no_lock {
         None
     } else {
-        Some(filesystem.write_lock(&[LockKey::Filesystem]).await)
+        Some(filesystem.lock_manager().write_lock(lock_keys![LockKey::Filesystem]).await)
     };
 
     let mut fsck = Fsck::new(options);
-    fsck.check_child_store(filesystem, store_id, crypt).await?;
-    let mut store_ids = HashSet::new();
+    fsck.check_child_store(filesystem, store_id, crypt, &mut result).await?;
+    let mut store_ids = HashSet::default();
     store_ids.insert(store_id);
-    fsck.verify_allocations(filesystem, &store_ids).await?;
+    fsck.verify_allocations(filesystem, &store_ids, &mut result).await?;
 
     let errors = fsck.errors();
     let warnings = fsck.warnings();
@@ -257,7 +295,7 @@ pub async fn fsck_volume_with_options(
                 info!("No issues detected");
             }
         }
-        Ok(())
+        Ok(result)
     }
 }
 
@@ -308,7 +346,7 @@ impl<'a> Fsck<'a> {
     fn assert<V>(&self, res: Result<V, Error>, error: FsckFatal) -> Result<V, Error> {
         if res.is_err() {
             (self.options.on_error)(&FsckIssue::Fatal(error.clone()));
-            return Err(anyhow!(format!("{:?}", error)).context(res.err().unwrap()));
+            return Err(anyhow!("{:?}", error)).context(res.err().unwrap());
         }
         res
     }
@@ -323,7 +361,7 @@ impl<'a> Fsck<'a> {
         (self.options.on_error)(&FsckIssue::Error(error.clone()));
         self.errors.fetch_add(1, Ordering::Relaxed);
         if self.options.halt_on_error {
-            Err(anyhow!(format!("{:?}", error)))
+            Err(anyhow!("{:?}", error))
         } else {
             Ok(())
         }
@@ -331,13 +369,13 @@ impl<'a> Fsck<'a> {
 
     fn fatal(&self, error: FsckFatal) -> Result<(), Error> {
         (self.options.on_error)(&FsckIssue::Fatal(error.clone()));
-        Err(anyhow!(format!("{:?}", error)))
+        Err(anyhow!("{:?}", error))
     }
 
     // Does not actually verify the inner contents of the store; for that, use check_child_store.
     async fn check_child_store_metadata(
         &mut self,
-        filesystem: &dyn Filesystem,
+        filesystem: &FxFilesystem,
         store_id: u64,
         root_store_root_objects: &mut Vec<u64>,
     ) -> Result<(), Error> {
@@ -354,78 +392,45 @@ impl<'a> Fsck<'a> {
 
     async fn check_child_store(
         &mut self,
-        filesystem: &dyn Filesystem,
+        filesystem: &FxFilesystem,
         store_id: u64,
-        mut crypt: Option<Arc<dyn Crypt>>,
+        crypt: Option<Arc<dyn Crypt>>,
+        result: &mut FsckResult,
     ) -> Result<(), Error> {
-        let root_store = filesystem.root_store();
         let store =
             filesystem.object_manager().store(store_id).context("open_store failed").unwrap();
 
-        let _relock_guard = if store.is_locked() {
+        let _relock_guard;
+        if store.is_locked() {
             if let Some(crypt) = &crypt {
                 store.unlock_read_only(crypt.clone()).await?;
-                Some(scopeguard::guard(store.clone(), |store| {
+                _relock_guard = scopeguard::guard(store.clone(), |store| {
                     store.lock_read_only();
-                }))
+                });
             } else {
                 return Err(anyhow!("Invalid key"));
             }
-        } else {
-            crypt = store.crypt();
-            None
-        };
-
-        for layer_file_object_id in store.layer_file_object_ids() {
-            self.check_layer_file::<ObjectKey, ObjectValue>(
-                &root_store,
-                store_id,
-                layer_file_object_id,
-                crypt.clone(),
-            )
-            .await?;
         }
-        store_scanner::scan_store(self, store.as_ref(), &store.root_objects())
+
+        if self.options.do_slow_passes {
+            let layer_set = store.tree().immutable_layer_set();
+            for layer in layer_set.layers {
+                let (layer_object_id, layer_size) = if let Some(h) = layer.handle() {
+                    (h.object_id(), h.get_size())
+                } else {
+                    (0, 0)
+                };
+                self.verbose(format!(
+                    "Layer file {} for store {} is {} bytes",
+                    layer_object_id, store_id, layer_size,
+                ));
+                self.check_layer_file_contents(store_id, layer_object_id, layer.clone()).await?
+            }
+        }
+
+        store_scanner::scan_store(self, store.as_ref(), &store.root_objects(), result)
             .await
             .context("scan_store failed")
-    }
-
-    async fn check_layer_file<
-        K: Key + KeyExt + OrdUpperBound + std::fmt::Debug,
-        V: Value + std::fmt::Debug,
-    >(
-        &self,
-        root_store: &Arc<ObjectStore>,
-        store_object_id: u64,
-        layer_file_object_id: u64,
-        crypt: Option<Arc<dyn Crypt>>,
-    ) -> Result<(), Error> {
-        let layer_file = self.assert(
-            ObjectStore::open_object(
-                root_store,
-                layer_file_object_id,
-                HandleOptions::default(),
-                crypt,
-            )
-            .await,
-            FsckFatal::MissingLayerFile(store_object_id, layer_file_object_id),
-        )?;
-        if self.options.do_slow_passes {
-            self.verbose(format!(
-                "Layer file {} for store {} is {} bytes",
-                layer_file_object_id,
-                store_object_id,
-                layer_file.get_size()
-            ));
-            let layer = SimplePersistentLayer::open(layer_file).await?;
-            self.check_layer_file_contents(
-                store_object_id,
-                layer_file_object_id,
-                layer as Arc<dyn Layer<K, V>>,
-            )
-            .await?;
-        }
-        Ok(())
     }
 
     async fn check_layer_file_contents<
@@ -472,15 +477,16 @@ impl<'a> Fsck<'a> {
     // Assumes that every store in `store_object_ids` has been previously scanned.
     async fn verify_allocations(
         &self,
-        filesystem: &dyn Filesystem,
+        filesystem: &FxFilesystem,
         store_object_ids: &HashSet<u64>,
+        result: &mut FsckResult,
     ) -> Result<(), Error> {
         let allocator = filesystem.allocator();
         let objects_pending_deletion = allocator.objects_pending_deletion();
         let layer_set = allocator.tree().layer_set();
         let mut merger = layer_set.merger();
         let mut stored_allocations =
-            CoalescingIterator::new(allocator.iter(&mut merger, Bound::Unbounded).await?)
+            CoalescingIterator::new(allocator.filter(merger.seek(Bound::Unbounded).await?).await?)
                 .await
                 .expect("filter failed");
         let mut observed_allocations =
@@ -488,6 +494,7 @@ impl<'a> Fsck<'a> {
         let mut observed_owner_allocated_bytes = BTreeMap::new();
         let mut extra_allocations: Vec<errors::Allocation> = vec![];
         let bs = filesystem.block_size();
+        let mut previous_allocation_end = 0;
         while let Some(allocation) = stored_allocations.get() {
             if allocation.key.device_range.start % bs > 0
                 || allocation.key.device_range.end % bs > 0
@@ -501,6 +508,17 @@ impl<'a> Fsck<'a> {
                 AllocatorValue::Abs { owner_object_id, .. } => *owner_object_id,
             };
             let r = &allocation.key.device_range;
+
+            // 'None' allocator values represent free space so should be ignored here.
+            if allocation.value != &AllocatorValue::None {
+                if r.start > previous_allocation_end {
+                    let size = r.start - previous_allocation_end;
+                    result.fragmentation.free_space
+                        [FragmentationStats::get_histogram_bucket_for_size(size)] += 1;
+                }
+                previous_allocation_end = r.end;
+            }
+
             if !objects_pending_deletion.contains(&owner_object_id) {
                 *observed_owner_allocated_bytes.entry(owner_object_id).or_insert(0) +=
                     (r.end - r.start) as i64;
@@ -545,6 +563,13 @@ impl<'a> Fsck<'a> {
             }
             try_join!(stored_allocations.advance(), observed_allocations.advance())?;
         }
+        let device_size =
+            filesystem.device().block_count() * filesystem.device().block_size() as u64;
+        if previous_allocation_end < device_size {
+            let size = device_size - previous_allocation_end;
+            result.fragmentation.free_space
+                [FragmentationStats::get_histogram_bucket_for_size(size)] += 1;
+        }
         while let Some(allocation) = observed_allocations.get() {
             self.error(FsckError::MissingAllocation(allocation.into()))?;
             observed_allocations.advance().await?;
@@ -555,7 +580,7 @@ impl<'a> Fsck<'a> {
             "Found {} bytes allocated (expected {} bytes). Total device size is {} bytes.",
             allocator.get_allocated_bytes(),
             expected_allocated_bytes,
-            filesystem.device().block_count() * filesystem.device().block_size() as u64
+            device_size,
         ));
         if !extra_allocations.is_empty() {
             self.error(FsckError::ExtraAllocations(extra_allocations))?;

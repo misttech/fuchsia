@@ -45,11 +45,11 @@ SoftAp::SoftAp(SoftApIfc* ifc, DeviceContext* context, uint32_t bss_index)
 
 SoftAp::~SoftAp() {
   // Attempt to stop the Soft AP and ignore the error.
-  fuchsia_wlan_fullmac::wire::WlanFullmacStopReq req = {.ssid = ssid_};
-  Stop(&req);
+  Stop(&ssid_);
 }
 
-wlan_start_result_t SoftAp::Start(const fuchsia_wlan_fullmac::wire::WlanFullmacStartReq* req) {
+wlan_fullmac_wire::WlanStartResult SoftAp::Start(
+    const fuchsia_wlan_fullmac::wire::WlanFullmacImplStartBssRequest* req) {
   std::lock_guard lock(mutex_);
   IoctlRequest<mlan_ds_bss> start_req(MLAN_IOCTL_BSS, MLAN_ACT_GET, bss_index_,
                                       {.sub_command = MLAN_OID_UAP_BSS_CONFIG});
@@ -58,13 +58,13 @@ wlan_start_result_t SoftAp::Start(const fuchsia_wlan_fullmac::wire::WlanFullmacS
 
   if (started_) {
     NXPF_ERR("SoftAP has already been started");
-    return WLAN_START_RESULT_BSS_ALREADY_STARTED_OR_JOINED;
+    return wlan_fullmac_wire::WlanStartResult::kBssAlreadyStartedOrJoined;
   }
   // Get the current BSS configuration
   io_status = context_->ioctl_adapter_->IssueIoctlSync(&start_req);
   if (io_status != IoctlStatus::Success) {
     NXPF_ERR("BSS get req failed: %d", io_status);
-    return WLAN_START_RESULT_NOT_SUPPORTED;
+    return wlan_fullmac_wire::WlanStartResult::kNotSupported;
   }
 
   // Get the supported data rates for the specified band.
@@ -74,7 +74,7 @@ wlan_start_result_t SoftAp::Start(const fuchsia_wlan_fullmac::wire::WlanFullmacS
   auto& rate_band_cfg = rate_req.UserReq().param.rate_band_cfg;
   rate_band_cfg.bss_mode = MLAN_BSS_MODE_INFRA;
   rate_band_cfg.config_bands =
-      (band_from_channel(req->channel) == BAND_5GHZ) ? BAND_A : (BAND_B | BAND_G);
+      (band_from_channel(req->channel()) == BAND_5GHZ) ? BAND_A : (BAND_B | BAND_G);
   io_status = context_->ioctl_adapter_->IssueIoctlSync(&rate_req);
   if (io_status != IoctlStatus::Success) {
     NXPF_ERR("Rate req get failed: %d", io_status);
@@ -86,15 +86,15 @@ wlan_start_result_t SoftAp::Start(const fuchsia_wlan_fullmac::wire::WlanFullmacS
   // BSS get should have copied the default config into the ioctl buffer, just set ssid,
   // channel and band from the request
   start_req.IoctlReq().action = MLAN_ACT_SET;
-  memcpy(&bss_cfg.ssid.ssid, req->ssid.data.data(), req->ssid.len);
-  bss_cfg.ssid.ssid_len = req->ssid.len;
-  bss_cfg.channel = req->channel;
-  bss_cfg.bandcfg.chanBand = band_from_channel(req->channel);
+  memcpy(&bss_cfg.ssid.ssid, req->ssid().data.data(), req->ssid().len);
+  bss_cfg.ssid.ssid_len = req->ssid().len;
+  bss_cfg.channel = req->channel();
+  bss_cfg.bandcfg.chanBand = band_from_channel(req->channel());
   bss_cfg.bandcfg.chanWidth = CHAN_BW_20MHZ;
   io_status = context_->ioctl_adapter_->IssueIoctlSync(&start_req);
   if (io_status != IoctlStatus::Success) {
     NXPF_ERR("BSS set req failed: %d", io_status);
-    return WLAN_START_RESULT_NOT_SUPPORTED;
+    return wlan_fullmac_wire::WlanStartResult::kNotSupported;
   }
 
   // Now start the BSS
@@ -106,30 +106,30 @@ wlan_start_result_t SoftAp::Start(const fuchsia_wlan_fullmac::wire::WlanFullmacS
   io_status = context_->ioctl_adapter_->IssueIoctlSync(&start_req);
   if (io_status != IoctlStatus::Success) {
     NXPF_ERR("BSS start req failed: %d", io_status);
-    return WLAN_START_RESULT_NOT_SUPPORTED;
+    return wlan_fullmac_wire::WlanStartResult::kNotSupported;
   }
 
   // Wait for confirmation via the MLAN_EVENT_ID_UAP_FW_BSS_START event.
   if (sync_completion_wait(&softap_start_sync_, kWaitForSoftApStartTo) != ZX_OK) {
-    return WLAN_START_RESULT_NOT_SUPPORTED;
+    return wlan_fullmac_wire::WlanStartResult::kNotSupported;
   }
   started_ = true;
-  ssid_ = req->ssid;
-  return WLAN_START_RESULT_SUCCESS;
+  ssid_ = req->ssid();
+  return wlan_fullmac_wire::WlanStartResult::kSuccess;
 }
 
-wlan_stop_result_t SoftAp::Stop(const fuchsia_wlan_fullmac::wire::WlanFullmacStopReq* req) {
+wlan_fullmac_wire::WlanStopResult SoftAp::Stop(const fuchsia_wlan_ieee80211::wire::CSsid* ssid) {
   {
     std::lock_guard lock(mutex_);
     if (!started_) {
       NXPF_ERR("SoftAP has not been started yet");
-      return WLAN_STOP_RESULT_BSS_ALREADY_STOPPED;
+      return wlan_fullmac_wire::WlanStopResult::kBssAlreadyStopped;
     }
     // Ensure the requested ssid matches the started ssid.
-    if (memcmp(req->ssid.data.data(), ssid_.data.data(), req->ssid.len) != 0) {
-      NXPF_ERR("Stop req ssid: %s does not match started ssid: %s", req->ssid.data.data(),
+    if (memcmp(ssid->data.data(), ssid_.data.data(), ssid->len) != 0) {
+      NXPF_ERR("Stop req ssid: %s does not match started ssid: %s", ssid->data.data(),
                ssid_.data.data());
-      return WLAN_STOP_RESULT_INTERNAL_ERROR;
+      return wlan_fullmac_wire::WlanStopResult::kInternalError;
     }
   }
 
@@ -147,7 +147,7 @@ wlan_stop_result_t SoftAp::Stop(const fuchsia_wlan_fullmac::wire::WlanFullmacSto
     }
   } else {
     NXPF_ERR("Get sta list req failed: %d", io_status);
-    return WLAN_STOP_RESULT_INTERNAL_ERROR;
+    return wlan_fullmac_wire::WlanStopResult::kInternalError;
   }
 
   std::lock_guard lock(mutex_);
@@ -159,7 +159,7 @@ wlan_stop_result_t SoftAp::Stop(const fuchsia_wlan_fullmac::wire::WlanFullmacSto
   io_status = context_->ioctl_adapter_->IssueIoctlSync(&bss_req);
   if (io_status != IoctlStatus::Success) {
     NXPF_ERR("BSS get req failed: %d", io_status);
-    return WLAN_START_RESULT_NOT_SUPPORTED;
+    return wlan_fullmac_wire::WlanStopResult::kInternalError;
   }
 
   // Send the Stop request.
@@ -174,7 +174,7 @@ wlan_stop_result_t SoftAp::Stop(const fuchsia_wlan_fullmac::wire::WlanFullmacSto
   io_status = context_->ioctl_adapter_->IssueIoctlSync(&stop_req);
   if (io_status != IoctlStatus::Success) {
     NXPF_ERR("BSS stop req failed: %d", io_status);
-    return WLAN_STOP_RESULT_INTERNAL_ERROR;
+    return wlan_fullmac_wire::WlanStopResult::kInternalError;
   }
 
   // Reset the BSS. This resets the BSS parameters.
@@ -182,13 +182,13 @@ wlan_stop_result_t SoftAp::Stop(const fuchsia_wlan_fullmac::wire::WlanFullmacSto
   io_status = context_->ioctl_adapter_->IssueIoctlSync(&stop_req);
   if (io_status != IoctlStatus::Success) {
     NXPF_ERR("BSS reset req failed: %d", io_status);
-    return WLAN_STOP_RESULT_INTERNAL_ERROR;
+    return wlan_fullmac_wire::WlanStopResult::kInternalError;
   }
 
   // Clear out the deauth sta list.
   deauth_sta_set_.clear();
   started_ = false;
-  return WLAN_STOP_RESULT_SUCCESS;
+  return wlan_fullmac_wire::WlanStopResult::kSuccess;
 }
 
 zx_status_t SoftAp::DeauthSta(const uint8_t sta_mac_addr[ETH_ALEN], uint16_t reason_code) {

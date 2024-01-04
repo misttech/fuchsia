@@ -11,7 +11,11 @@ import("//build/test.gni")
 
 driver_bind_rules("ihda_controller_bind") {
   rules = "intel_hda.bind"
-  deps = [ "//src/devices/bind/fuchsia.pci" ]
+  deps = [
+    "//src/devices/bind/fuchsia.acpi",
+    "//src/devices/bind/fuchsia.pci",
+    "//src/devices/bind/fuchsia.sysmem",
+  ]
   tests = "bind_test.json"
 }
 
@@ -74,7 +78,7 @@ source_set("src") {
     "//src/media/audio/drivers/lib/audio-proto-utils",
   ]
   public_deps = [
-    "//sdk/fidl/fuchsia.hardware.intel.hda:fuchsia.hardware.intel.hda_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.intel.hda:fuchsia.hardware.intel.hda_cpp",
     "//sdk/lib/fit",
     "//src/devices/lib/mmio",
     "//src/devices/pci/lib/device-protocol-pci",
@@ -122,6 +126,11 @@ fuchsia_driver_component("intel-hda") {
   deps = [ ":intel-hda-driver" ]
   info = "intel-hda-info.json"
   manifest = "meta/intel-hda.cml"
+}
+
+fuchsia_driver_package("package") {
+  package_name = "intel-hda"
+  driver_components = [ ":intel-hda" ]
 }
 
 test("controller_test") {

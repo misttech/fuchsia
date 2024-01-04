@@ -181,7 +181,7 @@ where
     for<'a> &'a T: Into<u8>,
 {
     /// The minimum packet consists of an opcode (1 byte) and packet length (2 bytes).
-    const MIN_PACKET_SIZE: usize = 3;
+    pub const MIN_PACKET_SIZE: usize = 3;
 
     pub fn new(code: T, data: Vec<u8>, headers: HeaderSet) -> Self {
         Self { code, data, headers }
@@ -193,6 +193,11 @@ where
 
     pub fn data(&self) -> &Vec<u8> {
         &self.data
+    }
+
+    #[cfg(test)]
+    pub fn headers(&self) -> &HeaderSet {
+        &self.headers
     }
 
     /// Attempts to decode the body of `buf` into a `Packet`.
@@ -390,7 +395,6 @@ decodable_enum! {
 pub type ResponsePacket = Packet<ResponseCode>;
 
 impl ResponsePacket {
-    #[cfg(test)]
     pub fn new_no_data(code: ResponseCode, headers: HeaderSet) -> Self {
         Self::new(code, vec![], headers)
     }
@@ -404,6 +408,18 @@ impl ResponsePacket {
         let mut data = vec![OBEX_PROTOCOL_VERSION_NUMBER, OBEX_CONNECT_RESPONSE_FLAGS];
         data.extend_from_slice(&max_packet_size.to_be_bytes());
         Self::new(code, data, headers)
+    }
+
+    pub fn new_disconnect(headers: HeaderSet) -> Self {
+        Self::new(ResponseCode::Ok, vec![], headers)
+    }
+
+    pub fn new_setpath(code: ResponseCode, headers: HeaderSet) -> Self {
+        Self::new(code, vec![], headers)
+    }
+
+    pub fn new_get(code: ResponseCode, headers: HeaderSet) -> Self {
+        Self::new(code, vec![], headers)
     }
 
     pub fn expect_code(self, request: OpCode, expected: ResponseCode) -> Result<Self, Error> {
@@ -524,7 +540,7 @@ mod tests {
     #[fuchsia::test]
     fn construct_setpath() {
         // A request with all flags enabled & Name header is valid.
-        let headers = HeaderSet::from_header(Header::name("foo")).unwrap();
+        let headers = HeaderSet::from_header(Header::name("foo"));
         let _request = RequestPacket::new_set_path(SetPathFlags::all(), headers.clone())
             .expect("valid set path args");
 

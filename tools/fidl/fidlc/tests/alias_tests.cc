@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 #include "tools/fidl/fidlc/include/fidl/diagnostics.h"
 #include "tools/fidl/fidlc/include/fidl/names.h"
-#include "tools/fidl/fidlc/tests/error_test.h"
 #include "tools/fidl/fidlc/tests/test_library.h"
 
 namespace {
@@ -22,7 +21,9 @@ type Message = struct {
 alias alias_of_int16 = int16;
 alias alias_of_int16 = int16;
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrNameCollision);
+  library.ExpectFail(fidl::ErrNameCollision, fidl::flat::Element::Kind::kAlias, "alias_of_int16",
+                     fidl::flat::Element::Kind::kAlias, "example.fidl:8:7");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(AliasTests, GoodAliasOfStruct) {
@@ -36,9 +37,9 @@ alias AliasOfDecl = TypeDecl;
 )FIDL");
   ASSERT_COMPILED(library);
   auto type_decl = library.LookupStruct("TypeDecl");
-  ASSERT_NOT_NULL(type_decl);
-  EXPECT_EQ(type_decl->members.size(), 2);
-  ASSERT_NOT_NULL(library.LookupAlias("AliasOfDecl"));
+  ASSERT_NE(type_decl, nullptr);
+  EXPECT_EQ(type_decl->members.size(), 2u);
+  ASSERT_NE(library.LookupAlias("AliasOfDecl"), nullptr);
 }
 
 TEST(AliasTests, GoodPrimitive) {
@@ -52,8 +53,8 @@ alias alias_of_int16 = int16;
 )FIDL");
   ASSERT_COMPILED(library);
   auto msg = library.LookupStruct("Message");
-  ASSERT_NOT_NULL(msg);
-  ASSERT_EQ(msg->members.size(), 1);
+  ASSERT_NE(msg, nullptr);
+  ASSERT_EQ(msg->members.size(), 1u);
 
   auto type = msg->members[0].type_ctor->type;
   ASSERT_EQ(type->kind, fidl::flat::Type::Kind::kPrimitive);
@@ -63,10 +64,10 @@ alias alias_of_int16 = int16;
   ASSERT_EQ(primitive_type->subtype, fidl::types::PrimitiveSubtype::kInt16);
 
   auto invocation = msg->members[0].type_ctor->resolved_params;
-  ASSERT_NOT_NULL(invocation.from_alias);
-  EXPECT_STREQ(fidl::NameFlatName(invocation.from_alias->name).c_str(), "example/alias_of_int16");
-  EXPECT_NULL(invocation.element_type_resolved);
-  EXPECT_NULL(invocation.size_resolved);
+  ASSERT_NE(invocation.from_alias, nullptr);
+  EXPECT_EQ(fidl::NameFlatName(invocation.from_alias->name), "example/alias_of_int16");
+  EXPECT_EQ(invocation.element_type_resolved, nullptr);
+  EXPECT_EQ(invocation.size_resolved, nullptr);
   EXPECT_EQ(invocation.nullability, fidl::types::Nullability::kNonnullable);
 }
 
@@ -81,8 +82,8 @@ type Message = struct {
 )FIDL");
   ASSERT_COMPILED(library);
   auto msg = library.LookupStruct("Message");
-  ASSERT_NOT_NULL(msg);
-  ASSERT_EQ(msg->members.size(), 1);
+  ASSERT_NE(msg, nullptr);
+  ASSERT_EQ(msg->members.size(), 1u);
 
   auto type = msg->members[0].type_ctor->type;
   ASSERT_EQ(type->kind, fidl::flat::Type::Kind::kPrimitive);
@@ -92,10 +93,10 @@ type Message = struct {
   ASSERT_EQ(primitive_type->subtype, fidl::types::PrimitiveSubtype::kInt16);
 
   auto invocation = msg->members[0].type_ctor->resolved_params;
-  ASSERT_NOT_NULL(invocation.from_alias);
-  EXPECT_STREQ(fidl::NameFlatName(invocation.from_alias->name).c_str(), "example/alias_of_int16");
-  EXPECT_NULL(invocation.element_type_resolved);
-  EXPECT_NULL(invocation.size_resolved);
+  ASSERT_NE(invocation.from_alias, nullptr);
+  EXPECT_EQ(fidl::NameFlatName(invocation.from_alias->name), "example/alias_of_int16");
+  EXPECT_EQ(invocation.element_type_resolved, nullptr);
+  EXPECT_EQ(invocation.size_resolved, nullptr);
   EXPECT_EQ(invocation.nullability, fidl::types::Nullability::kNonnullable);
 }
 
@@ -109,14 +110,15 @@ type Message = struct {
     f uint32;
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrIncludeCycle);
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "alias 'uint32' -> alias 'uint32'");
+  library.ExpectFail(fidl::ErrIncludeCycle, "alias 'uint32' -> alias 'uint32'");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(AliasTests, BadNoOptionalOnPrimitive) {
   TestLibrary library;
   library.AddFile("bad/fi-0156.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrCannotBeOptional);
+  library.ExpectFail(fidl::ErrCannotBeOptional, "int16");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(AliasTests, BadMultipleConstraintsOnPrimitive) {
@@ -128,20 +130,23 @@ type Bad = struct {
 };
 
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrTooManyConstraints);
+  library.ExpectFail(fidl::ErrTooManyConstraints, "int64", 0, 3);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(AliasTests, BadInvalidSizeConstraintType) {
   TestLibrary library;
   library.AddFile("bad/fi-0101-a.test.fidl");
-  ASSERT_ERRORED_TWICE_DURING_COMPILE(library, fidl::ErrTypeCannotBeConvertedToType,
-                                      fidl::ErrCouldNotResolveSizeBound);
+  library.ExpectFail(fidl::ErrTypeCannotBeConvertedToType, "\"255\"", "string:3", "uint32");
+  library.ExpectFail(fidl::ErrCouldNotResolveSizeBound);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(AliasTests, BadInvalidSizeConstraintIsNotValue) {
   TestLibrary library;
   library.AddFile("bad/fi-0101-b.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrCouldNotResolveSizeBound);
+  library.ExpectFail(fidl::ErrCouldNotResolveSizeBound);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(AliasTests, BadNoOptionalOnAliasedPrimitive) {
@@ -155,7 +160,8 @@ type Bad = struct {
 };
 
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrCannotBeOptional);
+  library.ExpectFail(fidl::ErrCannotBeOptional, "alias");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(AliasTests, GoodVectorParameterizedOnDecl) {
@@ -169,8 +175,8 @@ alias alias_of_vector_of_string = vector<string>;
 )FIDL");
   ASSERT_COMPILED(library);
   auto msg = library.LookupStruct("Message");
-  ASSERT_NOT_NULL(msg);
-  ASSERT_EQ(msg->members.size(), 1);
+  ASSERT_NE(msg, nullptr);
+  ASSERT_EQ(msg->members.size(), 1u);
 
   auto type = msg->members[0].type_ctor->type;
   ASSERT_EQ(type->kind, fidl::flat::Type::Kind::kVector);
@@ -181,11 +187,10 @@ alias alias_of_vector_of_string = vector<string>;
   ASSERT_EQ(vector_type->ElementCount(), fidl::flat::Size::Max().value);
 
   auto invocation = msg->members[0].type_ctor->resolved_params;
-  ASSERT_NOT_NULL(invocation.from_alias);
-  EXPECT_STREQ(fidl::NameFlatName(invocation.from_alias->name).c_str(),
-               "example/alias_of_vector_of_string");
-  EXPECT_NULL(invocation.element_type_resolved);
-  EXPECT_NULL(invocation.size_resolved);
+  ASSERT_NE(invocation.from_alias, nullptr);
+  EXPECT_EQ(fidl::NameFlatName(invocation.from_alias->name), "example/alias_of_vector_of_string");
+  EXPECT_EQ(invocation.element_type_resolved, nullptr);
+  EXPECT_EQ(invocation.size_resolved, nullptr);
   EXPECT_EQ(invocation.nullability, fidl::types::Nullability::kNonnullable);
 }
 
@@ -199,10 +204,9 @@ type Message = struct {
 
 alias alias_of_vector = vector;
 )FIDL");
-  ASSERT_ERRORED_TWICE_DURING_COMPILE(library, fidl::ErrWrongNumberOfLayoutParameters,
-                                      fidl::ErrWrongNumberOfLayoutParameters);
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "vector expected 1 layout parameter(s)");
-  ASSERT_SUBSTR(library.errors()[1]->msg.c_str(), "alias_of_vector expected 0 layout parameter(s)");
+  library.ExpectFail(fidl::ErrWrongNumberOfLayoutParameters, "alias_of_vector", 0, 1);
+  library.ExpectFail(fidl::ErrWrongNumberOfLayoutParameters, "vector", 1, 0);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(AliasTests, BadVectorBoundedOnDecl) {
@@ -215,11 +219,9 @@ type Message = struct {
 
 alias alias_of_vector_max_8 = vector:8;
 )FIDL");
-  ASSERT_ERRORED_TWICE_DURING_COMPILE(library, fidl::ErrWrongNumberOfLayoutParameters,
-                                      fidl::ErrWrongNumberOfLayoutParameters);
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "vector expected 1 layout parameter(s)");
-  ASSERT_SUBSTR(library.errors()[1]->msg.c_str(),
-                "alias_of_vector_max_8 expected 0 layout parameter(s)");
+  library.ExpectFail(fidl::ErrWrongNumberOfLayoutParameters, "alias_of_vector_max_8", 0, 1);
+  library.ExpectFail(fidl::ErrWrongNumberOfLayoutParameters, "vector", 1, 0);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(AliasTests, GoodVectorBoundedOnUse) {
@@ -233,8 +235,8 @@ alias alias_of_vector_of_string = vector<string>;
 )FIDL");
   ASSERT_COMPILED(library);
   auto msg = library.LookupStruct("Message");
-  ASSERT_NOT_NULL(msg);
-  ASSERT_EQ(msg->members.size(), 1);
+  ASSERT_NE(msg, nullptr);
+  ASSERT_EQ(msg->members.size(), 1u);
 
   auto type = msg->members[0].type_ctor->type;
   ASSERT_EQ(type->kind, fidl::flat::Type::Kind::kVector);
@@ -245,11 +247,10 @@ alias alias_of_vector_of_string = vector<string>;
   ASSERT_EQ(vector_type->ElementCount(), 8u);
 
   auto invocation = msg->members[0].type_ctor->resolved_params;
-  ASSERT_NOT_NULL(invocation.from_alias);
-  EXPECT_STREQ(fidl::NameFlatName(invocation.from_alias->name).c_str(),
-               "example/alias_of_vector_of_string");
-  EXPECT_NULL(invocation.element_type_resolved);
-  EXPECT_NOT_NULL(invocation.size_resolved);
+  ASSERT_NE(invocation.from_alias, nullptr);
+  EXPECT_EQ(fidl::NameFlatName(invocation.from_alias->name), "example/alias_of_vector_of_string");
+  EXPECT_EQ(invocation.element_type_resolved, nullptr);
+  EXPECT_NE(invocation.size_resolved, nullptr);
   EXPECT_EQ(static_cast<uint32_t>(*invocation.size_resolved), 8u);
   EXPECT_EQ(invocation.nullability, fidl::types::Nullability::kNonnullable);
 }
@@ -272,8 +273,8 @@ alias alias_of_vector_of_string_nullable = vector<string>:optional;
 )FIDL");
   ASSERT_COMPILED(library);
   auto msg = library.LookupStruct("Message");
-  ASSERT_NOT_NULL(msg);
-  ASSERT_EQ(msg->members.size(), 1);
+  ASSERT_NE(msg, nullptr);
+  ASSERT_EQ(msg->members.size(), 1u);
 
   auto type = msg->members[0].type_ctor->type;
   ASSERT_EQ(type->kind, fidl::flat::Type::Kind::kVector);
@@ -284,11 +285,11 @@ alias alias_of_vector_of_string_nullable = vector<string>:optional;
   ASSERT_EQ(vector_type->ElementCount(), fidl::flat::Size::Max().value);
 
   auto invocation = msg->members[0].type_ctor->resolved_params;
-  ASSERT_NOT_NULL(invocation.from_alias);
-  EXPECT_STREQ(fidl::NameFlatName(invocation.from_alias->name).c_str(),
-               "example/alias_of_vector_of_string_nullable");
-  EXPECT_NULL(invocation.element_type_resolved);
-  EXPECT_NULL(invocation.size_resolved);
+  ASSERT_NE(invocation.from_alias, nullptr);
+  EXPECT_EQ(fidl::NameFlatName(invocation.from_alias->name),
+            "example/alias_of_vector_of_string_nullable");
+  EXPECT_EQ(invocation.element_type_resolved, nullptr);
+  EXPECT_EQ(invocation.size_resolved, nullptr);
   EXPECT_EQ(invocation.nullability, fidl::types::Nullability::kNonnullable);
 }
 
@@ -303,8 +304,8 @@ alias alias_of_vector_of_string = vector<string>;
 )FIDL");
   ASSERT_COMPILED(library);
   auto msg = library.LookupStruct("Message");
-  ASSERT_NOT_NULL(msg);
-  ASSERT_EQ(msg->members.size(), 1);
+  ASSERT_NE(msg, nullptr);
+  ASSERT_EQ(msg->members.size(), 1u);
 
   auto type = msg->members[0].type_ctor->type;
   ASSERT_EQ(type->kind, fidl::flat::Type::Kind::kVector);
@@ -315,11 +316,10 @@ alias alias_of_vector_of_string = vector<string>;
   ASSERT_EQ(vector_type->ElementCount(), fidl::flat::Size::Max().value);
 
   auto invocation = msg->members[0].type_ctor->resolved_params;
-  ASSERT_NOT_NULL(invocation.from_alias);
-  EXPECT_STREQ(fidl::NameFlatName(invocation.from_alias->name).c_str(),
-               "example/alias_of_vector_of_string");
-  EXPECT_NULL(invocation.element_type_resolved);
-  EXPECT_NULL(invocation.size_resolved);
+  ASSERT_NE(invocation.from_alias, nullptr);
+  EXPECT_EQ(fidl::NameFlatName(invocation.from_alias->name), "example/alias_of_vector_of_string");
+  EXPECT_EQ(invocation.element_type_resolved, nullptr);
+  EXPECT_EQ(invocation.size_resolved, nullptr);
   EXPECT_EQ(invocation.nullability, fidl::types::Nullability::kNullable);
 }
 
@@ -333,21 +333,24 @@ type Message = struct {
 
 alias alias_of_vector_of_string = vector<string>;
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrWrongNumberOfLayoutParameters);
+  library.ExpectFail(fidl::ErrWrongNumberOfLayoutParameters, "alias_of_vector_of_string", 0, 1);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(AliasTests, BadCannotBoundTwice) {
   TestLibrary library;
   library.AddFile("bad/fi-0158.test.fidl");
 
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrCannotBoundTwice);
+  library.ExpectFail(fidl::ErrCannotBoundTwice, "ByteVec256");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(AliasTests, BadCannotNullTwice) {
   TestLibrary library;
   library.AddFile("bad/fi-0160.test.fidl");
 
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrCannotIndicateOptionalTwice);
+  library.ExpectFail(fidl::ErrCannotIndicateOptionalTwice, "MyAlias");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(AliasTests, GoodMultiFileAliasReference) {
@@ -397,9 +400,9 @@ type TheStruct = struct {
 };
 )FIDL");
 
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrIncludeCycle);
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(),
-                "alias 'TheAlias' -> struct 'TheStruct' -> alias 'TheAlias'");
+  library.ExpectFail(fidl::ErrIncludeCycle,
+                     "alias 'TheAlias' -> struct 'TheStruct' -> alias 'TheAlias'");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(AliasTests, BadCompoundIdentifier) {
@@ -409,7 +412,10 @@ library example;
 alias foo.bar.baz = uint8;
 )FIDL");
 
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrUnexpectedTokenOfKind);
+  library.ExpectFail(fidl::ErrUnexpectedTokenOfKind,
+                     fidl::Token::KindAndSubkind(fidl::Token::Kind::kDot),
+                     fidl::Token::KindAndSubkind(fidl::Token::Kind::kEqual));
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(AliasTests, GoodUsingLibrary) {

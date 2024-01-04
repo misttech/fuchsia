@@ -33,11 +33,11 @@
 #include <safemath/checked_math.h>
 #include <src/lib/uuid/uuid.h>
 
-#include "src/lib/storage/block_client/cpp/block_device.h"
-#include "src/lib/storage/block_client/cpp/reader.h"
-#include "src/lib/storage/block_client/cpp/remote_block_device.h"
-#include "src/lib/storage/block_client/cpp/writer.h"
 #include "src/lib/utf_conversion/utf_conversion.h"
+#include "src/storage/lib/block_client/cpp/block_device.h"
+#include "src/storage/lib/block_client/cpp/reader.h"
+#include "src/storage/lib/block_client/cpp/remote_block_device.h"
+#include "src/storage/lib/block_client/cpp/writer.h"
 
 namespace gpt {
 
@@ -549,7 +549,20 @@ zx_status_t GptDevice::ValidateEntries(const uint8_t* buffer, uint64_t block_cou
   ZX_ASSERT(usable_range);
 
   // Verify crc before we process entries.
-  if (header_.entries_crc != crc32(0, buffer, EntryArraySize())) {
+  const uint64_t partition_array_size = static_cast<uint64_t>(header_.entries_count) * kEntrySize;
+
+  const uint32_t partition_array_crc_without_padding = crc32(0, buffer, partition_array_size);
+  const uint32_t partition_array_crc_with_padding = crc32(0, buffer, kMaxPartitionTableSize);
+
+  if (header_.entries_crc == partition_array_crc_without_padding) {
+    // The partition entry array CRC covers only the number of entries specified
+    // in the header. This is the expected case.
+  } else if (header_.entries_crc == partition_array_crc_with_padding) {
+    // The partition entry array CRC includes padding bytes/blocks following the
+    // array. This is technically incorrect, but should be accepted anyway to
+    // maintain the previous behavior of the GPT driver.
+    G_PRINTF("GPT partition entry array CRC includes padding, continuing anyway");
+  } else {
     return ZX_ERR_BAD_STATE;
   }
 

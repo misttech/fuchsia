@@ -14,7 +14,11 @@ if (is_host) {
     main_source = "fidlcat_e2e_tests.py"
     extra_args = [ "-v" ]
 
-    deps = [ ":runtime_deps" ]
+    deps = [
+      ":runtime_deps",
+      "//src/developer/ffx:test_data",
+      "//src/developer/ffx/plugins/debug:ffx_debug_plugin_tool_test_data",
+    ]
 
     # Runs on "main" builders (try and ci) in QEMU environments, but only on x64, as we don't
     # support running host test on arm64 host.
@@ -110,18 +114,25 @@ if (is_host) {
     ]
   }
 
-  host_test_data("runtime_deps") {
+  host_test_data("test_tools") {
     sources = [
       "$root_out_dir/ffx",
       "$root_out_dir/fidlcat",
     ]
 
     deps = [
-      ":test_data",
-      "//src/developer/debug/debug_agent($target_toolchain)",
       "//src/developer/ffx:ffx_bin",
-      "//src/testing/fidl/echo_realm_placeholder($target_toolchain)",
       "//tools/fidlcat",
+    ]
+  }
+
+  group("runtime_deps") {
+    testonly = true
+    deps = [
+      ":test_data",
+      ":test_tools",
+      "//src/developer/debug/debug_agent($target_toolchain)",
+      "//src/testing/fidl/echo_realm_placeholder($target_toolchain)",
     ]
   }
 }

@@ -5,13 +5,10 @@
 #ifndef SRC_CONNECTIVITY_BLUETOOTH_CORE_BT_HOST_TESTING_FAKE_CONTROLLER_H_
 #define SRC_CONNECTIVITY_BLUETOOTH_CORE_BT_HOST_TESTING_FAKE_CONTROLLER_H_
 
-#include <lib/async/default.h>
 #include <lib/fit/function.h>
-#include <lib/zx/channel.h>
 
 #include <memory>
 #include <unordered_map>
-#include <vector>
 
 #include "src/connectivity/bluetooth/core/bt-host/common/device_address.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/device_class.h"
@@ -53,7 +50,7 @@ class FakeController final : public ControllerTestDoubleBase, public WeakSelf<Fa
 
     // The time elapsed from the receipt of a LE Create Connection command until the resulting LE
     // Connection Complete event.
-    zx::duration le_connection_delay = zx::sec(0);
+    pw::chrono::SystemClock::duration le_connection_delay = std::chrono::seconds(0);
 
     // HCI settings.
     pw::bluetooth::emboss::CoreSpecificationVersion hci_version =
@@ -155,7 +152,8 @@ class FakeController final : public ControllerTestDoubleBase, public WeakSelf<Fa
 
   // Constructor initializes the controller with the minimal default settings (equivalent to calling
   // Settings::ApplyDefaults()).
-  FakeController() : WeakSelf(this) {}
+  explicit FakeController(pw::async::Dispatcher& pw_dispatcher)
+      : ControllerTestDoubleBase(pw_dispatcher), WeakSelf(this) {}
   ~FakeController() override = default;
 
   // Resets the controller settings.
@@ -316,7 +314,7 @@ class FakeController final : public ControllerTestDoubleBase, public WeakSelf<Fa
   // should be taken to ensure that a callback with a reference to test case
   // variables is not invoked when tearing down.
   using DataCallback = fit::function<void(const ByteBuffer& packet)>;
-  void SetDataCallback(DataCallback callback, async_dispatcher_t* dispatcher);
+  void SetDataCallback(DataCallback callback, pw::async::Dispatcher& pw_dispatcher);
   void ClearDataCallback();
 
   // Callback to invoke when a packet is received over the SCO data channel.
@@ -380,30 +378,27 @@ class FakeController final : public ControllerTestDoubleBase, public WeakSelf<Fa
   void SendCommand(pw::span<const std::byte> command) override;
   void SendAclData(pw::span<const std::byte> data) override {
     // Post the packet to simulate async HCI behavior.
-    async::PostTask(dispatcher(),
-                    [self = GetWeakPtr(), data = DynamicByteBuffer(BufferView(data))]() {
-                      if (self.is_alive()) {
-                        self->OnACLDataPacketReceived(BufferView(data));
-                      }
-                    });
+    heap_dispatcher().Post([self = GetWeakPtr(), data = DynamicByteBuffer(BufferView(data))](
+                               pw::async::Context /*ctx*/, pw::Status status) {
+      if (self.is_alive() && status.ok()) {
+        self->OnACLDataPacketReceived(BufferView(data));
+      }
+    });
   }
   void SendScoData(pw::span<const std::byte> data) override {
     // Post the packet to simulate async HCI behavior.
-    async::PostTask(dispatcher(),
-                    [self = GetWeakPtr(), data = DynamicByteBuffer(BufferView(data))]() {
-                      if (self.is_alive()) {
-                        self->OnScoDataPacketReceived(BufferView(data));
-                      }
-                    });
+    heap_dispatcher().Post([self = GetWeakPtr(), data = DynamicByteBuffer(BufferView(data))](
+                               pw::async::Context /*ctx*/, pw::Status status) {
+      if (self.is_alive() && status.ok()) {
+        self->OnScoDataPacketReceived(BufferView(data));
+      }
+    });
   }
 
  private:
   static bool IsValidAdvertisingHandle(hci_spec::AdvertisingHandle handle) {
     return handle <= hci_spec::kAdvertisingHandleMax;
   }
-
-  // Returns the current thread's task dispatcher.
-  async_dispatcher_t* dispatcher() const { return async_get_default_dispatcher(); }
 
   // Finds and returns the FakePeer with the given parameters or nullptr if no
   // such device exists.
@@ -774,7 +769,7 @@ class FakeController final : public ControllerTestDoubleBase, public WeakSelf<Fa
   // Variables used for
   // HCI_LE_Create_Connection/HCI_LE_Create_Connection_Cancel.
   uint16_t next_conn_handle_ = 0u;
-  async::TaskClosure le_connect_rsp_task_;
+  SmartTask le_connect_rsp_task_{pw_dispatcher()};
   std::optional<LEConnectParams> le_connect_params_;
   bool le_connect_pending_ = false;
 
@@ -782,7 +777,7 @@ class FakeController final : public ControllerTestDoubleBase, public WeakSelf<Fa
   // HCI_BREDR_Create_Connection/HCI_BREDR_Create_Connection_Cancel.
   bool bredr_connect_pending_ = false;
   DeviceAddress pending_bredr_connect_addr_;
-  async::TaskClosure bredr_connect_rsp_task_;
+  SmartTask bredr_connect_rsp_task_{pw_dispatcher()};
 
   // ID used for L2CAP LE signaling channel commands.
   uint8_t next_le_sig_id_ = 1u;
@@ -830,7 +825,7 @@ class FakeController final : public ControllerTestDoubleBase, public WeakSelf<Fa
 
   // Called when ACL data packets received.
   DataCallback acl_data_callback_ = nullptr;
-  async_dispatcher_t* data_dispatcher_ = nullptr;
+  std::optional<pw::async::HeapDispatcher> data_dispatcher_;
 
   // Called when SCO data packets received.
   DataCallback sco_data_callback_ = nullptr;

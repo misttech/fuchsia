@@ -4,7 +4,6 @@
 
 use bitflags::bitflags;
 use chrono::naive::NaiveDateTime;
-use packet_encoding::Decodable;
 use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -15,7 +14,7 @@ use xml::writer::{EmitterConfig, XmlEvent as XmlWriteEvent};
 use xml::{attribute::OwnedAttribute, EventWriter};
 
 use crate::error::Error;
-use crate::Builder;
+use crate::{Builder, Parser};
 
 /// Element names
 const FILE_ELEM: &str = "file";
@@ -86,8 +85,8 @@ impl FormattedDateTimeObj {
     /// The format is YYYYMMDDTHHMMSS where "T" delimits the date from the time. It is assumed that
     /// the time is the local time, but per OBEX 2.2.5, a suffix of "Z" can be included to indicate
     /// UTC time.
-    const ISO_8601_UTC_TIME_FORMAT: &str = "%Y%m%dT%H%M%SZ";
-    const ISO_8601_TIME_FORMAT: &str = "%Y%m%dT%H%M%S";
+    const ISO_8601_UTC_TIME_FORMAT: &'static str = "%Y%m%dT%H%M%SZ";
+    const ISO_8601_TIME_FORMAT: &'static str = "%Y%m%dT%H%M%S";
 
     fn new(dt: NaiveDateTime) -> Self {
         Self(dt, Self::ISO_8601_TIME_FORMAT.to_string())
@@ -97,8 +96,12 @@ impl FormattedDateTimeObj {
     }
 
     fn parse_datetime(dt: String) -> Result<Self, Error> {
-        let Ok(datetime) = NaiveDateTime::parse_from_str(dt.as_str(), Self::ISO_8601_UTC_TIME_FORMAT) else {
-            return NaiveDateTime::parse_from_str(dt.as_str(), Self::ISO_8601_TIME_FORMAT).map(|t| Self::new(t)).map_err(|_| Error::InvalidData(dt));
+        let Ok(datetime) =
+            NaiveDateTime::parse_from_str(dt.as_str(), Self::ISO_8601_UTC_TIME_FORMAT)
+        else {
+            return NaiveDateTime::parse_from_str(dt.as_str(), Self::ISO_8601_TIME_FORMAT)
+                .map(|t| Self::new(t))
+                .map_err(|_| Error::InvalidData(dt));
         };
 
         // UTC timestamp.
@@ -165,7 +168,7 @@ impl FolderListingAttribute {
         })
     }
 
-    fn xml_attribute_name(&self) -> &'static str {
+    const fn xml_attribute_name(&self) -> &'static str {
         match self {
             Self::Name(_) => NAME_ATTR,
             Self::Size(_) => SIZE_ATTR,
@@ -213,7 +216,7 @@ impl File {
             .map(|a| (a.xml_attribute_name(), a.xml_attribute_value()))
             .collect();
         for a in &attrs {
-            builder = builder.attr(a.0, a.1.as_str());
+            builder = builder.attr(a.0, &a.1);
         }
         writer.write(builder)?;
 
@@ -222,7 +225,7 @@ impl File {
         }
 
         // Write the end element.
-        Ok(writer.write(XmlWriteEvent::end_element())?)
+        writer.write(XmlWriteEvent::end_element()).map_err(Into::into)
     }
 
     fn validate(&self) -> Result<(), Error> {
@@ -237,19 +240,18 @@ impl File {
 impl TryFrom<XmlEvent> for File {
     type Error = Error;
     fn try_from(src: XmlEvent) -> Result<Self, Error> {
-        let XmlEvent::StartElement{ref name, ref attributes, ..} = src else {
+        let XmlEvent::StartElement { ref name, ref attributes, .. } = src else {
             return Err(Error::InvalidData(format!("{:?}", src)));
         };
         if name.local_name.as_str() != FILE_ELEM {
             return Err(Error::InvalidData(name.local_name.clone()));
         }
         let mut attrs = HashSet::new();
-        attributes.iter().try_for_each(|a| {
+        for a in attributes {
             if !attrs.insert(FolderListingAttribute::try_from_xml_attribute(a)?) {
                 return Err(Error::InvalidData(format!("duplicate \"{}\"", a.name.local_name)));
             }
-            Ok(())
-        })?;
+        }
 
         let file = File { data: None, attributes: attrs };
         file.validate()?;
@@ -302,7 +304,7 @@ impl Folder {
 impl TryFrom<XmlEvent> for Folder {
     type Error = Error;
     fn try_from(src: XmlEvent) -> Result<Self, Error> {
-        let XmlEvent::StartElement{ref name, ref attributes, ..} = src else {
+        let XmlEvent::StartElement { ref name, ref attributes, .. } = src else {
             return Err(Error::InvalidData(format!("{:?}", src)));
         };
         if name.local_name.as_str() != FOLDER_ELEM {
@@ -342,7 +344,7 @@ pub struct FolderListing {
 }
 
 impl FolderListing {
-    const DEFAULT_VERSION: &str = "1.0";
+    const DEFAULT_VERSION: &'static str = "1.0";
 
     fn new_empty() -> Self {
         Self { parent_folder: false, files: Vec::new(), folders: Vec::new() }
@@ -351,7 +353,7 @@ impl FolderListing {
     // Given the XML StartElement, checks whether or not it is a valid folder
     // listing element.
     fn validate_folder_listing_element(element: XmlEvent) -> Result<(), Error> {
-        let XmlEvent::StartElement{ref name, ref attributes, ..} = element else {
+        let XmlEvent::StartElement { ref name, ref attributes, .. } = element else {
             return Err(Error::InvalidData(format!("{:?}", element)));
         };
 
@@ -360,7 +362,7 @@ impl FolderListing {
         }
         let default_version: OwnedAttribute = OwnedAttribute::new(
             OwnedName { local_name: VERSION_ATTR.to_string(), namespace: None, prefix: None },
-            Self::DEFAULT_VERSION,
+            FolderListing::DEFAULT_VERSION,
         );
         // If the version attribute was missing, assume 1.0.
         let version = &attributes
@@ -368,18 +370,18 @@ impl FolderListing {
             .find(|a| a.name.local_name == VERSION_ATTR)
             .unwrap_or(&default_version)
             .value;
-        if version != Self::DEFAULT_VERSION {
+        if version != FolderListing::DEFAULT_VERSION {
             return Err(Error::InvalidData(version.to_string()));
         }
         Ok(())
     }
 }
 
-impl Decodable for FolderListing {
+impl Parser for FolderListing {
     type Error = Error;
 
     /// Parses FolderListing from raw bytes of XML data.
-    fn decode(buf: &[u8]) -> core::result::Result<Self, Self::Error> {
+    fn parse<R: std::io::prelude::Read>(buf: R) -> Result<Self, Self::Error> {
         let mut reader = ParserConfig::new()
             .ignore_comments(true)
             .whitespace_to_characters(true)
@@ -402,7 +404,7 @@ impl Decodable for FolderListing {
         let _ = Self::validate_folder_listing_element(xml_event)?;
 
         prev.push(ParsedXmlEvent::FolderListingElement);
-        let mut folder_listing = FolderListing::new_empty();
+        let mut folder_listing = Self::new_empty();
 
         // Process remaining elements elements.
         let mut finished_document = false;
@@ -427,13 +429,17 @@ impl Decodable for FolderListing {
                     match name.local_name.as_str() {
                         FOLDER_LISTING_ELEM => {
                             let ParsedXmlEvent::FolderListingElement = parsed_elem else {
-                                return Err(Error::MissingData(format!("closing {FOLDER_LISTING_ELEM}")));
+                                return Err(Error::MissingData(format!(
+                                    "closing {FOLDER_LISTING_ELEM}"
+                                )));
                             };
                             finished_folder_listing = true;
                         }
                         PARENT_FOLDER_ELEM => {
                             let ParsedXmlEvent::ParentFolderElement = parsed_elem else {
-                                return Err(Error::MissingData(format!("closing {PARENT_FOLDER_ELEM}")));
+                                return Err(Error::MissingData(format!(
+                                    "closing {PARENT_FOLDER_ELEM}"
+                                )));
                             };
                             folder_listing.parent_folder = true;
                         }
@@ -487,7 +493,7 @@ impl Builder for FolderListing {
     }
 
     /// Builds self into raw bytes of the specific Document Type.
-    fn build(&self, buf: &mut Vec<u8>) -> Result<(), Self::Error> {
+    fn build<W: std::io::Write>(&self, buf: W) -> Result<(), Self::Error> {
         let mut w = EmitterConfig::new()
             .write_document_declaration(true)
             .perform_indent(true)
@@ -517,20 +523,21 @@ mod tests {
     use chrono::{NaiveDate, NaiveTime};
 
     use std::fs;
+    use std::io::Cursor;
 
     #[fuchsia::test]
-    fn decode_empty_folder_listing_success() {
+    fn parse_empty_folder_listing_success() {
         const EMPTY_FOLDER_LISTING_TEST_FILE: &str = "/pkg/data/sample_folder_listing_1.xml";
         let bytes = fs::read(EMPTY_FOLDER_LISTING_TEST_FILE).expect("should be ok");
-        let folder_listing = FolderListing::decode(&bytes).expect("should be ok");
+        let folder_listing = FolderListing::parse(Cursor::new(bytes)).expect("should be ok");
         assert_eq!(folder_listing, FolderListing::new_empty());
     }
 
     #[fuchsia::test]
-    fn decode_simple_folder_listing_success() {
+    fn parse_simple_folder_listing_success() {
         const FOLDER_LISTING_TEST_FILE: &str = "/pkg/data/sample_folder_listing_2.xml";
         let bytes = fs::read(FOLDER_LISTING_TEST_FILE).expect("should be ok");
-        let folder_listing = FolderListing::decode(&bytes).expect("should be ok");
+        let folder_listing = FolderListing::parse(Cursor::new(bytes)).expect("should be ok");
         assert_eq!(
             folder_listing,
             FolderListing {
@@ -570,10 +577,10 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn decode_detailed_folder_listing_success() {
+    fn parse_detailed_folder_listing_success() {
         const DETAILED_FOLDER_LISTING_TEST_FILE: &str = "/pkg/data/sample_folder_listing_3.xml";
         let bytes = fs::read(DETAILED_FOLDER_LISTING_TEST_FILE).expect("should be ok");
-        let folder_listing = FolderListing::decode(&bytes).expect("should be ok");
+        let folder_listing = FolderListing::parse(Cursor::new(bytes)).expect("should be ok");
         assert_eq!(
             folder_listing,
             FolderListing {
@@ -657,8 +664,9 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn decode_folder_listing_fail() {
+    fn parse_folder_listing_fail() {
         let bad_sample_xml_files = vec![
+            "/pkg/data/bad_sample.xml",
             "/pkg/data/bad_sample_folder_listing_1.xml",
             "/pkg/data/bad_sample_folder_listing_2.xml",
             "/pkg/data/bad_sample_folder_listing_3.xml",
@@ -671,7 +679,7 @@ mod tests {
 
         bad_sample_xml_files.iter().for_each(|f| {
             let bytes = fs::read(f).expect("should be ok");
-            let _ = FolderListing::decode(&bytes).expect_err("should have failed");
+            let _ = FolderListing::parse(Cursor::new(bytes)).expect_err("should have failed");
         });
     }
 
@@ -682,7 +690,10 @@ mod tests {
         let mut buf = Vec::new();
         assert_eq!(empty_folder_listing.mime_type(), "application/xml");
         empty_folder_listing.build(&mut buf).expect("should have succeeded");
-        assert_eq!(empty_folder_listing, FolderListing::decode(&buf).expect("should be valid xml"));
+        assert_eq!(
+            empty_folder_listing,
+            FolderListing::parse(Cursor::new(buf)).expect("should be valid xml")
+        );
     }
 
     #[fuchsia::test]
@@ -703,7 +714,10 @@ mod tests {
         };
         let mut buf = Vec::new();
         folder_listing.build(&mut buf).expect("should have succeeded");
-        assert_eq!(folder_listing, FolderListing::decode(&buf).expect("should be valid xml"));
+        assert_eq!(
+            folder_listing,
+            FolderListing::parse(Cursor::new(buf)).expect("should be valid xml")
+        );
     }
 
     #[fuchsia::test]
@@ -749,9 +763,10 @@ mod tests {
         let mut buf = Vec::new();
         assert_eq!(detailed_folder_listing.mime_type(), "application/xml");
         detailed_folder_listing.build(&mut buf).expect("should have succeeded");
+
         assert_eq!(
             detailed_folder_listing,
-            FolderListing::decode(&buf).expect("should be valid xml")
+            FolderListing::parse(Cursor::new(buf)).expect("should be valid xml")
         );
     }
 }

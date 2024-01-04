@@ -5,17 +5,18 @@
 pub mod bootfs;
 pub mod component_resolvers;
 pub mod kernel_cmdline;
+pub mod pre_signing;
 pub mod route_sources;
 pub mod routes;
 pub mod static_pkgs;
 pub mod structured_config;
 
-use argh::FromArgs;
+use argh::{ArgsInfo, FromArgs};
 use ffx_core::ffx_command;
 use std::path::PathBuf;
 
 #[ffx_command()]
-#[derive(FromArgs, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "verify", description = "Verify the build")]
 pub struct Command {
     /// path to depfile that gathers dependencies during execution.
@@ -34,12 +35,13 @@ pub struct Command {
     pub subcommand: SubCommand,
 }
 
-#[derive(FromArgs, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand)]
 pub enum SubCommand {
     Bootfs(bootfs::Command),
     ComponentResolvers(component_resolvers::Command),
     KernelCmdline(kernel_cmdline::Command),
+    PreSigning(pre_signing::Command),
     RouteSources(route_sources::Command),
     Routes(routes::Command),
     StaticPkgs(static_pkgs::Command),

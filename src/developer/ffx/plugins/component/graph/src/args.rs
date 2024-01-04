@@ -2,27 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use argh::FromArgs;
+use argh::{ArgsInfo, FromArgs};
 use component_debug::cli::{GraphFilter, GraphOrientation};
 use ffx_core::ffx_command;
 
 #[ffx_command()]
-#[derive(FromArgs, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(
     subcommand,
     name = "graph",
-    description = "Outputs a Graphviz dot graph for the component topology",
-    example = "To graph all components in the topology:
+    description = "Outputs a Graphviz dot graph for the components in the component topology. Children of unresolved components are not included in this list.",
+    example = "To graph components in the topology:
 
     $ ffx component graph
-
-    To graph all cmx components in the topology:
-
-    $ ffx component graph --only cmx
-
-    To graph all cml components in the topology:
-
-    $ ffx component graph --only cml
 
     To graph all running components in the topology:
 

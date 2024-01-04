@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <gtest/gtest.h>
+#include <pw_async_fuchsia/dispatcher.h>
 
 #include "socket_factory.h"
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/channel.h"
@@ -10,8 +11,8 @@
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/channel_manager_mock_controller_test_fixture.h"
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/l2cap_defs.h"
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/test_packets.h"
-#include "src/connectivity/bluetooth/core/bt-host/testing/controller_test.h"
 #include "src/connectivity/bluetooth/core/bt-host/testing/mock_controller.h"
+#include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 
 namespace bt::socket {
 namespace {
@@ -21,20 +22,22 @@ using namespace bt::testing;
 using TestingBase = l2cap::ChannelManagerMockControllerTest;
 
 // This test harness provides test cases for interations between SocketFactory and the L2cap layer.
-class SocketFactoryL2capIntegrationTest : public TestingBase {
+class SocketFactoryL2capIntegrationTest : public ::gtest::TestLoopFixture, public TestingBase {
  public:
-  SocketFactoryL2capIntegrationTest() = default;
+  SocketFactoryL2capIntegrationTest() : TestingBase(dispatcher_), dispatcher_(dispatcher()) {}
   ~SocketFactoryL2capIntegrationTest() override = default;
 
  protected:
   void SetUp() override {
-    TestingBase::SetUp();
+    TestingBase::Initialize();
     socket_factory_ = std::make_unique<socket::SocketFactory<l2cap::Channel>>();
   }
 
   void TearDown() override {
     socket_factory_.reset();
-    TestingBase::TearDown();
+    TestingBase::DeleteChannelManager();
+    RunLoopUntilIdle();
+    DeleteTransport();
   }
 
   zx::socket MakeSocketForChannel(l2cap::Channel::WeakPtr channel) {
@@ -43,12 +46,13 @@ class SocketFactoryL2capIntegrationTest : public TestingBase {
 
  private:
   std::unique_ptr<socket::SocketFactory<l2cap::Channel>> socket_factory_;
+  pw::async::fuchsia::FuchsiaDispatcher dispatcher_;
 
   BT_DISALLOW_COPY_ASSIGN_AND_MOVE(SocketFactoryL2capIntegrationTest);
 };
 
 TEST_F(SocketFactoryL2capIntegrationTest, InboundL2capSocket) {
-  constexpr l2cap::PSM kPSM = l2cap::kAVDTP;
+  constexpr l2cap::Psm kPsm = l2cap::kAVDTP;
   constexpr l2cap::ChannelId kLocalId = 0x0040;
   constexpr l2cap::ChannelId kRemoteId = 0x9042;
   constexpr hci_spec::ConnectionHandle kLinkHandle = 0x0001;
@@ -60,10 +64,10 @@ TEST_F(SocketFactoryL2capIntegrationTest, InboundL2capSocket) {
     EXPECT_EQ(kLinkHandle, cb_chan->link_handle());
     channel = std::move(cb_chan);
   };
-  chanmgr()->RegisterService(kPSM, kChannelParameters, std::move(chan_cb));
+  chanmgr()->RegisterService(kPsm, kChannelParameters, std::move(chan_cb));
   RunLoopUntilIdle();
 
-  QueueInboundL2capConnection(kLinkHandle, kPSM, kLocalId, kRemoteId);
+  QueueInboundL2capConnection(kLinkHandle, kPsm, kLocalId, kRemoteId);
 
   RunLoopUntilIdle();
   ASSERT_TRUE(channel.is_alive());
@@ -147,7 +151,7 @@ TEST_F(SocketFactoryL2capIntegrationTest, InboundL2capSocket) {
 }
 
 TEST_F(SocketFactoryL2capIntegrationTest, OutboundL2capSocket) {
-  constexpr l2cap::PSM kPSM = l2cap::kAVCTP;
+  constexpr l2cap::Psm kPsm = l2cap::kAVCTP;
   constexpr l2cap::ChannelId kLocalId = 0x0040;
   constexpr l2cap::ChannelId kRemoteId = 0x9042;
   constexpr hci_spec::ConnectionHandle kLinkHandle = 0x0001;
@@ -162,7 +166,7 @@ TEST_F(SocketFactoryL2capIntegrationTest, OutboundL2capSocket) {
     EXPECT_EQ(kLinkHandle, cb_chan->link_handle());
     chan = std::move(cb_chan);
   };
-  QueueOutboundL2capConnection(kLinkHandle, kPSM, kLocalId, kRemoteId, std::move(chan_cb));
+  QueueOutboundL2capConnection(kLinkHandle, kPsm, kLocalId, kRemoteId, std::move(chan_cb));
 
   RunLoopUntilIdle();
   EXPECT_TRUE(test_device()->AllExpectedDataPacketsSent());

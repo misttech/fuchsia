@@ -13,13 +13,13 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "src/lib/storage/block_client/cpp/fake_block_device.h"
 #include "src/storage/blobfs/blobfs.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/mkfs.h"
 #include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/blobfs/test/blobfs_test_setup.h"
+#include "src/storage/lib/block_client/cpp/fake_block_device.h"
 
 namespace blobfs {
 
@@ -87,11 +87,7 @@ class DeliveryBlobTest : public BlobfsTestSetup,
         .blob_layout_format = GetParam().format,
     };
     ASSERT_EQ(FormatFilesystem(device.get(), filesystem_options), ZX_OK);
-
-    const MountOptions mount_options{
-        .allow_delivery_blobs = true,
-    };
-    ASSERT_EQ(ZX_OK, Mount(std::move(device), mount_options));
+    ASSERT_EQ(ZX_OK, Mount(std::move(device), {}));
     ASSERT_EQ(ZX_OK, blobfs()->OpenRootNode(&root_));
   }
 

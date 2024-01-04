@@ -6,6 +6,7 @@
     program: {
         runner: "elf",
         binary: "bin/simplest-app-flatland",
+        args: [ "graphical_presenter" ],
     },
     capabilities: [
         {

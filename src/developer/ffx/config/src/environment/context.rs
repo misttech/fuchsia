@@ -4,11 +4,12 @@
 
 use crate::{
     api::{value::ValueStrategy, ConfigError, ConfigValue},
+    is_analytics_disabled,
     storage::Config,
     BuildOverride, ConfigMap, ConfigQuery, Environment,
 };
 use anyhow::{Context, Result};
-use camino::Utf8PathBuf;
+use camino::{Utf8Path, Utf8PathBuf};
 use errors::ffx_error;
 use ffx_config_domain::ConfigDomain;
 use sdk::{Sdk, SdkRoot};
@@ -21,7 +22,7 @@ use std::{
     sync::Arc,
 };
 use thiserror::Error;
-use tracing::error;
+use tracing::{debug, error, info, trace};
 
 use super::{EnvironmentKind, ExecutableKind};
 
@@ -138,14 +139,28 @@ impl EnvironmentContext {
         env_vars: EnvVars,
         runtime_args: ConfigMap,
         env_file_path: Option<PathBuf>,
-    ) -> Self {
-        Self::new(
-            EnvironmentKind::Isolated { isolate_root },
-            exe_kind,
-            Some(env_vars),
-            runtime_args,
-            env_file_path,
-        )
+        current_dir: Option<&Utf8Path>,
+    ) -> Result<Self> {
+        if let Some(domain_path) = current_dir.and_then(ConfigDomain::find_root) {
+            let domain = ConfigDomain::load_from(&domain_path)?;
+            Ok(Self::config_domain(exe_kind, domain, runtime_args, Some(isolate_root)))
+        } else {
+            Ok(Self::new(
+                EnvironmentKind::Isolated { isolate_root },
+                exe_kind,
+                Some(env_vars),
+                runtime_args,
+                env_file_path,
+            ))
+        }
+    }
+
+    pub fn is_isolated(&self) -> bool {
+        match self.kind {
+            EnvironmentKind::ConfigDomain { isolate_root: Some(..), .. }
+            | EnvironmentKind::Isolated { .. } => true,
+            _ => false,
+        }
     }
 
     /// Initialize an environment type that has no meaningful context, using only global and
@@ -195,7 +210,7 @@ impl EnvironmentContext {
             false
         } else {
             // note: double negative to turn this into an affirmative
-            !self.get("ffx.analytics.disabled").await.unwrap_or(false)
+            !is_analytics_disabled(self).await
         }
     }
 
@@ -203,6 +218,16 @@ impl EnvironmentContext {
         match &self.env_file_path {
             Some(path) => Ok(path.clone()),
             None => Ok(self.get_default_env_path()?),
+        }
+    }
+
+    /// Returns the context's project root, if it makes sense for its
+    /// [`EnvironmentKind`].
+    pub fn project_root(&self) -> Option<&Path> {
+        match &self.kind {
+            EnvironmentKind::InTree { tree_root, .. } => Some(&tree_root),
+            EnvironmentKind::ConfigDomain { domain, .. } => Some(domain.root().as_std_path()),
+            _ => None,
         }
     }
 
@@ -302,9 +327,6 @@ impl EnvironmentContext {
             self.query("sdk.root").build(Some(BuildOverride::NoBuild)).get().await.ok();
 
         match (&self.kind, runtime_root) {
-            (EnvironmentKind::ConfigDomain { domain, .. }, None) => {
-                self.sdk_from_config(domain.get_explicit_sdk_root().map(|p| p.as_std_path())).await
-            }
             (EnvironmentKind::InTree { build_dir: Some(build_dir), .. }, None) => {
                 let manifest = build_dir.clone();
                 let module = self.query("sdk.module").get().await.ok();
@@ -323,7 +345,8 @@ impl EnvironmentContext {
     }
 
     /// The environment variable we search for
-    pub const FFX_BIN_ENV: &str = "FFX_BIN";
+    pub const FFX_BIN_ENV: &'static str = "FFX_BIN";
+
     /// Gets the path to the top level binary for use when re-running ffx.
     ///
     /// - This will first check the environment variable in [`Self::FFX_BIN_ENV`],
@@ -413,10 +436,14 @@ impl EnvironmentContext {
 
     pub fn get_default_overrides(&self) -> ConfigMap {
         use EnvironmentKind::*;
-        match &self.kind {
+        let mut cm = match &self.kind {
             ConfigDomain { domain, .. } => domain.get_config_defaults().clone(),
             _ => ConfigMap::default(),
+        };
+        if self.is_isolated() {
+            crate::aliases::add_isolation_default(&mut cm);
         }
+        cm
     }
 
     /// Gets the basic information about the sdk as configured, without diving deeper into the sdk's own configuration.
@@ -426,15 +453,9 @@ impl EnvironmentContext {
         let manifest = match sdk_root {
             Some(root) => root.to_owned(),
             _ => {
-                let path = std::env::current_exe().map_err(|e| {
-                    errors::ffx_error!(
-                        "{}Error was: failed to get current ffx exe path for SDK root: {:?}",
-                        SDK_NOT_FOUND_HELP,
-                        e
-                    )
-                })?;
+                let exe_path = find_exe_path()?;
 
-                match find_sdk_root(&path) {
+                match find_sdk_root(&Path::new(&exe_path)) {
                     Ok(Some(root)) => root,
                     Ok(None) => {
                         errors::ffx_bail!(
@@ -450,15 +471,95 @@ impl EnvironmentContext {
         };
         let module = self.query("sdk.module").build(Some(BuildOverride::NoBuild)).get().await.ok();
         match module {
-            Some(module) => Ok(SdkRoot::Modular { manifest, module }),
-            _ => Ok(SdkRoot::Full(manifest)),
+            Some(module) => {
+                info!("Found modular Fuchsia SDK at {manifest:?} with module {module}");
+                Ok(SdkRoot::Modular { manifest, module })
+            }
+            _ => {
+                info!("Found full Fuchsia SDK at {manifest:?}");
+                Ok(SdkRoot::Full(manifest))
+            }
+        }
+    }
+
+    /// Returns the configuration domain for the current invocation, if there
+    /// is one.
+    pub fn get_config_domain(&self) -> Option<&ConfigDomain> {
+        match &self.kind {
+            EnvironmentKind::ConfigDomain { domain, .. } => Some(domain),
+            _ => None,
+        }
+    }
+
+    /// Returns a mutable reference to the configuration domain for the current
+    /// invocation, if there is one. This can be used in bootstrapping to
+    /// refresh the project-local configuration.
+    pub fn get_config_domain_mut(&mut self) -> Option<&mut ConfigDomain> {
+        match &mut self.kind {
+            EnvironmentKind::ConfigDomain { domain, .. } => Some(domain),
+            _ => None,
         }
     }
 }
 
+/// Finds the executable path of the ffx binary being run, attempting to
+/// get the path the user believes it to be at, even if it's symlinked from
+/// somewhere else, by using `argv[0]` and [`std::env::current_exe`].
+///
+/// We do this because sometimes ffx is invoked through an SDK that is symlinked
+/// into place from a content addressable store, and we want to make a best
+/// effort to search for the sdk in the right place.
+fn find_exe_path() -> Result<PathBuf> {
+    // get the 'real' binary path, which may have symlinks resolved, as well
+    // as the command this was run as and the cwd
+    let cwd = std::env::current_dir().context("FFX was run from an invalid working directory")?;
+    let binary_path = std::env::current_exe()
+        .and_then(|p| p.canonicalize())
+        .context("FFX Binary doesn't exist in the file system")?;
+    let args_path = match std::env::args_os().next() {
+        Some(arg) => PathBuf::from(&arg),
+        None => {
+            trace!("FFX was run without an argv[0] somehow");
+            return Ok(binary_path);
+        }
+    };
+
+    // canonicalize the path from argv0 to try to figure out where it 'really'
+    // is to make sure it's actually the right binary through potential
+    // symlinks.
+    let canonical_args_path = match args_path.canonicalize() {
+        Ok(path) => path,
+        Err(e) => {
+            trace!(
+                "Could not canonicalize the path ffx was run with, \
+                which might mean the working directory has changed or the file \
+                doesn't exist anymore: {e:?}"
+            );
+            return Ok(binary_path);
+        }
+    };
+
+    // check that it's the same file in the end
+    if binary_path == canonical_args_path {
+        // but return the path it was actually run through instead of the canonical
+        // path, but [`Path::join`]-ed to the cwd to make it more or less
+        // absolute.
+        Ok(cwd.join(args_path))
+    } else {
+        trace!(
+            "FFX's argv[0] ({args_path:?}) resolved to {canonical_args_path:?} \
+            instead of the binary's path {binary_path:?}, falling back to the \
+            binary path."
+        );
+        Ok(binary_path)
+    }
+}
+
 fn find_sdk_root(start_path: &Path) -> Result<Option<PathBuf>> {
-    let mut path = std::fs::canonicalize(start_path)
-        .context(format!("canonicalizing ffx path {:?}", start_path))?;
+    let cwd = std::env::current_dir()
+        .context("Could not resolve working directory while searching for the Fuchsia SDK")?;
+    let mut path = cwd.join(start_path);
+    debug!("Attempting to find the sdk root from {path:?}");
 
     loop {
         path = if let Some(parent) = path.parent() {
@@ -468,6 +569,7 @@ fn find_sdk_root(start_path: &Path) -> Result<Option<PathBuf>> {
         };
 
         if SdkRoot::is_sdk_root(&path) {
+            debug!("Found sdk root through recursive search in {path:?}");
             return Ok(Some(path));
         }
     }
@@ -541,12 +643,14 @@ mod test {
         .expect("config domain context");
 
         check_config_domain_paths(&context, &domain_root).await;
+        assert!(!context.is_isolated());
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_config_domain_context_isolated() {
         let isolate_dir = tempdir().expect("tempdir");
         let domain_root = domains_test_data_path().join("basic_example");
+        println!("check with explicit config domain path");
         let context = EnvironmentContext::config_domain_root(
             ExecutableKind::Test,
             domain_root.clone(),
@@ -554,6 +658,20 @@ mod test {
             Some(isolate_dir.path().to_owned()),
         )
         .expect("isolated config domain context");
+
+        check_config_domain_paths(&context, &domain_root).await;
+        check_isolated_paths(&context, &isolate_dir.path());
+
+        println!("check with implied config domain path");
+        let context = EnvironmentContext::isolated(
+            ExecutableKind::Test,
+            isolate_dir.path().to_owned(),
+            Default::default(),
+            Default::default(),
+            None,
+            Some(&domain_root),
+        )
+        .expect("Isolated context");
 
         check_config_domain_paths(&context, &domain_root).await;
         check_isolated_paths(&context, &isolate_dir.path());
@@ -568,7 +686,9 @@ mod test {
             Default::default(),
             Default::default(),
             None,
-        );
+            None,
+        )
+        .expect("Isolated context");
 
         check_isolated_paths(&context, &isolate_dir.path());
     }
@@ -580,7 +700,7 @@ mod test {
             context.get_build_config_file().unwrap(),
             domain_root.join(".fuchsia-build-config.json")
         );
-        assert_matches!(context.get_sdk_root().await.unwrap(), SdkRoot::Full(path) if path == domain_root.join("bazel-project/external/fuchsia_sdk"));
+        assert_matches!(context.get_sdk_root().await.unwrap(), SdkRoot::Full(path) if path == domain_root.join("bazel-out/external/fuchsia_sdk"));
     }
 
     fn check_isolated_paths(context: &EnvironmentContext, isolate_dir: &Path) {
@@ -597,5 +717,6 @@ mod test {
         assert_eq!(context.get_cache_path().unwrap(), isolate_dir.join("cache"));
         assert_eq!(context.get_config_path().unwrap(), isolate_dir.join("config"));
         assert_eq!(context.get_data_path().unwrap(), isolate_dir.join("data"));
+        assert!(context.is_isolated());
     }
 }

@@ -6,10 +6,10 @@ group("tests") {
   testonly = true
 
   deps = [
+    "async-helpers/cpp:tests",
     "compat:tests",
-    "component:tests",
+    "component/cpp:tests",
     "devfs:tests",
     "devicetree:tests",
-    "symbols:tests",
   ]
 }

@@ -3,13 +3,9 @@
 
 #include <fuchsia/media/tuning/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
-#include <zircon/status.h>
 #include <zircon/types.h>
 
-#include <algorithm>
 #include <cstdint>
-#include <memory>
-#include <set>
 #include <vector>
 
 #include "src/media/audio/audio_core/shared/device_id.h"
@@ -95,6 +91,9 @@ class AudioRendererPipelineTest : public HermeticAudioTest {
                           PacketsToFrames(num_packets, renderer->format().frames_per_second()));
   }
 
+  VirtualOutput<SampleType>* output() const { return output_; }
+
+ private:
   VirtualOutput<SampleType>* output_ = nullptr;
 };
 
@@ -112,9 +111,10 @@ TEST_F(AudioRendererPipelineTestInt16, RenderSameFrameRate) {
   input_buffer.Append(&signal);
 
   auto packets = renderer->AppendSlice(input_buffer, frames_per_packet);
-  renderer->PlaySynchronized(this, output_, 0);
+  renderer->PlaySynchronized(this, output(), 0);
   renderer->WaitForPackets(this, packets);
-  auto ring_buffer = output_->SnapshotRingBuffer();
+  auto ring_buffer = output()->SnapshotRingBuffer();
+  Unbind(renderer);
 
   if constexpr (!kEnableAllOverflowAndUnderflowChecksInRealtimeTests) {
     // In case of underflows, exit NOW (don't assess this buffer).
@@ -133,7 +133,7 @@ TEST_F(AudioRendererPipelineTestInt16, RenderSameFrameRate) {
   CompareAudioBuffers(AudioBufferSlice(&ring_buffer, 0, num_frames),
                       AudioBufferSlice(&input_buffer, 0, num_frames), opts);
   opts.test_label = "check silence";
-  CompareAudioBuffers(AudioBufferSlice(&ring_buffer, num_frames, output_->frame_count()),
+  CompareAudioBuffers(AudioBufferSlice(&ring_buffer, num_frames, output()->frame_count()),
                       AudioBufferSlice<ASF::SIGNED_16>(), opts);
 }
 
@@ -149,9 +149,10 @@ TEST_F(AudioRendererPipelineTestInt16, RenderFasterFrameRate) {
   input_buffer.Append(&signal);
 
   auto packets = renderer->AppendSlice(input_buffer, frames_per_packet);
-  renderer->PlaySynchronized(this, output_, 0);
+  renderer->PlaySynchronized(this, output(), 0);
   renderer->WaitForPackets(this, packets);
-  auto ring_buffer = output_->SnapshotRingBuffer();
+  auto ring_buffer = output()->SnapshotRingBuffer();
+  Unbind(renderer);
 
   if constexpr (!kEnableAllOverflowAndUnderflowChecksInRealtimeTests) {
     // In case of underflows, exit NOW (don't assess this buffer).
@@ -175,7 +176,7 @@ TEST_F(AudioRendererPipelineTestInt16, RenderFasterFrameRate) {
   auto data_start = kNumInitialSilentFrames / 2 + kSincSamplerHalfFilterWidth;
   auto data_end = expected.NumFrames() - kSincSamplerHalfFilterWidth;
   auto silence_start = expected.NumFrames() + kSincSamplerHalfFilterWidth;
-  auto silence_end = output_->frame_count() - kSincSamplerHalfFilterWidth;
+  auto silence_end = output()->frame_count() - kSincSamplerHalfFilterWidth;
   FX_LOGS(INFO) << "data_start " << data_start << ", data_end " << data_end << ", silence_start "
                 << silence_start << ", silence_end " << silence_end;
 
@@ -201,9 +202,10 @@ TEST_F(AudioRendererPipelineTestInt16, RenderSlowerFrameRate) {
   input_buffer.Append(&signal);
 
   auto packets = renderer->AppendSlice(input_buffer, frames_per_packet);
-  renderer->PlaySynchronized(this, output_, 0);
+  renderer->PlaySynchronized(this, output(), 0);
   renderer->WaitForPackets(this, packets);
-  auto ring_buffer = output_->SnapshotRingBuffer();
+  auto ring_buffer = output()->SnapshotRingBuffer();
+  Unbind(renderer);
 
   if constexpr (!kEnableAllOverflowAndUnderflowChecksInRealtimeTests) {
     // In case of underflows, exit NOW (don't assess this buffer).
@@ -231,7 +233,7 @@ TEST_F(AudioRendererPipelineTestInt16, RenderSlowerFrameRate) {
   auto data_start = kNumInitialSilentFrames * 2 + filter_half_width;
   auto data_end = expected.NumFrames() - filter_half_width;
   auto silence_start = expected.NumFrames() + filter_half_width;
-  auto silence_end = output_->frame_count() - filter_half_width;
+  auto silence_end = output()->frame_count() - filter_half_width;
 
   CompareAudioBufferOptions opts;
   opts.num_frames_per_packet = kFramesPerPacketForDisplay;
@@ -262,9 +264,10 @@ TEST_F(AudioRendererPipelineTestInt16, PlayRampUp) {
   // changes we need at least enough packets for initial playback plus a complete rampdown
   ASSERT_GT(packets.size(), 2u);
 
-  renderer->PlaySynchronized(this, output_, 0);
+  renderer->PlaySynchronized(this, output(), 0);
   renderer->WaitForPackets(this, {packets[0], packets[1]});
-  auto ring_buffer = output_->SnapshotRingBuffer();
+  auto ring_buffer = output()->SnapshotRingBuffer();
+  Unbind(renderer);
 
   if constexpr (!kEnableAllOverflowAndUnderflowChecksInRealtimeTests) {
     // In case of underflows, exit NOW (don't assess this buffer).
@@ -331,14 +334,15 @@ TEST_F(AudioRendererPipelineTestInt16, PauseRampDown) {
   // changes we need at least enough packets for initial playback plus a complete rampdown
   ASSERT_GT(packets.size(), 3u);
 
-  renderer->PlaySynchronized(this, output_, 0);
+  renderer->PlaySynchronized(this, output(), 0);
   renderer->WaitForPackets(this, {packets[0], packets[1]});
   auto [pause_ref_time, pause_media_time] = renderer->Pause(this);
   auto renderer_ref_time = renderer->ReferenceTimeFromMonotonicTime(zx::clock::get_monotonic());
   EXPECT_GT(renderer_ref_time.get(), pause_ref_time)
       << "Pause received pause_ref_time " << pause_ref_time
       << " in the future (now=" << renderer_ref_time.get() << ")";
-  auto ring_buffer = output_->SnapshotRingBuffer();
+  auto ring_buffer = output()->SnapshotRingBuffer();
+  Unbind(renderer);
 
   if constexpr (!kEnableAllOverflowAndUnderflowChecksInRealtimeTests) {
     // In case of underflows, exit NOW (don't assess this buffer).
@@ -496,7 +500,7 @@ TEST_F(AudioRendererPipelineTestInt16, DiscardDuringPlayback) {
   first_input.Append(&signal);
 
   auto first_packets = renderer->AppendSlice(first_input, frames_per_packet);
-  renderer->PlaySynchronized(this, output_, 0);
+  renderer->PlaySynchronized(this, output(), 0);
   renderer->WaitForPackets(this, {first_packets[0], first_packets[1]});
 
   renderer->fidl()->DiscardAllPackets(AddCallback(
@@ -506,7 +510,7 @@ TEST_F(AudioRendererPipelineTestInt16, DiscardDuringPlayback) {
   // The entire first two packets must have been written. Subsequent packets may have been partially
   // written, depending on exactly when the DiscardAllPackets command is received. The remaining
   // bytes should be zeros.
-  auto ring_buffer = output_->SnapshotRingBuffer();
+  auto ring_buffer = output()->SnapshotRingBuffer();
 
   if constexpr (!kEnableAllOverflowAndUnderflowChecksInRealtimeTests) {
     // In case of underflows, exit NOW (don't assess this buffer).
@@ -524,8 +528,8 @@ TEST_F(AudioRendererPipelineTestInt16, DiscardDuringPlayback) {
                       AudioBufferSlice(&first_input, 0, 2 * kPacketFrames), opts);
   opts.test_label = "first_input, third packet onwards";
   opts.partial = true;
-  CompareAudioBuffers(AudioBufferSlice(&ring_buffer, 2 * kPacketFrames, output_->frame_count()),
-                      AudioBufferSlice(&first_input, 2 * kPacketFrames, output_->frame_count()),
+  CompareAudioBuffers(AudioBufferSlice(&ring_buffer, 2 * kPacketFrames, output()->frame_count()),
+                      AudioBufferSlice(&first_input, 2 * kPacketFrames, output()->frame_count()),
                       opts);
 
   opts.partial = false;
@@ -543,7 +547,8 @@ TEST_F(AudioRendererPipelineTestInt16, DiscardDuringPlayback) {
   // The ring buffer should contain first_input for 10ms (one packet), then partially-written data
   // followed by zeros until restart_pts, then second_input (num_packets), then the remaining bytes
   // should be zeros.
-  ring_buffer = output_->SnapshotRingBuffer();
+  ring_buffer = output()->SnapshotRingBuffer();
+  Unbind(renderer);
 
   if constexpr (!kEnableAllOverflowAndUnderflowChecksInRealtimeTests) {
     // In case of underflows, exit NOW (don't assess this buffer).
@@ -570,7 +575,7 @@ TEST_F(AudioRendererPipelineTestInt16, DiscardDuringPlayback) {
 
   opts.test_label = "silence after second_input";
   CompareAudioBuffers(
-      AudioBufferSlice(&ring_buffer, restart_pts + num_frames, output_->frame_count()),
+      AudioBufferSlice(&ring_buffer, restart_pts + num_frames, output()->frame_count()),
       AudioBufferSlice<ASF::SIGNED_16>(), opts);
 }
 
@@ -591,7 +596,7 @@ TEST_F(AudioRendererPipelineTestInt16, RampOnGainChanges) {
 
   auto input_buffer = GenerateConstantAudio(format, num_frames, kSampleVolume100);
   auto packets = renderer->AppendSlice(input_buffer, frames_per_packet);
-  auto start_time = renderer->PlaySynchronized(this, output_, 0);
+  auto start_time = renderer->PlaySynchronized(this, output(), 0);
 
   // Wait until a few packets are rendered, then raise the volume to 1.0.
   auto start_delay = zx::time(start_time) - zx::clock::get_monotonic();
@@ -600,7 +605,8 @@ TEST_F(AudioRendererPipelineTestInt16, RampOnGainChanges) {
 
   // Now wait for all packets to be rendered.
   renderer->WaitForPackets(this, packets);
-  auto ring_buffer = output_->SnapshotRingBuffer();
+  auto ring_buffer = output()->SnapshotRingBuffer();
+  Unbind(renderer);
 
   if constexpr (!kEnableAllOverflowAndUnderflowChecksInRealtimeTests) {
     // In case of underflows, exit NOW (don't assess this buffer).
@@ -668,9 +674,10 @@ TEST_F(AudioRendererPipelineTestInt16, SetGainBeforeSetFormat) {
   expected_output_buffer.Append(&expected_output_signal);
 
   auto packets = renderer->AppendSlice(input_buffer, frames_per_packet);
-  renderer->PlaySynchronized(this, output_, 0);
+  renderer->PlaySynchronized(this, output(), 0);
   renderer->WaitForPackets(this, packets);
-  auto ring_buffer = output_->SnapshotRingBuffer();
+  auto ring_buffer = output()->SnapshotRingBuffer();
+  Unbind(renderer);
 
   if constexpr (!kEnableAllOverflowAndUnderflowChecksInRealtimeTests) {
     // In case of underflows, exit NOW (don't assess this buffer).
@@ -704,11 +711,11 @@ TEST_F(AudioRendererPipelineTestFloat, NoDistortionOnGainChanges) {
   // At 48kHz, this is 5.33ms per sinusoidal period. This is chosen intentionally to
   // (a) not align with volume updates, which happen every 10ms, and (b) include a
   // power-of-2 number of frames, to simplify the FFT comparison.
-  const int64_t kFramesPerPeriod = 256;
+  const int32_t kFramesPerPeriod = 256;
   const int32_t freq = num_frames / kFramesPerPeriod;
   auto input_buffer = GenerateCosineAudio(format, num_frames, freq);
   auto packets = renderer->AppendSlice(input_buffer, kPacketFrames);
-  auto start_time = renderer->PlaySynchronized(this, output_, 0);
+  auto start_time = renderer->PlaySynchronized(this, output(), 0);
 
   // Wait until the first packet will be rendered, then make a few gain toggles.
   RunLoopWithTimeout(zx::time(start_time) - zx::clock::get_monotonic());
@@ -719,7 +726,8 @@ TEST_F(AudioRendererPipelineTestFloat, NoDistortionOnGainChanges) {
 
   // Now wait for all packets to be rendered.
   renderer->WaitForPackets(this, packets);
-  auto ring_buffer = output_->SnapshotRingBuffer();
+  auto ring_buffer = output()->SnapshotRingBuffer();
+  Unbind(renderer);
 
   if constexpr (!kEnableAllOverflowAndUnderflowChecksInRealtimeTests) {
     // In case of underflows, exit NOW (don't assess this buffer).
@@ -757,7 +765,7 @@ TEST_F(AudioRendererPipelineTestInt16, AddPayloadBufferDiscardable) {
   auto [renderer, format] = CreateRenderer(kOutputFrameRate);
 
   zx::vmo vmo;
-  ASSERT_EQ(zx::vmo::create(2 * zx_system_get_page_size(), ZX_VMO_DISCARDABLE, &vmo), ZX_OK);
+  ASSERT_EQ(zx::vmo::create(2ul * zx_system_get_page_size(), ZX_VMO_DISCARDABLE, &vmo), ZX_OK);
   renderer->fidl()->AddPayloadBuffer(1, std::move(vmo));
 
   // It's not possible to wait for AddPayloadBuffer to complete, since it has no return value, so
@@ -844,9 +852,11 @@ class AudioRendererGainLimitsTest : public AudioRendererPipelineTestFloat {
     input_buffer.Append(&signal);
 
     auto packets = renderer->AppendSlice(input_buffer, frames_per_packet);
-    renderer->PlaySynchronized(this, output_, 0);
+    renderer->PlaySynchronized(this, output(), 0);
     renderer->WaitForPackets(this, packets);
-    auto ring_buffer = output_->SnapshotRingBuffer();
+    auto ring_buffer = output()->SnapshotRingBuffer();
+    gain_control.Unbind();
+    Unbind(renderer);
 
     if constexpr (!kEnableAllOverflowAndUnderflowChecksInRealtimeTests) {
       // In case of underflows, exit NOW (don't assess this buffer).
@@ -870,7 +880,7 @@ class AudioRendererGainLimitsTest : public AudioRendererPipelineTestFloat {
                         AudioBufferSlice(&expected_output_buffer, 0, num_frames - kSilentPrefix),
                         opts);
     opts.test_label = "check final silence";
-    CompareAudioBuffers(AudioBufferSlice(&ring_buffer, num_frames, output_->frame_count()),
+    CompareAudioBuffers(AudioBufferSlice(&ring_buffer, num_frames, output()->frame_count()),
                         AudioBufferSlice<ASF::FLOAT>(), opts);
   }
 };
@@ -996,6 +1006,11 @@ class AudioRendererPipelineUnderflowTest : public HermeticAudioTest {
     renderer_ = CreateAudioRenderer(format_, kFrameRate);
   }
 
+  TypedFormat<ASF::SIGNED_16> format() const { return format_; }
+  VirtualOutput<ASF::SIGNED_16>* output() const { return output_; }
+  AudioRendererShim<ASF::SIGNED_16>* renderer() const { return renderer_; }
+
+ private:
   const TypedFormat<ASF::SIGNED_16> format_;
   VirtualOutput<ASF::SIGNED_16>* output_ = nullptr;
   AudioRendererShim<ASF::SIGNED_16>* renderer_ = nullptr;
@@ -1004,22 +1019,23 @@ class AudioRendererPipelineUnderflowTest : public HermeticAudioTest {
 // Validate that a slow effects pipeline registers an underflow.
 TEST_F(AudioRendererPipelineUnderflowTest, HasUnderflow) {
   // Inject one packet and wait for it to be rendered.
-  auto input_buffer = GenerateSequentialAudio(format_, kPacketFrames);
-  auto packets = renderer_->AppendSlice(input_buffer, kPacketFrames);
-  renderer_->PlaySynchronized(this, output_, 0);
-  renderer_->WaitForPackets(this, packets);
+  auto input_buffer = GenerateSequentialAudio(format(), kPacketFrames);
+  auto packets = renderer()->AppendSlice(input_buffer, kPacketFrames);
+  renderer()->PlaySynchronized(this, output(), 0);
+  renderer()->WaitForPackets(this, packets);
 
   // Wait an extra 20ms to account for the sleeper filter's delay.
   RunLoopWithTimeout(zx::msec(20));
 
   // Expect an underflow.
-  ExpectInspectMetrics(output_, DeviceUniqueIdToString(kUniqueId),
+  ExpectInspectMetrics(output(), DeviceUniqueIdToString(kUniqueId),
                        {
                            .children =
                                {
                                    {"pipeline underflows", {.nonzero_uints = {"count"}}},
                                },
                        });
+  Unbind(renderer());
 }
 
 class AudioRendererEffectsV1Test : public AudioRendererPipelineTestInt16 {
@@ -1090,9 +1106,10 @@ TEST_F(AudioRendererEffectsV1Test, RenderWithEffects) {
   input_buffer.Append(&signal);
 
   auto packets = renderer->AppendSlice(input_buffer, frames_per_packet);
-  renderer->PlaySynchronized(this, output_, 0);
+  renderer->PlaySynchronized(this, output(), 0);
   renderer->WaitForPackets(this, packets);
-  auto ring_buffer = output_->SnapshotRingBuffer();
+  auto ring_buffer = output()->SnapshotRingBuffer();
+  Unbind(renderer);
 
   if constexpr (!kEnableAllOverflowAndUnderflowChecksInRealtimeTests) {
     // In case of underflows, exit NOW (don't assess this buffer).
@@ -1114,7 +1131,7 @@ TEST_F(AudioRendererEffectsV1Test, RenderWithEffects) {
   CompareAudioBuffers(AudioBufferSlice(&ring_buffer, 0, num_frames),
                       AudioBufferSlice(&input_buffer, 0, num_frames), opts);
   opts.test_label = "check silence";
-  CompareAudioBuffers(AudioBufferSlice(&ring_buffer, num_frames, output_->frame_count()),
+  CompareAudioBuffers(AudioBufferSlice(&ring_buffer, num_frames, output()->frame_count()),
                       AudioBufferSlice<ASF::SIGNED_16>(), opts);
 }
 
@@ -1155,9 +1172,10 @@ TEST_F(AudioRendererEffectsV1Test, EffectsControllerUpdateEffect) {
   input_buffer.Append(&signal);
 
   auto packets = renderer->AppendSlice(input_buffer, frames_per_packet);
-  renderer->PlaySynchronized(this, output_, 0);
+  renderer->PlaySynchronized(this, output(), 0);
   renderer->WaitForPackets(this, packets);
-  auto ring_buffer = output_->SnapshotRingBuffer();
+  auto ring_buffer = output()->SnapshotRingBuffer();
+  Unbind(renderer);
 
   if constexpr (!kEnableAllOverflowAndUnderflowChecksInRealtimeTests) {
     // In case of underflows, exit NOW (don't assess this buffer).
@@ -1176,7 +1194,7 @@ TEST_F(AudioRendererEffectsV1Test, EffectsControllerUpdateEffect) {
   CompareAudioBuffers(AudioBufferSlice(&ring_buffer, 0, num_frames),
                       AudioBufferSlice(&input_buffer, 0, num_frames), opts);
   opts.test_label = "check silence";
-  CompareAudioBuffers(AudioBufferSlice(&ring_buffer, num_frames, output_->frame_count()),
+  CompareAudioBuffers(AudioBufferSlice(&ring_buffer, num_frames, output()->frame_count()),
                       AudioBufferSlice<ASF::SIGNED_16>(), opts);
 }
 
@@ -1247,9 +1265,10 @@ TEST_F(AudioRendererEffectsV2Test, RenderWithEffects) {
   input_buffer.Append(&signal);
 
   auto packets = renderer->AppendSlice(input_buffer, frames_per_packet);
-  renderer->PlaySynchronized(this, output_, 0);
+  renderer->PlaySynchronized(this, output(), 0);
   renderer->WaitForPackets(this, packets);
-  auto ring_buffer = output_->SnapshotRingBuffer();
+  auto ring_buffer = output()->SnapshotRingBuffer();
+  Unbind(renderer);
 
   if constexpr (!kEnableAllOverflowAndUnderflowChecksInRealtimeTests) {
     // In case of underflows, exit NOW (don't assess this buffer).
@@ -1273,7 +1292,7 @@ TEST_F(AudioRendererEffectsV2Test, RenderWithEffects) {
   CompareAudioBuffers(AudioBufferSlice(&ring_buffer, 0, num_frames),
                       AudioBufferSlice(&input_buffer, 0, num_frames), opts);
   opts.test_label = "check silence";
-  CompareAudioBuffers(AudioBufferSlice(&ring_buffer, num_frames, output_->frame_count()),
+  CompareAudioBuffers(AudioBufferSlice(&ring_buffer, num_frames, output()->frame_count()),
                       AudioBufferSlice<ASF::FLOAT>(), opts);
 }
 
@@ -1353,9 +1372,9 @@ TEST_F(AudioRendererPipelineTuningTest, CorrectStreamOutputUponUpdatedPipeline) 
   first_buffer.Append(&signal);
 
   auto first_packets = renderer->AppendSlice(first_buffer, frames_per_packet);
-  renderer->PlaySynchronized(this, output_, 0);
+  renderer->PlaySynchronized(this, output(), 0);
   renderer->WaitForPackets(this, first_packets);
-  auto ring_buffer = output_->SnapshotRingBuffer();
+  auto ring_buffer = output()->SnapshotRingBuffer();
 
   if constexpr (!kEnableAllOverflowAndUnderflowChecksInRealtimeTests) {
     // In case of underflows, exit NOW (don't assess this buffer).
@@ -1391,7 +1410,7 @@ TEST_F(AudioRendererPipelineTuningTest, CorrectStreamOutputUponUpdatedPipeline) 
                                     },
                                 .effects_v1 = {
                                     {
-                                        .lib_name = "inversion_filter.so",
+                                        .lib_name = "audio-core-api-test-effects.so",
                                         .effect_name = "inversion_filter",
                                         .instance_name = "inverter",
                                         .effect_config = "{ \"enabled\": false}",
@@ -1420,7 +1439,8 @@ TEST_F(AudioRendererPipelineTuningTest, CorrectStreamOutputUponUpdatedPipeline) 
   auto second_buffer = GenerateSequentialAudio(format, num_frames);
   auto second_packets = renderer->AppendSlice(second_buffer, frames_per_packet, restart_pts);
   renderer->WaitForPackets(this, second_packets);
-  ring_buffer = output_->SnapshotRingBuffer();
+  ring_buffer = output()->SnapshotRingBuffer();
+  Unbind(renderer);
 
   if constexpr (!kEnableAllOverflowAndUnderflowChecksInRealtimeTests) {
     // In case of underflows, exit NOW (don't assess this buffer).
@@ -1468,9 +1488,10 @@ TEST_F(AudioRendererPipelineTuningTest, AudioTunerUpdateEffect) {
   auto signal = GenerateSequentialAudio(format, num_frames - kNumInitialSilentFrames);
   input_buffer.Append(&signal);
   auto packets = renderer->AppendSlice(input_buffer, frames_per_packet);
-  renderer->PlaySynchronized(this, output_, 0);
+  renderer->PlaySynchronized(this, output(), 0);
   renderer->WaitForPackets(this, packets);
-  auto ring_buffer = output_->SnapshotRingBuffer();
+  auto ring_buffer = output()->SnapshotRingBuffer();
+  Unbind(renderer);
 
   if constexpr (!kEnableAllOverflowAndUnderflowChecksInRealtimeTests) {
     // In case of underflows, exit NOW (don't assess this buffer).
@@ -1488,7 +1509,7 @@ TEST_F(AudioRendererPipelineTuningTest, AudioTunerUpdateEffect) {
   CompareAudioBuffers(AudioBufferSlice(&ring_buffer, 0, num_frames),
                       AudioBufferSlice(&input_buffer, 0, num_frames), opts);
   opts.test_label = "check silence";
-  CompareAudioBuffers(AudioBufferSlice(&ring_buffer, num_frames, output_->frame_count()),
+  CompareAudioBuffers(AudioBufferSlice(&ring_buffer, num_frames, output()->frame_count()),
                       AudioBufferSlice<ASF::SIGNED_16>(), opts);
 }
 

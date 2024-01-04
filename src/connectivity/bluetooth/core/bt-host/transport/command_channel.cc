@@ -14,6 +14,9 @@
 #include "src/connectivity/bluetooth/core/bt-host/common/trace.h"
 #include "src/connectivity/bluetooth/lib/cpp-string/string_printf.h"
 
+#include <pw_bluetooth/hci_common.emb.h>
+#include <pw_bluetooth/hci_vendor.emb.h>
+
 namespace bt::hci {
 
 namespace {
@@ -62,6 +65,7 @@ CommandChannel::TransactionData::TransactionData(
       le_meta_subevent_code_(le_meta_subevent_code),
       exclusions_(std::move(exclusions)),
       callback_(std::move(callback)),
+      timeout_task_(channel_->dispatcher_),
       handler_id_(0u) {
   BT_DEBUG_ASSERT(transaction_id != 0u);
   exclusions_.insert(opcode_);
@@ -80,8 +84,12 @@ CommandChannel::TransactionData::~TransactionData() {
 void CommandChannel::TransactionData::StartTimer() {
   // Transactions should only ever be started once.
   BT_DEBUG_ASSERT(!timeout_task_.is_pending());
-  timeout_task_.set_handler([chan = channel_, tid = id()] { chan->OnCommandTimeout(tid); });
-  timeout_task_.PostDelayed(async_get_default_dispatcher(), hci_spec::kCommandTimeout);
+  timeout_task_.set_function([chan = channel_, tid = id()](auto, pw::Status status) {
+    if (status.ok()) {
+      chan->OnCommandTimeout(tid);
+    }
+  });
+  timeout_task_.PostAfter(hci_spec::kCommandTimeout);
 }
 
 void CommandChannel::TransactionData::Complete(std::unique_ptr<EventPacket> event) {
@@ -137,11 +145,12 @@ CommandChannel::EventCallbackVariant CommandChannel::TransactionData::MakeCallba
                     callback_);
 }
 
-CommandChannel::CommandChannel(pw::bluetooth::Controller* hci)
+CommandChannel::CommandChannel(pw::bluetooth::Controller* hci, pw::async::Dispatcher& dispatcher)
     : next_transaction_id_(1u),
       next_event_handler_id_(1u),
       hci_(hci),
       allowed_command_packets_(1u),
+      dispatcher_(dispatcher),
       weak_ptr_factory_(this) {
   hci_->SetEventFunction(fit::bind_member<&CommandChannel::OnEvent>(this));
 

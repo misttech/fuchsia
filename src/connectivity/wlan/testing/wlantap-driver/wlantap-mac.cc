@@ -18,11 +18,9 @@ constexpr size_t kWlanSoftmacQueryResponseBufferSize = 5120;
 namespace wlan {
 
 WlantapMac::WlantapMac(Listener* listener, wlan_common::WlanMacRole role,
-                       std::shared_ptr<wlan_tap::WlantapPhyConfig> config, zx::channel sme_channel)
-    : listener_(listener),
-      role_(role),
-      phy_config_(std::move(config)),
-      sme_channel_(std::move(sme_channel)) {}
+                       const std::shared_ptr<const wlan_tap::WlantapPhyConfig>& config,
+                       zx::channel sme_channel)
+    : listener_(listener), role_(role), phy_config_(config), sme_channel_(std::move(sme_channel)) {}
 
 void WlantapMac::Query(fdf::Arena& arena, QueryCompleter::Sync& completer) {
   FDF_LOG(INFO, "Query(): %u", phy_config_->hardware_capability);
@@ -118,7 +116,7 @@ void WlantapMac::StartPassiveScan(StartPassiveScanRequestView request, fdf::Aren
   listener_->WlantapMacStartScan(scan_id);
   fidl::Arena fidl_arena;
   auto builder =
-      fuchsia_wlan_softmac::wire::WlanSoftmacStartPassiveScanResponse::Builder(fidl_arena);
+      fuchsia_wlan_softmac::wire::WlanSoftmacBridgeStartPassiveScanResponse::Builder(fidl_arena);
   builder.scan_id(scan_id);
   completer.buffer(arena).ReplySuccess(builder.Build());
 }
@@ -130,7 +128,7 @@ void WlantapMac::StartActiveScan(StartActiveScanRequestView request, fdf::Arena&
 
   fidl::Arena fidl_arena;
   auto builder =
-      fuchsia_wlan_softmac::wire::WlanSoftmacStartActiveScanResponse::Builder(fidl_arena);
+      fuchsia_wlan_softmac::wire::WlanSoftmacBridgeStartActiveScanResponse::Builder(fidl_arena);
   builder.scan_id(scan_id);
   completer.buffer(arena).ReplySuccess(builder.Build());
 }

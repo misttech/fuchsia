@@ -42,8 +42,6 @@
 #include "src/lib/digest/digest.h"
 #include "src/lib/digest/merkle-tree.h"
 #include "src/lib/digest/node-digest.h"
-#include "src/lib/storage/vfs/cpp/journal/initializer.h"
-#include "src/lib/storage/vfs/cpp/transaction/transaction_handler.h"
 #include "src/storage/blobfs/allocator/extent_reserver.h"
 #include "src/storage/blobfs/allocator/host_allocator.h"
 #include "src/storage/blobfs/allocator/node_reserver.h"
@@ -63,6 +61,8 @@
 #include "src/storage/blobfs/iterator/vector_extent_iterator.h"
 #include "src/storage/blobfs/node_finder.h"
 #include "src/storage/lib/host/common.h"
+#include "src/storage/lib/vfs/cpp/journal/initializer.h"
+#include "src/storage/lib/vfs/cpp/transaction/transaction_handler.h"
 
 using digest::Digest;
 using digest::MerkleTreeCreator;
@@ -691,7 +691,7 @@ zx::result<> Blobfs::AddBlob(const BlobInfo& blob_info) {
     return inode.take_error();
   }
   inode->blob_size = blob_layout.FileSize();
-  inode->block_count = blob_layout.TotalBlockCount();
+  inode->block_count = safemath::checked_cast<uint32_t>(blob_layout.TotalBlockCount());
   blob_info.GetDigest().CopyTo(inode->merkle_root_hash);
   inode->header.flags |=
       (blob_info.IsCompressed() ? ChunkedCompressor::InodeHeaderCompressionFlags() : 0);

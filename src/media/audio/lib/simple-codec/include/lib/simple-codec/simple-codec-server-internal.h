@@ -9,6 +9,7 @@
 #include <fuchsia/hardware/audio/signalprocessing/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/fidl/cpp/binding.h>
 #include <lib/simple-codec/simple-codec-types.h>
 #include <lib/zircon-internal/thread_annotations.h>
 
@@ -17,7 +18,6 @@
 
 #include <fbl/intrusive_double_list.h>
 #include <fbl/mutex.h>
-#include <sdk/lib/fidl/cpp/binding.h>
 
 namespace audio {
 
@@ -84,6 +84,9 @@ class SimpleCodecServerInternal {
       SimpleCodecServerInstance<T>* instance);
   void GetTopologies(
       fuchsia::hardware::audio::signalprocessing::SignalProcessing::GetTopologiesCallback callback);
+  void WatchTopology(
+      fuchsia::hardware::audio::signalprocessing::SignalProcessing::WatchTopologyCallback callback,
+      SimpleCodecServerInstance<T>* instance);
   void SetTopology(
       uint64_t topology_id,
       fuchsia::hardware::audio::signalprocessing::SignalProcessing::SetTopologyCallback callback);
@@ -148,6 +151,11 @@ class SimpleCodecServerInstance
       override {
     parent_->GetTopologies(std::move(callback));
   }
+  void WatchTopology(
+      fuchsia::hardware::audio::signalprocessing::SignalProcessing::WatchTopologyCallback callback)
+      override {
+    parent_->WatchTopology(std::move(callback), this);
+  }
   void SetTopology(uint64_t topology_id,
                    fuchsia::hardware::audio::signalprocessing::SignalProcessing::SetTopologyCallback
                        callback) override {
@@ -174,7 +182,9 @@ class SimpleCodecServerInstance
   fidl::Binding<fuchsia::hardware::audio::Codec> binding_;
   std::optional<fidl::Binding<fuchsia::hardware::audio::signalprocessing::SignalProcessing>>
       signal_processing_binding_;
+
   bool plug_state_updated_ = true;  // Return the current plug state on the first call.
+  std::optional<fuchsia::hardware::audio::Codec::WatchPlugStateCallback> plug_callback_;
 
   bool gain_updated_ = true;  // Return the current gain state on the first call.
   std::optional<
@@ -190,6 +200,10 @@ class SimpleCodecServerInstance
   std::optional<
       fuchsia::hardware::audio::signalprocessing::SignalProcessing::WatchElementStateCallback>
       agc_callback_;
+
+  bool responded_to_watch_topology_ = false;
+  std::optional<fuchsia::hardware::audio::signalprocessing::SignalProcessing::WatchTopologyCallback>
+      topology_callback_;
 };
 
 }  // namespace audio

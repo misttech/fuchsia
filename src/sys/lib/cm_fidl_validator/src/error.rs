@@ -28,6 +28,9 @@ pub enum Error {
     #[error("Field `{}` for {} is too long.", .0.field, .0.decl)]
     FieldTooLong(DeclField),
 
+    #[error("Field `{}` for {} has an invalid path segment.", .0.field, .0.decl)]
+    FieldInvalidSegment(DeclField),
+
     #[error("\"{0}\" capabilities must be offered as a built-in capability.")]
     CapabilityMustBeBuiltin(DeclType),
 
@@ -36,9 +39,6 @@ pub enum Error {
 
     #[error("Encountered an unknown capability declaration. This may happen due to ABI skew between the FIDL component declaration and the system.")]
     UnknownCapability,
-
-    #[error("\"{0}\" target \"{1}\" is same as source.")]
-    OfferTargetEqualsSource(DeclType, String),
 
     #[error("\"{1}\" is referenced in {0} but it does not appear in children.")]
     InvalidChild(DeclField, String),
@@ -79,12 +79,23 @@ pub enum Error {
     #[error("Invalid aggregate offer: {0}")]
     InvalidAggregateOffer(String),
 
-    #[error("{} for {1} is an aggregate, but one of the sources is not a collection. \
-            Aggregation from non-collection sources in not currently supported.", .0.field)]
-    ServiceAggregateNotCollection(DeclField, String),
-
     #[error("All sources that feed into an aggregation operation should have the same availability. Got {0}.")]
     DifferentAvailabilityInAggregation(AvailabilityList),
+
+    #[error("Multiple runners used.")]
+    MultipleRunnersUsed,
+
+    #[error("Used runner conflicts with program runner.")]
+    ConflictingRunners,
+
+    #[error(
+        "Runner is missing for executable component. A runner must be specified in the \
+            `program` section or in the `use` section."
+    )]
+    MissingRunner,
+
+    #[error("Dynamic children cannot specify an environment.")]
+    DynamicChildWithEnvironment,
 }
 
 /// [AvailabilityList] is a newtype to provide a human friendly [Display] impl for a vector
@@ -137,8 +148,8 @@ impl Error {
         Error::FieldTooLong(DeclField { decl: decl_type, field: keyword.into() })
     }
 
-    pub fn offer_target_equals_source(decl: DeclType, target: impl Into<String>) -> Self {
-        Error::OfferTargetEqualsSource(decl, target.into())
+    pub fn field_invalid_segment(decl_type: DeclType, keyword: impl Into<String>) -> Self {
+        Error::FieldInvalidSegment(DeclField { decl: decl_type, field: keyword.into() })
     }
 
     pub fn invalid_child(
@@ -250,17 +261,6 @@ impl Error {
         Error::InvalidAggregateOffer(info.into())
     }
 
-    pub fn service_aggregate_not_collection(
-        decl_type: DeclType,
-        keyword: impl Into<String>,
-        target_name: impl Into<String>,
-    ) -> Self {
-        Error::ServiceAggregateNotCollection(
-            DeclField { decl: decl_type, field: keyword.into() },
-            target_name.into(),
-        )
-    }
-
     pub fn different_availability_in_aggregation(availability: Vec<fdecl::Availability>) -> Self {
         Error::DifferentAvailabilityInAggregation(AvailabilityList(availability))
     }
@@ -289,6 +289,7 @@ pub enum DeclType {
     Collection,
     CollectionRef,
     Component,
+    Configuration,
     ConfigChecksum,
     ConfigField,
     ConfigMutability,
@@ -306,6 +307,7 @@ pub enum DeclType {
     DebugRef,
     DebugRegistration,
     DependencyType,
+    Dictionary,
     Directory,
     Durability,
     Environment,
@@ -313,6 +315,8 @@ pub enum DeclType {
     EventStream,
     EventSubscription,
     Expose,
+    ExposeConfig,
+    ExposeDictionary,
     ExposeDirectory,
     ExposeProtocol,
     ExposeResolver,
@@ -323,6 +327,8 @@ pub enum DeclType {
     LayoutParameter,
     NameMapping,
     Offer,
+    OfferConfig,
+    OfferDictionary,
     OfferDirectory,
     OfferEventStream,
     OfferProtocol,
@@ -347,16 +353,14 @@ pub enum DeclType {
     Storage,
     StorageId,
     Use,
+    UseConfiguration,
     UseDirectory,
     UseEventStream,
     UseProtocol,
+    UseRunner,
     UseService,
     UseStorage,
     VoidRef,
-
-    // TODO(fxbug.dev/126609): These will be generated when fuchsia.component.config goes away.
-    ValueSpec,
-    ValuesData,
 }
 
 impl fmt::Display for DeclType {
@@ -381,6 +385,7 @@ impl fmt::Display for DeclType {
             DeclType::Collection => "Collection",
             DeclType::CollectionRef => "CollectionRef",
             DeclType::Component => "Component",
+            DeclType::Configuration => "Configuration",
             DeclType::ConfigChecksum => "ConfigChecksum",
             DeclType::ConfigField => "ConfigField",
             DeclType::ConfigMutability => "ConfigMutability",
@@ -398,6 +403,7 @@ impl fmt::Display for DeclType {
             DeclType::DebugRef => "DebugRef",
             DeclType::DebugRegistration => "DebugRegistration",
             DeclType::DependencyType => "DependencyType",
+            DeclType::Dictionary => "Dictionary",
             DeclType::Directory => "Directory",
             DeclType::Durability => "Durability",
             DeclType::Environment => "Environment",
@@ -405,6 +411,8 @@ impl fmt::Display for DeclType {
             DeclType::EventStream => "EventStream",
             DeclType::EventSubscription => "EventSubscription",
             DeclType::Expose => "Expose",
+            DeclType::ExposeConfig => "ExposeConfig",
+            DeclType::ExposeDictionary => "ExposeDictionary",
             DeclType::ExposeDirectory => "ExposeDirectory",
             DeclType::ExposeProtocol => "ExposeProtocol",
             DeclType::ExposeResolver => "ExposeResolver",
@@ -415,6 +423,8 @@ impl fmt::Display for DeclType {
             DeclType::LayoutParameter => "LayoutParameter",
             DeclType::NameMapping => "NameMapping",
             DeclType::Offer => "Offer",
+            DeclType::OfferConfig => "OfferConfig",
+            DeclType::OfferDictionary => "OfferDictionary",
             DeclType::OfferDirectory => "OfferDirectory",
             DeclType::OfferEventStream => "OfferEventStream",
             DeclType::OfferProtocol => "OfferProtocol",
@@ -439,16 +449,14 @@ impl fmt::Display for DeclType {
             DeclType::Storage => "Storage",
             DeclType::StorageId => "StorageId",
             DeclType::Use => "Use",
+            DeclType::UseConfiguration => "UseConfiguration",
             DeclType::UseDirectory => "UseDirectory",
             DeclType::UseEventStream => "UseEventStream",
             DeclType::UseProtocol => "UseProtocol",
+            DeclType::UseRunner => "UseRunner",
             DeclType::UseService => "UseService",
             DeclType::UseStorage => "UseStorage",
             DeclType::VoidRef => "VoidRef",
-
-            // TODO(fxbug.dev/126609): These will be generated when fuchsia.component.config goes away.
-            DeclType::ValueSpec => "ValueSpec",
-            DeclType::ValuesData => "ValuesData",
         };
         write!(f, "{}", name)
     }
@@ -510,6 +518,10 @@ mod tests {
         assert_eq!(
             format!("{}", Error::field_too_long(DeclType::Child, "keyword")),
             "Field `keyword` for Child is too long."
+        );
+        assert_eq!(
+            format!("{}", Error::field_invalid_segment(DeclType::Child, "keyword")),
+            "Field `keyword` for Child has an invalid path segment."
         );
         assert_eq!(
             format!("{}", Error::invalid_child(DeclType::Child, "source", "child")),

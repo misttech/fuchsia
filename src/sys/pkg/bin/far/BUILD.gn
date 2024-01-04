@@ -12,7 +12,7 @@ executable("bin") {
   sources = [ "main.cc" ]
 
   deps = [
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl_cli",
     "//src/sys/pkg/lib/far/cpp:far",
   ]
 }
@@ -23,7 +23,7 @@ sdk_host_tool("bin_sdk") {
   deps = [ ":bin" ]
 }
 
-fuchsia_shell_package("far") {
+fuchsia_package("far") {
   deps = [ ":bin" ]
 }
 

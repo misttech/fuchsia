@@ -7,7 +7,8 @@
 #include "src/connectivity/bluetooth/core/bt-host/hci-spec/vendor_protocol.h"
 #include "src/connectivity/bluetooth/core/bt-host/transport/transport.h"
 
-#include <pw_bluetooth/vendor.emb.h>
+#include <pw_bluetooth/hci_common.emb.h>
+#include <pw_bluetooth/hci_vendor.emb.h>
 
 namespace bt::hci {
 
@@ -50,9 +51,9 @@ std::optional<EmbossCommandPacket> AndroidExtendedLowEnergyAdvertiser::BuildEnab
   std::optional<hci_spec::AdvertisingHandle> handle = advertising_handle_map_.GetHandle(address);
   BT_ASSERT(handle);
 
-  auto packet =
-      hci::EmbossCommandPacket::New<pw::bluetooth::vendor::android_hci::LEMultiAdvtEnableCommandWriter>(
-          hci_android::kLEMultiAdvt);
+  auto packet = hci::EmbossCommandPacket::New<
+      pw::bluetooth::vendor::android_hci::LEMultiAdvtEnableCommandWriter>(
+      hci_android::kLEMultiAdvt);
   auto packet_view = packet.view_t();
   packet_view.vendor_command().sub_opcode().Write(hci_android::kLEMultiAdvtEnableSubopcode);
   packet_view.enable().Write(enable);
@@ -169,9 +170,9 @@ std::optional<EmbossCommandPacket> AndroidExtendedLowEnergyAdvertiser::BuildRemo
   std::optional<hci_spec::AdvertisingHandle> handle = advertising_handle_map_.GetHandle(address);
   BT_ASSERT(handle);
 
-  auto packet =
-      hci::EmbossCommandPacket::New<pw::bluetooth::vendor::android_hci::LEMultiAdvtEnableCommandWriter>(
-          hci_android::kLEMultiAdvt);
+  auto packet = hci::EmbossCommandPacket::New<
+      pw::bluetooth::vendor::android_hci::LEMultiAdvtEnableCommandWriter>(
+      hci_android::kLEMultiAdvt);
   auto packet_view = packet.view_t();
   packet_view.vendor_command().sub_opcode().Write(hci_android::kLEMultiAdvtEnableSubopcode);
   packet_view.enable().Write(pw::bluetooth::emboss::GenericEnableParam::DISABLE);

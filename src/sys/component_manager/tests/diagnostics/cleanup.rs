@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use component_events::{events::*, matcher::*, sequence::*};
-use diagnostics_reader::{assert_data_tree, ArchiveReader, Inspect};
+use diagnostics_assertions::assert_data_tree;
+use diagnostics_reader::{ArchiveReader, Inspect};
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_decl as fdecl;
 use fuchsia_component::client;
@@ -21,7 +22,18 @@ async fn main() {
         .new_named_instance("parent", "#meta/parent.cm")
         .await
         .expect("create scoped instance");
-    instance.start_with_binder_sync().await.expect("connect to binder");
+    let mut event_stream = component_events::events::EventStream::open().await.unwrap();
+    let _ = instance.connect_to_binder().unwrap();
+    let _ = EventMatcher::ok()
+        .moniker("./coll:parent")
+        .wait::<Started>(&mut event_stream)
+        .await
+        .unwrap();
+    let _ = EventMatcher::ok()
+        .moniker("./coll:parent/child")
+        .wait::<Started>(&mut event_stream)
+        .await
+        .unwrap();
 
     let data = reader.snapshot::<Inspect>().await.expect("got inspect data");
     assert_data_tree!(data[0].payload.as_ref().unwrap(), root: contains {

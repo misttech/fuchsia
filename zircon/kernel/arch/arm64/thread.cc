@@ -14,6 +14,7 @@
 
 #include <arch/arm64.h>
 #include <arch/arm64/mp.h>
+#include <arch/arm64/registers.h>
 #include <arch/arm64/uarch.h>
 #include <kernel/thread.h>
 
@@ -26,6 +27,9 @@ static_assert(sizeof(arm64_context_switch_frame) % 16 == 0, "");
 void arch_thread_initialize(Thread* t, vaddr_t entry_point) {
   // zero out the entire arch state
   t->arch() = {};
+
+  // Set MDSCR to the default value.
+  t->arch().mdscr_el1 = MSDCR_EL1_INITIAL_VALUE;
 
   // create a default stack frame on the stack
   vaddr_t stack_top = t->stack().top();
@@ -107,7 +111,7 @@ static void arm64_context_switch_spec_mitigations(Thread* oldthread, Thread* new
   // 2b)    the old address space is not nullptr (not a kernel thread).
   //        If the old thread is a kernel thread, it can be trusted not to attack userspace
   if (arm64_read_percpu_ptr()->should_invalidate_bp_on_context_switch &&
-      ((oldthread->aspace() != newthread->aspace()) && oldthread->aspace())) {
+      ((oldthread->active_aspace() != newthread->active_aspace()) && oldthread->active_aspace())) {
     arm64_uarch_do_spectre_v2_mitigation();
   }
 }

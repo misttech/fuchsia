@@ -5,7 +5,6 @@
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 import("//src/starnix/kernel/starnix.gni")
-import("//src/sys/core/build/core_shard.gni")
 
 group("runner") {
   deps = [
@@ -21,26 +20,46 @@ rustc_binary("starnix_runner_bin") {
 
   source_root = "main.rs"
   deps = [
+    ":starnix_runner_config",
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust",
+    "//sdk/fidl/fuchsia.settings:fuchsia.settings_rust",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
+    "//src/lib/zircon/rust:fuchsia-zircon",
     "//src/starnix/lib/kernel_manager",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:tracing",
   ]
 
   sources = [ "main.rs" ]
+
+  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
 }
 
-core_shard("starnix_runner_core_shard") {
-  shard_file = "meta/starnix_runner.core_shard.cml"
-}
-
-fuchsia_package_with_single_component("starnix_package") {
+fuchsia_component_manifest("starnix_runner_component_manifest") {
   manifest = "meta/starnix_runner.cml"
-  package_name = "starnix"
   component_name = "starnix_runner"
+}
 
+# Starnix runner is configured by software assembly.
+fuchsia_structured_config_rust_lib("starnix_runner_config") {
+  cm_label = ":starnix_runner_component_manifest"
+}
+
+fuchsia_component("starnix_runner_component") {
+  cm_label = ":starnix_runner_component_manifest"
   deps = [ ":starnix_runner_bin" ]
+}
+
+fuchsia_package("starnix_package") {
+  package_name = "starnix"
+  validate_structured_config = false
+
+  deps = [
+    ":starnix_runner_bin",
+    ":starnix_runner_component",
+    ":starnix_runner_component_manifest",
+  ]
 }

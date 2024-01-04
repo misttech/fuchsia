@@ -12,6 +12,7 @@ use fidl_fuchsia_net_debug as fnet_debug;
 use fidl_fuchsia_net_dhcp as fnet_dhcp;
 use fidl_fuchsia_net_dhcpv6 as fnet_dhcpv6;
 use fidl_fuchsia_net_filter as fnet_filter;
+use fidl_fuchsia_net_filter_deprecated as fnet_filter_deprecated;
 use fidl_fuchsia_net_interfaces as fnet_interfaces;
 use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
 use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
@@ -70,13 +71,20 @@ impl NetstackVersion {
         macro_rules! common_services_and {
             ($($name:expr),*) => {[
                 fnet_debug::InterfacesMarker::PROTOCOL_NAME,
-                fnet_filter::FilterMarker::PROTOCOL_NAME,
+                fnet_filter_deprecated::FilterMarker::PROTOCOL_NAME,
                 fnet_interfaces_admin::InstallerMarker::PROTOCOL_NAME,
                 fnet_interfaces::StateMarker::PROTOCOL_NAME,
+                fnet_name::DnsServerWatcherMarker::PROTOCOL_NAME,
+                fnet_neighbor::ControllerMarker::PROTOCOL_NAME,
+                fnet_neighbor::ViewMarker::PROTOCOL_NAME,
                 fnet_root::InterfacesMarker::PROTOCOL_NAME,
+                fnet_root::RoutesV4Marker::PROTOCOL_NAME,
+                fnet_root::RoutesV6Marker::PROTOCOL_NAME,
                 fnet_routes::StateMarker::PROTOCOL_NAME,
                 fnet_routes::StateV4Marker::PROTOCOL_NAME,
                 fnet_routes::StateV6Marker::PROTOCOL_NAME,
+                fnet_routes_admin::SetProviderV4Marker::PROTOCOL_NAME,
+                fnet_routes_admin::SetProviderV6Marker::PROTOCOL_NAME,
                 fnet_stack::StackMarker::PROTOCOL_NAME,
                 fposix_socket_packet::ProviderMarker::PROTOCOL_NAME,
                 fposix_socket_raw::ProviderMarker::PROTOCOL_NAME,
@@ -93,13 +101,12 @@ impl NetstackVersion {
             | NetstackVersion::ProdNetstack2 => &common_services_and!(
                 fnet_multicast_admin::Ipv4RoutingTableControllerMarker::PROTOCOL_NAME,
                 fnet_multicast_admin::Ipv6RoutingTableControllerMarker::PROTOCOL_NAME,
-                fnet_neighbor::ControllerMarker::PROTOCOL_NAME,
-                fnet_neighbor::ViewMarker::PROTOCOL_NAME,
-                fnet_routes_admin::SetProviderV4Marker::PROTOCOL_NAME,
-                fnet_routes_admin::SetProviderV6Marker::PROTOCOL_NAME,
                 fnet_stack::LogMarker::PROTOCOL_NAME,
             ),
-            NetstackVersion::Netstack3 | NetstackVersion::ProdNetstack3 => &common_services_and!(),
+            NetstackVersion::Netstack3 | NetstackVersion::ProdNetstack3 => &common_services_and!(
+                fnet_filter::ControlMarker::PROTOCOL_NAME,
+                fnet_filter::StateMarker::PROTOCOL_NAME,
+            ),
         }
     }
 }
@@ -170,8 +177,9 @@ pub enum ManagerConfig {
     Empty,
     Dhcpv6,
     Forwarding,
-    InstallOnly,
+    AllDelegated,
     IfacePrefix,
+    DuplicateNames,
 }
 
 impl ManagerConfig {
@@ -180,8 +188,9 @@ impl ManagerConfig {
             ManagerConfig::Empty => "/pkg/netcfg/empty.json",
             ManagerConfig::Dhcpv6 => "/pkg/netcfg/dhcpv6.json",
             ManagerConfig::Forwarding => "/pkg/netcfg/forwarding.json",
-            ManagerConfig::InstallOnly => "/pkg/netcfg/install_only.json",
+            ManagerConfig::AllDelegated => "/pkg/netcfg/all_delegated.json",
             ManagerConfig::IfacePrefix => "/pkg/netcfg/iface_prefix.json",
+            ManagerConfig::DuplicateNames => "/pkg/netcfg/duplicate_names.json",
         }
     }
 }
@@ -319,8 +328,9 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                     ManagerConfig::Dhcpv6 => true,
                     ManagerConfig::Forwarding
                     | ManagerConfig::Empty
-                    | ManagerConfig::InstallOnly
-                    | ManagerConfig::IfacePrefix => false,
+                    | ManagerConfig::AllDelegated
+                    | ManagerConfig::IfacePrefix
+                    | ManagerConfig::DuplicateNames => false,
                 };
 
                 fnetemul::ChildDef {
@@ -364,7 +374,7 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                                 [
                                     fnetemul::Capability::LogSink(fnetemul::Empty {}),
                                     fnetemul::Capability::ChildDep(protocol_dep::<
-                                        fnet_filter::FilterMarker,
+                                        fnet_filter_deprecated::FilterMarker,
                                     >(
                                         constants::netstack::COMPONENT_NAME,
                                     )),
@@ -380,6 +390,11 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                                     )),
                                     fnetemul::Capability::ChildDep(protocol_dep::<
                                         fnet_stack::StackMarker,
+                                    >(
+                                        constants::netstack::COMPONENT_NAME,
+                                    )),
+                                    fnetemul::Capability::ChildDep(protocol_dep::<
+                                        fnet_name::DnsServerWatcherMarker,
                                     >(
                                         constants::netstack::COMPONENT_NAME,
                                     )),

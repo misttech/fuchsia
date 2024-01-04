@@ -6,7 +6,6 @@ use {
     crate::core::{
         collection::{Components, ManifestData, Manifests},
         controller::utils::DefaultComponentRequest,
-        util::types::INFERRED_URL_SCHEME,
     },
     anyhow::{Error, Result},
     scrutiny::{
@@ -37,7 +36,7 @@ impl DataController for ComponentsGraphController {
             .summary("components")
             .description(
                 "Dumps every component indexed by the Data Model. Note that \
-            a single Fuchsia package can contain multiple components (cmx or cm) \
+            a single Fuchsia package can contain multiple component \
             manifests. This is intended for raw data analysis by piping this data \
             into a file.",
             )
@@ -100,12 +99,9 @@ impl DataController for ComponentManifestGraphController {
         let manifests = model.get::<Manifests>()?;
         for manifest in manifests.iter() {
             if manifest.component_id as i64 == component_id {
-                if let ManifestData::Version1(data) = &manifest.manifest {
-                    return Ok(serde_json::from_str(data)?);
-                }
-                if let ManifestData::Version2 { cm_base64: data, .. } = &manifest.manifest {
-                    return Ok(serde_json::to_value(data.clone())?);
-                }
+                let ManifestData { cm_base64: data, .. } = &manifest.manifest;
+
+                return Ok(serde_json::to_value(data.clone())?);
             }
         }
         Err(Error::new(io::Error::new(ErrorKind::Other, format!("Could not find manifest"))))
@@ -140,11 +136,8 @@ impl DataController for ComponentsUrlListController {
     fn query(&self, model: Arc<DataModel>, _: Value) -> Result<Value> {
         let mut components = model.get::<Components>()?.entries.clone();
         components.sort_by(|a, b| a.url.partial_cmp(&b.url).unwrap());
-        let component_urls: Vec<String> = components
-            .iter()
-            .filter(|component| component.url.scheme() != INFERRED_URL_SCHEME)
-            .map(|component| component.url.to_string())
-            .collect();
+        let component_urls: Vec<String> =
+            components.iter().map(|component| component.url.to_string()).collect();
         Ok(serde_json::to_value(component_urls)?)
     }
 
@@ -178,16 +171,15 @@ mod tests {
         serde_json::from_str("{}").unwrap()
     }
 
-    fn make_component(id: i32, url: &str, version: i32, source: ComponentSource) -> Component {
+    fn make_component(id: i32, url: &str, source: ComponentSource) -> Component {
         let url = Url::parse(url).unwrap();
-        Component { id, url, version, source }
+        Component { id, url, source }
     }
 
     fn make_manifest(id: i32, manifest: &str) -> Manifest {
         Manifest {
             component_id: id,
-            manifest: ManifestData::Version1(manifest.to_string()),
-            uses: vec![],
+            manifest: ManifestData { cm_base64: manifest.to_string(), cvf_bytes: None },
         }
     }
 
@@ -197,15 +189,13 @@ mod tests {
 
         let comp1 = make_component(
             1,
-            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cmx",
-            0,
+            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cm",
             fake_component_src_pkg(),
         );
         let comp2 = make_component(
             2,
-            "fuchsia-pkg://fuchsia.com/fake#meta/fake_2.cmx",
-            0,
-            ComponentSource::Inferred,
+            "fuchsia-pkg://fuchsia.com/fake#meta/fake_2.cm",
+            ComponentSource::ZbiBootfs,
         );
         let mut components = Components::default();
         components.push(comp1.clone());
@@ -227,15 +217,13 @@ mod tests {
 
         let comp_1 = make_component(
             1,
-            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cmx",
-            0,
+            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cm",
             fake_component_src_pkg(),
         );
         let comp_2 = make_component(
             2,
-            "fuchsia-pkg://fuchsia.com/fake#meta/fake_2.cmx",
-            0,
-            ComponentSource::Inferred,
+            "fuchsia-pkg://fuchsia.com/fake#meta/fake_2.cm",
+            ComponentSource::ZbiBootfs,
         );
         let mut components = Components::default();
         components.push(comp_1.clone());
@@ -252,7 +240,7 @@ mod tests {
         assert_eq!(comp_1, response);
 
         let json_body = json!({
-            "url": "fuchsia-pkg://fuchsia.com/fake#meta/fake_2.cmx",
+            "url": "fuchsia-pkg://fuchsia.com/fake#meta/fake_2.cm",
         });
         let val_2 = controller.query(model, json_body).unwrap();
         let response_2: Component = serde_json::from_value(val_2).unwrap();
@@ -265,15 +253,13 @@ mod tests {
 
         let comp1 = make_component(
             1,
-            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cmx",
-            0,
+            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cm",
             fake_component_src_pkg(),
         );
         let comp2 = make_component(
             2,
-            "fuchsia-pkg://fuchsia.com/fake#meta/fake_2.cmx",
-            0,
-            ComponentSource::Inferred,
+            "fuchsia-pkg://fuchsia.com/fake#meta/fake_2.cm",
+            ComponentSource::ZbiBootfs,
         );
         let mut components = Components::default();
         components.push(comp1.clone());
@@ -293,15 +279,13 @@ mod tests {
 
         let comp1 = make_component(
             1,
-            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cmx",
-            0,
+            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cm",
             fake_component_src_pkg(),
         );
         let comp2 = make_component(
             2,
-            "fuchsia-pkg://fuchsia.com/fake#meta/fake_2.cmx",
-            0,
-            ComponentSource::Inferred,
+            "fuchsia-pkg://fuchsia.com/fake#meta/fake_2.cm",
+            ComponentSource::ZbiBootfs,
         );
         let mut components = Components::default();
         components.push(comp1.clone());
@@ -315,7 +299,7 @@ mod tests {
 
         let controller = ComponentManifestGraphController::default();
         let request = DefaultComponentRequest {
-            url: Some("fuchsia-pkg://fuchsia.com/fake#meta/fake.cmx".to_string()),
+            url: Some("fuchsia-pkg://fuchsia.com/fake#meta/fake.cm".to_string()),
             component_id: None,
         };
         let json_body = serde_json::to_value(request).unwrap();
@@ -329,15 +313,13 @@ mod tests {
 
         let comp1 = make_component(
             1,
-            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cmx",
-            0,
+            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cm",
             fake_component_src_pkg(),
         );
         let comp2 = make_component(
             2,
-            "fuchsia-pkg://fuchsia.com/fake#meta/fake_2.cmx",
-            0,
-            ComponentSource::Inferred,
+            "fuchsia-pkg://fuchsia.com/fake#meta/fake_2.cm",
+            ComponentSource::ZbiBootfs,
         );
         let mut components = Components::default();
         components.push(comp1.clone());
@@ -362,15 +344,13 @@ mod tests {
 
         let comp1 = make_component(
             1,
-            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cmx",
-            0,
+            "fuchsia-pkg://fuchsia.com/fake#meta/fake.cm",
             fake_component_src_pkg(),
         );
         let comp2 = make_component(
             2,
-            "fuchsia-pkg://fuchsia.com/fake#meta/fake_2.cmx",
-            0,
-            ComponentSource::Inferred,
+            "fuchsia-pkg://fuchsia.com/fake#meta/fake_2.cm",
+            ComponentSource::ZbiBootfs,
         );
         let mut components = Components::default();
         components.push(comp1.clone());
@@ -399,13 +379,11 @@ mod tests {
         let comp1 = make_component(
             1,
             "fuchsia-pkg://fuchsia.com/bar#meta/bar.cm",
-            0,
-            ComponentSource::Inferred,
+            ComponentSource::ZbiBootfs,
         );
         let comp2 = make_component(
             2,
             "fuchsia-pkg://fuchsia.com/foo#meta/foo.cm",
-            0,
             fake_component_src_pkg(),
         );
         let mut components = Components::default();

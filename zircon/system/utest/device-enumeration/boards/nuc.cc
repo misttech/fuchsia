@@ -11,11 +11,14 @@ namespace {
 
 enum NucType {
   NUC7i5DNB,
+  NUC11TNBv5,
 };
 
 std::string NucTypeToString(NucType nuc_type) {
   if (nuc_type == NucType::NUC7i5DNB) {
     return "NUC7i5DNB";
+  } else if (nuc_type == NucType::NUC11TNBv5) {
+    return "NUC11TNBv5";
   }
 
   return "N/A";
@@ -34,6 +37,8 @@ std::variant<NucType, std::string> GetNucType() {
   const std::string_view board_name = response.name.get();
   if (board_name == "NUC7i5DNB") {
     return NucType::NUC7i5DNB;
+  } else if (board_name == "NUC11TNBv5") {
+    return NucType::NUC11TNBv5;
   }
 
   return std::string(board_name);
@@ -62,26 +67,45 @@ TEST_F(DeviceEnumerationTest, Nuc7i5DNBTest) {
   }
 
   static const char* kDevicePaths[] = {
-      "sys/platform/pt/PCI0/bus/00:02.0/00:02.0/intel_i915/intel-gpu-core",
-      "sys/platform/pt/PCI0/bus/00:02.0/00:02.0/intel_i915/intel-display-controller/display-coordinator",
-      "sys/platform/pt/PCI0/bus/00:14.0/00:14.0/xhci/usb-bus",
+      "sys/platform/pt/PCI0/bus/00:02.0/00_02_0/intel_i915/intel-gpu-core",
+      "sys/platform/pt/PCI0/bus/00:02.0/00_02_0/intel_i915/intel-display-controller/display-coordinator",
+      "sys/platform/pt/PCI0/bus/00:14.0/00_14_0/xhci/usb-bus",
       "sys/platform/pt/PCI0/bus/00:17.0/00_17_0/ahci",
       // TODO(fxbug.dev/84037): Temporarily removed.
-      // "sys/platform/pt/PCI0/bus/00:1f.3/00:1f.3/intel-hda-000",
-      // "sys/platform/pt/PCI0/bus/00:1f.3/00:1f.3/intel-hda-controller",
+      // "sys/platform/pt/PCI0/bus/00:1f.3/00_1f_3/intel-hda-000",
+      // "sys/platform/pt/PCI0/bus/00:1f.3/00_1f_3/intel-hda-controller",
       "sys/platform/pt/PCI0/bus/00:1f.6/00:1f.6/e1000",
+#ifdef include_packaged_drivers
+      "sys/platform/pt/PCI0/bus/01:00.0/01:00.0/iwlwifi-wlanphyimpl",
+#endif
   };
 
   ASSERT_NO_FATAL_FAILURE(TestRunner(kDevicePaths, std::size(kDevicePaths)));
 
-  if (!device_enumeration::IsDfv2Enabled()) {
-    // TODO(https://fxbug.dev/124274): Fix the metadata problems in i2c.cm and re-enable this.
-    static const char* kDfv1DevicePaths[] = {
-        "sys/platform/pt/PCI0/bus/00:15.0/00:15.0/i2c-bus-9d60",
-        "sys/platform/pt/PCI0/bus/00:15.1/00:15.1/i2c-bus-9d61",
-    };
-    ASSERT_NO_FATAL_FAILURE(TestRunner(kDfv1DevicePaths, std::size(kDfv1DevicePaths)));
+  // TODO(https://fxbug.dev/124274): Fix the metadata problems in i2c.cm and re-enable this.
+  // static const char* kDfv1DevicePaths[] = {
+  //     "sys/platform/pt/PCI0/bus/00:15.0/00:15.0/i2c-bus-9d60",
+  //     "sys/platform/pt/PCI0/bus/00:15.1/00:15.1/i2c-bus-9d61",
+  // };
+  // ASSERT_NO_FATAL_FAILURE(TestRunner(kDfv1DevicePaths, std::size(kDfv1DevicePaths)));
+}
+
+TEST_F(DeviceEnumerationTest, Nuc11TNBv5Test) {
+  if (!CheckTestMatch(NucType::NUC11TNBv5)) {
+    return;
   }
+
+  static const char* kDevicePaths[] = {
+      "sys/platform/pt/PC00/bus/00:02.0/00_02_0/intel_i915/intel-gpu-core",
+      "sys/platform/pt/PC00/bus/00:02.0/00_02_0/intel_i915/intel-display-controller/display-coordinator",
+      "sys/platform/pt/PC00/bus/00:14.0/00_14_0/xhci/usb-bus",
+      "sys/platform/pt/PC00/bus/00:17.0/00_17_0/ahci",
+#ifdef include_packaged_drivers
+      "sys/platform/pt/PC00/bus/00:14.3/00:14.3/iwlwifi-wlanphyimpl",
+#endif
+  };
+
+  ASSERT_NO_FATAL_FAILURE(TestRunner(kDevicePaths, std::size(kDevicePaths)));
 }
 
 }  // namespace

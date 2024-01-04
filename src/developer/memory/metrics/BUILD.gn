@@ -8,10 +8,10 @@ source_set("metrics") {
     "bucket_match.h",
     "capture.cc",
     "capture.h",
+    "capture_strategy.cc",
+    "capture_strategy.h",
     "digest.cc",
     "digest.h",
-    "filters.cc",
-    "filters.h",
     "printer.cc",
     "printer.h",
     "summary.cc",
@@ -21,7 +21,7 @@ source_set("metrics") {
   ]
 
   public_deps = [
-    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp_wire",
+    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
     "//third_party/re2",
   ]
 

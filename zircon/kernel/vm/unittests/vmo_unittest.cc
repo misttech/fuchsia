@@ -849,6 +849,11 @@ static bool vmo_contiguous_decommit_enabled_test() {
     bool page_absent = true;
     status = vmo->Lookup(offset, PAGE_SIZE,
                          [base_pa, offset, &page_absent](uint64_t lookup_offset, paddr_t pa) {
+                           // TODO(johngro): remove this explicit unused-capture warning suppression
+                           // when https://bugs.llvm.org/show_bug.cgi?id=35450 gets fixed.
+                           (void)base_pa;
+                           (void)offset;
+
                            page_absent = false;
                            DEBUG_ASSERT(offset == lookup_offset);
                            DEBUG_ASSERT(base_pa + lookup_offset == pa);
@@ -901,7 +906,7 @@ static bool vmo_demand_paged_map_test() {
   fbl::RefPtr<VmAspace> aspace = VmAspace::Create(VmAspace::Type::User, "test aspace");
   ASSERT_NONNULL(aspace, "VmAspace::Create pointer");
 
-  VmAspace* old_aspace = Thread::Current::Get()->aspace();
+  VmAspace* old_aspace = Thread::Current::Get()->active_aspace();
   auto cleanup_aspace = fit::defer([&]() {
     vmm_set_active_aspace(old_aspace);
     ASSERT(aspace->Destroy() == ZX_OK);
@@ -909,12 +914,11 @@ static bool vmo_demand_paged_map_test() {
   vmm_set_active_aspace(aspace.get());
 
   static constexpr const uint kArchFlags = kArchRwFlags | ARCH_MMU_FLAG_PERM_USER;
-  fbl::RefPtr<VmMapping> mapping;
-  status = aspace->RootVmar()->CreateVmMapping(0, alloc_size, 0, 0, vmo, 0, kArchFlags, "test",
-                                               &mapping);
-  ASSERT_EQ(status, ZX_OK, "mapping object");
+  auto mapping_result =
+      aspace->RootVmar()->CreateVmMapping(0, alloc_size, 0, 0, vmo, 0, kArchFlags, "test");
+  ASSERT_MSG(mapping_result.is_ok(), "mapping object");
 
-  auto uptr = make_user_inout_ptr(reinterpret_cast<void*>(mapping->base_locking()));
+  auto uptr = make_user_inout_ptr(reinterpret_cast<void*>(mapping_result->base));
 
   // fill with known pattern and test
   if (!fill_and_test_user(uptr, alloc_size)) {
@@ -1953,7 +1957,7 @@ static bool vmo_attribution_clones_test() {
             verify_object_page_attribution(vmo.get(), expected_gen_count, AttributionCounts{}));
 
   // Commit the first two pages. This should increment the generation count by 2 (one per
-  // LookupPagesLocked() call that results in a page getting committed).
+  // LookupCursor call that results in a page getting committed).
   status = vmo->CommitRange(0, 2 * PAGE_SIZE);
   ASSERT_EQ(ZX_OK, status);
   expected_gen_count += 2;
@@ -2388,7 +2392,7 @@ static bool vmo_attribution_pager_test() {
             verify_object_page_attribution(vmo.get(), expected_gen_count, AttributionCounts{}));
 
   // Supplying pages to the pager-backed vmo should increment the generation count.
-  status = vmo->SupplyPages(0, PAGE_SIZE, &page_list);
+  status = vmo->SupplyPages(0, PAGE_SIZE, &page_list, SupplyOptions::PagerSupply);
   ASSERT_EQ(ZX_OK, status);
   ++expected_gen_count;
   EXPECT_EQ(true, verify_object_page_attribution(vmo.get(), expected_gen_count,
@@ -2971,7 +2975,7 @@ static bool vmo_discard_failure_test() {
   fbl::RefPtr<VmAspace> aspace = VmAspace::Create(VmAspace::Type::User, "test aspace");
   ASSERT_NONNULL(aspace);
 
-  VmAspace* old_aspace = Thread::Current::Get()->aspace();
+  VmAspace* old_aspace = Thread::Current::Get()->active_aspace();
   auto cleanup_aspace = fit::defer([&]() {
     vmm_set_active_aspace(old_aspace);
     ASSERT(aspace->Destroy() == ZX_OK);
@@ -2979,15 +2983,14 @@ static bool vmo_discard_failure_test() {
   vmm_set_active_aspace(aspace.get());
 
   // Map the vmo.
-  fbl::RefPtr<VmMapping> mapping;
   constexpr uint64_t kMapSize = 3 * PAGE_SIZE;
   static constexpr const uint kArchFlags = kArchRwFlags | ARCH_MMU_FLAG_PERM_USER;
-  status = aspace->RootVmar()->CreateVmMapping(0, kMapSize, 0, 0, vmo, kSize - kMapSize, kArchFlags,
-                                               "test", &mapping);
-  ASSERT_EQ(ZX_OK, status);
+  auto mapping_result = aspace->RootVmar()->CreateVmMapping(0, kMapSize, 0, 0, vmo,
+                                                            kSize - kMapSize, kArchFlags, "test");
+  ASSERT(mapping_result.is_ok());
 
   // Fill with a known pattern through the mapping, and verify the contents.
-  auto uptr = make_user_inout_ptr(reinterpret_cast<void*>(mapping->base_locking()));
+  auto uptr = make_user_inout_ptr(reinterpret_cast<void*>(mapping_result->base));
   fill_region_user(0x88, uptr, kMapSize);
   EXPECT_TRUE(test_region_user(0x88, uptr, kMapSize));
 
@@ -3019,10 +3022,9 @@ static bool vmo_discard_failure_test() {
   EXPECT_EQ(0u, vmo->AttributedPages().uncompressed);
 
   // Creating a mapping succeeds.
-  fbl::RefPtr<VmMapping> mapping2;
-  status = aspace->RootVmar()->CreateVmMapping(0, kMapSize, 0, 0, vmo, kSize - kMapSize, kArchFlags,
-                                               "test2", &mapping2);
-  ASSERT_EQ(ZX_OK, status);
+  auto mapping2_result = aspace->RootVmar()->CreateVmMapping(0, kMapSize, 0, 0, vmo,
+                                                             kSize - kMapSize, kArchFlags, "test2");
+  ASSERT(mapping2_result.is_ok());
   EXPECT_EQ(0u, vmo->AttributedPages().uncompressed);
 
   // Lock the vmo again.
@@ -3047,7 +3049,7 @@ static bool vmo_discard_failure_test() {
   EXPECT_TRUE(test_region_user(0xaa, uptr, kMapSize));
 
   // Verify contents via the second mapping created when discarded.
-  uptr = make_user_inout_ptr(reinterpret_cast<void*>(mapping2->base_locking()));
+  uptr = make_user_inout_ptr(reinterpret_cast<void*>(mapping2_result->base));
   EXPECT_TRUE(test_region_user(0xaa, uptr, kMapSize));
 
   // The unmapped pages should still be intact after the Write() above.
@@ -3159,7 +3161,7 @@ static bool vmo_discardable_not_compressible_test() {
   END_TEST;
 }
 
-// using LookupPagesLocked with different kinds of faults reads / writes should correctly
+// using LookupCursor with different kinds of faults reads / writes should correctly
 // decompress or return an error.
 static bool vmo_lookup_compressed_pages_test() {
   BEGIN_TEST;
@@ -3747,7 +3749,7 @@ static bool vmo_supply_compressed_pages_test() {
   EXPECT_TRUE((VmObject::AttributionCounts{}) == vmo->AttributedPages());
 
   // After being supplied the pager backed VMO should not have compressed pages.
-  EXPECT_OK(vmop->SupplyPages(0, PAGE_SIZE, &pl));
+  EXPECT_OK(vmop->SupplyPages(0, PAGE_SIZE, &pl, SupplyOptions::PagerSupply));
   EXPECT_TRUE((VmObject::AttributionCounts{1, 0}) == vmop->AttributedPages());
 
   END_TEST;
@@ -4056,13 +4058,117 @@ static bool vmo_snapshot_modified_test() {
   status = clone2->Write(&data, PAGE_SIZE, sizeof(data));
   ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, status);
 
-  // Calling snapshot-modified on clone shouldn't be supported yet.
+  // Call snapshot-modified again on the full clone, which will create a hidden parent.
   fbl::RefPtr<VmObject> snapshot;
   status = clone->CreateClone(Resizability::NonResizable, CloneType::SnapshotModified, 0,
                               PAGE_SIZE * kNumPages, false,
                               AttributionObject::GetKernelAttribution(), &snapshot);
-  ASSERT_EQ(ZX_ERR_NOT_SUPPORTED, status, "vmobject snapshot-modified\n");
-  ASSERT_NULL(snapshot, "vmobject snapshot-modified\n");
+  ASSERT_EQ(ZX_OK, status, "vmobject snapshot-modified\n");
+  ASSERT_NONNULL(snapshot, "vmobject snapshot-modified clone\n");
+
+  // Pages in hidden parent will be attributed to the left child.
+  EXPECT_EQ((size_t)PAGE_SIZE, PAGE_SIZE * clone->AttributedPages().uncompressed,
+            "clone attribution\n");
+  EXPECT_EQ(0u, PAGE_SIZE * snapshot->AttributedPages().uncompressed, "snapshot attribution\n");
+
+  // Calling CreateClone directly with SnapshotAtLeastOnWrite should upgrade to snapshot-modified.
+  fbl::RefPtr<VmObject> atleastonwrite;
+  status = clone->CreateClone(Resizability::NonResizable, CloneType::SnapshotAtLeastOnWrite, 0,
+                              alloc_size, false, AttributionObject::GetKernelAttribution(),
+                              &atleastonwrite);
+  ASSERT_EQ(ZX_OK, status, "vmobject snapshot-at-least-on-write clone.\n");
+  ASSERT_NONNULL(atleastonwrite, "vmobject snapshot-at-least-on-write clone\n");
+
+  // Create a slice of the first two pages of the root VMO.
+  auto kSliceSize = 2 * PAGE_SIZE;
+  fbl::RefPtr<VmObject> slice;
+  ASSERT_OK(vmo->CreateChildSlice(0, kSliceSize, false, &slice));
+  ASSERT_NONNULL(slice, "slice root vmo");
+  slice->set_user_id(45);
+
+  // The oot VMO should have 3 children at this point.
+  ASSERT_EQ(vmo->num_children(), (uint32_t)3);
+
+  // Snapshot-modified of root-slice should work.
+  fbl::RefPtr<VmObject> slicesnapshot;
+  status =
+      slice->CreateClone(Resizability::NonResizable, CloneType::SnapshotModified, 0, kSliceSize,
+                         false, AttributionObject::GetKernelAttribution(), &slicesnapshot);
+  ASSERT_EQ(ZX_OK, status, "snapshot-modified root-slice\n");
+  ASSERT_NONNULL(slicesnapshot, "snapshot modified root-slice\n");
+  slicesnapshot->set_user_id(46);
+
+  // At the VMO level, the slice should see the snapshot as a child.
+  ASSERT_EQ(vmo->num_children(), (uint32_t)3);
+  ASSERT_EQ(slice->num_children(), (uint32_t)1);
+
+  // The cow pages, however, should be hung off the root VMO.
+  auto slicesnapshot_p = static_cast<VmObjectPaged*>(slicesnapshot.get());
+  auto vmo_cow_pages = vmo->DebugGetCowPages();
+  auto slicesnapshot_cow_pages = slicesnapshot_p->DebugGetCowPages();
+
+  ASSERT_EQ(slicesnapshot_cow_pages->DebugGetParent().get(), vmo_cow_pages.get());
+
+  // Create a slice of the clone of the root-slice.
+  fbl::RefPtr<VmObject> slicesnapshot_slice;
+  status = slicesnapshot->CreateClone(Resizability::NonResizable, CloneType::SnapshotModified, 0,
+                                      kSliceSize, false, AttributionObject::GetKernelAttribution(),
+                                      &slicesnapshot_slice);
+  ASSERT_EQ(ZX_OK, status, "slice snapshot-modified-root-slice\n");
+  ASSERT_NONNULL(slicesnapshot_slice, "slice snapshot-modified-root-slice\n");
+  slicesnapshot_slice->set_user_id(47);
+
+  // Check that snapshot-modified will work again on the snapshot-modified clone of the slice.
+  fbl::RefPtr<VmObject> slicesnapshot2;
+  status = slicesnapshot->CreateClone(Resizability::NonResizable, CloneType::SnapshotModified, 0,
+                                      kSliceSize, false, AttributionObject::GetKernelAttribution(),
+                                      &slicesnapshot2);
+  ASSERT_EQ(ZX_OK, status, "snapshot-modified root-slice-snapshot\n");
+  ASSERT_NONNULL(slicesnapshot2, "snapshot-modified root-slice-snapshot\n");
+  slicesnapshot2->set_user_id(48);
+
+  // Create a slice of a clone
+  fbl::RefPtr<VmObject> cloneslice;
+  ASSERT_OK(clone->CreateChildSlice(0, kSliceSize, false, &cloneslice));
+  ASSERT_NONNULL(slice, "slice root vmo");
+
+  // Snapshot-modified should not be allowed on a slice of a clone.
+  fbl::RefPtr<VmObject> cloneslicesnapshot;
+  status = cloneslice->CreateClone(Resizability::NonResizable, CloneType::SnapshotModified, 0,
+                                   kSliceSize, false, AttributionObject::GetKernelAttribution(),
+                                   &cloneslicesnapshot);
+  ASSERT_EQ(ZX_ERR_NOT_SUPPORTED, status, "snapshot-modified clone-slice\n");
+  ASSERT_NULL(cloneslicesnapshot, "snapshot-modified clone-slice\n");
+
+  // Tests that SnapshotModified will be upgraded to Snapshot when used on an anonymous VMO.
+  fbl::RefPtr<VmObjectPaged> anon_vmo;
+  status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, alloc_size,
+                                 AttributionObject::GetKernelAttribution(), &anon_vmo);
+  ASSERT_EQ(ZX_OK, status);
+  anon_vmo->set_user_id(0x49);
+
+  fbl::RefPtr<VmObject> anon_clone;
+  status =
+      anon_vmo->CreateClone(Resizability::NonResizable, CloneType::SnapshotModified, 0, PAGE_SIZE,
+                            true, AttributionObject::GetKernelAttribution(), &anon_clone);
+  ASSERT_OK(status);
+  anon_clone->set_user_id(0x50);
+
+  // Check that a hidden, common cow pages was made.
+  auto anon_clone_p = static_cast<VmObjectPaged*>(anon_clone.get());
+  auto anon_vmo_cow_pages = anon_vmo->DebugGetCowPages();
+  auto anon_clone_cow_pages = anon_clone_p->DebugGetCowPages();
+
+  ASSERT_EQ(anon_clone_cow_pages->DebugGetParent().get(),
+            anon_vmo_cow_pages->DebugGetParent().get());
+
+  // Snapshot-modified should also be upgraded when used on a SNAPSHOT clone.
+  fbl::RefPtr<VmObject> anon_snapshot;
+  status =
+      anon_clone->CreateClone(Resizability::NonResizable, CloneType::SnapshotModified, 0, PAGE_SIZE,
+                              true, AttributionObject::GetKernelAttribution(), &anon_snapshot);
+  ASSERT_OK(status);
+  anon_snapshot->set_user_id(0x51);
 
   END_TEST;
 }

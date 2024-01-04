@@ -13,9 +13,11 @@ ffx_plugin("ffx_product") {
   plugin_deps = [
     "create:ffx_product_create",
     "download:ffx_product_download",
-    "get:ffx_product_get",
     "get_artifacts:ffx_product_get_artifacts",
     "get_image_path:ffx_product_get_image_path",
+    "get_repository:ffx_product_get_repository",
+    "get_version:ffx_product_get_version",
+    "list:ffx_product_list",
     "lookup:ffx_product_lookup",
     "show:ffx_product_show",
   ]

@@ -91,7 +91,7 @@ impl AudioGatewayFeatureSupport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_inspect::assert_data_tree;
+    use diagnostics_assertions::assert_data_tree;
 
     #[fuchsia::test]
     fn load_from_config() {
@@ -107,7 +107,8 @@ mod tests {
             wide_band_speech: true,
             enhanced_voice_recognition: false,
             enhanced_voice_recognition_with_text: false,
-            in_band_sco: false,
+            controller_encoding_cvsd: true,
+            controller_encoding_msbc: true,
         });
         assert_eq!(
             config,

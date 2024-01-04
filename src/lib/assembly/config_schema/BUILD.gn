@@ -22,26 +22,20 @@ rustc_library("config_schema") {
   name = "assembly_config_schema"
   with_unit_tests = true
   _git_info = "${target_gen_dir}/icu_git_info.json"
-  _git_info_path = rebase_path(_git_info, root_out_dir)
-  _root_out_dir_from_here = rebase_path(root_out_dir, "./src/platform_config")
+  _git_info_path = rebase_path(_git_info, root_build_dir)
   rustenv = [
-    # Needed because `include_str!` in rust is relative to
-    # the source dir in which the file using `include_str!` is located. We back out
-    # to `root_build_dir`, then go into `_git_info_path`.
+    # Needed because `include_str_from_working_dir_env!` is relative to
+    # the root_build_dir. We provide the path into `_git_info_path`.
     # See `src/platform_config/icu_config.rs` for the inclusion details.
-    "ICU_GIT_INFO_JSON_FILE=${_root_out_dir_from_here}/${_git_info_path}",
+    "ICU_GIT_INFO_JSON_FILE=${_git_info_path}",
   ]
 
-  # The approach in `rustenv` above causes the build dir to "leak", which is not
-  # recommended in remote builds.  We turn off leak detection by using this
-  # config. In general this is suboptimal, but in this particular case we don't
-  # have much choice.
-  configs += [ "//build/config/rust:output_dir_sensitive" ]
   inputs = [ _git_info ]
   deps = [
+    "//src/lib/assembly/file_relative_path",
     "//src/lib/assembly/images_config",
     "//src/lib/assembly/package_utils",
-    "//src/lib/assembly/util",
+    "//src/lib/include_str_from_working_dir",
     "//src/ui/lib/input-device-constants:lib",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:camino",
@@ -49,11 +43,11 @@ rustc_library("config_schema") {
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
   ]
+
   non_rust_deps = [ ":git_info_json" ]
-  test_deps = [
-    "//third_party/rust_crates:assert_matches",
-    "//third_party/rust_crates:serde_json",
-  ]
+
+  test_deps = [ "//src/lib/assembly/util" ]
+
   sources = [
     "src/assembly_config.rs",
     "src/board_config.rs",
@@ -62,6 +56,7 @@ rustc_library("config_schema") {
     "src/lib.rs",
     "src/platform_config.rs",
     "src/platform_config/battery_config.rs",
+    "src/platform_config/bluetooth_config.rs",
     "src/platform_config/connectivity_config.rs",
     "src/platform_config/development_support_config.rs",
     "src/platform_config/diagnostics_config.rs",
@@ -72,10 +67,13 @@ rustc_library("config_schema") {
     "src/platform_config/graphics_config.rs",
     "src/platform_config/icu_config.rs",
     "src/platform_config/identity_config.rs",
-    "src/platform_config/input_config.rs",
+    "src/platform_config/input_groups_config.rs",
     "src/platform_config/intl_config.rs",
+    "src/platform_config/kernel_config.rs",
     "src/platform_config/media_config.rs",
-    "src/platform_config/session_manager_config.rs",
+    "src/platform_config/paravirtualization_config.rs",
+    "src/platform_config/recovery_config.rs",
+    "src/platform_config/session_config.rs",
     "src/platform_config/setui_config.rs",
     "src/platform_config/starnix_config.rs",
     "src/platform_config/storage_config.rs",
@@ -85,9 +83,4 @@ rustc_library("config_schema") {
     "src/product_config.rs",
   ]
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
-}
-
-group("host_tests") {
-  testonly = true
-  deps = [ ":config_schema_test" ]
 }

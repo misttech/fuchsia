@@ -15,6 +15,7 @@
 #include <asm/socket.h>
 #include <asm/stat.h>
 #include <asm/ucontext.h>
+#include <linux/ashmem.h>
 #include <linux/android/binder.h>
 #include <linux/audit.h>
 #include <linux/auxvec.h>
@@ -29,6 +30,7 @@
 #include <linux/fcntl.h>
 #include <linux/filter.h>
 #include <linux/fs.h>
+#include <linux/fsverity.h>
 #include <linux/fuse.h>
 #include <linux/futex.h>
 #include <linux/if_packet.h>
@@ -45,13 +47,14 @@
 #include <linux/mman.h>
 #include <linux/mqueue.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
-#include <linux/netfilter_ipv6/ipv6_tables.h>
+#include <linux/netfilter_ipv6/ip6_tables.h>
 #include <linux/netlink.h>
 #include <linux/oom.h>
 #include <linux/personality.h>
 #include <linux/pidfd.h>
 #include <linux/poll.h>
 #include <linux/prctl.h>
+#include <linux/ptrace.h>
 #include <linux/random.h>
 #include <linux/reboot.h>
 #include <linux/resource.h>
@@ -64,11 +67,13 @@
 #include <linux/socket.h>
 #include <linux/sockios.h>
 #include <linux/stat.h>
+#include <linux/sync_file.h>
 #include <linux/sysinfo.h>
 #include <linux/termios.h>
 #include <linux/time.h>
 #include <linux/timerfd.h>
 #include <linux/times.h>
+#include <linux/uinput.h>
 #include <linux/uio.h>
 #include <linux/un.h>
 #include <linux/unistd.h>
@@ -77,7 +82,7 @@
 #include <linux/xattr.h>
 
 // Data shared between Starnix and a vDSO implementation.
-#include <vvar-data.h>
+#include "src/starnix/kernel/vdso/vvar-data.h"
 
 #ifdef __x86_64__
 #include <asm/prctl.h>

@@ -3,9 +3,13 @@
 // found in the LICENSE file.
 
 use crate::subsystems::prelude::*;
+use anyhow::{anyhow, bail, Context, Result};
 use assembly_config_schema::platform_config::swd_config::{
     OtaConfigs, PolicyConfig, PolicyLabels, SwdConfig, UpdateChecker, VerificationFailureAction,
 };
+use assembly_config_schema::FileEntry;
+use camino::Utf8PathBuf;
+use std::fs::File;
 
 #[allow(dead_code)]
 const FUZZ_PERCENTAGE_RANGE: u32 = 25;
@@ -51,41 +55,40 @@ impl DefaultByBuildType for SwdConfig {
             policy: Some(PolicyLabels::default_by_build_type(build_type)),
             update_checker: Some(UpdateChecker::default_by_build_type(build_type)),
             on_verification_failure: VerificationFailureAction::default(),
-            tuf_config_path: None,
+            tuf_config_paths: vec![],
             include_configurator: false,
         }
     }
 }
 
 pub(crate) struct SwdSubsystemConfig;
-impl DefineSubsystemConfiguration<Option<SwdConfig>> for SwdSubsystemConfig {
-    /// Configures the SWD system. If |subsystem_config| is None, no SWD system
-    /// is configured by this call.
-    /// Configures the SWD system. If |subsystem_config| is None, the default
-    /// is set based on the build type and/or feature set level.
+impl DefineSubsystemConfiguration<SwdConfig> for SwdSubsystemConfig {
+    /// Configures the SWD system. If a specific field is not specified, a
+    /// default will be used based on the feature set level and the build type.
     fn define_configuration(
         context: &ConfigurationContext<'_>,
-        subsystem_config: &Option<SwdConfig>,
+        subsystem_config: &SwdConfig,
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
-        match subsystem_config {
-            // Add the checker according to the configuration
-            Some(SwdConfig { update_checker: Some(update_checker), .. }) => {
-                Self::set_update_checker(Some(update_checker), builder)?;
+        match &subsystem_config.update_checker {
+            // The product set a specific update checker. Use that one.
+            Some(update_checker) => {
+                Self::set_update_checker(&update_checker, context.build_type, builder)?;
+                Self::set_policy_by_build_type(&context.build_type, context, builder)?;
             }
-            // No checker is set or there is no SWD config at all, set based on
-            // feature set level
-            Some(SwdConfig { update_checker: None, .. }) | None => {
+            // The product does not specify. Set based on feature set level.
+            None => {
                 match context.feature_set_level {
                     // Minimal has an update checker
                     FeatureSupportLevel::Minimal => {
                         let update_checker =
                             UpdateChecker::default_by_build_type(context.build_type);
-                        Self::set_update_checker(Some(&update_checker), builder)?;
+                        Self::set_update_checker(&update_checker, context.build_type, builder)?;
+                        Self::set_policy_by_build_type(&context.build_type, context, builder)?;
                     }
                     // Utility has no update checker
                     FeatureSupportLevel::Utility => {
-                        Self::set_update_checker(None, builder)?;
+                        builder.platform_bundle("no_update_checker");
                     }
                     // Bootstrap has neither an update checker nor the system-update realm,
                     // so do not include `no_update_checker` AIB that requires the realm.
@@ -94,10 +97,19 @@ impl DefineSubsystemConfiguration<Option<SwdConfig>> for SwdSubsystemConfig {
             }
         }
 
-        if let Some(SwdConfig { include_configurator, .. }) = subsystem_config {
-            if *include_configurator {
-                builder.platform_bundle("system_update_configurator");
-            }
+        for tuf_config in &subsystem_config.tuf_config_paths {
+            let filename = tuf_config.file_name().ok_or(anyhow!(
+                "Failed to get the filename from the tuf config: {}",
+                &tuf_config
+            ))?;
+            builder.package("pkg-resolver").config_data(FileEntry {
+                source: tuf_config.clone(),
+                destination: format!("repositories/{}", filename),
+            })?;
+        }
+
+        if subsystem_config.include_configurator {
+            builder.platform_bundle("system_update_configurator");
         }
 
         Ok(())
@@ -107,11 +119,24 @@ impl DefineSubsystemConfiguration<Option<SwdConfig>> for SwdSubsystemConfig {
 impl SwdSubsystemConfig {
     /// Configure which AIB to select based on the UpdateChecker
     fn set_update_checker(
-        update_checker: Option<&UpdateChecker>,
+        update_checker: &UpdateChecker,
+        build_type: &BuildType,
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
         match update_checker {
-            Some(UpdateChecker::OmahaClient(OtaConfigs { policy_config, .. })) => {
+            UpdateChecker::OmahaClient(OtaConfigs {
+                channels_path,
+                policy_config,
+                include_empty_eager_config,
+                ..
+            }) => {
+                if *include_empty_eager_config {
+                    if build_type == &BuildType::User {
+                        bail!("The empty_eager_config cannot be enabled on user builds");
+                    }
+                    builder.platform_bundle("omaha_client_empty_eager_config");
+                }
+
                 builder.platform_bundle("omaha_client");
                 let mut omaha_config =
                     builder.package("omaha-client").component("meta/omaha-client-service.cm")?;
@@ -121,14 +146,69 @@ impl SwdSubsystemConfig {
                     .field("allow_reboot_when_idle", policy_config.allow_reboot_when_idle)?
                     .field("retry_delay_seconds", policy_config.retry_delay_seconds)?
                     .field("fuzz_percentage_range", policy_config.fuzz_percentage_range)?;
+
+                if let Some(channel_config) = channels_path {
+                    builder.package("omaha-client").config_data(FileEntry {
+                        source: channel_config.clone(),
+                        destination: "channel_config.json".into(),
+                    })?;
+                }
             }
-            Some(UpdateChecker::SystemUpdateChecker) => {
+            UpdateChecker::SystemUpdateChecker => {
                 builder.platform_bundle("system_update_checker");
             }
-            None => {
-                builder.platform_bundle("no_update_checker");
-            }
         }
+        Ok(())
+    }
+
+    fn set_policy_by_build_type(
+        build_type: &BuildType,
+        context: &ConfigurationContext<'_>,
+        builder: &mut dyn ConfigurationBuilder,
+    ) -> anyhow::Result<()> {
+        let gendir = context.get_gendir().context("Getting gendir for swd")?;
+
+        let policy = PolicyLabels::default_by_build_type(build_type);
+        let policy = PolicyLabelDetails::from_policy_labels(&policy);
+
+        let write_config = |name: &str, value: serde_json::Value| -> Result<Utf8PathBuf> {
+            let path = gendir.join(name);
+            let file = File::create(&path).with_context(|| format!("Creating config: {}", name))?;
+            serde_json::to_writer_pretty(file, &value)
+                .with_context(|| format!("Writing config: {}", name))?;
+            Ok(path)
+        };
+
+        if policy.persisted_repos_dir {
+            let source = write_config(
+                "pkg_resolver_repo_config.json",
+                serde_json::json!({
+                    "persisted_repos_dir": "repos",
+                }),
+            )?;
+            builder
+                .package("pkg-resolver")
+                .config_data(FileEntry { source, destination: "persisted_repos_dir.json".into() })
+                .context("Adding persisted repos dir config")?;
+        }
+
+        if policy.enable_dynamic_configuration {
+            let source = write_config(
+                "pkg_resolver_config.json",
+                serde_json::json!({
+                    "enable_dynamic_configuration": true,
+                }),
+            )?;
+            builder
+                .package("pkg-resolver")
+                .config_data(FileEntry { source, destination: "config.json".into() })
+                .context("Adding dynamic configuration config")?;
+        }
+
+        if policy.disable_executability_restrictions {
+            builder.platform_bundle("pkgfs_disable_executability_restrictions");
+        }
+
         Ok(())
     }
 }
@@ -141,11 +221,13 @@ impl DefaultByBuildType for UpdateChecker {
                 channels_path: None,
                 server_url: None,
                 policy_config: PolicyConfig::default(),
+                include_empty_eager_config: false,
             }),
             BuildType::User => UpdateChecker::OmahaClient(OtaConfigs {
                 channels_path: None,
                 server_url: None,
                 policy_config: PolicyConfig::default(),
+                include_empty_eager_config: false,
             }),
         }
     }
@@ -194,7 +276,7 @@ mod tests {
             policy: None,
             update_checker: None,
             on_verification_failure: VerificationFailureAction::default(),
-            tuf_config_path: None,
+            tuf_config_paths: vec![],
             ..Default::default()
         };
         let policy = config.policy.value_or_default_from_build_type(build_type);
@@ -212,7 +294,7 @@ mod tests {
             policy: None,
             update_checker: None,
             on_verification_failure: VerificationFailureAction::default(),
-            tuf_config_path: None,
+            tuf_config_paths: vec![],
             ..Default::default()
         };
         let policy = config.policy.value_or_default_from_build_type(build_type);
@@ -225,7 +307,8 @@ mod tests {
             UpdateChecker::OmahaClient(OtaConfigs {
                 channels_path: None,
                 server_url: None,
-                policy_config: PolicyConfig::default()
+                policy_config: PolicyConfig::default(),
+                include_empty_eager_config: false,
             })
         );
         assert_eq!(on_verification_failure, VerificationFailureAction::Reboot);
@@ -237,7 +320,7 @@ mod tests {
             policy: None,
             update_checker: None,
             on_verification_failure: VerificationFailureAction::default(),
-            tuf_config_path: None,
+            tuf_config_paths: vec![],
             ..Default::default()
         };
         let policy = config.policy.value_or_default_from_build_type(build_type);
@@ -250,7 +333,8 @@ mod tests {
             UpdateChecker::OmahaClient(OtaConfigs {
                 channels_path: None,
                 server_url: None,
-                policy_config: PolicyConfig::default()
+                policy_config: PolicyConfig::default(),
+                include_empty_eager_config: false,
             })
         );
         assert_eq!(on_verification_failure, VerificationFailureAction::Reboot);

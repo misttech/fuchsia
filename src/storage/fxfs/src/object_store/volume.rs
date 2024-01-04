@@ -5,11 +5,13 @@
 use {
     crate::{
         errors::FxfsError,
-        filesystem::Filesystem,
+        filesystem::FxFilesystem,
         object_store::{
-            allocator::Allocator, directory::Directory, load_store_info, transaction::Options,
-            transaction::Transaction, tree_cache::TreeCache, LockKey, NewChildStoreOptions,
-            ObjectDescriptor, ObjectStore,
+            directory::Directory,
+            load_store_info,
+            transaction::{lock_keys, Options, Transaction},
+            tree_cache::TreeCache,
+            LockKey, NewChildStoreOptions, ObjectDescriptor, ObjectStore,
         },
     },
     anyhow::{anyhow, bail, ensure, Context, Error},
@@ -29,7 +31,7 @@ pub const VOLUMES_DIRECTORY: &str = "volumes";
 /// RootVolume is the top-level volume which stores references to all of the other Volumes.
 pub struct RootVolume {
     _root_directory: Directory<ObjectStore>,
-    filesystem: Arc<dyn Filesystem>,
+    filesystem: Arc<FxFilesystem>,
 }
 
 impl RootVolume {
@@ -49,7 +51,7 @@ impl RootVolume {
             .filesystem
             .clone()
             .new_transaction(
-                &[LockKey::object(
+                lock_keys![LockKey::object(
                     root_store.store_object_id(),
                     self.volume_directory().object_id(),
                 )],
@@ -166,7 +168,7 @@ impl RootVolume {
 }
 
 /// Returns the root volume for the filesystem.
-pub async fn root_volume(filesystem: Arc<dyn Filesystem>) -> Result<RootVolume, Error> {
+pub async fn root_volume(filesystem: Arc<FxFilesystem>) -> Result<RootVolume, Error> {
     let root_store = filesystem.root_store();
     let root_directory = Directory::open(&root_store, root_store.root_directory_object_id())
         .await
@@ -192,12 +194,11 @@ mod tests {
     use {
         super::root_volume,
         crate::{
-            filesystem::{Filesystem, FxFilesystem, JournalingObject, SyncOptions},
+            filesystem::{FxFilesystem, JournalingObject, SyncOptions},
             object_handle::{ObjectHandle, WriteObjectHandle},
             object_store::{
-                allocator::Allocator,
                 directory::Directory,
-                transaction::{Options, TransactionHandler},
+                transaction::{lock_keys, Options},
                 LockKey,
             },
         },
@@ -233,7 +234,10 @@ mod tests {
             let mut transaction = filesystem
                 .clone()
                 .new_transaction(
-                    &[LockKey::object(store.store_object_id(), store.root_directory_object_id())],
+                    lock_keys![LockKey::object(
+                        store.store_object_id(),
+                        store.root_directory_object_id()
+                    )],
                     Options::default(),
                 )
                 .await
@@ -281,7 +285,7 @@ mod tests {
             let mut transaction = filesystem
                 .clone()
                 .new_transaction(
-                    &[LockKey::object(store_object_id, store.root_directory_object_id())],
+                    lock_keys![LockKey::object(store_object_id, store.root_directory_object_id())],
                     Options::default(),
                 )
                 .await
@@ -295,7 +299,7 @@ mod tests {
                 .expect("create_child_file failed");
             transaction.commit().await.expect("commit failed");
 
-            let mut buf = handle.allocate_buffer(8192);
+            let mut buf = handle.allocate_buffer(8192).await;
             buf.as_mut_slice().fill(0xaa);
             handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
             store.flush().await.expect("flush failed");
@@ -324,7 +328,7 @@ mod tests {
             let transaction = filesystem
                 .clone()
                 .new_transaction(
-                    &[LockKey::object(
+                    lock_keys![LockKey::object(
                         root_volume.volume_directory().store().store_object_id(),
                         root_volume.volume_directory().object_id(),
                     )],

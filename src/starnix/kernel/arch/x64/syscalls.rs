@@ -4,10 +4,14 @@
 
 use fuchsia_zircon as zx;
 use starnix_sync::{InterruptibleEvent, WakeReason};
+use starnix_sync::{Locked, Unlocked};
 
 use crate::{
-    arch::uapi::epoll_event,
-    fs::{
+    mm::MemoryAccessorExt,
+    signals::{syscalls::sys_signalfd4, RunState},
+    task::{syscalls::do_clone, CurrentTask},
+    time::utc,
+    vfs::{
         syscalls::{
             poll, sys_dup3, sys_epoll_create1, sys_epoll_pwait, sys_eventfd2, sys_faccessat,
             sys_fchmodat, sys_fchownat, sys_inotify_init1, sys_linkat, sys_mkdirat, sys_mknodat,
@@ -16,23 +20,39 @@ use crate::{
         },
         DirentSink32, FdNumber,
     },
-    mm::MemoryAccessorExt,
-    signals::{syscalls::sys_signalfd4, RunState},
-    syscalls::not_implemented,
-    task::{syscalls::do_clone, CurrentTask},
-    time::*,
-    types::*,
+};
+use starnix_logging::not_implemented;
+use starnix_uapi::{
+    __kernel_time_t, clone_args,
+    device_type::DeviceType,
+    epoll_event, errno, error,
+    errors::Errno,
+    file_mode::FileMode,
+    gid_t, itimerval,
+    open_flags::OpenFlags,
+    pid_t, pollfd,
+    signals::{SigSet, SIGCHLD},
+    time::{duration_from_poll_timeout, duration_from_timeval, timeval_from_duration},
+    uapi, uid_t,
+    user_address::{UserAddress, UserCString, UserRef},
+    ARCH_SET_FS, ARCH_SET_GS, AT_REMOVEDIR, AT_SYMLINK_NOFOLLOW, CLONE_VFORK, CLONE_VM, CSIGNAL,
+    ITIMER_REAL,
 };
 
 pub fn sys_access(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     user_path: UserCString,
     mode: u32,
 ) -> Result<(), Errno> {
-    sys_faccessat(current_task, FdNumber::AT_FDCWD, user_path, mode)
+    sys_faccessat(locked, current_task, FdNumber::AT_FDCWD, user_path, mode)
 }
 
-pub fn sys_alarm(current_task: &CurrentTask, duration: u32) -> Result<u32, Errno> {
+pub fn sys_alarm(
+    _locked: &mut Locked<'_, Unlocked>,
+    current_task: &CurrentTask,
+    duration: u32,
+) -> Result<u32, Errno> {
     let duration = zx::Duration::from_seconds(duration.into());
     let new_value = timeval_from_duration(duration);
     let old_value = current_task.thread_group.set_itimer(
@@ -52,45 +72,49 @@ pub fn sys_alarm(current_task: &CurrentTask, duration: u32) -> Result<u32, Errno
 }
 
 pub fn sys_arch_prctl(
+    _locked: &mut Locked<'_, Unlocked>,
     current_task: &mut CurrentTask,
     code: u32,
     addr: UserAddress,
 ) -> Result<(), Errno> {
     match code {
         ARCH_SET_FS => {
-            current_task.registers.fs_base = addr.ptr() as u64;
+            current_task.thread_state.registers.fs_base = addr.ptr() as u64;
             Ok(())
         }
         ARCH_SET_GS => {
-            current_task.registers.gs_base = addr.ptr() as u64;
+            current_task.thread_state.registers.gs_base = addr.ptr() as u64;
             Ok(())
         }
         _ => {
-            not_implemented!("arch_prctl: Unknown code: code=0x{:x} addr={}", code, addr);
+            not_implemented!("arch_prctl", code);
             error!(ENOSYS)
         }
     }
 }
 
 pub fn sys_chmod(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     user_path: UserCString,
     mode: FileMode,
 ) -> Result<(), Errno> {
-    sys_fchmodat(current_task, FdNumber::AT_FDCWD, user_path, mode)
+    sys_fchmodat(locked, current_task, FdNumber::AT_FDCWD, user_path, mode)
 }
 
 pub fn sys_chown(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     user_path: UserCString,
     owner: uid_t,
     group: gid_t,
 ) -> Result<(), Errno> {
-    sys_fchownat(current_task, FdNumber::AT_FDCWD, user_path, owner, group, 0)
+    sys_fchownat(locked, current_task, FdNumber::AT_FDCWD, user_path, owner, group, 0)
 }
 
 /// The parameter order for `clone` varies by architecture.
 pub fn sys_clone(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     flags: u64,
     user_stack: UserAddress,
@@ -101,6 +125,7 @@ pub fn sys_clone(
     // Our flags parameter uses the low 8 bits (CSIGNAL mask) of flags to indicate the exit
     // signal. The CloneArgs struct separates these as `flags` and `exit_signal`.
     do_clone(
+        locked,
         current_task,
         &clone_args {
             flags: flags & !(CSIGNAL as u64),
@@ -114,17 +139,26 @@ pub fn sys_clone(
     )
 }
 
-pub fn sys_fork(current_task: &CurrentTask) -> Result<pid_t, Errno> {
-    do_clone(current_task, &clone_args { exit_signal: uapi::SIGCHLD.into(), ..Default::default() })
+pub fn sys_fork(
+    locked: &mut Locked<'_, Unlocked>,
+    current_task: &CurrentTask,
+) -> Result<pid_t, Errno> {
+    do_clone(
+        locked,
+        current_task,
+        &clone_args { exit_signal: uapi::SIGCHLD.into(), ..Default::default() },
+    )
 }
 
 // https://pubs.opengroup.org/onlinepubs/9699919799/functions/creat.html
 pub fn sys_creat(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     user_path: UserCString,
     mode: FileMode,
 ) -> Result<FdNumber, Errno> {
     sys_open(
+        locked,
         current_task,
         user_path,
         (OpenFlags::WRONLY | OpenFlags::CREAT | OpenFlags::TRUNC).bits(),
@@ -133,6 +167,7 @@ pub fn sys_creat(
 }
 
 pub fn sys_dup2(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     oldfd: FdNumber,
     newfd: FdNumber,
@@ -141,34 +176,52 @@ pub fn sys_dup2(
         current_task.files.get(oldfd)?;
         return Ok(newfd);
     }
-    sys_dup3(current_task, oldfd, newfd, 0)
+    sys_dup3(locked, current_task, oldfd, newfd, 0)
 }
 
-pub fn sys_epoll_create(current_task: &CurrentTask, size: i32) -> Result<FdNumber, Errno> {
+pub fn sys_epoll_create(
+    locked: &mut Locked<'_, Unlocked>,
+    current_task: &CurrentTask,
+    size: i32,
+) -> Result<FdNumber, Errno> {
     if size < 1 {
         // The man page for epoll_create says the size was used in a previous implementation as
         // a hint but no longer does anything. But it's still required to be >= 1 to ensure
         // programs are backwards-compatible.
         return error!(EINVAL);
     }
-    sys_epoll_create1(current_task, 0)
+    sys_epoll_create1(locked, current_task, 0)
 }
 
 pub fn sys_epoll_wait(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &mut CurrentTask,
     epfd: FdNumber,
     events: UserRef<epoll_event>,
     max_events: i32,
     timeout: i32,
 ) -> Result<usize, Errno> {
-    sys_epoll_pwait(current_task, epfd, events, max_events, timeout, UserRef::<SigSet>::default())
+    sys_epoll_pwait(
+        locked,
+        current_task,
+        epfd,
+        events,
+        max_events,
+        timeout,
+        UserRef::<SigSet>::default(),
+    )
 }
 
-pub fn sys_eventfd(current_task: &CurrentTask, value: u32) -> Result<FdNumber, Errno> {
-    sys_eventfd2(current_task, value, 0)
+pub fn sys_eventfd(
+    locked: &mut Locked<'_, Unlocked>,
+    current_task: &CurrentTask,
+    value: u32,
+) -> Result<FdNumber, Errno> {
+    sys_eventfd2(locked, current_task, value, 0)
 }
 
 pub fn sys_getdents(
+    _locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     user_buffer: UserAddress,
@@ -181,29 +234,46 @@ pub fn sys_getdents(
     sink.map_result_with_actual(result)
 }
 
-pub fn sys_getpgrp(current_task: &CurrentTask) -> Result<pid_t, Errno> {
+pub fn sys_getpgrp(
+    _locked: &mut Locked<'_, Unlocked>,
+    current_task: &CurrentTask,
+) -> Result<pid_t, Errno> {
     Ok(current_task.thread_group.read().process_group.leader)
 }
 
-pub fn sys_inotify_init(current_task: &CurrentTask) -> Result<FdNumber, Errno> {
-    sys_inotify_init1(current_task, 0)
+pub fn sys_inotify_init(
+    locked: &mut Locked<'_, Unlocked>,
+    current_task: &CurrentTask,
+) -> Result<FdNumber, Errno> {
+    sys_inotify_init1(locked, current_task, 0)
 }
 
 pub fn sys_lchown(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     user_path: UserCString,
     owner: uid_t,
     group: gid_t,
 ) -> Result<(), Errno> {
-    sys_fchownat(current_task, FdNumber::AT_FDCWD, user_path, owner, group, AT_SYMLINK_NOFOLLOW)
+    sys_fchownat(
+        locked,
+        current_task,
+        FdNumber::AT_FDCWD,
+        user_path,
+        owner,
+        group,
+        AT_SYMLINK_NOFOLLOW,
+    )
 }
 
 pub fn sys_link(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     old_user_path: UserCString,
     new_user_path: UserCString,
 ) -> Result<(), Errno> {
     sys_linkat(
+        locked,
         current_task,
         FdNumber::AT_FDCWD,
         old_user_path,
@@ -214,42 +284,49 @@ pub fn sys_link(
 }
 
 pub fn sys_lstat(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     user_path: UserCString,
     buffer: UserRef<uapi::stat>,
 ) -> Result<(), Errno> {
     // TODO(fxbug.dev/91430): Add the `AT_NO_AUTOMOUNT` flag once it is supported in
     // `sys_newfstatat`.
-    sys_newfstatat(current_task, FdNumber::AT_FDCWD, user_path, buffer, AT_SYMLINK_NOFOLLOW)
+    sys_newfstatat(locked, current_task, FdNumber::AT_FDCWD, user_path, buffer, AT_SYMLINK_NOFOLLOW)
 }
 
 pub fn sys_mkdir(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     user_path: UserCString,
     mode: FileMode,
 ) -> Result<(), Errno> {
-    sys_mkdirat(current_task, FdNumber::AT_FDCWD, user_path, mode)
+    sys_mkdirat(locked, current_task, FdNumber::AT_FDCWD, user_path, mode)
 }
 
 pub fn sys_mknod(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     user_path: UserCString,
     mode: FileMode,
     dev: DeviceType,
 ) -> Result<(), Errno> {
-    sys_mknodat(current_task, FdNumber::AT_FDCWD, user_path, mode, dev)
+    sys_mknodat(locked, current_task, FdNumber::AT_FDCWD, user_path, mode, dev)
 }
 
 pub fn sys_open(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     user_path: UserCString,
     flags: u32,
     mode: FileMode,
 ) -> Result<FdNumber, Errno> {
-    sys_openat(current_task, FdNumber::AT_FDCWD, user_path, flags, mode)
+    sys_openat(locked, current_task, FdNumber::AT_FDCWD, user_path, flags, mode)
 }
 
-pub fn sys_pause(current_task: &CurrentTask) -> Result<(), Errno> {
+pub fn sys_pause(
+    _locked: &mut Locked<'_, Unlocked>,
+    current_task: &CurrentTask,
+) -> Result<(), Errno> {
     let event = InterruptibleEvent::new();
     let guard = event.begin_wait();
     current_task.run_in_state(RunState::Event(event.clone()), || {
@@ -261,11 +338,16 @@ pub fn sys_pause(current_task: &CurrentTask) -> Result<(), Errno> {
     })
 }
 
-pub fn sys_pipe(current_task: &CurrentTask, user_pipe: UserRef<FdNumber>) -> Result<(), Errno> {
-    sys_pipe2(current_task, user_pipe, 0)
+pub fn sys_pipe(
+    locked: &mut Locked<'_, Unlocked>,
+    current_task: &CurrentTask,
+    user_pipe: UserRef<FdNumber>,
+) -> Result<(), Errno> {
+    sys_pipe2(locked, current_task, user_pipe, 0)
 }
 
 pub fn sys_poll(
+    _locked: &mut Locked<'_, Unlocked>,
     current_task: &mut CurrentTask,
     user_fds: UserRef<pollfd>,
     num_fds: i32,
@@ -276,24 +358,31 @@ pub fn sys_poll(
 }
 
 pub fn sys_readlink(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     user_path: UserCString,
     buffer: UserAddress,
     buffer_size: usize,
 ) -> Result<usize, Errno> {
-    sys_readlinkat(current_task, FdNumber::AT_FDCWD, user_path, buffer, buffer_size)
+    sys_readlinkat(locked, current_task, FdNumber::AT_FDCWD, user_path, buffer, buffer_size)
 }
 
-pub fn sys_rmdir(current_task: &CurrentTask, user_path: UserCString) -> Result<(), Errno> {
-    sys_unlinkat(current_task, FdNumber::AT_FDCWD, user_path, AT_REMOVEDIR)
+pub fn sys_rmdir(
+    locked: &mut Locked<'_, Unlocked>,
+    current_task: &CurrentTask,
+    user_path: UserCString,
+) -> Result<(), Errno> {
+    sys_unlinkat(locked, current_task, FdNumber::AT_FDCWD, user_path, AT_REMOVEDIR)
 }
 
 pub fn sys_rename(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     old_user_path: UserCString,
     new_user_path: UserCString,
 ) -> Result<(), Errno> {
     sys_renameat2(
+        locked,
         current_task,
         FdNumber::AT_FDCWD,
         old_user_path,
@@ -304,35 +393,39 @@ pub fn sys_rename(
 }
 
 pub fn sys_renameat(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     old_dir_fd: FdNumber,
     old_user_path: UserCString,
     new_dir_fd: FdNumber,
     new_user_path: UserCString,
 ) -> Result<(), Errno> {
-    sys_renameat2(current_task, old_dir_fd, old_user_path, new_dir_fd, new_user_path, 0)
+    sys_renameat2(locked, current_task, old_dir_fd, old_user_path, new_dir_fd, new_user_path, 0)
 }
 
 pub fn sys_stat(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     user_path: UserCString,
     buffer: UserRef<uapi::stat>,
 ) -> Result<(), Errno> {
     // TODO(fxbug.dev/91430): Add the `AT_NO_AUTOMOUNT` flag once it is supported in
     // `sys_newfstatat`.
-    sys_newfstatat(current_task, FdNumber::AT_FDCWD, user_path, buffer, 0)
+    sys_newfstatat(locked, current_task, FdNumber::AT_FDCWD, user_path, buffer, 0)
 }
 
 // https://man7.org/linux/man-pages/man2/symlink.2.html
 pub fn sys_symlink(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     user_target: UserCString,
     user_path: UserCString,
 ) -> Result<(), Errno> {
-    sys_symlinkat(current_task, user_target, FdNumber::AT_FDCWD, user_path)
+    sys_symlinkat(locked, current_task, user_target, FdNumber::AT_FDCWD, user_path)
 }
 
 pub fn sys_time(
+    _locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     time_addr: UserRef<__kernel_time_t>,
 ) -> Result<__kernel_time_t, Errno> {
@@ -344,21 +437,30 @@ pub fn sys_time(
     Ok(time)
 }
 
-pub fn sys_unlink(current_task: &CurrentTask, user_path: UserCString) -> Result<(), Errno> {
-    sys_unlinkat(current_task, FdNumber::AT_FDCWD, user_path, 0)
+pub fn sys_unlink(
+    locked: &mut Locked<'_, Unlocked>,
+    current_task: &CurrentTask,
+    user_path: UserCString,
+) -> Result<(), Errno> {
+    sys_unlinkat(locked, current_task, FdNumber::AT_FDCWD, user_path, 0)
 }
 
 pub fn sys_signalfd(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
     mask_addr: UserRef<SigSet>,
     mask_size: usize,
 ) -> Result<FdNumber, Errno> {
-    sys_signalfd4(current_task, fd, mask_addr, mask_size, 0)
+    sys_signalfd4(locked, current_task, fd, mask_addr, mask_size, 0)
 }
 
-pub fn sys_vfork(current_task: &CurrentTask) -> Result<pid_t, Errno> {
+pub fn sys_vfork(
+    locked: &mut Locked<'_, Unlocked>,
+    current_task: &CurrentTask,
+) -> Result<pid_t, Errno> {
     do_clone(
+        locked,
         current_task,
         &clone_args {
             flags: (CLONE_VFORK | CLONE_VM) as u64,
@@ -372,30 +474,35 @@ pub fn sys_vfork(current_task: &CurrentTask) -> Result<pid_t, Errno> {
 mod tests {
     use super::*;
     use crate::{
-        fs::FdFlags,
         mm::{MemoryAccessor, PAGE_SIZE},
         testing::*,
+        vfs::FdFlags,
     };
 
     #[::fuchsia::test]
     async fn test_sys_dup2() {
         // Most tests are handled by test_sys_dup3, only test the case where both fds are equals.
-        let (_kernel, current_task) = create_kernel_and_task_with_pkgfs();
+        let (_kernel, current_task, mut locked) = create_kernel_task_and_unlocked_with_pkgfs();
         let fd = FdNumber::from_raw(42);
-        assert_eq!(sys_dup2(&current_task, fd, fd), error!(EBADF));
+        assert_eq!(sys_dup2(&mut locked, &current_task, fd, fd), error!(EBADF));
         let file_handle =
             current_task.open_file(b"data/testfile.txt", OpenFlags::RDONLY).expect("open_file");
         let fd = current_task.add_file(file_handle, FdFlags::empty()).expect("add");
-        assert_eq!(sys_dup2(&current_task, fd, fd), Ok(fd));
+        assert_eq!(sys_dup2(&mut locked, &current_task, fd, fd), Ok(fd));
     }
 
     #[::fuchsia::test]
     async fn test_sys_creat() -> Result<(), Errno> {
-        let (_kernel, current_task) = create_kernel_and_task();
+        let (_kernel, current_task, mut locked) = create_kernel_task_and_unlocked();
         let path_addr = map_memory(&current_task, UserAddress::default(), *PAGE_SIZE);
         let path = b"newfile.txt";
         current_task.write_memory(path_addr, path)?;
-        let fd = sys_creat(&current_task, UserCString::new(path_addr), FileMode::default())?;
+        let fd = sys_creat(
+            &mut locked,
+            &current_task,
+            UserCString::new(path_addr),
+            FileMode::default(),
+        )?;
         let _file_handle = current_task.open_file(path, OpenFlags::RDONLY)?;
         assert!(!current_task.files.get_fd_flags(fd)?.contains(FdFlags::CLOEXEC));
         Ok(())
@@ -403,8 +510,8 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_time() {
-        let (_kernel, current_task) = create_kernel_and_task();
-        let time1 = sys_time(&current_task, Default::default()).expect("time");
+        let (_kernel, current_task, mut locked) = create_kernel_task_and_unlocked();
+        let time1 = sys_time(&mut locked, &current_task, Default::default()).expect("time");
         assert!(time1 > 0);
         let address = map_memory(
             &current_task,
@@ -412,7 +519,7 @@ mod tests {
             std::mem::size_of::<__kernel_time_t>() as u64,
         );
         zx::Duration::from_seconds(2).sleep();
-        let time2 = sys_time(&current_task, address.into()).expect("time");
+        let time2 = sys_time(&mut locked, &current_task, address.into()).expect("time");
         assert!(time2 >= time1 + 2);
         assert!(time2 < time1 + 10);
         let time3: __kernel_time_t = current_task.read_object(address.into()).expect("read_object");

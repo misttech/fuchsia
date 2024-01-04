@@ -40,7 +40,14 @@ struct Funnel {
     /// the level to log at.
     #[argh(option, short = 'l', default = "default_log_level()")]
     log_level: LevelFilter,
-    // TODO(colnnelson): Add additional port forwards
+
+    /// additional ports to forward from the remote host to the target
+    #[argh(option, short = 'p')]
+    additional_port_forwards: Vec<u32>,
+
+    /// time to wait to discover targets.  
+    #[argh(option, short = 'w', default = "1")]
+    wait_for_target_time: u64,
 }
 
 #[fuchsia_async::run_singlethreaded]
@@ -50,11 +57,13 @@ async fn main() -> Result<()> {
     logging::init(args.log_level)?;
 
     tracing::trace!("Discoving targets...");
-    let targets = discover_targets(Duration::from_secs(1), MDNS_PORT).await?;
+    let wait_duration = Duration::from_secs(args.wait_for_target_time);
+    let targets = discover_targets(wait_duration, MDNS_PORT).await?;
 
     let target = choose_target(targets, args.target_name).await?;
 
     tracing::debug!("Target to forward: {:?}", target);
-    do_ssh(args.host, target, args.repository_port)?;
+    tracing::info!("Additional port forwards: {:?}", args.additional_port_forwards);
+    do_ssh(args.host, target, args.repository_port, args.additional_port_forwards)?;
     Ok(())
 }

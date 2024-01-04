@@ -16,6 +16,14 @@ namespace zxdb {
 DwarfUnitImpl::DwarfUnitImpl(DwarfBinaryImpl* binary, llvm::DWARFUnit* unit)
     : binary_(binary->GetWeakPtr()), unit_(unit) {}
 
+DwarfBinary* DwarfUnitImpl::GetBinary() const { return binary_.get(); }
+
+llvm::DWARFUnit* DwarfUnitImpl::GetLLVMUnit() const { return unit_; }
+
+int DwarfUnitImpl::GetDwarfVersion() const { return unit_->getVersion(); }
+
+llvm::DWARFDie DwarfUnitImpl::GetUnitDie() const { return unit_->getUnitDIE(true); }
+
 uint64_t DwarfUnitImpl::FunctionDieOffsetForRelativeAddress(uint64_t relative_address) const {
   if (!binary_)
     return 0;
@@ -57,7 +65,21 @@ const LineTable& DwarfUnitImpl::GetLineTable() const {
 const llvm::DWARFDebugLine::LineTable* DwarfUnitImpl::GetLLVMLineTable() const {
   if (!binary_)
     return nullptr;
-  return binary_->context()->getLineTableForUnit(unit_);
+  return binary_->GetLLVMContext()->getLineTableForUnit(unit_);
+}
+
+uint64_t DwarfUnitImpl::GetDieCount() const { return unit_->getNumDIEs(); }
+
+llvm::DWARFDie DwarfUnitImpl::GetLLVMDieAtIndex(uint64_t index) const {
+  return unit_->getDIEAtIndex(index);
+}
+
+llvm::DWARFDie DwarfUnitImpl::GetLLVMDieAtOffset(uint64_t offset) const {
+  return unit_->getDIEForOffset(offset);
+}
+
+uint64_t DwarfUnitImpl::GetIndexForLLVMDie(const llvm::DWARFDie& die) const {
+  return unit_->getDIEIndex(die);
 }
 
 }  // namespace zxdb

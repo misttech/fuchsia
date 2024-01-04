@@ -2,29 +2,38 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::framebuffer_server::{init_viewport_scene, spawn_view_provider, FramebufferServer};
-use crate::{
-    device::{DeviceMode, DeviceOps},
-    fs::{
-        buffers::{InputBuffer, OutputBuffer},
-        kobject::{KObjectDeviceAttribute, KType},
-        sysfs::SysFsDirectory,
-        *,
-    },
-    lock::RwLock,
-    logging::*,
-    mm::{MemoryAccessorExt, ProtectionFlags},
-    syscalls::*,
-    task::{CurrentTask, Kernel},
-    types::*,
+use super::framebuffer_server::{
+    init_viewport_scene, send_view_to_graphical_presenter, spawn_view_provider,
+    start_flatland_presentation_loop, FramebufferServer,
 };
-
+use crate::{
+    device::{features::AspectRatio, kobject::DeviceMetadata, DeviceMode, DeviceOps},
+    fs::sysfs::DeviceDirectory,
+    mm::MemoryAccessorExt,
+    task::{CurrentTask, Kernel},
+    vfs::{fileops_impl_seekable, fileops_impl_vmo, FileObject, FileOps, FsNode},
+};
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_math as fmath;
 use fidl_fuchsia_ui_composition as fuicomposition;
 use fidl_fuchsia_ui_display_singleton as fuidisplay;
 use fidl_fuchsia_ui_views as fuiviews;
-use fuchsia_component::client::connect_channel_to_protocol;
+use fuchsia_component::client::connect_to_protocol_sync;
+use fuchsia_fs::directory as ffs_dir;
 use fuchsia_zircon as zx;
+use starnix_logging::{impossible_error, log_info, log_warn};
+use starnix_sync::RwLock;
+use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_uapi::{
+    device_type::DeviceType,
+    errno, error,
+    errors::Errno,
+    fb_bitfield, fb_fix_screeninfo, fb_var_screeninfo,
+    open_flags::OpenFlags,
+    user_address::{UserAddress, UserRef},
+    FBIOGET_FSCREENINFO, FBIOGET_VSCREENINFO, FBIOPUT_VSCREENINFO, FB_TYPE_PACKED_PIXELS,
+    FB_VISUAL_TRUECOLOR,
+};
 use std::sync::Arc;
 use zerocopy::AsBytes;
 
@@ -36,14 +45,10 @@ pub struct Framebuffer {
 }
 
 impl Framebuffer {
-    /// Creates a new `Framebuffer` according to the spec provided in `feature_string`.
+    /// Creates a new `Framebuffer` fit to the screen, while maintaining the provided aspect ratio.
     ///
-    /// For example, `aspect_ratio:1:1` creates a 1:1 aspect ratio framebuffer, scaled to
-    /// fit the display.
-    ///
-    /// If the `feature_string` is empty, or `None`, the framebuffer will be scaled to the
-    /// display.
-    pub fn new(feature_string: Option<&String>) -> Result<Arc<Self>, Errno> {
+    /// If the `aspect_ratio` is `None`, the framebuffer will be scaled to the display.
+    pub fn new(aspect_ratio: Option<&AspectRatio>) -> Result<Arc<Self>, Errno> {
         let mut info = fb_var_screeninfo::default();
 
         let display_size =
@@ -51,15 +56,8 @@ impl Framebuffer {
 
         // If the container has a specific aspect ratio set, use that to fit the framebuffer
         // inside of the display.
-        let (feature_width, feature_height) = feature_string
-            .map(|s| {
-                let components: Vec<_> = s.split(':').collect();
-                assert_eq!(components.len(), 3, "Malformed aspect ratio");
-                (
-                    components[1].parse().expect("Malformed aspect ratio"),
-                    components[2].parse().expect("Malformed aspect ratio"),
-                )
-            })
+        let (feature_width, feature_height) = aspect_ratio
+            .map(|ar| (ar.width, ar.height))
             .unwrap_or((display_size.width, display_size.height));
 
         // Scale to framebuffer to fit the display, while maintaining the expected aspect ratio.
@@ -97,20 +95,74 @@ impl Framebuffer {
         }
     }
 
-    /// Starts serving a view based on this framebuffer in `outgoing_dir`.
+    /// Starts presenting a view based on this framebuffer.
+    /// If GraphicalPresenter is detected as an incoming service among
+    /// `maybe_svc`, connect to that protocol and PresentView. Otherwise, serve
+    /// ViewProvider. This is a transitionary measure while ViewProvider is
+    /// being deprecated.
     ///
     /// # Parameters
-    /// * `view_bound_protocols`: handles to input clients which will be associated with the view
-    /// * `outgoing_dir`: the path under which the `ViewProvider` protocol will be served
+    /// * `view_bound_protocols`: handles to input clients which will be
+    ///    associated with the view
+    /// * `view_identify`: the identity used to create view with flatland
+    /// * `outgoing_dir`: the path under which the `ViewProvider` protocol will
+    ///    be served
+    /// * `maybe_svc`: the incoming service directory under which the
+    ///    `GraphicalPresenter` protocol might be retrieved.
     pub fn start_server(
         &self,
+        kernel: &Arc<Kernel>,
         view_bound_protocols: fuicomposition::ViewBoundProtocols,
         view_identity: fuiviews::ViewIdentityOnCreation,
-        outgoing_dir: fidl::endpoints::ServerEnd<fidl_fuchsia_io::DirectoryMarker>,
-    ) {
+        outgoing_dir: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
+        maybe_svc: Option<fio::DirectorySynchronousProxy>,
+    ) -> Result<(), anyhow::Error> {
         if let Some(server) = &self.server {
-            spawn_view_provider(server.clone(), view_bound_protocols, view_identity, outgoing_dir);
+            // Start presentation loop to prepare for display updates.
+            start_flatland_presentation_loop(kernel, server.clone());
+
+            // Attempt to find and connect to GraphicalPresenter.
+            //
+            // TODO: b/307788344 - DirectorySynchronousProxy is not ideal,
+            // since it blocks this thread until the FIDL call returns. Use
+            // DirectoryProxy instead of DirectorySynchronousProxy when we
+            // remove spawn_view_provider.
+            if let Some(svc_dir_proxy) = maybe_svc {
+                let (status, buf) = svc_dir_proxy
+                    .read_dirents(fio::MAX_BUF, zx::Time::INFINITE)
+                    .expect("Calling read dirents");
+                zx::Status::ok(status).expect("Failed reading directory entries");
+                for entry in ffs_dir::parse_dir_entries(&buf)
+                    .into_iter()
+                    .collect::<Result<Vec<_>, _>>()
+                    .expect("Failed parsing directory entries")
+                {
+                    if entry.name == "fuchsia.element.GraphicalPresenter" {
+                        log_info!("Presenting view using GraphicalPresenter");
+                        send_view_to_graphical_presenter(
+                            kernel,
+                            server.clone(),
+                            view_bound_protocols,
+                            view_identity,
+                            svc_dir_proxy,
+                        );
+                        return Ok(());
+                    }
+                }
+            }
+
+            // Fallback to serving ViewProvider.
+            log_info!("Serving ViewProvider");
+            spawn_view_provider(
+                kernel,
+                server.clone(),
+                view_bound_protocols,
+                view_identity,
+                outgoing_dir,
+            );
         }
+
+        Ok(())
     }
 
     /// Starts presenting a child view instead of the framebuffer.
@@ -124,10 +176,8 @@ impl Framebuffer {
     }
 
     fn get_display_size() -> Result<fmath::SizeU, Errno> {
-        let (server_end, client_end) = zx::Channel::create();
-        connect_channel_to_protocol::<fuidisplay::InfoMarker>(server_end)
-            .map_err(|_| errno!(ENOENT))?;
-        let singleton_display_info = fuidisplay::InfoSynchronousProxy::new(client_end);
+        let singleton_display_info =
+            connect_to_protocol_sync::<fuidisplay::InfoMarker>().map_err(|_| errno!(ENOENT))?;
         let metrics =
             singleton_display_info.get_metrics(zx::Time::INFINITE).map_err(|_| errno!(EINVAL))?;
         let extent_in_px =
@@ -157,7 +207,7 @@ impl DeviceOps for Arc<Framebuffer> {
 }
 
 impl FileOps for Arc<Framebuffer> {
-    fileops_impl_seekable!();
+    fileops_impl_vmo!(self, &self.vmo);
 
     fn ioctl(
         &self,
@@ -205,50 +255,19 @@ impl FileOps for Arc<Framebuffer> {
             }
         }
     }
-
-    fn read(
-        &self,
-        file: &FileObject,
-        _current_task: &CurrentTask,
-        offset: usize,
-        data: &mut dyn OutputBuffer,
-    ) -> Result<usize, Errno> {
-        VmoFileObject::read(&self.vmo, file, offset, data)
-    }
-
-    fn write(
-        &self,
-        file: &FileObject,
-        current_task: &CurrentTask,
-        offset: usize,
-        data: &mut dyn InputBuffer,
-    ) -> Result<usize, Errno> {
-        VmoFileObject::write(&self.vmo, file, current_task, offset, data)
-    }
-
-    fn get_vmo(
-        &self,
-        file: &FileObject,
-        current_task: &CurrentTask,
-        _length: Option<usize>,
-        prot: ProtectionFlags,
-    ) -> Result<Arc<zx::Vmo>, Errno> {
-        VmoFileObject::get_vmo(&self.vmo, file, current_task, prot)
-    }
 }
 
-pub fn fb_device_init(kernel: &Arc<Kernel>) {
-    let graphics_class = kernel.device_registry.virtual_bus().get_or_create_child(
-        b"graphics",
-        KType::Class,
-        SysFsDirectory::new,
-    );
-    let fb_attr = KObjectDeviceAttribute::new(
-        Some(graphics_class),
+pub fn fb_device_init(system_task: &CurrentTask) {
+    let kernel = system_task.kernel();
+    let registry = &kernel.device_registry;
+
+    let graphics_class = registry.get_or_create_class(b"graphics", registry.virtual_bus());
+    registry.add_and_register_device(
+        system_task,
         b"fb0",
-        b"fb0",
-        DeviceType::FB0,
-        DeviceMode::Char,
+        DeviceMetadata::new(b"fb0", DeviceType::FB0, DeviceMode::Char),
+        graphics_class,
+        DeviceDirectory::new,
+        kernel.framebuffer.clone(),
     );
-    kernel.add_and_register_device(fb_attr, kernel.framebuffer.clone());
 }

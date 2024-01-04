@@ -11,19 +11,26 @@ sdk_source_set("cpp") {
   sdk_name = "driver_compat"
   include_base = "//sdk"
   sources = [
+    "banjo_client.cc",
+    "banjo_client.h",
+    "banjo_server.h",
     "compat.h",
     "connect.cc",
     "connect.h",
     "device_server.cc",
     "device_server.h",
+    "metadata.h",
     "service_offers.cc",
     "service_offers.h",
   ]
 
   public_deps = [
+    ":symbols",
     "//sdk/fidl/fuchsia.driver.compat:fuchsia.driver.compat_cpp",
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/component/outgoing/cpp",
+    "//sdk/lib/driver/async-helpers/cpp",
     "//sdk/lib/driver/component/cpp:cpp",
   ]
 }
@@ -36,7 +43,10 @@ source_set("logging") {
   public_deps = [ "//sdk/lib/driver/logging/cpp" ]
 }
 
-source_set("symbols") {
+sdk_source_set("symbols") {
+  category = "internal"
+  sdk_name = "driver_compat_symbols"
+  include_base = "//sdk"
   sources = [ "symbols.h" ]
 }
 
@@ -46,9 +56,8 @@ test("test") {
   deps = [
     ":cpp",
     ":logging",
-    "//src/lib/storage/vfs/cpp",
-    "//zircon/system/ulib/async-loop:async-loop-cpp",
-    "//zircon/system/ulib/async-loop:async-loop-default",
+    "//sdk/lib/driver/testing/cpp",
+    "//src/storage/lib/vfs/cpp",
     "//zircon/system/ulib/zxtest",
   ]
 }

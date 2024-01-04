@@ -6,13 +6,13 @@ use {
     crate::fuchsia::{
         component::map_to_raw_status,
         directory::FxDirectory,
+        dirent_cache::DirentCache,
         file::FxFile,
         fxblob::blob::FxBlob,
         memory_pressure::{MemoryPressureLevel, MemoryPressureMonitor},
         node::{FxNode, GetResult, NodeCache},
         pager::Pager,
         symlink::FxSymlink,
-        vmo_data_buffer::VmoDataBuffer,
         volumes_directory::VolumesDirectory,
     },
     anyhow::{bail, ensure, Error},
@@ -41,7 +41,6 @@ use {
     },
     std::{
         boxed::Box,
-        convert::TryInto,
         future::Future,
         marker::Unpin,
         sync::{Arc, Mutex, Weak},
@@ -50,36 +49,56 @@ use {
     vfs::{directory::entry::DirectoryEntry, execution_scope::ExecutionScope},
 };
 
+// TODO:(b/299919008) Fix this number to something reasonable, or maybe just for fxblob.
+const DIRENT_CACHE_LIMIT: usize = 8000;
+
 #[derive(Clone)]
-pub struct FlushTaskConfig {
-    /// The period to wait between flushes at [`MemoryPressureLevel::Normal`].
-    pub mem_normal_period: Duration,
-
-    /// The period to wait between flushes at [`MemoryPressureLevel::Warning`].
-    pub mem_warning_period: Duration,
-
-    /// The period to wait between flushes at [`MemoryPressureLevel::Critical`].
-    pub mem_critical_period: Duration,
+pub struct MemoryPressureLevelConfig {
+    /// The period to wait between flushes.
+    pub flush_period: Duration,
+    /// The limit of cached nodes.
+    pub cache_size_limit: usize,
 }
 
-impl FlushTaskConfig {
-    pub fn flush_period_from_level(&self, level: &MemoryPressureLevel) -> Duration {
+#[derive(Clone)]
+pub struct MemoryPressureConfig {
+    /// The configuration to use at [`MemoryPressureLevel::Normal`].
+    pub mem_normal: MemoryPressureLevelConfig,
+
+    /// The configuration to use at [`MemoryPressureLevel::Warning`].
+    pub mem_warning: MemoryPressureLevelConfig,
+
+    /// The configuration to use at [`MemoryPressureLevel::Critical`].
+    pub mem_critical: MemoryPressureLevelConfig,
+}
+
+impl MemoryPressureConfig {
+    pub fn for_level(&self, level: &MemoryPressureLevel) -> &MemoryPressureLevelConfig {
         match level {
-            MemoryPressureLevel::Normal => self.mem_normal_period,
-            MemoryPressureLevel::Warning => self.mem_warning_period,
-            MemoryPressureLevel::Critical => self.mem_critical_period,
+            MemoryPressureLevel::Normal => &self.mem_normal,
+            MemoryPressureLevel::Warning => &self.mem_warning,
+            MemoryPressureLevel::Critical => &self.mem_critical,
         }
     }
 }
 
-impl Default for FlushTaskConfig {
+impl Default for MemoryPressureConfig {
     fn default() -> Self {
         // TODO(https://fxbug.dev/110000): investigate a smarter strategy for determining flush
         // frequency.
         Self {
-            mem_normal_period: Duration::from_secs(20),
-            mem_warning_period: Duration::from_secs(5),
-            mem_critical_period: Duration::from_millis(1500),
+            mem_normal: MemoryPressureLevelConfig {
+                flush_period: Duration::from_secs(20),
+                cache_size_limit: DIRENT_CACHE_LIMIT,
+            },
+            mem_warning: MemoryPressureLevelConfig {
+                flush_period: Duration::from_secs(5),
+                cache_size_limit: 100,
+            },
+            mem_critical: MemoryPressureLevelConfig {
+                flush_period: Duration::from_millis(1500),
+                cache_size_limit: 20,
+            },
         }
     }
 }
@@ -101,8 +120,11 @@ pub struct FxVolume {
 
     // The execution scope for this volume.
     scope: ExecutionScope,
+
+    dirent_cache: DirentCache,
 }
 
+#[fxfs_trace::trace]
 impl FxVolume {
     pub fn new(
         parent: Weak<VolumesDirectory>,
@@ -119,6 +141,7 @@ impl FxVolume {
             flush_task: Mutex::new(None),
             fs_id,
             scope,
+            dirent_cache: DirentCache::new(DIRENT_CACHE_LIMIT),
         })
     }
 
@@ -130,12 +153,12 @@ impl FxVolume {
         &self.cache
     }
 
-    pub fn pager(&self) -> &Pager {
-        &self.pager
+    pub fn dirent_cache(&self) -> &DirentCache {
+        &self.dirent_cache
     }
 
-    pub fn executor(&self) -> &fasync::EHandle {
-        &self.executor
+    pub fn pager(&self) -> &Pager {
+        &self.pager
     }
 
     pub fn id(&self) -> u64 {
@@ -147,17 +170,24 @@ impl FxVolume {
     }
 
     pub async fn terminate(&self) {
-        self.cache.clear();
+        self.dirent_cache.clear();
+
+        // `NodeCache::terminate` will break any strong reference cycles contained within nodes
+        // (pager registration). The only remaining nodes should be those with open FIDL
+        // connections. `ExecutionScope::shutdown` + `ExecutionScope::wait` will close the open FIDL
+        // connections which should result in all nodes flushing and then dropping. Any async tasks
+        // required to flush a node should take an active guard on the `ExecutionScope` which will
+        // prevent `ExecutionScope::wait` from completing until all nodes are flushed.
         self.scope.shutdown();
-        self.pager.terminate();
+        self.cache.terminate();
         self.scope.wait().await;
+
         self.store.filesystem().graveyard().flush().await;
         let task = std::mem::replace(&mut *self.flush_task.lock().unwrap(), None);
         if let Some((task, terminate)) = task {
             let _ = terminate.send(());
             task.await;
         }
-        self.flush_all_files().await;
         if self.store.crypt().is_some() {
             if let Err(e) = self.store.lock().await {
                 // The store will be left in a safe state and there won't be data-loss unless
@@ -190,13 +220,8 @@ impl FxVolume {
             GetResult::Placeholder(placeholder) => {
                 let node = match object_descriptor {
                     ObjectDescriptor::File => FxFile::new(
-                        ObjectStore::open_object(
-                            self,
-                            object_id,
-                            HandleOptions::default(),
-                            self.store().crypt(),
-                        )
-                        .await?,
+                        ObjectStore::open_object(self, object_id, HandleOptions::default(), None)
+                            .await?,
                     ) as Arc<dyn FxNode>,
                     ObjectDescriptor::Directory => Arc::new(FxDirectory::new(
                         parent,
@@ -209,10 +234,6 @@ impl FxVolume {
                 Ok(node)
             }
         }
-    }
-
-    pub fn into_store(self) -> Arc<ObjectStore> {
-        self.store
     }
 
     /// Marks the given directory deleted.
@@ -258,7 +279,7 @@ impl FxVolume {
     /// be closed later with Self::terminate, or the FxVolume will never be dropped.
     pub fn start_flush_task(
         self: &Arc<Self>,
-        config: FlushTaskConfig,
+        config: MemoryPressureConfig,
         mem_monitor: Option<&MemoryPressureMonitor>,
     ) {
         let mut flush_task = self.flush_task.lock().unwrap();
@@ -282,7 +303,7 @@ impl FxVolume {
 
     async fn flush_task(
         self: Arc<Self>,
-        config: FlushTaskConfig,
+        config: MemoryPressureConfig,
         mut level_stream: impl Stream<Item = MemoryPressureLevel> + FusedStream + Unpin,
         terminate: oneshot::Receiver<()>,
     ) {
@@ -290,11 +311,12 @@ impl FxVolume {
         let mut terminate = terminate.fuse();
         // Default to the normal flush period until updates come from the `level_stream`.
         let mut level = MemoryPressureLevel::Normal;
-        let mut timer = fasync::Timer::new(config.flush_period_from_level(&level)).fuse();
+        let mut timer = fasync::Timer::new(config.for_level(&level).flush_period).fuse();
 
         loop {
             let mut should_terminate = false;
             let mut should_flush = false;
+            let mut should_update_cache_limit = false;
 
             futures::select_biased! {
                 _ = terminate => should_terminate = true,
@@ -306,16 +328,17 @@ impl FxVolume {
                     should_flush = matches!(new_level, MemoryPressureLevel::Critical);
                     if new_level != level {
                         level = new_level;
-                        timer = fasync::Timer::new(config.flush_period_from_level(&level)).fuse();
+                        should_update_cache_limit = true;
+                        timer = fasync::Timer::new(config.for_level(&level).flush_period).fuse();
                         debug!(
                             "Background flush period changed to {:?} due to new memory pressure \
                             level ({:?}).",
-                            config.flush_period_from_level(&level), level
+                            config.for_level(&level).flush_period, level
                         );
                     }
                 }
                 _ = timer => {
-                    timer = fasync::Timer::new(config.flush_period_from_level(&level)).fuse();
+                    timer = fasync::Timer::new(config.for_level(&level).flush_period).fuse();
                     should_flush = true;
                 }
             };
@@ -325,6 +348,11 @@ impl FxVolume {
 
             if should_flush {
                 self.flush_all_files().await;
+                self.dirent_cache.recycle_stale_files();
+            }
+
+            if should_update_cache_limit {
+                self.dirent_cache.set_limit(config.for_level(&level).cache_size_limit);
             }
         }
         debug!(store_id = self.store.store_object_id(), "FxVolume::flush_task end");
@@ -333,19 +361,26 @@ impl FxVolume {
     /// Reports that a certain number of bytes will be dirtied in a pager-backed VMO.
     ///
     /// Note that this function may await flush tasks.
-    pub async fn report_pager_dirty(&self, num_bytes: u64) {
+    pub fn report_pager_dirty(
+        self: Arc<Self>,
+        byte_count: u64,
+        mark_dirty: impl FnOnce() + Send + 'static,
+    ) {
         if let Some(parent) = self.parent.upgrade() {
-            parent.report_pager_dirty(num_bytes).await;
+            parent.report_pager_dirty(byte_count, self, mark_dirty);
+        } else {
+            mark_dirty();
         }
     }
 
     /// Reports that a certain number of bytes were cleaned in a pager-backed VMO.
-    pub fn report_pager_clean(&self, num_bytes: u64) {
+    pub fn report_pager_clean(&self, byte_count: u64) {
         if let Some(parent) = self.parent.upgrade() {
-            parent.report_pager_clean(num_bytes);
+            parent.report_pager_clean(byte_count);
         }
     }
 
+    #[trace]
     pub async fn flush_all_files(&self) {
         let mut flushed = 0;
         for file in self.cache.files() {
@@ -365,21 +400,14 @@ impl FxVolume {
     /// Spawns a short term task for the volume that includes a guard that will prevent termination.
     pub fn spawn(&self, task: impl Future<Output = ()> + Send + 'static) {
         let guard = self.scope().active_guard();
-        fasync::Task::spawn_on(&self.executor, async move {
+        self.executor.spawn_detached(async move {
             task.await;
             std::mem::drop(guard);
-        })
-        .detach();
+        });
     }
 }
 
-impl HandleOwner for FxVolume {
-    type Buffer = VmoDataBuffer;
-
-    fn create_data_buffer(&self, object_id: u64, initial_size: u64) -> Self::Buffer {
-        self.pager.create_vmo(object_id, initial_size).unwrap().try_into().unwrap()
-    }
-}
+impl HandleOwner for FxVolume {}
 
 impl AsRef<ObjectStore> for FxVolume {
     fn as_ref(&self) -> &ObjectStore {
@@ -404,6 +432,9 @@ pub trait RootDir: FxNode + DirectoryEntry {
 
     fn as_node(self: Arc<Self>) -> Arc<dyn FxNode>;
 
+    /// An optional callback invoked when the volume is opened.
+    fn on_open(self: Arc<Self>) {}
+
     async fn handle_blob_creator_requests(self: Arc<Self>, _requests: BlobCreatorRequestStream) {}
     async fn handle_blob_reader_requests(self: Arc<Self>, _requests: BlobReaderRequestStream) {}
 }
@@ -416,14 +447,15 @@ pub struct FxVolumeAndRoot {
 
 impl FxVolumeAndRoot {
     pub async fn new<T: From<Directory<FxVolume>> + RootDir>(
-        _parent: Weak<VolumesDirectory>,
+        parent: Weak<VolumesDirectory>,
         store: Arc<ObjectStore>,
         unique_id: u64,
     ) -> Result<Self, Error> {
-        let volume = Arc::new(FxVolume::new(Weak::new(), store, unique_id)?);
+        let volume = Arc::new(FxVolume::new(parent, store, unique_id)?);
         let root_object_id = volume.store().root_directory_object_id();
         let root_dir = Directory::open(&volume, root_object_id).await?;
         let root = Arc::<T>::new(root_dir.into()) as Arc<dyn RootDir>;
+        root.clone().on_open();
         volume
             .cache
             .get_or_reserve(root_object_id)
@@ -597,6 +629,7 @@ pub fn info_to_filesystem_info(
 #[cfg(test)]
 mod tests {
     use {
+        super::DIRENT_CACHE_LIMIT,
         crate::fuchsia::{
             directory::FxDirectory,
             file::FxFile,
@@ -605,7 +638,7 @@ mod tests {
                 close_dir_checked, close_file_checked, open_dir, open_dir_checked, open_file,
                 open_file_checked, write_at, TestFixture,
             },
-            volume::{FlushTaskConfig, FxVolumeAndRoot},
+            volume::{FxVolumeAndRoot, MemoryPressureConfig, MemoryPressureLevelConfig},
             volumes_directory::VolumesDirectory,
         },
         fidl::endpoints::ServerEnd,
@@ -615,11 +648,11 @@ mod tests {
         fuchsia_fs::file,
         fuchsia_zircon::Status,
         fxfs::{
-            filesystem::{Filesystem, FxFilesystem},
+            filesystem::FxFilesystem,
             fsck::{fsck, fsck_volume},
-            object_handle::{ObjectHandle, ObjectHandleExt},
+            object_handle::ObjectHandle,
             object_store::{
-                transaction::{Options, TransactionHandler},
+                transaction::{lock_keys, Options},
                 volume::root_volume,
                 HandleOptions, ObjectDescriptor, ObjectStore,
             },
@@ -894,7 +927,7 @@ mod tests {
                 root_volume.new_volume("vol", Some(Arc::new(InsecureCrypt::new()))).await.unwrap();
             let mut transaction = filesystem
                 .clone()
-                .new_transaction(&[], Options::default())
+                .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
             let object_id = ObjectStore::create_object(
@@ -936,10 +969,19 @@ mod tests {
             assert!(!data_has_persisted().await);
 
             vol.volume().start_flush_task(
-                FlushTaskConfig {
-                    mem_normal_period: Duration::from_millis(100),
-                    mem_warning_period: Duration::from_millis(100),
-                    mem_critical_period: Duration::from_millis(100),
+                MemoryPressureConfig {
+                    mem_normal: MemoryPressureLevelConfig {
+                        flush_period: Duration::from_millis(100),
+                        cache_size_limit: 100,
+                    },
+                    mem_warning: MemoryPressureLevelConfig {
+                        flush_period: Duration::from_millis(100),
+                        cache_size_limit: 100,
+                    },
+                    mem_critical: MemoryPressureLevelConfig {
+                        flush_period: Duration::from_millis(100),
+                        cache_size_limit: 100,
+                    },
                 },
                 None,
             );
@@ -953,6 +995,7 @@ mod tests {
                 wait *= 2;
             }
 
+            std::mem::drop(file);
             vol.volume().terminate().await;
         }
 
@@ -973,7 +1016,7 @@ mod tests {
                 root_volume.new_volume("vol", Some(Arc::new(InsecureCrypt::new()))).await.unwrap();
             let mut transaction = filesystem
                 .clone()
-                .new_transaction(&[], Options::default())
+                .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
             let object_id = ObjectStore::create_object(
@@ -1002,6 +1045,9 @@ mod tests {
             // Write some data to the file, which will only go to the cache for now.
             write_at(&file, 0, &[123u8]).await.expect("write_at failed");
 
+            // Initialized to the default size.
+            assert_eq!(vol.volume().dirent_cache().limit(), DIRENT_CACHE_LIMIT);
+
             let data_has_persisted = || async {
                 // We have to reopen the object each time since this is a distinct handle from the
                 // one managed by the FxFile.
@@ -1020,10 +1066,19 @@ mod tests {
                 .expect("Failed to create MemoryPressureMonitor");
 
             // Configure the flush task to only flush quickly on warning.
-            let flush_config = FlushTaskConfig {
-                mem_normal_period: Duration::from_secs(20),
-                mem_warning_period: Duration::from_millis(100),
-                mem_critical_period: Duration::from_secs(20),
+            let flush_config = MemoryPressureConfig {
+                mem_normal: MemoryPressureLevelConfig {
+                    flush_period: Duration::from_secs(20),
+                    cache_size_limit: DIRENT_CACHE_LIMIT,
+                },
+                mem_warning: MemoryPressureLevelConfig {
+                    flush_period: Duration::from_millis(100),
+                    cache_size_limit: 100,
+                },
+                mem_critical: MemoryPressureLevelConfig {
+                    flush_period: Duration::from_secs(20),
+                    cache_size_limit: 50,
+                },
             };
             vol.volume().start_flush_task(flush_config, Some(&mem_pressure));
 
@@ -1049,7 +1104,9 @@ mod tests {
             }
 
             assert!(data_has_persisted().await);
+            assert_eq!(vol.volume().dirent_cache().limit(), 100);
 
+            std::mem::drop(file);
             vol.volume().terminate().await;
         }
 
@@ -1070,7 +1127,7 @@ mod tests {
                 root_volume.new_volume("vol", Some(Arc::new(InsecureCrypt::new()))).await.unwrap();
             let mut transaction = filesystem
                 .clone()
-                .new_transaction(&[], Options::default())
+                .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
             let object_id = ObjectStore::create_object(
@@ -1096,6 +1153,9 @@ mod tests {
                 .downcast::<FxFile>()
                 .expect("Not a file");
 
+            // Initialized to the default size.
+            assert_eq!(vol.volume().dirent_cache().limit(), DIRENT_CACHE_LIMIT);
+
             // Write some data to the file, which will only go to the cache for now.
             write_at(&file, 0, &[123u8]).await.expect("write_at failed");
 
@@ -1117,10 +1177,19 @@ mod tests {
                 .expect("Failed to create MemoryPressureMonitor");
 
             // Configure the flush task to only flush quickly on warning.
-            let flush_config = FlushTaskConfig {
-                mem_normal_period: Duration::from_secs(20),
-                mem_warning_period: Duration::from_secs(20),
-                mem_critical_period: Duration::from_secs(20),
+            let flush_config = MemoryPressureConfig {
+                mem_normal: MemoryPressureLevelConfig {
+                    flush_period: Duration::from_secs(20),
+                    cache_size_limit: DIRENT_CACHE_LIMIT,
+                },
+                mem_warning: MemoryPressureLevelConfig {
+                    flush_period: Duration::from_secs(20),
+                    cache_size_limit: 100,
+                },
+                mem_critical: MemoryPressureLevelConfig {
+                    flush_period: Duration::from_secs(20),
+                    cache_size_limit: 50,
+                },
             };
             vol.volume().start_flush_task(flush_config, Some(&mem_pressure));
 
@@ -1145,7 +1214,9 @@ mod tests {
             }
 
             assert!(data_has_persisted().await);
+            assert_eq!(vol.volume().dirent_cache().limit(), 50);
 
+            std::mem::drop(file);
             vol.volume().terminate().await;
         }
 
@@ -1698,7 +1769,7 @@ mod tests {
     }
 
     #[fasync::run_singlethreaded(test)]
-    async fn test_project_node_inheritence() {
+    async fn test_project_node_inheritance() {
         const BYTES_LIMIT: u64 = 123456;
         const NODES_LIMIT: u64 = 4321;
         const VOLUME_NAME: &str = "A";

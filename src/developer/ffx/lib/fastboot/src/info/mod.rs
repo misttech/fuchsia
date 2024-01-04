@@ -4,20 +4,20 @@
 
 use crate::common::prepare;
 use anyhow::{anyhow, Result};
-use fidl::endpoints::{create_endpoints, ServerEnd};
-use fidl_fuchsia_developer_ffx::{FastbootProxy, VariableListenerMarker, VariableListenerRequest};
+use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, Variable};
 use futures::{prelude::*, try_join};
 use std::io::Write;
+use tokio::sync::mpsc;
+use tokio::sync::mpsc::{Receiver, Sender};
 
 /// Aggregates fastboot variables from a callback listener.
 async fn handle_variables_for_fastboot<W: Write>(
     writer: &mut W,
-    var_server: ServerEnd<VariableListenerMarker>,
+    mut var_server: Receiver<Variable>,
 ) -> Result<()> {
-    let mut stream = var_server.into_stream()?;
     loop {
-        match stream.try_next().await? {
-            Some(VariableListenerRequest::OnVariable { name, value, .. }) => {
+        match var_server.recv().await {
+            Some(Variable { name, value, .. }) => {
                 writeln!(writer, "{}: {}", name, value)?;
             }
             None => return Ok(()),
@@ -26,11 +26,14 @@ async fn handle_variables_for_fastboot<W: Write>(
 }
 
 #[tracing::instrument(skip(writer))]
-pub async fn info<W: Write>(writer: &mut W, fastboot_proxy: &FastbootProxy) -> Result<()> {
-    prepare(writer, &fastboot_proxy).await?;
-    let (var_client, var_server) = create_endpoints::<VariableListenerMarker>();
+pub async fn info<W: Write, F: FastbootInterface>(
+    writer: &mut W,
+    fastboot_interface: &mut F,
+) -> Result<()> {
+    prepare(writer, fastboot_interface).await?;
+    let (var_client, var_server): (Sender<Variable>, Receiver<Variable>) = mpsc::channel(1);
     let _ = try_join!(
-        fastboot_proxy.get_all_vars(var_client).map_err(|e| {
+        fastboot_interface.get_all_vars(var_client).map_err(|e| {
             tracing::error!("FIDL Communication error: {}", e);
             anyhow!(
                 "There was an error communicating with the daemon. Try running\n\
@@ -52,9 +55,9 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_showing_variables() -> Result<()> {
-        let (_, proxy) = setup();
+        let (_, mut proxy) = setup();
         let mut writer = Vec::<u8>::new();
-        info(&mut writer, &proxy).await?;
+        info(&mut writer, &mut proxy).await?;
         let output = String::from_utf8(writer).expect("utf-8 string");
         assert!(output.contains("test: test"));
         Ok(())

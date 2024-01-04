@@ -2,77 +2,22 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# This file is used to limit visibility to Pigweed modules.
-# Modules may only be added to this file after OSRB approval.
-# Clients may only be added to visibility lists after OSRB approval.
-
-source_set("pw_assert") {
-  public_deps = [ "src/pw_assert" ]
-  visibility = [ "//src/connectivity/bluetooth/core/bt-host/*" ]
+source_set("pw_async_task") {
+  public_deps = [ "src/pw_async:task" ]
 }
 
-source_set("pw_bluetooth") {
-  public_deps = [ "src/pw_bluetooth" ]
-  visibility = [ "//src/connectivity/bluetooth/core/bt-host/*" ]
+source_set("pw_async_dispatcher") {
+  public_deps = [ "src/pw_async:dispatcher" ]
 }
 
-source_set("pw_intrusive_ptr") {
-  public_deps = [ "src/pw_intrusive_ptr" ]
-  visibility = [ "//src/connectivity/bluetooth/core/bt-host/*" ]
+source_set("pw_async_heap_dispatcher") {
+  public_deps = [ "src/pw_async:heap_dispatcher" ]
 }
 
-source_set("pw_random") {
-  public_deps = [ "src/pw_random" ]
-  visibility = [ "//src/connectivity/bluetooth/core/bt-host/*" ]
-}
-
-source_set("pw_random_fuzzer_generator") {
-  public_deps = [ "src/pw_random:fuzzer_generator" ]
-  visibility = [ "//src/connectivity/bluetooth/core/bt-host/*" ]
-}
-
-source_set("pw_span") {
-  public_deps = [ "src/pw_span" ]
-  visibility = [ "//src/connectivity/bluetooth/core/bt-host/*" ]
-}
-
-source_set("pw_third_party_boringssl") {
-  public_deps = [ "src/third_party/boringssl" ]
-  visibility = [ "//src/connectivity/bluetooth/core/bt-host/*" ]
-}
-
-source_set("pw_string") {
-  public_deps = [ "src/pw_string" ]
-  visibility = [ "//src/connectivity/bluetooth/core/bt-host/*" ]
-}
-
-source_set("pw_log") {
-  public_deps = [ "src/pw_log" ]
-  visibility = [ "//src/connectivity/bluetooth/core/bt-host/*" ]
-}
-
-source_set("pw_rpc_client") {
-  public_deps = [ "src/pw_rpc:client" ]
-}
-
-source_set("pw_hdlc") {
-  public_deps = [
-    "src/pw_hdlc",
-    "src/pw_hdlc:pw_rpc",
-    "src/pw_hdlc:rpc_channel_output",
-  ]
-}
-
-source_set("pw_stream_socket_stream") {
-  public_deps = [ "src/pw_stream:socket_stream" ]
-}
-
-source_set("pw_rpc.pwpb.echo_service") {
-  public_deps = [ "src/pw_rpc/pwpb:echo_service" ]
-}
-
-# TODO(fxbug.dev/125377): Add "backends/pw_async_fuchsia:tests" to deps.
 group("tests") {
   testonly = true
-  deps = [ "backends/pw_random:tests" ]
+  deps = [
+    "backends/pw_async_fuchsia:tests",
+    "backends/pw_random:tests",
+  ]
 }

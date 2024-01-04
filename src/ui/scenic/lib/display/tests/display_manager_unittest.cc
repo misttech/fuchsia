@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
 #include <fuchsia/hardware/display/cpp/fidl.h>
+#include <fuchsia/hardware/display/types/cpp/fidl.h>
 #include <lib/async/default.h>
 #include <lib/async/time.h>
 
@@ -56,7 +57,7 @@ class DisplayManagerMockTest : public gtest::TestLoopFixture {
 };
 
 TEST_F(DisplayManagerMockTest, DisplayVsyncCallback) {
-  constexpr fuchsia::hardware::display::DisplayId kDisplayId = {.value = 1};
+  constexpr fuchsia::hardware::display::types::DisplayId kDisplayId = {.value = 1};
   const uint32_t kDisplayWidth = 1024;
   const uint32_t kDisplayHeight = 768;
   const size_t kTotalVsync = 10;
@@ -83,7 +84,7 @@ TEST_F(DisplayManagerMockTest, DisplayVsyncCallback) {
 
   display_manager()->default_display()->SetVsyncCallback(
       [&num_vsync_display_received](zx::time timestamp,
-                                    fuchsia::hardware::display::ConfigStamp stamp) {
+                                    fuchsia::hardware::display::types::ConfigStamp stamp) {
         ++num_vsync_display_received;
       });
 

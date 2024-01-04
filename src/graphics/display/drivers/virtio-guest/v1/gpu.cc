@@ -11,6 +11,7 @@
 #include <lib/image-format/image_format.h>
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/zircon-internal/align.h>
+#include <lib/zx/result.h>
 #include <zircon/compiler.h>
 #include <zircon/errors.h>
 #include <zircon/status.h>
@@ -29,10 +30,11 @@
 #include "src/graphics/display/lib/api-types-cpp/config-stamp.h"
 #include "src/graphics/display/lib/api-types-cpp/display-id.h"
 #include "src/graphics/display/lib/api-types-cpp/driver-buffer-collection-id.h"
+#include "src/graphics/display/lib/api-types-cpp/driver-image-id.h"
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
-namespace virtio {
+namespace virtio_display {
 
 namespace {
 
@@ -89,7 +91,7 @@ void GpuDevice::DisplayControllerImplSetDisplayControllerInterface(
       .pixel_format_list = kSupportedFormats.data(),
       .pixel_format_count = kSupportedFormats.size(),
   };
-  display_controller_interface_on_displays_changed(intf, &args, 1, nullptr, 0, nullptr, 0, nullptr);
+  display_controller_interface_on_displays_changed(intf, &args, 1, nullptr, 0);
 }
 
 zx::result<GpuDevice::BufferInfo> GpuDevice::GetAllocatedBufferInfoForImage(
@@ -174,7 +176,7 @@ zx_status_t GpuDevice::DisplayControllerImplImportBufferCollection(
     return ZX_ERR_ALREADY_EXISTS;
   }
 
-  ZX_DEBUG_ASSERT_MSG(sysmem_allocator_client_.is_valid(), "sysmem allocator is not initialized");
+  ZX_DEBUG_ASSERT_MSG(sysmem_.is_valid(), "sysmem allocator is not initialized");
 
   auto endpoints = fidl::CreateEndpoints<fuchsia_sysmem::BufferCollection>();
   if (!endpoints.is_ok()) {
@@ -183,7 +185,7 @@ zx_status_t GpuDevice::DisplayControllerImplImportBufferCollection(
   }
   auto& [collection_client_endpoint, collection_server_endpoint] = endpoints.value();
 
-  auto bind_result = sysmem_allocator_client_->BindSharedCollection(
+  auto bind_result = sysmem_->BindSharedCollection(
       fidl::ClientEnd<fuchsia_sysmem::BufferCollectionToken>(std::move(collection_token)),
       std::move(collection_server_endpoint));
   if (!bind_result.ok()) {
@@ -210,9 +212,10 @@ zx_status_t GpuDevice::DisplayControllerImplReleaseBufferCollection(
   return ZX_OK;
 }
 
-zx_status_t GpuDevice::DisplayControllerImplImportImage(image_t* image,
+zx_status_t GpuDevice::DisplayControllerImplImportImage(const image_t* image,
                                                         uint64_t banjo_driver_buffer_collection_id,
-                                                        uint32_t index) {
+                                                        uint32_t index,
+                                                        uint64_t* out_image_handle) {
   const display::DriverBufferCollectionId driver_buffer_collection_id =
       display::ToDriverBufferCollectionId(banjo_driver_buffer_collection_id);
   const auto it = buffer_collections_.find(driver_buffer_collection_id);
@@ -228,20 +231,27 @@ zx_status_t GpuDevice::DisplayControllerImplImportImage(image_t* image,
     return buffer_info_result.error_value();
   }
   BufferInfo& buffer_info = buffer_info_result.value();
-  return Import(std::move(buffer_info.vmo), image, buffer_info.offset, buffer_info.bytes_per_pixel,
-                buffer_info.bytes_per_row, buffer_info.pixel_format);
+  zx::result<display::DriverImageId> import_result =
+      Import(std::move(buffer_info.vmo), image, buffer_info.offset, buffer_info.bytes_per_pixel,
+             buffer_info.bytes_per_row, buffer_info.pixel_format);
+  if (import_result.is_ok()) {
+    *out_image_handle = display::ToBanjoDriverImageId(import_result.value());
+    return ZX_OK;
+  }
+  return import_result.error_value();
 }
 
-zx_status_t GpuDevice::Import(zx::vmo vmo, image_t* image, size_t offset, uint32_t pixel_size,
-                              uint32_t row_bytes, fuchsia_images2::wire::PixelFormat pixel_format) {
+zx::result<display::DriverImageId> GpuDevice::Import(
+    zx::vmo vmo, const image_t* image, size_t offset, uint32_t pixel_size, uint32_t row_bytes,
+    fuchsia_images2::wire::PixelFormat pixel_format) {
   if (image->type != IMAGE_TYPE_SIMPLE) {
-    return ZX_ERR_INVALID_ARGS;
+    return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   fbl::AllocChecker ac;
   auto import_data = fbl::make_unique_checked<imported_image_t>(&ac);
   if (!ac.check()) {
-    return ZX_ERR_NO_MEMORY;
+    return zx::error(ZX_ERR_NO_MEMORY);
   }
 
   unsigned size = ZX_ROUNDUP(row_bytes * image->height, zx_system_get_page_size());
@@ -250,29 +260,28 @@ zx_status_t GpuDevice::Import(zx::vmo vmo, image_t* image, size_t offset, uint32
                                 &import_data->pmt);
   if (status != ZX_OK) {
     zxlogf(ERROR, "Failed to pin VMO: %s", zx_status_get_string(status));
-    return status;
+    return zx::error(status);
   }
 
   status = allocate_2d_resource(&import_data->resource_id, row_bytes / pixel_size, image->height,
                                 pixel_format);
   if (status != ZX_OK) {
     zxlogf(ERROR, "Failed to allocate 2D resource: %s", zx_status_get_string(status));
-    return status;
+    return zx::error(status);
   }
 
   status = attach_backing(import_data->resource_id, paddr, size);
   if (status != ZX_OK) {
     zxlogf(ERROR, "Failed to attach resource backing store: %s", zx_status_get_string(status));
-    return status;
+    return zx::error(status);
   }
 
-  image->handle = reinterpret_cast<uint64_t>(import_data.release());
-
-  return ZX_OK;
+  display::DriverImageId image_id(reinterpret_cast<uint64_t>(import_data.release()));
+  return zx::ok(image_id);
 }
 
-void GpuDevice::DisplayControllerImplReleaseImage(image_t* image) {
-  delete reinterpret_cast<imported_image_t*>(image->handle);
+void GpuDevice::DisplayControllerImplReleaseImage(uint64_t image_handle) {
+  delete reinterpret_cast<imported_image_t*>(image_handle);
 }
 
 config_check_result_t GpuDevice::DisplayControllerImplCheckConfiguration(
@@ -342,12 +351,14 @@ void GpuDevice::DisplayControllerImplApplyConfiguration(const display_config_t**
 }
 
 zx_status_t GpuDevice::DisplayControllerImplGetSysmemConnection(zx::channel sysmem_handle) {
-  auto result =
-      sysmem_->ConnectServer(fidl::ServerEnd<fuchsia_sysmem::Allocator>{std::move(sysmem_handle)});
-  if (!result.ok()) {
-    return result.status();
+  // We can't use DdkConnectFragmentFidlProtocol here because it wants to create the endpoints but
+  // we only have the server_end here.
+  using ServiceMember = fuchsia_hardware_sysmem::Service::AllocatorV1;
+  zx_status_t status = device_connect_fragment_fidl_protocol(
+      parent_, "sysmem", ServiceMember::ServiceName, ServiceMember::Name, sysmem_handle.release());
+  if (status != ZX_OK) {
+    return status;
   }
-
   return ZX_OK;
 }
 
@@ -412,7 +423,7 @@ zx_status_t GpuDevice::DisplayControllerImplSetDisplayPower(uint64_t display_id,
   return ZX_ERR_NOT_SUPPORTED;
 }
 
-GpuDevice::GpuDevice(zx_device_t* bus_device, zx::bti bti, std::unique_ptr<Backend> backend)
+GpuDevice::GpuDevice(zx_device_t* bus_device, zx::bti bti, std::unique_ptr<virtio::Backend> backend)
     : virtio::Device(std::move(bti), std::move(backend)), DeviceType(bus_device) {
   sem_init(&request_sem_, 0, 1);
   sem_init(&response_sem_, 0, 0);
@@ -719,48 +730,24 @@ zx_status_t GpuDevice::Start() {
   return ZX_OK;
 }
 
-zx_status_t GpuDevice::InitSysmemAllocatorClient() {
-  auto endpoints = fidl::CreateEndpoints<fuchsia_sysmem::Allocator>();
-  if (!endpoints.is_ok()) {
-    zxlogf(ERROR, "Cannot create sysmem allocator endpoints: %s", endpoints.status_string());
-    return endpoints.status_value();
-  }
-  auto& [client, server] = endpoints.value();
-  auto connect_result = sysmem_->ConnectServer(std::move(server));
-  if (!connect_result.ok()) {
-    zxlogf(ERROR, "Cannot connect to sysmem Allocator protocol: %s",
-           connect_result.status_string());
-    return connect_result.status();
-  }
-  sysmem_allocator_client_ = fidl::WireSyncClient(std::move(client));
-
-  std::string debug_name =
-      fxl::StringPrintf("virtio-gpu-display[%lu]", fsl::GetCurrentProcessKoid());
-  auto set_debug_status = sysmem_allocator_client_->SetDebugClientInfo(
-      fidl::StringView::FromExternal(debug_name), fsl::GetCurrentProcessKoid());
-  if (!set_debug_status.ok()) {
-    zxlogf(ERROR, "Cannot set sysmem allocator debug info: %s", set_debug_status.status_string());
-  }
-
-  return ZX_OK;
-}
-
 zx_status_t GpuDevice::Init() {
   zxlogf(TRACE, "Init()");
 
-  zx::result client =
-      DdkConnectFragmentFidlProtocol<fuchsia_hardware_sysmem::Service::Sysmem>("sysmem");
-  if (client.is_error()) {
-    zxlogf(ERROR, "Could not get Display SYSMEM protocol: %s", client.status_string());
-    return client.status_value();
+  zx::result sysmem_result =
+      DdkConnectFragmentFidlProtocol<fuchsia_hardware_sysmem::Service::AllocatorV1>("sysmem");
+  if (sysmem_result.is_error()) {
+    zxlogf(ERROR, "Could not get Display SYSMEM protocol: %s", sysmem_result.status_string());
+    return sysmem_result.status_value();
   }
+  sysmem_ = fidl::WireSyncClient(std::move(*sysmem_result));
 
-  sysmem_ = fidl::WireSyncClient(std::move(*client));
-
-  zx_status_t status = InitSysmemAllocatorClient();
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Failed to create sysmem Allocator client: %s", zx_status_get_string(status));
-    return status;
+  std::string debug_name =
+      fxl::StringPrintf("virtio-gpu-display[%lu]", fsl::GetCurrentProcessKoid());
+  auto set_debug_status = sysmem_->SetDebugClientInfo(fidl::StringView::FromExternal(debug_name),
+                                                      fsl::GetCurrentProcessKoid());
+  if (!set_debug_status.ok()) {
+    zxlogf(ERROR, "Cannot set sysmem allocator debug info: %s", set_debug_status.status_string());
+    return set_debug_status.error().status();
   }
 
   DeviceReset();
@@ -786,7 +773,7 @@ zx_status_t GpuDevice::Init() {
   }
 
   // Allocate the main vring
-  status = vring_.Init(0, 16);
+  zx_status_t status = vring_.Init(0, 16);
   if (status != ZX_OK) {
     zxlogf(ERROR, "Failed to allocate vring: %s", zx_status_get_string(status));
     return status;
@@ -862,4 +849,4 @@ void GpuDevice::IrqRingUpdate() {
 
 void GpuDevice::IrqConfigChange() { zxlogf(TRACE, "IrqConfigChange()"); }
 
-}  // namespace virtio
+}  // namespace virtio_display

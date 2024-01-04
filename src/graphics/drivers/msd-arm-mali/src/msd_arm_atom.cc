@@ -4,8 +4,9 @@
 
 #include "src/graphics/drivers/msd-arm-mali/src/msd_arm_atom.h"
 
-#include "magma_util/short_macros.h"
-#include "platform_trace.h"
+#include <lib/magma/platform/platform_trace.h>
+#include <lib/magma/util/short_macros.h>
+
 #include "src/graphics/drivers/msd-arm-mali/src/msd_arm_connection.h"
 #include "string_printf.h"
 
@@ -102,8 +103,8 @@ std::vector<std::string> MsdArmAtom::DumpInformation() {
 std::vector<std::string> MsdArmSoftAtom::DumpInformation() {
   std::vector<std::string> result = MsdArmAtom::DumpInformation();
 
-  if (platform_semaphore_) {
-    result.push_back(StringPrintf("  Semaphore koid %ld", platform_semaphore_->id()).c_str());
+  for (auto& semaphore : platform_semaphores_) {
+    result.push_back(StringPrintf("  Semaphore koid %ld", semaphore->id()).c_str());
   }
   return result;
 }

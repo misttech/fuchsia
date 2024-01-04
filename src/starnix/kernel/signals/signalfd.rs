@@ -3,17 +3,19 @@
 // found in the LICENSE file.
 
 use crate::{
-    fs::{
+    signals::SignalDetail,
+    task::{CurrentTask, EventHandler, WaitCanceler, Waiter},
+    vfs::{
         buffers::{InputBuffer, OutputBuffer},
-        *,
+        fileops_impl_nonseekable, Anon, FdEvents, FileHandle, FileObject, FileOps,
     },
-    lock::Mutex,
-    signals::*,
-    task::*,
-    types::*,
+};
+use starnix_sync::Mutex;
+use starnix_uapi::{
+    errno, error, errors::Errno, open_flags::OpenFlags, signalfd_siginfo, signals::SigSet,
+    SFD_NONBLOCK,
 };
 use std::convert::TryInto;
-
 use zerocopy::AsBytes;
 
 pub struct SignalFd {
@@ -65,12 +67,15 @@ impl FileOps for SignalFd {
                 // fields into the signalfd_siginfo.
                 match signal.detail {
                     SignalDetail::None => {}
-                    SignalDetail::SigChld { pid, uid, status } => {
+                    SignalDetail::SIGCHLD { pid, uid, status } => {
                         siginfo.ssi_pid = pid as u32;
                         siginfo.ssi_uid = uid;
                         siginfo.ssi_status = status;
                     }
-                    SignalDetail::SigSys { call_addr, syscall, arch } => {
+                    SignalDetail::SigFault { addr } => {
+                        siginfo.ssi_addr = addr;
+                    }
+                    SignalDetail::SIGSYS { call_addr, syscall, arch } => {
                         siginfo.ssi_call_addr = call_addr.into();
                         siginfo.ssi_syscall = syscall;
                         siginfo.ssi_arch = arch;
@@ -95,6 +100,12 @@ impl FileOps for SignalFd {
                         siginfo.ssi_utime = u64::from_ne_bytes(data[12..20].try_into().unwrap());
                         siginfo.ssi_stime = u64::from_ne_bytes(data[20..28].try_into().unwrap());
                     }
+                    SignalDetail::Timer { timer } => {
+                        siginfo.ssi_tid = timer.timer_id as u32;
+                        siginfo.ssi_overrun = timer.overrun_cur() as u32;
+                        siginfo.ssi_int = timer.signal_event.value.0 as i32;
+                        siginfo.ssi_ptr = timer.signal_event.value.0;
+                    }
                 }
                 buf.extend_from_slice(siginfo.as_bytes());
             }
@@ -111,7 +122,7 @@ impl FileOps for SignalFd {
         handler: EventHandler,
     ) -> Option<WaitCanceler> {
         let task_state = current_task.read();
-        Some(task_state.signals.signal_wait.wait_async_events(waiter, events, handler))
+        Some(task_state.signals.signal_wait.wait_async_fd_events(waiter, events, handler))
     }
 
     fn query_events(
@@ -120,7 +131,7 @@ impl FileOps for SignalFd {
         current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
         let mut events = FdEvents::empty();
-        if current_task.read().signals.is_any_allowed_by_mask(self.mask.lock().to_inverted()) {
+        if current_task.read().signals.is_any_allowed_by_mask(!*self.mask.lock()) {
             events |= FdEvents::POLLIN;
         }
         Ok(events)

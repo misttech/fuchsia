@@ -35,12 +35,31 @@ Replacer ReplaceIPv4();
 Replacer ReplaceIPv6();
 
 // Constructs a Replacer that substitutes all instances of MAC address with a string like
-// "REDACTED-MAC:"
+// "<REDACTED-MAC: %d>"
 Replacer ReplaceMac();
 
-// Constructs a Replacer that substitutes all instances of MAC addresses with a string like
-// "REDACTED-MAC", which does not include a salted hash of the original address.
-Replacer ReplaceMacNoHash();
+// Constructs a Replacer that substitutes all instances of SSIDs with a string like
+// "<REDACTED-SSID: %d>"
+Replacer ReplaceSsid();
+
+namespace mac_utils {
+
+// Returns a sub-string view of the first three bytes of |mac|, including the delimiters
+// that follow each byte.
+//
+// This function assumes |mac| is a proper representation of a MAC address. Undefined
+// behavior will result if passed any other string.
+std::string GetOuiPrefix(const std::string& mac);
+
+// Constructs a MAC address equivalent to |mac| but in the canonical form with
+// exactly two digits per bytes and colons as delimiters.
+//
+// This function assumes |mac| is a proper representation of a MAC address. Undefined
+// behavior will result if passed any other string.
+std::string CanonicalizeMac(const std::string& original_mac);
+
+}  // namespace mac_utils
+
 }  // namespace forensics
 
 #endif  // SRC_DEVELOPER_FORENSICS_UTILS_REDACT_REPLACER_H_

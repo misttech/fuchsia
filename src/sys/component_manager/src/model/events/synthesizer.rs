@@ -12,8 +12,8 @@ use {
     },
     ::routing::event::EventFilter,
     async_trait::async_trait,
-    cm_task_scope::TaskScope,
     cm_types::Name,
+    cm_util::TaskGroup,
     futures::{channel::mpsc, future::join_all, stream, SinkExt, StreamExt},
     moniker::{ExtendedMoniker, Moniker, MonikerBase},
     std::{
@@ -78,7 +78,7 @@ impl EventSynthesizer {
         &self,
         sender: mpsc::UnboundedSender<(Event, Option<Vec<ComponentEventRoute>>)>,
         events: HashMap<Name, Vec<EventDispatcherScope>>,
-        scope: &TaskScope,
+        scope: &TaskGroup,
     ) {
         SynthesisTask::new(&self, sender, events).spawn(scope).await
     }
@@ -126,29 +126,27 @@ impl SynthesisTask {
 
     /// Spawns a task that will synthesize all events that were requested when creating the
     /// `SynthesisTask`
-    pub async fn spawn(self, scope: &TaskScope) {
+    pub async fn spawn(self, scope: &TaskGroup) {
         if self.event_infos.is_empty() {
             return;
         }
-        scope
-            .add_task(async move {
-                // If we can't find the component then we can't synthesize events.
-                // This isn't necessarily an error as the model or component might've been
-                // destroyed in the intervening time, so we just exit early.
-                if let Some(model) = self.model.upgrade() {
-                    let sender = self.sender;
-                    let futs = self
-                        .event_infos
-                        .into_iter()
-                        .map(|event_info| Self::run(&model, sender.clone(), event_info));
-                    for result in join_all(futs).await {
-                        if let Err(error) = result {
-                            error!(?error, "Event synthesis failed");
-                        }
+        scope.spawn(async move {
+            // If we can't find the component then we can't synthesize events.
+            // This isn't necessarily an error as the model or component might've been
+            // destroyed in the intervening time, so we just exit early.
+            if let Some(model) = self.model.upgrade() {
+                let sender = self.sender;
+                let futs = self
+                    .event_infos
+                    .into_iter()
+                    .map(|event_info| Self::run(&model, sender.clone(), event_info));
+                for result in join_all(futs).await {
+                    if let Err(error) = result {
+                        error!(?error, "Event synthesis failed");
                     }
                 }
-            })
-            .await;
+            }
+        });
     }
 
     /// Performs a depth-first traversal of the component instance tree. It adds to the stream a
@@ -183,7 +181,7 @@ impl SynthesisTask {
                 }
                 ExtendedMoniker::ComponentInstance(ref scope_moniker) => scope_moniker.clone(),
             };
-            let root = model.look_up(&scope_moniker).await?;
+            let root = model.find_and_maybe_resolve(&scope_moniker).await?;
             let mut component_stream = get_subcomponents(root, visited_components.clone());
             let mut tasks = vec![];
             while let Some(component) = component_stream.next().await {
@@ -241,7 +239,7 @@ fn get_subcomponents(
                     let state_guard = curr_component.lock_state().await;
                     match *state_guard {
                         InstanceState::New
-                        | InstanceState::Unresolved
+                        | InstanceState::Unresolved(_)
                         | InstanceState::Destroyed => {}
                         InstanceState::Resolved(ref s) => {
                             for (_, child) in s.children() {
@@ -275,47 +273,60 @@ mod tests {
         cm_rust::{DirectoryDecl, ExposeDecl, ExposeDirectoryDecl, ExposeSource, ExposeTarget},
         cm_rust_testing::*,
         fidl_fuchsia_io as fio,
-        fuchsia_component::server::ServiceFs,
         routing::component_instance::ComponentInstanceInterface,
+        std::collections::HashSet,
+        vfs::pseudo_directory,
     };
 
     struct CreateStreamArgs<'a> {
         registry: &'a EventRegistry,
         scope_monikers: Vec<Moniker>,
         events: Vec<EventType>,
-        include_builtin: bool,
     }
 
     #[fuchsia::test]
-    async fn synthesize_directory_ready_builtin() {
+    async fn synthesize_directory_ready() {
         let test = setup_synthesis_test().await;
-
-        let mut fs = ServiceFs::new();
-        test.builtin_environment.emit_diagnostics_for_test(&mut fs).expect("emitting diagnostics");
 
         let registry = test.builtin_environment.event_registry.clone();
         let mut event_stream = create_stream(
             &test,
             CreateStreamArgs {
                 registry: &registry,
-                scope_monikers: vec![],
+                scope_monikers: vec![vec!["b"].try_into().unwrap()],
                 events: vec![EventType::DirectoryReady],
-                include_builtin: true,
             },
         )
         .await;
 
-        let (event, _) = event_stream.next().await.expect("got running event");
-        match event.event.payload {
-            EventPayload::DirectoryReady { name, .. } if name == "diagnostics" => {
-                assert_eq!(event.event.target_moniker, ExtendedMoniker::ComponentManager);
-            }
-            payload => panic!("Expected running or directory ready. Got: {:?}", payload),
+        let mut instances_with_diag_dirs = HashSet::<ExtendedMoniker>::from([
+            ExtendedMoniker::from(Moniker::try_from(vec!["b"]).unwrap()),
+            ExtendedMoniker::from(Moniker::try_from(vec!["b", "c"]).unwrap()),
+            ExtendedMoniker::from(Moniker::try_from(vec!["b", "d"]).unwrap()),
+        ]);
+
+        for instance in &instances_with_diag_dirs {
+            let ExtendedMoniker::ComponentInstance(ref m) = instance else {
+                continue;
+            };
+            test.start_instance(m).await.unwrap();
         }
+
+        for _ in 0..instances_with_diag_dirs.len() {
+            let (event, _) = event_stream.next().await.unwrap();
+            match event.event.payload {
+                EventPayload::DirectoryReady { name, .. } if name == "diagnostics" => {
+                    assert!(instances_with_diag_dirs.remove(&event.event.target_moniker));
+                }
+                payload => panic!("Expected running or directory ready. Got: {:?}", payload),
+            }
+        }
+
+        assert!(instances_with_diag_dirs.is_empty());
     }
 
     async fn create_stream<'a>(test: &RoutingTest, args: CreateStreamArgs<'a>) -> EventStream {
-        let mut scopes = args
+        let scopes = args
             .scope_monikers
             .into_iter()
             .map(|moniker| EventDispatcherScope {
@@ -323,12 +334,6 @@ mod tests {
                 filter: EventFilter::debug(),
             })
             .collect::<Vec<_>>();
-        if args.include_builtin {
-            scopes.push(EventDispatcherScope {
-                moniker: ExtendedMoniker::ComponentManager,
-                filter: EventFilter::debug(),
-            });
-        }
         let events = args
             .events
             .into_iter()
@@ -347,15 +352,7 @@ mod tests {
             .expect("subscribe to event stream")
     }
 
-    // Sets up the following topology (all children are lazy)
-    //
-    //     a
-    //    / \
-    //   b   c
-    //  /   / \
-    // d   e   f
-    //    / \   \
-    //   g   h   i
+    /// Construct topology for the test. Puts a diagnostics directory in b, c, and d's namespaces.
     async fn setup_synthesis_test() -> RoutingTest {
         let components = vec![
             (
@@ -364,7 +361,6 @@ mod tests {
                     .directory(diagnostics_decl())
                     .expose(expose_diagnostics_decl())
                     .add_lazy_child("b")
-                    .add_lazy_child("c")
                     .build(),
             ),
             (
@@ -372,10 +368,17 @@ mod tests {
                 ComponentDeclBuilder::new()
                     .directory(diagnostics_decl())
                     .expose(expose_diagnostics_decl())
+                    .add_lazy_child("c")
                     .add_lazy_child("d")
                     .build(),
             ),
-            ("c", ComponentDeclBuilder::new().add_lazy_child("e").add_lazy_child("f").build()),
+            (
+                "c",
+                ComponentDeclBuilder::new()
+                    .directory(diagnostics_decl())
+                    .expose(expose_diagnostics_decl())
+                    .build(),
+            ),
             (
                 "d",
                 ComponentDeclBuilder::new()
@@ -383,33 +386,13 @@ mod tests {
                     .expose(expose_diagnostics_decl())
                     .build(),
             ),
-            (
-                "e",
-                ComponentDeclBuilder::new()
-                    .directory(diagnostics_decl())
-                    .expose(expose_diagnostics_decl())
-                    .add_lazy_child("g")
-                    .add_lazy_child("h")
-                    .build(),
-            ),
-            ("f", ComponentDeclBuilder::new().add_lazy_child("i").build()),
-            (
-                "g",
-                ComponentDeclBuilder::new()
-                    .directory(diagnostics_decl())
-                    .expose(expose_diagnostics_decl())
-                    .build(),
-            ),
-            ("h", ComponentDeclBuilder::new().build()),
-            (
-                "i",
-                ComponentDeclBuilder::new()
-                    .directory(diagnostics_decl())
-                    .expose(expose_diagnostics_decl())
-                    .build(),
-            ),
         ];
-        RoutingTest::new("a", components).await
+        RoutingTestBuilder::new("a", components)
+            .add_outgoing_path("b", "/diagnostics".parse().unwrap(), pseudo_directory! {})
+            .add_outgoing_path("c", "/diagnostics".parse().unwrap(), pseudo_directory! {})
+            .add_outgoing_path("d", "/diagnostics".parse().unwrap(), pseudo_directory! {})
+            .build()
+            .await
     }
 
     fn diagnostics_decl() -> DirectoryDecl {
@@ -420,6 +403,7 @@ mod tests {
         ExposeDecl::Directory(ExposeDirectoryDecl {
             source: ExposeSource::Self_,
             source_name: "diagnostics".parse().unwrap(),
+            source_dictionary: None,
             target_name: "diagnostics".parse().unwrap(),
             target: ExposeTarget::Framework,
             rights: Some(fio::Operations::CONNECT),

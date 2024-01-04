@@ -10,7 +10,7 @@ driver_bind_rules("dwmac_bind") {
   tests = "bind-tests.json"
   deps = [
     "//src/devices/bind/fuchsia.designware.platform",
-    "//src/devices/bind/fuchsia.hardware.ethernet.board",
+    "//src/devices/bind/fuchsia.ethernet",
     "//src/devices/bind/fuchsia.platform",
   ]
 }
@@ -30,9 +30,8 @@ fuchsia_driver("dwmac-driver") {
     ":dwmac_bind",
     "//sdk/banjo/fuchsia.hardware.ethernet:fuchsia.hardware.ethernet_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.ethernet.mac:fuchsia.hardware.ethernet.mac_banjo_cpp",
-    "//sdk/banjo/fuchsia.hardware.gpio:fuchsia.hardware.gpio_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.test:fuchsia.hardware.test_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.ethernet.board:fuchsia.hardware.ethernet.board_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.ethernet.board:fuchsia.hardware.ethernet.board_cpp",
     "//src/devices/bus/lib/device-protocol-pdev",
     "//src/devices/lib/dev-operation",
     "//src/devices/lib/driver",
@@ -52,6 +51,11 @@ fuchsia_driver_component("dwmac") {
   deps = [ ":dwmac-driver" ]
   info = "dwmac-info.json"
   manifest = "meta/dwmac.cml"
+}
+
+fuchsia_driver_package("package") {
+  package_name = "dwmac"
+  driver_components = [ ":dwmac" ]
 }
 
 group("tests") {

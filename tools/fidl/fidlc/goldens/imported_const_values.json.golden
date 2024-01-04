@@ -1,11 +1,12 @@
 {
   "name": "test.importedconstvalues",
   "experiments": [
-    "no_optional_structs",
     "output_index_json",
-    "unknown_interactions",
-    "unknown_interactions_mandate"
+    "transitional_allow_list"
   ],
+  "available": {
+    "fuchsia": "LEGACY"
+  },
   "library_dependencies": [
     {
       "name": "test.dependent",
@@ -81,16 +82,6 @@
         "kind": "identifier",
         "identifier": "test.dependent/MyBits",
         "nullable": false,
-        "type_shape_v1": {
-          "inline_size": 1,
-          "alignment": 1,
-          "depth": 0,
-          "max_handles": 0,
-          "max_out_of_line": 0,
-          "has_padding": false,
-          "has_envelope": false,
-          "has_flexible_envelope": false
-        },
         "type_shape_v2": {
           "inline_size": 1,
           "alignment": 1,
@@ -98,7 +89,6 @@
           "max_handles": 0,
           "max_out_of_line": 0,
           "has_padding": false,
-          "has_envelope": false,
           "has_flexible_envelope": false
         }
       },
@@ -153,16 +143,6 @@
       "type": {
         "kind": "primitive",
         "subtype": "uint8",
-        "type_shape_v1": {
-          "inline_size": 1,
-          "alignment": 1,
-          "depth": 0,
-          "max_handles": 0,
-          "max_out_of_line": 0,
-          "has_padding": false,
-          "has_envelope": false,
-          "has_flexible_envelope": false
-        },
         "type_shape_v2": {
           "inline_size": 1,
           "alignment": 1,
@@ -170,7 +150,6 @@
           "max_handles": 0,
           "max_out_of_line": 0,
           "has_padding": false,
-          "has_envelope": false,
           "has_flexible_envelope": false
         }
       },
@@ -193,16 +172,6 @@
         "kind": "identifier",
         "identifier": "test.dependent/MyEnum",
         "nullable": false,
-        "type_shape_v1": {
-          "inline_size": 1,
-          "alignment": 1,
-          "depth": 0,
-          "max_handles": 0,
-          "max_out_of_line": 0,
-          "has_padding": false,
-          "has_envelope": false,
-          "has_flexible_envelope": false
-        },
         "type_shape_v2": {
           "inline_size": 1,
           "alignment": 1,
@@ -210,7 +179,6 @@
           "max_handles": 0,
           "max_out_of_line": 0,
           "has_padding": false,
-          "has_envelope": false,
           "has_flexible_envelope": false
         }
       },
@@ -265,16 +233,6 @@
       "type": {
         "kind": "primitive",
         "subtype": "uint8",
-        "type_shape_v1": {
-          "inline_size": 1,
-          "alignment": 1,
-          "depth": 0,
-          "max_handles": 0,
-          "max_out_of_line": 0,
-          "has_padding": false,
-          "has_envelope": false,
-          "has_flexible_envelope": false
-        },
         "type_shape_v2": {
           "inline_size": 1,
           "alignment": 1,
@@ -282,7 +240,6 @@
           "max_handles": 0,
           "max_out_of_line": 0,
           "has_padding": false,
-          "has_envelope": false,
           "has_flexible_envelope": false
         }
       },
@@ -423,16 +380,6 @@
       "members": [],
       "resource": false,
       "is_empty_success_struct": false,
-      "type_shape_v1": {
-        "inline_size": 1,
-        "alignment": 1,
-        "depth": 0,
-        "max_handles": 0,
-        "max_out_of_line": 0,
-        "has_padding": false,
-        "has_envelope": false,
-        "has_flexible_envelope": false
-      },
       "type_shape_v2": {
         "inline_size": 1,
         "alignment": 1,
@@ -440,7 +387,6 @@
         "max_handles": 0,
         "max_out_of_line": 0,
         "has_padding": false,
-        "has_envelope": false,
         "has_flexible_envelope": false
       }
     }

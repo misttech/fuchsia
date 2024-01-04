@@ -14,6 +14,7 @@ if (is_host) {
     sources = [
       "src/api.rs",
       "src/blob.rs",
+      "src/bootfs.rs",
       "src/data_source.rs",
       "src/hash.rs",
       "src/lib.rs",
@@ -27,7 +28,12 @@ if (is_host) {
 
     deps = [
       "//build/sdk/meta:rust",
+      "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+      "//sdk/fidl/fuchsia.component.internal:fuchsia.component.internal_rust",
+      "//src/lib/fidl/rust/fidl",
       "//src/lib/fuchsia-url",
+      "//src/sys/lib/cm_config",
+      "//src/sys/lib/cm_rust",
       "//src/sys/pkg/lib/far/rust:fuchsia-archive",
       "//src/sys/pkg/lib/fuchsia-hash",
       "//src/sys/pkg/lib/fuchsia-merkle",
@@ -52,9 +58,9 @@ if (is_host) {
       "//src/lib/assembly/partitions_config",
       "//src/lib/assembly/update_package",
       "//src/lib/fuchsia",
+      "//src/sys/lib/cm_rust/testing",
       "//src/sys/pkg/lib/epoch",
       "//third_party/rust_crates:maplit",
-      "//third_party/rust_crates:serde_json",
       "//third_party/rust_crates:tempfile",
     ]
   }

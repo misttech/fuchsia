@@ -8,7 +8,7 @@
 #include <lib/zx/vmo.h>
 #include <zircon/syscalls-next.h>
 
-#include "src/lib/storage/vfs/cpp/vfs_types.h"
+#include "src/storage/lib/vfs/cpp/vfs_types.h"
 #include "src/storage/memfs/memfs.h"
 
 namespace memfs {
@@ -88,6 +88,23 @@ zx_status_t VnodeFile::GetAttributes(fs::VnodeAttributes* attr) {
   return ZX_OK;
 }
 
+zx_status_t VnodeFile::SetAttributes(fs::VnodeAttributesUpdate attr) {
+  // Reset the vmo stats when mtime is explicitly set.
+  if (attr.has_modification_time()) {
+    fs::SharedLock lock(mutex_);
+    if (paged_vmo().is_valid()) {
+      zx_pager_vmo_stats vmo_stats;
+      zx_status_t status =
+          zx_pager_query_vmo_stats(memfs_.pager_for_next_vdso_syscalls().get(), paged_vmo().get(),
+                                   ZX_PAGER_RESET_VMO_STATS, &vmo_stats, sizeof(vmo_stats));
+      if (status != ZX_OK) {
+        return status;
+      }
+    }
+  }
+  return Vnode::SetAttributes(attr);
+}
+
 zx_status_t VnodeFile::GetNodeInfoForProtocol([[maybe_unused]] fs::VnodeProtocol protocol,
                                               [[maybe_unused]] fs::Rights rights,
                                               fs::VnodeRepresentation* info) {
@@ -121,14 +138,6 @@ uint64_t VnodeFile::GetContentSize() const {
   return content_size;
 }
 
-bool VnodeFile::SupportsClientSideStreams() {
-#if defined(MEMFS_ENABLE_CLIENT_SIDE_STREAMS)
-  return true;
-#else
-  return false;
-#endif
-}
-
 zx_status_t VnodeFile::CloseNode() {
   fs::SharedLock lock(mutex_);
   UpdateModifiedIfVmoChanged();
@@ -142,7 +151,6 @@ void VnodeFile::Sync(SyncCallback closure) {
 }
 
 void VnodeFile::UpdateModifiedIfVmoChanged() {
-#if defined(MEMFS_ENABLE_CLIENT_SIDE_STREAMS)
   if (!paged_vmo().is_valid()) {
     return;
   }
@@ -155,7 +163,6 @@ void VnodeFile::UpdateModifiedIfVmoChanged() {
   if (vmo_stats.modified == ZX_PAGER_VMO_STATS_MODIFIED) {
     UpdateModified();
   }
-#endif
 }
 
 }  // namespace memfs

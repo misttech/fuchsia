@@ -12,7 +12,9 @@ pub mod encoding;
 
 pub mod client;
 pub mod epitaph;
+pub mod for_fidl_message_crate;
 pub mod handle;
+pub mod marker;
 pub mod prelude;
 pub mod server;
 

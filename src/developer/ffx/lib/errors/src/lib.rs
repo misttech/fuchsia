@@ -2,8 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#[cfg(not(target_os = "fuchsia"))]
+use anyhow::anyhow;
+
 use std::process::ExitStatus;
 
+#[cfg(not(target_os = "fuchsia"))]
 use fidl_fuchsia_developer_ffx::{
     DaemonError, OpenTargetError, TargetConnectionError, TunnelError,
 };
@@ -25,6 +29,7 @@ pub enum FfxError {
     #[error("{}", .0)]
     Error(#[source] anyhow::Error, i32 /* Error status code */),
 
+    #[cfg(not(target_os = "fuchsia"))]
     #[error("{}", match .err {
         DaemonError::TargetCacheError => format!("Target {} could not be looked up in the cache due to an unspecified error. Retry your request, and if that fails run `ffx doctor`.", target_string(.target, .is_default_target)),
         DaemonError::TargetStateError => format!("Target {} is not in a state capable of the requested operation. Inspect `ffx target list` to determine if it is in the expected state.", target_string(.target, .is_default_target)),
@@ -42,12 +47,14 @@ pub enum FfxError {
     })]
     DaemonError { err: DaemonError, target: Option<String>, is_default_target: bool },
 
+    #[cfg(not(target_os = "fuchsia"))]
     #[error("{}", match .err {
         OpenTargetError::QueryAmbiguous => format!("Target specification {} matched multiple targets. Use `ffx target list` to list known targets, and use a more specific matcher.", target_string(.target, .is_default_target)),
         OpenTargetError::TargetNotFound => format!("Target specification {} was not found. Use `ffx target list` to list known targets, and use a different matcher.", target_string(.target, .is_default_target))
     })]
     OpenTargetError { err: OpenTargetError, target: Option<String>, is_default_target: bool },
 
+    #[cfg(not(target_os = "fuchsia"))]
     #[error("{}", match .err {
         TunnelError::CouldNotListen => "Could not establish a host-side TCP listen socket".to_string(),
         TunnelError::TargetConnectFailed => "Couldn not connect to target to establish a tunnel".to_string(),
@@ -57,6 +64,7 @@ pub enum FfxError {
     #[error("{}", format!("No target with matcher {} was found.\n\n* Use `ffx target list` to verify the state of connected devices.\n* Use the SERIAL matcher with the --target (-t) parameter to explicity match a device.", target_string(.target, .is_default_target)))]
     FastbootError { target: Option<String>, is_default_target: bool },
 
+    #[cfg(not(target_os = "fuchsia"))]
     #[error("{}", match .err {
         TargetConnectionError::PermissionDenied => format!("Could not establish SSH connection to the target {}: Permission denied.", target_string(.target, .is_default_target)),
         TargetConnectionError::ConnectionRefused => format!("Could not establish SSH connection to the target {}: Connection refused.", target_string(.target, .is_default_target)),
@@ -93,6 +101,40 @@ pub fn target_string(matcher: &Option<String>, is_default: &bool) -> String {
             "".to_string()
         },
     )
+}
+
+/// Convenience function for converting protocol connection requests into more
+/// diagnosable/actionable errors for the user.
+#[cfg(not(target_os = "fuchsia"))]
+pub fn map_daemon_error(svc_name: &str, err: DaemonError) -> anyhow::Error {
+    match err {
+        DaemonError::ProtocolNotFound => anyhow!(
+            "The daemon protocol '{svc_name}' did not match any protocols on the daemon
+If you are not developing this plugin or the protocol it connects to, then this is a bug
+
+Please report it at http://fxbug.dev/new/ffx+User+Bug."
+        ),
+        DaemonError::ProtocolOpenError => anyhow!(
+            "The daemon protocol '{svc_name}' failed to open on the daemon.
+
+If you are developing the protocol, there may be an internal failure when invoking the start
+function. See the ffx.daemon.log for details at `ffx config get log.dir -p sub`.
+
+If you are NOT developing this plugin or the protocol it connects to, then this is a bug.
+
+Please report it at http://fxbug.dev/new/ffx+User+Bug."
+        ),
+        unexpected => anyhow!(
+"While attempting to open the daemon protocol '{svc_name}', received an unexpected error:
+
+{unexpected:?}
+
+This is not intended behavior and is a bug.
+Please report it at http://fxbug.dev/new/ffx+User+Bug."
+
+        ),
+    }
+    .into()
 }
 
 // Utility macro for constructing a FfxError::Error with a simple error string.

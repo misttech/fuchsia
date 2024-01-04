@@ -2,124 +2,57 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use extended_pstate::ExtendedPstateState;
-use fuchsia_zircon::{
-    self as zx, sys::zx_thread_state_general_regs_t, AsHandleRef, Signals, Task as _,
+use crate::{
+    mm::{DumpPolicy, MemoryAccessor, MemoryAccessorExt, MemoryManager},
+    mutable_state::{state_accessor, state_implementation},
+    signals::{SignalInfo, SignalState},
+    task::{
+        set_thread_role, AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentTask,
+        Kernel, ProcessEntryRef, ProcessExitInfo, PtraceState, PtraceStatus, SchedulerPolicy,
+        SeccompFilterContainer, SeccompState, SeccompStateValue, ThreadGroup, ThreadState,
+        UtsNamespaceHandle, Waiter, ZombieProcess,
+    },
+    vfs::{FdFlags, FdNumber, FdTable, FileHandle, FsContext, FsString},
 };
+use bitflags::bitflags;
+use fuchsia_inspect_contrib::profile_duration;
+use fuchsia_zircon::{
+    AsHandleRef, Signals, Task as _, {self as zx},
+};
+use macro_rules_attribute::apply;
 use once_cell::sync::OnceCell;
+use starnix_logging::{
+    log_debug, log_warn, set_zx_name, {self},
+};
+use starnix_sync::{LockBefore, Locked, MmDumpable, Mutex, RwLock};
+use starnix_uapi::{
+    auth::{
+        Credentials, FsCred, PtraceAccessMode, CAP_KILL, CAP_SYS_PTRACE, PTRACE_MODE_FSCREDS,
+        PTRACE_MODE_REALCREDS,
+    },
+    errno, error,
+    errors::Errno,
+    from_status_like_fdio,
+    ownership::{OwnedRef, Releasable, ReleasableByRef, ReleaseGuard, TempRef, WeakRef},
+    pid_t, robust_list_head,
+    signals::{SigSet, Signal, UncheckedSignal, SIGCONT},
+    stats::TaskTimeStats,
+    ucred,
+    user_address::{UserAddress, UserRef},
+    CLD_CONTINUED, CLD_DUMPED, CLD_EXITED, CLD_KILLED, CLD_STOPPED, FUTEX_BITSET_MATCH_ANY,
+    PTRACE_EVENT_STOP,
+};
 use std::{
     cmp,
     convert::TryFrom,
     ffi::CString,
     fmt,
-    sync::{atomic::Ordering, Arc},
-};
-
-use crate::{
-    arch::{
-        registers::RegisterState,
-        task::{decode_page_fault_exception_report, get_signal_for_general_exception},
+    mem::MaybeUninit,
+    sync::{
+        atomic::{AtomicBool, AtomicU8, Ordering},
+        Arc,
     },
-    auth::*,
-    execution::*,
-    fs::{
-        FdFlags, FdNumber, FdTable, FileHandle, FsContext, FsStr, FsString, LookupContext,
-        NamespaceNode, SymlinkMode, SymlinkTarget,
-    },
-    loader::*,
-    lock::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard},
-    logging::*,
-    mm::{DumpPolicy, MemoryAccessor, MemoryAccessorExt, MemoryManager},
-    signals::{types::*, SignalInfo},
-    syscalls::{decls::Syscall, SyscallResult},
-    task::*,
-    types::*,
 };
-
-// In user space, priority (niceness) is an integer from -20..19 (inclusive)
-// with the default being 0.
-//
-// In the kernel it is represented as a range from 1..40 (inclusive).
-// The conversion is done by the formula: user_nice = 20 - kernel_nice.
-//
-// See https://man7.org/linux/man-pages/man2/setpriority.2.html#NOTES
-const DEFAULT_TASK_PRIORITY: u8 = 20;
-
-/// The task object associated with the currently executing thread.
-///
-/// We often pass the `CurrentTask` as the first argument to functions if those functions need to
-/// know contextual information about the thread on which they are running. For example, we often
-/// use the `CurrentTask` to perform access checks, which ensures that the caller is authorized to
-/// perform the requested operation.
-///
-/// The `CurrentTask` also has state that can be referenced only on the currently executing thread,
-/// such as the register state for that thread. Syscalls are given a mutable references to the
-/// `CurrentTask`, which lets them manipulate this state.
-///
-/// See also `Task` for more information about tasks.
-pub struct CurrentTask {
-    /// The underlying task object.
-    pub task: OwnedRef<Task>,
-
-    /// A copy of the registers associated with the Zircon thread. Up-to-date values can be read
-    /// from `self.handle.read_state_general_regs()`. To write these values back to the thread, call
-    /// `self.handle.write_state_general_regs(self.registers.into())`.
-    pub registers: RegisterState,
-
-    /// Copy of the current extended processor state including floating point and vector registers.
-    pub extended_pstate: ExtendedPstateState,
-
-    /// A custom function to resume a syscall that has been interrupted by SIGSTOP.
-    /// To use, call set_syscall_restart_func and return ERESTART_RESTARTBLOCK. sys_restart_syscall
-    /// will eventually call it.
-    pub syscall_restart_func: Option<Box<SyscallRestartFunc>>,
-}
-
-type SyscallRestartFunc =
-    dyn FnOnce(&mut CurrentTask) -> Result<SyscallResult, Errno> + Send + Sync;
-
-impl Releasable for CurrentTask {
-    type Context = ();
-
-    fn release(&self, _: &()) {
-        self.notify_robust_list();
-        let _ignored = self.clear_child_tid_if_needed();
-        self.task.release(self);
-    }
-}
-
-impl std::ops::Deref for CurrentTask {
-    type Target = Task;
-    fn deref(&self) -> &Self::Target {
-        &self.task
-    }
-}
-
-impl MemoryAccessor for CurrentTask {
-    fn read_memory_to_slice(&self, addr: UserAddress, bytes: &mut [u8]) -> Result<(), Errno> {
-        self.mm.read_memory_to_slice(addr, bytes)
-    }
-
-    fn read_memory_partial_to_slice(
-        &self,
-        addr: UserAddress,
-        bytes: &mut [u8],
-    ) -> Result<usize, Errno> {
-        self.mm.read_memory_partial_to_slice(addr, bytes)
-    }
-
-    fn write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
-        self.mm.write_memory(addr, bytes)
-    }
-
-    fn write_memory_partial(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
-        self.mm.write_memory_partial(addr, bytes)
-    }
-
-    fn zero(&self, addr: UserAddress, length: usize) -> Result<usize, Errno> {
-        self.mm.zero(addr, length)
-    }
-}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExitStatus {
@@ -132,22 +65,37 @@ pub enum ExitStatus {
 impl ExitStatus {
     /// Converts the given exit status to a status code suitable for returning from wait syscalls.
     pub fn wait_status(&self) -> i32 {
+        let maybe_ptrace = |siginfo: &SignalInfo| {
+            if ((siginfo.code >> 8) as u32) == PTRACE_EVENT_STOP {
+                (PTRACE_EVENT_STOP << 16) as i32
+            } else {
+                0
+            }
+        };
         match self {
             ExitStatus::Exit(status) => (*status as i32) << 8,
             ExitStatus::Kill(siginfo) => siginfo.signal.number() as i32,
             ExitStatus::CoreDump(siginfo) => (siginfo.signal.number() as i32) | 0x80,
-            ExitStatus::Continue(_) => 0xffff,
-            ExitStatus::Stop(siginfo) => 0x7f + ((siginfo.signal.number() as i32) << 8),
+            ExitStatus::Continue(siginfo) => {
+                if maybe_ptrace(siginfo) != 0 {
+                    (siginfo.signal.number() as i32) | maybe_ptrace(siginfo)
+                } else {
+                    0xffff
+                }
+            }
+            ExitStatus::Stop(siginfo) => {
+                (0x7f + ((siginfo.signal.number() as i32) << 8)) | maybe_ptrace(siginfo)
+            }
         }
     }
 
-    pub fn signal_info_code(&self) -> u32 {
+    pub fn signal_info_code(&self) -> i32 {
         match self {
-            ExitStatus::Exit(_) => CLD_EXITED,
-            ExitStatus::Kill(_) => CLD_KILLED,
-            ExitStatus::CoreDump(_) => CLD_DUMPED,
-            ExitStatus::Stop(_) => CLD_STOPPED,
-            ExitStatus::Continue(_) => CLD_CONTINUED,
+            ExitStatus::Exit(_) => CLD_EXITED as i32,
+            ExitStatus::Kill(_) => CLD_KILLED as i32,
+            ExitStatus::CoreDump(_) => CLD_DUMPED as i32,
+            ExitStatus::Stop(_) => CLD_STOPPED as i32,
+            ExitStatus::Continue(_) => CLD_CONTINUED as i32,
         }
     }
 
@@ -162,75 +110,191 @@ impl ExitStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-pub enum SchedulerPolicy {
-    #[default]
-    Normal,
-    Batch,
-    Idle,
-    Fifo {
-        priority: u32,
-    },
-    RoundRobin {
-        priority: u32,
-    },
+pub struct AtomicStopState {
+    inner: AtomicU8,
 }
 
-impl SchedulerPolicy {
-    pub fn from_raw(policy: u32, params: sched_param, rlimit: u64) -> Result<Self, Errno> {
-        let valid_priorities =
-            min_priority_for_sched_policy(policy)?..=max_priority_for_sched_policy(policy)?;
-        if !valid_priorities.contains(&params.sched_priority) {
-            return error!(EINVAL);
-        }
-        // ok to cast i32->u64, above range excludes negatives
-        match (policy, params.sched_priority as u64) {
-            (SCHED_NORMAL, 0) => Ok(Self::Normal),
-            (SCHED_BATCH, 0) => Ok(Self::Batch),
-            (SCHED_IDLE, 0) => Ok(Self::Idle),
-            (SCHED_FIFO, priority) => {
-                Ok(Self::Fifo { priority: std::cmp::min(priority, rlimit) as u32 })
-            }
-            (SCHED_RR, priority) => {
-                Ok(Self::RoundRobin { priority: std::cmp::min(priority, rlimit) as u32 })
-            }
-            _ => error!(EINVAL),
-        }
+impl AtomicStopState {
+    pub fn new(state: StopState) -> Self {
+        Self { inner: AtomicU8::new(state as u8) }
     }
 
-    pub fn raw_policy(&self) -> u32 {
-        match self {
-            Self::Normal => SCHED_NORMAL,
-            Self::Batch => SCHED_BATCH,
-            Self::Idle => SCHED_IDLE,
-            Self::Fifo { .. } => SCHED_FIFO,
-            Self::RoundRobin { .. } => SCHED_RR,
-        }
+    pub fn load(&self, ordering: Ordering) -> StopState {
+        let v = self.inner.load(ordering);
+        // SAFETY: we only ever store to the atomic a value originating
+        // from a valid `StopState`.
+        unsafe { std::mem::transmute(v) }
     }
 
-    pub fn raw_params(&self) -> sched_param {
-        match self {
-            Self::Normal | Self::Batch | Self::Idle => sched_param { sched_priority: 0 },
-            Self::Fifo { priority } | Self::RoundRobin { priority } => {
-                sched_param { sched_priority: *priority as i32 }
-            }
-        }
+    pub fn store(&self, state: StopState, ordering: Ordering) {
+        self.inner.store(state as u8, ordering)
     }
 }
 
-pub fn min_priority_for_sched_policy(policy: u32) -> Result<i32, Errno> {
-    match policy {
-        SCHED_NORMAL | SCHED_BATCH | SCHED_IDLE | SCHED_DEADLINE => Ok(0),
-        SCHED_FIFO | SCHED_RR => Ok(1),
-        _ => error!(EINVAL),
+/// This enum describes the state that a task or thread group can be in when being stopped.
+/// The names are taken from ptrace(2).
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(u8)]
+pub enum StopState {
+    /// In this state, the process has been told to wake up, but has not yet been woken.
+    /// Individual threads may still be stopped.
+    Waking,
+    /// In this state, at least one thread is awake.
+    Awake,
+    /// Same as the above, but you are not allowed to make further transitions.  Used
+    /// to kill the task / group.  These names are not in ptrace(2).
+    ForceWaking,
+    ForceAwake,
+
+    /// In this state, the process has been told to stop via a signal, but has not yet stopped.
+    GroupStopping,
+    /// In this state, at least one thread of the process has stopped
+    GroupStopped,
+    /// In this state, the task has received a signal, and it is being traced, so it will
+    /// stop at the next opportunity.
+    SignalDeliveryStopping,
+    /// Same as the last one, but has stopped.
+    SignalDeliveryStopped,
+    /// Stop for a ptrace event: a variety of events defined by ptrace and
+    /// enabled with the use of various ptrace features, such as the
+    /// PTRACE_O_TRACE_* options.  The parameter indicates the type of
+    /// event. Examples include PTRACE_EVENT_FORK (the event is a fork),
+    /// PTRACE_EVENT_EXEC (the event is exec), and other similar events.
+    PtraceEventStopping,
+    /// Same as the last one, but has stopped
+    PtraceEventStopped,
+    /// In this state, we have stopped before executing a syscall
+    SyscallEnterStopping,
+    SyscallEnterStopped,
+    /// In this state, we have stopped after executing a syscall
+    SyscallExitStopping,
+    SyscallExitStopped,
+    // TODO: Other states.
+}
+
+impl StopState {
+    /// This means a stop is either in progress or we've stopped.
+    pub fn is_stopping_or_stopped(&self) -> bool {
+        self.is_stopped() || self.is_stopping()
+    }
+
+    /// This means a stop is in progress.  Refers to any stop state ending in "ing".
+    pub fn is_stopping(&self) -> bool {
+        match *self {
+            StopState::GroupStopping
+            | StopState::SignalDeliveryStopping
+            | StopState::PtraceEventStopping
+            | StopState::SyscallEnterStopping
+            | StopState::SyscallExitStopping => true,
+            _ => false,
+        }
+    }
+
+    /// This means task is stopped.
+    pub fn is_stopped(&self) -> bool {
+        match *self {
+            StopState::GroupStopped
+            | StopState::SignalDeliveryStopped
+            | StopState::PtraceEventStopped
+            | StopState::SyscallEnterStopped
+            | StopState::SyscallExitStopped => true,
+            _ => false,
+        }
+    }
+
+    /// Returns the "ed" version of this StopState, if it is "ing".
+    pub fn finalize(&self) -> Result<StopState, ()> {
+        match *self {
+            StopState::GroupStopping => Ok(StopState::GroupStopped),
+            StopState::SignalDeliveryStopping => Ok(StopState::SignalDeliveryStopped),
+            StopState::PtraceEventStopping => Ok(StopState::PtraceEventStopped),
+            StopState::Waking => Ok(StopState::Awake),
+            StopState::ForceWaking => Ok(StopState::ForceAwake),
+            StopState::SyscallEnterStopping => Ok(StopState::SyscallEnterStopped),
+            StopState::SyscallExitStopping => Ok(StopState::SyscallExitStopped),
+            _ => Err(()),
+        }
+    }
+
+    pub fn is_downgrade(&self, new_state: &StopState) -> bool {
+        match *self {
+            StopState::GroupStopped => *new_state == StopState::GroupStopping,
+            StopState::SignalDeliveryStopped => *new_state == StopState::SignalDeliveryStopping,
+            StopState::PtraceEventStopped => *new_state == StopState::PtraceEventStopping,
+            StopState::SyscallEnterStopped => *new_state == StopState::SyscallEnterStopping,
+            StopState::SyscallExitStopped => *new_state == StopState::SyscallExitStopping,
+            StopState::Awake => *new_state == StopState::Waking,
+            _ => false,
+        }
+    }
+
+    pub fn is_waking_or_awake(&self) -> bool {
+        *self == StopState::Waking
+            || *self == StopState::Awake
+            || *self == StopState::ForceWaking
+            || *self == StopState::ForceAwake
+    }
+
+    /// Indicate if the transition to the stopped / awake state is not finished.  This
+    /// function is typically used to determine when it is time to notify waiters.
+    pub fn is_in_progress(&self) -> bool {
+        *self == StopState::Waking
+            || *self == StopState::ForceWaking
+            || *self == StopState::GroupStopping
+            || *self == StopState::SignalDeliveryStopping
+            || *self == StopState::PtraceEventStopping
+            || *self == StopState::SyscallEnterStopping
+            || *self == StopState::SyscallExitStopping
+    }
+
+    pub fn ptrace_only(&self) -> bool {
+        !self.is_waking_or_awake()
+            && *self != StopState::GroupStopped
+            && *self != StopState::GroupStopping
+    }
+
+    pub fn is_illegal_transition(&self, new_state: StopState) -> bool {
+        *self == StopState::ForceAwake
+            || (*self == StopState::ForceWaking && new_state != StopState::ForceAwake)
+            || new_state == *self
+            || self.is_downgrade(&new_state)
+    }
+
+    pub fn is_force(&self) -> bool {
+        *self == StopState::ForceAwake || *self == StopState::ForceWaking
     }
 }
 
-pub fn max_priority_for_sched_policy(policy: u32) -> Result<i32, Errno> {
-    match policy {
-        SCHED_NORMAL | SCHED_BATCH | SCHED_IDLE | SCHED_DEADLINE => Ok(0),
-        SCHED_FIFO | SCHED_RR => Ok(99),
-        _ => error!(EINVAL),
+bitflags! {
+    pub struct TaskFlags: u8 {
+        const EXITED = 0x1;
+        const SIGNALS_AVAILABLE = 0x2;
+        const TEMPORARY_SIGNAL_MASK = 0x4;
+        /// Whether the executor should dump the stack of this task when it exits.
+        /// Currently used to implement ExitStatus::CoreDump.
+        const DUMP_ON_EXIT = 0x8;
+    }
+}
+
+pub struct AtomicTaskFlags {
+    flags: AtomicU8,
+}
+
+impl AtomicTaskFlags {
+    fn new(flags: TaskFlags) -> Self {
+        Self { flags: AtomicU8::new(flags.bits()) }
+    }
+
+    fn load(&self, ordering: Ordering) -> TaskFlags {
+        let flags = self.flags.load(ordering);
+        // SAFETY: We only ever store values from a `TaskFlags`.
+        unsafe { TaskFlags::from_bits_unchecked(flags) }
+    }
+
+    fn swap(&self, flags: TaskFlags, ordering: Ordering) -> TaskFlags {
+        let flags = self.flags.swap(flags.bits(), ordering);
+        // SAFETY: We only ever store values from a `TaskFlags`.
+        unsafe { TaskFlags::from_bits_unchecked(flags) }
     }
 }
 
@@ -243,18 +307,7 @@ pub struct TaskMutableState {
     pub signals: SignalState,
 
     /// The exit status that this task exited with.
-    pub exit_status: Option<ExitStatus>,
-
-    /// Whether the executor should dump the stack of this task when it exits. Currently used to
-    /// implement ExitStatus::CoreDump.
-    pub dump_on_exit: bool,
-
-    /// The priority of the current task, a value between 1 and 40 (inclusive). Higher value means
-    /// higher priority. Defaults to 20.
-    ///
-    /// In POSIX, priority is a per-process setting, but in Linux it is per-thread.
-    /// See https://man7.org/linux/man-pages/man2/setpriority.2.html#BUGS
-    pub priority: u8,
+    exit_status: Option<ExitStatus>,
 
     /// Desired scheduler policy for the task.
     pub scheduler_policy: SchedulerPolicy,
@@ -294,14 +347,18 @@ pub struct TaskMutableState {
     /// Timers may expire up to `timerslack_ns` late, but never early.
     ///
     /// If this value is 0, the task's default timerslack is used.
-    timerslack_ns: u64,
+    pub timerslack_ns: u64,
 
     /// The default value for `timerslack_ns`. This value cannot change during the lifetime of a
     /// task.
     ///
     /// This value is set to the `timerslack_ns` of the creating thread, and thus is not constant
     /// across tasks.
-    default_timerslack_ns: u64,
+    pub default_timerslack_ns: u64,
+
+    /// Information that a tracer needs to communicate with this process, if it
+    /// is being traced.
+    pub ptrace: Option<PtraceState>,
 }
 
 impl TaskMutableState {
@@ -329,14 +386,131 @@ impl TaskMutableState {
             self.timerslack_ns = ns;
         }
     }
+
+    pub fn set_ptrace(&mut self, tracer: Option<PtraceState>) -> Result<(), Errno> {
+        if tracer.is_some() && self.ptrace.is_some() {
+            return Err(errno!(EPERM));
+        }
+        self.ptrace = tracer;
+        Ok(())
+    }
+
+    pub fn is_ptraced(&self) -> bool {
+        self.ptrace.is_some()
+    }
+
+    pub fn is_ptrace_listening(&self) -> bool {
+        self.ptrace.as_ref().map_or(false, |ptrace| ptrace.stop_status == PtraceStatus::Listening)
+    }
+
+    pub fn ptrace_on_signal_consume(&mut self) -> bool {
+        self.ptrace.as_mut().map_or(false, |ptrace: &mut PtraceState| {
+            if ptrace.stop_status.is_continuing() {
+                ptrace.stop_status = PtraceStatus::Default;
+                false
+            } else {
+                true
+            }
+        })
+    }
+
+    pub fn notify_ptracers(&mut self) {
+        if let Some(ptrace) = &self.ptrace {
+            ptrace.tracer_waiters.notify_all();
+        }
+    }
+
+    pub fn wait_on_ptracer(&self, waiter: &Waiter) {
+        if let Some(ptrace) = &self.ptrace {
+            ptrace.tracee_waiters.wait_async(&waiter);
+        }
+    }
+
+    pub fn notify_ptracees(&mut self) {
+        if let Some(ptrace) = &self.ptrace {
+            ptrace.tracee_waiters.notify_all();
+        }
+    }
 }
 
-pub enum ExceptionResult {
-    /// The exception was handled and no further action is required.
-    Handled,
+#[apply(state_implementation!)]
+impl TaskMutableState<Base = Task> {
+    pub fn set_stopped(
+        &mut self,
+        stopped: StopState,
+        siginfo: Option<SignalInfo>,
+        current_task: Option<&CurrentTask>,
+    ) {
+        if stopped.ptrace_only() && self.ptrace.is_none() {
+            return;
+        }
 
-    // The exception generated a signal that should be delivered.
-    Signal(SignalInfo),
+        if self.base.load_stopped().is_illegal_transition(stopped) {
+            return;
+        }
+
+        // TODO(https://g-issues.fuchsia.dev/issues/306438676): When task can be
+        // stopped inside user code, task will need to be either restarted or
+        // stopped here.
+        self.store_stopped(stopped);
+        if let Some(ref mut ptrace) = &mut self.ptrace {
+            if stopped.is_stopped() {
+                if let Some(ref current_task) = current_task {
+                    ptrace.copy_state_from(current_task);
+                }
+            } else {
+                ptrace.clear_state();
+            }
+            ptrace.set_last_signal(siginfo);
+        }
+        if stopped == StopState::Waking || stopped == StopState::ForceWaking {
+            self.notify_ptracees();
+        }
+        if !stopped.is_in_progress() {
+            self.notify_ptracers();
+        }
+    }
+
+    pub fn can_accept_ptrace_commands(&mut self) -> bool {
+        !self.base.load_stopped().is_waking_or_awake()
+            && self.is_ptraced()
+            && !self.is_ptrace_listening()
+    }
+
+    fn store_stopped(&mut self, state: StopState) {
+        // We don't actually use the guard but we require it to enforce that the
+        // caller holds the thread group's mutable state lock (identified by
+        // mutable access to the thread group's mutable state).
+
+        self.base.stop_state.store(state, Ordering::Relaxed)
+    }
+
+    pub fn update_flags(&mut self, clear: TaskFlags, set: TaskFlags) {
+        // We don't actually use the guard but we require it to enforce that the
+        // caller holds the task's mutable state lock (identified by mutable
+        // access to the task's mutable state).
+
+        debug_assert_eq!(clear ^ set, clear | set);
+        let observed = self.base.flags();
+        let swapped = self.base.flags.swap((observed | set) & !clear, Ordering::Relaxed);
+        debug_assert_eq!(swapped, observed);
+    }
+
+    pub fn set_flags(&mut self, flag: TaskFlags, v: bool) {
+        let (clear, set) = if v { (TaskFlags::empty(), flag) } else { (flag, TaskFlags::empty()) };
+
+        self.update_flags(clear, set);
+    }
+
+    pub fn set_exit_status(&mut self, status: ExitStatus) {
+        self.set_flags(TaskFlags::EXITED, true);
+        self.exit_status = Some(status);
+    }
+
+    pub fn set_exit_status_if_not_already(&mut self, status: ExitStatus) {
+        self.set_flags(TaskFlags::EXITED, true);
+        self.exit_status.get_or_insert(status);
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -416,6 +590,10 @@ impl TaskPersistentInfoState {
         &self.creds
     }
 
+    pub fn creds_mut(&mut self) -> &mut Credentials {
+        &mut self.creds
+    }
+
     pub fn exit_signal(&self) -> &Option<Signal> {
         &self.exit_signal
     }
@@ -472,18 +650,26 @@ pub struct Task {
     pub files: FdTable,
 
     /// The memory manager for this task.
-    pub mm: Arc<MemoryManager>,
+    mm: Option<Arc<MemoryManager>>,
 
     /// The file system for this task.
-    ///
-    /// The only case when this is not set is for the initial task while the FsContext is built.
-    fs: OnceCell<Arc<FsContext>>,
+    fs: Option<Arc<FsContext>>,
 
     /// The namespace for abstract AF_UNIX sockets for this task.
     pub abstract_socket_namespace: Arc<AbstractUnixSocketNamespace>,
 
     /// The namespace for AF_VSOCK for this task.
     pub abstract_vsock_namespace: Arc<AbstractVsockSocketNamespace>,
+
+    /// The stop state of the task, distinct from the stop state of the thread group.
+    ///
+    /// Must only be set when the `mutable_state` write lock is held.
+    stop_state: AtomicStopState,
+
+    /// The flags for the task.
+    ///
+    /// Must only be set the then `mutable_state` write lock is held.
+    flags: AtomicTaskFlags,
 
     /// The mutable state of the Task.
     mutable_state: RwLock<TaskMutableState>,
@@ -502,6 +688,12 @@ pub struct Task {
     /// Variable that can tell you whether there are currently seccomp
     /// filters without holding a lock
     pub seccomp_filter_state: SeccompState,
+
+    /// Used to ensure that all logs related to this task carry the same metadata about the task.
+    logging_span: OnceCell<starnix_logging::Span>,
+
+    /// Tell you whether you are tracing syscall entry / exit without a lock.
+    pub trace_syscalls: AtomicBool,
 }
 
 /// The decoded cross-platform parts we care about for page fault exception reports.
@@ -512,6 +704,80 @@ pub struct PageFaultExceptionReport {
 }
 
 impl Task {
+    pub fn kernel(&self) -> &Arc<Kernel> {
+        &self.thread_group.kernel
+    }
+
+    pub fn has_same_address_space(&self, other: &Self) -> bool {
+        Arc::ptr_eq(self.mm(), other.mm())
+    }
+
+    pub fn flags(&self) -> TaskFlags {
+        self.flags.load(Ordering::Relaxed)
+    }
+
+    /// When the task exits, if there is a notification that needs to propagate
+    /// to a ptracer, make sure it will propagate.
+    pub fn set_ptrace_zombie(&self) {
+        let pids = self.thread_group.kernel.pids.write();
+        let (pgid, ppid) = {
+            let group_state = self.thread_group.read();
+            (
+                group_state.process_group.leader,
+                group_state.parent.as_ref().map_or(0, |parent| parent.leader),
+            )
+        };
+        let mut state = self.write();
+        state.set_stopped(StopState::ForceAwake, None, None);
+        if let Some(ref mut ptrace) = &mut state.ptrace {
+            // Add a zombie that the ptracer will notice.
+            ptrace.last_signal_waitable = true;
+            let tracer_pid = ptrace.pid;
+            if tracer_pid == ppid {
+                // The tracer is the parent, and will get notified of this
+                // task's exit without this extra work.
+                return;
+            }
+            let weak_init = pids.get_task(tracer_pid);
+            if let Some(tracer_task) = weak_init.upgrade() {
+                drop(state);
+                let mut tracer_state = tracer_task.thread_group.write();
+
+                let exit_status = self.exit_status().unwrap_or_else(|| {
+                    starnix_logging::log_error!("Exiting without an exit code.");
+                    ExitStatus::Exit(u8::MAX)
+                });
+                let (uid, exit_signal) = {
+                    let persistent_state = self.persistent_info.lock();
+                    (persistent_state.creds().uid, persistent_state.exit_signal().clone())
+                };
+                let exit_info = ProcessExitInfo { status: exit_status, exit_signal };
+                let zombie = OwnedRef::new(ZombieProcess {
+                    pid: self.id,
+                    pgid,
+                    uid,
+                    exit_info: exit_info.clone(),
+                    // ptrace doesn't need this.
+                    time_stats: TaskTimeStats::default(),
+                    is_canonical: false,
+                });
+                tracer_state.zombie_ptracees.push(zombie);
+            };
+        }
+    }
+
+    pub fn exit_status(&self) -> Option<ExitStatus> {
+        self.is_exitted().then(|| self.read().exit_status.clone()).flatten()
+    }
+
+    pub fn is_exitted(&self) -> bool {
+        self.flags().contains(TaskFlags::EXITED)
+    }
+
+    pub fn load_stopped(&self) -> StopState {
+        self.stop_state.load(Ordering::Relaxed)
+    }
+
     /// Upgrade a Reference to a Task, returning a ESRCH errno if the reference cannot be borrowed.
     pub fn from_weak(weak: &WeakRef<Task>) -> Result<TempRef<'_, Task>, Errno> {
         weak.upgrade().ok_or_else(|| errno!(ESRCH))
@@ -524,7 +790,7 @@ impl Task {
     /// with fork, are initialized to their defaults inside this function. All other fields are
     /// passed as parameters.
     #[allow(clippy::let_and_return)]
-    fn new(
+    pub fn new(
         id: pid_t,
         command: CString,
         thread_group: Arc<ThreadGroup>,
@@ -533,14 +799,14 @@ impl Task {
         mm: Arc<MemoryManager>,
         // The only case where fs should be None if when building the initial task that is the
         // used to build the initial FsContext.
-        fs: Option<Arc<FsContext>>,
+        fs: Arc<FsContext>,
         creds: Credentials,
         abstract_socket_namespace: Arc<AbstractUnixSocketNamespace>,
         abstract_vsock_namespace: Arc<AbstractVsockSocketNamespace>,
         exit_signal: Option<Signal>,
         signal_mask: SigSet,
         vfork_event: Option<Arc<zx::Event>>,
-        priority: u8,
+        scheduler_policy: SchedulerPolicy,
         uts_ns: UtsNamespaceHandle,
         no_new_privs: bool,
         seccomp_filter_state: SeccompState,
@@ -548,31 +814,24 @@ impl Task {
         robust_list_head: UserRef<robust_list_head>,
         timerslack_ns: u64,
     ) -> Self {
-        let fs = {
-            let result = OnceCell::new();
-            if let Some(fs) = fs {
-                result.get_or_init(|| fs);
-            }
-            result
-        };
         let pid = thread_group.leader;
         let task = Task {
             id,
             thread_group,
             thread: RwLock::new(thread),
             files,
-            mm,
-            fs,
+            mm: Some(mm),
+            fs: Some(fs),
             abstract_socket_namespace,
             abstract_vsock_namespace,
             vfork_event,
+            stop_state: AtomicStopState::new(StopState::Awake),
+            flags: AtomicTaskFlags::new(TaskFlags::empty()),
             mutable_state: RwLock::new(TaskMutableState {
                 clear_child_tid: UserRef::default(),
                 signals: SignalState::with_mask(signal_mask),
                 exit_status: None,
-                dump_on_exit: false,
-                priority,
-                scheduler_policy: Default::default(),
+                scheduler_policy,
                 uts_ns,
                 no_new_privs,
                 oom_score_adj: Default::default(),
@@ -581,9 +840,12 @@ impl Task {
                 timerslack_ns,
                 // The default timerslack is set to the current timerslack of the creating thread.
                 default_timerslack_ns: timerslack_ns,
+                ptrace: None,
             }),
             persistent_info: TaskPersistentInfoState::new(id, pid, command, creds, exit_signal),
             seccomp_filter_state,
+            logging_span: OnceCell::new(),
+            trace_syscalls: AtomicBool::new(false),
         };
         #[cfg(any(test, debug_assertions))]
         {
@@ -593,15 +855,7 @@ impl Task {
         task
     }
 
-    /// Access mutable state with a read lock.
-    pub fn read(&self) -> RwLockReadGuard<'_, TaskMutableState> {
-        self.mutable_state.read()
-    }
-
-    /// Access mutable state with a write lock.
-    pub fn write(&self) -> RwLockWriteGuard<'_, TaskMutableState> {
-        self.mutable_state.write()
-    }
+    state_accessor!(Task, mutable_state);
 
     pub fn add_file(&self, file: FileHandle, flags: FdFlags) -> Result<FdNumber, Errno> {
         self.files.add_with_flags(self, file, flags)
@@ -620,19 +874,66 @@ impl Task {
     }
 
     pub fn fs(&self) -> &Arc<FsContext> {
-        self.fs.get().unwrap()
+        self.fs.as_ref().expect("fs must be set")
     }
 
-    pub fn set_fs(&self, fs: Arc<FsContext>) {
-        self.fs.set(fs).map_err(|_| "Cannot set fs multiple times").unwrap();
+    pub fn mm(&self) -> &Arc<MemoryManager> {
+        self.mm.as_ref().expect("mm must be set")
+    }
+
+    /// Overwrite the existing scheduler policy with a new one and update the task's thread's role.
+    pub fn set_scheduler_policy(&self, policy: SchedulerPolicy) -> Result<(), Errno> {
+        self.update_sched_policy_then_role(|sched_policy| *sched_policy = policy)
+    }
+
+    /// Update the nice value of the scheduler policy and update the task's thread's role.
+    pub fn update_scheduler_nice(&self, raw_priority: u8) -> Result<(), Errno> {
+        self.update_sched_policy_then_role(|sched_policy| sched_policy.set_raw_nice(raw_priority))
+    }
+
+    /// Update the task's thread's role based on its current scheduler policy without making any
+    /// changes to the policy.
+    ///
+    /// This should be called on tasks that have newly created threads, e.g. after cloning.
+    pub fn sync_scheduler_policy_to_role(&self) -> Result<(), Errno> {
+        self.update_sched_policy_then_role(|_| {})
+    }
+
+    fn update_sched_policy_then_role(
+        &self,
+        updater: impl FnOnce(&mut SchedulerPolicy),
+    ) -> Result<(), Errno> {
+        profile_duration!("UpdateTaskThreadRole");
+        let new_scheduler_policy = {
+            // Hold the task state lock as briefly as possible, it's not needed to update the role.
+            let mut state = self.write();
+            updater(&mut state.scheduler_policy);
+            state.scheduler_policy
+        };
+
+        let Some(profile_provider) = &self.thread_group.kernel.profile_provider else {
+            log_debug!("thread role update requested in kernel without ProfileProvider, skipping");
+            return Ok(());
+        };
+        let thread = self.thread.read();
+        let Some(thread) = thread.as_ref() else {
+            log_debug!("thread role update requested for task without thread, skipping");
+            return Ok(());
+        };
+        set_thread_role(profile_provider, thread, new_scheduler_policy)?;
+        Ok(())
     }
 
     // See "Ptrace access mode checking" in https://man7.org/linux/man-pages/man2/ptrace.2.html
-    pub fn check_ptrace_access_mode(
+    pub fn check_ptrace_access_mode<L>(
         &self,
+        locked: &mut Locked<'_, L>,
         mode: PtraceAccessMode,
         target: &Task,
-    ) -> Result<(), Errno> {
+    ) -> Result<(), Errno>
+    where
+        L: LockBefore<MmDumpable>,
+    {
         // (1)  If the calling thread and the target thread are in the same
         //      thread group, access is always allowed.
         if self.thread_group.leader == target.thread_group.leader {
@@ -671,7 +972,7 @@ impl Task {
         //         namespace of the target.
         let target_creds = target.creds();
         if !creds.has_capability(CAP_SYS_PTRACE)
-            || !(target_creds.uid == uid
+            && !(target_creds.uid == uid
                 && target_creds.euid == uid
                 && target_creds.saved_uid == uid
                 && target_creds.gid == gid
@@ -686,7 +987,7 @@ impl Task {
         //      PR_SET_DUMPABLE in prctl(2)), and the caller does not have
         //      the CAP_SYS_PTRACE capability in the user namespace of the
         //      target process.
-        let dumpable = *target.mm.dumpable.lock();
+        let dumpable = *target.mm().dumpable.lock(locked);
         if dumpable != DumpPolicy::User && !creds.has_capability(CAP_SYS_PTRACE) {
             return error!(EPERM);
         }
@@ -699,413 +1000,6 @@ impl Task {
         // (6)  If access has not been denied by any of the preceding steps,
         //      then access is allowed.
         Ok(())
-    }
-
-    pub fn create_init_child_process(
-        kernel: &Arc<Kernel>,
-        binary_path: &CString,
-    ) -> Result<CurrentTask, Errno> {
-        let weak_init = kernel.pids.read().get_task(1);
-        let init_task = weak_init.upgrade().ok_or_else(|| errno!(EINVAL))?;
-        let task = Self::create_process_without_parent(
-            kernel,
-            binary_path.clone(),
-            Some(init_task.fs().fork()),
-        )?;
-        {
-            let mut init_writer = init_task.thread_group.write();
-            let mut new_process_writer = task.thread_group.write();
-            new_process_writer.parent = Some(init_task.thread_group.clone());
-            init_writer.children.insert(task.id, Arc::downgrade(&task.thread_group));
-        }
-        Ok(task)
-    }
-
-    /// Create a task that is the leader of a new thread group.
-    ///
-    /// This function creates an underlying Zircon process to host the new
-    /// task.
-    ///
-    /// `fs` should only be None for the init task, and set_fs should be called as soon as the
-    /// FsContext is build.
-    pub fn create_process_without_parent(
-        kernel: &Arc<Kernel>,
-        initial_name: CString,
-        fs: Option<Arc<FsContext>>,
-    ) -> Result<CurrentTask, Errno> {
-        let initial_name_bytes = initial_name.as_bytes().to_owned();
-        Self::create_task(kernel, initial_name, fs, |pid, process_group| {
-            create_zircon_process(
-                kernel,
-                None,
-                pid,
-                process_group,
-                SignalActions::default(),
-                &initial_name_bytes,
-            )
-        })
-    }
-
-    /// Create a task that runs inside the kernel.
-    ///
-    /// There is no underlying Zircon process to host the task.
-    pub fn create_kernel_task(
-        kernel: &Arc<Kernel>,
-        initial_name: CString,
-        fs: Arc<FsContext>,
-    ) -> Result<CurrentTask, Errno> {
-        Self::create_task(kernel, initial_name, Some(fs), |pid, process_group| {
-            let process = zx::Process::from(zx::Handle::invalid());
-            let memory_manager = Arc::new(MemoryManager::new_empty());
-            let thread_group = ThreadGroup::new(
-                kernel.clone(),
-                process,
-                None,
-                pid,
-                process_group,
-                SignalActions::default(),
-            );
-            Ok(TaskInfo { thread: None, thread_group, memory_manager })
-        })
-    }
-
-    fn create_task<F>(
-        kernel: &Arc<Kernel>,
-        initial_name: CString,
-        root_fs: Option<Arc<FsContext>>,
-        task_info_factory: F,
-    ) -> Result<CurrentTask, Errno>
-    where
-        F: FnOnce(i32, Arc<ProcessGroup>) -> Result<TaskInfo, Errno>,
-    {
-        let mut pids = kernel.pids.write();
-        let pid = pids.allocate_pid();
-
-        let process_group = ProcessGroup::new(pid, None);
-        pids.add_process_group(&process_group);
-
-        let TaskInfo { thread, thread_group, memory_manager } =
-            task_info_factory(pid, process_group.clone())?;
-
-        process_group.insert(&thread_group);
-
-        // > The timer slack values of init (PID 1), the ancestor of all processes, are 50,000
-        // > nanoseconds (50 microseconds).  The timer slack value is inherited by a child created
-        // > via fork(2), and is preserved across execve(2).
-        // https://man7.org/linux/man-pages/man2/prctl.2.html
-        let default_timerslack = 50_000;
-        let current_task = CurrentTask::new(Self::new(
-            pid,
-            initial_name,
-            thread_group,
-            thread,
-            FdTable::default(),
-            memory_manager,
-            root_fs,
-            Credentials::root(),
-            Arc::clone(&kernel.default_abstract_socket_namespace),
-            Arc::clone(&kernel.default_abstract_vsock_namespace),
-            None,
-            Default::default(),
-            None,
-            DEFAULT_TASK_PRIORITY,
-            kernel.root_uts_ns.clone(),
-            false,
-            SeccompState::default(),
-            SeccompFilterContainer::default(),
-            UserAddress::NULL.into(),
-            default_timerslack,
-        ));
-        release_on_error!(current_task, &(), {
-            let temp_task = current_task.temp_task();
-            current_task.thread_group.add(&temp_task)?;
-
-            pids.add_task(&temp_task);
-            pids.add_thread_group(&current_task.thread_group);
-            Ok(())
-        });
-        Ok(current_task)
-    }
-
-    /// Create a kernel task in the same ThreadGroup as the given `system_task`.
-    ///
-    /// There is no underlying Zircon thread to host the task.
-    pub fn create_kernel_thread(
-        system_task: &CurrentTask,
-        initial_name: CString,
-    ) -> Result<CurrentTask, Errno> {
-        let mut pids = system_task.kernel().pids.write();
-        let pid = pids.allocate_pid();
-
-        let priority;
-        let uts_ns;
-        let default_timerslack_ns;
-        {
-            let state = system_task.read();
-            priority = state.priority;
-            uts_ns = state.uts_ns.clone();
-            default_timerslack_ns = state.default_timerslack_ns;
-        }
-
-        let current_task = CurrentTask::new(Self::new(
-            pid,
-            initial_name,
-            Arc::clone(&system_task.thread_group),
-            None,
-            FdTable::default(),
-            Arc::clone(&system_task.mm),
-            Some(Arc::clone(system_task.fs())),
-            system_task.creds(),
-            Arc::clone(&system_task.abstract_socket_namespace),
-            Arc::clone(&system_task.abstract_vsock_namespace),
-            None,
-            Default::default(),
-            None,
-            priority,
-            uts_ns,
-            false,
-            SeccompState::default(),
-            SeccompFilterContainer::default(),
-            UserAddress::NULL.into(),
-            default_timerslack_ns,
-        ));
-        release_on_error!(current_task, &(), {
-            let temp_task = current_task.temp_task();
-            current_task.thread_group.add(&temp_task)?;
-            pids.add_task(&temp_task);
-            Ok(())
-        });
-        Ok(current_task)
-    }
-
-    /// Clone this task.
-    ///
-    /// Creates a new task object that shares some state with this task
-    /// according to the given flags.
-    ///
-    /// Used by the clone() syscall to create both processes and threads.
-    ///
-    /// The exit signal is broken out from the flags parameter like clone3() rather than being
-    /// bitwise-ORed like clone().
-    pub fn clone_task(
-        &self,
-        flags: u64,
-        child_exit_signal: Option<Signal>,
-        user_parent_tid: UserRef<pid_t>,
-        user_child_tid: UserRef<pid_t>,
-    ) -> Result<CurrentTask, Errno> {
-        // TODO: Implement more flags.
-        const IMPLEMENTED_FLAGS: u64 = (CLONE_VM
-            | CLONE_FS
-            | CLONE_FILES
-            | CLONE_SIGHAND
-            | CLONE_THREAD
-            | CLONE_SYSVSEM
-            | CLONE_SETTLS
-            | CLONE_PARENT_SETTID
-            | CLONE_CHILD_CLEARTID
-            | CLONE_CHILD_SETTID
-            | CLONE_VFORK) as u64;
-        // A mask with all valid flags set, because we want to return a different error code for an
-        // invalid flag vs an unimplemented flag. Subtracting 1 from the largest valid flag gives a
-        // mask with all flags below it set. Shift up by one to make sure the largest flag is also
-        // set.
-        const VALID_FLAGS: u64 = (CLONE_INTO_CGROUP << 1) - 1;
-
-        // CLONE_SETTLS is implemented by sys_clone.
-
-        let clone_thread = flags & (CLONE_THREAD as u64) != 0;
-        let clone_vm = flags & (CLONE_VM as u64) != 0;
-        let clone_sighand = flags & (CLONE_SIGHAND as u64) != 0;
-        let clone_vfork = flags & (CLONE_VFORK as u64) != 0;
-
-        let new_uts = flags & (CLONE_NEWUTS as u64) != 0;
-
-        if clone_sighand && !clone_vm {
-            return error!(EINVAL);
-        }
-        if clone_thread && !clone_sighand {
-            return error!(EINVAL);
-        }
-        if flags & !VALID_FLAGS != 0 {
-            return error!(EINVAL);
-        }
-
-        if clone_vm && !clone_thread {
-            // TODO(fxbug.dev/114813) Implement CLONE_VM for child processes (not just child
-            // threads). Currently this executes CLONE_VM (explicitly passed to clone() or as
-            // used by vfork()) as a fork (the VM in the child is copy-on-write) which is almost
-            // always OK.
-            //
-            // CLONE_VM is primarily as an optimization to avoid making a copy-on-write version of a
-            // process' VM that will be immediately replaced with a call to exec(). The main users
-            // (libc and language runtimes) don't actually rely on the memory being shared between
-            // the two processes. And the vfork() man page explicitly allows vfork() to be
-            // implemented as fork() which is what we do here.
-            if !clone_vfork {
-                log_warn!("CLONE_VM set without CLONE_THREAD. Ignoring CLONE_VM (doing a fork).");
-            }
-        } else if clone_thread && !clone_vm {
-            not_implemented!("CLONE_THREAD without CLONE_VM is not implemented");
-            return error!(ENOSYS);
-        }
-
-        if flags & !IMPLEMENTED_FLAGS != 0 {
-            not_implemented!("clone does not implement flags: 0x{:x}", flags & !IMPLEMENTED_FLAGS);
-            return error!(ENOSYS);
-        }
-
-        let fs = if flags & (CLONE_FS as u64) != 0 { self.fs().clone() } else { self.fs().fork() };
-        let files =
-            if flags & (CLONE_FILES as u64) != 0 { self.files.clone() } else { self.files.fork() };
-
-        let kernel = &self.thread_group.kernel;
-        let mut pids = kernel.pids.write();
-
-        let pid;
-        let command;
-        let creds;
-        let priority;
-        let uts_ns;
-        let no_new_privs;
-        let seccomp_filters;
-        let robust_list_head = UserAddress::NULL.into();
-        let child_signal_mask;
-        let timerslack_ns;
-
-        let TaskInfo { thread, thread_group, memory_manager } = {
-            // Make sure to drop these locks ASAP to avoid inversion
-            let thread_group_state = self.thread_group.write();
-            let state = self.read();
-
-            no_new_privs = state.no_new_privs;
-            seccomp_filters = state.seccomp_filters.clone();
-            child_signal_mask = state.signals.mask();
-
-            pid = pids.allocate_pid();
-            command = self.command();
-            creds = self.creds();
-            priority = state.priority;
-            timerslack_ns = state.timerslack_ns;
-
-            uts_ns = if new_uts {
-                if !self.creds().has_capability(CAP_SYS_ADMIN) {
-                    return error!(EPERM);
-                }
-
-                // Fork the UTS namespace of the existing task.
-                let new_uts_ns = state.uts_ns.read().clone();
-                Arc::new(RwLock::new(new_uts_ns))
-            } else {
-                // Inherit the UTS of the existing task.
-                state.uts_ns.clone()
-            };
-
-            if clone_thread {
-                let thread_group = self.thread_group.clone();
-                let memory_manager = self.mm.clone();
-                TaskInfo { thread: None, thread_group, memory_manager }
-            } else {
-                // Drop the lock on this task before entering `create_zircon_process`, because it will
-                // take a lock on the new thread group, and locks on thread groups have a higher
-                // priority than locks on the task in the thread group.
-                std::mem::drop(state);
-                let signal_actions = if clone_sighand {
-                    self.thread_group.signal_actions.clone()
-                } else {
-                    self.thread_group.signal_actions.fork()
-                };
-                let process_group = thread_group_state.process_group.clone();
-                create_zircon_process(
-                    kernel,
-                    Some(thread_group_state),
-                    pid,
-                    process_group,
-                    signal_actions,
-                    command.as_bytes(),
-                )?
-            }
-        };
-
-        // Only create the vfork event when the caller requested CLONE_VFORK.
-        let vfork_event = if flags & (CLONE_VFORK as u64) != 0 {
-            Some(Arc::new(zx::Event::create()))
-        } else {
-            None
-        };
-
-        let child = CurrentTask::new(Self::new(
-            pid,
-            command,
-            thread_group,
-            thread,
-            files,
-            memory_manager,
-            Some(fs),
-            creds,
-            self.abstract_socket_namespace.clone(),
-            self.abstract_vsock_namespace.clone(),
-            child_exit_signal,
-            child_signal_mask,
-            vfork_event,
-            priority,
-            uts_ns,
-            no_new_privs,
-            SeccompState::from(&self.seccomp_filter_state),
-            seccomp_filters,
-            robust_list_head,
-            timerslack_ns,
-        ));
-
-        release_on_error!(child, &(), {
-            let child_task = TempRef::from(&child.task);
-            // Drop the pids lock as soon as possible after creating the child. Destroying the child
-            // and removing it from the pids table itself requires the pids lock, so if an early exit
-            // takes place we have a self deadlock.
-            pids.add_task(&child_task);
-            if !clone_thread {
-                pids.add_thread_group(&child.thread_group);
-            }
-            std::mem::drop(pids);
-
-            // Child lock must be taken before this lock. Drop the lock on the task, take a writable
-            // lock on the child and take the current state back.
-
-            #[cfg(any(test, debug_assertions))]
-            {
-                // Take the lock on the thread group and its child in the correct order to ensure any wrong ordering
-                // will trigger the tracing-mutex at the right call site.
-                if !clone_thread {
-                    let _l1 = self.thread_group.read();
-                    let _l2 = child.thread_group.read();
-                }
-            }
-
-            if clone_thread {
-                self.thread_group.add(&child_task)?;
-            } else {
-                child.thread_group.add(&child_task)?;
-                let mut child_state = child.write();
-                let state = self.read();
-                child_state.signals.alt_stack = state.signals.alt_stack;
-                child_state.signals.set_mask(state.signals.mask());
-                self.mm.snapshot_to(&child.mm)?;
-            }
-
-            if flags & (CLONE_PARENT_SETTID as u64) != 0 {
-                self.mm.write_object(user_parent_tid, &child.id)?;
-            }
-
-            if flags & (CLONE_CHILD_CLEARTID as u64) != 0 {
-                child.write().clear_child_tid = user_child_tid;
-            }
-
-            if flags & (CLONE_CHILD_SETTID as u64) != 0 {
-                child.mm.write_object(user_child_tid, &child.id)?;
-            }
-            Ok(())
-        });
-        Ok(child)
     }
 
     /// Signals the vfork event, if any, to unblock waiters.
@@ -1129,28 +1023,6 @@ impl Task {
         Ok(())
     }
 
-    /// The flags indicates only the flags as in clone3(), and does not use the low 8 bits for the
-    /// exit signal as in clone().
-    #[cfg(test)]
-    pub fn clone_task_for_test(
-        &self,
-        flags: u64,
-        exit_signal: Option<Signal>,
-    ) -> crate::testing::AutoReleasableTask {
-        let result = self
-            .clone_task(flags, exit_signal, UserRef::default(), UserRef::default())
-            .expect("failed to create task in test");
-
-        // Take the lock on thread group and task in the correct order to ensure any wrong ordering
-        // will trigger the tracing-mutex at the right call site.
-        {
-            let _l1 = result.thread_group.read();
-            let _l2 = result.read();
-        }
-
-        result.into()
-    }
-
     /// If needed, clear the child tid for this task.
     ///
     /// Userspace can ask us to clear the child tid and issue a futex wake at
@@ -1158,13 +1030,13 @@ impl Task {
     /// uses this mechanism to implement pthread_join. The thread that calls
     /// pthread_join sleeps using FUTEX_WAIT on the child tid address. We wake
     /// them up here to let them know the thread is done.
-    fn clear_child_tid_if_needed(&self) -> Result<(), Errno> {
+    pub fn clear_child_tid_if_needed(&self) -> Result<(), Errno> {
         let mut state = self.write();
         let user_tid = state.clear_child_tid;
         if !user_tid.is_null() {
             let zero: pid_t = 0;
-            self.mm.write_object(user_tid, &zero)?;
-            self.thread_group.kernel.shared_futexes.wake(
+            self.mm().write_object(user_tid, &zero)?;
+            self.kernel().shared_futexes.wake(
                 self,
                 user_tid.addr(),
                 usize::MAX,
@@ -1176,7 +1048,7 @@ impl Task {
     }
 
     pub fn get_task(&self, pid: pid_t) -> WeakRef<Task> {
-        self.thread_group.kernel.pids.read().get_task(pid)
+        self.kernel().pids.read().get_task(pid)
     }
 
     pub fn get_pid(&self) -> pid_t {
@@ -1187,13 +1059,17 @@ impl Task {
         self.id
     }
 
+    pub fn is_leader(&self) -> bool {
+        self.get_pid() == self.get_tid()
+    }
+
     pub fn read_argv(&self) -> Result<Vec<FsString>, Errno> {
         let (argv_start, argv_end) = {
-            let mm_state = self.mm.state.read();
+            let mm_state = self.mm().state.read();
             (mm_state.argv_start, mm_state.argv_end)
         };
 
-        self.mm.read_nul_delimited_c_string_list(argv_start, argv_end - argv_start)
+        self.mm().read_nul_delimited_c_string_list(argv_start, argv_end - argv_start)
     }
 
     pub fn thread_runtime_info(&self) -> Result<zx::TaskRuntimeInfo, Errno> {
@@ -1214,7 +1090,7 @@ impl Task {
         self.creds().as_fscred()
     }
 
-    pub fn can_signal(&self, target: &Task, unchecked_signal: &UncheckedSignal) -> bool {
+    pub fn can_signal(&self, target: &Task, unchecked_signal: UncheckedSignal) -> bool {
         // If both the tasks share a thread group the signal can be sent. This is not documented
         // in kill(2) because kill does not support task-level granularity in signal sending.
         if self.thread_group == target.thread_group {
@@ -1260,17 +1136,25 @@ impl Task {
             set_zx_name(thread, name.as_bytes());
         }
         // If this is the thread group leader, use this name for the process too.
-        if self.get_pid() == self.get_tid() {
+        if self.is_leader() {
             set_zx_name(&self.thread_group.process, name.as_bytes());
         }
 
+        let debug_info = starnix_logging::TaskDebugInfo {
+            pid: self.thread_group.leader,
+            tid: self.id,
+            command: name,
+        };
+        self.update_logging_span(&debug_info);
+
         // Truncate to 16 bytes, including null byte.
-        let bytes = name.to_bytes();
+        let bytes = debug_info.command.to_bytes();
+
         self.persistent_info.lock().command = if bytes.len() > 15 {
             // SAFETY: Substring of a CString will contain no null bytes.
             CString::new(&bytes[..15]).unwrap()
         } else {
-            name
+            debug_info.command
         };
     }
 
@@ -1301,766 +1185,127 @@ impl Task {
             system_time: zx::Duration::default(),
         }
     }
+
+    pub fn logging_span(&self) -> starnix_logging::Span {
+        let logging_span = self.logging_span.get_or_init(|| {
+            starnix_logging::Span::new(&starnix_logging::TaskDebugInfo {
+                pid: self.thread_group.leader,
+                tid: self.id,
+                command: self.command(),
+            })
+        });
+        logging_span.clone()
+    }
+
+    fn update_logging_span(&self, debug_info: &starnix_logging::TaskDebugInfo) {
+        let logging_span =
+            self.logging_span.get_or_init(|| starnix_logging::Span::new(&debug_info));
+        logging_span.update(debug_info);
+    }
 }
 
 impl Releasable for Task {
-    type Context = CurrentTask;
+    type Context<'a> = ThreadState;
 
-    fn release(&self, current_task: &CurrentTask) {
-        self.thread_group.remove(self);
+    fn release(mut self, thread_state: ThreadState) {
+        self.thread_group.remove(&self);
+
+        // Disconnect from tracer, if one is present.
+        let ptracer_pid = self.mutable_state.get_mut().ptrace.as_ref().map(|ptrace| ptrace.pid);
+        if let Some(ptracer_pid) = ptracer_pid {
+            if let Some(ProcessEntryRef::Process(tg)) =
+                self.kernel().pids.read().get_process(ptracer_pid)
+            {
+                let pid = self.id;
+                tg.ptracees.lock().remove(&pid);
+            }
+            let _ = self.mutable_state.get_mut().set_ptrace(None);
+        }
 
         // Release the fd table.
-        self.files.release(current_task);
-
-        self.signal_vfork();
-    }
-}
-
-impl CurrentTask {
-    fn new(task: Task) -> CurrentTask {
-        CurrentTask {
-            task: OwnedRef::new(task),
-            registers: RegisterState::default(),
-            extended_pstate: ExtendedPstateState::default(),
-            syscall_restart_func: None,
-        }
-    }
-
-    pub fn kernel(&self) -> &Arc<Kernel> {
-        &self.thread_group.kernel
-    }
-
-    pub fn weak_task(&self) -> WeakRef<Task> {
-        WeakRef::from(&self.task)
-    }
-
-    pub fn temp_task(&self) -> TempRef<'_, Task> {
-        TempRef::from(&self.task)
-    }
-
-    pub fn set_syscall_restart_func<R: Into<SyscallResult>>(
-        &mut self,
-        f: impl FnOnce(&mut CurrentTask) -> Result<R, Errno> + Send + Sync + 'static,
-    ) {
-        self.syscall_restart_func = Some(Box::new(|current_task| Ok(f(current_task)?.into())));
-    }
-
-    /// Sets the task's signal mask to `signal_mask` and runs `wait_function`.
-    ///
-    /// Signals are dequeued prior to the original signal mask being restored. This is done by the
-    /// signal machinery in the syscall dispatch loop.
-    ///
-    /// The returned result is the result returned from the wait function.
-    pub fn wait_with_temporary_mask<F, T>(
-        &mut self,
-        signal_mask: SigSet,
-        wait_function: F,
-    ) -> Result<T, Errno>
-    where
-        F: FnOnce(&CurrentTask) -> Result<T, Errno>,
-    {
-        self.write().signals.set_temporary_mask(signal_mask);
-        wait_function(self)
-    }
-
-    /// Set the RunState for the current task to the given value and then call the given callback.
-    ///
-    /// When the callback is done, the run_state is restored to `RunState::Running`.
-    ///
-    /// This function is typically used just before blocking the current task on some operation.
-    /// The given `run_state` registers the mechasim for interrupting the blocking operation with
-    /// the task and the given `callback` actually blocks the task.
-    ///
-    /// This function can only be called in the `RunState::Running` state and cannot set the
-    /// run state to `RunState::Running`. For this reason, this function cannot be reentered.
-    pub fn run_in_state<F, T>(&self, run_state: RunState, callback: F) -> Result<T, Errno>
-    where
-        F: FnOnce() -> Result<T, Errno>,
-    {
-        assert_ne!(run_state, RunState::Running);
-
-        {
-            let mut state = self.write();
-            assert!(!state.signals.run_state.is_blocked());
-            if state.signals.is_any_pending() {
-                return error!(EINTR);
-            }
-            state.signals.run_state = run_state.clone();
-        }
-
-        let result = callback();
-
-        {
-            let mut state = self.write();
-            assert_eq!(
-                state.signals.run_state, run_state,
-                "SignalState run state changed while waiting!"
-            );
-            state.signals.run_state = RunState::Running;
-        };
-
-        result
-    }
-
-    /// Determine namespace node indicated by the dir_fd.
-    ///
-    /// Returns the namespace node and the path to use relative to that node.
-    pub fn resolve_dir_fd<'a>(
-        &self,
-        dir_fd: FdNumber,
-        mut path: &'a FsStr,
-    ) -> Result<(NamespaceNode, &'a FsStr), Errno> {
-        let dir = if !path.is_empty() && path[0] == b'/' {
-            path = &path[1..];
-            self.fs().root()
-        } else if dir_fd == FdNumber::AT_FDCWD {
-            self.fs().cwd()
-        } else {
-            let file = self.files.get(dir_fd)?;
-            file.name.clone()
-        };
-        if !path.is_empty() {
-            if !dir.entry.node.is_dir() {
-                return error!(ENOTDIR);
-            }
-            dir.entry.node.check_access(self, Access::EXEC)?;
-        }
-        Ok((dir, path))
-    }
-
-    /// A convenient wrapper for opening files relative to FdNumber::AT_FDCWD.
-    ///
-    /// Returns a FileHandle but does not install the FileHandle in the FdTable
-    /// for this task.
-    pub fn open_file(&self, path: &FsStr, flags: OpenFlags) -> Result<FileHandle, Errno> {
-        if flags.contains(OpenFlags::CREAT) {
-            // In order to support OpenFlags::CREAT we would need to take a
-            // FileMode argument.
-            return error!(EINVAL);
-        }
-        self.open_file_at(FdNumber::AT_FDCWD, path, flags, FileMode::default())
-    }
-
-    /// Resolves a path for open.
-    ///
-    /// If the final path component points to a symlink, the symlink is followed (as long as
-    /// the symlink traversal limit has not been reached).
-    ///
-    /// If the final path component (after following any symlinks, if enabled) does not exist,
-    /// and `flags` contains `OpenFlags::CREAT`, a new node is created at the location of the
-    /// final path component.
-    ///
-    /// This returns the resolved node, and a boolean indicating whether the node has been created.
-    fn resolve_open_path(
-        &self,
-        context: &mut LookupContext,
-        dir: NamespaceNode,
-        path: &FsStr,
-        mode: FileMode,
-        flags: OpenFlags,
-    ) -> Result<(NamespaceNode, bool), Errno> {
-        context.update_for_path(path);
-        let mut parent_content = context.with(SymlinkMode::Follow);
-        let (parent, basename) = self.lookup_parent(&mut parent_content, dir, path)?;
-        context.remaining_follows = parent_content.remaining_follows;
-
-        let must_create = flags.contains(OpenFlags::CREAT) && flags.contains(OpenFlags::EXCL);
-
-        // Lookup the child, without following a symlink or expecting it to be a directory.
-        let mut child_context = context.with(SymlinkMode::NoFollow);
-        child_context.must_be_directory = false;
-
-        match parent.lookup_child(self, &mut child_context, basename) {
-            Ok(name) => {
-                if name.entry.node.is_lnk() {
-                    if context.symlink_mode == SymlinkMode::NoFollow
-                        || context.remaining_follows == 0
-                    {
-                        if must_create {
-                            // Since `must_create` is set, and a node was found, this returns EEXIST
-                            // instead of ELOOP.
-                            return error!(EEXIST);
-                        }
-                        // A symlink was found, but too many symlink traversals have been
-                        // attempted.
-                        return error!(ELOOP);
-                    }
-
-                    context.remaining_follows -= 1;
-                    match name.readlink(self)? {
-                        SymlinkTarget::Path(path) => {
-                            let dir = if path[0] == b'/' { self.fs().root() } else { parent };
-                            self.resolve_open_path(context, dir, &path, mode, flags)
-                        }
-                        SymlinkTarget::Node(node) => Ok((node, false)),
-                    }
-                } else {
-                    if must_create {
-                        return error!(EEXIST);
-                    }
-                    Ok((name, false))
-                }
-            }
-            Err(e) if e == errno!(ENOENT) && flags.contains(OpenFlags::CREAT) => {
-                if context.must_be_directory {
-                    return error!(EISDIR);
-                }
-                Ok((
-                    parent.open_create_node(
-                        self,
-                        basename,
-                        mode.with_type(FileMode::IFREG),
-                        DeviceType::NONE,
-                        flags,
-                    )?,
-                    true,
-                ))
-            }
-            Err(e) => Err(e),
-        }
-    }
-
-    /// The primary entry point for opening files relative to a task.
-    ///
-    /// Absolute paths are resolve relative to the root of the FsContext for
-    /// this task. Relative paths are resolve relative to dir_fd. To resolve
-    /// relative to the current working directory, pass FdNumber::AT_FDCWD for
-    /// dir_fd.
-    ///
-    /// Returns a FileHandle but does not install the FileHandle in the FdTable
-    /// for this task.
-    pub fn open_file_at(
-        &self,
-        dir_fd: FdNumber,
-        path: &FsStr,
-        flags: OpenFlags,
-        mode: FileMode,
-    ) -> Result<FileHandle, Errno> {
-        if path.is_empty() {
-            return error!(ENOENT);
-        }
-
-        let (dir, path) = self.resolve_dir_fd(dir_fd, path)?;
-        self.open_namespace_node_at(dir, path, flags, mode)
-    }
-
-    pub fn open_namespace_node_at(
-        &self,
-        dir: NamespaceNode,
-        path: &FsStr,
-        flags: OpenFlags,
-        mode: FileMode,
-    ) -> Result<FileHandle, Errno> {
-        // 64-bit kernels force the O_LARGEFILE flag to be on.
-        let mut flags = flags | OpenFlags::LARGEFILE;
-        if flags.contains(OpenFlags::PATH) {
-            // When O_PATH is specified in flags, flag bits other than O_CLOEXEC,
-            // O_DIRECTORY, and O_NOFOLLOW are ignored.
-            const ALLOWED_FLAGS: OpenFlags = OpenFlags::from_bits_truncate(
-                OpenFlags::PATH.bits()
-                    | OpenFlags::CLOEXEC.bits()
-                    | OpenFlags::DIRECTORY.bits()
-                    | OpenFlags::NOFOLLOW.bits(),
-            );
-            flags &= ALLOWED_FLAGS;
-        }
-
-        if flags.contains(OpenFlags::TMPFILE) && !flags.can_write() {
-            return error!(EINVAL);
-        }
-
-        let nofollow = flags.contains(OpenFlags::NOFOLLOW);
-        let must_create = flags.contains(OpenFlags::CREAT) && flags.contains(OpenFlags::EXCL);
-
-        let symlink_mode =
-            if nofollow || must_create { SymlinkMode::NoFollow } else { SymlinkMode::Follow };
-
-        let mut context = LookupContext::new(symlink_mode);
-        context.must_be_directory = flags.contains(OpenFlags::DIRECTORY);
-        let (name, created) = self.resolve_open_path(&mut context, dir, path, mode, flags)?;
-
-        let name = if flags.contains(OpenFlags::TMPFILE) {
-            name.create_tmpfile(self, mode.with_type(FileMode::IFREG), flags)?
-        } else {
-            let mode = name.entry.node.info().mode;
-
-            // These checks are not needed in the `O_TMPFILE` case because `mode` refers to the
-            // file we are opening. With `O_TMPFILE`, that file is the regular file we just
-            // created rather than the node we found by resolving the path.
-            //
-            // For example, we do not need to produce `ENOTDIR` when `must_be_directory` is set
-            // because `must_be_directory` refers to the node we found by resolving the path.
-            // If that node was not a directory, then `create_tmpfile` will produce an error.
-            //
-            // Similarly, we never need to call `truncate` because `O_TMPFILE` is newly created
-            // and therefor already an empty file.
-
-            if nofollow && mode.is_lnk() {
-                return error!(ELOOP);
-            }
-
-            if mode.is_dir() {
-                if flags.can_write()
-                    || flags.contains(OpenFlags::CREAT)
-                    || flags.contains(OpenFlags::TRUNC)
-                {
-                    return error!(EISDIR);
-                }
-                if flags.contains(OpenFlags::DIRECT) {
-                    return error!(EINVAL);
-                }
-            } else if context.must_be_directory {
-                return error!(ENOTDIR);
-            }
-
-            if flags.contains(OpenFlags::TRUNC) && mode.is_reg() && !created {
-                // You might think we should check file.can_write() at this
-                // point, which is what the docs suggest, but apparently we
-                // are supposed to truncate the file if this task can write
-                // to the underlying node, even if we are opening the file
-                // as read-only. See OpenTest.CanTruncateReadOnly.
-                name.check_readonly_filesystem()?;
-                name.entry.node.truncate(self, 0)?;
-            }
-
-            name
-        };
-
-        // If the node has been created, the open operation should not verify access right:
-        // From <https://man7.org/linux/man-pages/man2/open.2.html>
-        //
-        // > Note that mode applies only to future accesses of the newly created file; the
-        // > open() call that creates a read-only file may well return a  read/write  file
-        // > descriptor.
-
-        name.open(self, flags, !created)
-    }
-
-    /// A wrapper for FsContext::lookup_parent_at that resolves the given
-    /// dir_fd to a NamespaceNode.
-    ///
-    /// Absolute paths are resolve relative to the root of the FsContext for
-    /// this task. Relative paths are resolve relative to dir_fd. To resolve
-    /// relative to the current working directory, pass FdNumber::AT_FDCWD for
-    /// dir_fd.
-    pub fn lookup_parent_at<'a>(
-        &self,
-        context: &mut LookupContext,
-        dir_fd: FdNumber,
-        path: &'a FsStr,
-    ) -> Result<(NamespaceNode, &'a FsStr), Errno> {
-        let (dir, path) = self.resolve_dir_fd(dir_fd, path)?;
-        self.lookup_parent(context, dir, path)
-    }
-
-    /// Lookup the parent of a namespace node.
-    ///
-    /// Consider using Task::open_file_at or Task::lookup_parent_at rather than
-    /// calling this function directly.
-    ///
-    /// This function resolves all but the last component of the given path.
-    /// The function returns the parent directory of the last component as well
-    /// as the last component.
-    ///
-    /// If path is empty, this function returns dir and an empty path.
-    /// Similarly, if path ends with "." or "..", these components will be
-    /// returned along with the parent.
-    ///
-    /// The returned parent might not be a directory.
-    pub fn lookup_parent<'a>(
-        &self,
-        context: &mut LookupContext,
-        dir: NamespaceNode,
-        path: &'a FsStr,
-    ) -> Result<(NamespaceNode, &'a FsStr), Errno> {
-        context.update_for_path(path);
-
-        let mut current_node = dir;
-        let mut it = path.split(|c| *c == b'/').filter(|p| !p.is_empty());
-        let mut current_path_component = it.next().unwrap_or(b"");
-        for next_path_component in it {
-            current_node = current_node.lookup_child(self, context, current_path_component)?;
-            current_path_component = next_path_component;
-        }
-        Ok((current_node, current_path_component))
-    }
-
-    /// Lookup a namespace node.
-    ///
-    /// Consider using Task::open_file_at or Task::lookup_parent_at rather than
-    /// calling this function directly.
-    ///
-    /// This function resolves the component of the given path.
-    pub fn lookup_path(
-        &self,
-        context: &mut LookupContext,
-        dir: NamespaceNode,
-        path: &FsStr,
-    ) -> Result<NamespaceNode, Errno> {
-        let (parent, basename) = self.lookup_parent(context, dir, path)?;
-        parent.lookup_child(self, context, basename)
-    }
-
-    /// Lookup a namespace node starting at the root directory.
-    ///
-    /// Resolves symlinks.
-    pub fn lookup_path_from_root(&self, path: &FsStr) -> Result<NamespaceNode, Errno> {
-        let mut context = LookupContext::default();
-        self.lookup_path(&mut context, self.fs().root(), path)
-    }
-
-    pub fn exec(
-        &mut self,
-        executable: FileHandle,
-        path: CString,
-        argv: Vec<CString>,
-        environ: Vec<CString>,
-    ) -> Result<(), Errno> {
-        // Executable must be a regular file
-        if !executable.name.entry.node.is_reg() {
-            return error!(EACCES);
-        }
-
-        // File node must have EXEC mode permissions.
-        // Note that the ability to execute a file is unrelated to the flags
-        // used in the `open` call.
-        executable.node().check_access(self, Access::EXEC)?;
-
-        let resolved_elf = resolve_executable(self, executable, path.clone(), argv, environ)?;
-        if let Err(err) = self.finish_exec(path, resolved_elf) {
-            // TODO(tbodt): Replace this panic with a log and force a SIGSEGV.
-            panic!("{self:?} unrecoverable error in exec: {err:?}");
-        }
+        self.files.release(());
 
         self.signal_vfork();
 
-        Ok(())
-    }
+        // Drop fields that can end up owning a FsNode to ensure no FsNode are owned by this task.
+        self.fs = None;
+        self.mm = None;
+        // Rebuild a temporary CurrentTask to run the release actions that requires a CurrentState.
+        let current_task = CurrentTask::new(OwnedRef::new(self), thread_state);
 
-    /// After the memory is unmapped, any failure in exec is unrecoverable and results in the
-    /// process crashing. This function is for that second half; any error returned from this
-    /// function will be considered unrecoverable.
-    fn finish_exec(&mut self, path: CString, resolved_elf: ResolvedElf) -> Result<(), Errno> {
-        // Now that the exec will definitely finish (or crash), notify owners of
-        // locked futexes for the current process, which will be impossible to
-        // update after process image is replaced.  See get_robust_list(2).
-        self.notify_robust_list();
+        // Apply any delayed releasers left.
+        current_task.trigger_delayed_releaser();
 
-        self.mm
-            .exec(resolved_elf.file.name.clone())
-            .map_err(|status| from_status_like_fdio!(status))?;
-        let start_info = load_executable(self, resolved_elf, &path)?;
-        let regs: zx_thread_state_general_regs_t = start_info.into();
-        self.registers = regs.into();
+        // Drop the task now that is has been released. This requires to take it fro the OwnedRef
+        // and from the resulting ReleaseGuard.
+        let CurrentTask { mut task, .. } = current_task;
+        let task = OwnedRef::take(&mut task).expect("task should not have been re-owned");
+        let task: Self = ReleaseGuard::take(task);
 
-        {
-            let mut state = self.write();
-            let mut persistent_info = self.persistent_info.lock();
-            state.signals.alt_stack = None;
-            state.robust_list_head = UserAddress::NULL.into();
-
-            // TODO(tbodt): Check whether capability xattrs are set on the file, and grant/limit
-            // capabilities accordingly.
-            persistent_info.creds.exec();
-        }
-        self.extended_pstate.reset();
-
-        self.thread_group.signal_actions.reset_for_exec();
-
-        // TODO: The termination signal is reset to SIGCHLD.
-
-        // TODO: All threads other than the calling thread are destroyed.
-
-        // TODO: The file descriptor table is unshared, undoing the effect of
-        //       the CLONE_FILES flag of clone(2).
-        //
-        // To make this work, we can put the files in an RwLock and then cache
-        // a reference to the files on the CurrentTask. That will let
-        // functions that have CurrentTask access the FdTable without
-        // needing to grab the read-lock.
-        //
-        // For now, we do not implement that behavior.
-        self.files.exec();
-
-        // TODO: POSIX timers are not preserved.
-
-        self.thread_group.write().did_exec = true;
-
-        // Get the basename of the path, which will be used as the name displayed with
-        // `prctl(PR_GET_NAME)` and `/proc/self/stat`
-        let basename = if let Some(idx) = memchr::memrchr(b'/', path.to_bytes()) {
-            // SAFETY: Substring of a CString will contain no null bytes.
-            CString::new(&path.to_bytes()[idx + 1..]).unwrap()
-        } else {
-            path
-        };
-        self.set_command_name(basename);
-        crate::logging::set_current_task_info(self);
-
-        Ok(())
-    }
-
-    pub fn add_seccomp_filter(
-        &mut self,
-        bpf_filter: UserAddress,
-        flags: u32,
-    ) -> Result<SyscallResult, Errno> {
-        let fprog: sock_fprog = self.mm.read_object(UserRef::new(bpf_filter))?;
-
-        if u32::from(fprog.len) > BPF_MAXINSNS || fprog.len == 0 {
-            return Err(errno!(EINVAL));
-        }
-
-        let code: Vec<sock_filter> =
-            self.read_objects_to_vec(fprog.filter.into(), fprog.len as usize)?;
-
-        let new_filter = Arc::new(SeccompFilter::from_cbpf(
-            &code,
-            self.thread_group.next_seccomp_filter_id.fetch_add(1, Ordering::SeqCst),
-            flags & SECCOMP_FILTER_FLAG_LOG != 0,
-        )?);
-
-        let mut maybe_fd: Option<FdNumber> = None;
-
-        if flags & SECCOMP_FILTER_FLAG_NEW_LISTENER != 0 {
-            let mut task_state = self.mutable_state.write();
-            maybe_fd = Some(task_state.seccomp_filters.create_listener(self)?);
-        }
-
-        // We take the process lock here because we can't change any of the threads
-        // while doing a tsync.  So, you hold the process lock while making any changes.
-        let state = self.thread_group.write();
-
-        if flags & SECCOMP_FILTER_FLAG_TSYNC != 0 {
-            // TSYNC synchronizes all filters for all threads in the current process to
-            // the current thread's
-
-            // We collect the filters for the current task upfront to save us acquiring
-            // the task's lock a lot of times below.
-            let mut filters: SeccompFilterContainer = self.read().seccomp_filters.clone();
-
-            // For TSYNC to work, all of the other thread filters in this process have to
-            // be a prefix of this thread's filters, and none of them can be in
-            // strict mode.
-            let tasks = state.tasks().collect::<Vec<_>>();
-            for task in &tasks {
-                if task.id == self.id {
-                    continue;
-                }
-                let other_task_state = task.mutable_state.read();
-
-                // Target threads cannot be in SECCOMP_MODE_STRICT
-                if task.seccomp_filter_state.get() == SeccompStateValue::Strict {
-                    return Self::seccomp_tsync_error(task.id, flags);
-                }
-
-                // Target threads' filters must be a subsequence of this thread's
-                if !other_task_state.seccomp_filters.can_sync_to(&filters) {
-                    return Self::seccomp_tsync_error(task.id, flags);
-                }
-            }
-
-            // Now that we're sure we're allowed to do so, add the filter to all threads.
-            filters.add_filter(new_filter, fprog.len)?;
-
-            for task in &tasks {
-                let mut other_task_state = task.mutable_state.write();
-
-                other_task_state.enable_no_new_privs();
-                other_task_state.seccomp_filters = filters.clone();
-                task.set_seccomp_state(SeccompStateValue::UserDefined)?;
-            }
-        } else {
-            let mut task_state = self.mutable_state.write();
-
-            task_state.seccomp_filters.add_filter(new_filter, fprog.len)?;
-            self.set_seccomp_state(SeccompStateValue::UserDefined)?;
-        }
-
-        if let Some(fd) = maybe_fd {
-            Ok(fd.into())
-        } else {
-            Ok(().into())
-        }
-    }
-
-    pub fn run_seccomp_filters(
-        &mut self,
-        syscall: &Syscall,
-    ) -> Option<Result<SyscallResult, Errno>> {
-        // Implementation of SECCOMP_FILTER_STRICT, which has slightly different semantics
-        // from user-defined seccomp filters.
-        if self.seccomp_filter_state.get() == SeccompStateValue::Strict {
-            return SeccompState::do_strict(self, syscall);
-        }
-
-        // Run user-defined seccomp filters
-        let result = self.mutable_state.read().seccomp_filters.run_all(self, syscall);
-
-        SeccompState::do_user_defined(result, self, syscall)
-    }
-
-    fn seccomp_tsync_error(id: i32, flags: u32) -> Result<SyscallResult, Errno> {
-        // By default, TSYNC indicates failure state by returning the first thread
-        // id not to be able to sync, rather than by returning -1 and setting
-        // errno.  However, if TSYNC_ESRCH is set, it returns ESRCH.  This
-        // prevents conflicts with fact that SECCOMP_FILTER_FLAG_NEW_LISTENER
-        // makes seccomp return an fd.
-        if flags & SECCOMP_FILTER_FLAG_TSYNC_ESRCH != 0 {
-            Err(errno!(ESRCH))
-        } else {
-            Ok(id.into())
-        }
-    }
-
-    // Notify all futexes in robust list.  The robust list is in user space, so we
-    // are very careful about walking it, and there are a lot of quiet returns if
-    // we fail to walk it.
-    // TODO(fxbug.dev/128610): This only sets the FUTEX_OWNER_DIED bit; it does
-    // not wake up a waiter.
-    pub fn notify_robust_list(&self) {
-        let task_state = self.write();
-        let robust_list_addr = task_state.robust_list_head.addr();
-        if robust_list_addr == UserAddress::NULL {
-            // No one has called set_robust_list.
-            return;
-        }
-        let robust_list_res = self.mm.read_object(task_state.robust_list_head);
-
-        let head = if let Ok(head) = robust_list_res {
-            head
-        } else {
-            return;
-        };
-
-        let offset = head.futex_offset;
-        if head.list.next.addr.addr as usize == robust_list_addr.ptr() {
-            // There is a list, but it is empty
-            return;
-        }
-
-        let mut curr_ptr = head.list.next;
-        let null_ref = uaddr { addr: 0 };
-        while curr_ptr.addr != null_ref {
-            let curr_ref = self.mm.read_object(curr_ptr.into());
-
-            let curr = if let Ok(curr) = curr_ref {
-                curr
-            } else {
-                return;
-            };
-
-            let futex_base: u64;
-            if let Some(fb) = curr_ptr.addr.addr.checked_add_signed(offset) {
-                futex_base = fb;
-            } else {
-                return;
-            }
-
-            let futex_ref = UserRef::<u32>::new(UserAddress::from(futex_base));
-
-            let futex = if let Ok(futex) = self.mm.read_object(futex_ref) {
-                futex
-            } else {
-                return;
-            };
-            let owner_died = FUTEX_OWNER_DIED | futex;
-            if self.write_object(futex_ref, &owner_died).is_err() {
-                return;
-            }
-            curr_ptr = curr.next;
-        }
-    }
-
-    /// Returns a ref to this thread's SeccompNotifier.
-    pub fn get_seccomp_notifier(&mut self) -> Option<SeccompNotifierHandle> {
-        self.mutable_state.write().seccomp_filters.notifier.clone()
-    }
-
-    pub fn set_seccomp_notifier(&mut self, notifier: Option<SeccompNotifierHandle>) {
-        self.mutable_state.write().seccomp_filters.notifier = notifier;
-    }
-
-    /// Processes a Zircon exception associated with this task.
-    ///
-    /// If the exception is fully handled, returns Ok(None)
-    /// If the exception produces a signal, returns Ok(Some(SigInfo)).
-    /// If the exception could not be handled returns Err(())
-    pub fn process_exception(&self, report: &zx::sys::zx_exception_report_t) -> ExceptionResult {
-        if report.header.type_ == zx::sys::ZX_EXCP_FATAL_PAGE_FAULT {
-            // A page fault may be resolved by extending a growsdown mapping to cover the faulting
-            // address. Ask the memory manager if it can extend a mapping to cover the faulting
-            // address and if says that it's found a mapping that exists or that can be extended to
-            // cover this address mark the exception as handled so that the instruction can try
-            // again. Otherwise let the regular handling proceed.
-
-            // We should only attempt growth on a not-present fault and we should only extend if the
-            // access type matches the protection on the GROWSDOWN mapping.
-            let decoded = decode_page_fault_exception_report(report);
-            if decoded.not_present {
-                match self.mm.extend_growsdown_mapping_to_address(
-                    UserAddress::from(decoded.faulting_address),
-                    decoded.is_write,
-                ) {
-                    Ok(true) => {
-                        return ExceptionResult::Handled;
-                    }
-                    Err(e) => {
-                        log_warn!("Error handling page fault: {e}")
-                    }
-                    _ => {}
-                }
-            }
-        }
-        match report.header.type_ {
-            zx::sys::ZX_EXCP_GENERAL => match get_signal_for_general_exception(&report.context) {
-                Some(sig) => ExceptionResult::Signal(SignalInfo::default(sig)),
-                None => {
-                    log_warn!("Unrecognized general exception: {:?}", report);
-                    ExceptionResult::Signal(SignalInfo::default(SIGILL))
-                }
-            },
-            zx::sys::ZX_EXCP_FATAL_PAGE_FAULT => {
-                ExceptionResult::Signal(SignalInfo::default(SIGSEGV))
-            }
-            zx::sys::ZX_EXCP_UNDEFINED_INSTRUCTION => {
-                ExceptionResult::Signal(SignalInfo::default(SIGILL))
-            }
-            zx::sys::ZX_EXCP_UNALIGNED_ACCESS => {
-                ExceptionResult::Signal(SignalInfo::default(SIGBUS))
-            }
-            zx::sys::ZX_EXCP_SW_BREAKPOINT => ExceptionResult::Signal(SignalInfo::default(SIGTRAP)),
-            _ => {
-                log_error!("Unknown exception {:?}", report);
-                ExceptionResult::Signal(SignalInfo::default(SIGSEGV))
-            }
-        }
+        // It is safe to drop the task, as it has been release by this method.
+        std::mem::drop(task);
     }
 }
 
 impl MemoryAccessor for Task {
-    fn read_memory_to_slice(&self, addr: UserAddress, bytes: &mut [u8]) -> Result<(), Errno> {
-        self.mm.read_memory_to_slice(addr, bytes)
-    }
-
-    fn read_memory_partial_to_slice(
+    fn read_memory<'a>(
         &self,
         addr: UserAddress,
-        bytes: &mut [u8],
-    ) -> Result<usize, Errno> {
-        self.mm.read_memory_partial_to_slice(addr, bytes)
+        bytes: &'a mut [MaybeUninit<u8>],
+    ) -> Result<&'a mut [u8], Errno> {
+        self.mm().read_memory(addr, bytes)
+    }
+
+    fn vmo_read_memory<'a>(
+        &self,
+        addr: UserAddress,
+        bytes: &'a mut [MaybeUninit<u8>],
+    ) -> Result<&'a mut [u8], Errno> {
+        self.mm().vmo_read_memory(addr, bytes)
+    }
+
+    fn read_memory_partial_until_null_byte<'a>(
+        &self,
+        addr: UserAddress,
+        bytes: &'a mut [MaybeUninit<u8>],
+    ) -> Result<&'a mut [u8], Errno> {
+        self.mm().read_memory_partial_until_null_byte(addr, bytes)
+    }
+
+    fn read_memory_partial<'a>(
+        &self,
+        addr: UserAddress,
+        bytes: &'a mut [MaybeUninit<u8>],
+    ) -> Result<&'a mut [u8], Errno> {
+        self.mm().read_memory_partial(addr, bytes)
+    }
+
+    fn vmo_read_memory_partial<'a>(
+        &self,
+        addr: UserAddress,
+        bytes: &'a mut [MaybeUninit<u8>],
+    ) -> Result<&'a mut [u8], Errno> {
+        self.mm().vmo_read_memory_partial(addr, bytes)
     }
 
     fn write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
-        self.mm.write_memory(addr, bytes)
+        self.mm().write_memory(addr, bytes)
+    }
+
+    fn vmo_write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
+        self.mm().vmo_write_memory(addr, bytes)
     }
 
     fn write_memory_partial(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
-        self.mm.write_memory_partial(addr, bytes)
+        self.mm().write_memory_partial(addr, bytes)
+    }
+
+    fn vmo_write_memory_partial(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
+        self.mm().vmo_write_memory_partial(addr, bytes)
     }
 
     fn zero(&self, addr: UserAddress, length: usize) -> Result<usize, Errno> {
-        self.mm.zero(addr, length)
+        self.mm().zero(addr, length)
     }
 }
 
@@ -2073,12 +1318,6 @@ impl fmt::Debug for Task {
             self.id,
             self.persistent_info.lock().command.to_string_lossy()
         )
-    }
-}
-
-impl fmt::Debug for CurrentTask {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.task.fmt(f)
     }
 }
 
@@ -2102,6 +1341,10 @@ impl From<&Task> for FsCred {
 mod test {
     use super::*;
     use crate::testing::*;
+    use starnix_uapi::{
+        auth::CAP_SYS_ADMIN, resource_limits::Resource, rlimit, signals::SIGCHLD, CLONE_SIGHAND,
+        CLONE_THREAD, CLONE_VM,
+    };
 
     #[::fuchsia::test]
     async fn test_tid_allocation() {
@@ -2109,26 +1352,28 @@ mod test {
 
         assert_eq!(current_task.get_tid(), 1);
         let another_current = create_task(&kernel, "another-task");
-        // tid 2 gets assigned to kthreadd.
-        assert_eq!(another_current.get_tid(), 3);
+        let another_tid = another_current.get_tid();
+        assert!(another_tid >= 2);
 
         let pids = kernel.pids.read();
         assert_eq!(pids.get_task(1).upgrade().unwrap().get_tid(), 1);
-        assert_eq!(pids.get_task(2).upgrade().unwrap().get_tid(), 2);
-        assert_eq!(pids.get_task(3).upgrade().unwrap().get_tid(), 3);
-        assert!(pids.get_task(4).upgrade().is_none());
+        assert_eq!(pids.get_task(another_tid).upgrade().unwrap().get_tid(), another_tid);
+        assert!(pids.get_task(another_tid + 1).upgrade().is_none());
     }
 
     #[::fuchsia::test]
     async fn test_clone_pid_and_parent_pid() {
-        let (_kernel, current_task) = create_kernel_and_task();
-        let thread = current_task
-            .clone_task_for_test((CLONE_THREAD | CLONE_VM | CLONE_SIGHAND) as u64, Some(SIGCHLD));
+        let (_kernel, current_task, mut locked) = create_kernel_task_and_unlocked();
+        let thread = current_task.clone_task_for_test(
+            &mut locked,
+            (CLONE_THREAD | CLONE_VM | CLONE_SIGHAND) as u64,
+            Some(SIGCHLD),
+        );
         assert_eq!(current_task.get_pid(), thread.get_pid());
         assert_ne!(current_task.get_tid(), thread.get_tid());
         assert_eq!(current_task.thread_group.leader, thread.thread_group.leader);
 
-        let child_task = current_task.clone_task_for_test(0, Some(SIGCHLD));
+        let child_task = current_task.clone_task_for_test(&mut locked, 0, Some(SIGCHLD));
         assert_ne!(current_task.get_pid(), child_task.get_pid());
         assert_ne!(current_task.get_tid(), child_task.get_tid());
         assert_eq!(current_task.get_pid(), child_task.thread_group.read().get_ppid());
@@ -2140,5 +1385,23 @@ mod test {
         assert!(current_task.creds().has_capability(CAP_SYS_ADMIN));
         current_task.set_creds(Credentials::with_ids(1, 1));
         assert!(!current_task.creds().has_capability(CAP_SYS_ADMIN));
+    }
+
+    #[::fuchsia::test]
+    async fn test_clone_rlimit() {
+        let (_kernel, current_task, mut locked) = create_kernel_task_and_unlocked();
+        let prev_fsize = current_task.thread_group.get_rlimit(Resource::FSIZE);
+        assert_ne!(prev_fsize, 10);
+        current_task
+            .thread_group
+            .limits
+            .lock()
+            .set(Resource::FSIZE, rlimit { rlim_cur: 10, rlim_max: 100 });
+        let current_fsize = current_task.thread_group.get_rlimit(Resource::FSIZE);
+        assert_eq!(current_fsize, 10);
+
+        let child_task = current_task.clone_task_for_test(&mut locked, 0, Some(SIGCHLD));
+        let child_fsize = child_task.thread_group.get_rlimit(Resource::FSIZE);
+        assert_eq!(child_fsize, 10)
     }
 }

@@ -16,8 +16,15 @@ When updating, please add the value in alphabetical order.
 :                                         : start automatically when a subtool :
 :                                         : that requires the daemon is        :
 :                                         : invoked.  Defaults to `true`.      :
+| `daemon.host_pipe_ssh_timeout`          | Time the daemon waits for an       |
+:                                         : initial response from ssh on the   :
+:                                         : target. Defaults to 50 seconds.    :
 | `discovery.expire_targets`              | Determines if targets discovered   |
 :                                         : should expire. Defaults to `true`  :
+| `discovery.mdns.autoconnect`            | Determines whether to connect      |
+|                                         : automatically to targets           :
+|                                         : discovered through mDNS. Defaults  :
+:                                         : to `false`                         :
 | `discovery.zedboot.advert_port`         | Zedboot discovery port (must be a  |
 :                                         : nonzero u16)                       :
 | `discovery.zedboot.enabled`             | Determines if zedboot discovery is |
@@ -76,6 +83,13 @@ When updating, please add the value in alphabetical order.
 :                                         : target is in fastboot, and to      :
 :                                         : communicate directly with it as    :
 :                                         : opposed to doing discovery.        :
+| `ffx.isolated`                          | "Alias" for encapsulation of       :
+:                                         : config options used to request     :
+:                                         : isolation. Currently affects:      :
+:                                         : `fastboot.usb.disabled`,           :
+:                                         : `ffx.analytics.disabled`,          :
+:                                         : `discovery.mdns.enabled`,          :
+:                                         : `discovery.mdns.autoconnect`       :
 | `log.dir`                               | Location for ffx and daemon logs   |
 | `log.enabled`                           | Whether logging is enabled         |
 | `log.include_spans`                     | Whether spans (function names,     |
@@ -123,5 +137,6 @@ When updating, please add the value in alphabetical order.
 | `targets.manual`                        | Contains the list of manual        |
 :                                         : targets                            :
 | `ffx.subtool-search-paths`              | A list of paths to search for non- |
-|                                         | SDK subtool binaries.              |
-:                                         :                                    :
+:                                         : SDK subtool binaries.              :
+| `fidl.ir.path`                          | The path for looking up FIDL IR    |
+:                                         : encoding/decoding FIDL messages    :

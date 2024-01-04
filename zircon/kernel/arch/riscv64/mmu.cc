@@ -9,6 +9,7 @@
 #include <bits.h>
 #include <debug.h>
 #include <inttypes.h>
+#include <lib/boot-options/boot-options.h>
 #include <lib/counters.h>
 #include <lib/fit/defer.h>
 #include <lib/heap.h>
@@ -22,9 +23,11 @@
 
 #include <arch/aspace.h>
 #include <arch/ops.h>
+#include <arch/riscv64/feature.h>
 #include <arch/riscv64/mmu.h>
 #include <arch/riscv64/sbi.h>
 #include <fbl/auto_lock.h>
+#include <kernel/mp.h>
 #include <kernel/mutex.h>
 #include <ktl/algorithm.h>
 #include <phys/arch/arch-handoff.h>
@@ -70,17 +73,35 @@ namespace {
 alignas(PAGE_SIZE) pte_t
     riscv64_kernel_top_level_page_tables[RISCV64_MMU_PT_ENTRIES / 2][RISCV64_MMU_PT_ENTRIES];
 
+// Track the size and capability of the hardware ASID, and if its in use.
 uint64_t riscv_asid_mask;
+bool riscv_use_asid;
+AsidAllocator asid_allocator;
 
-KCOUNTER(cm_flush_all, "mmu.consistency_manager.flush_all")
-KCOUNTER(cm_flush_all_replacing, "mmu.consistency_manager.flush_all_replacing")
-KCOUNTER(cm_single_tlb_invalidates, "mmu.consistency_manager.single_tlb_invalidate")
-KCOUNTER(cm_flush, "mmu.consistency_manager.flush")
-
-AsidAllocator asid;
+KCOUNTER(cm_flush_call, "mmu.consistency_manager.flush_call")
+KCOUNTER(cm_asid_invalidate, "mmu.consistency_manager.asid_invalidate")
+KCOUNTER(cm_global_invalidate, "mmu.consistency_manager.global_invalidate")
+KCOUNTER(cm_page_run_invalidate, "mmu.consistency_manager.page_run_invalidate")
+KCOUNTER(cm_single_page_invalidate, "mmu.consistency_manager.single_page_invalidate")
+KCOUNTER(cm_local_page_invalidate, "mmu.consistency_manager.local_page_invalidate")
 
 KCOUNTER(vm_mmu_protect_make_execute_calls, "vm.mmu.protect.make_execute_calls")
 KCOUNTER(vm_mmu_protect_make_execute_pages, "vm.mmu.protect.make_execute_pages")
+
+// Return the asid that should be assigned to the kernel aspace.
+uint16_t kernel_asid() {
+  // When using ASIDs, the kernel is assigned KERNEL_ASID (1) instead of UNUSED_ASID (0)
+  // for two reasons:
+  // a) To keep it logically separate from UNUSED_ASID for debug and assert reasons.
+  // b) A note in SiFive documentation for various cores that says
+  //   "Supervisor software that uses ASIDs should use a nonzero ASID value to refer to the same
+  //   address space across all harts in the supervisor execution environment (SEE) and should not
+  //   use an ASID value of 0. If supervisor software does not use ASIDs, then the ASID field in the
+  //   satp CSR should be set to 0."
+  // Unclear if this is simply a suggestion or hardware will perform some sort of optimization based
+  // on this.
+  return riscv_use_asid ? MMU_RISCV64_KERNEL_ASID : MMU_RISCV64_UNUSED_ASID;
+}
 
 // given a va address and the level, compute the index in the current PT
 constexpr uint vaddr_to_index(vaddr_t va, uint level) {
@@ -106,8 +127,8 @@ constexpr uintptr_t page_size_per_level(uint level) {
 
 constexpr uintptr_t page_mask_per_level(uint level) { return page_size_per_level(level) - 1; }
 
-// Convert user level mmu flags to flags that go in L1 descriptors.
-constexpr pte_t mmu_flags_to_pte_attr(uint flags, bool global) {
+// Convert user level mmu flags to flags that go in leaf descriptors.
+pte_t mmu_flags_to_pte_attr(uint flags, bool global) {
   pte_t attr = RISCV64_PTE_V;
   attr |= RISCV64_PTE_A | RISCV64_PTE_D;
   attr |= (flags & ARCH_MMU_FLAG_PERM_USER) ? RISCV64_PTE_U : 0;
@@ -116,36 +137,57 @@ constexpr pte_t mmu_flags_to_pte_attr(uint flags, bool global) {
   attr |= (flags & ARCH_MMU_FLAG_PERM_EXECUTE) ? RISCV64_PTE_X : 0;
   attr |= (global) ? RISCV64_PTE_G : 0;
 
+  // Svpbmt support
+  if (riscv_feature_svpbmt) {
+    switch (flags & ARCH_MMU_FLAG_CACHE_MASK) {
+      case ARCH_MMU_FLAG_CACHED:
+        attr |= RISCV64_PTE_PBMT_PMA;
+        break;
+      case ARCH_MMU_FLAG_UNCACHED:
+      case ARCH_MMU_FLAG_WRITE_COMBINING:
+        attr |= RISCV64_PTE_PBMT_NC;
+        break;
+      case ARCH_MMU_FLAG_UNCACHED_DEVICE:
+        attr |= RISCV64_PTE_PBMT_IO;
+        break;
+    }
+  }
+
   return attr;
+}
+
+// Construct a non leaf page table entry.
+// For all inner page tables for the entire kernel hierarchy, set the global bit.
+constexpr pte_t mmu_non_leaf_pte(paddr_t pa, bool global) {
+  return riscv64_pte_pa_to_pte(pa) | (global ? RISCV64_PTE_G : 0) | RISCV64_PTE_V;
 }
 
 void update_pte(volatile pte_t* pte, pte_t newval) { *pte = newval; }
 
-int first_used_page_table_entry(const volatile pte_t* page_table) {
-  const int count = 1U << (PAGE_SIZE_SHIFT - 3);
+zx::result<size_t> first_used_page_table_entry(const volatile pte_t* page_table) {
+  const size_t count = 1U << (PAGE_SIZE_SHIFT - 3);
 
-  for (int i = 0; i < count; i++) {
+  for (size_t i = 0; i < count; i++) {
     pte_t pte = page_table[i];
     if (riscv64_pte_is_valid(pte)) {
-      return i;
+      return zx::ok(i);
     }
   }
-  return -1;
+  return zx::error(ZX_ERR_NOT_FOUND);
 }
 
 bool page_table_is_clear(const volatile pte_t* page_table) {
-  const int index = first_used_page_table_entry(page_table);
-  const bool clear = index == -1;
-  if (clear) {
+  const zx::result<size_t> index_result = first_used_page_table_entry(page_table);
+  if (index_result.is_error()) {
     LTRACEF("page table at %p is clear\n", page_table);
   } else {
-    LTRACEF("page_table at %p still in use, index %d is %#" PRIx64 "\n", page_table, index,
-            page_table[index]);
+    LTRACEF("page_table at %p still in use, index %zu is %#" PRIx64 "\n", page_table, *index_result,
+            page_table[*index_result]);
   }
-  return clear;
+  return index_result.is_error();
 }
 
-Riscv64AspaceType AspaceTypeFromFlags(uint mmu_flags) {
+constexpr Riscv64AspaceType AspaceTypeFromFlags(uint mmu_flags) {
   // Kernel/Guest flags are mutually exclusive. Ensure at most 1 is set.
   DEBUG_ASSERT(((mmu_flags & ARCH_ASPACE_FLAG_KERNEL) != 0) +
                    ((mmu_flags & ARCH_ASPACE_FLAG_GUEST) != 0) <=
@@ -159,7 +201,7 @@ Riscv64AspaceType AspaceTypeFromFlags(uint mmu_flags) {
   return Riscv64AspaceType::kUser;
 }
 
-ktl::string_view Riscv64AspaceTypeName(Riscv64AspaceType type) {
+constexpr ktl::string_view Riscv64AspaceTypeName(Riscv64AspaceType type) {
   switch (type) {
     case Riscv64AspaceType::kKernel:
       return "kernel";
@@ -167,10 +209,8 @@ ktl::string_view Riscv64AspaceTypeName(Riscv64AspaceType type) {
       return "user";
     case Riscv64AspaceType::kGuest:
       return "guest";
-    case Riscv64AspaceType::kHypervisor:
-      return "hypervisor";
   }
-  __UNREACHABLE;
+  __builtin_abort();
 }
 
 constexpr bool IsUserBaseSizeValid(vaddr_t base, size_t size) {
@@ -210,11 +250,71 @@ paddr_t kernel_virt_to_phys(const void* va) {
   return pa;
 }
 
+// Argument to SfenceVma.  Used to perform TLB invalidation on an optional range
+// with an optional ASID.  When no range is present, the target is all
+// addresses.  When no ASID is present the target is invalidated for all ASIDs.
+struct SfenceVmaArgs {
+  struct Range {
+    vaddr_t base;
+    size_t size;
+  };
+  ktl::optional<Range> range;
+  ktl::optional<uint16_t> asid;
+};
+
+// Issues a sequence of sfence.vma instructions as specified by SfenceVmaArgs.
+void SfenceVma(void* _args) {
+  DEBUG_ASSERT(arch_ints_disabled());
+  auto* args = reinterpret_cast<SfenceVmaArgs*>(_args);
+
+  if (args->range.has_value()) {
+    // With range.
+    const vaddr_t base = args->range->base;
+    const vaddr_t end = base + args->range->size;
+    if (args->asid.has_value()) {
+      // With range, one ASID.
+      const uint16_t asid = args->asid.value();
+      for (vaddr_t va = base; va < end; va += PAGE_SIZE) {
+        riscv64_tlb_flush_address_one_asid(va, asid);
+      }
+    } else {
+      // With range, all ASIDs.
+      for (vaddr_t va = base; va < end; va += PAGE_SIZE) {
+        riscv64_tlb_flush_address_all_asids(va);
+      }
+    }
+  } else {
+    if (args->asid.has_value()) {
+      // All addresses, one ASID.
+      const uint16_t asid = args->asid.value();
+      riscv64_tlb_flush_asid(asid);
+    } else {
+      // All addresses, all ASIDs.
+      riscv64_tlb_flush_all();
+    }
+  }
+}
+
 }  // namespace
 
 // A consistency manager that tracks TLB updates, walker syncs and free pages in an effort to
 // minimize MBs (by delaying and coalescing TLB invalidations) and switching to full ASID
 // invalidations if too many TLB invalidations are requested.
+// The aspace lock *must* be held over the full operation of the ConsistencyManager, from
+// construction to deletion. The lock must be held continuously to deletion, and specifically till
+// the actual TLB invalidations occur, due to strategy employed here of only invalidating actual
+// vaddrs with changing entries, and not all vaddrs an operation applies to. Otherwise the following
+// scenario is possible
+//  1. Thread 1 performs an Unmap and removes PTE entries, but drops the lock prior to invalidation.
+//  2. Thread 2 performs an Unmap, no PTE entries are removed, no invalidations occur
+//  3. Thread 2 now believes the resources (pages) for the region are no longer accessible, and
+//     returns them to the pmm.
+//  4. Thread 3 attempts to access this region and is now able to read/write to returned pages as
+//     invalidations have not occurred.
+// This scenario is possible as the mappings here are not the source of truth of resource
+// management, but a cache of information from other parts of the system. If thread 2 wanted to
+// guarantee that the pages were free it could issue it's own TLB invalidations for the vaddr range,
+// even though it found no entries. However this is not the strategy employed here at the moment.
 class Riscv64ArchVmAspace::ConsistencyManager {
  public:
   ConsistencyManager(Riscv64ArchVmAspace& aspace) TA_REQ(aspace.lock_) : aspace_(aspace) {}
@@ -228,55 +328,83 @@ class Riscv64ArchVmAspace::ConsistencyManager {
   // Queue a TLB entry for flushing. This may get turned into a complete ASID flush.
   void FlushEntry(vaddr_t va, bool terminal) {
     AssertHeld(aspace_.lock_);
-    // Check we have queued too many entries already.
-    if (num_pending_tlbs_ >= kMaxPendingTlbs) {
-      // Most of the time we will now prefer to invalidate the entire ASID, the exception is if
-      // this aspace is using the global ASID.
-      if (aspace_.asid_ != MMU_RISCV64_GLOBAL_ASID) {
-        // Keep counting entries so that we can track how many TLB invalidates we saved by grouping.
-        num_pending_tlbs_++;
-        return;
-      }
-      // Flush what pages we've cached up until now and reset counter to zero.
-      Flush();
-    }
 
-    // va must be page aligned so we can safely throw away the bottom bit.
+    LTRACEF("va %#lx, asid %#x, terminal %u\n", va, aspace_.asid_, terminal);
+
     DEBUG_ASSERT(IS_PAGE_ALIGNED(va));
     DEBUG_ASSERT(aspace_.IsValidVaddr(va));
 
-    pending_tlbs_[num_pending_tlbs_].terminal = terminal;
-    pending_tlbs_[num_pending_tlbs_].va_shifted = va >> 1;
-    num_pending_tlbs_++;
+    if (full_flush_) {
+      // If we've already decided to do a full flush, nothing more to track here.
+      return;
+    }
+
+    // If we're asked to flush a non terminal entry, we're going to need to dump the entire ASID
+    // so skip tracking this VA and exit now.
+    if (!terminal) {
+      full_flush_ = true;
+      return;
+    }
+
+    // Check we have queued too many entries already.
+    if (num_pending_tlb_runs_ >= kMaxPendingTlbRuns) {
+      // Most of the time we will now prefer to invalidate the entire ASID, the exception is if
+      // this aspace is for the kernel, in which all pages are global and we need to flush
+      // them one at a time.
+      if (!aspace_.IsKernel()) {
+        full_flush_ = true;
+        return;
+      }
+
+      // Kernel case: Flush what pages we've cached up until now and reset counter to zero.
+      Flush();
+    }
+
+    if (num_pending_tlb_runs_ > 0) {
+      // See if this entry completes the previous run or is the start of the previous run.
+      // The latter catches a fairly common case of multiple flushes of the same page in a row.
+      auto& run = pending_tlbs_[num_pending_tlb_runs_ - 1];
+      if ((run.va + run.count * PAGE_SIZE == va)) {
+        run.count++;
+        return;
+      }
+      if (run.va == va) {
+        return;
+      }
+    }
+
+    // Start a new run of entries to track
+    pending_tlbs_[num_pending_tlb_runs_].va = va;
+    pending_tlbs_[num_pending_tlb_runs_].count = 1;
+    num_pending_tlb_runs_++;
   }
 
   // Performs any pending synchronization of TLBs and page table walkers. Includes the MB to ensure
   // TLB flushes have completed prior to returning to user.
   void Flush() TA_REQ(aspace_.lock_) {
-    cm_flush.Add(1);
-    if (num_pending_tlbs_ == 0) {
+    kcounter_add(cm_flush_call, 1);
+    if (!full_flush_ && num_pending_tlb_runs_ == 0) {
       return;
     }
     // Need a mb to synchronize any page table updates prior to flushing the TLBs.
     mb();
 
     // Check if we should just be performing a full ASID invalidation.
-    if (num_pending_tlbs_ > kMaxPendingTlbs) {
-      cm_flush_all.Add(1);
-      cm_flush_all_replacing.Add(num_pending_tlbs_);
+    if (full_flush_) {
       aspace_.FlushAsid();
     } else {
-      for (size_t i = 0; i < num_pending_tlbs_; i++) {
-        const vaddr_t va = pending_tlbs_[i].va_shifted << 1;
-        DEBUG_ASSERT(aspace_.IsValidVaddr(va));
-        aspace_.FlushTLBEntry(va, pending_tlbs_[i].terminal);
+      for (size_t i = 0; i < num_pending_tlb_runs_; i++) {
+        const vaddr_t va = pending_tlbs_[i].va;
+        const size_t count = pending_tlbs_[i].count;
+
+        aspace_.FlushTLBEntryRun(va, count);
       }
-      cm_single_tlb_invalidates.Add(num_pending_tlbs_);
     }
 
     // mb to ensure TLB flushes happen prior to returning to user.
     mb();
-    num_pending_tlbs_ = 0;
+    num_pending_tlb_runs_ = 0;
+    full_flush_ = false;
   }
 
   // Queue a page for freeing that is dependent on TLB flushing. This is for pages that were
@@ -286,21 +414,29 @@ class Riscv64ArchVmAspace::ConsistencyManager {
 
  private:
   // Maximum number of TLB entries we will queue before switching to ASID invalidation.
-  static constexpr size_t kMaxPendingTlbs = 8;
-
-  // Pending TLBs to flush are stored as 63 bits, with the bottom bit stolen to store the terminal
-  // flag. 63 bits is more than enough as these entries are page aligned at the minimum.
-  struct {
-    bool terminal : 1;
-    uint64_t va_shifted : 63;
-  } pending_tlbs_[kMaxPendingTlbs];
-  size_t num_pending_tlbs_ = 0;
+  static constexpr uint32_t kMaxPendingTlbRuns = 8;
 
   // vm_page_t's to release to the PMM after the TLB invalidation occurs.
   list_node to_free_ = LIST_INITIAL_VALUE(to_free_);
 
   // The aspace we are invalidating TLBs for.
   const Riscv64ArchVmAspace& aspace_;
+
+  // Perform a full flush of the entire ASID (or all ASIDs if a kernel aspace) in these cases:
+  // 1) We've accumulated more than kMaxPendingTlbRuns run of pages, which are expensive to perform
+  // because of cross cpu TLB shootdowns.
+  // 2) If we've been asked to flush a non terminal page, which according to the RISC-V
+  // privileged spec should involve clearing the entire ASID.
+  bool full_flush_ = false;
+
+  // Pending TLBs to flush are stored as a virtual address + a count of pages to flush in a run.
+  uint32_t num_pending_tlb_runs_ = 0;
+
+  // A run of pages to flush.
+  struct {
+    uint64_t va;
+    size_t count;
+  } pending_tlbs_[kMaxPendingTlbRuns];
 };
 
 uint Riscv64ArchVmAspace::MmuFlagsFromPte(pte_t pte) {
@@ -309,6 +445,26 @@ uint Riscv64ArchVmAspace::MmuFlagsFromPte(pte_t pte) {
   mmu_flags |= (pte & RISCV64_PTE_R) ? ARCH_MMU_FLAG_PERM_READ : 0;
   mmu_flags |= (pte & RISCV64_PTE_W) ? ARCH_MMU_FLAG_PERM_WRITE : 0;
   mmu_flags |= (pte & RISCV64_PTE_X) ? ARCH_MMU_FLAG_PERM_EXECUTE : 0;
+
+  // Svpbmt feature
+  if (riscv_feature_svpbmt) {
+    switch (pte & RISCV64_PTE_PBMT_MASK) {
+      case RISCV64_PTE_PBMT_PMA:
+        // PMA state basically means default cache paramaters, as determined by physical address.
+        // Don't actually report it as CACHED here since we can't know here what the actual
+        // underlying physical range's type is.
+        break;
+      case RISCV64_PTE_PBMT_NC:
+        mmu_flags |= ARCH_MMU_FLAG_UNCACHED;
+        break;
+      case RISCV64_PTE_PBMT_IO:
+        mmu_flags |= ARCH_MMU_FLAG_UNCACHED_DEVICE;
+        break;
+      default:
+        panic("unexpected pte value %" PRIx64, pte);
+    }
+  }
+
   return mmu_flags;
 }
 
@@ -360,78 +516,78 @@ zx_status_t Riscv64ArchVmAspace::QueryLocked(vaddr_t vaddr, paddr_t* paddr, uint
   }
 }
 
-zx_status_t Riscv64ArchVmAspace::AllocPageTable(paddr_t* paddrp) {
+zx::result<paddr_t> Riscv64ArchVmAspace::AllocPageTable() {
   // Allocate a page from the pmm via function pointer passed to us in Init().
   // The default is pmm_alloc_page so test and explicitly call it to avoid any unnecessary
   // virtual functions.
   vm_page_t* page;
-  zx_status_t status;
-  if (likely(!test_page_alloc_func_)) {
-    status = pmm_alloc_page(0, &page, paddrp);
-  } else {
-    status = test_page_alloc_func_(0, &page, paddrp);
-  }
+  paddr_t paddr;
+  const zx_status_t status = likely(!test_page_alloc_func_)
+                                 ? pmm_alloc_page(0, &page, &paddr)
+                                 : test_page_alloc_func_(0, &page, &paddr);
   if (status != ZX_OK) {
-    return status;
+    return zx::error_result(status);
   }
+  DEBUG_ASSERT(is_physmap_phys_addr(paddr));
 
   page->set_state(vm_page_state::MMU);
   pt_pages_++;
 
   LOCAL_KTRACE("page table alloc");
+  LTRACEF("allocated 0x%lx\n", paddr);
 
-  LTRACEF("allocated 0x%lx\n", *paddrp);
-
-  if (!is_physmap_phys_addr(*paddrp)) {
-    while (1)
-      __asm__("nop");
-  }
-  return ZX_OK;
+  return zx::ok(paddr);
 }
 
 void Riscv64ArchVmAspace::FreePageTable(void* vaddr, paddr_t paddr, ConsistencyManager& cm) {
   LTRACEF("vaddr %p paddr 0x%lx\n", vaddr, paddr);
-
   LOCAL_KTRACE("page table free");
 
-  vm_page_t* page = paddr_to_vm_page(paddr);
-  if (!page) {
-    panic("bad page table paddr 0x%lx\n", paddr);
-  }
+  vm_page_t* const page = paddr_to_vm_page(paddr);
+  DEBUG_ASSERT(page != nullptr);
   DEBUG_ASSERT(page->state() == vm_page_state::MMU);
-  cm.FreePage(page);
 
+  cm.FreePage(page);
   pt_pages_--;
 }
 
 zx_status_t Riscv64ArchVmAspace::SplitLargePage(vaddr_t vaddr, uint level, vaddr_t pt_index,
                                                 volatile pte_t* page_table,
                                                 ConsistencyManager& cm) {
-  const pte_t pte = page_table[pt_index];
-  DEBUG_ASSERT(riscv64_pte_is_leaf(pte));
+  LTRACEF("vaddr %#lx, level %u, pt_index %#lx, page_table %p\n", vaddr, level, pt_index,
+          page_table);
 
-  paddr_t paddr;
-  zx_status_t ret = AllocPageTable(&paddr);
-  if (ret) {
+  const pte_t old_pte = page_table[pt_index];
+  DEBUG_ASSERT(riscv64_pte_is_leaf(old_pte));
+
+  LTRACEF("old leaf table entry is %#lx\n", old_pte);
+
+  const zx::result<paddr_t> result = AllocPageTable();
+  if (result.is_error()) {
     TRACEF("failed to allocate page table\n");
-    return ret;
+    return result.error_value();
   }
+  const paddr_t paddr = result.value();
 
   const auto new_page_table = static_cast<volatile pte_t*>(paddr_to_physmap(paddr));
-  const auto attrs = pte & (RISCV64_PTE_PERM_MASK | RISCV64_PTE_V);
+
+  // Inherit all of the page table entry bits that aren't part of the address.
+  const pte_t new_page_attrs = old_pte & ~(RISCV64_PTE_PPN_MASK);
+
+  LTRACEF("new page table filled with attrs %#lx | address\n", new_page_attrs);
 
   const size_t next_size = page_size_per_level(level - 1);
-  for (uint64_t i = 0, mapped_paddr = riscv64_pte_pa(pte); i < RISCV64_MMU_PT_ENTRIES;
+  for (uint64_t i = 0, mapped_paddr = riscv64_pte_pa(old_pte); i < RISCV64_MMU_PT_ENTRIES;
        i++, mapped_paddr += next_size) {
     // directly write to the pte, no need to update since this is
     // a completely new table
-    new_page_table[i] = riscv64_pte_pa_to_pte(mapped_paddr) | attrs;
+    new_page_table[i] = riscv64_pte_pa_to_pte(mapped_paddr) | new_page_attrs;
   }
 
-  // Ensure all zeroing becomes visible prior to page table installation.
+  // Ensure page table initialization becomes visible prior to page table installation.
   wmb();
 
-  update_pte(&page_table[pt_index], riscv64_pte_pa_to_pte(paddr) | RISCV64_PTE_V);
+  update_pte(&page_table[pt_index], mmu_non_leaf_pte(paddr, IsKernel()));
   LTRACEF("pte %p[%#" PRIxPTR "] = %#" PRIx64 "\n", page_table, pt_index, page_table[pt_index]);
 
   // no need to update the page table count here since we're replacing a block entry with a table
@@ -442,30 +598,51 @@ zx_status_t Riscv64ArchVmAspace::SplitLargePage(vaddr_t vaddr, uint level, vaddr
   return ZX_OK;
 }
 
-// use the appropriate TLB flush instruction to globally flush the modified entry
-// terminal is set when flushing at the final level of the page table.
-void Riscv64ArchVmAspace::FlushTLBEntry(vaddr_t vaddr, bool terminal) const {
-  LTRACEF("vaddr %#lx asid %#hx terminal %u\n", vaddr, asid_, terminal);
-  cpu_mask_t cpu_mask = mask_all_but_one(arch_curr_cpu_num());
-  if (terminal) {
-    __asm__ __volatile__("sfence.vma  %0, %1" ::"r"(vaddr), "r"(asid_) : "memory");
-    sbi_remote_sfence_vma_asid(cpu_mask, vaddr, PAGE_SIZE, asid_);
+// Use the appropriate TLB flush instruction to globally flush the modified run of pages
+// in the appropriate ASID or global if kernel.
+void Riscv64ArchVmAspace::FlushTLBEntryRun(vaddr_t vaddr, size_t count) const {
+  LTRACEF("vaddr %#lx, count %#lx, asid %#hx, kernel %u\n", vaddr, count, asid_, IsKernel());
+
+  kcounter_add(cm_page_run_invalidate, 1);
+  kcounter_add(cm_single_page_invalidate, static_cast<int64_t>(count));
+
+  // Future optimization here and FlushAsid() when asids are disabled:
+  // Based on which cpu has the aspace active, only send IPIs (either directly
+  // or via SBI) to the cores from that list to shoot down TLBs.
+  const size_t size = count * PAGE_SIZE;
+  if (IsKernel()) {
+    SfenceVmaArgs args{SfenceVmaArgs::Range{vaddr, size}};
+    mp_sync_exec(MP_IPI_TARGET_ALL, /* cpu_mask */ 0, &SfenceVma, &args);
+  } else if (IsUser()) {
+    // Flush just the aspace's asid
+    SfenceVmaArgs args{SfenceVmaArgs::Range{vaddr, size}, asid_};
+    mp_sync_exec(MP_IPI_TARGET_ALL, /* cpu_mask */ 0, &SfenceVma, &args);
   } else {
-    __asm("sfence.vma  zero, %0" ::"r"(asid_) : "memory");
-    sbi_remote_sfence_vma_asid(cpu_mask, 0, -1, asid_);
+    PANIC_UNIMPLEMENTED;
   }
 }
 
+// Flush an entire ASID on all cpus.
 void Riscv64ArchVmAspace::FlushAsid() const {
-  LTRACEF("asid %#hx\n", asid_);
-  __asm("sfence.vma  zero, %0" ::"r"(asid_) : "memory");
-  cpu_mask_t cpu_mask = mask_all_but_one(arch_curr_cpu_num());
-  sbi_remote_sfence_vma_asid(cpu_mask, 0, -1, asid_);
+  LTRACEF("asid %#hx, kernel %u\n", asid_, IsKernel());
+
+  if (IsKernel()) {
+    // Perform a full flush of all cpus across all ASIDs
+    SfenceVmaArgs args{};
+    mp_sync_exec(MP_IPI_TARGET_ALL, /* cpu_mask */ 0, &SfenceVma, &args);
+    kcounter_add(cm_global_invalidate, 1);
+  } else {
+    // Perform a full flush of all cpus of a single ASID
+    SfenceVmaArgs args{.asid = asid_};
+    mp_sync_exec(MP_IPI_TARGET_ALL, /* cpu_mask */ 0, &SfenceVma, &args);
+    kcounter_add(cm_asid_invalidate, 1);
+  }
 }
 
-ssize_t Riscv64ArchVmAspace::UnmapPageTable(vaddr_t vaddr, vaddr_t vaddr_rel, size_t size,
-                                            EnlargeOperation enlarge, uint level,
-                                            volatile pte_t* page_table, ConsistencyManager& cm) {
+zx::result<size_t> Riscv64ArchVmAspace::UnmapPageTable(vaddr_t vaddr, vaddr_t vaddr_rel,
+                                                       size_t size, EnlargeOperation enlarge,
+                                                       uint level, volatile pte_t* page_table,
+                                                       ConsistencyManager& cm) {
   const vaddr_t block_size = page_size_per_level(level);
   const vaddr_t block_mask = block_size - 1;
 
@@ -483,12 +660,12 @@ ssize_t Riscv64ArchVmAspace::UnmapPageTable(vaddr_t vaddr, vaddr_t vaddr_rel, si
     // If the input range partially covers a large page, attempt to split.
     if (level > 0 && riscv64_pte_is_valid(pte) && riscv64_pte_is_leaf(pte) &&
         chunk_size != block_size) {
-      zx_status_t s = SplitLargePage(vaddr, level, index, page_table, cm);
+      const zx_status_t status = SplitLargePage(vaddr, level, index, page_table, cm);
       // If the split failed then we just fall through and unmap the entire large page.
-      if (likely(s == ZX_OK)) {
+      if (likely(status == ZX_OK)) {
         pte = page_table[index];
       } else if (enlarge == EnlargeOperation::No) {
-        return s;
+        return zx::error_result(status);
       }
     }
 
@@ -499,9 +676,9 @@ ssize_t Riscv64ArchVmAspace::UnmapPageTable(vaddr_t vaddr, vaddr_t vaddr_rel, si
           static_cast<volatile pte_t*>(paddr_to_physmap(page_table_paddr));
 
       // Recurse a level.
-      ssize_t result =
+      zx::result<size_t> result =
           UnmapPageTable(vaddr, vaddr_rem, chunk_size, enlarge, level - 1, next_page_table, cm);
-      if (result < 0) {
+      if (result.is_error()) {
         return result;
       }
 
@@ -542,12 +719,13 @@ ssize_t Riscv64ArchVmAspace::UnmapPageTable(vaddr_t vaddr, vaddr_t vaddr_rel, si
     unmap_size += chunk_size;
   }
 
-  return unmap_size;
+  return zx::ok(unmap_size);
 }
 
-ssize_t Riscv64ArchVmAspace::MapPageTable(vaddr_t vaddr_in, vaddr_t vaddr_rel_in, paddr_t paddr_in,
-                                          size_t size_in, pte_t attrs, uint level,
-                                          volatile pte_t* page_table, ConsistencyManager& cm) {
+zx::result<size_t> Riscv64ArchVmAspace::MapPageTable(vaddr_t vaddr_in, vaddr_t vaddr_rel_in,
+                                                     paddr_t paddr_in, size_t size_in, pte_t attrs,
+                                                     uint level, volatile pte_t* page_table,
+                                                     ConsistencyManager& cm) {
   vaddr_t vaddr = vaddr_in;
   vaddr_t vaddr_rel = vaddr_rel_in;
   paddr_t paddr = paddr_in;
@@ -562,13 +740,14 @@ ssize_t Riscv64ArchVmAspace::MapPageTable(vaddr_t vaddr_in, vaddr_t vaddr_rel_in
 
   if ((vaddr_rel | paddr | size) & (PAGE_MASK)) {
     TRACEF("not page aligned\n");
-    return ZX_ERR_INVALID_ARGS;
+    return zx::error_result(ZX_ERR_INVALID_ARGS);
   }
 
   auto cleanup = fit::defer([&]() {
     AssertHeld(lock_);
-    UnmapPageTable(vaddr_in, vaddr_rel_in, size_in - size, EnlargeOperation::No, level, page_table,
-                   cm);
+    zx::result<size_t> result = UnmapPageTable(vaddr_in, vaddr_rel_in, size_in - size,
+                                               EnlargeOperation::No, level, page_table, cm);
+    DEBUG_ASSERT(result.is_ok());
   });
 
   size_t mapped_size = 0;
@@ -586,11 +765,12 @@ ssize_t Riscv64ArchVmAspace::MapPageTable(vaddr_t vaddr_in, vaddr_t vaddr_rel_in
       volatile pte_t* next_page_table = nullptr;
 
       if (!riscv64_pte_is_valid(pte)) {
-        zx_status_t ret = AllocPageTable(&page_table_paddr);
-        if (ret) {
+        zx::result<paddr_t> result = AllocPageTable();
+        if (result.is_error()) {
           TRACEF("failed to allocate page table\n");
-          return NULL;
+          return result.take_error();
         }
+        page_table_paddr = result.value();
         allocated_page_table = true;
         void* pt_vaddr = paddr_to_physmap(page_table_paddr);
 
@@ -601,7 +781,7 @@ ssize_t Riscv64ArchVmAspace::MapPageTable(vaddr_t vaddr_in, vaddr_t vaddr_rel_in
         // do this prior to writing the pte we cannot defer it using the consistency manager.
         mb();
 
-        pte = riscv64_pte_pa_to_pte(page_table_paddr) | RISCV64_PTE_V;
+        pte = mmu_non_leaf_pte(page_table_paddr, IsKernel());
         update_pte(&page_table[index], pte);
         // We do not need to sync the walker, despite writing a new entry, as this is a
         // non-terminal entry and so is irrelevant to the walker anyway.
@@ -613,13 +793,13 @@ ssize_t Riscv64ArchVmAspace::MapPageTable(vaddr_t vaddr_in, vaddr_t vaddr_rel_in
         LTRACEF("found page table %#" PRIxPTR "\n", page_table_paddr);
         next_page_table = static_cast<volatile pte_t*>(paddr_to_physmap(page_table_paddr));
       } else {
-        return ZX_ERR_ALREADY_EXISTS;
+        return zx::error_result(ZX_ERR_ALREADY_EXISTS);
       }
       DEBUG_ASSERT(next_page_table);
 
-      ssize_t ret =
+      zx::result<size_t> result =
           MapPageTable(vaddr, vaddr_rem, paddr, chunk_size, attrs, level - 1, next_page_table, cm);
-      if (ret < 0) {
+      if (result.is_error()) {
         if (allocated_page_table) {
           // We just allocated this page table. The unmap in err will not clean it up as the size
           // we pass in will not cause us to look at this page table. This is reasonable as if we
@@ -635,18 +815,33 @@ ssize_t Riscv64ArchVmAspace::MapPageTable(vaddr_t vaddr_in, vaddr_t vaddr_rel_in
           cm.FlushEntry(vaddr, false);
           FreePageTable(const_cast<pte_t*>(next_page_table), page_table_paddr, cm);
         }
-        return ret;
+        return result;
       }
-      DEBUG_ASSERT(static_cast<size_t>(ret) == chunk_size);
+      DEBUG_ASSERT(result.value() == chunk_size);
     } else {
       if (riscv64_pte_is_valid(pte)) {
         LTRACEF("page table entry already in use, index %#" PRIxPTR ", %#" PRIx64 "\n", index, pte);
-        return ZX_ERR_ALREADY_EXISTS;
+        return zx::error_result(ZX_ERR_ALREADY_EXISTS);
       }
 
       pte = riscv64_pte_pa_to_pte(paddr) | attrs;
       LTRACEF("pte %p[%#" PRIxPTR "] = %#" PRIx64 "\n", page_table, index, pte);
       page_table[index] = pte;
+
+      // Flush the TLB on map as well, unlike most architectures.
+      if (IsKernel()) {
+        // Normally we only need a local fence here and secondary cpus at worse would only
+        // get a spurious page fault. However, since spurious PFs are not tolerated in the
+        // kernel we want to do a full flush via the ConsistencyManager for kernel addresses.
+        cm.FlushEntry(vaddr, true);
+      } else if (IsUser()) {
+        // Perform a local sfence.vma on the single page in the local asid. If another cpu were
+        // to page fault on this user address, it will sfence.vma in its PF handler.
+        riscv64_tlb_flush_address_one_asid(vaddr, asid_);
+        kcounter_add(cm_local_page_invalidate, 1);
+      } else [[unlikely]] {
+        PANIC_UNIMPLEMENTED;
+      }
     }
     vaddr += chunk_size;
     vaddr_rel += chunk_size;
@@ -656,7 +851,7 @@ ssize_t Riscv64ArchVmAspace::MapPageTable(vaddr_t vaddr_in, vaddr_t vaddr_rel_in
   }
 
   cleanup.cancel();
-  return mapped_size;
+  return zx::ok(mapped_size);
 }
 
 zx_status_t Riscv64ArchVmAspace::ProtectPageTable(vaddr_t vaddr_in, vaddr_t vaddr_rel_in,
@@ -835,35 +1030,28 @@ void Riscv64ArchVmAspace::MarkAccessedPageTable(vaddr_t vaddr, vaddr_t vaddr_rel
   }
 }
 
-ssize_t Riscv64ArchVmAspace::MapPages(vaddr_t vaddr, paddr_t paddr, size_t size, pte_t attrs,
-                                      ConsistencyManager& cm) {
+zx::result<size_t> Riscv64ArchVmAspace::MapPages(vaddr_t vaddr, paddr_t paddr, size_t size,
+                                                 pte_t attrs, ConsistencyManager& cm) {
   LOCAL_KTRACE("mmu map", (vaddr & ~PAGE_MASK) | ((size >> PAGE_SIZE_SHIFT) & PAGE_MASK));
   uint level = RISCV64_MMU_PT_LEVELS - 1;
-  ssize_t ret = MapPageTable(vaddr, vaddr, paddr, size, attrs, level, tt_virt_, cm);
+  zx::result<size_t> ret = MapPageTable(vaddr, vaddr, paddr, size, attrs, level, tt_virt_, cm);
   mb();
   return ret;
 }
 
-ssize_t Riscv64ArchVmAspace::UnmapPages(vaddr_t vaddr, size_t size, EnlargeOperation enlarge,
-                                        ConsistencyManager& cm) {
+zx::result<size_t> Riscv64ArchVmAspace::UnmapPages(vaddr_t vaddr, size_t size,
+                                                   EnlargeOperation enlarge,
+                                                   ConsistencyManager& cm) {
   LOCAL_KTRACE("mmu unmap", (vaddr & ~PAGE_MASK) | ((size >> PAGE_SIZE_SHIFT) & PAGE_MASK));
   uint level = RISCV64_MMU_PT_LEVELS - 1;
-  ssize_t ret = UnmapPageTable(vaddr, vaddr, size, enlarge, level, tt_virt_, cm);
-  return ret;
+  return UnmapPageTable(vaddr, vaddr, size, enlarge, level, tt_virt_, cm);
 }
 
 zx_status_t Riscv64ArchVmAspace::ProtectPages(vaddr_t vaddr, size_t size, pte_t attrs) {
   LOCAL_KTRACE("mmu protect", (vaddr & ~PAGE_MASK) | ((size >> PAGE_SIZE_SHIFT) & PAGE_MASK));
   uint level = RISCV64_MMU_PT_LEVELS - 1;
   ConsistencyManager cm(*this);
-  zx_status_t ret = ProtectPageTable(vaddr, vaddr, size, attrs, level, tt_virt_, cm);
-  return ret;
-}
-
-void Riscv64ArchVmAspace::MmuParamsFromFlags(uint mmu_flags, pte_t* attrs) {
-  if (attrs) {
-    *attrs = mmu_flags_to_pte_attr(mmu_flags, asid_ == MMU_RISCV64_GLOBAL_ASID);
-  }
+  return ProtectPageTable(vaddr, vaddr, size, attrs, level, tt_virt_, cm);
 }
 
 zx_status_t Riscv64ArchVmAspace::MapContiguous(vaddr_t vaddr, paddr_t paddr, size_t count,
@@ -894,25 +1082,22 @@ zx_status_t Riscv64ArchVmAspace::MapContiguous(vaddr_t vaddr, paddr_t paddr, siz
     return ZX_OK;
   }
 
-  ssize_t ret;
-  {
-    Guard<Mutex> a{&lock_};
-    if (mmu_flags & ARCH_MMU_FLAG_PERM_EXECUTE) {
-      Riscv64VmICacheConsistencyManager cache_cm;
-      cache_cm.SyncAddr(reinterpret_cast<vaddr_t>(paddr_to_physmap(paddr)), count * PAGE_SIZE);
-    }
-    pte_t attrs;
-    MmuParamsFromFlags(mmu_flags, &attrs);
-    ConsistencyManager cm(*this);
-    ret = MapPages(vaddr, paddr, count * PAGE_SIZE, attrs, cm);
+  Guard<Mutex> a{&lock_};
+
+  if (mmu_flags & ARCH_MMU_FLAG_PERM_EXECUTE) {
+    Riscv64VmICacheConsistencyManager cache_cm;
+    cache_cm.SyncAddr(reinterpret_cast<vaddr_t>(paddr_to_physmap(paddr)), count * PAGE_SIZE);
   }
 
+  ConsistencyManager cm(*this);
+  const pte_t attrs = mmu_flags_to_pte_attr(mmu_flags, IsKernel());
+  zx::result<size_t> result = MapPages(vaddr, paddr, count * PAGE_SIZE, attrs, cm);
   if (mapped) {
-    *mapped = (ret > 0) ? (ret / PAGE_SIZE) : 0u;
+    *mapped = result.is_ok() ? result.value() / PAGE_SIZE : 0u;
     DEBUG_ASSERT(*mapped <= count);
   }
 
-  return (ret < 0) ? (zx_status_t)ret : ZX_OK;
+  return result.status_value();
 }
 
 zx_status_t Riscv64ArchVmAspace::Map(vaddr_t vaddr, paddr_t* phys, size_t count, uint mmu_flags,
@@ -955,30 +1140,29 @@ zx_status_t Riscv64ArchVmAspace::Map(vaddr_t vaddr, paddr_t* phys, size_t count,
         cache_cm.SyncAddr(reinterpret_cast<vaddr_t>(paddr_to_physmap(phys[idx])), PAGE_SIZE);
       }
     }
-    pte_t attrs;
-    MmuParamsFromFlags(mmu_flags, &attrs);
 
-    ssize_t ret;
     size_t idx = 0;
     ConsistencyManager cm(*this);
     auto undo = fit::defer([&]() TA_NO_THREAD_SAFETY_ANALYSIS {
       if (idx > 0) {
-        UnmapPages(vaddr, idx * PAGE_SIZE, EnlargeOperation::No, cm);
+        zx::result<size_t> result = UnmapPages(vaddr, idx * PAGE_SIZE, EnlargeOperation::No, cm);
+        DEBUG_ASSERT(result.is_ok());
       }
     });
 
+    const pte_t attrs = mmu_flags_to_pte_attr(mmu_flags, IsKernel());
     vaddr_t v = vaddr;
     for (; idx < count; ++idx) {
       paddr_t paddr = phys[idx];
       DEBUG_ASSERT(IS_PAGE_ALIGNED(paddr));
-      ret = MapPages(v, paddr, PAGE_SIZE, attrs, cm);
-      if (ret < 0) {
-        zx_status_t status = static_cast<zx_status_t>(ret);
-        if (status != ZX_ERR_ALREADY_EXISTS || existing_action == ExistingEntryAction::Error) {
-          return status;
+      zx::result<size_t> result = MapPages(v, paddr, PAGE_SIZE, attrs, cm);
+      if (result.is_error()) {
+        if (result.error_value() != ZX_ERR_ALREADY_EXISTS ||
+            existing_action == ExistingEntryAction::Error) {
+          return result.error_value();
         }
       } else {
-        total_mapped += ret / PAGE_SIZE;
+        total_mapped += result.value() / PAGE_SIZE;
       }
 
       v += PAGE_SIZE;
@@ -1018,14 +1202,14 @@ zx_status_t Riscv64ArchVmAspace::Unmap(vaddr_t vaddr, size_t count, EnlargeOpera
   Guard<Mutex> a{&lock_};
 
   ConsistencyManager cm(*this);
-  ssize_t ret = UnmapPages(vaddr, count * PAGE_SIZE, enlarge, cm);
+  zx::result<size_t> result = UnmapPages(vaddr, count * PAGE_SIZE, enlarge, cm);
 
   if (unmapped) {
-    *unmapped = (ret > 0) ? (ret / PAGE_SIZE) : 0u;
+    *unmapped = result.is_ok() ? result.value() / PAGE_SIZE : 0u;
     DEBUG_ASSERT(*unmapped <= count);
   }
 
-  return (ret < 0) ? (zx_status_t)ret : 0;
+  return result.status_value();
 }
 
 zx_status_t Riscv64ArchVmAspace::Protect(vaddr_t vaddr, size_t count, uint mmu_flags) {
@@ -1066,15 +1250,8 @@ zx_status_t Riscv64ArchVmAspace::Protect(vaddr_t vaddr, size_t count, uint mmu_f
     vm_mmu_protect_make_execute_pages.Add(pages_synced);
   }
 
-  int ret;
-  {
-    pte_t attrs;
-    MmuParamsFromFlags(mmu_flags, &attrs);
-
-    ret = ProtectPages(vaddr, count * PAGE_SIZE, attrs);
-  }
-
-  return ret;
+  const pte_t attrs = mmu_flags_to_pte_attr(mmu_flags, IsKernel());
+  return ProtectPages(vaddr, count * PAGE_SIZE, attrs);
 }
 
 zx_status_t Riscv64ArchVmAspace::HarvestAccessed(vaddr_t vaddr, size_t count,
@@ -1159,7 +1336,7 @@ zx_status_t Riscv64ArchVmAspace::Init() {
 
     tt_virt_ = riscv64_kernel_translation_table;
     tt_phys_ = kernel_virt_to_phys(riscv64_kernel_translation_table);
-    asid_ = (uint16_t)MMU_RISCV64_GLOBAL_ASID;
+    asid_ = kernel_asid();
   } else {
     if (type_ == Riscv64AspaceType::kUser) {
       DEBUG_ASSERT_MSG(IsUserBaseSizeValid(base_, size_), "base %#" PRIxPTR " size 0x%zx", base_,
@@ -1168,22 +1345,28 @@ zx_status_t Riscv64ArchVmAspace::Init() {
         return ZX_ERR_INVALID_ARGS;
       }
 
-      auto status = asid.Alloc();
-      if (status.is_error()) {
-        printf("RISC-V: out of ASIDs!\n");
-        return status.status_value();
+      // If using asids, assign a unique asid per process. If not, set the UNUSED
+      // asid to this address space, which will be the same between all aspaces.
+      if (riscv_use_asid) {
+        auto status = asid_allocator.Alloc();
+        if (status.is_error()) {
+          printf("RISC-V: out of ASIDs!\n");
+          return status.status_value();
+        }
+        asid_ = status.value();
+      } else {
+        asid_ = MMU_RISCV64_UNUSED_ASID;
       }
-      asid_ = status.value();
     } else {
       return ZX_ERR_NOT_SUPPORTED;
     }
 
     // allocate a top level page table to serve as the translation table
-    paddr_t pa;
-    zx_status_t status = AllocPageTable(&pa);
-    if (status != ZX_OK) {
-      return status;
+    const zx::result<paddr_t> result = AllocPageTable();
+    if (result.is_error()) {
+      return result.error_value();
     }
+    const paddr_t pa = result.value();
 
     volatile pte_t* va = static_cast<volatile pte_t*>(paddr_to_physmap(pa));
     tt_virt_ = va;
@@ -1201,6 +1384,13 @@ zx_status_t Riscv64ArchVmAspace::Init() {
   return ZX_OK;
 }
 
+zx_status_t Riscv64ArchVmAspace::InitShared() { return ZX_ERR_NOT_SUPPORTED; }
+zx_status_t Riscv64ArchVmAspace::InitRestricted() { return ZX_ERR_NOT_SUPPORTED; }
+zx_status_t Riscv64ArchVmAspace::InitUnified(ArchVmAspaceInterface& shared,
+                                             ArchVmAspaceInterface& restricted) {
+  return ZX_ERR_NOT_SUPPORTED;
+}
+
 void Riscv64ArchVmAspace::DisableUpdates() {
   // TODO-rvbringup: add machinery for this and the update checker logic
 }
@@ -1209,31 +1399,31 @@ zx_status_t Riscv64ArchVmAspace::Destroy() {
   canary_.Assert();
   LTRACEF("aspace %p\n", this);
 
-  Guard<Mutex> a{&lock_};
+  Guard<Mutex> guard{&lock_};
 
-  // Not okay to destroy the kernel address space
+  // Not okay to destroy the kernel address space.
   DEBUG_ASSERT(type_ != Riscv64AspaceType::kKernel);
 
   // Check to see if the top level page table is empty. If not the user didn't
-  // properly unmap everything before destroying the aspace
-  const int index = first_used_page_table_entry(tt_virt_);
-  if (index != -1 && index >= (1 << (PAGE_SIZE_SHIFT - 2))) {
-    panic("top level page table still in use! aspace %p tt_virt %p index %d entry %" PRIx64 "\n",
-          this, tt_virt_, index, tt_virt_[index]);
+  // properly unmap everything before destroying the aspace.
+  const zx::result<size_t> index_result = first_used_page_table_entry(tt_virt_);
+  DEBUG_ASSERT_MSG(
+      index_result.is_error() || *index_result < (1 << (PAGE_SIZE_SHIFT - 2)),
+      "Top level page table still in use: aspace %p tt_virt %p index %zu entry %" PRIx64, this,
+      tt_virt_, *index_result,
+      *index_result < (1 << (PAGE_SIZE_SHIFT - 2)) ? tt_virt_[*index_result] : 0);
+  DEBUG_ASSERT_MSG(pt_pages_ == 1, "Too many page table pages: aspace %p pt_pages_ %zu", this,
+                   pt_pages_);
+
+  if (riscv_use_asid) {
+    // Flush the ASID associated with this aspace
+    FlushAsid();
+
+    // Free any ASID.
+    auto status = asid_allocator.Free(asid_);
+    ASSERT(status.is_ok());
+    asid_ = MMU_RISCV64_UNUSED_ASID;
   }
-
-  if (pt_pages_ != 1) {
-    panic("allocated page table count is wrong, aspace %p count %zu (should be 1)\n", this,
-          pt_pages_);
-  }
-
-  // Flush the ASID associated with this aspace
-  FlushAsid();
-
-  // Free any ASID.
-  auto status = asid.Free(asid_);
-  ASSERT(status.is_ok());
-  asid_ = MMU_RISCV64_UNUSED_ASID;
 
   // Free the top level page table
   vm_page_t* page = paddr_to_vm_page(tt_phys_);
@@ -1252,6 +1442,7 @@ zx_status_t Riscv64ArchVmAspace::Destroy() {
 void Riscv64ArchVmAspace::ContextSwitch(Riscv64ArchVmAspace* old_aspace,
                                         Riscv64ArchVmAspace* aspace) {
   uint64_t satp;
+
   if (likely(aspace)) {
     aspace->canary_.Assert();
     DEBUG_ASSERT(aspace->type_ == Riscv64AspaceType::kUser);
@@ -1268,6 +1459,7 @@ void Riscv64ArchVmAspace::ContextSwitch(Riscv64ArchVmAspace* old_aspace,
   } else {
     // Switching to the null aspace, which means kernel address space only.
     satp = ((uint64_t)RISCV64_SATP_MODE_SV39 << RISCV64_SATP_MODE_SHIFT) |
+           ((uint64_t)kernel_asid() << RISCV64_SATP_ASID_SHIFT) |
            (kernel_virt_to_phys(riscv64_kernel_translation_table) >> PAGE_SIZE_SHIFT);
   }
   if (likely(old_aspace != nullptr)) {
@@ -1281,6 +1473,11 @@ void Riscv64ArchVmAspace::ContextSwitch(Riscv64ArchVmAspace* old_aspace,
 
   riscv64_csr_write(RISCV64_CSR_SATP, satp);
   mb();
+
+  // If we're not using hardware features, flush all non global TLB entries on context switch.
+  if (!riscv_use_asid) {
+    riscv64_tlb_flush_asid(MMU_RISCV64_UNUSED_ASID);
+  }
 }
 
 Riscv64ArchVmAspace::Riscv64ArchVmAspace(vaddr_t base, size_t size, Riscv64AspaceType type,
@@ -1322,7 +1519,7 @@ void riscv64_mmu_early_init() {
 
       LTRACEF("RISCV: MMU allocating top level page table for slot %zu, pa %#lx\n", i, pt_paddr);
 
-      pte_t pte = riscv64_pte_pa_to_pte(pt_paddr) | RISCV64_PTE_V;
+      pte_t pte = mmu_non_leaf_pte(pt_paddr, true);
       update_pte(&riscv64_kernel_bootstrap_translation_table[i], pte);
     }
   }
@@ -1332,40 +1529,72 @@ void riscv64_mmu_early_init() {
 
   // Zero the bottom of the kernel page table to remove any left over boot mappings.
   memset(riscv64_kernel_translation_table, 0, PAGE_SIZE / 2);
+
+  // Make sure it's visible to the cpu
+  wmb();
 }
 
-void riscv64_mmu_early_init_percpu() {
-  // Switch to the proper kernel translation table.
-  uint64_t satp = (RISCV64_SATP_MODE_SV39 << RISCV64_SATP_MODE_SHIFT) |
-                  ((uint64_t)MMU_RISCV64_GLOBAL_ASID << RISCV64_SATP_ASID_SHIFT) |
-                  (kernel_virt_to_phys(riscv64_kernel_translation_table) >> PAGE_SIZE_SHIFT);
+namespace {
+
+// Load the kernel page tables and set the passed in asid
+void riscv64_switch_kernel_asid(uint16_t asid) {
+  const uint64_t satp = (RISCV64_SATP_MODE_SV39 << RISCV64_SATP_MODE_SHIFT) |
+                        ((uint64_t)asid << RISCV64_SATP_ASID_SHIFT) |
+                        (kernel_virt_to_phys(riscv64_kernel_translation_table) >> PAGE_SIZE_SHIFT);
   riscv64_csr_write(RISCV64_CSR_SATP, satp);
 
   // Globally TLB flush.
-  asm("sfence.vma  zero, zero" ::: "memory");
+  riscv64_tlb_flush_all();
+}
+
+}  // anonymous namespace
+
+void riscv64_mmu_early_init_percpu() {
+  // Switch to the proper kernel translation table.
+  // Note: during early bringup on the boot cpu, we will have not decided to use asids yet, so
+  // kernel_asid() will return UNUSED_ASID. This is okay, we will decide later to
+  // use asids on the boot cpu in riscv64_mmu_prevm_init and reload the satp.
+  // Everything will be sorted out by the time secondary cpus are brought up.
+  riscv64_switch_kernel_asid(kernel_asid());
+
+  // Globally TLB flush.
+  riscv64_tlb_flush_all();
+}
+
+void riscv64_mmu_prevm_init() {
+  // Use asids if hardware has full 16 bit support and our command line switches allow.
+  // We decide here because before now we have not been able to read gBootOptions.
+  riscv_use_asid = gBootOptions->riscv64_enable_asid && riscv_asid_mask == 0xffff;
+
+  // Now that we've decided to use asids, reload the kernel satp with the proper asid
+  // on the boot cpu.
+  riscv64_switch_kernel_asid(kernel_asid());
 }
 
 void riscv64_mmu_init() {
   dprintf(INFO, "RISCV: MMU enabled sv39\n");
-  dprintf(INFO, "RISCV: MMU ASID mask %#lx\n", riscv_asid_mask);
+  dprintf(INFO, "RISCV: MMU ASID mask %#lx, using asids %u\n", riscv_asid_mask, riscv_use_asid);
 }
 
 void Riscv64VmICacheConsistencyManager::SyncAddr(vaddr_t start, size_t len) {
+  LTRACEF("start %#lx, len %zu\n", start, len);
+
   // Validate we are operating on a kernel address range.
   DEBUG_ASSERT(is_kernel_address(start));
-  // use the physmap to clean the range to PoU, which is the point of where the instruction cache
-  // pulls from. Cleaning to PoU is potentially cheaper than cleaning to PoC, which is the default
-  // of arch_clean_cache_range.
-  // TODO(revest): Flush
-  // We can batch the icache invalidate and just perform it once at the end.
+
+  // Track that we'll need to fence.i at the end, the address is not important.
   need_invalidate_ = true;
 }
 
 void Riscv64VmICacheConsistencyManager::Finish() {
+  LTRACEF("need_invalidate %d\n", need_invalidate_);
   if (!need_invalidate_) {
     return;
   }
-  // TODO(revest): Flush
+
+  // Sync any address, since fence.i will dump the entire icache (for now).
+  arch_sync_cache_range(KERNEL_ASPACE_BASE, PAGE_SIZE);
+
   need_invalidate_ = false;
 }
 
@@ -1373,22 +1602,38 @@ uint32_t arch_address_tagging_features() { return 0; }
 
 void arch_zero_page(void* _ptr) {
   const uintptr_t end_address = reinterpret_cast<uintptr_t>(_ptr) + PAGE_SIZE;
-  asm volatile(
-      R"""(
-    .balign 4
-    0:
-      sd    zero,0(%0)
-      sd    zero,8(%0)
-      sd    zero,16(%0)
-      sd    zero,24(%0)
-      sd    zero,32(%0)
-      sd    zero,40(%0)
-      sd    zero,48(%0)
-      sd    zero,56(%0)
-      addi  %0,%0,64
-      bne   %0,%1,0b
-      )"""
-      : "+r"(_ptr)
-      : "r"(end_address)
-      : "memory");
+
+  if (riscv_feature_cboz) {
+    asm volatile(
+        R"""(
+      .balign 4
+      0:
+        cbo.zero 0(%0)
+        add  %0,%0,%2
+        bne  %0,%1,0b
+        )"""
+        : "+r"(_ptr)
+        : "r"(end_address), "r"(riscv_cboz_size)
+        : "memory");
+
+  } else {
+    asm volatile(
+        R"""(
+      .balign 4
+      0:
+        sd    zero,0(%0)
+        sd    zero,8(%0)
+        sd    zero,16(%0)
+        sd    zero,24(%0)
+        sd    zero,32(%0)
+        sd    zero,40(%0)
+        sd    zero,48(%0)
+        sd    zero,56(%0)
+        addi  %0,%0,64
+        bne   %0,%1,0b
+        )"""
+        : "+r"(_ptr)
+        : "r"(end_address)
+        : "memory");
+  }
 }

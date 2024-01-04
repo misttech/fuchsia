@@ -18,12 +18,14 @@
 #include <utility>
 #include <vector>
 
+#include "src/lib/fostr/fidl/fuchsia.math/amendments.h"
 #include "src/lib/fsl/handles/object_info.h"
+#include "src/ui/scenic/lib/allocation/id.h"
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
-#include "src/ui/scenic/lib/gfx/util/validate_eventpair.h"
 #include "src/ui/scenic/lib/scheduling/id.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 #include "src/ui/scenic/lib/utils/logging.h"
+#include "src/ui/scenic/lib/utils/validate_eventpair.h"
 #include "zircon/errors.h"
 
 #include <glm/gtc/constants.hpp>
@@ -47,6 +49,13 @@ using fuchsia::ui::views::ViewCreationToken;
 using fuchsia::ui::views::ViewportCreationToken;
 
 namespace {
+
+// Handle floating point errors up to an epsilon for sample region calls.
+void ClampIfNear(float* val, float difference) {
+  if (difference > 0.f && difference < 1e-3f) {
+    *val -= difference;
+  }
+}
 
 std::optional<std::string> ValidateViewportProperties(const ViewportProperties& properties) {
   if (properties.has_logical_size()) {
@@ -310,18 +319,18 @@ void Flatland::Present(fuchsia::ui::composition::PresentArgs args) {
           }
 
           for (auto& image_id : images_to_release) {
-            if (!all_images_to_release->erase(image_id.identifier)) {
+            if (!all_images_to_release->erase(image_id)) {
               // This is harmless, but typically shouldn't happen.  The rare exception is a race
               // when the Flatland session is being torn down, if this runs after the session is
               // destroyed, but before the session's loop/thread is stopped.
               FX_LOGS(WARNING) << "Flatland session << " << session_id
-                               << " did not find expected image " << image_id.identifier
+                               << " did not find expected image " << image_id
                                << " in images_to_release_";
               continue;
             }
 
             for (auto& importer : importer_refs) {
-              importer->ReleaseBufferImage(image_id.identifier);
+              importer->ReleaseBufferImage(image_id);
             }
           }
         });
@@ -444,8 +453,8 @@ void Flatland::CreateViewHelper(
     return;
   }
 
-  if (view_identity.has_value() && !scenic_impl::gfx::validate_viewref(
-                                       view_identity->view_ref_control, view_identity->view_ref)) {
+  if (view_identity.has_value() &&
+      !utils::validate_viewref(view_identity->view_ref_control, view_identity->view_ref)) {
     error_reporter_->ERROR() << "CreateView failed, ViewIdentityOnCreation was invalid";
     ReportBadOperationError();
     return;
@@ -554,27 +563,7 @@ void Flatland::ReleaseView() {
   link_to_parent_.reset();
 
   // Delay the actual destruction of the Link until the next Present().
-  pending_link_operations_.push_back(
-      [old_link_to_parent = std::move(old_link_to_parent), debug_name = debug_name_]() mutable {
-        ViewCreationToken return_token;
-
-        auto error_reporter = scenic_impl::ErrorReporter::DefaultUnique();
-        error_reporter->SetPrefix(std::move(debug_name));
-
-        // If the link is still valid, return the original token. If not, create an orphaned
-        // zx::channel and return it since the ObjectLinker does not retain the orphaned token.
-        auto link_token = old_link_to_parent.exporter.ReleaseToken();
-        if (link_token.has_value()) {
-          return_token.value = zx::channel(std::move(link_token.value()));
-        } else {
-          error_reporter->ERROR() << "No valid ViewCreationToken found.";
-          // |peer_token| immediately falls out of scope, orphaning |return_token|.
-          zx::channel peer_token;
-          zx::channel::create(0, &return_token.value, &peer_token);
-        }
-
-        // TODO(fxbug.dev/81576): Consider returning |return_token| for re-linking..
-      });
+  pending_link_operations_.push_back([old_link_to_parent = std::move(old_link_to_parent)]() {});
 }
 
 void Flatland::Clear() {
@@ -789,22 +778,28 @@ void Flatland::SetClipBoundaryInternal(TransformHandle handle, fuchsia::math::Re
   clip_regions_[handle] = bounds;
 }
 
-std::vector<allocation::ImageMetadata> Flatland::ProcessDeadTransforms(
+std::vector<allocation::GlobalImageId> Flatland::ProcessDeadTransforms(
     const TransformGraph::TopologyData& data) {
-  std::vector<allocation::ImageMetadata> images_to_release;
+  std::vector<allocation::GlobalImageId> images_to_release;
   for (const auto& dead_handle : data.dead_transforms) {
     matrices_.erase(dead_handle);
 
     // Gather all images corresponding to dead transforms.
     auto image_kv = image_metadatas_.find(dead_handle);
     if (image_kv != image_metadatas_.end()) {
+      const auto image_id = image_kv->second.identifier;
+      image_metadatas_.erase(image_kv);
+
+      // FilledRects do not need to be released.
+      if (image_id == allocation::kInvalidImageId)
+        continue;
+
       // Remember all dead images so that we can release them in the destructor if necessary.
       // Typically this won't be necessary: we'll release them as soon as it is safe (roughly, when
       // the next present takes effect).
-      images_to_release_->insert(image_kv->second.identifier);
+      images_to_release_->insert(image_id);
 
-      images_to_release.push_back(image_kv->second);
-      image_metadatas_.erase(image_kv);
+      images_to_release.push_back(image_id);
     }
   }
 
@@ -1111,10 +1106,19 @@ void Flatland::SetImageSampleRegion(ContentId image_id, RectF rect) {
     const auto& metadata = image_kv->second;
     const auto image_width = static_cast<float>(metadata.width);
     const auto image_height = static_cast<float>(metadata.height);
-    if (rect.x < 0.f || rect.x > image_width || rect.width < 0.f ||
-        (rect.x + rect.width) > image_width || rect.y < 0.f || rect.y > image_height ||
+    // This clamping is required in cases where (x+width>image_width) or (y+height>image_height) by
+    // a small epsilon. The downstream code expects these numbers to be within the (image_width,
+    // image_height) limits, so we only clamp the positive differences. The root cause is the
+    // precision errors in floating point arithmetic when a client tries to calculate floats within
+    // pixel space.
+    // TODO(fxbug.dev/132486): Remove floating point precision error checks and use uints instead.
+    ClampIfNear(&rect.width, rect.x + rect.width - image_width);
+    ClampIfNear(&rect.height, rect.y + rect.height - image_height);
+    if (rect.x < 0.f || rect.width < 0.f || (rect.x + rect.width) > image_width || rect.y < 0.f ||
         rect.height < 0.f || (rect.y + rect.height) > image_height) {
-      error_reporter_->ERROR() << "SetImageSampleRegion rect out of bounds for image.";
+      error_reporter_->ERROR() << "SetImageSampleRegion rect " << rect
+                               << " out of bounds for image (" << image_width << ", "
+                               << image_height << ")";
       ReportBadOperationError();
       return;
     }
@@ -1547,7 +1551,7 @@ void Flatland::ReleaseViewport(
     FX_DCHECK(content_released);
   }
 
-  // Move the old child link into the delayed operation so that the ContentId is immeditely free
+  // Move the old child link into the delayed operation so that the ContentId is immediately free
   // for re-use, but it doesn't get deleted until after the new UberStruct is published.
   auto link_to_child = std::move(link_data);
   links_to_children_.erase(content_kv->second);

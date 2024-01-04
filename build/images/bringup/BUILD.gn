@@ -41,8 +41,6 @@ files = {
 
 _partitions_config = "//boards/partitions:default"
 if (has_board) {
-  assert(board_information_for_assembly != false,
-         "board_information_for_assembly must be defined for the build")
   assert(partitions_config_label != false,
          "Need to define partitions_config_label")
   _partitions_config = partitions_config_label
@@ -62,8 +60,6 @@ product_assembly_configuration("product_assembly_config") {
         image_mode = "no_image"
         volume = {
           fvm = {
-            data = {
-            }
             blob = {
             }
           }
@@ -92,42 +88,19 @@ bringup_base = {
   }
 
   product_assembly_config_label = ":product_assembly_config"
-  board_config = board_information_for_assembly
+  board_config_label = board_configuration_label
   use_bringup_platform_bundles_only = true
 
-  use_assembly_fshost = true
-  fshost_config = board_fshost_config
-
-  include_component_id_index = true
   include_shell_commands = false
 
   cmdline_deps = [ "//build/input:bootfs" ]
 
   base_packages = []
-  base_driver_packages = [
-    "//:developer_base_driver_packages",
-    "//:legacy_base_driver_packages",
+
+  bootfs_labels = [
+    "//build/input:bootfs",
+    "//:developer_base_packages",
   ]
-
-  bootfs_labels = base_driver_packages + [
-                    "//build/input:bootfs",
-                    "//:developer_base_packages",
-                  ]
-
-  _ignored = {
-    import("//build/dev.gni")
-    import("//build/product.gni")
-    all_empty = true
-    if (dev_system_image_deps != []) {
-      print("dev_system_image_deps not empty: ${dev_system_image_deps}")
-      all_empty = false
-    }
-    if (product_system_image_deps != []) {
-      print("product_system_image_deps not empty: ${product_system_image_deps}")
-      all_empty = false
-    }
-    assert(all_empty)
-  }
 }
 
 assembled_system("bringup_assembly") {
@@ -143,6 +116,8 @@ product_bundle("product_bundle") {
     _partitions_config,
     recovery_label,
   ]
+
+  name = main_product_bundle_name
   partitions = _partitions_config_file
   system_a = files.images_json
   system_r = files.recovery_images_json
@@ -167,10 +142,6 @@ product_bundle("product_bundle") {
   partitions_contents = partitions_config_contents
   system_a_contents = _assembly_contents
   system_r_contents = _recovery_contents
-
-  # Skip scrutiny.
-  skip_scrutiny = true
-  skip_scrutiny_recovery = true
 }
 
 group("bringup") {

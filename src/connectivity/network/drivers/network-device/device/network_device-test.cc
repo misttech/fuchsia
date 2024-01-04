@@ -5,12 +5,13 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async/cpp/task.h>
 #include <lib/fit/defer.h>
-#include <lib/sync/completion.h>
+#include <lib/sync/cpp/completion.h>
 #include <lib/syslog/global.h>
 
 #include <future>
 #include <iomanip>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include "device_interface.h"
@@ -30,6 +31,9 @@
 #endif
 
 namespace {
+
+using ::testing::ElementsAreArray;
+
 // Attempts to read an epitaph from |channel|. Returns the epitaph in the OK variant when it could
 // be fetched.
 zx::result<zx_status_t> WaitClosedAndReadEpitaph(const zx::channel& channel) {
@@ -81,15 +85,15 @@ class NetworkDeviceTest : public ::testing::Test {
   // A minimally valid mock MacAddressing implementation.
   static constexpr mac_addr_protocol_ops_t kMockMacOps = {
       .get_address =
-          [](void* ctx, uint8_t out_mac[6]) {
+          [](void* ctx, mac_address_t* out_mac) {
             constexpr uint8_t kMac[] = {1, 2, 3, 4, 5, 6};
-            std::copy(std::begin(kMac), std::end(kMac), out_mac);
+            std::copy(std::begin(kMac), std::end(kMac), out_mac->octets);
           },
       .get_features =
           [](void* ctx, features_t* out_features) {
             *out_features = {.supported_modes = SUPPORTED_MAC_FILTER_MODE_MULTICAST_FILTER};
           },
-      .set_mode = [](void* ctx, mode_t mode, const uint8_t* multicast_macs_list,
+      .set_mode = [](void* ctx, mac_filter_mode_t mode, const mac_address_t* multicast_macs_list,
                      size_t multicast_macs_count) {},
   };
 
@@ -860,8 +864,7 @@ TEST_F(NetworkDeviceTest, ListenSession) {
   buffer_descriptor_t& desc = session_b.descriptor(kDescriptorIndex0);
   ASSERT_EQ(desc.data_length, send_buff.size());
   auto* data = session_b.buffer(desc.offset);
-  ASSERT_EQ(std::basic_string_view(data, send_buff.size()),
-            std::basic_string_view(send_buff.data(), send_buff.size()));
+  EXPECT_THAT(cpp20::span(data, send_buff.size()), ElementsAreArray(send_buff));
 }
 
 TEST_F(NetworkDeviceTest, ClosingPrimarySession) {
@@ -1618,16 +1621,36 @@ TEST_F(NetworkDeviceTest, RejectsInvalidPortIds) {
     // Add a port with an invalid ID.
     FakeNetworkPortImpl fake_port;
     network_port_protocol_t proto = fake_port.protocol();
-    impl_.client().AddPort(MAX_PORTS, proto.ctx, proto.ops);
-    ASSERT_TRUE(fake_port.removed());
+    libsync::Completion port_added;
+    impl_.client().AddPort(
+        MAX_PORTS, proto.ctx, proto.ops,
+        [](void* ctx, zx_status_t status) {
+          libsync::Completion* port_added = static_cast<libsync::Completion*>(ctx);
+          EXPECT_EQ(status, ZX_ERR_INVALID_ARGS);
+          port_added->Signal();
+        },
+        &port_added);
+    port_added.Wait();
+    // Port should NOT have been removed if AddPort fails.
+    ASSERT_FALSE(fake_port.removed());
   }
 
   {
     // Add a port with a duplicate ID.
     FakeNetworkPortImpl fake_port;
     network_port_protocol_t proto = fake_port.protocol();
-    impl_.client().AddPort(kPort13, proto.ctx, proto.ops);
-    ASSERT_TRUE(fake_port.removed());
+    libsync::Completion port_added;
+    impl_.client().AddPort(
+        kPort13, proto.ctx, proto.ops,
+        [](void* ctx, zx_status_t status) {
+          libsync::Completion* port_added = static_cast<libsync::Completion*>(ctx);
+          EXPECT_EQ(status, ZX_ERR_ALREADY_EXISTS);
+          port_added->Signal();
+        },
+        &port_added);
+    port_added.Wait();
+    // Port should NOT have been removed if AddPort fails.
+    ASSERT_FALSE(fake_port.removed());
   }
 }
 
@@ -1966,7 +1989,7 @@ TEST_F(NetworkDeviceTest, PortGetInfo) {
   fidl::WireResult result = port->GetInfo();
   ASSERT_OK(result.status());
   const netdev::wire::PortInfo& port_info = result.value().info;
-  const port_info_t& impl_info = port13_.port_info();
+  const port_base_info_t& impl_info = port13_.port_info();
   ASSERT_TRUE(port_info.has_id());
   const netdev::wire::PortId& port_id = port_info.id();
   EXPECT_EQ(port_id.base, kPort13);
@@ -2004,14 +2027,14 @@ TEST_F(NetworkDeviceTest, PortGetStatus) {
   } kTests[] = {
       {
           .name = "offline-1280",
-          .status = {.mtu = 1280, .flags = 0},
+          .status = {.flags = 0, .mtu = 1280},
       },
       {
           .name = "online-1500",
           .status =
               {
-                  .mtu = 1500,
                   .flags = static_cast<uint32_t>(netdev::wire::StatusFlags::kOnline),
+                  .mtu = 1500,
               },
       },
   };
@@ -2047,9 +2070,9 @@ TEST_F(NetworkDeviceTest, PortGetMac) {
   fidl::WireResult result = mac->GetUnicastAddress();
   ASSERT_OK(result.status());
   fuchsia_net::wire::MacAddress& addr = result.value().address;
-  decltype(addr.octets) octets;
-  kMockMacOps.get_address(nullptr, octets.data());
-  EXPECT_TRUE(std::equal(addr.octets.begin(), addr.octets.end(), octets.begin()));
+  mac_address_t out_mac{};
+  kMockMacOps.get_address(nullptr, &out_mac);
+  EXPECT_TRUE(std::equal(addr.octets.begin(), addr.octets.end(), out_mac.octets));
 }
 
 TEST_F(NetworkDeviceTest, PortGetMacFails) {
@@ -2433,7 +2456,7 @@ TEST_F(NetworkDeviceTest, PortWatcherEnforcesQueueLimit) {
       port = nullptr;
     } else {
       port = std::make_unique<FakeNetworkPortImpl>();
-      port->AddPort((event_count / 2) % MAX_PORTS, impl_.client());
+      ASSERT_OK(port->AddPort((event_count / 2) % MAX_PORTS, impl_.client()));
     }
   }
   zx::result status = WaitClosedAndReadEpitaph(watcher.channel());

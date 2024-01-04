@@ -11,7 +11,11 @@ use {
     fidl_fuchsia_driver_development as fdd,
     fuchsia_driver_dev::{self, Device},
     futures::join,
-    std::{collections::HashSet, fmt::Write as OtherWrite, io::Write, iter::FromIterator},
+    std::{
+        collections::{HashMap, HashSet},
+        io::Write,
+        iter::FromIterator,
+    },
 };
 
 pub async fn list(
@@ -33,33 +37,15 @@ pub async fn list(
         // Await the futures concurrently.
         let (driver_info, device_info) = join!(driver_info, device_info);
 
-        let loaded_driver_set: HashSet<String> =
-            HashSet::from_iter(device_info?.into_iter().filter_map(|device_info| {
-                let device: Device = device_info.into();
-                let key = match device {
-                    Device::V1(ref info) => &info.0.bound_driver_libname,
-                    Device::V2(ref info) => {
-                        // DFv2 nodes do not have a bound driver libname so the
-                        // bound driver URL is selected instead.
-                        &info.0.bound_driver_url
-                    }
-                };
-                match key {
-                    Some(key) => Some(key.to_owned()),
-                    None => None,
-                }
-            }));
+        let loaded_driver_set: HashSet<String> = HashSet::from_iter(
+            device_info?.into_iter().filter_map(|device_info| device_info.bound_driver_url),
+        );
 
         // Filter the driver list by the hash set.
         driver_info?
             .into_iter()
             .filter(|driver| {
                 let mut loaded = false;
-                if let Some(ref libname) = driver.libname {
-                    if loaded_driver_set.contains(libname) {
-                        loaded = true;
-                    }
-                }
                 if let Some(ref url) = driver.url {
                     if loaded_driver_set.contains(url) {
                         loaded = true
@@ -73,16 +59,47 @@ pub async fn list(
     };
 
     if cmd.verbose {
+        // Query devices and create a map of drivers to devices.
+        let device_info = fuchsia_driver_dev::get_device_info(
+            &driver_development_proxy,
+            &empty,
+            /* exact_match= */ false,
+        )
+        .await?;
+
+        let mut driver_to_devices = HashMap::<String, Vec<String>>::new();
+        for device in device_info.into_iter() {
+            let driver = device.bound_driver_url.clone();
+            let device: Device = device.into();
+            let device_name = match device {
+                Device::V1(ref info) => &info.get_v1_info()?.topological_path,
+                Device::V2(ref info) => &info.get_v2_info()?.moniker,
+            };
+            if let (Some(driver), Some(device_name)) = (driver, device_name) {
+                driver_to_devices
+                    .entry(driver.to_string())
+                    .and_modify(|v| v.push(device_name.to_string()))
+                    .or_insert(vec![device_name.to_string()]);
+            }
+        }
+        let driver_to_devices = driver_to_devices;
+
         for driver in driver_info {
             if let Some(name) = driver.name {
                 writeln!(writer, "{0: <10}: {1}", "Name", name)?;
             }
-            if let Some(url) = driver.url {
+            if let Some(url) = driver.url.as_ref() {
                 writeln!(writer, "{0: <10}: {1}", "URL", url)?;
             }
-            if let Some(libname) = driver.libname {
-                writeln!(writer, "{0: <10}: {1}", "Driver", libname)?;
-            }
+
+            // If the version isn't set, the value is assumed to be 1.
+            writeln!(
+                writer,
+                "{0: <10}: {1}",
+                "DF Version",
+                driver.driver_framework_version.unwrap_or(1)
+            )?;
+
             if let Some(device_categories) = driver.device_categories {
                 write!(writer, "Device Categories: [")?;
 
@@ -105,50 +122,33 @@ pub async fn list(
                 }
                 writeln!(writer, "]")?;
             }
-            if let Some(package_hash) = driver.package_hash {
-                let mut merkle_root = String::with_capacity(package_hash.merkle_root.len() * 2);
-                for byte in package_hash.merkle_root.iter() {
-                    write!(merkle_root, "{:02x}", byte)?;
+
+            if let Some(url) = driver.url {
+                if let Some(devices) = driver_to_devices.get(&url) {
+                    writeln!(writer, "{0: <10}:\n  {1}", "Devices", devices.join("\n  "))?;
                 }
-                writeln!(writer, "{0: <10}: {1}", "Merkle Root", &merkle_root)?;
             }
-            match driver.bind_rules {
-                Some(fdd::BindRulesBytecode::BytecodeV1(bytecode)) => {
-                    writeln!(writer, "{0: <10}: {1}", "Bytecode Version", 1)?;
-                    writeln!(
-                        writer,
-                        "{0: <10}({1} bytes): {2:?}",
-                        "Bytecode:",
-                        bytecode.len(),
-                        bytecode
-                    )?;
+
+            // TODO(b/303084353): Once the merkle_root is available, write it here.
+            let bind_rules =
+                driver.bind_rules_bytecode.map(|bytecode| dump_bind_rules(bytecode).ok()).flatten();
+            match bind_rules {
+                Some(bind_rules) => {
+                    writeln!(writer, "{0: <10}: ", "Bind rules bytecode")?;
+                    writeln!(writer, "{}", bind_rules)?;
                 }
-                Some(fdd::BindRulesBytecode::BytecodeV2(bytecode)) => {
-                    writeln!(writer, "{0: <10}: {1}", "Bytecode Version", 2)?;
-                    writeln!(writer, "{0: <10}({1} bytes): ", "Bytecode:", bytecode.len())?;
-                    match dump_bind_rules(bytecode.clone()) {
-                        Ok(bytecode_dump) => writeln!(writer, "{}", bytecode_dump)?,
-                        Err(err) => {
-                            writeln!(
-                                writer,
-                                "  Issue parsing bytecode \"{}\": {:?}",
-                                err, bytecode
-                            )?;
-                        }
-                    }
-                }
-                _ => writeln!(writer, "{0: <10}: {1}", "Bytecode Version", "Unknown")?,
+                _ => writeln!(writer, "Issue parsing the bind rules bytecode")?,
             }
             writeln!(writer)?;
         }
     } else {
         for driver in driver_info {
             if let Some(name) = driver.name {
-                let libname_or_url = driver.libname.or(driver.url).unwrap_or("".to_string());
-                writeln!(writer, "{:<20}: {}", name, libname_or_url)?;
+                let url = driver.url.unwrap_or_default();
+                writeln!(writer, "{:<20}: {}", name, url)?;
             } else {
-                let url_or_libname = driver.url.or(driver.libname).unwrap_or("".to_string());
-                writeln!(writer, "{}", url_or_libname)?;
+                let url = driver.url.unwrap_or_default();
+                writeln!(writer, "{}", url)?;
             }
         }
     }
@@ -161,7 +161,7 @@ mod tests {
         super::*,
         argh::FromArgs,
         fidl::endpoints::ServerEnd,
-        fidl_fuchsia_driver_index as fdi, fidl_fuchsia_pkg as fpkg, fuchsia_async as fasync,
+        fidl_fuchsia_driver_framework as fdf, fuchsia_async as fasync,
         futures::{
             future::{Future, FutureExt},
             stream::StreamExt,
@@ -202,7 +202,7 @@ mod tests {
     }
 
     async fn run_driver_info_iterator_server(
-        mut driver_infos: Vec<fdd::DriverInfo>,
+        mut driver_infos: Vec<fdf::DriverInfo>,
         iterator: ServerEnd<fdd::DriverInfoIteratorMarker>,
     ) -> Result<()> {
         let mut iterator =
@@ -221,6 +221,26 @@ mod tests {
         Ok(())
     }
 
+    async fn run_device_info_iterator_server(
+        mut device_infos: Vec<fdd::NodeInfo>,
+        iterator: ServerEnd<fdd::NodeInfoIteratorMarker>,
+    ) -> Result<()> {
+        let mut iterator =
+            iterator.into_stream().context("Failed to convert iterator into a stream")?;
+        while let Some(res) = iterator.next().await {
+            let request = res.context("Failed to get request")?;
+            match request {
+                fdd::NodeInfoIteratorRequest::GetNext { responder } => {
+                    responder
+                        .send(&device_infos)
+                        .context("Failed to send device infos to responder")?;
+                    device_infos.clear();
+                }
+            }
+        }
+        Ok(())
+    }
+
     #[fasync::run_singlethreaded(test)]
     async fn test_verbose() {
         let cmd = ListCommand::from_args(&["list"], &["--verbose"]).unwrap();
@@ -232,25 +252,17 @@ mod tests {
                     iterator,
                     control_handle: _,
                 } => run_driver_info_iterator_server(
-                    vec![fdd::DriverInfo {
-                        libname: Some("foo.so".to_owned()),
+                    vec![fdf::DriverInfo {
                         name: Some("foo".to_owned()),
                         url: Some("fuchsia-pkg://fuchsia.com/foo-package#meta/foo.cm".to_owned()),
-                        bind_rules: None,
-                        package_type: Some(fdi::DriverPackageType::Base),
-                        package_hash: Some(fpkg::BlobId {
-                            merkle_root: [
-                                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-                                20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
-                            ],
-                        }),
+                        package_type: Some(fdf::DriverPackageType::Base),
                         device_categories: Some(vec![
-                            fdi::DeviceCategory {
+                            fdf::DeviceCategory {
                                 category: Some("connectivity".to_string()),
                                 subcategory: Some("ethernet".to_string()),
                                 ..Default::default()
                             },
-                            fdi::DeviceCategory {
+                            fdf::DeviceCategory {
                                 category: Some("usb".to_string()),
                                 subcategory: None,
                                 ..Default::default()
@@ -262,6 +274,26 @@ mod tests {
                 )
                 .await
                 .context("Failed to run driver info iterator server")?,
+                fdd::DriverDevelopmentRequest::GetNodeInfo {
+                    node_filter: _,
+                    iterator,
+                    control_handle: _,
+                    exact_match: _,
+                } => run_device_info_iterator_server(
+                    vec![fdd::NodeInfo {
+                        bound_driver_url: Some(
+                            "fuchsia-pkg://fuchsia.com/foo-package#meta/foo.cm".to_owned(),
+                        ),
+                        versioned_info: Some(fdd::VersionedNodeInfo::V2(fdd::V2NodeInfo {
+                            moniker: Some("dev.sys.foo".to_owned()),
+                            ..Default::default()
+                        })),
+                        ..Default::default()
+                    }],
+                    iterator,
+                )
+                .await
+                .context("Failed to run device info iterator server")?,
                 _ => {}
             }
             Ok(())
@@ -269,14 +301,17 @@ mod tests {
         .await
         .unwrap();
 
+        println!("{}", output);
+
         assert_eq!(
             output,
             r#"Name      : foo
 URL       : fuchsia-pkg://fuchsia.com/foo-package#meta/foo.cm
-Driver    : foo.so
+DF Version: 1
 Device Categories: [connectivity::ethernet, usb]
-Merkle Root: 0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20
-Bytecode Version: Unknown
+Devices   :
+  dev.sys.foo
+Issue parsing the bind rules bytecode
 
 "#
         );

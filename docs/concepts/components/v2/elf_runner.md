@@ -163,6 +163,22 @@ if the component also has `job_policy_create_raw_processes` set to `true`.
 }
 ```
 
+#### Job with available exception channel
+
+The `job_with_available_exception_channel` field may be used to make sure the
+component is created as a direct descendent of a job that will have its
+exception channel available for taking.
+
+```json5
+{
+    program: {
+        runner: "elf",
+        binary: "bin/foo",
+        {{ '<strong>' }}job_with_available_exception_channel: "true"{{ '</strong>' }}
+    }
+}
+```
+
 ## Further Reading
 
 For a detailed explanation of how processes are created, please see
@@ -196,10 +212,10 @@ and `red`.
 [lc-proto]: /sdk/fidl/fuchsia.process.lifecycle/lifecycle.fidl
 [lifecycle]: lifecycle.md
 [program-loading]: /docs/concepts/process/program_loading.md
-[job-set-critical]: /docs/reference/syscalls/job_set_critical.md
-[job-set-policy]: /docs/reference/syscalls/job_set_policy.md
-[process-create]: /docs/reference/syscalls/process_create.md
-[vmo-replace]: /docs/reference/syscalls/vmo_replace_as_executable.md
+[job-set-critical]: /reference/syscalls/job_set_critical.md
+[job-set-policy]: /reference/syscalls/job_set_policy.md
+[process-create]: /reference/syscalls/process_create.md
+[vmo-replace]: /reference/syscalls/vmo_replace_as_executable.md
 [fxb-72178]: https://bugs.fuchsia.dev/p/fuchsia/issues/detail?id=72178
 [fxb-72764]: https://bugs.fuchsia.dev/p/fuchsia/issues/detail?id=72764
 [logsink]: /docs/development/diagnostics/logs/recording.md#logsinksyslog

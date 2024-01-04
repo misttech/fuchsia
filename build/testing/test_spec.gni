@@ -86,8 +86,7 @@ if (allowed_device_types == []) {
       "QEMU",
       "GCE",
     ]
-  } else if (board_name == "qemu-riscv64" || board_name == "riscv64" ||
-             board_name == "qemu-arm64") {
+  } else if (board_name == "riscv64" || board_name == "qemu-arm64") {
     allowed_device_types = [ "QEMU" ]
   } else if (board_name == "qemu-x64") {
     allowed_device_types = [
@@ -109,9 +108,12 @@ if (allowed_device_types == []) {
   }
 }
 
-# Describes the target device environment in which a test should run. This
-# specification is written in JSON to the build directory, to be aggregated
-# at test-time.
+# Describes the target device environment in which a test should
+# run. This specification is written to a tests.json file in the build
+# directory, to be aggregated at test-time.
+#
+# The format is documented at
+# https://fuchsia.dev/fuchsia-src/reference/testing/tests-json-format
 #
 # Parameters
 #
@@ -152,9 +154,17 @@ if (allowed_device_types == []) {
 #     cuckoo_kernel_zbi_test() defined in //build/testing/kernel_zbi_test.gni
 #     which require different images to boot the target with.
 #
+#     TODO(b/304279485): Deprecate in favour of specifying `product_bundle`.
+#
 #     zbi, vbmeta, qemu_kernel, efi_disk, fvm (optional)
 #       [label_with_toolchain] Specifies an override via label. One of
 #       these values must be set.
+#
+#   product_bundle (optional)
+#     [string] The name of a product bundle describing the system against which
+#     the test should be run (describing the test itself in the case of boot
+#     tests). Associated product bundle artifacts can be looked up with this
+#     name in the product bundle build API module.
 #
 #   environments (optional, default: Emu for fuchsia; else a VM)
 #     [list of scopes] Device environments in which the test should run.
@@ -356,6 +366,7 @@ template("test_spec") {
                              ])
       outputs = [ runtime_deps_file ]
       data_keys = [ "test_runtime_deps" ]
+      walk_keys = [ "test_runtime_deps_barrier" ]
       rebase = root_build_dir
       output_conversion = "json"
     }
@@ -412,7 +423,11 @@ template("test_spec") {
   }
 
   test_spec = {
-    forward_variables_from(invoker, [ "image_overrides" ])
+    forward_variables_from(invoker,
+                           [
+                             "image_overrides",
+                             "product_bundle",
+                           ])
     test = {
       forward_variables_from(invoker,
                              [
@@ -489,11 +504,26 @@ template("test_spec") {
     }
     deps = target_name_deps
     if (defined(invoker.isolated) && invoker.isolated &&
-        # Tests that use image overrides, primarily boot tests, must necessarily
-        # run in isolated mode, so they need not be explicitly included in the
-        # isolated allowlist.
-        !defined(invoker.image_overrides)) {
+        # Tests that use image overrides/product bundles, primarily boot tests,
+        # must necessarily run in isolated mode, so they need not be explicitly
+        # included in the isolated allowlist.
+        !defined(invoker.image_overrides) && !defined(invoker.product_bundle)) {
       deps += [ "//build/testing/isolated:isolated_test_spec_allowlist" ]
+    }
+    if (defined(invoker.timeout_secs) &&
+        # Tests that use image overrides/product bundles, primarily boot tests,
+        # are known to run slower, so they need not be explicitly included in
+        # the allowlist.
+        !defined(invoker.image_overrides) && !defined(invoker.product_bundle)) {
+      dir = string_replace(get_label_info(invoker.target, "dir"), "//", "")
+      split = string_split(dir, "/")
+      if (split[0] == "vendor") {
+        # Use the vendor repo's allowlist.
+        deps += [ "//vendor/" + split[1] +
+                  "/build/testing/timeouts:per_test_timeout_allowlist" ]
+      } else {
+        deps += [ "//build/testing/timeouts:per_test_timeout_allowlist" ]
+      }
     }
   }
 

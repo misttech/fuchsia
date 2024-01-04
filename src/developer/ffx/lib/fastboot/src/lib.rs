@@ -4,6 +4,7 @@
 
 pub mod boot;
 pub mod common;
+pub mod file_resolver;
 pub mod info;
 pub mod lock;
 pub mod manifest;
@@ -12,20 +13,24 @@ pub mod unlock;
 ////////////////////////////////////////////////////////////////////////////////
 // tests
 pub mod test {
-    use crate::common::file::FileResolver;
+    use crate::{
+        common::fastboot::{FastbootConnectionFactory, FastbootConnectionKind},
+        file_resolver::FileResolver,
+    };
     use anyhow::Result;
     use async_trait::async_trait;
-    use fidl::endpoints::{create_proxy_and_stream, Proxy};
-    use fidl_fuchsia_developer_ffx::{FastbootProxy, FastbootRequest};
+    use ffx_fastboot_interface::fastboot_interface::{
+        Fastboot, FastbootInterface, RebootEvent, UploadProgress, Variable,
+    };
     use std::{
         collections::HashMap,
         default::Default,
         io::Write,
-        path::{Path, PathBuf},
         sync::{Arc, Mutex},
     };
+    use tokio::sync::mpsc::Sender;
 
-    #[derive(Default)]
+    #[derive(Default, Debug)]
     pub struct FakeServiceCommands {
         pub staged_files: Vec<String>,
         pub oem_commands: Vec<String>,
@@ -60,111 +65,134 @@ pub mod test {
         }
     }
 
-    pub struct TestResolver {
-        manifest: PathBuf,
-    }
+    pub struct TestResolver {}
 
     impl TestResolver {
         pub fn new() -> Self {
-            let mut test = PathBuf::new();
-            test.push("./flash.json");
-            Self { manifest: test }
+            Self {}
         }
     }
 
     #[async_trait(?Send)]
     impl FileResolver for TestResolver {
-        fn manifest(&self) -> &Path {
-            self.manifest.as_path()
-        }
-
         async fn get_file<W: Write>(&mut self, _writer: &mut W, file: &str) -> Result<String> {
             Ok(file.to_owned())
         }
     }
 
-    fn setup_fake_fastboot_proxy<R: 'static>(mut handle_request: R) -> FastbootProxy
-    where
-        R: FnMut(fidl::endpoints::Request<<FastbootProxy as fidl::endpoints::Proxy>::Protocol>),
-    {
-        use futures::TryStreamExt;
-        let (proxy, mut stream) =
-            create_proxy_and_stream::<<FastbootProxy as Proxy>::Protocol>().unwrap();
-        fuchsia_async::Task::local(async move {
-            while let Ok(Some(req)) = stream.try_next().await {
-                handle_request(req);
+    #[derive(Debug)]
+    pub struct TestFastbootInterface {
+        state: Arc<Mutex<FakeServiceCommands>>,
+    }
+    impl FastbootInterface for TestFastbootInterface {}
+
+    #[async_trait(?Send)]
+    impl Fastboot for TestFastbootInterface {
+        async fn prepare(&mut self, _listener: Sender<RebootEvent>) -> Result<()> {
+            Ok(())
+        }
+
+        async fn get_var(&mut self, name: &str) -> Result<String> {
+            let mut state = self.state.lock().unwrap();
+            match state.variables.get_mut(name) {
+                Some(var) => {
+                    var.1 += 1;
+                    Ok(var.0.clone())
+                }
+                None => {
+                    panic!("Warning: requested variable: {}, which was not set", name)
+                }
             }
-        })
-        .detach();
-        proxy
+        }
+
+        async fn get_all_vars(&mut self, listener: Sender<Variable>) -> Result<()> {
+            listener
+                .send(Variable { name: "test".to_string(), value: "test".to_string() })
+                .await
+                .unwrap();
+            Ok(())
+        }
+
+        async fn flash(
+            &mut self,
+            _partition_name: &str,
+            _path: &str,
+            listener: Sender<UploadProgress>,
+        ) -> Result<()> {
+            listener.send(UploadProgress::OnStarted { size: 1 }).await?;
+            listener.send(UploadProgress::OnProgress { bytes_written: 1 }).await?;
+            listener.send(UploadProgress::OnFinished).await?;
+            Ok(())
+        }
+
+        async fn erase(&mut self, _partition_name: &str) -> Result<()> {
+            Ok(())
+        }
+
+        async fn boot(&mut self) -> Result<()> {
+            let mut state = self.state.lock().unwrap();
+            state.boots += 1;
+            Ok(())
+        }
+
+        async fn reboot(&mut self) -> Result<()> {
+            Ok(())
+        }
+
+        async fn reboot_bootloader(&mut self, listener: Sender<RebootEvent>) -> Result<()> {
+            listener.send(RebootEvent::OnReboot).await?;
+            let mut state = self.state.lock().unwrap();
+            state.bootloader_reboots += 1;
+            Ok(())
+        }
+        async fn continue_boot(&mut self) -> Result<()> {
+            Ok(())
+        }
+
+        async fn get_staged(&mut self, _path: &str) -> Result<()> {
+            Ok(())
+        }
+
+        async fn stage(&mut self, path: &str, _listener: Sender<UploadProgress>) -> Result<()> {
+            let mut state = self.state.lock().unwrap();
+            state.staged_files.push(path.to_string());
+            Ok(())
+        }
+
+        async fn set_active(&mut self, _slot: &str) -> Result<()> {
+            Ok(())
+        }
+
+        async fn oem(&mut self, command: &str) -> Result<()> {
+            let mut state = self.state.lock().unwrap();
+            state.oem_commands.push(command.to_string());
+            Ok(())
+        }
     }
 
-    pub fn setup() -> (Arc<Mutex<FakeServiceCommands>>, FastbootProxy) {
+    pub fn setup() -> (Arc<Mutex<FakeServiceCommands>>, TestFastbootInterface) {
         let state = Arc::new(Mutex::new(FakeServiceCommands::default()));
-        (
-            state.clone(),
-            setup_fake_fastboot_proxy(move |req| match req {
-                FastbootRequest::Prepare { listener, responder } => {
-                    listener.into_proxy().unwrap().on_reboot().unwrap();
-                    responder.send(Ok(())).unwrap();
-                }
-                FastbootRequest::GetVar { responder, name } => {
-                    let mut state = state.lock().unwrap();
-                    match state.variables.get_mut(&name) {
-                        Some(var) => {
-                            var.1 += 1;
-                            responder.send(Ok(&var.0)).unwrap();
-                        }
-                        None => {
-                            panic!("Warning: requested variable: {}, which was not set", name)
-                        }
-                    }
-                }
-                FastbootRequest::GetAllVars { listener, responder, .. } => {
-                    listener.into_proxy().unwrap().on_variable("test", "test").unwrap();
-                    responder.send(Ok(())).unwrap();
-                }
-                FastbootRequest::Flash { listener, responder, .. } => {
-                    listener.into_proxy().unwrap().on_finished().unwrap();
-                    responder.send(Ok(())).unwrap();
-                }
-                FastbootRequest::GetStaged { responder, .. } => {
-                    responder.send(Ok(())).unwrap();
-                }
-                FastbootRequest::Erase { responder, .. } => {
-                    responder.send(Ok(())).unwrap();
-                }
-                FastbootRequest::Boot { responder } => {
-                    let mut state = state.lock().unwrap();
-                    state.boots += 1;
-                    responder.send(Ok(())).unwrap();
-                }
-                FastbootRequest::Reboot { responder } => {
-                    responder.send(Ok(())).unwrap();
-                }
-                FastbootRequest::RebootBootloader { listener, responder } => {
-                    listener.into_proxy().unwrap().on_reboot().unwrap();
-                    let mut state = state.lock().unwrap();
-                    state.bootloader_reboots += 1;
-                    responder.send(Ok(())).unwrap();
-                }
-                FastbootRequest::ContinueBoot { responder } => {
-                    responder.send(Ok(())).unwrap();
-                }
-                FastbootRequest::SetActive { responder, .. } => {
-                    responder.send(Ok(())).unwrap();
-                }
-                FastbootRequest::Stage { path, responder, .. } => {
-                    let mut state = state.lock().unwrap();
-                    state.staged_files.push(path);
-                    responder.send(Ok(())).unwrap();
-                }
-                FastbootRequest::Oem { command, responder } => {
-                    let mut state = state.lock().unwrap();
-                    state.oem_commands.push(command);
-                    responder.send(Ok(())).unwrap();
-                }
-            }),
-        )
+        let interface = TestFastbootInterface { state: state.clone() };
+        (state, interface)
+    }
+
+    pub struct TestConnectionFactory {
+        state: Arc<Mutex<FakeServiceCommands>>,
+    }
+
+    #[async_trait(?Send)]
+    impl FastbootConnectionFactory for TestConnectionFactory {
+        async fn build_interface(
+            &self,
+            _connection: FastbootConnectionKind,
+        ) -> Result<Box<dyn FastbootInterface>> {
+            Ok(Box::new(TestFastbootInterface { state: self.state.clone() }))
+        }
+    }
+
+    pub fn setup_connection_factory(
+    ) -> (Arc<Mutex<FakeServiceCommands>>, impl FastbootConnectionFactory) {
+        let state = Arc::new(Mutex::new(FakeServiceCommands::default()));
+        (state.clone(), TestConnectionFactory { state: state.clone() })
     }
 }

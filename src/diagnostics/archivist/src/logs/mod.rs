@@ -23,24 +23,24 @@ pub use debuglog::{convert_debuglog_to_log_message, KernelDebugLog};
 #[cfg(test)]
 mod tests {
     use crate::{identity::ComponentIdentity, logs::testing::*};
+    use diagnostics_assertions::{assert_data_tree, AnyProperty};
     use diagnostics_data::{
         LegacySeverity, DROPPED_LABEL, MESSAGE_LABEL, PID_LABEL, TAG_LABEL, TID_LABEL,
     };
     use diagnostics_log_encoding::{Argument, Record, Severity as StreamSeverity, Value};
     use fidl_fuchsia_logger::{LogFilterOptions, LogLevelFilter, LogMessage};
-    use fuchsia_inspect::{assert_data_tree, testing::AnyProperty};
     use fuchsia_zircon as zx;
     use moniker::ExtendedMoniker;
     use std::sync::Arc;
 
     #[fuchsia::test]
     async fn test_log_manager_simple() {
-        TestHarness::default().await.manager_test(false).await;
+        TestHarness::default().manager_test(false).await;
     }
 
     #[fuchsia::test]
     async fn test_log_manager_dump() {
-        TestHarness::default().await.manager_test(true).await;
+        TestHarness::default().manager_test(true).await;
     }
 
     #[fuchsia::test]
@@ -70,8 +70,8 @@ mod tests {
         fifth_packet.metadata.severity = LogLevelFilter::Error.into_primitive().into();
         fifth_message.severity = fifth_packet.metadata.severity;
 
-        let mut harness = TestHarness::default().await;
-        let mut stream = harness.create_stream(Arc::new(ComponentIdentity::unknown())).await;
+        let mut harness = TestHarness::default();
+        let mut stream = harness.create_stream(Arc::new(ComponentIdentity::unknown()));
         stream.write_packets(vec![
             first_packet,
             second_packet,
@@ -157,10 +157,10 @@ mod tests {
             let mut message2 = message.clone();
             message2.severity = packet2.metadata.severity;
 
-            let mut foo_stream = $harness.create_stream_from_log_reader($log_reader1).await;
+            let mut foo_stream = $harness.create_stream_from_log_reader($log_reader1);
             foo_stream.write_packet(&packet);
 
-            let mut bar_stream = $harness.create_stream_from_log_reader($log_reader2).await;
+            let mut bar_stream = $harness.create_stream_from_log_reader($log_reader2);
             bar_stream.write_packet(&packet2);
             drop((foo_stream, bar_stream));
 
@@ -254,7 +254,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn attributed_inspect_two_streams_different_identities() {
-        let mut harness = TestHarness::with_retained_sinks().await;
+        let mut harness = TestHarness::with_retained_sinks();
 
         let log_reader1 = harness.create_default_reader(ComponentIdentity::new(
             ExtendedMoniker::parse_str("./foo").unwrap(),
@@ -275,7 +275,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn attributed_inspect_two_v2_streams_different_identities() {
-        let mut harness = TestHarness::with_retained_sinks().await;
+        let mut harness = TestHarness::with_retained_sinks();
         let log_reader1 = harness.create_event_stream_reader("./foo", "http://foo.com");
         let log_reader2 = harness.create_event_stream_reader("./bar", "http://bar.com");
 
@@ -288,7 +288,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn attributed_inspect_two_mixed_streams_different_identities() {
-        let mut harness = TestHarness::with_retained_sinks().await;
+        let mut harness = TestHarness::with_retained_sinks();
         let log_reader1 = harness.create_event_stream_reader("./foo", "http://foo.com");
         let log_reader2 = harness.create_default_reader(ComponentIdentity::new(
             ExtendedMoniker::parse_str("./bar").unwrap(),
@@ -326,8 +326,8 @@ mod tests {
             tags: vec![],
         };
 
-        let mut harness = TestHarness::default().await;
-        let mut stream = harness.create_stream(Arc::new(ComponentIdentity::unknown())).await;
+        let mut harness = TestHarness::default();
+        let mut stream = harness.create_stream(Arc::new(ComponentIdentity::unknown()));
         stream.write_packets(vec![p, p2]);
         drop(stream);
         harness.filter_test(vec![lm], Some(options)).await;
@@ -358,8 +358,8 @@ mod tests {
             tags: vec![],
         };
 
-        let mut harness = TestHarness::default().await;
-        let mut stream = harness.create_stream(Arc::new(ComponentIdentity::unknown())).await;
+        let mut harness = TestHarness::default();
+        let mut stream = harness.create_stream(Arc::new(ComponentIdentity::unknown()));
         stream.write_packets(vec![p, p2]);
         drop(stream);
         harness.filter_test(vec![lm], Some(options)).await;
@@ -397,8 +397,8 @@ mod tests {
             tags: vec![],
         };
 
-        let mut harness = TestHarness::default().await;
-        let mut stream = harness.create_stream(Arc::new(ComponentIdentity::unknown())).await;
+        let mut harness = TestHarness::default();
+        let mut stream = harness.create_stream(Arc::new(ComponentIdentity::unknown()));
         stream.write_packets(vec![p, p2, p3, p4, p5]);
         drop(stream);
         harness.filter_test(vec![lm], Some(options)).await;
@@ -432,8 +432,8 @@ mod tests {
             tags: vec![],
         };
 
-        let mut harness = TestHarness::default().await;
-        let mut stream = harness.create_stream(Arc::new(ComponentIdentity::unknown())).await;
+        let mut harness = TestHarness::default();
+        let mut stream = harness.create_stream(Arc::new(ComponentIdentity::unknown()));
         stream.write_packets(vec![p, p2, p3]);
         drop(stream);
         harness.filter_test(vec![lm], Some(options)).await;
@@ -481,8 +481,8 @@ mod tests {
             tags: vec![String::from("BBBBB"), String::from("DDDDD")],
         };
 
-        let mut harness = TestHarness::default().await;
-        let mut stream = harness.create_stream(Arc::new(ComponentIdentity::unknown())).await;
+        let mut harness = TestHarness::default();
+        let mut stream = harness.create_stream(Arc::new(ComponentIdentity::unknown()));
         stream.write_packets(vec![p, p2]);
         drop(stream);
         harness.filter_test(vec![lm1, lm2], Some(options)).await;
@@ -562,9 +562,8 @@ mod tests {
                 tags: vec![String::from("tag-1"), String::from("tag-2")],
             },
         ];
-        let mut harness = TestHarness::default().await;
-        let mut stream =
-            harness.create_structured_stream(Arc::new(ComponentIdentity::unknown())).await;
+        let mut harness = TestHarness::default();
+        let mut stream = harness.create_structured_stream(Arc::new(ComponentIdentity::unknown()));
         stream.write_packets(logs);
         drop(stream);
         harness.filter_test(expected_logs, None).await;
@@ -577,12 +576,12 @@ mod tests {
         let log3 = TestDebugEntry::new("log3".as_bytes());
 
         let klog_reader = TestDebugLog::default();
-        klog_reader.enqueue_read_entry(&log1).await;
-        klog_reader.enqueue_read_entry(&log2).await;
+        klog_reader.enqueue_read_entry(&log1);
+        klog_reader.enqueue_read_entry(&log2);
         // logs received after kernel indicates no logs should be read
-        klog_reader.enqueue_read_fail(zx::Status::SHOULD_WAIT).await;
-        klog_reader.enqueue_read_entry(&log3).await;
-        klog_reader.enqueue_read_fail(zx::Status::SHOULD_WAIT).await;
+        klog_reader.enqueue_read_fail(zx::Status::SHOULD_WAIT);
+        klog_reader.enqueue_read_entry(&log3);
+        klog_reader.enqueue_read_fail(zx::Status::SHOULD_WAIT);
 
         let expected_logs = vec![
             LogMessage {

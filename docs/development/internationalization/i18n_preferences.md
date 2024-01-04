@@ -102,7 +102,7 @@ should implement the
 protocol, which serves the `Profile` and notifies of changes:
 
 ```fidl {:.devsite-disable-click-to-copy}
-{% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="sdk/fidl/fuchsia.intl/property_provider.fidl" indented_block="protocol PropertyProvider" exclude_regexp="(//.*)|(^$)" %}
+{% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="sdk/fidl/fuchsia.intl/property_provider.fidl" indented_block="closed protocol PropertyProvider" exclude_regexp="(//.*)|(^$)" %}
 ```
 
 This protocol offers a _read-only_ view of an internationalization profile.
@@ -122,7 +122,7 @@ settings, following Fuchsia's design principle of
 
 In runtimes where the standard library offers access to some default locale, it
 is the responsibility of the
-[runner](/docs/concepts/components/v2/capabilities/runners.md) to retrieve the
+[runner](/docs/concepts/components/v2/capabilities/runner.md) to retrieve the
 needed values from the realm of the component being run. In most cases, the
 runner should call `fuchsia.intl.PropertyProvider.GetProfile`.
 
@@ -170,7 +170,7 @@ Specifically, the protocol
 is used to write and monitor internationalization-related settings.
 
 ```fidl {:.devsite-disable-click-to-copy}
-{% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="sdk/fidl/fuchsia.settings/intl.fidl" indented_block="protocol Intl" exclude_regexp="(//.*)|(^$)" %}
+{% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="sdk/fidl/fuchsia.settings/intl.fidl" indented_block="closed protocol Intl" exclude_regexp="(//.*)|(^$)" %}
 ```
 
 ```fidl {:.devsite-disable-click-to-copy}

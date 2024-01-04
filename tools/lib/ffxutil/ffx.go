@@ -6,14 +6,17 @@
 package ffxutil
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"go.fuchsia.dev/fuchsia/tools/bootserver"
 	botanistconstants "go.fuchsia.dev/fuchsia/tools/botanist/constants"
 	"go.fuchsia.dev/fuchsia/tools/build"
 	"go.fuchsia.dev/fuchsia/tools/lib/ffxutil/constants"
@@ -116,7 +119,7 @@ func NewFFXInstance(
 	}
 	ffxCmds := [][]string{
 		{"config", "set", "log.dir", filepath.Join(outputDir, "ffx_logs")},
-		{"config", "set", "ffx.subtool-search-paths", filepath.Dir(ffxPath)},
+		{"config", "set", "ffx.subtool-search-paths", filepath.Dir(absFFXPath)},
 		{"config", "set", "target.default", target},
 		{"config", "set", "test.experimental_json_input", "true"},
 		// Set these fields in the global config for tests that don't use this library
@@ -166,6 +169,14 @@ func (f *FFXInstance) SetTarget(target string) {
 	f.target = target
 }
 
+func (f *FFXInstance) Stdout() io.Writer {
+	return f.stdout
+}
+
+func (f *FFXInstance) Stderr() io.Writer {
+	return f.stderr
+}
+
 // SetStdoutStderr sets the stdout and stderr for the ffx commands to write to.
 func (f *FFXInstance) SetStdoutStderr(stdout, stderr io.Writer) {
 	f.stdout = stdout
@@ -203,6 +214,20 @@ func (f *FFXInstance) RunWithTarget(ctx context.Context, args ...string) error {
 	return f.Run(ctx, args...)
 }
 
+// RunAndGetOutput runs ffx with the provided args and returns the stdout.
+func (f *FFXInstance) RunAndGetOutput(ctx context.Context, args ...string) (string, error) {
+	origStdout := f.stdout
+	var output bytes.Buffer
+	f.stdout = io.MultiWriter(&output, origStdout)
+	defer func() {
+		f.stdout = origStdout
+	}()
+	if err := f.Run(ctx, args...); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(output.String()), nil
+}
+
 // WaitForDaemon tries a few times to check that the daemon is up
 // and returns an error if it fails to respond.
 func (f *FFXInstance) WaitForDaemon(ctx context.Context) error {
@@ -213,7 +238,7 @@ func (f *FFXInstance) WaitForDaemon(ctx context.Context) error {
 	defer func() {
 		f.stderr = origStderr
 	}()
-	return retry.Retry(ctx, retry.WithMaxAttempts(retry.NewConstantBackoff(500*time.Millisecond), 3), func() error {
+	return retry.Retry(ctx, retry.WithMaxAttempts(retry.NewConstantBackoff(time.Second), 3), func() error {
 		return f.Run(ctx, "daemon", "echo")
 	}, nil)
 }
@@ -228,21 +253,28 @@ func (f *FFXInstance) Stop() error {
 }
 
 // BootloaderBoot RAM boots the target.
-func (f *FFXInstance) BootloaderBoot(ctx context.Context, serialNum, zbi, vbmeta, slot string) error {
-	var args []string
-	if zbi != "" {
-		args = append(args, "--zbi", zbi)
-	}
-	if vbmeta != "" {
-		args = append(args, "--vbmeta", vbmeta)
-	}
-	if slot != "" {
-		args = append(args, "--slot", slot)
-	}
-	return f.Run(ctx, append([]string{
+func (f *FFXInstance) BootloaderBoot(ctx context.Context, serialNum, zbi, vbmeta, slot, productBundle string) error {
+	args := []string{
 		"--target", serialNum,
 		"--config", "{\"ffx\": {\"fastboot\": {\"inline_target\": true}}}",
-		"target", "bootloader", "boot"}, args...)...)
+		"target", "bootloader",
+	}
+	if productBundle != "" {
+		args = append(args, "--product-bundle", productBundle)
+	}
+	args = append(args, "boot")
+	if productBundle == "" {
+		if zbi != "" {
+			args = append(args, "--zbi", zbi)
+		}
+		if vbmeta != "" {
+			args = append(args, "--vbmeta", vbmeta)
+		}
+		if slot != "" {
+			args = append(args, "--slot", slot)
+		}
+	}
+	return f.Run(ctx, args...)
 }
 
 // List lists all available targets.
@@ -308,4 +340,54 @@ func (f *FFXInstance) Snapshot(ctx context.Context, outDir string, snapshotFilen
 // GetConfig shows the ffx config.
 func (f *FFXInstance) GetConfig(ctx context.Context) error {
 	return f.Run(ctx, "config", "get")
+}
+
+// GetPBArtifacts returns a list of the artifacts required for the specified artifactsGroup (flash or emu).
+// The returned list are relative paths to the pbPath.
+func (f *FFXInstance) GetPBArtifacts(ctx context.Context, pbPath string, artifactsGroup string) ([]string, error) {
+	output, err := f.RunAndGetOutput(ctx, "--config", "ffx_product_get_artifacts=true", "product", "get-artifacts", pbPath, "-r", "-g", artifactsGroup)
+	if err != nil {
+		return nil, err
+	}
+
+	return strings.Split(output, "\n"), nil
+}
+
+// GetImageFromPB returns an image from a product bundle.
+func (f *FFXInstance) GetImageFromPB(ctx context.Context, pbPath string, slot string, imageType string, bootloader string) (*bootserver.Image, error) {
+	args := []string{"--config", "ffx_product_get_image_path=true", "product", "get-image-path", pbPath, "-r"}
+	if slot != "" && imageType != "" && bootloader == "" {
+		args = append(args, "--slot", slot, "--image-type", imageType)
+	} else if bootloader != "" && slot == "" && imageType == "" {
+		args = append(args, "--bootloader", bootloader)
+	} else {
+		return nil, fmt.Errorf("either slot and image type should be provided or bootloader "+
+			"should be provided, not both: slot: %s, imageType: %s, bootloader: %s", slot, imageType, bootloader)
+	}
+	relImagePath, err := f.RunAndGetOutput(ctx, args...)
+	if err != nil {
+		// An error is returned if the image cannot be found in the product bundle
+		// which is ok.
+		return nil, nil
+	}
+
+	imagePath := filepath.Join(pbPath, relImagePath)
+	buildImg := build.Image{Name: relImagePath, Path: imagePath}
+
+	reader, err := os.Open(imagePath)
+	if err != nil {
+		return nil, err
+	}
+
+	fi, err := reader.Stat()
+	if err != nil {
+		return nil, err
+	}
+	image := bootserver.Image{
+		Image:  buildImg,
+		Reader: reader,
+		Size:   fi.Size(),
+	}
+
+	return &image, nil
 }

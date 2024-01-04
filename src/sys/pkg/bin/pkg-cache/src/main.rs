@@ -8,7 +8,10 @@
 #![allow(clippy::too_many_arguments)]
 
 use {
-    crate::{base_packages::BasePackages, index::PackageIndex},
+    crate::{
+        base_packages::{BasePackages, CachePackages},
+        index::PackageIndex,
+    },
     anyhow::{anyhow, format_err, Context as _, Error},
     cobalt_sw_delivery_registry as metrics,
     fidl::endpoints::DiscoverableProtocolMarker as _,
@@ -24,16 +27,22 @@ use {
     fuchsia_inspect as finspect,
     futures::join,
     futures::prelude::*,
+    std::collections::HashMap,
     std::sync::{atomic::AtomicU32, Arc},
     tracing::{error, info},
-    vfs::directory::{entry::DirectoryEntry as _, helper::DirectlyMutable as _},
+    vfs::{
+        directory::{entry::DirectoryEntry as _, helper::DirectlyMutable as _},
+        remote::remote_dir,
+    },
 };
 
 mod base_packages;
+mod base_resolver;
 mod cache_service;
 mod compat;
 mod gc_service;
 mod index;
+mod reboot;
 mod required_blobs;
 mod retained_packages_service;
 
@@ -90,11 +99,17 @@ pub fn main() -> Result<(), Error> {
     fuchsia_trace_provider::trace_provider_create_with_fdio();
 
     let mut executor = fasync::LocalExecutor::new();
-    executor.run_singlethreaded(main_inner().map_err(|err| {
-        let err = anyhow!(err);
-        error!("error running pkg-cache: {:#}", err);
-        err
-    }))
+    executor.run_singlethreaded(async move {
+        match main_inner().await {
+            Err(err) => {
+                let err = anyhow!(err);
+                error!("error running pkg-cache: {:#}", err);
+                let () = reboot::reboot().await;
+                Err(err)
+            }
+            ok => ok,
+        }
+    })
 }
 
 async fn main_inner() -> Result<(), Error> {
@@ -103,17 +118,20 @@ async fn main_inner() -> Result<(), Error> {
 
     let (use_fxblob, use_system_image) = {
         let config = pkg_cache_config::Config::take_from_startup_handle();
-        inspector.root().record_child("config", |config_node| config.record_inspect(config_node));
+        inspector
+            .root()
+            .record_child("structured_config", |config_node| config.record_inspect(config_node));
         (config.use_fxblob, config.use_system_image)
     };
 
-    let mut package_index = PackageIndex::new(inspector.root().create_child("index"));
-    let blobfs = if use_fxblob {
-        blobfs::Client::open_from_namespace_rwx_use_fxblob()
-    } else {
-        blobfs::Client::open_from_namespace_rwx()
-    }
-    .context("error opening blobfs")?;
+    let mut package_index = PackageIndex::new();
+    let builder = blobfs::Client::builder().readable().writable().executable();
+    let blobfs = if use_fxblob { builder.use_creator().use_reader() } else { builder }
+        .build()
+        .await
+        .context("error opening blobfs")?;
+
+    let authenticator = base_resolver::context_authenticator::ContextAuthenticator::new();
 
     let (system_image, executability_restrictions, base_packages, cache_packages) =
         if use_system_image {
@@ -129,38 +147,40 @@ async fn main_inner() -> Result<(), Error> {
                     let cache_packages =
                         system_image.cache_packages().await.context("reading cache_packages")?;
                     index::load_cache_packages(&mut package_index, &cache_packages, &blobfs).await;
-                    let cache_packages = Arc::new(cache_packages);
-                    inspector.root().record_lazy_values(
-                        "cache-packages",
-                        cache_packages.record_lazy_inspect("cache-packages"),
-                    );
-                    Ok(cache_packages)
+                    Ok(CachePackages::new(&blobfs, &cache_packages)
+                        .await
+                        .context("creating CachePackages index")?)
                 });
             let base_packages = base_packages_res.context("loading base packages")?;
-            let cache_packages = cache_packages_res.map_or_else(
-                |e: anyhow::Error| {
-                    error!("Failed to load cache packages: {e:#}");
-                    None
-                },
-                Some,
-            );
-
+            let cache_packages = cache_packages_res.unwrap_or_else(|e: anyhow::Error| {
+                error!("Failed to load cache packages, using empty: {e:#}");
+                CachePackages::empty()
+            });
             let executability_restrictions = system_image.load_executability_restrictions();
 
             (Some(system_image), executability_restrictions, base_packages, cache_packages)
         } else {
             info!("not loading system_image due to structured config");
             inspector.root().record_string("system_image", "ignored");
-            (None, system_image::ExecutabilityRestrictions::Enforce, BasePackages::empty(), None)
+            (
+                None,
+                system_image::ExecutabilityRestrictions::Enforce,
+                BasePackages::empty(),
+                CachePackages::empty(),
+            )
         };
 
     inspector
         .root()
         .record_string("executability-restrictions", format!("{executability_restrictions:?}"));
-
+    let base_resolver_base_packages =
+        Arc::new(base_packages.root_package_urls_and_hashes().clone());
     let base_packages = Arc::new(base_packages);
+    let cache_packages = Arc::new(cache_packages);
     inspector.root().record_lazy_child("base-packages", base_packages.record_lazy_inspect());
+    inspector.root().record_lazy_child("cache-packages", cache_packages.record_lazy_inspect());
     let package_index = Arc::new(async_lock::RwLock::new(package_index));
+    inspector.root().record_lazy_child("index", PackageIndex::record_lazy_inspect(&package_index));
     let scope = vfs::execution_scope::ExecutionScope::new();
     let (cobalt_sender, cobalt_fut) = ProtocolConnector::new_with_buffer_size(
         CobaltConnectedService,
@@ -177,6 +197,7 @@ async fn main_inner() -> Result<(), Error> {
         let package_index = Arc::clone(&package_index);
         let blobfs = blobfs.clone();
         let base_packages = Arc::clone(&base_packages);
+        let cache_packages = Arc::clone(&cache_packages);
         let scope = scope.clone();
         let cobalt_sender = cobalt_sender.clone();
         let cache_inspect_id = Arc::new(AtomicU32::new(0));
@@ -190,7 +211,7 @@ async fn main_inner() -> Result<(), Error> {
                         Arc::clone(&package_index),
                         blobfs.clone(),
                         Arc::clone(&base_packages),
-                        cache_packages.clone(),
+                        Arc::clone(&cache_packages),
                         executability_restrictions,
                         scope.clone(),
                         stream,
@@ -247,6 +268,7 @@ async fn main_inner() -> Result<(), Error> {
                     gc_service::serve(
                         blobfs.clone(),
                         Arc::clone(&base_packages),
+                        Arc::clone(&cache_packages),
                         Arc::clone(&package_index),
                         commit_status_provider.clone(),
                         stream,
@@ -258,9 +280,58 @@ async fn main_inner() -> Result<(), Error> {
             )
             .context("adding fuchsia.space/Manager to /svc")?;
     }
+    {
+        let base_resolver_base_packages = Arc::clone(&base_resolver_base_packages);
+        let authenticator = authenticator.clone();
+        let blobfs = blobfs.clone();
+        let () = svc_dir
+            .add_entry(
+                fidl_fuchsia_pkg::PackageResolverMarker::PROTOCOL_NAME,
+                vfs::service::host(
+                    move |stream: fidl_fuchsia_pkg::PackageResolverRequestStream| {
+                        base_resolver::package::serve_request_stream(
+                            stream,
+                            Arc::clone(&base_resolver_base_packages),
+                            authenticator.clone(),
+                            blobfs.clone(),
+                        )
+                        .unwrap_or_else(|e| {
+                            error!("failed to serve package resolver request: {:#}", e)
+                        })
+                    },
+                ),
+            )
+            .context("adding fuchsia.space/Manager to /svc")?;
+    }
+    {
+        let base_resolver_base_packages = Arc::clone(&base_resolver_base_packages);
+        let authenticator = authenticator.clone();
+        let blobfs = blobfs.clone();
+        let () = svc_dir
+            .add_entry(
+                fidl_fuchsia_component_resolution::ResolverMarker::PROTOCOL_NAME,
+                vfs::service::host(
+                    move |stream: fidl_fuchsia_component_resolution::ResolverRequestStream| {
+                        base_resolver::component::serve_request_stream(
+                            stream,
+                            Arc::clone(&base_resolver_base_packages),
+                            authenticator.clone(),
+                            blobfs.clone(),
+                        )
+                        .unwrap_or_else(|e| {
+                            error!("failed to serve component resolver request: {:#}", e)
+                        })
+                    },
+                ),
+            )
+            .context("adding fuchsia.space/Manager to /svc")?;
+    }
 
     let out_dir = vfs::pseudo_directory! {
         "svc" => svc_dir,
+        "shell-commands-bin" => remote_dir(shell_commands_bin_dir(&base_resolver_base_packages, scope.clone(), blobfs.clone())
+            .await
+            .context("getting shell-commands-bin dir")?),
         "pkgfs" =>
             crate::compat::pkgfs::make_dir(
                 Arc::clone(&base_packages),
@@ -268,8 +339,10 @@ async fn main_inner() -> Result<(), Error> {
                 system_image,
             )
             .context("serve pkgfs compat directories")?,
-        inspect_runtime::DIAGNOSTICS_DIR => inspect_runtime::create_diagnostics_dir(inspector),
     };
+
+    let _inspect_server_task =
+        inspect_runtime::publish(&inspector, inspect_runtime::PublishOptions::default());
 
     let () = out_dir.open(
         scope.clone(),
@@ -286,4 +359,33 @@ async fn main_inner() -> Result<(), Error> {
     cobalt_fut.await;
 
     Ok(())
+}
+
+async fn shell_commands_bin_dir(
+    base_packages: &HashMap<fuchsia_url::UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    scope: package_directory::ExecutionScope,
+    blobfs: blobfs::Client,
+) -> anyhow::Result<fio::DirectoryProxy> {
+    let (client, server) =
+        fidl::endpoints::create_proxy::<fio::DirectoryMarker>().context("create proxy")?;
+    let Some(hash) =
+        base_packages.get(&"fuchsia-pkg://fuchsia.com/shell-commands".parse().expect("valid url"))
+    else {
+        tracing::warn!(
+            "no 'shell-commands' package in base, so exposed 'shell-commands-bin' directory will \
+             close connections"
+        );
+        return Ok(client);
+    };
+    package_directory::serve_path(
+        scope,
+        blobfs,
+        *hash,
+        fio::OpenFlags::RIGHT_READABLE | fio::OpenFlags::RIGHT_EXECUTABLE,
+        package_directory::VfsPath::validate_and_split("bin").expect("valid path"),
+        server.into_channel().into(),
+    )
+    .await
+    .context("serving shell-commands bin dir")?;
+    Ok(client)
 }

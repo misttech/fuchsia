@@ -176,7 +176,21 @@ pub fn validate_capabilities(
 type CheckChildNameFn = fn(Option<&String>, DeclType, &str, &mut Vec<Error>) -> bool;
 
 pub fn validate_dynamic_child(child: &fdecl::Child) -> Result<(), ErrorList> {
-    validate_child(child, check_dynamic_name)
+    let mut errors = vec![];
+
+    if let Err(mut error_list) = validate_child(child, check_dynamic_name) {
+        errors.append(&mut error_list.errs);
+    }
+
+    if child.environment.is_some() {
+        errors.push(Error::DynamicChildWithEnvironment);
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(ErrorList { errs: errors })
+    }
 }
 
 /// Validates an independent Child. Performs the same validation on it as `validate`. A
@@ -237,12 +251,14 @@ struct ValidationContext<'a> {
     all_children: HashMap<&'a str, &'a fdecl::Child>,
     all_collections: HashSet<&'a str>,
     all_capability_ids: HashSet<&'a str>,
-    all_storage_and_sources: HashMap<&'a str, Option<&'a fdecl::Ref>>,
+    all_storages: HashMap<&'a str, Option<&'a fdecl::Ref>>,
     all_services: HashSet<&'a str>,
     all_protocols: HashSet<&'a str>,
     all_directories: HashSet<&'a str>,
     all_runners: HashSet<&'a str>,
     all_resolvers: HashSet<&'a str>,
+    all_dictionaries: HashMap<&'a str, Option<&'a fdecl::Ref>>,
+    all_configs: HashSet<&'a str>,
     all_environment_names: HashSet<&'a str>,
     strong_dependencies: DirectedGraph<DependencyNode<'a>>,
     target_ids: IdMap<'a>,
@@ -257,8 +273,6 @@ enum DependencyNode<'a> {
     Child(&'a str, Option<&'a str>),
     Collection(&'a str),
     Environment(&'a str),
-    /// This variant is automatically translated to the source backing the capability by
-    /// `add_strong_dep`, it does not appear in the dependency graph.
     Capability(&'a str),
 }
 
@@ -294,7 +308,8 @@ impl<'a> DependencyNode<'a> {
                 // our parent are handled by cycle detection in the parent's manifest.
                 None
             }
-            _ => {
+            fdecl::Ref::VoidType(_) => None,
+            fdecl::RefUnknown!() => {
                 // We were unable to understand this FIDL value
                 None
             }
@@ -328,11 +343,6 @@ impl<'a> ValidationContext<'a> {
             self.collect_environment_names(&envs);
         }
 
-        // Validate "program".
-        if let Some(program) = decl.program.as_ref() {
-            self.validate_program(program);
-        }
-
         // Validate "children" and build the set of all children.
         if let Some(children) = decl.children.as_ref() {
             for child in children {
@@ -355,8 +365,14 @@ impl<'a> ValidationContext<'a> {
         }
 
         // Validate "uses".
+        let mut uses_runner = None;
         if let Some(uses) = decl.uses.as_ref() {
-            self.validate_use_decls(uses);
+            uses_runner = self.validate_use_decls(uses);
+        }
+
+        // Validate "program".
+        if let Some(program) = decl.program.as_ref() {
+            self.validate_program(program, uses_runner);
         }
 
         // Validate "exposes".
@@ -567,17 +583,34 @@ impl<'a> ValidationContext<'a> {
                     self.errors.push(Error::CapabilityMustBeBuiltin(DeclType::EventStream))
                 }
             }
+            fdecl::Capability::Dictionary(dictionary) => {
+                self.validate_dictionary_decl(&dictionary);
+            }
+            fdecl::Capability::Config(config) => {
+                self.validate_configuration_decl(&config);
+            }
             fdecl::CapabilityUnknown!() => self.errors.push(Error::UnknownCapability),
         }
     }
 
-    fn validate_use_decls(&mut self, uses: &'a [fdecl::Use]) {
+    fn validate_use_decls(&mut self, uses: &'a [fdecl::Use]) -> Option<fdecl::UseRunner> {
+        let mut uses_runner = None;
+
         // Validate individual fields.
         for use_ in uses.iter() {
             self.validate_use_decl(&use_);
+            if let fdecl::Use::Runner(use_runner) = use_ {
+                if uses_runner.is_some() {
+                    self.errors.push(Error::MultipleRunnersUsed);
+                }
+
+                uses_runner = Some(use_runner.clone());
+            }
         }
 
         self.validate_use_paths(&uses);
+
+        uses_runner
     }
 
     fn validate_use_decl(&mut self, use_: &'a fdecl::Use) {
@@ -588,6 +621,7 @@ impl<'a> ValidationContext<'a> {
                     decl,
                     u.source.as_ref(),
                     u.source_name.as_ref(),
+                    u.source_dictionary.as_ref(),
                     u.target_path.as_ref(),
                     u.dependency_type.as_ref(),
                     u.availability.as_ref(),
@@ -602,6 +636,7 @@ impl<'a> ValidationContext<'a> {
                     decl,
                     u.source.as_ref(),
                     u.source_name.as_ref(),
+                    u.source_dictionary.as_ref(),
                     u.target_path.as_ref(),
                     u.dependency_type.as_ref(),
                     u.availability.as_ref(),
@@ -616,6 +651,7 @@ impl<'a> ValidationContext<'a> {
                     decl,
                     u.source.as_ref(),
                     u.source_name.as_ref(),
+                    u.source_dictionary.as_ref(),
                     u.target_path.as_ref(),
                     u.dependency_type.as_ref(),
                     u.availability.as_ref(),
@@ -643,6 +679,7 @@ impl<'a> ValidationContext<'a> {
                     DeclType::UseStorage,
                     SOURCE.as_ref(),
                     u.source_name.as_ref(),
+                    None,
                     u.target_path.as_ref(),
                     DEPENDENCY_TYPE.as_ref(),
                     u.availability.as_ref(),
@@ -656,6 +693,7 @@ impl<'a> ValidationContext<'a> {
                     decl,
                     u.source.as_ref(),
                     u.source_name.as_ref(),
+                    None,
                     u.target_path.as_ref(),
                     DEPENDENCY_TYPE.as_ref(),
                     u.availability.as_ref(),
@@ -690,6 +728,36 @@ impl<'a> ValidationContext<'a> {
                     }
                 }
             }
+            fdecl::Use::Runner(u) => {
+                const DEPENDENCY_TYPE: Option<fdecl::DependencyType> =
+                    Some(fdecl::DependencyType::Strong);
+                const AVAILABILITY: Option<fdecl::Availability> =
+                    Some(fdecl::Availability::Required);
+                let decl = DeclType::UseRunner;
+                self.validate_use_fields(
+                    decl,
+                    u.source.as_ref(),
+                    u.source_name.as_ref(),
+                    None,
+                    None,
+                    DEPENDENCY_TYPE.as_ref(),
+                    AVAILABILITY.as_ref(),
+                );
+            }
+            fdecl::Use::Config(u) => {
+                const DEPENDENCY_TYPE: Option<fdecl::DependencyType> =
+                    Some(fdecl::DependencyType::Strong);
+                let decl = DeclType::UseConfiguration;
+                self.validate_use_fields(
+                    decl,
+                    u.source.as_ref(),
+                    u.source_name.as_ref(),
+                    None,
+                    None,
+                    DEPENDENCY_TYPE.as_ref(),
+                    u.availability.as_ref(),
+                );
+            }
             fdecl::UseUnknown!() => {
                 self.errors.push(Error::invalid_field(DeclType::Component, "use"));
             }
@@ -698,9 +766,26 @@ impl<'a> ValidationContext<'a> {
 
     /// Validates the "program" declaration. This does not check runner-specific properties
     /// since those are checked by the runner.
-    fn validate_program(&mut self, program: &fdecl::Program) {
-        if program.runner.is_none() {
-            self.errors.push(Error::missing_field(DeclType::Program, "runner"));
+    fn validate_program(
+        &mut self,
+        program: &fdecl::Program,
+        uses_runner: Option<fdecl::UseRunner>,
+    ) {
+        match &program.runner {
+            Some(_) => {
+                if let Some(use_runner) = uses_runner {
+                    if &use_runner.source_name != &program.runner
+                        || use_runner.source != Some(fdecl::Ref::Environment(fdecl::EnvironmentRef))
+                    {
+                        self.errors.push(Error::ConflictingRunners);
+                    }
+                }
+            }
+            None => {
+                if uses_runner.is_none() {
+                    self.errors.push(Error::MissingRunner);
+                }
+            }
         }
 
         if program.info.is_none() {
@@ -812,6 +897,7 @@ impl<'a> ValidationContext<'a> {
         decl: DeclType,
         source: Option<&'a fdecl::Ref>,
         source_name: Option<&'a String>,
+        source_dictionary: Option<&'a String>,
         target_path: Option<&'a String>,
         dependency_type: Option<&fdecl::DependencyType>,
         availability: Option<&'a fdecl::Availability>,
@@ -821,6 +907,7 @@ impl<'a> ValidationContext<'a> {
             Some(fdecl::Ref::Framework(_)) => {}
             Some(fdecl::Ref::Debug(_)) => {}
             Some(fdecl::Ref::Self_(_)) => {}
+            Some(fdecl::Ref::Environment(_)) => {}
             Some(fdecl::Ref::Child(child)) => {
                 if self.validate_child_ref(decl, "source", &child, OfferType::Static)
                     && dependency_type == Some(&fdecl::DependencyType::Strong)
@@ -851,7 +938,12 @@ impl<'a> ValidationContext<'a> {
             }
         };
         check_name(source_name, decl, "source_name", &mut self.errors);
-        check_path(target_path, decl, "target_path", &mut self.errors);
+        if source_dictionary.is_some() {
+            check_relative_path(source_dictionary, decl, "source_dictionary", &mut self.errors);
+        }
+        if decl != DeclType::UseRunner && decl != DeclType::UseConfiguration {
+            check_path(target_path, decl, "target_path", &mut self.errors);
+        }
         check_use_availability(decl, availability, &mut self.errors);
 
         // Only allow `weak` dependency with `use from child`.
@@ -1174,7 +1266,7 @@ impl<'a> ValidationContext<'a> {
             if !self.all_capability_ids.insert(name) {
                 self.errors.push(Error::duplicate_field(DeclType::Storage, "name", name.as_str()));
             }
-            self.all_storage_and_sources.insert(name, storage.source.as_ref());
+            self.all_storages.insert(name, storage.source.as_ref());
         }
         if storage.storage_id.is_none() {
             self.errors.push(Error::missing_field(DeclType::Storage, "storage_id"));
@@ -1234,6 +1326,55 @@ impl<'a> ValidationContext<'a> {
                     &mut self.errors,
                 );
             }
+        }
+    }
+
+    fn validate_dictionary_decl(&mut self, dictionary: &'a fdecl::Dictionary) {
+        let decl = DeclType::Dictionary;
+        if check_name(dictionary.name.as_ref(), decl, "name", &mut self.errors) {
+            let name = dictionary.name.as_ref().unwrap();
+            if !self.all_capability_ids.insert(name) {
+                self.errors.push(Error::duplicate_field(decl, "name", name.as_str()));
+            }
+            self.all_dictionaries.insert(name, dictionary.source.as_ref());
+        }
+        match dictionary.source.as_ref() {
+            Some(fdecl::Ref::Self_(_)) | Some(fdecl::Ref::Parent(_)) => {
+                check_relative_path(
+                    dictionary.source_dictionary.as_ref(),
+                    decl,
+                    "source_dictionary",
+                    &mut self.errors,
+                );
+            }
+            Some(fdecl::Ref::Child(child)) => {
+                let _ = self.validate_child_ref(decl, "source", &child, OfferType::Static);
+                check_relative_path(
+                    dictionary.source_dictionary.as_ref(),
+                    decl,
+                    "source_dictionary",
+                    &mut self.errors,
+                );
+            }
+            Some(_) => {
+                self.errors.push(Error::invalid_field(decl, "source"));
+            }
+            None => {
+                if dictionary.source_dictionary.is_some() {
+                    self.errors.push(Error::extraneous_field(decl, "source_dictionary"));
+                }
+            }
+        };
+    }
+
+    fn validate_configuration_decl(&mut self, config: &'a fdecl::Configuration) {
+        let decl = DeclType::Configuration;
+        if check_name(config.name.as_ref(), decl, "name", &mut self.errors) {
+            let name = config.name.as_ref().unwrap();
+            if !self.all_capability_ids.insert(name) {
+                self.errors.push(Error::duplicate_field(decl, "name", name.as_str()));
+            }
+            self.all_configs.insert(name);
         }
     }
 
@@ -1365,7 +1506,7 @@ impl<'a> ValidationContext<'a> {
 
     fn validate_storage_source(&mut self, source_name: &String, decl_type: DeclType) {
         if check_name(Some(source_name), decl_type, "source.storage.name", &mut self.errors) {
-            if !self.all_storage_and_sources.contains_key(source_name.as_str()) {
+            if !self.all_storages.contains_key(source_name.as_str()) {
                 self.errors.push(Error::invalid_storage(decl_type, "source", source_name));
             }
         }
@@ -1433,7 +1574,7 @@ impl<'a> ValidationContext<'a> {
                 expose_groups.entry(key).or_insert_with(|| vec![]).push(expose.clone());
             }
         }
-        for (p, expose_group) in expose_groups {
+        for expose_group in expose_groups.into_values() {
             if expose_group.len() == 1 {
                 // If there are not multiple exposes for a (target_name, target) pair then there are
                 // no aggregation conditions to check.
@@ -1441,15 +1582,6 @@ impl<'a> ValidationContext<'a> {
             }
 
             self.validate_aggregation_has_same_availability(&expose_group);
-
-            let (target_name, _) = p;
-            if !expose_group.iter().all(|e| matches!(e.source, Some(fdecl::Ref::Collection(_)))) {
-                self.errors.push(Error::service_aggregate_not_collection(
-                    DeclType::ExposeService,
-                    "source",
-                    target_name,
-                ));
-            }
         }
     }
 
@@ -1467,6 +1599,7 @@ impl<'a> ValidationContext<'a> {
                     CollectionSource::Allow,
                     e.source.as_ref(),
                     e.source_name.as_ref(),
+                    e.source_dictionary.as_ref(),
                     e.target.as_ref(),
                     e.target_name.as_ref(),
                     e.availability.as_ref(),
@@ -1488,6 +1621,7 @@ impl<'a> ValidationContext<'a> {
                     CollectionSource::Deny,
                     e.source.as_ref(),
                     e.source_name.as_ref(),
+                    e.source_dictionary.as_ref(),
                     e.target.as_ref(),
                     e.target_name.as_ref(),
                     e.availability.as_ref(),
@@ -1509,6 +1643,7 @@ impl<'a> ValidationContext<'a> {
                     CollectionSource::Deny,
                     e.source.as_ref(),
                     e.source_name.as_ref(),
+                    e.source_dictionary.as_ref(),
                     e.target.as_ref(),
                     e.target_name.as_ref(),
                     e.availability.as_ref(),
@@ -1548,6 +1683,7 @@ impl<'a> ValidationContext<'a> {
                     CollectionSource::Deny,
                     e.source.as_ref(),
                     e.source_name.as_ref(),
+                    e.source_dictionary.as_ref(),
                     e.target.as_ref(),
                     e.target_name.as_ref(),
                     Some(&fdecl::Availability::Required),
@@ -1568,6 +1704,7 @@ impl<'a> ValidationContext<'a> {
                     CollectionSource::Deny,
                     e.source.as_ref(),
                     e.source_name.as_ref(),
+                    e.source_dictionary.as_ref(),
                     e.target.as_ref(),
                     e.target_name.as_ref(),
                     Some(&fdecl::Availability::Required),
@@ -1576,6 +1713,48 @@ impl<'a> ValidationContext<'a> {
                 // If the expose source is `self`, ensure we have a corresponding Resolver.
                 if let (Some(fdecl::Ref::Self_(_)), Some(ref name)) = (&e.source, &e.source_name) {
                     if !self.all_resolvers.contains(&name as &str) {
+                        self.errors.push(Error::invalid_capability(decl, "source", name));
+                    }
+                }
+            }
+            fdecl::Expose::Dictionary(e) => {
+                let decl = DeclType::ExposeDictionary;
+                self.validate_expose_fields(
+                    decl,
+                    AllowableIds::One,
+                    CollectionSource::Deny,
+                    e.source.as_ref(),
+                    e.source_name.as_ref(),
+                    e.source_dictionary.as_ref(),
+                    e.target.as_ref(),
+                    e.target_name.as_ref(),
+                    Some(&fdecl::Availability::Required),
+                    prev_target_ids,
+                );
+                // If the expose source is `self`, ensure we have a corresponding Dictionary.
+                if let (Some(fdecl::Ref::Self_(_)), Some(ref name)) = (&e.source, &e.source_name) {
+                    if !self.all_dictionaries.contains_key(&name as &str) {
+                        self.errors.push(Error::invalid_capability(decl, "source", name));
+                    }
+                }
+            }
+            fdecl::Expose::Config(e) => {
+                let decl = DeclType::ExposeConfig;
+                self.validate_expose_fields(
+                    decl,
+                    AllowableIds::One,
+                    CollectionSource::Deny,
+                    e.source.as_ref(),
+                    e.source_name.as_ref(),
+                    None,
+                    e.target.as_ref(),
+                    e.target_name.as_ref(),
+                    e.availability.as_ref(),
+                    prev_target_ids,
+                );
+                // If the expose source is `self`, ensure we have a corresponding Config capability.
+                if let (Some(fdecl::Ref::Self_(_)), Some(ref name)) = (&e.source, &e.source_name) {
+                    if !self.all_configs.contains(&name as &str) {
                         self.errors.push(Error::invalid_capability(decl, "source", name));
                     }
                 }
@@ -1593,6 +1772,7 @@ impl<'a> ValidationContext<'a> {
         collection_source: CollectionSource,
         source: Option<&fdecl::Ref>,
         source_name: Option<&String>,
+        source_dictionary: Option<&String>,
         target: Option<&fdecl::Ref>,
         target_name: Option<&'a String>,
         availability: Option<&fdecl::Availability>,
@@ -1636,6 +1816,9 @@ impl<'a> ValidationContext<'a> {
             }
         }
         check_name(source_name, decl, "source_name", &mut self.errors);
+        if source_dictionary.is_some() {
+            check_relative_path(source_dictionary, decl, "source_dictionary", &mut self.errors);
+        }
         if check_name(target_name, decl, "target_name", &mut self.errors) {
             // TODO: This logic needs to pair the target name with the target before concluding
             // there's a duplicate.
@@ -1666,30 +1849,52 @@ impl<'a> ValidationContext<'a> {
         let source = source.unwrap();
         let target = target.unwrap();
 
-        let source = {
-            // A dependency on a storage capability from `self` is really a dependency on the
-            // backing dir.  Perform that translation here.
-            let possible_storage_name = match (source, source_name) {
-                (DependencyNode::Capability(name), _) => Some(name),
-                (DependencyNode::Self_, Some(name)) => Some(name.as_str()),
-                _ => None,
-            };
-            let possible_storage_source =
-                possible_storage_name.map(|name| self.all_storage_and_sources.get(name)).flatten();
-            let source = possible_storage_source
-                .map(|r| DependencyNode::try_from_ref(*r))
-                .unwrap_or(Some(source));
-            if source.is_none() {
-                return;
-            }
-            source.unwrap()
-        };
+        let source = self.normalize_dep(source, source_name);
+        let target = self.normalize_dep(target, None);
+        Self::add_edge(source, target, &mut self.strong_dependencies);
+    }
 
-        if source == target {
-            // This is already its own error, or is a valid `use from self`, don't report this as a
-            // cycle.
-        } else {
-            self.strong_dependencies.add_edge(source, target);
+    // A dependency on a storage capability from `self` transitively depends on the source in that
+    // capability's `from`. In this case, do the following:
+    //
+    // - Transform the dependency to a "named capability" node.
+    // - On this "name capability" node, add a dep on the source.
+    // Return that additional dep, if it exists.
+    fn normalize_dep(
+        &mut self,
+        dep: DependencyNode<'a>,
+        source_name: Option<&'a String>,
+    ) -> DependencyNode<'a> {
+        let name = match (dep, source_name) {
+            (DependencyNode::Capability(name), _) => name,
+            (DependencyNode::Self_, Some(name)) => name,
+            _ => return dep,
+        };
+        for m in [&self.all_storages, &self.all_dictionaries] {
+            if let Some(source) = m.get(&name) {
+                let dep = DependencyNode::Capability(name);
+                let other_dep = DependencyNode::try_from_ref(*source);
+                if let Some(other_dep) = other_dep {
+                    Self::add_edge(other_dep, dep, &mut self.strong_dependencies);
+                }
+                return dep;
+            }
+        }
+        dep
+    }
+
+    fn add_edge<'b>(
+        source: DependencyNode<'b>,
+        target: DependencyNode<'b>,
+        strong_dependencies: &mut DirectedGraph<DependencyNode<'b>>,
+    ) {
+        match (source, target) {
+            (DependencyNode::Self_, DependencyNode::Self_) => {
+                // `self` dependencies (e.g. `use from self`) are allowed.
+            }
+            (source, target) => {
+                strong_dependencies.add_edge(source, target);
+            }
         }
     }
 
@@ -1710,7 +1915,7 @@ impl<'a> ValidationContext<'a> {
                 offer_groups.entry(key).or_insert_with(|| vec![]).push(offer.clone());
             }
         }
-        for (p, offer_group) in offer_groups {
+        for offer_group in offer_groups.into_values() {
             if offer_group.len() == 1 {
                 // If there are not multiple offers for a (target_name, target) pair then there are
                 // no aggregation conditions to check.
@@ -1718,17 +1923,6 @@ impl<'a> ValidationContext<'a> {
             }
 
             self.validate_aggregation_has_same_availability(&offer_group);
-
-            let (target_name, _) = p;
-            if offer_type == OfferType::Static
-                && !offer_group.iter().all(|o| matches!(o.source, Some(fdecl::Ref::Collection(_))))
-            {
-                self.errors.push(Error::service_aggregate_not_collection(
-                    DeclType::OfferService,
-                    "source",
-                    target_name,
-                ));
-            }
 
             let mut source_instance_filter_entries: HashSet<String> = HashSet::new();
             let mut service_source_names: HashSet<String> = HashSet::new();
@@ -1778,10 +1972,10 @@ impl<'a> ValidationContext<'a> {
                     CollectionSource::Allow,
                     o.source.as_ref(),
                     o.source_name.as_ref(),
+                    o.source_dictionary.as_ref(),
                     o.target.as_ref(),
                     o.target_name.as_ref(),
                     o.availability.as_ref(),
-                    None,
                     offer_type,
                 );
                 self.validate_filtered_service_fields(
@@ -1810,10 +2004,10 @@ impl<'a> ValidationContext<'a> {
                     CollectionSource::Deny,
                     o.source.as_ref(),
                     o.source_name.as_ref(),
+                    o.source_dictionary.as_ref(),
                     o.target.as_ref(),
                     o.target_name.as_ref(),
                     o.availability.as_ref(),
-                    o.dependency_type,
                     offer_type,
                 );
                 if o.dependency_type.is_none() {
@@ -1842,10 +2036,10 @@ impl<'a> ValidationContext<'a> {
                     CollectionSource::Deny,
                     o.source.as_ref(),
                     o.source_name.as_ref(),
+                    o.source_dictionary.as_ref(),
                     o.target.as_ref(),
                     o.target_name.as_ref(),
                     o.availability.as_ref(),
-                    o.dependency_type,
                     offer_type,
                 );
                 if o.dependency_type.is_none() {
@@ -1894,10 +2088,7 @@ impl<'a> ValidationContext<'a> {
                 match (o.source.as_ref(), o.source_name.as_ref()) {
                     (Some(fdecl::Ref::Self_ { .. }), Some(source_name)) => {
                         if let Some(source) = DependencyNode::try_from_ref(
-                            *self
-                                .all_storage_and_sources
-                                .get(source_name.as_str())
-                                .unwrap_or(&None),
+                            *self.all_storages.get(source_name.as_str()).unwrap_or(&None),
                         ) {
                             if let Some(target) = DependencyNode::try_from_ref(o.target.as_ref()) {
                                 self.strong_dependencies.add_edge(source, target);
@@ -1919,10 +2110,10 @@ impl<'a> ValidationContext<'a> {
                     CollectionSource::Deny,
                     o.source.as_ref(),
                     o.source_name.as_ref(),
+                    o.source_dictionary.as_ref(),
                     o.target.as_ref(),
                     o.target_name.as_ref(),
                     Some(&fdecl::Availability::Required),
-                    None,
                     offer_type,
                 );
                 // If the offer source is `self`, ensure we have a corresponding Runner.
@@ -1945,10 +2136,10 @@ impl<'a> ValidationContext<'a> {
                     CollectionSource::Deny,
                     o.source.as_ref(),
                     o.source_name.as_ref(),
+                    o.source_dictionary.as_ref(),
                     o.target.as_ref(),
                     o.target_name.as_ref(),
                     Some(&fdecl::Availability::Required),
-                    None,
                     offer_type,
                 );
 
@@ -1968,7 +2159,61 @@ impl<'a> ValidationContext<'a> {
             fdecl::Offer::EventStream(e) => {
                 self.validate_event_stream_offer_fields(e, offer_type);
             }
-            _ => {
+            fdecl::Offer::Dictionary(o) => {
+                let decl = DeclType::OfferDictionary;
+                self.validate_offer_fields(
+                    decl,
+                    AllowableIds::One,
+                    CollectionSource::Deny,
+                    o.source.as_ref(),
+                    o.source_name.as_ref(),
+                    o.source_dictionary.as_ref(),
+                    o.target.as_ref(),
+                    o.target_name.as_ref(),
+                    Some(&fdecl::Availability::Required),
+                    offer_type,
+                );
+
+                // If the offer source is `self`, ensure we have a
+                // corresponding Dictionary.
+                if let (Some(fdecl::Ref::Self_(_)), Some(ref name)) = (&o.source, &o.source_name) {
+                    if !self.all_dictionaries.contains_key(&name as &str) {
+                        self.errors.push(Error::invalid_capability(decl, "source", name));
+                    }
+                }
+                self.add_strong_dep(
+                    o.source_name.as_ref(),
+                    DependencyNode::try_from_ref(o.source.as_ref()),
+                    DependencyNode::try_from_ref(o.target.as_ref()),
+                );
+            }
+            fdecl::Offer::Config(o) => {
+                let decl = DeclType::OfferConfig;
+                self.validate_offer_fields(
+                    decl,
+                    AllowableIds::One,
+                    CollectionSource::Deny,
+                    o.source.as_ref(),
+                    o.source_name.as_ref(),
+                    None,
+                    o.target.as_ref(),
+                    o.target_name.as_ref(),
+                    o.availability.as_ref(),
+                    offer_type,
+                );
+                // If the offer source is `self`, ensure we have a corresponding capability.
+                if let (Some(fdecl::Ref::Self_(_)), Some(ref name)) = (&o.source, &o.source_name) {
+                    if !self.all_configs.contains(&name as &str) {
+                        self.errors.push(Error::invalid_capability(decl, "source", name));
+                    }
+                }
+                self.add_strong_dep(
+                    o.source_name.as_ref(),
+                    DependencyNode::try_from_ref(o.source.as_ref()),
+                    DependencyNode::try_from_ref(o.target.as_ref()),
+                );
+            }
+            fdecl::OfferUnknown!() => {
                 self.errors.push(Error::invalid_field(DeclType::Component, "offer"));
             }
         }
@@ -1981,10 +2226,10 @@ impl<'a> ValidationContext<'a> {
         collection_source: CollectionSource,
         source: Option<&'a fdecl::Ref>,
         source_name: Option<&'a String>,
+        source_dictionary: Option<&'a String>,
         target: Option<&'a fdecl::Ref>,
         target_name: Option<&'a String>,
         availability: Option<&'a fdecl::Availability>,
-        dependency: Option<fdecl::DependencyType>,
         offer_type: OfferType,
     ) {
         match source {
@@ -2006,15 +2251,10 @@ impl<'a> ValidationContext<'a> {
         }
         check_route_availability(decl, availability, source, source_name, &mut self.errors);
         check_offer_name(source_name, decl, "source_name", offer_type, &mut self.errors);
-        self.validate_offer_target(
-            decl,
-            allowable_names,
-            source,
-            target,
-            target_name,
-            dependency,
-            offer_type,
-        );
+        if source_dictionary.is_some() {
+            check_relative_path(source_dictionary, decl, "source_dictionary", &mut self.errors);
+        }
+        self.validate_offer_target(decl, allowable_names, target, target_name, offer_type);
         check_offer_name(target_name, decl, "target_name", offer_type, &mut self.errors);
     }
 
@@ -2042,15 +2282,7 @@ impl<'a> ValidationContext<'a> {
         }
         check_route_availability(decl, availability, source, source_name, &mut self.errors);
         check_offer_name(source_name, decl, "source_name", offer_type, &mut self.errors);
-        self.validate_offer_target(
-            decl,
-            AllowableIds::One,
-            source,
-            target,
-            target_name,
-            None,
-            offer_type,
-        );
+        self.validate_offer_target(decl, AllowableIds::One, target, target_name, offer_type);
         check_offer_name(target_name, decl, "target_name", offer_type, &mut self.errors);
     }
 
@@ -2119,10 +2351,8 @@ impl<'a> ValidationContext<'a> {
         self.validate_offer_target(
             decl,
             AllowableIds::One,
-            event_stream.source.as_ref(),
             event_stream.target.as_ref(),
             event_stream.target_name.as_ref(),
-            None,
             offer_type,
         );
         check_name(event_stream.target_name.as_ref(), decl, "target_name", &mut self.errors);
@@ -2233,26 +2463,22 @@ impl<'a> ValidationContext<'a> {
         &mut self,
         decl: DeclType,
         allowable_names: AllowableIds,
-        source: Option<&'a fdecl::Ref>,
         target: Option<&'a fdecl::Ref>,
         target_name: Option<&'a String>,
-        dependency: Option<fdecl::DependencyType>,
         offer_type: OfferType,
     ) {
         match target {
             Some(fdecl::Ref::Child(c)) => {
-                self.validate_target_child(
-                    decl,
-                    allowable_names,
-                    c,
-                    source,
-                    target_name,
-                    dependency,
-                    offer_type,
-                );
+                self.validate_target_child(decl, allowable_names, c, target_name, offer_type);
             }
             Some(fdecl::Ref::Collection(c)) => {
                 self.validate_target_collection(decl, allowable_names, c, target_name);
+            }
+            Some(fdecl::Ref::Capability(c)) => {
+                // Only offers to dictionary capabilities are valid.
+                if !self.all_dictionaries.contains_key(&c.name.as_str()) {
+                    self.errors.push(Error::invalid_field(decl, "target"));
+                }
             }
             Some(_) => {
                 self.errors.push(Error::invalid_field(decl, "target"));
@@ -2268,9 +2494,7 @@ impl<'a> ValidationContext<'a> {
         decl: DeclType,
         allowable_names: AllowableIds,
         child: &'a fdecl::ChildRef,
-        source: Option<&fdecl::Ref>,
         target_name: Option<&'a String>,
-        dependency: Option<fdecl::DependencyType>,
         offer_type: OfferType,
     ) {
         if !self.validate_child_ref(decl, "target", child, offer_type) {
@@ -2291,14 +2515,6 @@ impl<'a> ValidationContext<'a> {
                         "target_name",
                         target_name as &str,
                     ));
-                }
-            }
-            if let Some(fdecl::Ref::Child(source_child)) = source {
-                if source_child.name == child.name
-                    && dependency.unwrap_or(fdecl::DependencyType::Strong)
-                        == fdecl::DependencyType::Strong
-                {
-                    self.errors.push(Error::offer_target_equals_source(decl, &child.name as &str));
                 }
             }
         }
@@ -2938,6 +3154,11 @@ mod tests {
                         target_path: None,
                         ..Default::default()
                     }),
+                    fdecl::Use::Runner(fdecl::UseRunner {
+                        source_name: None,
+                        source: None,
+                        ..Default::default()
+                    }),
                 ]);
                 decl
             },
@@ -2960,6 +3181,9 @@ mod tests {
                 Error::missing_field(DeclType::UseEventStream, "source"),
                 Error::missing_field(DeclType::UseEventStream, "source_name"),
                 Error::missing_field(DeclType::UseEventStream, "target_path"),
+                Error::missing_field(DeclType::UseRunner, "source"),
+                Error::missing_field(DeclType::UseRunner, "source_name"),
+                Error::ConflictingRunners,
             ])),
         },
         test_validate_missing_program_info => {
@@ -3025,6 +3249,14 @@ mod tests {
                         target_path: Some("e".to_string()),
                         ..Default::default()
                     }),
+                    fdecl::Use::Runner(fdecl::UseRunner {
+                        source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                            name: "^bad".to_string(),
+                            collection: None,
+                        })),
+                        source_name: Some("foo/".to_string()),
+                        ..Default::default()
+                    }),
                 ]);
                 decl
             },
@@ -3044,6 +3276,8 @@ mod tests {
                 Error::invalid_field(DeclType::UseEventStream, "source.child.name"),
                 Error::invalid_field(DeclType::UseEventStream, "source_name"),
                 Error::invalid_field(DeclType::UseEventStream, "target_path"),
+                Error::invalid_field(DeclType::UseRunner, "source.child.name"),
+                Error::invalid_field(DeclType::UseRunner, "source_name"),
             ])),
         },
         test_validate_uses_missing_source => {
@@ -3094,6 +3328,11 @@ mod tests {
                             subdir: None,
                             ..Default::default()
                         }),
+                        fdecl::Use::Runner(fdecl::UseRunner {
+                            source: Some(fdecl::Ref::Child(fdecl::ChildRef{ name: "no-such-child".to_string(), collection: None})),
+                            source_name: Some("RunnerName".to_string()),
+                            ..Default::default()
+                        }),
                     ]),
                     ..new_component_decl()
                 }
@@ -3102,6 +3341,7 @@ mod tests {
                 Error::invalid_child(DeclType::UseProtocol, "source", "no-such-child"),
                 Error::invalid_child(DeclType::UseService, "source", "no-such-child"),
                 Error::invalid_child(DeclType::UseDirectory, "source", "no-such-child"),
+                Error::invalid_child(DeclType::UseRunner, "source", "no-such-child"),
             ])),
         },
         test_validate_use_from_child_offer_to_child_strong_cycle => {
@@ -3638,9 +3878,140 @@ mod tests {
                 }
             },
             result = Err(ErrorList::new(vec![
-                Error::dependency_cycle("{{self -> child child -> self}}".to_string()),
+                Error::dependency_cycle("{{self -> capability data -> child child -> self}}".to_string()),
             ])),
         },
+        test_validate_strong_cycle_with_dictionary => {
+            input = fdecl::Component {
+                offers: Some(vec![
+                    fdecl::Offer::Dictionary(fdecl::OfferDictionary {
+                        source: Some(fdecl::Ref::Self_(fdecl::SelfRef {})),
+                        source_name: Some("dict".into()),
+                        target: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                            name: "a".into(),
+                            collection: None,
+                        })),
+                        target_name: Some("dict".into()),
+                        dependency_type: Some(fdecl::DependencyType::Strong),
+                        ..Default::default()
+                    }),
+                    fdecl::Offer::Protocol(fdecl::OfferProtocol {
+                        source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                            name: "b".into(),
+                            collection: None,
+                        })),
+                        source_name: Some("1".into()),
+                        target: Some(fdecl::Ref::Capability(fdecl::CapabilityRef {
+                            name: "dict".into(),
+                        })),
+                        target_name: Some("1".into()),
+                        dependency_type: Some(fdecl::DependencyType::Strong),
+                        ..Default::default()
+                    }),
+                    fdecl::Offer::Protocol(fdecl::OfferProtocol {
+                        source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                            name: "a".into(),
+                            collection: None,
+                        })),
+                        source_name: Some("2".into()),
+                        target: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                            name: "b".into(),
+                            collection: None,
+                        })),
+                        target_name: Some("2".into()),
+                        dependency_type: Some(fdecl::DependencyType::Strong),
+                        ..Default::default()
+                    }),
+                ]),
+                children: Some(vec![
+                    fdecl::Child {
+                        name: Some("a".into()),
+                        url: Some("fuchsia-pkg://child".into()),
+                        startup: Some(fdecl::StartupMode::Lazy),
+                        ..Default::default()
+                    },
+                    fdecl::Child {
+                        name: Some("b".into()),
+                        url: Some("fuchsia-pkg://child".into()),
+                        startup: Some(fdecl::StartupMode::Lazy),
+                        ..Default::default()
+                    },
+                ]),
+                capabilities: Some(vec![
+                    fdecl::Capability::Dictionary(fdecl::Dictionary {
+                        name: Some("dict".into()),
+                        ..Default::default()
+                    }),
+                ]),
+                ..Default::default()
+            },
+            result = Err(ErrorList::new(vec![
+                Error::dependency_cycle("{{child a -> child b -> capability dict -> child a}}".to_string()),
+            ])),
+        },
+        test_validate_strong_cycle_with_dictionary_that_extends => {
+            input = fdecl::Component {
+                offers: Some(vec![
+                    fdecl::Offer::Dictionary(fdecl::OfferDictionary {
+                        source: Some(fdecl::Ref::Self_(fdecl::SelfRef {})),
+                        source_name: Some("dict".into()),
+                        target: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                            name: "a".into(),
+                            collection: None,
+                        })),
+                        target_name: Some("dict".into()),
+                        dependency_type: Some(fdecl::DependencyType::Strong),
+                        ..Default::default()
+                    }),
+                    fdecl::Offer::Protocol(fdecl::OfferProtocol {
+                        source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                            name: "a".into(),
+                            collection: None,
+                        })),
+                        source_name: Some("1".into()),
+                        target: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                            name: "b".into(),
+                            collection: None,
+                        })),
+                        target_name: Some("1".into()),
+                        dependency_type: Some(fdecl::DependencyType::Strong),
+                        ..Default::default()
+                    }),
+                ]),
+                children: Some(vec![
+                    fdecl::Child {
+                        name: Some("a".into()),
+                        url: Some("fuchsia-pkg://child".into()),
+                        startup: Some(fdecl::StartupMode::Lazy),
+                        ..Default::default()
+                    },
+                    fdecl::Child {
+                        name: Some("b".into()),
+                        url: Some("fuchsia-pkg://child".into()),
+                        startup: Some(fdecl::StartupMode::Lazy),
+                        ..Default::default()
+                    },
+                ]),
+                capabilities: Some(vec![
+                    fdecl::Capability::Dictionary(fdecl::Dictionary {
+                        name: Some("dict".into()),
+                        source: Some(fdecl::Ref::Child(
+                            fdecl::ChildRef {
+                                name: "b".into(),
+                                collection: None,
+                            },
+                        )),
+                        source_dictionary: Some("d".into()),
+                        ..Default::default()
+                    }),
+                ]),
+                ..Default::default()
+            },
+            result = Err(ErrorList::new(vec![
+                Error::dependency_cycle("{{child a -> child b -> capability dict -> child a}}".to_string()),
+            ])),
+        },
+
         test_validate_use_from_child_offer_to_child_weak_cycle => {
             input = {
                 fdecl::Component {
@@ -4226,7 +4597,7 @@ mod tests {
                 Error::MissingField(DeclField { decl: DeclType::UseEventStream, field: "scope".to_string() })
             ])),
         },
-        test_validate_uses_no_runner => {
+        test_validate_no_runner => {
             input = {
                 let mut decl = new_component_decl();
                 decl.program = Some(fdecl::Program {
@@ -4240,7 +4611,99 @@ mod tests {
                 decl
             },
             result = Err(ErrorList::new(vec![
-                Error::missing_field(DeclType::Program, "runner"),
+                Error::MissingRunner,
+            ])),
+        },
+        test_validate_uses_runner => {
+            input = {
+                let mut decl = new_component_decl();
+                decl.program = Some(fdecl::Program {
+                    runner: None,
+                    info: Some(fdata::Dictionary {
+                        entries: None,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                });
+                decl.uses = Some(vec![
+                    fdecl::Use::Runner(fdecl::UseRunner {
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        source_name: Some("runner".to_string()),
+                        ..Default::default()
+                    }),
+                ]);
+                decl
+            },
+            result = Ok(()),
+        },
+        test_validate_program_and_uses_runner_match => {
+            input = {
+                let mut decl = new_component_decl();
+                decl.program = Some(fdecl::Program {
+                    runner: Some("runner".to_string()),
+                    info: Some(fdata::Dictionary {
+                        entries: None,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                });
+                decl.uses = Some(vec![
+                    fdecl::Use::Runner(fdecl::UseRunner {
+                        source: Some(fdecl::Ref::Environment(fdecl::EnvironmentRef {})),
+                        source_name: Some("runner".to_string()),
+                        ..Default::default()
+                    }),
+                ]);
+                decl
+            },
+            result = Ok(()),
+        },
+        test_validate_runner_names_conflict => {
+            input = {
+                let mut decl = new_component_decl();
+                decl.program = Some(fdecl::Program {
+                    runner: Some("runner".to_string()),
+                    info: Some(fdata::Dictionary {
+                        entries: None,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                });
+                decl.uses = Some(vec![
+                    fdecl::Use::Runner(fdecl::UseRunner {
+                        source: Some(fdecl::Ref::Environment(fdecl::EnvironmentRef {})),
+                        source_name: Some("other.runner".to_string()),
+                        ..Default::default()
+                    }),
+                ]);
+                decl
+            },
+            result = Err(ErrorList::new(vec![
+                Error::ConflictingRunners,
+            ])),
+        },
+        test_validate_uses_runner_not_environement => {
+            input = {
+                let mut decl = new_component_decl();
+                decl.program = Some(fdecl::Program {
+                    runner: Some("runner".to_string()),
+                    info: Some(fdata::Dictionary {
+                        entries: None,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                });
+                decl.uses = Some(vec![
+                    fdecl::Use::Runner(fdecl::UseRunner {
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        source_name: Some("runner".to_string()),
+                        ..Default::default()
+                    }),
+                ]);
+                decl
+            },
+            result = Err(ErrorList::new(vec![
+                Error::ConflictingRunners,
             ])),
         },
         test_validate_uses_long_identifiers => {
@@ -4373,6 +4836,9 @@ mod tests {
                         target_name: None,
                         ..Default::default()
                     }),
+                    fdecl::Expose::Dictionary(fdecl::ExposeDictionary {
+                        ..Default::default()
+                    }),
                 ]);
                 decl
             },
@@ -4397,6 +4863,10 @@ mod tests {
                 Error::missing_field(DeclType::ExposeResolver, "target"),
                 Error::missing_field(DeclType::ExposeResolver, "source_name"),
                 Error::missing_field(DeclType::ExposeResolver, "target_name"),
+                Error::missing_field(DeclType::ExposeDictionary, "source"),
+                Error::missing_field(DeclType::ExposeDictionary, "target"),
+                Error::missing_field(DeclType::ExposeDictionary, "source_name"),
+                Error::missing_field(DeclType::ExposeDictionary, "target_name"),
             ])),
         },
         test_validate_exposes_extraneous => {
@@ -4455,6 +4925,16 @@ mod tests {
                         target_name: Some("pkg".to_string()),
                         ..Default::default()
                     }),
+                    fdecl::Expose::Dictionary(fdecl::ExposeDictionary {
+                        source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                            name: "netstack".to_string(),
+                            collection: Some("modular".to_string()),
+                        })),
+                        source_name: Some("dict".to_string()),
+                        target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        target_name: Some("dict".to_string()),
+                        ..Default::default()
+                    }),
                 ]);
                 decl
             },
@@ -4464,6 +4944,7 @@ mod tests {
                 Error::extraneous_field(DeclType::ExposeDirectory, "source.child.collection"),
                 Error::extraneous_field(DeclType::ExposeRunner, "source.child.collection"),
                 Error::extraneous_field(DeclType::ExposeResolver, "source.child.collection"),
+                Error::extraneous_field(DeclType::ExposeDictionary, "source.child.collection"),
             ])),
         },
         test_validate_exposes_invalid_identifiers => {
@@ -4522,6 +5003,16 @@ mod tests {
                         target_name: Some("pkg!".to_string()),
                         ..Default::default()
                     }),
+                    fdecl::Expose::Dictionary(fdecl::ExposeDictionary {
+                        source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                            name: "^bad".to_string(),
+                            collection: None,
+                        })),
+                        source_name: Some("/path".to_string()),
+                        target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        target_name: Some("pkg!".to_string()),
+                        ..Default::default()
+                    }),
                 ]);
                 decl
             },
@@ -4542,6 +5033,9 @@ mod tests {
                 Error::invalid_field(DeclType::ExposeResolver, "source.child.name"),
                 Error::invalid_field(DeclType::ExposeResolver, "source_name"),
                 Error::invalid_field(DeclType::ExposeResolver, "target_name"),
+                Error::invalid_field(DeclType::ExposeDictionary, "source.child.name"),
+                Error::invalid_field(DeclType::ExposeDictionary, "source_name"),
+                Error::invalid_field(DeclType::ExposeDictionary, "target_name"),
             ])),
         },
         test_validate_exposes_invalid_source_target => {
@@ -4602,7 +5096,7 @@ mod tests {
                         target_name: Some("l".to_string()),
                         ..Default::default()
                     }),
-                    fdecl::Expose::Directory(fdecl::ExposeDirectory {
+                    fdecl::Expose::Dictionary(fdecl::ExposeDictionary {
                         source: Some(fdecl::Ref::Child(fdecl::ChildRef {
                             name: "logger".to_string(),
                             collection: None,
@@ -4610,8 +5104,6 @@ mod tests {
                         source_name: Some("m".to_string()),
                         target_name: Some("n".to_string()),
                         target: Some(fdecl::Ref::Framework(fdecl::FrameworkRef {})),
-                        rights: Some(fio::Operations::CONNECT),
-                        subdir: None,
                         ..Default::default()
                     }),
                 ]);
@@ -4630,7 +5122,7 @@ mod tests {
                 Error::invalid_field(DeclType::ExposeRunner, "target"),
                 Error::invalid_field(DeclType::ExposeResolver, "source"),
                 Error::invalid_field(DeclType::ExposeResolver, "target"),
-                Error::invalid_field(DeclType::ExposeDirectory, "target"),
+                Error::invalid_field(DeclType::ExposeDictionary, "target"),
             ])),
         },
         test_validate_exposes_invalid_source_collection => {
@@ -4674,6 +5166,13 @@ mod tests {
                         target_name: Some("d".to_string()),
                         ..Default::default()
                     }),
+                    fdecl::Expose::Dictionary(fdecl::ExposeDictionary {
+                        source: Some(fdecl::Ref::Collection(fdecl::CollectionRef {name: "col".to_string()})),
+                        source_name: Some("e".to_string()),
+                        target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        target_name: Some("e".to_string()),
+                        ..Default::default()
+                    }),
                 ]);
                 decl
             },
@@ -4682,6 +5181,7 @@ mod tests {
                 Error::invalid_field(DeclType::ExposeDirectory, "source"),
                 Error::invalid_field(DeclType::ExposeRunner, "source"),
                 Error::invalid_field(DeclType::ExposeResolver, "source"),
+                Error::invalid_field(DeclType::ExposeDictionary, "source"),
             ])),
         },
         test_validate_exposes_sources_collection => {
@@ -4765,6 +5265,16 @@ mod tests {
                         target_name: Some("b".repeat(101)),
                         ..Default::default()
                     }),
+                    fdecl::Expose::Dictionary(fdecl::ExposeDictionary {
+                        source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                            name: "b".repeat(101),
+                            collection: None,
+                        })),
+                        source_name: Some("a".repeat(101)),
+                        target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        target_name: Some("b".repeat(101)),
+                        ..Default::default()
+                    }),
                 ]);
                 decl
             },
@@ -4784,6 +5294,9 @@ mod tests {
                 Error::field_too_long(DeclType::ExposeResolver, "source.child.name"),
                 Error::field_too_long(DeclType::ExposeResolver, "source_name"),
                 Error::field_too_long(DeclType::ExposeResolver, "target_name"),
+                Error::field_too_long(DeclType::ExposeDictionary, "source.child.name"),
+                Error::field_too_long(DeclType::ExposeDictionary, "source_name"),
+                Error::field_too_long(DeclType::ExposeDictionary, "target_name"),
             ])),
         },
         test_validate_exposes_invalid_child => {
@@ -4842,6 +5355,16 @@ mod tests {
                         target_name: Some("pkg".to_string()),
                         ..Default::default()
                     }),
+                    fdecl::Expose::Dictionary(fdecl::ExposeDictionary {
+                        source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                            name: "netstack".to_string(),
+                            collection: None,
+                        })),
+                        source_name: Some("dict".to_string()),
+                        target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        target_name: Some("dict".to_string()),
+                        ..Default::default()
+                    }),
                 ]);
                 decl
             },
@@ -4851,6 +5374,7 @@ mod tests {
                 Error::invalid_child(DeclType::ExposeDirectory, "source", "netstack"),
                 Error::invalid_child(DeclType::ExposeRunner, "source", "netstack"),
                 Error::invalid_child(DeclType::ExposeResolver, "source", "netstack"),
+                Error::invalid_child(DeclType::ExposeDictionary, "source", "netstack"),
             ])),
         },
         test_validate_exposes_invalid_source_capability => {
@@ -4956,6 +5480,20 @@ mod tests {
                         target_name: Some("pkg".to_string()),
                         ..Default::default()
                     }),
+                    fdecl::Expose::Dictionary(fdecl::ExposeDictionary {
+                        source: Some(fdecl::Ref::Self_(fdecl::SelfRef{})),
+                        source_name: Some("source_dict".to_string()),
+                        target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        target_name: Some("dict".to_string()),
+                        ..Default::default()
+                    }),
+                    fdecl::Expose::Dictionary(fdecl::ExposeDictionary {
+                        source: Some(fdecl::Ref::Self_(fdecl::SelfRef{})),
+                        source_name: Some("source_dict".to_string()),
+                        target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        target_name: Some("dict".to_string()),
+                        ..Default::default()
+                    }),
                 ]);
                 decl.collections = Some(vec![
                     fdecl::Collection {
@@ -5012,6 +5550,10 @@ mod tests {
                         source_path: Some("/path".to_string()),
                         ..Default::default()
                     }),
+                    fdecl::Capability::Dictionary(fdecl::Dictionary {
+                        name: Some("source_dict".to_string()),
+                        ..Default::default()
+                    }),
                 ]);
                 decl
             },
@@ -5024,6 +5566,7 @@ mod tests {
                 Error::duplicate_field(DeclType::ExposeRunner, "target_name",
                                     "elf"),
                 Error::duplicate_field(DeclType::ExposeResolver, "target_name", "pkg"),
+                Error::duplicate_field(DeclType::ExposeDictionary, "target_name", "dict"),
             ])),
         },
         // TODO: Add analogous test for offer
@@ -5068,6 +5611,13 @@ mod tests {
                         target_name: Some("pkg".to_string()),
                         ..Default::default()
                     }),
+                    fdecl::Expose::Dictionary(fdecl::ExposeDictionary {
+                        source: Some(fdecl::Ref::Self_(fdecl::SelfRef{})),
+                        source_name: Some("source_dict".to_string()),
+                        target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        target_name: Some("dict".to_string()),
+                        ..Default::default()
+                    }),
                 ]);
                 decl
             },
@@ -5083,6 +5633,7 @@ mod tests {
                 Error::invalid_capability(DeclType::ExposeDirectory, "source", "dir"),
                 Error::invalid_capability(DeclType::ExposeRunner, "source", "source_elf"),
                 Error::invalid_capability(DeclType::ExposeResolver, "source", "source_pkg"),
+                Error::invalid_capability(DeclType::ExposeDictionary, "source", "source_dict"),
             ])),
         },
 
@@ -5243,6 +5794,12 @@ mod tests {
                         target_name: None,
                         ..Default::default()
                     }),
+                    fdecl::Offer::Resolver(fdecl::OfferResolver {
+                        ..Default::default()
+                    }),
+                    fdecl::Offer::Dictionary(fdecl::OfferDictionary {
+                        ..Default::default()
+                    }),
                 ]);
                 decl
             },
@@ -5276,6 +5833,14 @@ mod tests {
                 Error::missing_field(DeclType::OfferRunner, "target"),
                 Error::missing_field(DeclType::OfferRunner, "target_name"),
                 //Error::missing_field(DeclType::OfferRunner, "availability"),
+                Error::missing_field(DeclType::OfferResolver, "source"),
+                Error::missing_field(DeclType::OfferResolver, "source_name"),
+                Error::missing_field(DeclType::OfferResolver, "target"),
+                Error::missing_field(DeclType::OfferResolver, "target_name"),
+                Error::missing_field(DeclType::OfferDictionary, "source"),
+                Error::missing_field(DeclType::OfferDictionary, "source_name"),
+                Error::missing_field(DeclType::OfferDictionary, "target"),
+                Error::missing_field(DeclType::OfferDictionary, "target_name"),
             ])),
         },
         test_validate_offers_long_identifiers => {
@@ -5417,6 +5982,20 @@ mod tests {
                         target_name: Some("d".repeat(101)),
                         ..Default::default()
                     }),
+                    fdecl::Offer::Dictionary(fdecl::OfferDictionary {
+                        source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                            name: "a".repeat(101),
+                            collection: None,
+                        })),
+                        source_name: Some("b".repeat(101)),
+                        target: Some(fdecl::Ref::Collection(
+                            fdecl::CollectionRef {
+                                name: "c".repeat(101),
+                            }
+                        )),
+                        target_name: Some("d".repeat(101)),
+                        ..Default::default()
+                    }),
                 ]);
                 decl
             },
@@ -5449,6 +6028,10 @@ mod tests {
                 Error::field_too_long(DeclType::OfferResolver, "source_name"),
                 Error::field_too_long(DeclType::OfferResolver, "target.collection.name"),
                 Error::field_too_long(DeclType::OfferResolver, "target_name"),
+                Error::field_too_long(DeclType::OfferDictionary, "source.child.name"),
+                Error::field_too_long(DeclType::OfferDictionary, "source_name"),
+                Error::field_too_long(DeclType::OfferDictionary, "target.collection.name"),
+                Error::field_too_long(DeclType::OfferDictionary, "target_name"),
             ])),
         },
         test_validate_offers_extraneous => {
@@ -5546,6 +6129,21 @@ mod tests {
                         target_name: Some("pkg".to_string()),
                         ..Default::default()
                     }),
+                    fdecl::Offer::Dictionary(fdecl::OfferDictionary {
+                        source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                            name: "logger".to_string(),
+                            collection: Some("modular".to_string()),
+                        })),
+                        source_name: Some("dict".to_string()),
+                        target: Some(fdecl::Ref::Child(
+                            fdecl::ChildRef {
+                                name: "netstack".to_string(),
+                                collection: Some("modular".to_string()),
+                            }
+                        )),
+                        target_name: Some("dict".to_string()),
+                        ..Default::default()
+                    }),
                 ]);
                 decl.capabilities = Some(vec![
                     fdecl::Capability::Protocol(fdecl::Protocol {
@@ -5574,6 +6172,8 @@ mod tests {
                 Error::extraneous_field(DeclType::OfferRunner, "target.child.collection"),
                 Error::extraneous_field(DeclType::OfferResolver, "source.child.collection"),
                 Error::extraneous_field(DeclType::OfferResolver, "target.child.collection"),
+                Error::extraneous_field(DeclType::OfferDictionary, "source.child.collection"),
+                Error::extraneous_field(DeclType::OfferDictionary, "target.child.collection"),
             ])),
         },
         test_validate_offers_invalid_filtered_service_fields => {
@@ -5697,6 +6297,19 @@ mod tests {
                         target_name: Some("pkg!".to_string()),
                         ..Default::default()
                     }),
+                    fdecl::Offer::Dictionary(fdecl::OfferDictionary {
+                        source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                            name: "^bad".to_string(),
+                            collection: None,
+                        })),
+                        source_name: Some("/path".to_string()),
+                        target: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                            name: "%bad".to_string(),
+                            collection: None,
+                        })),
+                        target_name: Some("pkg!".to_string()),
+                        ..Default::default()
+                    }),
                 ]);
                 decl
             },
@@ -5722,6 +6335,10 @@ mod tests {
                 Error::invalid_field(DeclType::OfferResolver, "source_name"),
                 Error::invalid_field(DeclType::OfferResolver, "target.child.name"),
                 Error::invalid_field(DeclType::OfferResolver, "target_name"),
+                Error::invalid_field(DeclType::OfferDictionary, "source.child.name"),
+                Error::invalid_field(DeclType::OfferDictionary, "source_name"),
+                Error::invalid_field(DeclType::OfferDictionary, "target.child.name"),
+                Error::invalid_field(DeclType::OfferDictionary, "target_name"),
             ])),
         },
         test_validate_offers_target_equals_source => {
@@ -5823,6 +6440,21 @@ mod tests {
                         target_name: Some("pkg".to_string()),
                         ..Default::default()
                     }),
+                    fdecl::Offer::Dictionary(fdecl::OfferDictionary {
+                        source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                            name: "logger".to_string(),
+                            collection: None,
+                        })),
+                        source_name: Some("dict".to_string()),
+                        target: Some(fdecl::Ref::Child(
+                        fdecl::ChildRef {
+                            name: "logger".to_string(),
+                            collection: None,
+                        }
+                        )),
+                        target_name: Some("dict".to_string()),
+                        ..Default::default()
+                    }),
                 ]);
                 decl.children = Some(vec![fdecl::Child{
                     name: Some("logger".to_string()),
@@ -5835,13 +6467,7 @@ mod tests {
                 decl
             },
             result = Err(ErrorList::new(vec![
-                Error::offer_target_equals_source(DeclType::OfferService, "logger"),
-                // Only the DependencyType::Strong offer-target-equals-source
-                // should result in an error.
-                Error::offer_target_equals_source(DeclType::OfferProtocol, "logger"),
-                Error::offer_target_equals_source(DeclType::OfferDirectory, "logger"),
-                Error::offer_target_equals_source(DeclType::OfferRunner, "logger"),
-                Error::offer_target_equals_source(DeclType::OfferResolver, "logger"),
+                Error::dependency_cycle("{{child logger -> child logger}}".to_string()),
             ])),
         },
         test_validate_offers_storage_target_equals_source => {
@@ -6151,6 +6777,24 @@ mod tests {
                         target_name: Some("started".to_string()),
                         ..Default::default()
                     }),
+                    fdecl::Offer::Dictionary(fdecl::OfferDictionary {
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef{})),
+                        source_name: Some("a".to_string()),
+                        target: Some(fdecl::Ref::Collection(
+                            fdecl::CollectionRef { name: "modular".to_string() }
+                        )),
+                        target_name: Some("dict".to_string()),
+                        ..Default::default()
+                    }),
+                    fdecl::Offer::Dictionary(fdecl::OfferDictionary {
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef{})),
+                        source_name: Some("b".to_string()),
+                        target: Some(fdecl::Ref::Collection(
+                            fdecl::CollectionRef { name: "modular".to_string() }
+                        )),
+                        target_name: Some("dict".to_string()),
+                        ..Default::default()
+                    }),
                 ]);
                 decl.children = Some(vec![
                     fdecl::Child{
@@ -6182,6 +6826,7 @@ mod tests {
                 Error::duplicate_field(DeclType::OfferRunner, "target_name", "duplicated"),
                 Error::duplicate_field(DeclType::OfferResolver, "target_name", "duplicated"),
                 Error::duplicate_field(DeclType::OfferEventStream, "target_name", "started"),
+                Error::duplicate_field(DeclType::OfferDictionary, "target_name", "dict"),
             ])),
         },
         test_validate_offers_target_invalid => {
@@ -6322,6 +6967,27 @@ mod tests {
                         target_name: Some("pkg".to_string()),
                         ..Default::default()
                     }),
+                    fdecl::Offer::Dictionary(fdecl::OfferDictionary {
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef{})),
+                        source_name: Some("pkg".to_string()),
+                        target: Some(fdecl::Ref::Child(
+                            fdecl::ChildRef {
+                                name: "netstack".to_string(),
+                                collection: None,
+                            }
+                        )),
+                        target_name: Some("pkg".to_string()),
+                        ..Default::default()
+                    }),
+                    fdecl::Offer::Dictionary(fdecl::OfferDictionary {
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef{})),
+                        source_name: Some("pkg".to_string()),
+                        target: Some(fdecl::Ref::Collection(
+                        fdecl::CollectionRef { name: "modular".to_string(), }
+                        )),
+                        target_name: Some("pkg".to_string()),
+                        ..Default::default()
+                    }),
                 ]);
                 decl
             },
@@ -6338,6 +7004,8 @@ mod tests {
                 Error::invalid_collection(DeclType::OfferRunner, "target", "modular"),
                 Error::invalid_child(DeclType::OfferResolver, "target", "netstack"),
                 Error::invalid_collection(DeclType::OfferResolver, "target", "modular"),
+                Error::invalid_child(DeclType::OfferDictionary, "target", "netstack"),
+                Error::invalid_collection(DeclType::OfferDictionary, "target", "modular"),
             ])),
         },
         test_validate_offers_invalid_source_collection => {
@@ -6401,6 +7069,13 @@ mod tests {
                         target_name: Some("e".to_string()),
                         ..Default::default()
                     }),
+                    fdecl::Offer::Dictionary(fdecl::OfferDictionary {
+                        source: Some(fdecl::Ref::Collection(fdecl::CollectionRef { name: "col".to_string() })),
+                        source_name: Some("f".to_string()),
+                        target: Some(fdecl::Ref::Child(fdecl::ChildRef { name: "child".to_string(), collection: None })),
+                        target_name: Some("f".to_string()),
+                        ..Default::default()
+                    }),
                 ]);
                 decl
             },
@@ -6410,6 +7085,7 @@ mod tests {
                 Error::invalid_field(DeclType::OfferStorage, "source"),
                 Error::invalid_field(DeclType::OfferRunner, "source"),
                 Error::invalid_field(DeclType::OfferResolver, "source"),
+                Error::invalid_field(DeclType::OfferDictionary, "source"),
             ])),
         },
         test_validate_offers_source_collection => {
@@ -6773,6 +7449,96 @@ mod tests {
                 decl
             },
             result = Ok(()),
+        },
+
+        // dictionaries
+        test_validate_source_dictionary => {
+            input = fdecl::Component {
+                program: Some(fdecl::Program {
+                    runner: Some("elf".into()),
+                    info: Some(fdata::Dictionary {
+                        entries: None,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                uses: Some(vec![
+                    fdecl::Use::Protocol(fdecl::UseProtocol {
+                        dependency_type: Some(fdecl::DependencyType::Strong),
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        source_dictionary: Some("bad//".into()),
+                        source_name: Some("foo".into()),
+                        target_path: Some("/svc/foo".into()),
+                        ..Default::default()
+                    }),
+                ]),
+                exposes: Some(vec![
+                    fdecl::Expose::Directory(fdecl::ExposeDirectory {
+                        source: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                            name: "missing".into(),
+                            collection: None,
+                        })),
+                        source_dictionary: Some("in/dict".into()),
+                        target: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        source_name: Some("foo".into()),
+                        target_name: Some("bar".into()),
+                        ..Default::default()
+                    }),
+                ]),
+                offers: Some(vec![
+                    fdecl::Offer::Service(fdecl::OfferService {
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        source_dictionary: Some("bad//".into()),
+                        target: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                            name: "child".into(),
+                            collection: None,
+                        })),
+                        source_name: Some("foo".into()),
+                        target_name: Some("bar".into()),
+                        ..Default::default()
+                    }),
+                ]),
+                children: Some(vec![
+                    fdecl::Child {
+                        name: Some("child".into()),
+                        url: Some("fuchsia-pkg://child".into()),
+                        startup: Some(fdecl::StartupMode::Lazy),
+                        ..Default::default()
+                    },
+                ]),
+                ..Default::default()
+            },
+            result = Err(ErrorList::new(vec![
+                Error::invalid_field(DeclType::UseProtocol, "source_dictionary"),
+                Error::invalid_child(DeclType::ExposeDirectory, "source", "missing"),
+                Error::invalid_field(DeclType::OfferService, "source_dictionary"),
+            ])),
+        },
+        test_validate_dictionary_too_long => {
+            input = fdecl::Component {
+                program: Some(fdecl::Program {
+                    runner: Some("elf".into()),
+                    info: Some(fdata::Dictionary {
+                        entries: None,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                uses: Some(vec![
+                    fdecl::Use::Protocol(fdecl::UseProtocol {
+                        dependency_type: Some(fdecl::DependencyType::Strong),
+                        source: Some(fdecl::Ref::Parent( fdecl::ParentRef {} )),
+                        source_dictionary: Some("a".repeat(4096)),
+                        source_name: Some("foo".into()),
+                        target_path: Some("/svc/foo".into()),
+                        ..Default::default()
+                    }),
+                ]),
+                ..Default::default()
+            },
+            result = Err(ErrorList::new(vec![
+                Error::field_too_long(DeclType::UseProtocol, "source_dictionary"),
+            ])),
         },
 
         // environments
@@ -7545,6 +8311,9 @@ mod tests {
                         source_path: None,
                         ..Default::default()
                     }),
+                    fdecl::Capability::Dictionary(fdecl::Dictionary {
+                        ..Default::default()
+                    }),
                 ]);
                 decl
             },
@@ -7564,6 +8333,7 @@ mod tests {
                 Error::missing_field(DeclType::Runner, "source_path"),
                 Error::missing_field(DeclType::Resolver, "name"),
                 Error::missing_field(DeclType::Resolver, "source_path"),
+                Error::missing_field(DeclType::Dictionary, "name"),
             ])),
         },
         test_validate_capabilities_invalid_identifiers => {
@@ -7606,6 +8376,10 @@ mod tests {
                         source_path: Some("&bad".to_string()),
                         ..Default::default()
                     }),
+                    fdecl::Capability::Dictionary(fdecl::Dictionary {
+                        name: Some("^bad".to_string()),
+                        ..Default::default()
+                    }),
                 ]);
                 decl
             },
@@ -7623,6 +8397,7 @@ mod tests {
                 Error::invalid_field(DeclType::Runner, "source_path"),
                 Error::invalid_field(DeclType::Resolver, "name"),
                 Error::invalid_field(DeclType::Resolver, "source_path"),
+                Error::invalid_field(DeclType::Dictionary, "name"),
             ])),
         },
         test_validate_capabilities_invalid_child => {
@@ -7639,11 +8414,19 @@ mod tests {
                         storage_id: Some(fdecl::StorageId::StaticInstanceIdOrMoniker),
                         ..Default::default()
                     }),
+                    fdecl::Capability::Dictionary(fdecl::Dictionary {
+                        name: Some("dict".to_string()),
+                        source: Some(fdecl::Ref::Collection(fdecl::CollectionRef {
+                            name: "invalid".to_string(),
+                        })),
+                        ..Default::default()
+                    }),
                 ]);
                 decl
             },
             result = Err(ErrorList::new(vec![
                 Error::invalid_field(DeclType::Storage, "source"),
+                Error::invalid_field(DeclType::Dictionary, "source"),
             ])),
         },
         test_validate_capabilities_long_identifiers => {
@@ -7687,6 +8470,10 @@ mod tests {
                         source_path: Some(format!("/{}", "b".repeat(1024))),
                         ..Default::default()
                     }),
+                    fdecl::Capability::Dictionary(fdecl::Dictionary {
+                        name: Some("a".repeat(101)),
+                        ..Default::default()
+                    }),
                 ]);
                 decl
             },
@@ -7704,6 +8491,7 @@ mod tests {
                 Error::field_too_long(DeclType::Runner, "source_path"),
                 Error::field_too_long(DeclType::Resolver, "name"),
                 Error::field_too_long(DeclType::Resolver, "source_path"),
+                Error::field_too_long(DeclType::Dictionary, "name"),
             ])),
         },
         test_validate_capabilities_duplicate_name => {
@@ -7778,6 +8566,14 @@ mod tests {
                         source_path: Some("/resolver".to_string()),
                         ..Default::default()
                     }),
+                    fdecl::Capability::Dictionary(fdecl::Dictionary {
+                        name: Some("dictionary".to_string()),
+                        ..Default::default()
+                    }),
+                    fdecl::Capability::Dictionary(fdecl::Dictionary {
+                        name: Some("dictionary".to_string()),
+                        ..Default::default()
+                    }),
                 ]);
                 decl
             },
@@ -7788,6 +8584,7 @@ mod tests {
                 Error::duplicate_field(DeclType::Storage, "name", "storage"),
                 Error::duplicate_field(DeclType::Runner, "name", "runner"),
                 Error::duplicate_field(DeclType::Resolver, "name", "resolver"),
+                Error::duplicate_field(DeclType::Dictionary, "name", "dictionary"),
             ])),
         },
 
@@ -9070,6 +9867,21 @@ mod tests {
                 environment: None,
                 ..Default::default()
             })
+        );
+    }
+
+    #[test]
+    fn test_validate_dynamic_child_environment_is_invalid() {
+        assert_eq!(
+            validate_dynamic_child(&fdecl::Child {
+                name: Some("a".repeat(MAX_LONG_NAME_LENGTH).to_string()),
+                url: Some("test:///child".to_string()),
+                startup: Some(fdecl::StartupMode::Lazy),
+                on_terminate: None,
+                environment: Some("env".to_string()),
+                ..Default::default()
+            }),
+            Err(ErrorList::new(vec![Error::DynamicChildWithEnvironment]))
         );
     }
 

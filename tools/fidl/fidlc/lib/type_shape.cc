@@ -78,8 +78,6 @@ DataSize MaxOutOfLine(const flat::Object& object, WireFormat wire_format);
 [[maybe_unused]] DataSize MaxOutOfLine(const flat::Object* object, WireFormat wire_format);
 bool HasPadding(const flat::Object& object, WireFormat wire_format);
 [[maybe_unused]] bool HasPadding(const flat::Object* object, WireFormat wire_format);
-bool HasEnvelope(const flat::Object& object, WireFormat wire_format);
-[[maybe_unused]] bool HasEnvelope(const flat::Object* object, WireFormat wire_format);
 bool HasFlexibleEnvelope(const flat::Object& object, WireFormat wire_format);
 [[maybe_unused]] bool HasFlexibleEnvelope(const flat::Object* object, WireFormat wire_format);
 
@@ -143,7 +141,7 @@ class UnalignedSizeVisitor final : public TypeShapeVisitor<DataSize> {
 
   std::any Visit(const flat::InternalType& object) override {
     switch (object.subtype) {
-      case fidl::types::InternalSubtype::kTransportErr:
+      case fidl::types::InternalSubtype::kFrameworkErr:
         return DataSize(4);
     }
   }
@@ -161,8 +159,6 @@ class UnalignedSizeVisitor final : public TypeShapeVisitor<DataSize> {
             return DataSize(8);
           case flat::Decl::Kind::kUnion:
             switch (wire_format()) {
-              case WireFormat::kV1NoEe:
-                return DataSize(24);
               case WireFormat::kV2:
                 return DataSize(16);
             }
@@ -231,8 +227,6 @@ class UnalignedSizeVisitor final : public TypeShapeVisitor<DataSize> {
 
   std::any Visit(const flat::Union& object) override {
     switch (wire_format()) {
-      case WireFormat::kV1NoEe:
-        return DataSize(24);
       case WireFormat::kV2:
         return DataSize(16);
     }
@@ -293,7 +287,7 @@ class AlignmentVisitor final : public TypeShapeVisitor<DataSize> {
 
   std::any Visit(const flat::InternalType& object) override {
     switch (object.subtype) {
-      case fidl::types::InternalSubtype::kTransportErr:
+      case fidl::types::InternalSubtype::kFrameworkErr:
         return DataSize(4);
     }
   }
@@ -425,7 +419,7 @@ class DepthVisitor : public TypeShapeVisitor<DataSize> {
 
   std::any Visit(const flat::InternalType& object) override {
     switch (object.subtype) {
-      case fidl::types::InternalSubtype::kTransportErr:
+      case fidl::types::InternalSubtype::kFrameworkErr:
         return DataSize(0);
     }
   }
@@ -582,41 +576,6 @@ class DepthVisitor : public TypeShapeVisitor<DataSize> {
   DataSize Depth(const flat::Object* object) { return Depth(*object); }
 };
 
-// This visitor calculates depth according to the "old" wire format (i.e. with
-// static unions). It leverages |DepthVisitor| for any cases that are wire format
-// dependent, and overrides cases that are different in the old wire format (i.e.
-// unions).
-class OldWireFormatDepthVisitor final : public DepthVisitor {
- public:
-  // A wire format is provided here because the default constructor is disabled. In actuality,
-  // the wire format does not matter as this class is hardcoded to return depth under the
-  // "old" wire format.
-  explicit OldWireFormatDepthVisitor(WireFormat wire_format) : DepthVisitor(wire_format) {}
-
-  // A nullable static union introduces an extra level of depth, since it gets replaced with
-  // a presence pointer.
-  std::any Visit(const flat::IdentifierType& object) override {
-    if (object.nullability == types::Nullability::kNullable &&
-        object.type_decl->kind == flat::Decl::Kind::kUnion) {
-      return DataSize(1) + Depth(object.type_decl);
-    }
-
-    return DepthVisitor::Visit(object);
-  }
-
-  // Static unions do not introduce an extra level of depth because they hold data inline,
-  // without the use of an envelope
-  std::any Visit(const flat::Union& object) override {
-    DataSize max_depth;
-
-    for (const auto& member : object.members) {
-      max_depth = std::max(max_depth, Depth(member));
-    }
-
-    return max_depth;
-  }
-};
-
 class MaxHandlesVisitor final : public flat::Object::Visitor<DataSize> {
  public:
   std::any Visit(const flat::ArrayType& object) override {
@@ -635,7 +594,7 @@ class MaxHandlesVisitor final : public flat::Object::Visitor<DataSize> {
 
   std::any Visit(const flat::InternalType& object) override {
     switch (object.subtype) {
-      case fidl::types::InternalSubtype::kTransportErr:
+      case fidl::types::InternalSubtype::kFrameworkErr:
         return DataSize(0);
     }
   }
@@ -797,7 +756,7 @@ class MaxOutOfLineVisitor final : public TypeShapeVisitor<DataSize> {
 
   std::any Visit(const flat::InternalType& object) override {
     switch (object.subtype) {
-      case fidl::types::InternalSubtype::kTransportErr:
+      case fidl::types::InternalSubtype::kFrameworkErr:
         return DataSize(0);
     }
   }
@@ -915,9 +874,6 @@ class MaxOutOfLineVisitor final : public TypeShapeVisitor<DataSize> {
 
     DataSize envelope_size = 0;
     switch (wire_format()) {
-      case WireFormat::kV1NoEe:
-        envelope_size = 16;
-        break;
       case WireFormat::kV2:
         envelope_size = 8;
         break;
@@ -996,7 +952,7 @@ class HasPaddingVisitor final : public TypeShapeVisitor<bool> {
 
   std::any Visit(const flat::InternalType& object) override {
     switch (object.subtype) {
-      case fidl::types::InternalSubtype::kTransportErr:
+      case fidl::types::InternalSubtype::kFrameworkErr:
         return false;
     }
   }
@@ -1132,106 +1088,6 @@ class HasPaddingVisitor final : public TypeShapeVisitor<bool> {
   bool HasPadding(const flat::Object* object) { return HasPadding(*object); }
 };
 
-class HasEnvelopeVisitor final : public TypeShapeVisitor<bool> {
- public:
-  using TypeShapeVisitor<bool>::TypeShapeVisitor;
-
-  std::any Visit(const flat::ArrayType& object) override {
-    return HasEnvelope(object.element_type, wire_format());
-  }
-
-  std::any Visit(const flat::VectorType& object) override {
-    return HasEnvelope(object.element_type, wire_format());
-  }
-
-  std::any Visit(const flat::StringType& object) override { return false; }
-
-  std::any Visit(const flat::HandleType& object) override { return false; }
-
-  std::any Visit(const flat::PrimitiveType& object) override { return false; }
-
-  std::any Visit(const flat::InternalType& object) override {
-    switch (object.subtype) {
-      case fidl::types::InternalSubtype::kTransportErr:
-        return false;
-    }
-  }
-
-  std::any Visit(const flat::IdentifierType& object) override {
-    thread_local RecursionDetector recursion_detector;
-
-    auto guard = recursion_detector.Enter(&object);
-    if (!guard) {
-      return false;
-    }
-
-    return HasEnvelope(object.type_decl, wire_format());
-  }
-
-  std::any Visit(const flat::NewType& object) override {
-    return HasEnvelope(object.type_ctor->type, wire_format());
-  }
-
-  std::any Visit(const flat::BoxType& object) override {
-    return HasEnvelope(object.boxed_type, wire_format());
-  }
-
-  std::any Visit(const flat::TransportSideType& object) override { return false; }
-
-  std::any Visit(const flat::Enum& object) override { return false; }
-
-  std::any Visit(const flat::Bits& object) override { return false; }
-
-  std::any Visit(const flat::Service& object) override { return false; }
-
-  std::any Visit(const flat::Struct& object) override {
-    for (const auto& member : object.members) {
-      if (HasEnvelope(member, wire_format())) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  std::any Visit(const flat::Struct::Member& object) override {
-    return HasEnvelope(object.type_ctor->type, wire_format());
-  }
-
-  std::any Visit(const flat::Overlay& object) override {
-    for (const auto& member : object.members) {
-      if (HasEnvelope(member, wire_format())) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  std::any Visit(const flat::Overlay::Member& object) override {
-    return object.maybe_used ? HasEnvelope(*object.maybe_used, wire_format()) : false;
-  }
-  std::any Visit(const flat::Overlay::Member::Used& object) override {
-    return HasEnvelope(object.type_ctor->type, wire_format());
-  }
-
-  std::any Visit(const flat::Table& object) override { return true; }
-
-  std::any Visit(const flat::Table::Member& object) override { return true; }
-
-  std::any Visit(const flat::Table::Member::Used& object) override { return true; }
-
-  std::any Visit(const flat::Union& object) override { return true; }
-
-  std::any Visit(const flat::Union::Member& object) override { return true; }
-
-  std::any Visit(const flat::Union::Member::Used& object) override { return true; }
-
-  std::any Visit(const flat::Protocol& object) override { return false; }
-
-  std::any Visit(const flat::ZxExperimentalPointerType& object) override { return false; }
-};
-
 class HasFlexibleEnvelopeVisitor final : public TypeShapeVisitor<bool> {
  public:
   using TypeShapeVisitor<bool>::TypeShapeVisitor;
@@ -1252,7 +1108,7 @@ class HasFlexibleEnvelopeVisitor final : public TypeShapeVisitor<bool> {
 
   std::any Visit(const flat::InternalType& object) override {
     switch (object.subtype) {
-      case fidl::types::InternalSubtype::kTransportErr:
+      case fidl::types::InternalSubtype::kFrameworkErr:
         return false;
     }
   }
@@ -1423,15 +1279,6 @@ bool HasPadding(const flat::Object& object, WireFormat wire_format) {
   return HasPadding(*object, wire_format);
 }
 
-bool HasEnvelope(const flat::Object& object, WireFormat wire_format) {
-  HasEnvelopeVisitor v(wire_format);
-  return object.Accept(&v);
-}
-
-[[maybe_unused]] bool HasEnvelope(const flat::Object* object, WireFormat wire_format) {
-  return HasEnvelope(*object, wire_format);
-}
-
 bool HasFlexibleEnvelope(const flat::Object& object, WireFormat wire_format) {
   HasFlexibleEnvelopeVisitor v(wire_format);
   return object.Accept(&v);
@@ -1445,13 +1292,6 @@ bool HasFlexibleEnvelope(const flat::Object& object, WireFormat wire_format) {
 
 namespace fidl {
 
-uint32_t OldWireFormatDepth(const flat::Object& object) {
-  OldWireFormatDepthVisitor v(WireFormat::kV1NoEe);
-  return object.Accept(&v);
-}
-
-uint32_t OldWireFormatDepth(const flat::Object* object) { return OldWireFormatDepth(*object); }
-
 TypeShape::TypeShape(const flat::Object& object, WireFormat wire_format)
     : inline_size(::AlignedSize(object, wire_format)),
       alignment(::Alignment(object, wire_format)),
@@ -1459,7 +1299,6 @@ TypeShape::TypeShape(const flat::Object& object, WireFormat wire_format)
       max_handles(::MaxHandles(object)),
       max_out_of_line(::MaxOutOfLine(object, wire_format)),
       has_padding(::HasPadding(object, wire_format)),
-      has_envelope(::HasEnvelope(object, wire_format)),
       has_flexible_envelope(::HasFlexibleEnvelope(object, wire_format)) {}
 
 TypeShape::TypeShape(const flat::Object* object, WireFormat wire_format)

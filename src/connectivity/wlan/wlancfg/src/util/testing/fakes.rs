@@ -6,7 +6,10 @@
 use {
     crate::{
         client::{
-            connection_selection::{EWMA_SMOOTHING_FACTOR, EWMA_VELOCITY_SMOOTHING_FACTOR},
+            connection_selection::{
+                bss_selection, local_roam_manager::LocalRoamManagerApi, EWMA_SMOOTHING_FACTOR,
+                EWMA_VELOCITY_SMOOTHING_FACTOR,
+            },
             scan, types as client_types,
         },
         config_management::{
@@ -16,8 +19,8 @@ use {
         util::pseudo_energy::SignalData,
     },
     async_trait::async_trait,
-    fidl_fuchsia_wlan_policy as fidl_policy, fidl_fuchsia_wlan_sme as fidl_sme,
-    fuchsia_async as fasync, fuchsia_zircon as zx,
+    fidl_fuchsia_wlan_internal as fidl_internal, fidl_fuchsia_wlan_policy as fidl_policy,
+    fidl_fuchsia_wlan_sme as fidl_sme, fuchsia_async as fasync, fuchsia_zircon as zx,
     futures::{channel::mpsc, lock::Mutex},
     rand::Rng,
     std::{
@@ -26,7 +29,6 @@ use {
         sync::Arc,
     },
     tracing::{info, warn},
-    wlan_common::hasher::WlanHasher,
 };
 
 pub struct FakeSavedNetworksManager {
@@ -258,10 +260,10 @@ impl SavedNetworksManagerApi for FakeSavedNetworksManager {
     async fn record_scan_result(
         &self,
         target_ssids: Vec<client_types::Ssid>,
-        results: Vec<client_types::NetworkIdentifierDetailed>,
+        results: Vec<&client_types::NetworkIdentifierDetailed>,
     ) {
         let mut records = self.scan_result_records.lock().await;
-        records.push((target_ssids, results));
+        records.push((target_ssids, results.into_iter().cloned().collect()));
     }
 
     async fn get_networks(&self) -> Vec<NetworkConfig> {
@@ -278,8 +280,56 @@ impl SavedNetworksManagerApi for FakeSavedNetworksManager {
     }
 }
 
-pub fn create_wlan_hasher() -> WlanHasher {
-    WlanHasher::new(rand::thread_rng().gen::<u64>().to_le_bytes())
+pub struct FakeLocalRoamManager {
+    /// This is used to check what connection stats are sent to the FakeLocalRoamManager. It may be
+    /// None if the test does not care about the values.
+    stats_sender: Option<mpsc::UnboundedSender<fidl_internal::SignalReportIndication>>,
+    /// This is what will be returned by get_signal_data. It is set in handle_connection_start and
+    /// updated in handle_connection_stats for the sake of state_machine_tests.
+    signal_data: Option<SignalData>,
+}
+
+impl LocalRoamManagerApi for FakeLocalRoamManager {
+    fn handle_connection_stats(
+        &mut self,
+        stats: fidl_internal::SignalReportIndication,
+        _responder: mpsc::UnboundedSender<client_types::ScannedCandidate>,
+    ) -> Result<u8, anyhow::Error> {
+        if let Some(sender) = &self.stats_sender {
+            sender
+                .clone()
+                .unbounded_send(stats)
+                .expect("failed to send fake roam manager stats out");
+        }
+        return Ok(u8::MIN);
+    }
+
+    fn handle_connection_start(
+        &mut self,
+        quality_data: bss_selection::BssQualityData,
+        _connection_start_time: fasync::Time,
+        _network: client_types::NetworkIdentifier,
+        _credential: Credential,
+        _bssid: client_types::Bssid,
+    ) {
+        self.signal_data = Some(quality_data.signal_data);
+    }
+
+    fn get_signal_data(&self) -> Option<SignalData> {
+        self.signal_data
+    }
+}
+
+impl FakeLocalRoamManager {
+    pub fn new() -> Self {
+        Self { stats_sender: None, signal_data: None }
+    }
+
+    pub fn new_with_stats_channel(
+    ) -> (Self, mpsc::UnboundedReceiver<fidl_internal::SignalReportIndication>) {
+        let (sender, receiver) = mpsc::unbounded();
+        (Self { stats_sender: Some(sender), signal_data: None }, receiver)
+    }
 }
 
 pub fn create_inspect_persistence_channel() -> (mpsc::Sender<String>, mpsc::Receiver<String>) {
@@ -295,9 +345,7 @@ pub fn random_connection_data() -> PastConnectionData {
     let uptime = zx::Duration::from_seconds(rng.gen_range::<i64, _>(5..1000));
     let disconnect_time = connect_time + time_to_connect + uptime;
     PastConnectionData::new(
-        client_types::Bssid(
-            (0..6).map(|_| rng.gen::<u8>()).collect::<Vec<u8>>().try_into().unwrap(),
-        ),
+        client_types::Bssid::from(rng.gen::<[u8; 6]>()),
         connect_time,
         time_to_connect,
         disconnect_time,

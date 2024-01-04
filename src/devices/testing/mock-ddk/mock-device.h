@@ -11,6 +11,7 @@
 #include <lib/ddk/device.h>
 #include <lib/ddk/driver.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
+#include <lib/fdf/cpp/channel.h>
 #include <lib/fidl/cpp/wire/wire_messaging.h>
 #include <lib/fit/function.h>
 #include <lib/stdcompat/span.h>
@@ -110,15 +111,6 @@ struct MockDevice : public std::enable_shared_from_this<MockDevice> {
     return std::shared_ptr<MockDevice>(new MockDevice(mock_ddk::GetDriverRuntime()));
   }
 
-  // DEPRECATED!
-  // This is here only for soft migration of tests that manually manage the runtime and dispatchers
-  // today. For new tests, use `FakeRootParent`.
-  // Create a Root Parent.  This device has limited functionality.
-  // TODO(fxb/124464): Remove when all usages are removed.
-  static std::shared_ptr<MockDevice> FakeRootParentNoDispatcherIntegrationDEPRECATED() {
-    return std::shared_ptr<MockDevice>(new MockDevice());
-  }
-
   ~MockDevice();
 
   // Calls for tracking libdriver calls made that reference this device:
@@ -165,7 +157,6 @@ struct MockDevice : public std::enable_shared_from_this<MockDevice> {
   void UnbindOp();
   void ReleaseOp();
   void SuspendNewOp(uint8_t requested_state, bool enable_wake, uint8_t suspend_reason);
-  zx_status_t SetPerformanceStateOp(uint32_t requested_state, uint32_t* out_state);
   zx_status_t ConfigureAutoSuspendOp(bool enable, uint8_t requested_state);
   void ResumeNewOp(uint32_t requested_state);
   bool MessageOp(fidl::IncomingHeaderAndMessage msg, device_fidl_txn_t txn);
@@ -275,6 +266,17 @@ struct MockDevice : public std::enable_shared_from_this<MockDevice> {
                                                            const char* service_name,
                                                            const char* protocol_name,
                                                            zx_handle_t request);
+
+  zx_status_t ConnectToRuntimeProtocol(const char* service_name, const char* protocol_name,
+                                       fdf::Channel request, const char* fragment_name = "");
+  friend zx_status_t device_connect_runtime_protocol(zx_device_t* device, const char* service_name,
+                                                     const char* protocol_name,
+                                                     fdf_handle_t request);
+  friend zx_status_t device_connect_fragment_runtime_protocol(zx_device_t* device,
+                                                              const char* fragment_name,
+                                                              const char* service_name,
+                                                              const char* protocol_name,
+                                                              fdf_handle_t request);
 
   // device_get_metadata calls GetMetadata:
   zx_status_t GetMetadata(uint32_t type, void* buf, size_t buflen, size_t* actual);

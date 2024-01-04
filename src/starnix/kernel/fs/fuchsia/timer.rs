@@ -2,21 +2,30 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::{
+    task::{CurrentTask, EventHandler, SignalHandler, SignalHandlerInner, WaitCanceler, Waiter},
+    vfs::{
+        buffers::{InputBuffer, OutputBuffer},
+        fileops_impl_nonseekable, Anon, FdEvents, FileHandle, FileObject, FileOps,
+    },
+};
 use fuchsia_runtime::zx_utc_reference_get;
 use fuchsia_zircon as zx;
 use fuchsia_zircon::{AsHandleRef, Clock, Unowned};
+use starnix_sync::Mutex;
+use starnix_uapi::{
+    error,
+    errors::Errno,
+    from_status_like_fdio, itimerspec,
+    open_flags::OpenFlags,
+    time::{
+        duration_from_timespec, itimerspec_from_deadline_interval, time_from_timespec,
+        timespec_from_duration, timespec_is_zero,
+    },
+    TFD_TIMER_ABSTIME,
+};
 use std::sync::Arc;
 use zerocopy::AsBytes;
-
-use crate::{
-    fs::{
-        buffers::{InputBuffer, OutputBuffer},
-        *,
-    },
-    lock::Mutex,
-    task::*,
-    types::*,
-};
 
 /// Clock types supported by TimerFiles.
 pub enum TimerFileClock {
@@ -234,27 +243,20 @@ impl FileOps for TimerFile {
         _current_task: &CurrentTask,
         waiter: &Waiter,
         events: FdEvents,
-        handler: EventHandler,
+        event_handler: EventHandler,
     ) -> Option<WaitCanceler> {
-        let signal_handler = move |signals: zx::Signals| {
-            let events = TimerFile::get_events_from_signals(signals);
-            handler(events);
+        let signal_handler = SignalHandler {
+            inner: SignalHandlerInner::ZxHandle(TimerFile::get_events_from_signals),
+            event_handler,
         };
         let canceler = waiter
             .wake_on_zircon_signals(
                 self.timer.as_ref(),
                 TimerFile::get_signals_from_events(events),
-                Box::new(signal_handler),
+                signal_handler,
             )
             .unwrap(); // TODO return error
-        let timer = Arc::downgrade(&self.timer);
-        Some(WaitCanceler::new(move || {
-            if let Some(timer) = timer.upgrade() {
-                canceler.cancel(timer.as_handle_ref())
-            } else {
-                false
-            }
-        }))
+        Some(WaitCanceler::new_timer(Arc::downgrade(&self.timer), canceler))
     }
 
     fn query_events(

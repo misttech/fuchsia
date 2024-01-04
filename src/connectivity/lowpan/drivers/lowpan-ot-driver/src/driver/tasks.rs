@@ -108,16 +108,10 @@ where
                         None => 0,
                         Some(val) => val.into(),
                     };
-                    self.driver_state
-                        .lock()
-                        .ot_instance
-                        .as_ref()
-                        .platform_infra_if_on_state_changed(
-                            backbone_nic_id
-                                .try_into()
-                                .expect("NIC ID should be able to fit in u32"),
-                            is_running,
-                        );
+                    self.driver_state.lock().ot_instance.as_ref().plat_infra_if_on_state_changed(
+                        backbone_nic_id.try_into().expect("NIC ID should be able to fit in u32"),
+                        is_running,
+                    );
                     Result::<_, Error>::Ok(())
                 }
                 Err(x) => Err(x),
@@ -269,10 +263,16 @@ where
         driver_state.ot_instance.icmp6_set_echo_mode(ot::Icmp6EchoMode::HandleDisabled);
 
         // Enable SRP Server
-        driver_state.ot_instance.srp_server_set_enabled(true);
+        driver_state.ot_instance.srp_server_set_auto_enable_mode(true);
 
         // <b/293936909>: Make sure the TREL state matches what is expected.
         driver_state.check_trel();
+
+        // Set default NAT64 CIDR address
+        if let Err(e) = driver_state.ot_instance.nat64_set_ip4_cidr(Nat64::get_default_nat64_cidr())
+        {
+            warn!("failed to set NAT64 CIDR: {:?}", e);
+        }
     }
 
     /// A single iteration of the main task loop

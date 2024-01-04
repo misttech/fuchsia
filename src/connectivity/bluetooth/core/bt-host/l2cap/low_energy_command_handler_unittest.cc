@@ -4,14 +4,14 @@
 
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/low_energy_command_handler.h"
 
+#include <pw_async/fake_dispatcher_fixture.h>
+
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/fake_signaling_channel.h"
 #include "src/connectivity/bluetooth/core/bt-host/testing/test_helpers.h"
-#include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 
 namespace bt::l2cap::internal {
 
-using TestBase = ::gtest::TestLoopFixture;
-class LowEnergyCommandHandlerTest : public TestBase {
+class LowEnergyCommandHandlerTest : public pw::async::test::FakeDispatcherFixture {
  public:
   LowEnergyCommandHandlerTest() = default;
   ~LowEnergyCommandHandlerTest() override = default;
@@ -20,7 +20,6 @@ class LowEnergyCommandHandlerTest : public TestBase {
  protected:
   // TestLoopFixture overrides
   void SetUp() override {
-    TestBase::SetUp();
     signaling_channel_ = std::make_unique<testing::FakeSignalingChannel>(dispatcher());
     command_handler_ = std::make_unique<LowEnergyCommandHandler>(
         fake_sig(), fit::bind_member<&LowEnergyCommandHandlerTest::OnRequestFail>(this));
@@ -32,7 +31,6 @@ class LowEnergyCommandHandlerTest : public TestBase {
     request_fail_callback_ = nullptr;
     signaling_channel_ = nullptr;
     command_handler_ = nullptr;
-    TestBase::TearDown();
   }
 
   testing::FakeSignalingChannel* fake_sig() const { return signaling_channel_.get(); }
@@ -90,7 +88,7 @@ TEST_F(LowEnergyCommandHandlerTest, OutboundConnParamUpdateReqRspOk) {
 
   EXPECT_TRUE(cmd_handler()->SendConnectionParameterUpdateRequest(
       kIntervalMin, kIntervalMax, kPeripheralLatency, kTimeoutMult, std::move(rsp_cb)));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(cb_called);
 }
 

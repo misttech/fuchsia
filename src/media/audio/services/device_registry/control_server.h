@@ -17,7 +17,6 @@
 #include "src/media/audio/services/device_registry/audio_device_registry.h"
 #include "src/media/audio/services/device_registry/control_notify.h"
 #include "src/media/audio/services/device_registry/device.h"
-#include "src/media/audio/services/device_registry/logging.h"
 
 namespace media_audio {
 
@@ -62,6 +61,7 @@ class ControlServer
   void WatchElementState(WatchElementStateRequest& request,
                          WatchElementStateCompleter::Sync& completer) final {}
   void GetTopologies(GetTopologiesCompleter::Sync& completer) final {}
+  void WatchTopology(WatchTopologyCompleter::Sync& completer) final {}
   void SetElementState(SetElementStateRequest& request,
                        SetElementStateCompleter::Sync& completer) final {}
   void SetTopology(SetTopologyRequest& request, SetTopologyCompleter::Sync& completer) final {}

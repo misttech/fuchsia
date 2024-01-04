@@ -14,7 +14,6 @@ class {{ .Name }};
 {{ if .IsResourceType }}
 {{- IfdefFuchsia -}}
 {{- end }}
-extern "C" const fidl_type_t {{ .CodingTableType.Name }};
 
 {{ .Docs }}
 class {{ .Name }} {
@@ -108,9 +107,9 @@ class {{ .Name }} {
   static constexpr auto kPadding = std::make_tuple(
     {{- range $i, $p := .PaddingV2 }}
       {{- if $i }}, {{ end -}}
-      ::fidl::internal::NaturalStructPadding<{{ $p.MaskType }}>{
+      ::fidl::internal::NaturalStructPadding<uint{{ $p.MaskBitWidth }}_t>{
         .offset = {{ $p.Offset }},
-        .mask = {{ $p.Mask }},
+        .mask = {{ $p.Mask | printf "%#x" }},
       }
     {{- end -}}
   );
@@ -182,8 +181,6 @@ class {{ .Name }} {
   {{- IfdefFuchsia -}}
   {{- end }}
 
-  extern "C" const fidl_type_t {{ .CodingTableType.Self }};
-
   {{ if .IsResourceType }}
   template <>
   struct IsResource<{{ . }}> : public std::true_type {};
@@ -197,7 +194,6 @@ class {{ .Name }} {
     static constexpr uint32_t kMaxDepth = {{ .TypeShapeV2.Depth }};
     static constexpr uint32_t kPrimarySize = {{ .TypeShapeV2.InlineSize }};
     static constexpr uint32_t kMaxOutOfLine = {{ .TypeShapeV2.MaxOutOfLine }};
-    static constexpr bool kHasEnvelope = {{ .TypeShapeV2.HasEnvelope }};
     static constexpr bool kHasPointer = {{ .TypeShapeV2.HasPointer }};
   };
 

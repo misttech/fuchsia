@@ -20,6 +20,7 @@
 #include <fbl/string_buffer.h>
 #include <zxtest/zxtest.h>
 
+#include "fidl/fuchsia.wlan.fullmac/cpp/wire_types.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-env.h"
 #include "src/connectivity/wlan/drivers/third_party/nxp/nxpfmac/data_plane.h"
 #include "src/connectivity/wlan/drivers/third_party/nxp/nxpfmac/device.h"
@@ -104,8 +105,6 @@ struct WlanInterfaceTest : public zxtest::Test,
   WlanInterfaceTest() : test_arena_(nullptr) {}
 
   void SetUp() override {
-    // TODO(fxb/124464): Migrate test to use dispatcher integration.
-    parent_ = MockDevice::FakeRootParentNoDispatcherIntegrationDEPRECATED();
     ASSERT_OK(wlan::nxpfmac::TestDataPlane::Create(this, &mock_bus_, mlan_mocks_.GetAdapter(),
                                                    &test_data_plane_));
 
@@ -122,28 +121,12 @@ struct WlanInterfaceTest : public zxtest::Test,
     context_.ioctl_adapter_ = ioctl_adapter_.get();
     context_.data_plane_ = test_data_plane_->GetDataPlane();
     context_.device_ = test_device_;
-
-    auto driver_dispatcher = fdf::SynchronizedDispatcher::Create(
-        fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "test-driver-dispatcher",
-        [&](fdf_dispatcher_t*) { driver_completion_.Signal(); });
-    ASSERT_FALSE(driver_dispatcher.is_error());
-    driver_dispatcher_ = *std::move(driver_dispatcher);
-
-    auto server_dispatcher = fdf::SynchronizedDispatcher::Create(
-        {}, "test-server-dispatcher", [&](fdf_dispatcher_t*) { server_completion_.Signal(); });
-    ASSERT_FALSE(driver_dispatcher.is_error());
-    server_dispatcher_ = *std::move(server_dispatcher);
   }
 
   void TearDown() override {
     test_data_plane_.reset();
-    mock_ddk::ReleaseFlaggedDevices(parent_.get(), driver_dispatcher_.async_dispatcher());
+    mock_ddk::ReleaseFlaggedDevices(parent_.get(), driver_dispatcher_->async_dispatcher());
 
-    driver_dispatcher_.ShutdownAsync();
-    driver_completion_.Wait();
-
-    server_dispatcher_.ShutdownAsync();
-    server_completion_.Wait();
     // Destroy the dataplane before the mock device. This ensures a safe destruction before the
     // parent device of the NetworkDeviceImpl device goes away.
     delete context_.device_;
@@ -155,7 +138,7 @@ struct WlanInterfaceTest : public zxtest::Test,
                                     DeviceContext* context, const uint8_t mac_address[ETH_ALEN],
                                     zx::channel&& mlme_channel) {
     libsync::Completion created;
-    async::PostTask(driver_dispatcher_.async_dispatcher(), [&]() {
+    async::PostTask(driver_dispatcher_->async_dispatcher(), [&]() {
       ASSERT_EQ(ZX_OK, test_device_->CreateInterface(parent, name, iface_index, role, context,
                                                      mac_address, std::move(mlme_channel)));
       created.Signal();
@@ -169,7 +152,7 @@ struct WlanInterfaceTest : public zxtest::Test,
     // it manipulates a `driver::OutgoingDirectory` which can only be accessed
     // on the same fdf dispatcher that created it.
     libsync::Completion served;
-    async::PostTask(driver_dispatcher_.async_dispatcher(), [&]() {
+    async::PostTask(driver_dispatcher_->async_dispatcher(), [&]() {
       ASSERT_EQ(ZX_OK, test_device_->ServeIfaceProtocol(std::move(outgoing_dir_endpoints->server)));
       served.Signal();
     });
@@ -213,16 +196,26 @@ struct WlanInterfaceTest : public zxtest::Test,
     // implementation of the netdevice ifc.
     network_device_impl_protocol_t netdev_proto;
     ASSERT_OK(device_get_protocol(net_device, ZX_PROTOCOL_NETWORK_DEVICE_IMPL, &netdev_proto));
-    ASSERT_OK(
-        network_device_impl_init(&netdev_proto, netdev_ifc_proto_.ctx, netdev_ifc_proto_.ops));
+    libsync::Completion initialized;
+    network_device_impl_init(
+        &netdev_proto, netdev_ifc_proto_.ctx, netdev_ifc_proto_.ops,
+        [](void* ctx, zx_status_t status) {
+          libsync::Completion* initialized = static_cast<libsync::Completion*>(ctx);
+          EXPECT_OK(status);
+          initialized->Signal();
+        },
+        &initialized);
+    initialized.Wait();
   }
 
-  static void OnAddPort(void* ctx, uint8_t, const network_port_protocol_t* proto) {
+  static void OnAddPort(void* ctx, uint8_t, const network_port_protocol_t* proto,
+                        network_device_ifc_add_port_callback callback, void* cookie) {
     auto ifc = static_cast<WlanInterfaceTest*>(ctx);
     ifc->net_port_proto_ = *proto;
     EXPECT_NOT_NULL(proto->ctx);
     EXPECT_NOT_NULL(proto->ops);
     sync_completion_signal(&ifc->on_add_port_called_);
+    callback(cookie, ZX_OK);
   }
   static void OnRemovePort(void* ctx, uint8_t) {
     auto ifc = static_cast<WlanInterfaceTest*>(ctx);
@@ -258,7 +251,7 @@ struct WlanInterfaceTest : public zxtest::Test,
   void StartInterface() {
     auto endpoints = fdf::CreateEndpoints<fuchsia_wlan_fullmac::WlanFullmacImplIfc>();
     EXPECT_FALSE(endpoints.is_error());
-    fdf::BindServer(server_dispatcher_.get(), std::move(endpoints->server), this);
+    fdf::BindServer(server_dispatcher_->get(), std::move(endpoints->server), this);
 
     auto result = client_.buffer(test_arena_)->Start(std::move(endpoints->client));
     ASSERT_TRUE(result.ok());
@@ -275,7 +268,7 @@ struct WlanInterfaceTest : public zxtest::Test,
     bool connect_conf_called_ = false;
     fuchsia_wlan_fullmac::wire::WlanFullmacAuthInd auth_ind_;
     bool auth_ind_called_ = false;
-    fuchsia_wlan_fullmac::wire::WlanFullmacDeauthConfirm deauth_conf_;
+    fuchsia_wlan_fullmac::wire::WlanFullmacImplIfcDeauthConfRequest deauth_conf_;
     // Use completion as the invoke flag when the event could be triggered by a asynchronous
     // routine to avoid flakeness.
     libsync::Completion deauth_conf_called_;
@@ -318,8 +311,13 @@ struct WlanInterfaceTest : public zxtest::Test,
 
   void DeauthConf(DeauthConfRequestView request, fdf::Arena& arena,
                   DeauthConfCompleter::Sync& completer) override {
-    memcpy(ifc_results_.deauth_conf_.peer_sta_address.data(), request->resp.peer_sta_address.data(),
-           ETH_ALEN);
+    auto builder =
+        fuchsia_wlan_fullmac::wire::WlanFullmacImplIfcDeauthConfRequest::Builder(test_arena_);
+    if (request->has_peer_sta_address()) {
+      builder.peer_sta_address(request->peer_sta_address());
+    }
+    ifc_results_.deauth_conf_ = builder.Build();
+
     ifc_results_.deauth_conf_called_.Signal();
     completer.buffer(arena).Reply();
   }
@@ -396,10 +394,6 @@ struct WlanInterfaceTest : public zxtest::Test,
                 EapolIndCompleter::Sync& completer) override {
     completer.buffer(arena).Reply();
   }
-  void RelayCapturedFrame(RelayCapturedFrameRequestView request, fdf::Arena& arena,
-                          RelayCapturedFrameCompleter::Sync& completer) override {
-    completer.buffer(arena).Reply();
-  }
   void OnPmkAvailable(OnPmkAvailableRequestView request, fdf::Arena& arena,
                       OnPmkAvailableCompleter::Sync& completer) override {
     completer.buffer(arena).Reply();
@@ -416,6 +410,8 @@ struct WlanInterfaceTest : public zxtest::Test,
                        OnWmmStatusRespCompleter::Sync& completer) override {
     completer.buffer(arena).Reply();
   }
+
+  fdf_testing::DriverRuntime* runtime() { return fdf_testing::DriverRuntime::GetInstance(); }
 
   WlanFullmacIfcResultStorage ifc_results_;
 
@@ -440,17 +436,9 @@ struct WlanInterfaceTest : public zxtest::Test,
   DeviceContext context_;
   // This data member MUST BE LAST, because it needs to be destroyed first, ensuring that whatever
   // interface lifetimes are managed by it are destroyed before other data members.
-  std::shared_ptr<MockDevice> parent_;
-
-  // Driver dispatcher that manages the lifecycle of interface device, and carries it's outgoing
-  // directory operations.
-  fdf::Dispatcher driver_dispatcher_;
-  libsync::Completion driver_completion_;
-
-  // This test class servers as the server end of WlanPhyImplIfc protocol, this dispatcher binds to
-  // this class to dispatcher FIDL requests.
-  fdf::Dispatcher server_dispatcher_;
-  libsync::Completion server_completion_;
+  std::shared_ptr<MockDevice> parent_{MockDevice::FakeRootParent()};
+  fdf::UnownedSynchronizedDispatcher driver_dispatcher_{runtime()->StartBackgroundDispatcher()};
+  fdf::UnownedSynchronizedDispatcher server_dispatcher_{runtime()->StartBackgroundDispatcher()};
 
   // The FIDL client used to communicate with the interface device which is created in this test.
   fdf::WireSyncClient<fuchsia_wlan_fullmac::WlanFullmacImpl> client_;
@@ -617,13 +605,11 @@ TEST_F(WlanInterfaceTest, WlanFullmacImplStartScan) {
 
   StartInterface();
 
-  auto builder = fuchsia_wlan_fullmac::wire::WlanFullmacImplStartScanRequest::Builder(test_arena_);
-  builder.txn_id(kScanTxnId);
-  builder.scan_type(fuchsia_wlan_fullmac::wire::WlanScanType::kActive);
+  auto builder = fuchsia_wlan_fullmac::wire::WlanFullmacImplStartScanRequest::Builder(test_arena_)
+                     .txn_id(kScanTxnId)
+                     .scan_type(fuchsia_wlan_fullmac::wire::WlanScanType::kActive);
 
-  auto scan_request = builder.Build();
-
-  auto result = client_.buffer(test_arena_)->StartScan(scan_request);
+  auto result = client_.buffer(test_arena_)->StartScan(builder.Build());
   ASSERT_TRUE(result.ok());
 
   mlan_event scan_report_event{.event_id = MLAN_EVENT_ID_DRV_SCAN_REPORT};
@@ -685,20 +671,17 @@ TEST_F(WlanInterfaceTest, WlanFullmacImplConnectDisconnectReq) {
   constexpr uint8_t kIesWithSsid[] = {"\x00\x04Test"};
   constexpr uint8_t kTestChannel = 1;
 
-  auto builder = fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectReqRequest::Builder(test_arena_);
-
   fuchsia_wlan_internal::wire::BssDescription bss = {
       .ies = fidl::VectorView<uint8_t>::FromExternal(const_cast<uint8_t*>(kIesWithSsid),
                                                      sizeof(kIesWithSsid)),
       .channel = {.primary = kTestChannel},
   };
-
-  builder.selected_bss(bss);
-  builder.auth_type(fuchsia_wlan_fullmac::wire::WlanAuthType::kOpenSystem);
-  auto connect_request = builder.Build();
+  auto builder = fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectRequest::Builder(test_arena_)
+                     .selected_bss(bss)
+                     .auth_type(fuchsia_wlan_fullmac::wire::WlanAuthType::kOpenSystem);
 
   {
-    auto result = client_.buffer(test_arena_)->ConnectReq(connect_request);
+    auto result = client_.buffer(test_arena_)->Connect(builder.Build());
     ASSERT_TRUE(result.ok());
   }
 
@@ -718,13 +701,15 @@ TEST_F(WlanInterfaceTest, WlanFullmacImplConnectDisconnectReq) {
   EXPECT_EQ(ifc_results_.report_ind_.snr_db, kTestSnr);
 
   constexpr uint8_t kTestPeerAddr[] = {1, 2, 3, 4, 5, 6};
-  fuchsia_wlan_fullmac::wire::WlanFullmacDeauthReq deauth_req = {
-      .reason_code = fuchsia_wlan_ieee80211::wire::ReasonCode::kReserved0,
-  };
-  memcpy(deauth_req.peer_sta_address.data(), kTestPeerAddr, sizeof(kTestPeerAddr));
+  ::fidl::Array<uint8_t, ETH_ALEN> peer_sta_address;
+  std::memcpy(peer_sta_address.data(), kTestPeerAddr, ETH_ALEN);
+  auto deauth_builder =
+      fuchsia_wlan_fullmac::wire::WlanFullmacImplDeauthRequest::Builder(test_arena_)
+          .peer_sta_address(peer_sta_address)
+          .reason_code(fuchsia_wlan_ieee80211::ReasonCode::kUnspecifiedReason);
 
   {
-    auto result = client_.buffer(test_arena_)->DeauthReq(deauth_req);
+    auto result = client_.buffer(test_arena_)->Deauth(deauth_builder.Build());
     ASSERT_TRUE(result.ok());
   }
 
@@ -777,19 +762,16 @@ TEST_F(WlanInterfaceTest, WlanFullmacImplConnectRemoteDisconnectReq) {
 
   constexpr uint8_t kIesWithSsid[] = {"\x00\x04Test"};
   constexpr uint8_t kTestChannel = 1;
-  auto builder = fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectReqRequest::Builder(test_arena_);
-
   fuchsia_wlan_internal::wire::BssDescription bss = {
       .ies = fidl::VectorView<uint8_t>::FromExternal(const_cast<uint8_t*>(kIesWithSsid),
                                                      sizeof(kIesWithSsid)),
       .channel = {.primary = kTestChannel},
   };
+  auto builder = fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectRequest::Builder(test_arena_)
+                     .selected_bss(bss)
+                     .auth_type(fuchsia_wlan_fullmac::wire::WlanAuthType::kOpenSystem);
 
-  builder.selected_bss(bss);
-  builder.auth_type(fuchsia_wlan_fullmac::wire::WlanAuthType::kOpenSystem);
-  auto connect_request = builder.Build();
-
-  auto result = client_.buffer(test_arena_)->ConnectReq(connect_request);
+  auto result = client_.buffer(test_arena_)->Connect(builder.Build());
   ASSERT_TRUE(result.ok());
 
   // Wait until the timer has been scheduled.
@@ -823,28 +805,31 @@ TEST_F(WlanInterfaceTest, WlanFullmacImplConnectRemoteDisconnectReq) {
 
 TEST_F(WlanInterfaceTest, MacSetMode) {
   // Test that MacSetMode actually sets the mac mode.
-  constexpr uint8_t kMacMulticastFilters[] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
-                                              0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c};
+  constexpr mac_address_t kMacMulticastFilters[] = {
+      mac_address_t{{0x01, 0x02, 0x03, 0x04, 0x05, 0x06}},
+      mac_address_t{{0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c}}};
 
-  std::atomic<mode_t> mac_mode;
+  std::atomic<mac_filter_mode_t> mac_mode;
 
   mlan_mocks_.SetOnMlanIoctl([&](t_void*, pmlan_ioctl_req req) -> mlan_status {
     if (req->action == MLAN_ACT_SET && req->req_id == MLAN_IOCTL_BSS) {
       auto bss = reinterpret_cast<const mlan_ds_bss*>(req->pbuf);
       if (bss->sub_command == MLAN_OID_BSS_MULTICAST_LIST) {
         switch (mac_mode.load()) {
-          case MODE_MULTICAST_FILTER:
+          case MAC_FILTER_MODE_MULTICAST_FILTER:
             EXPECT_EQ(MLAN_MULTICAST_MODE, bss->param.multicast_list.mode);
-            EXPECT_EQ(sizeof(kMacMulticastFilters) / ETH_ALEN,
+            EXPECT_EQ(std::size(kMacMulticastFilters),
                       bss->param.multicast_list.num_multicast_addr);
-            EXPECT_BYTES_EQ(kMacMulticastFilters, bss->param.multicast_list.mac_list,
-                            sizeof(kMacMulticastFilters));
+            for (size_t i = 0; i < std::size(kMacMulticastFilters); ++i) {
+              EXPECT_BYTES_EQ(kMacMulticastFilters[i].octets, bss->param.multicast_list.mac_list[i],
+                              MAC_SIZE);
+            }
             break;
-          case MODE_MULTICAST_PROMISCUOUS:
+          case MAC_FILTER_MODE_MULTICAST_PROMISCUOUS:
             EXPECT_EQ(MLAN_ALL_MULTI_MODE, bss->param.multicast_list.mode);
             EXPECT_EQ(0, bss->param.multicast_list.num_multicast_addr);
             break;
-          case MODE_PROMISCUOUS:
+          case MAC_FILTER_MODE_PROMISCUOUS:
             EXPECT_EQ(MLAN_PROMISC_MODE, bss->param.multicast_list.mode);
             EXPECT_EQ(0, bss->param.multicast_list.num_multicast_addr);
             break;
@@ -868,8 +853,9 @@ TEST_F(WlanInterfaceTest, MacSetMode) {
                                   kClientMacAddress, std::move(in_mlme_channel)));
   WlanInterface* ifc = GetInterface();
 
-  constexpr mode_t kMacModes[] = {MODE_MULTICAST_FILTER, MODE_MULTICAST_PROMISCUOUS,
-                                  MODE_PROMISCUOUS};
+  constexpr mode_t kMacModes[] = {MAC_FILTER_MODE_MULTICAST_FILTER,
+                                  MAC_FILTER_MODE_MULTICAST_PROMISCUOUS,
+                                  MAC_FILTER_MODE_PROMISCUOUS};
   for (auto mode : kMacModes) {
     mac_mode = mode;
     ifc->MacSetMode(mode, kMacMulticastFilters);
@@ -925,15 +911,20 @@ TEST_F(WlanInterfaceTest, WlanFullmacImplStartReq) {
   StartInterface();
 
   // Start the SoftAP
-  fuchsia_wlan_fullmac::wire::WlanFullmacStartReq start_req = {
-      .bss_type = fuchsia_wlan_common::wire::BssType::kInfrastructure,
-      .channel = kTestChannel,
-  };
-  memcpy(start_req.ssid.data.data(), kSoftApSsid, sizeof(kSoftApSsid));
-  start_req.ssid.len = sizeof(kSoftApSsid);
+  fuchsia_wlan_ieee80211::wire::CSsid ssid;
+  memcpy(ssid.data.data(), kSoftApSsid, sizeof(kSoftApSsid));
+  ssid.len = sizeof(kSoftApSsid);
+
+  fidl::Arena<sizeof(fuchsia_wlan_fullmac::wire::WlanFullmacImplStartBssRequest)> arena;
+  auto builder = fuchsia_wlan_fullmac::wire::WlanFullmacImplStartBssRequest::Builder(arena)
+                     .bss_type(fuchsia_wlan_common::wire::BssType::kInfrastructure)
+                     .beacon_period(100)
+                     .dtim_period(100)
+                     .channel(kTestChannel)
+                     .ssid(ssid);
 
   {
-    auto result = client_.buffer(test_arena_)->StartReq(start_req);
+    auto result = client_.buffer(test_arena_)->StartBss(builder.Build());
     ASSERT_TRUE(result.ok());
   }
 
@@ -942,12 +933,13 @@ TEST_F(WlanInterfaceTest, WlanFullmacImplStartReq) {
             fuchsia_wlan_fullmac::wire::WlanStartResult::kSuccess);
 
   // And now ensure SoftAP Stop works ok.
-  fuchsia_wlan_fullmac::wire::WlanFullmacStopReq stop_req;
-  memcpy(stop_req.ssid.data.data(), kSoftApSsid, sizeof(kSoftApSsid));
-  stop_req.ssid.len = sizeof(kSoftApSsid);
+  fidl::Arena<sizeof(fuchsia_wlan_fullmac::wire::WlanFullmacImplStopBssRequest)> stop_arena;
+  auto stop_builder =
+      fuchsia_wlan_fullmac::wire::WlanFullmacImplStopBssRequest::Builder(stop_arena);
+  stop_builder.ssid(ssid);
 
   {
-    auto result = client_.buffer(test_arena_)->StopReq(stop_req);
+    auto result = client_.buffer(test_arena_)->StopBss(stop_builder.Build());
     ASSERT_TRUE(result.ok());
   }
 
@@ -1010,15 +1002,20 @@ TEST_F(WlanInterfaceTest, SoftApStaConnectDisconnect) {
   StartInterface();
 
   // Start the SoftAP
-  fuchsia_wlan_fullmac::wire::WlanFullmacStartReq start_req = {
-      .bss_type = fuchsia_wlan_common::wire::BssType::kInfrastructure,
-      .channel = kTestChannel,
-  };
-  memcpy(start_req.ssid.data.data(), kSoftApSsid, sizeof(kSoftApSsid));
-  start_req.ssid.len = sizeof(kSoftApSsid);
+  fuchsia_wlan_ieee80211::wire::CSsid ssid;
+  memcpy(ssid.data.data(), kSoftApSsid, sizeof(kSoftApSsid));
+  ssid.len = sizeof(kSoftApSsid);
+
+  fidl::Arena<sizeof(fuchsia_wlan_fullmac::wire::WlanFullmacImplStartBssRequest)> arena;
+  auto builder = fuchsia_wlan_fullmac::wire::WlanFullmacImplStartBssRequest::Builder(arena)
+                     .bss_type(fuchsia_wlan_common::wire::BssType::kInfrastructure)
+                     .beacon_period(100)
+                     .dtim_period(100)
+                     .channel(kTestChannel)
+                     .ssid(ssid);
 
   {
-    auto result = client_.buffer(test_arena_)->StartReq(start_req);
+    auto result = client_.buffer(test_arena_)->StartBss(builder.Build());
     ASSERT_TRUE(result.ok());
   }
 
@@ -1060,12 +1057,13 @@ TEST_F(WlanInterfaceTest, SoftApStaConnectDisconnect) {
   EXPECT_BYTES_EQ(ifc_results_.disassoc_ind_.peer_sta_address.data(), kTestSoftApClient, ETH_ALEN);
 
   // And now ensure SoftAP Stop works ok.
-  fuchsia_wlan_fullmac::wire::WlanFullmacStopReq stop_req = {};
-  memcpy(stop_req.ssid.data.data(), kSoftApSsid, sizeof(kSoftApSsid));
-  stop_req.ssid.len = sizeof(kSoftApSsid);
+  fidl::Arena<sizeof(fuchsia_wlan_fullmac::wire::WlanFullmacImplStopBssRequest)> stop_arena;
+  auto stop_builder =
+      fuchsia_wlan_fullmac::wire::WlanFullmacImplStopBssRequest::Builder(stop_arena);
+  stop_builder.ssid(ssid);
 
   {
-    auto result = client_.buffer(test_arena_)->StopReq(stop_req);
+    auto result = client_.buffer(test_arena_)->StopBss(stop_builder.Build());
     ASSERT_TRUE(result.ok());
   }
 
@@ -1128,15 +1126,19 @@ TEST_F(WlanInterfaceTest, SoftApStaLocalDisconnect) {
   StartInterface();
 
   // Start the SoftAP
-  fuchsia_wlan_fullmac::wire::WlanFullmacStartReq start_req = {
-      .bss_type = fuchsia_wlan_common::wire::BssType::kInfrastructure,
-      .channel = kTestChannel,
-  };
-  memcpy(start_req.ssid.data.data(), kSoftApSsid, sizeof(kSoftApSsid));
-  start_req.ssid.len = sizeof(kSoftApSsid);
+  fuchsia_wlan_ieee80211::wire::CSsid ssid;
+  memcpy(ssid.data.data(), kSoftApSsid, sizeof(kSoftApSsid));
+  ssid.len = sizeof(kSoftApSsid);
+  auto bss_builder =
+      fuchsia_wlan_fullmac::wire::WlanFullmacImplStartBssRequest::Builder(test_arena_)
+          .bss_type(fuchsia_wlan_common::wire::BssType::kInfrastructure)
+          .beacon_period(100)
+          .dtim_period(100)
+          .channel(kTestChannel)
+          .ssid(ssid);
 
   {
-    auto result = client_.buffer(test_arena_)->StartReq(start_req);
+    auto result = client_.buffer(test_arena_)->StartBss(bss_builder.Build());
     ASSERT_TRUE(result.ok());
   }
 
@@ -1163,14 +1165,15 @@ TEST_F(WlanInterfaceTest, SoftApStaLocalDisconnect) {
   EXPECT_BYTES_EQ(ifc_results_.assoc_ind_.peer_sta_address.data(), kTestSoftApClient, ETH_ALEN);
   EXPECT_EQ(ifc_results_.assoc_ind_.listen_interval, 0);
 
+  ::fidl::Array<uint8_t, ETH_ALEN> peer_sta_address;
+  std::memcpy(peer_sta_address.data(), kTestSoftApClient, ETH_ALEN);
   // Send a deauth request to disconnect the STA
-  fuchsia_wlan_fullmac::wire::WlanFullmacDeauthReq deauth_req = {
-      .reason_code = fuchsia_wlan_ieee80211::wire::ReasonCode::kReserved0,
-  };
-  memcpy(deauth_req.peer_sta_address.data(), kTestSoftApClient, ETH_ALEN);
+  auto builder = fuchsia_wlan_fullmac::wire::WlanFullmacImplDeauthRequest::Builder(test_arena_)
+                     .peer_sta_address(peer_sta_address)
+                     .reason_code(fuchsia_wlan_ieee80211::ReasonCode::kUnspecifiedReason);
 
   env_.ScheduleNotification(
-      [&]() { EXPECT_TRUE(client_.buffer(test_arena_)->DeauthReq(deauth_req).ok()); },
+      [&]() { EXPECT_TRUE(client_.buffer(test_arena_)->Deauth(builder.Build()).ok()); },
       zx::msec(10));
   // We currently do not have a way to send the deauth event at the appropriate time. So let the
   // deauth request timeout waiting for the event and send a deauth conf.
@@ -1178,15 +1181,19 @@ TEST_F(WlanInterfaceTest, SoftApStaLocalDisconnect) {
   env_.Run(zx::sec(2));
 
   ifc_results_.deauth_conf_called_.Wait();
-  EXPECT_BYTES_EQ(ifc_results_.deauth_conf_.peer_sta_address.data(), kTestSoftApClient, ETH_ALEN);
+  auto& deauth_conf = ifc_results_.deauth_conf_;
+  EXPECT_TRUE(deauth_conf.has_peer_sta_address());
+  EXPECT_EQ(ETH_ALEN, deauth_conf.peer_sta_address().size());
+  EXPECT_BYTES_EQ(ifc_results_.deauth_conf_.peer_sta_address().data(), kTestSoftApClient, ETH_ALEN);
 
   // And now ensure SoftAP Stop works ok.
-  fuchsia_wlan_fullmac::wire::WlanFullmacStopReq stop_req;
-  memcpy(stop_req.ssid.data.data(), kSoftApSsid, sizeof(kSoftApSsid));
-  stop_req.ssid.len = sizeof(kSoftApSsid);
+  fidl::Arena<sizeof(fuchsia_wlan_fullmac::wire::WlanFullmacImplStopBssRequest)> stop_arena;
+  auto stop_builder =
+      fuchsia_wlan_fullmac::wire::WlanFullmacImplStopBssRequest::Builder(stop_arena);
+  stop_builder.ssid(ssid);
 
   {
-    auto result = client_.buffer(test_arena_)->StopReq(stop_req);
+    auto result = client_.buffer(test_arena_)->StopBss(stop_builder.Build());
     ASSERT_TRUE(result.ok());
   }
 

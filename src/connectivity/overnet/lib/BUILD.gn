@@ -4,17 +4,7 @@
 
 group("lib") {
   testonly = true
-  deps = [
-    "core",
-    "hoist",
-    "onet_test_util",
-    "onet_tool",
-    "quic",
-    "serial_link",
-    "stream_framer",
-    "stream_link",
-    "udp_link",
-  ]
+  deps = [ "core" ]
   if (is_host) {
     deps += [ "ascendd" ]
   }
@@ -25,12 +15,5 @@ group("tests") {
   deps = [
     "circuit:tests",
     "core:tests",
-    "hoist:tests",
-    "onet_test_util:tests",
-    "quic:tests",
-    "serial_link:tests",
-    "stream_framer:tests",
-    "stream_link:tests",
-    "udp_link:tests",
   ]
 }

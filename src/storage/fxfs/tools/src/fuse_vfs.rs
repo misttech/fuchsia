@@ -18,12 +18,12 @@ use {
     futures_util::{stream, stream::Iter, StreamExt},
     fxfs::{
         errors::FxfsError,
-        filesystem::{Filesystem, SyncOptions},
+        filesystem::SyncOptions,
         log::info,
-        object_handle::{GetProperties, ObjectHandle, ReadObjectHandle, WriteObjectHandle},
+        object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle},
         object_store::{
             directory::{replace_child, ReplacedChild},
-            transaction::{LockKey, Options, TransactionHandler},
+            transaction::{lock_keys, LockKey, Options},
             ObjectDescriptor, Timestamp,
         },
     },
@@ -73,7 +73,10 @@ impl FuseFs {
                 .fs
                 .clone()
                 .new_transaction(
-                    &[LockKey::object(self.default_store.store_object_id(), dir.object_id())],
+                    lock_keys![LockKey::object(
+                        self.default_store.store_object_id(),
+                        dir.object_id()
+                    )],
                     Options::default(),
                 )
                 .await?;
@@ -102,9 +105,11 @@ impl FuseFs {
     async fn unlink_fxfs(&self, parent: u64, name: &OsStr) -> FxfsResult<()> {
         let dir = self.open_dir(parent).await?;
 
-        let (mut transaction, object_id_and_descriptor) =
-            dir.acquire_transaction_for_replace(&[], name.osstr_to_str()?, true).await?;
-        let object_descriptor = match object_id_and_descriptor {
+        let replace_context =
+            dir.acquire_context_for_replace(None, name.osstr_to_str()?, true).await?;
+        let mut transaction = replace_context.transaction;
+
+        let object_descriptor = match replace_context.dst_id_and_descriptor {
             Some((_, object_descriptor)) => object_descriptor,
             None => return Err(FxfsError::NotFound.into()),
         };
@@ -136,9 +141,10 @@ impl FuseFs {
     async fn rmdir_fxfs(&self, parent: u64, name: &OsStr) -> FxfsResult<()> {
         let dir = self.open_dir(parent).await?;
 
-        let (mut transaction, object_id_and_descriptor) =
-            dir.acquire_transaction_for_replace(&[], name.osstr_to_str()?, true).await?;
-        let object_descriptor = match object_id_and_descriptor {
+        let replace_context =
+            dir.acquire_context_for_replace(None, name.osstr_to_str()?, true).await?;
+        let mut transaction = replace_context.transaction;
+        let object_descriptor = match replace_context.dst_id_and_descriptor {
             Some((_, object_descriptor)) => object_descriptor,
             None => return Err(FxfsError::NotFound.into()),
         };
@@ -166,16 +172,18 @@ impl FuseFs {
         new_name: &OsStr,
     ) -> FxfsResult<()> {
         let old_dir = self.open_dir(parent).await?;
-        let new_dir = self.open_dir(new_parent).await?;
-        let (mut transaction, _) = new_dir
-            .acquire_transaction_for_replace(
-                &[LockKey::object(self.default_store.store_object_id(), old_dir.object_id())],
+        let new_dir: fxfs::object_store::Directory<fxfs::object_store::ObjectStore> =
+            self.open_dir(new_parent).await?;
+        let replace_context = new_dir
+            .acquire_context_for_replace(
+                Some((&old_dir, name.osstr_to_str()?)),
                 new_name.osstr_to_str()?,
                 true,
             )
             .await?;
+        let mut transaction = replace_context.transaction;
 
-        if old_dir.lookup(name.osstr_to_str()?).await?.is_some() {
+        if replace_context.src_id_and_descriptor.is_some() {
             let replaced_child = replace_child(
                 &mut transaction,
                 Some((&old_dir, name.osstr_to_str()?)),
@@ -211,7 +219,7 @@ impl FuseFs {
             let mut out: Vec<u8> = Vec::new();
             let align = offset % self.fs.block_size();
 
-            let mut buf = handle.allocate_buffer(handle.block_size() as usize);
+            let mut buf = handle.allocate_buffer(handle.block_size() as usize).await;
             // Round down for the block alignment.
             let mut ofs = offset - align;
             let len = size as u64 + align + ofs;
@@ -250,7 +258,7 @@ impl FuseFs {
     async fn write_fxfs(&self, inode: u64, offset: u64, data: &[u8]) -> FxfsResult<ReplyWrite> {
         if self.get_object_type(inode).await? == ObjectDescriptor::File {
             let handle = self.get_object_handle(inode).await?;
-            let mut buf = handle.allocate_buffer(data.len());
+            let mut buf = handle.allocate_buffer(data.len()).await;
 
             buf.as_mut_slice().copy_from_slice(data);
             handle.write_or_append(Some(offset), buf.as_ref()).await?;
@@ -291,11 +299,15 @@ impl FuseFs {
     /// Return NotFound if `inode` does not exist.
     async fn setattr_fxfs(&self, inode: u64, set_attr: SetAttr) -> FxfsResult<ReplyAttr> {
         let object_type = self.get_object_type(inode).await?;
-        let ctime: Option<Timestamp> = match set_attr.ctime {
+        let mtime: Option<Timestamp> = match set_attr.mtime {
             Some(t) => Some(to_fxfs_time(t)),
             None => None,
         };
-        let mtime: Option<Timestamp> = match set_attr.mtime {
+        let atime: Option<Timestamp> = match set_attr.atime {
+            Some(t) => Some(to_fxfs_time(t)),
+            None => None,
+        };
+        let ctime: Option<Timestamp> = match set_attr.ctime {
             Some(t) => Some(to_fxfs_time(t)),
             None => None,
         };
@@ -306,11 +318,24 @@ impl FuseFs {
                 .fs
                 .clone()
                 .new_transaction(
-                    &[LockKey::object(self.default_store.store_object_id(), handle.object_id())],
+                    lock_keys![LockKey::object(
+                        self.default_store.store_object_id(),
+                        handle.object_id()
+                    )],
                     Options::default(),
                 )
                 .await?;
-            handle.write_timestamps(&mut transaction, ctime, mtime).await?;
+            handle
+                .update_attributes(
+                    &mut transaction,
+                    Some(&fio::MutableNodeAttributes {
+                        modification_time: mtime.map(|t| t.as_nanos()),
+                        access_time: atime.map(|t| t.as_nanos()),
+                        ..Default::default()
+                    }),
+                    ctime,
+                )
+                .await?;
             transaction.commit().await?;
 
             // Truncate the file size if size attribute needs to be set.
@@ -323,7 +348,7 @@ impl FuseFs {
                 .fs
                 .clone()
                 .new_transaction(
-                    &[LockKey::object(self.default_store.store_object_id(), inode)],
+                    lock_keys![LockKey::object(self.default_store.store_object_id(), inode)],
                     Options::default(),
                 )
                 .await?;
@@ -331,11 +356,12 @@ impl FuseFs {
             dir.update_attributes(
                 &mut transaction,
                 Some(&fio::MutableNodeAttributes {
-                    creation_time: ctime.map(|t| t.as_nanos()),
                     modification_time: mtime.map(|t| t.as_nanos()),
+                    access_time: atime.map(|t| t.as_nanos()),
                     ..Default::default()
                 }),
                 0,
+                ctime,
             )
             .await?;
             transaction.commit().await?;
@@ -369,7 +395,10 @@ impl FuseFs {
                 .fs
                 .clone()
                 .new_transaction(
-                    &[LockKey::object(self.default_store.store_object_id(), dir.object_id())],
+                    lock_keys![LockKey::object(
+                        self.default_store.store_object_id(),
+                        dir.object_id()
+                    )],
                     Options::default(),
                 )
                 .await?;
@@ -633,7 +662,7 @@ impl FuseFs {
             .fs
             .clone()
             .new_transaction(
-                &[LockKey::object(self.default_store.store_object_id(), dir.object_id())],
+                lock_keys![LockKey::object(self.default_store.store_object_id(), dir.object_id())],
                 Options::default(),
             )
             .await?;
@@ -668,7 +697,7 @@ impl FuseFs {
                 .fs
                 .clone()
                 .new_transaction(
-                    &[
+                    lock_keys![
                         LockKey::object(self.default_store.store_object_id(), dir.object_id()),
                         LockKey::object(self.default_store.store_object_id(), inode),
                     ],
@@ -1161,7 +1190,7 @@ mod tests {
             Errno, FileType, Result, SetAttr, Timestamp,
         },
         futures::stream::StreamExt,
-        fxfs::{errors::FxfsError, filesystem::Filesystem as FxFs, object_store::ObjectDescriptor},
+        fxfs::{errors::FxfsError, object_store::ObjectDescriptor},
         std::ffi::OsStr,
     };
 

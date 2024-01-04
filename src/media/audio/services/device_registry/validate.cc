@@ -8,14 +8,17 @@
 #include <lib/zx/clock.h>
 #include <zircon/errors.h>
 
-#include "src/media/audio/services/device_registry/device.h"
+#include <cmath>
+#include <cstdint>
+#include <string>
+
 #include "src/media/audio/services/device_registry/logging.h"
 
 namespace media_audio {
 
 // Frame rates must be listed in ascending order, but some drivers don't do this.
 // TODO(fxbug.dev/116959): once this is fixed, clean out this workaround.
-inline constexpr bool kStrictFrameRateOrdering = false;
+inline constexpr bool kStrictFrameRateOrdering = true;
 
 // We define these here only temporarily, as we publish no frame-rate limits for audio devices.
 // TODO(fxbug.dev/116961): officially define frame-rate limits/expectations for audio devices.
@@ -137,6 +140,20 @@ zx_status_t ValidateStreamProperties(
     return ZX_ERR_INVALID_ARGS;
   }
 
+  // Eliminate NaN or infinity values
+  if (!std::isfinite(*props.min_gain_db())) {
+    FX_LOGS(WARNING) << "Reported min_gain_db is NaN or infinity";
+    return ZX_ERR_INVALID_ARGS;
+  }
+  if (!std::isfinite(*props.max_gain_db())) {
+    FX_LOGS(WARNING) << "Reported max_gain_db is NaN or infinity";
+    return ZX_ERR_INVALID_ARGS;
+  }
+  if (!std::isfinite(*props.gain_step_db())) {
+    FX_LOGS(WARNING) << "Reported gain_step_db is NaN or infinity";
+    return ZX_ERR_INVALID_ARGS;
+  }
+
   if (*props.min_gain_db() > *props.max_gain_db()) {
     FX_LOGS(WARNING) << "GetProperties: min_gain_db cannot exceed max_gain_db: "
                      << *props.min_gain_db() << "," << *props.max_gain_db();
@@ -195,83 +212,74 @@ zx_status_t ValidateSupportedFormats(
     return ZX_ERR_INVALID_ARGS;
   }
 
-  for (const auto& supported_formats : formats) {
-    if (!supported_formats.pcm_supported_formats()) {
+  for (const auto& format_set : formats) {
+    if (!format_set.pcm_supported_formats()) {
       FX_LOGS(WARNING) << "GetSupportedFormats: pcm_supported_formats is absent";
       return ZX_ERR_INVALID_ARGS;
     }
-    const auto& pcm_supported_formats = *supported_formats.pcm_supported_formats();
+    const auto& pcm_format_set = *format_set.pcm_supported_formats();
 
     // Frame rates
-    [[maybe_unused]] uint32_t prev_frame_rate = 0;
-    uint32_t max_supported_frame_rate = 0;
-    if (!pcm_supported_formats.frame_rates() || pcm_supported_formats.frame_rates()->empty()) {
-      FX_LOGS(WARNING) << "GetSupportedFormats: frame_rates[] is absent/empty";
+    if (!pcm_format_set.frame_rates() || pcm_format_set.frame_rates()->empty()) {
+      FX_LOGS(WARNING) << "GetSupportedFormats: frame_rates[] is "
+                       << (pcm_format_set.frame_rates() ? "empty" : "absent");
       return ZX_ERR_INVALID_ARGS;
     }
-    for (const auto& rate : *pcm_supported_formats.frame_rates()) {
+    // While testing frame_rates, we can determine max_supported_frame_rate.
+    uint32_t prev_frame_rate = 0, max_supported_frame_rate = 0;
+    for (const auto& rate : *pcm_format_set.frame_rates()) {
       if (rate < kMinFrameRate || rate > kMaxFrameRate) {
         FX_LOGS(WARNING) << "GetSupportedFormats: frame_rate (" << rate << ") out of range ["
                          << kMinFrameRate << "," << kMaxFrameRate << "] ";
         return ZX_ERR_OUT_OF_RANGE;
       }
-      if constexpr (kStrictFrameRateOrdering) {
-        // This also eliminates duplicate entries.
-        if (rate <= prev_frame_rate) {
-          FX_LOGS(WARNING) << "GetSupportedFormats: frame_rate must be listed in ascending order: "
-                           << rate << " listed after " << prev_frame_rate;
-          return ZX_ERR_INVALID_ARGS;
-        }
-        prev_frame_rate = rate;
-      } else {
-        if (std::count(pcm_supported_formats.frame_rates()->begin(),
-                       pcm_supported_formats.frame_rates()->end(), rate) > 1) {
-          FX_LOGS(WARNING) << "GetSupportedFormats: rate (" << rate
-                           << ") must be unique across frame_rates";
-          return ZX_ERR_INVALID_ARGS;
-        }
+      // Checking for "strictly ascending" also eliminates duplicate entries.
+      if (rate <= prev_frame_rate) {
+        FX_LOGS(WARNING) << "GetSupportedFormats: frame_rate must be in ascending order: "
+                         << prev_frame_rate << " was listed before " << rate;
+        return ZX_ERR_INVALID_ARGS;
       }
-
+      prev_frame_rate = rate;
       max_supported_frame_rate = std::max(max_supported_frame_rate, rate);
     }
 
     // Channel sets
-    if (!pcm_supported_formats.channel_sets() || pcm_supported_formats.channel_sets()->empty()) {
-      FX_LOGS(WARNING) << "GetSupportedFormats: channel_sets[] is absent/empty";
+    if (!pcm_format_set.channel_sets() || pcm_format_set.channel_sets()->empty()) {
+      FX_LOGS(WARNING) << "GetSupportedFormats: channel_sets[] is "
+                       << (pcm_format_set.channel_sets() ? "empty" : "absent");
       return ZX_ERR_INVALID_ARGS;
     }
-    for (const fuchsia_hardware_audio::ChannelSet& chan_set :
-         *pcm_supported_formats.channel_sets()) {
+    auto max_allowed_frequency = max_supported_frame_rate / 2;
+    for (const fuchsia_hardware_audio::ChannelSet& chan_set : *pcm_format_set.channel_sets()) {
       if (!chan_set.attributes() || chan_set.attributes()->empty()) {
-        FX_LOGS(WARNING) << "GetSupportedFormats: ChannelSet.attributes[] is absent/empty";
+        FX_LOGS(WARNING) << "GetSupportedFormats: ChannelSet.attributes[] is "
+                         << (chan_set.attributes() ? "empty" : "absent");
         return ZX_ERR_INVALID_ARGS;
       }
-      if (CountChannelMatches(*pcm_supported_formats.channel_sets(),
-                              chan_set.attributes()->size()) > 1) {
+      if (CountChannelMatches(*pcm_format_set.channel_sets(), chan_set.attributes()->size()) > 1) {
         FX_LOGS(WARNING)
             << "GetSupportedFormats: channel-count must be unique across channel_sets: "
             << chan_set.attributes()->size();
         return ZX_ERR_INVALID_ARGS;
       }
       for (const auto& attrib : *chan_set.attributes()) {
-        auto max_allowed_frequency = max_supported_frame_rate / 2;
         if (attrib.min_frequency()) {
           if (*attrib.min_frequency() > max_allowed_frequency) {
-            FX_LOGS(WARNING)
-                << "GetSupportedFormats: ChannelAttributes.min_frequency out of range: "
-                << *attrib.min_frequency();
+            FX_LOGS(WARNING) << "GetSupportedFormats: ChannelAttributes.min_frequency ("
+                             << *attrib.min_frequency() << ") out of range: " << "[0, "
+                             << max_allowed_frequency << "]";
             return ZX_ERR_OUT_OF_RANGE;
           }
           if (attrib.max_frequency() && *attrib.min_frequency() > *attrib.max_frequency()) {
-            FX_LOGS(WARNING) << "GetSupportedFormats: min_frequency cannot exceed max_frequency: "
-                             << *attrib.min_frequency() << "," << *attrib.max_frequency();
+            FX_LOGS(WARNING) << "GetSupportedFormats: min_frequency (" << *attrib.min_frequency()
+                             << ") cannot exceed max_frequency (" << *attrib.max_frequency() << ")";
             return ZX_ERR_INVALID_ARGS;
           }
         }
 
         if (attrib.max_frequency()) {
           if (*attrib.max_frequency() > max_allowed_frequency) {
-            FX_LOGS(WARNING) << "GetSupportedFormats: ChannelAttrib.max_freq "
+            FX_LOGS(WARNING) << "GetSupportedFormats: ChannelAttrib.max_frequency "
                              << *attrib.max_frequency() << " will be limited to "
                              << max_allowed_frequency;
           }
@@ -280,12 +288,12 @@ zx_status_t ValidateSupportedFormats(
     }
 
     // Sample format
-    if (!pcm_supported_formats.sample_formats() ||
-        pcm_supported_formats.sample_formats()->empty()) {
-      FX_LOGS(WARNING) << "GetSupportedFormats: sample_formats[] is empty";
+    if (!pcm_format_set.sample_formats() || pcm_format_set.sample_formats()->empty()) {
+      FX_LOGS(WARNING) << "GetSupportedFormats: sample_formats[] is "
+                       << (pcm_format_set.sample_formats() ? "empty" : "absent");
       return ZX_ERR_INVALID_ARGS;
     }
-    const auto& sample_formats = *pcm_supported_formats.sample_formats();
+    const auto& sample_formats = *pcm_format_set.sample_formats();
     for (const auto& format : sample_formats) {
       if (CountFormatMatches(sample_formats, format) > 1) {
         FX_LOGS(WARNING) << "GetSupportedFormats: no duplicate SampleFormat values allowed: "
@@ -295,39 +303,37 @@ zx_status_t ValidateSupportedFormats(
     }
 
     // Bytes per sample
-    if (!pcm_supported_formats.bytes_per_sample() ||
-        pcm_supported_formats.bytes_per_sample()->empty()) {
-      FX_LOGS(WARNING) << "GetSupportedFormats: bytes_per_sample[] is absent/empty";
+    if (!pcm_format_set.bytes_per_sample() || pcm_format_set.bytes_per_sample()->empty()) {
+      FX_LOGS(WARNING) << "GetSupportedFormats: bytes_per_sample[] is "
+                       << (pcm_format_set.bytes_per_sample() ? "empty" : "absent");
       return ZX_ERR_INVALID_ARGS;
     }
-    uint8_t prev_bytes_per_sample = 0;
-    uint8_t max_bytes_per_sample = 0;
-    for (const auto& bytes : *pcm_supported_formats.bytes_per_sample()) {
+    uint8_t prev_bytes_per_sample = 0, max_bytes_per_sample = 0;
+    for (const auto& bytes : *pcm_format_set.bytes_per_sample()) {
       if (CountFormatMatches(sample_formats, fuchsia_hardware_audio::SampleFormat::kPcmSigned) &&
           (bytes != 2 && bytes != 4)) {
-        FX_LOGS(WARNING)
-            << "GetSupportedFormats: bytes_per_sample must be 2 or 4 for PCM_SIGNED format: "
-            << bytes;
+        FX_LOGS(WARNING) << "GetSupportedFormats: bytes_per_sample ("
+                         << static_cast<uint16_t>(bytes)
+                         << ") must be 2 or 4 for PCM_SIGNED format";
         return ZX_ERR_INVALID_ARGS;
       }
       if (CountFormatMatches(sample_formats, fuchsia_hardware_audio::SampleFormat::kPcmFloat) &&
           (bytes != 4 && bytes != 8)) {
-        FX_LOGS(WARNING)
-            << "GetSupportedFormats: bytes_per_sample must be 4 or 8 for PCM_FLOAT format: "
-            << bytes;
+        FX_LOGS(WARNING) << "GetSupportedFormats: bytes_per_sample ("
+                         << static_cast<uint16_t>(bytes) << ") must be 4 or 8 for PCM_FLOAT format";
         return ZX_ERR_INVALID_ARGS;
       }
       if (CountFormatMatches(sample_formats, fuchsia_hardware_audio::SampleFormat::kPcmUnsigned) &&
           bytes != 1) {
-        FX_LOGS(WARNING)
-            << "GetSupportedFormats: bytes_per_sample must be 1 for PCM_UNSIGNED format: " << bytes;
+        FX_LOGS(WARNING) << "GetSupportedFormats: bytes_per_sample ("
+                         << static_cast<uint16_t>(bytes) << ") must be 1 for PCM_UNSIGNED format";
         return ZX_ERR_INVALID_ARGS;
       }
-      // Bytes per sample must be listed in ascending order. This also eliminates duplicate values.
+      // Checking for "strictly ascending" also eliminates duplicate entries.
       if (bytes <= prev_bytes_per_sample) {
-        FX_LOGS(WARNING)
-            << "GetSupportedFormats: bytes_per_sample must be listed in ascending order: " << bytes
-            << " listed after " << prev_bytes_per_sample;
+        FX_LOGS(WARNING) << "GetSupportedFormats: bytes_per_sample must be in ascending order: "
+                         << static_cast<uint16_t>(prev_bytes_per_sample) << " was listed before "
+                         << static_cast<uint16_t>(bytes);
         return ZX_ERR_INVALID_ARGS;
       }
       prev_bytes_per_sample = bytes;
@@ -336,23 +342,26 @@ zx_status_t ValidateSupportedFormats(
     }
 
     // Valid bits per sample
-    if (!pcm_supported_formats.valid_bits_per_sample() ||
-        pcm_supported_formats.valid_bits_per_sample()->empty()) {
-      FX_LOGS(WARNING) << "GetSupportedFormats: valid_bits_per_sample[] is absent/empty";
+    if (!pcm_format_set.valid_bits_per_sample() ||
+        pcm_format_set.valid_bits_per_sample()->empty()) {
+      FX_LOGS(WARNING) << "GetSupportedFormats: valid_bits_per_sample[] is "
+                       << (pcm_format_set.valid_bits_per_sample() ? "empty" : "absent");
       return ZX_ERR_INVALID_ARGS;
     }
     uint8_t prev_valid_bits = 0;
-    for (const auto& valid_bits : *pcm_supported_formats.valid_bits_per_sample()) {
+    for (const auto& valid_bits : *pcm_format_set.valid_bits_per_sample()) {
       if (valid_bits == 0 || valid_bits > max_bytes_per_sample * 8) {
-        FX_LOGS(WARNING) << "GetSupportedFormats: valid_bits_per_sample out of range: "
-                         << valid_bits;
+        FX_LOGS(WARNING) << "GetSupportedFormats: valid_bits_per_sample ("
+                         << static_cast<uint16_t>(valid_bits) << ") out of range [1, "
+                         << max_bytes_per_sample * 8 << "]";
         return ZX_ERR_OUT_OF_RANGE;
       }
-      // Valid bits per sample must be listed in ascending order.
+      // Checking for "strictly ascending" also eliminates duplicate entries.
       if (valid_bits <= prev_valid_bits) {
         FX_LOGS(WARNING)
-            << "GetSupportedFormats: valid_bits_per_sample must be listed in ascending order: "
-            << valid_bits << " listed after " << prev_valid_bits;
+            << "GetSupportedFormats: valid_bits_per_sample must be in ascending order: "
+            << static_cast<uint16_t>(prev_valid_bits) << " was listed before "
+            << static_cast<uint16_t>(valid_bits);
         return ZX_ERR_INVALID_ARGS;
       }
       prev_valid_bits = valid_bits;
@@ -370,6 +379,12 @@ zx_status_t ValidateGainState(
 
   if (!gain_state.gain_db()) {
     FX_LOGS(WARNING) << "Incomplete StreamConfig/WatchGainState response";
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  // Eliminate NaN or infinity values
+  if (!std::isfinite(*gain_state.gain_db())) {
+    FX_LOGS(WARNING) << "Reported gain_db is NaN or infinity";
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -397,7 +412,7 @@ zx_status_t ValidateGainState(
 
 zx_status_t ValidatePlugState(
     const fuchsia_hardware_audio::PlugState& plug_state,
-    std::optional<const fuchsia_hardware_audio::StreamProperties> stream_props) {
+    std::optional<fuchsia_hardware_audio::PlugDetectCapabilities> plug_detect_capabilities) {
   LogPlugState(plug_state);
   ADR_LOG(kLogDeviceMethods);
 
@@ -413,9 +428,8 @@ zx_status_t ValidatePlugState(
   }
 
   // If we already have this device's PlugDetectCapabilities, double-check against those.
-  if (stream_props) {
-    if (*stream_props->plug_detect_capabilities() ==
-            fuchsia_hardware_audio::PlugDetectCapabilities::kHardwired &&
+  if (plug_detect_capabilities) {
+    if (*plug_detect_capabilities == fuchsia_hardware_audio::PlugDetectCapabilities::kHardwired &&
         !plug_state.plugged().value_or(true)) {
       FX_LOGS(WARNING) << "Reported 'plug_state' (UNPLUGGED) is unsupported (HARDWIRED)";
       return ZX_ERR_INVALID_ARGS;
@@ -447,20 +461,16 @@ zx_status_t ValidateRingBufferProperties(
   LogRingBufferProperties(rb_props);
   ADR_LOG(kLogDeviceMethods);
 
-  if (rb_props.external_delay() && *rb_props.external_delay() < 0) {
-    FX_LOGS(WARNING) << "Reported RingBufferProperties.external_delay is negative";
-    return ZX_ERR_OUT_OF_RANGE;
+  if (!rb_props.needs_cache_flush_or_invalidate()) {
+    FX_LOGS(WARNING) << "Reported RingBufferProperties.needs_cache_flush_or_invalidate is missing";
+    return ZX_ERR_INVALID_ARGS;
   }
   if (rb_props.turn_on_delay() && *rb_props.turn_on_delay() < 0) {
-    FX_LOGS(WARNING) << "Reported RingBufferProperties.external_delay is negative";
+    FX_LOGS(WARNING) << "Reported RingBufferProperties.turn_on_delay is negative";
     return ZX_ERR_OUT_OF_RANGE;
   }
   if (!rb_props.driver_transfer_bytes()) {
     FX_LOGS(WARNING) << "Reported RingBufferProperties.driver_transfer_bytes is missing";
-    return ZX_ERR_INVALID_ARGS;
-  }
-  if (!rb_props.needs_cache_flush_or_invalidate()) {
-    FX_LOGS(WARNING) << "Reported RingBufferProperties.needs_cache_flush_or_invalidate is missing";
     return ZX_ERR_INVALID_ARGS;
   }
   return ZX_OK;
@@ -473,14 +483,45 @@ zx_status_t ValidateRingBufferFormat(const fuchsia_hardware_audio::Format& forma
     FX_LOGS(WARNING) << "RingBuffer format must set pcm_format";
     return ZX_ERR_INVALID_ARGS;
   }
-
-  if (format.pcm_format()->valid_bits_per_sample() > format.pcm_format()->bytes_per_sample() * 8) {
-    FX_LOGS(WARNING) << "RingBuffer valid_bits_per_sample ("
-                     << format.pcm_format()->valid_bits_per_sample()
-                     << ") cannot exceed bytes_per_sample ("
-                     << format.pcm_format()->bytes_per_sample() << ") * 8";
+  if (format.pcm_format()->number_of_channels() == 0) {
+    FX_LOGS(WARNING) << "RingBuffer number_of_channels is too low";
     return ZX_ERR_OUT_OF_RANGE;
   }
+  // Is there an upper limit on RingBuffer channels?
+
+  if (format.pcm_format()->bytes_per_sample() == 0) {
+    FX_LOGS(WARNING) << "RingBuffer bytes_per_sample is too low";
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+  if (format.pcm_format()->sample_format() == fuchsia_hardware_audio::SampleFormat::kPcmUnsigned &&
+      format.pcm_format()->bytes_per_sample() > sizeof(uint8_t)) {
+    FX_LOGS(WARNING) << "RingBuffer bytes_per_sample is too high";
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+  if (format.pcm_format()->sample_format() == fuchsia_hardware_audio::SampleFormat::kPcmSigned &&
+      format.pcm_format()->bytes_per_sample() > sizeof(uint32_t)) {
+    FX_LOGS(WARNING) << "RingBuffer bytes_per_sample is too high";
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+  if (format.pcm_format()->sample_format() == fuchsia_hardware_audio::SampleFormat::kPcmFloat &&
+      format.pcm_format()->bytes_per_sample() > sizeof(double)) {
+    FX_LOGS(WARNING) << "RingBuffer bytes_per_sample is too high";
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+
+  if (format.pcm_format()->valid_bits_per_sample() == 0) {
+    FX_LOGS(WARNING) << "RingBuffer valid_bits_per_sample is too low";
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+  auto bytes_per_sample = format.pcm_format()->bytes_per_sample();
+  if (format.pcm_format()->valid_bits_per_sample() > bytes_per_sample * 8) {
+    FX_LOGS(WARNING) << "RingBuffer valid_bits_per_sample ("
+                     << static_cast<uint16_t>(format.pcm_format()->valid_bits_per_sample())
+                     << ") cannot exceed bytes_per_sample ("
+                     << static_cast<uint16_t>(bytes_per_sample) << ") * 8";
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+
   if (format.pcm_format()->frame_rate() > kMaxFrameRate ||
       format.pcm_format()->frame_rate() < kMinFrameRate) {
     FX_LOGS(WARNING) << "RingBuffer frame rate (" << format.pcm_format()->frame_rate()
@@ -491,6 +532,25 @@ zx_status_t ValidateRingBufferFormat(const fuchsia_hardware_audio::Format& forma
   return ZX_OK;
 }
 
+zx_status_t ValidateFormatCompatibility(uint8_t bytes_per_sample,
+                                        fuchsia_hardware_audio::SampleFormat sample_format) {
+  // Explicitly check for fuchsia_audio::SampleType kUint8, kInt16, kInt32, kFloat32, kFloat64
+  if ((sample_format == fuchsia_hardware_audio::SampleFormat::kPcmUnsigned &&
+       bytes_per_sample == 1) ||
+      (sample_format == fuchsia_hardware_audio::SampleFormat::kPcmSigned &&
+       bytes_per_sample == 2) ||
+      (sample_format == fuchsia_hardware_audio::SampleFormat::kPcmSigned &&
+       bytes_per_sample == 4) ||
+      (sample_format == fuchsia_hardware_audio::SampleFormat::kPcmFloat && bytes_per_sample == 4) ||
+      (sample_format == fuchsia_hardware_audio::SampleFormat::kPcmFloat && bytes_per_sample == 8)) {
+    return ZX_OK;
+  }
+
+  FX_LOGS(WARNING) << "No valid fuchsia_audio::SampleType exists, for "
+                   << static_cast<uint16_t>(bytes_per_sample) << "-byte " << sample_format;
+  return ZX_ERR_INVALID_ARGS;
+}
+
 zx_status_t ValidateRingBufferVmo(const zx::vmo& vmo, uint32_t num_frames,
                                   const fuchsia_hardware_audio::Format& format) {
   LogRingBufferVmo(vmo, num_frames, format);
@@ -498,6 +558,11 @@ zx_status_t ValidateRingBufferVmo(const zx::vmo& vmo, uint32_t num_frames,
 
   uint64_t size;
   auto status = ValidateRingBufferFormat(format);
+  if (status != ZX_OK) {
+    return status;
+  }
+  status = ValidateFormatCompatibility(format.pcm_format()->bytes_per_sample(),
+                                       format.pcm_format()->sample_format());
   if (status != ZX_OK) {
     return status;
   }
@@ -515,36 +580,25 @@ zx_status_t ValidateRingBufferVmo(const zx::vmo& vmo, uint32_t num_frames,
   return ZX_OK;
 }
 
-zx_status_t ValidateDelayInfo(
-    const fuchsia_hardware_audio::DelayInfo& delay_info,
-    const std::optional<const fuchsia_hardware_audio::RingBufferProperties>& rb_props,
-    const fuchsia_hardware_audio::PcmFormat& format) {
+zx_status_t ValidateDelayInfo(const fuchsia_hardware_audio::DelayInfo& delay_info) {
   LogDelayInfo(delay_info);
   ADR_LOG(kLogDeviceMethods);
 
-  const auto int_delay = delay_info.internal_delay().value_or(0);
-  const auto ext_delay = delay_info.external_delay().value_or(0);
-  if (int_delay < 0) {
-    FX_LOGS(WARNING) << "WatchDelayInfo: reported 'internal_delay' (" << int_delay
+  if (!delay_info.internal_delay()) {
+    FX_LOGS(WARNING) << "Reported DelayInfo.internal_delay is missing";
+    return ZX_ERR_INVALID_ARGS;
+  }
+  const auto internal_delay = *delay_info.internal_delay();
+  if (internal_delay < 0) {
+    FX_LOGS(WARNING) << "WatchDelayInfo: reported 'internal_delay' (" << internal_delay
                      << " ns) cannot be negative";
     return ZX_ERR_OUT_OF_RANGE;
   }
 
-  if (ext_delay < 0) {
-    FX_LOGS(WARNING) << "WatchDelayInfo: reported 'external_delay' (" << ext_delay
-                     << " ns) cannot be negative";
+  if (delay_info.external_delay() && *delay_info.external_delay() < 0) {
+    FX_LOGS(WARNING) << "WatchDelayInfo: reported 'external_delay' ("
+                     << *delay_info.external_delay() << " ns) cannot be negative";
     return ZX_ERR_OUT_OF_RANGE;
-  }
-
-  // If we have a (redundant) delay value from RingBufferProperties, double-check against that.
-  if (rb_props) {
-    if (rb_props->external_delay() && *rb_props->external_delay() != ext_delay) {
-      FX_LOGS(WARNING) << "RingBufferProperties reported 'external_delay' ("
-                       << *rb_props->external_delay()
-                       << " ns) must match WatchDelayInfo 'external_delay' (" << ext_delay
-                       << " ns)";
-      return ZX_ERR_INVALID_ARGS;
-    }
   }
 
   return ZX_OK;

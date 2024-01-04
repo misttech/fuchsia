@@ -3,12 +3,17 @@
 // found in the LICENSE file.
 
 use {
-    anyhow::{Error, Result},
+    anyhow::{Context, Error, Result},
+    fidl::endpoints,
+    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio,
     fidl_fuchsia_testing_harness::{OperationError, RealmProxy_Request, RealmProxy_RequestStream},
+    fuchsia_async as fasync,
     fuchsia_component_test::RealmInstance,
-    fuchsia_zircon as zx,
-    futures::StreamExt,
-    tracing::{error, info},
+    fuchsia_zircon::{self as zx},
+    futures::{Future, StreamExt, TryStreamExt},
+    std::sync::Mutex,
+    tracing::{error, info, warn},
+    vfs::{directory::entry::DirectoryEntry, execution_scope::ExecutionScope},
 };
 
 // RealmProxy mediates a test suite's access to the services in a test realm.
@@ -20,6 +25,23 @@ pub trait RealmProxy {
     fn connect_to_named_protocol(
         &mut self,
         protocol: &str,
+        server_end: zx::Channel,
+    ) -> Result<(), OperationError>;
+
+    // Opens the service directory in this proxy's realm.
+    //
+    // If the connection fails, the resulting [OperationError] is determined
+    // by the [RealmProxy] implementation.
+    fn open_service(&self, service: &str, server_end: zx::Channel) -> Result<(), OperationError>;
+
+    // Connects to the service instance in this proxy's realm.
+    //
+    // If the connection fails, the resulting [OperationError] is determined
+    // by the [RealmProxy] implementation.
+    fn connect_to_service_instance(
+        &self,
+        service: &str,
+        instance: &str,
         server_end: zx::Channel,
     ) -> Result<(), OperationError>;
 }
@@ -37,11 +59,48 @@ impl RealmProxy for RealmInstanceProxy {
             self.0.root.connect_request_to_named_protocol_at_exposed_dir(protocol, server_end);
 
         if let Some(err) = res.err() {
-            error!("{:?}", err);
+            error!("{err:?}");
             return Err(OperationError::Failed);
         }
 
         Ok(())
+    }
+
+    fn open_service(&self, service: &str, server_end: zx::Channel) -> Result<(), OperationError> {
+        self.0
+            .root
+            .get_exposed_dir()
+            .open(
+                fio::OpenFlags::DIRECTORY,
+                fio::ModeType::empty(),
+                service,
+                fidl::endpoints::ServerEnd::new(server_end),
+            )
+            .map_err(|e| {
+                warn!("Failed to open service directory for {service}. {e:?}");
+                OperationError::Failed
+            })
+    }
+
+    fn connect_to_service_instance(
+        &self,
+        service: &str,
+        instance: &str,
+        server_end: zx::Channel,
+    ) -> Result<(), OperationError> {
+        self.0
+            .root
+            .get_exposed_dir()
+            .open(
+                fio::OpenFlags::DIRECTORY,
+                fio::ModeType::empty(),
+                format!("{service}/{instance}").as_str(),
+                fidl::endpoints::ServerEnd::new(server_end),
+            )
+            .map_err(|e| {
+                warn!("Failed to open service instance directory for {service}/{instance}. {e:?}");
+                OperationError::Failed
+            })
     }
 }
 
@@ -73,19 +132,45 @@ impl RealmProxy for RealmInstanceProxy {
 pub async fn serve_with_proxy<P: RealmProxy>(
     mut proxy: P,
     mut stream: RealmProxy_RequestStream,
-) -> Result<(), Error> {
-    while let Some(Ok(request)) = stream.next().await {
-        info!("received {:?}", request);
-        match request {
-            RealmProxy_Request::ConnectToNamedProtocol {
-                protocol, server_end, responder, ..
-            } => {
-                let res = proxy.connect_to_named_protocol(protocol.as_str(), server_end);
-                responder.send(res)?;
-            }
+) -> Result<(), crate::Error> {
+    while let Some(option) = stream.next().await {
+        match option {
+            Ok(request) => match request {
+                RealmProxy_Request::ConnectToNamedProtocol {
+                    protocol,
+                    server_end,
+                    responder,
+                    ..
+                } => {
+                    let res = proxy.connect_to_named_protocol(protocol.as_str(), server_end);
+                    responder.send(res)?;
+                }
+                RealmProxy_Request::OpenService { service, server_end, responder } => {
+                    let res = proxy.open_service(service.as_str(), server_end);
+                    responder.send(res)?;
+                }
+                RealmProxy_Request::ConnectToServiceInstance {
+                    service,
+                    instance,
+                    server_end,
+                    responder,
+                } => {
+                    let res = proxy.connect_to_service_instance(
+                        service.as_str(),
+                        instance.as_str(),
+                        server_end,
+                    );
+                    responder.send(res)?;
+                }
+            },
+            // Tell the user if we failed to read from the channel. These errors occur during
+            // testing and ignoring them can make it difficult to root cause test failures.
+            Err(e) => return Err(crate::error::Error::Fidl(e)),
         }
     }
 
+    // Tell the user we're disconnecting in case this is a premature shutdown.
+    info!("done serving the RealmProxy connection");
     Ok(())
 }
 
@@ -112,5 +197,71 @@ pub async fn serve_with_proxy<P: RealmProxy>(
 // ```
 pub async fn serve(realm: RealmInstance, stream: RealmProxy_RequestStream) -> Result<(), Error> {
     let proxy = RealmInstanceProxy(realm);
-    serve_with_proxy(proxy, stream).await
+    serve_with_proxy(proxy, stream).await?;
+    Ok(())
+}
+
+/// Dispatches incoming connections on `receiver_stream to `request_stream_handler`.
+/// `receiver_stream` is a sandbox receiver channel.
+///
+/// Example:
+///
+/// async fn handle_echo_request_stream(mut stream: fecho::EchoRequestStream) {
+///     while let Ok(Some(_request)) = stream.try_next().await {
+///         // ... handle request ...
+///     }
+/// }
+/// ...
+/// task_group.spawn(async move {
+///     let _ = realm_proxy::service::handle_receiver::<fecho::EchoMarker, _, _>(
+///         echo_receiver_stream,
+///         handle_echo_request_stream,
+///     )
+///     .await
+///     .map_err(|e| {
+///         error!("Failed to serve echo stream: {}", e);
+///     });
+/// });
+pub async fn handle_receiver<T, Fut, F>(
+    mut receiver_stream: fsandbox::ReceiverRequestStream,
+    request_stream_handler: F,
+) -> Result<(), Error>
+where
+    T: endpoints::ProtocolMarker,
+    Fut: Future<Output = ()> + Send,
+    F: Fn(T::RequestStream) -> Fut + Send + Sync + Copy + 'static,
+{
+    let task_group = Mutex::new(fasync::TaskGroup::new());
+    // Alternatively, we could handle the flags directly. That would avoid linking
+    // in vfs
+    let service =
+        vfs::service::endpoint(move |_scope: ExecutionScope, channel: fuchsia_async::Channel| {
+            let mut task_group = task_group.lock().unwrap();
+            task_group.spawn(async move {
+                let server_end = endpoints::ServerEnd::<T>::new(channel.into());
+                let stream: T::RequestStream = server_end.into_stream().unwrap();
+                request_stream_handler(stream).await;
+            });
+        });
+    while let Some(request) =
+        receiver_stream.try_next().await.context("failed to read request from stream")?
+    {
+        match request {
+            fsandbox::ReceiverRequest::Clone2 { .. } => {
+                unimplemented!()
+            }
+            fsandbox::ReceiverRequest::Receive { channel, flags, control_handle: _ } => {
+                service.clone().open(
+                    ExecutionScope::new(),
+                    flags,
+                    vfs::path::Path::dot(),
+                    channel.into(),
+                );
+            }
+            fsandbox::ReceiverRequest::_UnknownMethod { .. } => {
+                unimplemented!()
+            }
+        }
+    }
+    Ok(())
 }

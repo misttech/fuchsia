@@ -6,10 +6,11 @@
 #define SRC_DEVICES_BOARD_DRIVERS_VIM3_DEVICETREE_VIM3_DEVICETREE_H_
 
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/devicetree/manager/manager.h>
+#include <lib/driver/devicetree/visitors/registry.h>
 
+#include <memory>
 #include <optional>
-
-#include "sdk/lib/driver/devicetree/manager.h"
 
 namespace vim3_dt {
 
@@ -23,6 +24,7 @@ class Vim3Devicetree : public fdf::DriverBase {
 
  private:
   std::optional<fdf_devicetree::Manager> manager_;
+  std::unique_ptr<fdf_devicetree::VisitorRegistry> visitors_;
   fidl::SyncClient<fuchsia_driver_framework::Node> node_;
 };
 

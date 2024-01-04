@@ -319,7 +319,7 @@ func (g *GCE) addSSHKey() error {
 	}
 	logger.Infof(g.loggerCtx, "GCE Mediator client command: %s", invocation)
 	cmd := exec.Command(invocation[0], invocation[1:]...)
-	stdout, stderr, flush := botanist.NewStdioWriters(g.loggerCtx)
+	stdout, stderr, flush := botanist.NewStdioWritersWithTimestamp(g.loggerCtx)
 	defer flush()
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
@@ -447,7 +447,7 @@ func (g *GCE) SSHKey() string {
 	return g.opts.SSHKey
 }
 
-func (g *GCE) Start(ctx context.Context, _ []bootserver.Image, args []string) error {
+func (g *GCE) Start(_ context.Context, _ []bootserver.Image, _ []string, _ string, _ bool) error {
 	return nil
 }
 

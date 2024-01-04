@@ -4,33 +4,25 @@
 
 use {
     crate::{
-        capability::{CapabilityProvider, CapabilitySource},
+        capability::{CapabilityProvider, FrameworkCapability, InternalCapabilityProvider},
         model::{
             component::{StartReason, WeakComponentInstance},
-            error::{CapabilityProviderError, ModelError},
-            hooks::{Event, EventPayload, EventType, Hook, HooksRegistration},
-            model::Model,
+            error::ModelError,
             routing::report_routing_failure,
         },
     },
     async_trait::async_trait,
-    cm_task_scope::TaskScope,
     cm_types::Name,
-    cm_util::channel,
-    fidl_fuchsia_io as fio, fuchsia_zircon as zx,
+    fidl::endpoints::ServerEnd,
+    fidl_fuchsia_component as fcomponent, fuchsia_zircon as zx,
     lazy_static::lazy_static,
-    moniker::{ExtendedMoniker, Moniker},
     routing::capability_source::{ComponentCapability, InternalCapability},
-    std::{
-        path::PathBuf,
-        sync::{Arc, Weak},
-    },
     tracing::warn,
 };
 
 lazy_static! {
-    pub static ref BINDER_SERVICE: Name = "fuchsia.component.Binder".parse().unwrap();
-    pub static ref BINDER_CAPABILITY: ComponentCapability =
+    static ref BINDER_SERVICE: Name = "fuchsia.component.Binder".parse().unwrap();
+    static ref BINDER_CAPABILITY: ComponentCapability =
         ComponentCapability::Protocol(cm_rust::ProtocolDecl {
             name: BINDER_SERVICE.clone(),
             source_path: Some("/svc/fuchsia.component.Binder".parse().unwrap()),
@@ -38,7 +30,7 @@ lazy_static! {
 }
 
 /// Implementation of `fuchsia.component.Binder` FIDL protocol.
-pub struct BinderCapabilityProvider {
+struct BinderCapabilityProvider {
     source: WeakComponentInstance,
     target: WeakComponentInstance,
 }
@@ -47,113 +39,61 @@ impl BinderCapabilityProvider {
     pub fn new(source: WeakComponentInstance, target: WeakComponentInstance) -> Self {
         Self { source, target }
     }
-}
 
-#[async_trait]
-impl CapabilityProvider for BinderCapabilityProvider {
-    async fn open(
-        self: Box<Self>,
-        task_scope: TaskScope,
-        _flags: fio::OpenFlags,
-        _relative_path: PathBuf,
-        server_end: &mut zx::Channel,
-    ) -> Result<(), CapabilityProviderError> {
-        let target = self.target.clone();
-        let source = self.source.clone();
-        let server_end = channel::take_channel(server_end);
+    async fn bind(self: Box<Self>, server_end: zx::Channel) -> Result<(), ()> {
+        let source = match self.source.upgrade().map_err(|e| ModelError::from(e)) {
+            Ok(source) => source,
+            Err(err) => {
+                report_routing_failure_to_target(self.target, err, server_end).await;
+                return Err(());
+            }
+        };
 
-        task_scope
-            .add_task(async move {
-                let source = match source.upgrade().map_err(|e| ModelError::from(e)) {
-                    Ok(source) => source,
-                    Err(err) => {
-                        report_routing_failure_to_target(target, err, server_end).await;
-                        return;
-                    }
-                };
-
-                let start_reason = StartReason::AccessCapability {
-                    target: target.moniker.clone(),
-                    name: BINDER_SERVICE.clone(),
-                };
-                match source.start(&start_reason, None, vec![], vec![]).await {
-                    Ok(_) => {
-                        source.scope_to_runtime(server_end).await;
-                    }
-                    Err(err) => {
-                        report_routing_failure_to_target(target, err.into(), server_end).await;
-                    }
-                }
-            })
-            .await;
-        Ok(())
-    }
-}
-
-// A `Hook` that serves the `fuchsia.component.Binder` FIDL protocol.
-#[derive(Clone)]
-pub struct BinderCapabilityHost {
-    model: Weak<Model>,
-}
-
-impl BinderCapabilityHost {
-    pub fn new(model: Weak<Model>) -> Self {
-        Self { model }
-    }
-
-    pub fn hooks(self: &Arc<Self>) -> Vec<HooksRegistration> {
-        vec![HooksRegistration::new(
-            "BinderCapabilityHost",
-            vec![EventType::CapabilityRouted],
-            Arc::downgrade(self) as Weak<dyn Hook>,
-        )]
-    }
-
-    async fn on_scoped_framework_capability_routed_async<'a>(
-        self: Arc<Self>,
-        source: WeakComponentInstance,
-        target_moniker: Moniker,
-        capability: &'a InternalCapability,
-        capability_provider: Option<Box<dyn CapabilityProvider>>,
-    ) -> Result<Option<Box<dyn CapabilityProvider>>, ModelError> {
-        // If some other capability has already been installed, then there's nothing to
-        // do here.
-        if capability_provider.is_none() && capability.matches_protocol(&BINDER_SERVICE) {
-            let model = self.model.upgrade().ok_or(ModelError::ModelNotAvailable)?;
-            let target = WeakComponentInstance::new(&model.look_up(&target_moniker).await?);
-            Ok(Some(Box::new(BinderCapabilityProvider::new(source, target))
-                as Box<dyn CapabilityProvider>))
-        } else {
-            Ok(capability_provider)
+        let start_reason = StartReason::AccessCapability {
+            target: self.target.moniker.clone(),
+            name: BINDER_SERVICE.clone(),
+        };
+        match source.start(&start_reason, None, vec![], vec![]).await {
+            Ok(_) => {
+                source.scope_to_runtime(server_end).await;
+            }
+            Err(err) => {
+                report_routing_failure_to_target(self.target, err.into(), server_end).await;
+                return Err(());
+            }
         }
+        Ok(())
     }
 }
 
 #[async_trait]
-impl Hook for BinderCapabilityHost {
-    async fn on(self: Arc<Self>, event: &Event) -> Result<(), ModelError> {
-        if let EventPayload::CapabilityRouted {
-            source: CapabilitySource::Framework { capability, component },
-            capability_provider,
-        } = &event.payload
-        {
-            let target_moniker = match &event.target_moniker {
-                ExtendedMoniker::ComponentManager => {
-                    Err(ModelError::UnexpectedComponentManagerMoniker)
-                }
-                ExtendedMoniker::ComponentInstance(moniker) => Ok(moniker),
-            }?;
-            let mut capability_provider = capability_provider.lock().await;
-            *capability_provider = self
-                .on_scoped_framework_capability_routed_async(
-                    component.clone(),
-                    target_moniker.clone(),
-                    &capability,
-                    capability_provider.take(),
-                )
-                .await?;
-        }
-        Ok(())
+impl InternalCapabilityProvider for BinderCapabilityProvider {
+    type Marker = fcomponent::BinderMarker;
+    async fn open_protocol(self: Box<Self>, server_end: ServerEnd<Self::Marker>) {
+        let server_end = server_end.into_channel().into();
+        let _ = self.bind(server_end).await;
+    }
+}
+
+pub struct BinderFrameworkCapability {}
+
+impl BinderFrameworkCapability {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl FrameworkCapability for BinderFrameworkCapability {
+    fn matches(&self, capability: &InternalCapability) -> bool {
+        capability.matches_protocol(&BINDER_SERVICE)
+    }
+
+    fn new_provider(
+        &self,
+        scope: WeakComponentInstance,
+        target: WeakComponentInstance,
+    ) -> Box<dyn CapabilityProvider> {
+        Box::new(BinderCapabilityProvider::new(scope, target))
     }
 }
 
@@ -181,18 +121,20 @@ mod tests {
             capability::CapabilityProvider,
             model::{
                 events::{source::EventSource, stream::EventStream},
+                hooks::EventType,
                 testing::test_helpers::*,
             },
         },
         assert_matches::assert_matches,
         cm_rust::{self, ComponentDecl},
         cm_rust_testing::*,
-        cm_task_scope::TaskScope,
+        cm_util::TaskGroup,
         fidl::{client::Client, handle::AsyncChannel},
-        fuchsia_zircon as zx,
+        fidl_fuchsia_io as fio, fuchsia_zircon as zx,
         futures::{lock::Mutex, StreamExt},
         moniker::{Moniker, MonikerBase},
         std::path::PathBuf,
+        std::sync::Arc,
     };
 
     struct BinderCapabilityTestFixture {
@@ -219,12 +161,12 @@ mod tests {
             let builtin_environment = self.builtin_environment.lock().await;
             let source = builtin_environment
                 .model
-                .look_up(&source)
+                .find_and_maybe_resolve(&source)
                 .await
                 .expect("failed to look up source moniker");
             let target = builtin_environment
                 .model
-                .look_up(&target)
+                .find_and_maybe_resolve(&target)
                 .await
                 .expect("failed to look up target moniker");
 
@@ -255,14 +197,14 @@ mod tests {
         let (_client_end, mut server_end) = zx::Channel::create();
         let moniker: Moniker = vec!["source"].try_into().unwrap();
 
-        let task_scope = TaskScope::new();
+        let task_group = TaskGroup::new();
         fixture
             .provider(moniker.clone(), vec!["target"].try_into().unwrap())
             .await
-            .open(task_scope.clone(), fio::OpenFlags::empty(), PathBuf::new(), &mut server_end)
+            .open(task_group.clone(), fio::OpenFlags::empty(), PathBuf::new(), &mut server_end)
             .await
             .expect("failed to call open()");
-        task_scope.shutdown().await;
+        task_group.join().await;
 
         assert!(event_stream.wait_until(EventType::Resolved, moniker.clone()).await.is_some());
         assert!(event_stream.wait_until(EventType::Started, moniker.clone()).await.is_some());
@@ -283,14 +225,14 @@ mod tests {
         let (client_end, mut server_end) = zx::Channel::create();
         let moniker: Moniker = vec!["foo"].try_into().unwrap();
 
-        let task_scope = TaskScope::new();
+        let task_group = TaskGroup::new();
         fixture
             .provider(moniker, Moniker::root())
             .await
-            .open(task_scope.clone(), fio::OpenFlags::empty(), PathBuf::new(), &mut server_end)
+            .open(task_group.clone(), fio::OpenFlags::empty(), PathBuf::new(), &mut server_end)
             .await
             .expect("failed to call open()");
-        task_scope.shutdown().await;
+        task_group.join().await;
 
         let client_end =
             AsyncChannel::from_channel(client_end).expect("failed to create AsyncChanel");

@@ -2,7 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use {fidl_fuchsia_wlan_mlme as fidl_mlme, ieee80211::MacAddr};
+use {
+    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_mlme as fidl_mlme,
+    ieee80211::MacAddr,
+};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,14 +57,15 @@ impl From<&fidl_mlme::SetKeyDescriptor> for KeyConfig {
             bssid: 0,
             protection: Protection::RX_TX,
             cipher_oui: key_desc.cipher_suite_oui,
-            cipher_type: key_desc.cipher_suite_type,
+            cipher_type: fidl_ieee80211::CipherSuiteType::into_primitive(key_desc.cipher_suite_type)
+                as u8,
             key_type: match key_desc.key_type {
                 fidl_mlme::KeyType::Pairwise => KeyType::PAIRWISE,
                 fidl_mlme::KeyType::PeerKey => KeyType::PEER,
                 fidl_mlme::KeyType::Igtk => KeyType::IGTK,
                 fidl_mlme::KeyType::Group => KeyType::GROUP,
             },
-            peer_addr: key_desc.address,
+            peer_addr: key_desc.address.into(),
             key_idx: key_desc.key_id as u8,
             key_len: key_desc.key.len() as u8,
             key: key,
@@ -79,7 +83,7 @@ mod test {
         assert_eq!(
             KeyConfig::from(&fidl_mlme::SetKeyDescriptor {
                 cipher_suite_oui: [1, 2, 3],
-                cipher_suite_type: 4,
+                cipher_suite_type: fidl_ieee80211::CipherSuiteType::from_primitive_allow_unknown(4),
                 key_type: fidl_mlme::KeyType::Pairwise,
                 address: [5; 6],
                 key_id: 6,
@@ -92,7 +96,7 @@ mod test {
                 cipher_oui: [1, 2, 3],
                 cipher_type: 4,
                 key_type: KeyType::PAIRWISE,
-                peer_addr: [5; 6],
+                peer_addr: [5; 6].into(),
                 key_idx: 6,
                 key_len: 7,
                 key: [

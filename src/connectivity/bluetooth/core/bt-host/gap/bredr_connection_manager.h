@@ -8,11 +8,14 @@
 #include <functional>
 #include <optional>
 
+#include <pw_async/dispatcher.h>
+
 #include "src/connectivity/bluetooth/core/bt-host/common/bounded_inspect_list_node.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/expiring_set.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/metrics.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/bredr_connection.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/bredr_connection_request.h"
+#include "src/connectivity/bluetooth/core/bt-host/gap/gap.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/peer.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/types.h"
 #include "src/connectivity/bluetooth/core/bt-host/hci-spec/constants.h"
@@ -66,7 +69,8 @@ class BrEdrConnectionManager final {
  public:
   BrEdrConnectionManager(hci::Transport::WeakPtr hci, PeerCache* peer_cache,
                          DeviceAddress local_address, l2cap::ChannelManager* l2cap,
-                         bool use_interlaced_scan, bool local_secure_connections_supported);
+                         bool use_interlaced_scan, bool local_secure_connections_supported,
+                         pw::async::Dispatcher& dispatcher);
   ~BrEdrConnectionManager();
 
   // Set whether this host is connectable
@@ -91,7 +95,7 @@ class BrEdrConnectionManager final {
   //
   // |cb| will be called with the channel created to the peer, or nullptr if the channel creation
   // resulted in an error.
-  void OpenL2capChannel(PeerId peer_id, l2cap::PSM psm,
+  void OpenL2capChannel(PeerId peer_id, l2cap::Psm psm,
                         BrEdrSecurityRequirements security_requirements,
                         l2cap::ChannelParameters params, l2cap::ChannelCallback cb);
 
@@ -144,9 +148,17 @@ class BrEdrConnectionManager final {
   // the peer is disconnected, false if the peer can not be disconnected.
   bool Disconnect(PeerId peer_id, DisconnectReason reason);
 
+  // Sets the BR/EDR security mode of the local device (Core Spec v5.4, Vol 3, Part C, 5.2.2). If
+  // set to SecureConnectionsOnly, any currently encrypted links not meeting the requirements of
+  // Security Mode 4 Level 4 will be disconnected.
+  void SetSecurityMode(BrEdrSecurityMode mode);
+
+  BrEdrSecurityMode security_mode() { return *security_mode_; }
+
   // If `reason` is DisconnectReason::kApiRequest, then incoming connections from `peer_id` are
   // rejected for kLocalDisconnectCooldownDuration
-  static constexpr zx::duration kLocalDisconnectCooldownDuration = zx::sec(30);
+  static constexpr pw::chrono::SystemClock::duration kLocalDisconnectCooldownDuration =
+      std::chrono::seconds(30);
 
   // Attach Inspect node as child of |parent| named |name|.
   // Only connections established after a call to AttachInspect are tracked.
@@ -169,7 +181,7 @@ class BrEdrConnectionManager final {
   // Writes page timeout duration to the controller.
   // |page_timeout| must be in the range [PageTimeout::MIN (0x0001), PageTimeout::MAX (0xFFFF)]
   // |cb| will be called with the resulting return parameter status.
-  void WritePageTimeout(zx::duration page_timeout, hci::ResultFunction<> cb);
+  void WritePageTimeout(pw::chrono::SystemClock::duration page_timeout, hci::ResultFunction<> cb);
 
   // Reads the controller page scan settings.
   void ReadPageScanSettings();
@@ -212,15 +224,18 @@ class BrEdrConnectionManager final {
   hci::CommandChannel::EventCallbackResult OnConnectionRequest(const hci::EmbossEventPacket& event);
   hci::CommandChannel::EventCallbackResult OnConnectionComplete(
       const hci::EmbossEventPacket& event);
-  hci::CommandChannel::EventCallbackResult OnIoCapabilityRequest(const hci::EventPacket& event);
-  hci::CommandChannel::EventCallbackResult OnIoCapabilityResponse(const hci::EventPacket& event);
-  hci::CommandChannel::EventCallbackResult OnLinkKeyRequest(const hci::EventPacket& event);
-  hci::CommandChannel::EventCallbackResult OnLinkKeyNotification(const hci::EventPacket& event);
+  hci::CommandChannel::EventCallbackResult OnIoCapabilityRequest(
+      const hci::EmbossEventPacket& event);
+  hci::CommandChannel::EventCallbackResult OnIoCapabilityResponse(
+      const hci::EmbossEventPacket& event);
+  hci::CommandChannel::EventCallbackResult OnLinkKeyRequest(const hci::EmbossEventPacket& event);
+  hci::CommandChannel::EventCallbackResult OnLinkKeyNotification(
+      const hci::EmbossEventPacket& event);
   hci::CommandChannel::EventCallbackResult OnSimplePairingComplete(const hci::EventPacket& event);
   hci::CommandChannel::EventCallbackResult OnUserConfirmationRequest(const hci::EventPacket& event);
   hci::CommandChannel::EventCallbackResult OnUserPasskeyRequest(const hci::EventPacket& event);
   hci::CommandChannel::EventCallbackResult OnUserPasskeyNotification(const hci::EventPacket& event);
-  hci::CommandChannel::EventCallbackResult OnRoleChange(const hci::EventPacket& event);
+  hci::CommandChannel::EventCallbackResult OnRoleChange(const hci::EmbossEventPacket& event);
 
   void HandleNonAclConnectionRequest(const DeviceAddress& addr,
                                      pw::bluetooth::emboss::LinkType link_type);
@@ -316,6 +331,11 @@ class BrEdrConnectionManager final {
   // Holds the connections that are active.
   ConnectionMap connections_;
 
+  // Current security mode
+  StringInspectable<BrEdrSecurityMode> security_mode_{
+      BrEdrSecurityMode::Mode4,
+      /*convert=*/[](auto mode) { return BrEdrSecurityModeToString(mode); }};
+
   // Holds a denylist with cooldowns for locally requested disconnects.
   ExpiringSet<DeviceAddress> deny_incoming_;
 
@@ -338,7 +358,7 @@ class BrEdrConnectionManager final {
   std::optional<hci::BrEdrConnectionRequest> pending_request_;
 
   // Time after which a connection attempt is considered to have timed out.
-  zx::duration request_timeout_;
+  pw::chrono::SystemClock::duration request_timeout_{kBrEdrCreateConnectionTimeout};
 
   struct InspectProperties {
     BoundedInspectListNode last_disconnected_list = BoundedInspectListNode(/*capacity=*/5);
@@ -368,8 +388,7 @@ class BrEdrConnectionManager final {
   InspectProperties inspect_properties_;
   inspect::Node inspect_node_;
 
-  // The dispatcher that all commands are queued on.
-  async_dispatcher_t* dispatcher_;
+  pw::async::Dispatcher& dispatcher_;
 
   // Keep this as the last member to make sure that all weak pointers are
   // invalidated before other members get destroyed.

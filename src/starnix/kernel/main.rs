@@ -2,17 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#![recursion_limit = "256"]
 #![allow(clippy::too_many_arguments)]
 // TODO(fxbug.dev/122028): Remove this allow once the lint is fixed.
 #![allow(unknown_lints, clippy::extra_unused_type_parameters)]
 
-#[macro_use]
-extern crate macro_rules_attribute;
+// Avoid unused crate warnings on non-test/non-debug builds because this needs to be an
+// unconditional dependency for rustdoc generation.
+use extended_pstate as _;
+use tracing_mutex as _;
 
-use crate::{
-    execution::{Container, ContainerServiceConfig},
-    logging::*,
-};
 use anyhow::Error;
 use fidl::endpoints::ControlHandle;
 use fidl_fuchsia_component_runner as frunner;
@@ -20,42 +19,34 @@ use fidl_fuchsia_process_lifecycle as flifecycle;
 use fidl_fuchsia_starnix_container as fstarcontainer;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
+use fuchsia_inspect::health::Reporter;
 use fuchsia_runtime as fruntime;
 use futures::{StreamExt, TryStreamExt};
+use starnix_core::{
+    execution::{Container, ContainerServiceConfig},
+    mm::{init_usercopy, zxio_maybe_faultable_copy_impl},
+};
+use starnix_logging::{log_debug, trace_category_starnix, trace_instant, trace_name_start_kernel};
 
-#[cfg(target_arch = "x86_64")]
-use fuchsia_inspect as inspect;
+/// Overrides the `zxio_maybe_faultable_copy` weak symbol found in zxio.
+#[no_mangle]
+extern "C" fn zxio_maybe_faultable_copy(
+    dest: *mut u8,
+    src: *const u8,
+    count: usize,
+    ret_dest: bool,
+) -> bool {
+    // SAFETY: we know that we are either copying from or to a buffer that
+    // zxio (and thus Starnix) owns per `zxio_maybe_faultable_copy`'s
+    // documentation.
+    unsafe { zxio_maybe_faultable_copy_impl(dest, src, count, ret_dest) }
+}
 
-#[macro_use]
-mod trace;
-
-mod arch;
-mod auth;
-mod bpf;
-mod collections;
-mod device;
-mod diagnostics;
-mod drop_notifier;
-mod dynamic_thread_pool;
-mod execution;
-mod fs;
-mod loader;
-mod lock;
-mod logging;
-mod mm;
-mod mutable_state;
-mod power;
-mod selinux;
-mod signals;
-mod syscalls;
-mod task;
-mod time;
-mod types;
-mod vdso;
-mod vmex_resource;
-
-#[cfg(test)]
-mod testing;
+/// Overrides the `zxio_fault_catching_disabled` weak symbol found in zxio.
+#[no_mangle]
+extern "C" fn zxio_fault_catching_disabled() -> bool {
+    false
+}
 
 fn maybe_serve_lifecycle() {
     if let Some(lifecycle) =
@@ -66,7 +57,7 @@ fn maybe_serve_lifecycle() {
                 fidl::endpoints::ServerEnd::<flifecycle::LifecycleMarker>::new(lifecycle.into())
                     .into_stream()
             {
-                while let Ok(Some(request)) = stream.try_next().await {
+                if let Ok(Some(request)) = stream.try_next().await {
                     match request {
                         flifecycle::LifecycleRequest::Stop { control_handle } => {
                             control_handle.shutdown();
@@ -110,16 +101,23 @@ async fn build_container(
     stream: frunner::ComponentRunnerRequestStream,
     returned_config: &mut Option<ContainerServiceConfig>,
 ) -> Result<Container, Error> {
-    let (container, config) = execution::create_component_from_stream(stream).await?;
+    let (container, config) = starnix_core::execution::create_component_from_stream(stream).await?;
     *returned_config = Some(config);
     Ok(container)
 }
 
-#[fuchsia::main(logging_tags = ["starnix"])]
+#[fuchsia::main(logging_tags = ["starnix"], logging_blocking)]
 async fn main() -> Result<(), Error> {
     // Because the starnix kernel state is shared among all of the processes in the same job,
     // we need to kill those in addition to the process which panicked.
     kill_job_on_panic::install_hook("\n\n\n\nSTARNIX KERNEL PANIC\n\n\n\n");
+
+    let _inspect_server_task = inspect_runtime::publish(
+        fuchsia_inspect::component::init_inspector_with_size(1_000_000),
+        inspect_runtime::PublishOptions::default(),
+    );
+    let mut health = fuchsia_inspect::component::health();
+    health.set_starting_up();
 
     fuchsia_trace_provider::trace_provider_create_with_fdio();
     trace_instant!(
@@ -138,25 +136,27 @@ async fn main() -> Result<(), Error> {
         .add_fidl_service(KernelServices::ComponentRunner)
         .add_fidl_service(KernelServices::ContainerController);
 
+    let inspector = fuchsia_inspect::component::inspector();
     #[cfg(target_arch = "x86_64")]
     {
-        inspect::component::inspector().root().record_string(
+        inspector.root().record_string(
             "x86_64_extended_pstate_strategy",
             format!("{:?}", *extended_pstate::x86_64::PREFERRED_STRATEGY),
         );
     }
-    inspect_runtime::serve(fuchsia_inspect::component::inspector(), &mut fs)?;
-
-    // Wait for the UTC clock to start up before we start accepting requests since so many Linux
-    // APIs need a running UTC clock to function.
-    // See https://fxbug.dev/126111 for more discussion.
-    // TODO(https://fxbug.dev/93344): Once it's practical to do so we should report a STARTING_UP
-    // state in inspect's health node until we are ready to start accepting requests.
-    log_debug!("Starting UTC clock.");
-    time::utc::start_utc_clock().await;
+    inspector.root().record_lazy_child("not_found", starnix_logging::not_found_lazy_node_callback);
+    inspector
+        .root()
+        .record_lazy_child("not_implemented", starnix_logging::not_implemented_lazy_node_callback);
 
     log_debug!("Serving kernel services on outgoing directory handle.");
     fs.take_and_serve_directory_handle()?;
+    health.set_ok();
+
+    // We call this early during Starnix boot to make sure the usercopy utilities
+    // are ready for use before any restricted-mode/Linux processes are created.
+    init_usercopy();
+
     fs.for_each_concurrent(None, |request: KernelServices| async {
         match request {
             KernelServices::ContainerRunner(stream) => {
@@ -173,14 +173,20 @@ async fn main() -> Result<(), Error> {
                 }
             }
             KernelServices::ComponentRunner(stream) => {
-                execution::serve_component_runner(stream, container.wait().await)
-                    .await
-                    .expect("failed to start component runner");
+                starnix_core::execution::serve_component_runner(
+                    stream,
+                    &container.wait().await.system_task(),
+                )
+                .await
+                .expect("failed to start component runner");
             }
             KernelServices::ContainerController(stream) => {
-                execution::serve_container_controller(stream, container.wait().await)
-                    .await
-                    .expect("failed to start container controller");
+                starnix_core::execution::serve_container_controller(
+                    stream,
+                    &container.wait().await.system_task(),
+                )
+                .await
+                .expect("failed to start container controller");
             }
         }
     })

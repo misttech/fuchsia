@@ -9,10 +9,7 @@ import(
 import(
     "//src/lib/testing/expectation/fuchsia_test_with_expectations_package.gni")
 
-tests = [
-  "inspect",
-  "sys",
-]
+tests = [ "sys" ]
 
 tests_with_err_logs = [
   {
@@ -81,19 +78,12 @@ package_deps = [
   # netemul-sandbox is used to create hermetic test realms.
   "//src/connectivity/network/testing/netemul/service:netemul-sandbox",
 
-  # netstack is under test.
-  ":netstack-empty-netemul-config",
-  ":netstack-specified-procs-netemul-config",
-
   # netstack3 is under test.
   "//src/connectivity/network/netstack3:component",
   "//src/connectivity/network/netstack3:component-debug",
 
   # reachability monitor is under test.
   "//src/connectivity/network/reachability:component_with_fake_time",
-
-  # sampler config is tested as part of inspect integration tests.
-  ":sampler-config",
 
   # stash_secure is used by dhcpd and netstack.
   "//src/sys/stash:stash_secure_v2",
@@ -116,11 +106,12 @@ package_deps = [
   # netcfg integration with netstack is tested.
   ":netcfg-netemul-config",
   ":netcfg-with-dhcpv6-netemul-config",
+  ":netcfg-with-duplicate-names",
   ":netcfg-with-forwarding-netemul-config",
   ":netcfg-with-iface-name-prefix",
   ":netcfg-without-provisioning-netemul-config",
-  "//src/connectivity/network/netcfg:component-advanced",
-  "//src/connectivity/network/netcfg:component-basic",
+  "//src/connectivity/policy/netcfg:component-advanced",
+  "//src/connectivity/policy/netcfg:component-basic",
 ]
 
 # RISC-V on Fuchsia does not support Golang.
@@ -209,8 +200,8 @@ resource("netcfg-with-forwarding-netemul-config") {
 
 resource("netcfg-without-provisioning-netemul-config") {
   testonly = true
-  sources = [ "management/config/install_only.json" ]
-  outputs = [ "netcfg/install_only.json" ]
+  sources = [ "management/config/all_delegated.json" ]
+  outputs = [ "netcfg/all_delegated.json" ]
 }
 
 resource("netcfg-with-iface-name-prefix") {
@@ -219,21 +210,10 @@ resource("netcfg-with-iface-name-prefix") {
   outputs = [ "netcfg/iface_prefix.json" ]
 }
 
-resource("netstack-empty-netemul-config") {
+resource("netcfg-with-duplicate-names") {
   testonly = true
-  sources = [ "inspect/config/empty.json" ]
-  outputs = [ "netstack/empty.json" ]
-}
-
-resource("netstack-specified-procs-netemul-config") {
-  testonly = true
-  sources = [ "inspect/config/specified_procs.json" ]
-  outputs = [ "netstack/specified_procs.json" ]
-}
-
-resource("sampler-config") {
-  sources = [ "//src/diagnostics/config/sampler/netstack.json" ]
-  outputs = [ "data/sampler-config/netstack.json" ]
+  sources = [ "management/config/duplicate_names.json" ]
+  outputs = [ "netcfg/duplicate_names.json" ]
 }
 
 # We keep tests that involve the virtualization stack (and especially guest
@@ -252,6 +232,7 @@ group("tests") {
   deps = [
            ":netstack-integration-tests",
            "guest:build-only",
+           "inspect:tests",
            "macros:netstack_testing_macros_test",
          ] + err_log_package_deps
 

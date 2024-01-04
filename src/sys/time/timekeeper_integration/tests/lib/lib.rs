@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use anyhow::Context;
+use fidl_test_time_realm;
+use parking_lot::Mutex;
 use {
     chrono::{Datelike, TimeZone, Timelike},
     fidl::endpoints::ServerEnd,
@@ -30,7 +33,6 @@ use {
         Future, FutureExt, SinkExt,
     },
     lazy_static::lazy_static,
-    parking_lot::Mutex,
     push_source::{PushSource, TestUpdateAlgorithm, Update},
     std::{ops::Deref, sync::Arc},
     time_metrics_registry::PROJECT_ID,
@@ -38,11 +40,9 @@ use {
 };
 
 /// URL for timekeeper.
-const TIMEKEEPER_URL: &str =
-    "fuchsia-pkg://fuchsia.com/timekeeper-integration#meta/timekeeper_for_integration.cm";
+const TIMEKEEPER_URL: &str = "#meta/timekeeper_for_integration.cm";
 /// URL for timekeeper with fake time.
-const TIMEKEEPER_FAKE_TIME_URL: &str =
-    "fuchsia-pkg://fuchsia.com/timekeeper-integration#meta/timekeeper_with_fake_time.cm";
+const TIMEKEEPER_FAKE_TIME_URL: &str = "#meta/timekeeper_with_fake_time.cm";
 /// URL for fake cobalt.
 const COBALT_URL: &str = "#meta/mock_cobalt.cm";
 /// URL for the fake clock component.
@@ -54,16 +54,29 @@ pub struct NestedTimekeeper {
     _realm_instance: RealmInstance,
 }
 
+impl Into<RealmInstance> for NestedTimekeeper {
+    // Deconstructs [Self] into an underlying [RealmInstance].
+    fn into(self) -> RealmInstance {
+        self._realm_instance
+    }
+}
+
 impl NestedTimekeeper {
+    /// Creates a new [NestedTimekeeper].
+    ///
     /// Launches an instance of timekeeper maintaining the provided |clock| in a nested
-    /// environment. If |initial_rtc_time| is provided, then the environment contains a fake RTC
+    /// environment.
+    ///
+    /// If |initial_rtc_time| is provided, then the environment contains a fake RTC
     /// device that reports the time as |initial_rtc_time|.
-    /// If use_fake_clock is true, also launches a fake clock service.
+    ///
+    /// If use_fake_clock is true, also launches a fake monotonic clock service.
+    ///
     /// Returns a `NestedTimekeeper`, handles to the PushSource and RTC it obtains updates from,
     /// Cobalt debug querier, and a fake clock control handle if use_fake_clock is true.
     pub async fn new(
         clock: Arc<zx::Clock>,
-        initial_rtc_time: Option<zx::Time>,
+        rtc_options: RtcOptions,
         use_fake_clock: bool,
     ) -> (
         Self,
@@ -79,9 +92,11 @@ impl NestedTimekeeper {
             builder.add_child("mock_cobalt", COBALT_URL, ChildOptions::new()).await.unwrap();
 
         let timekeeper_url = if use_fake_clock { TIMEKEEPER_FAKE_TIME_URL } else { TIMEKEEPER_URL };
+        tracing::trace!("using timekeeper_url: {}", timekeeper_url);
         let timekeeper = builder
             .add_child("timekeeper_test", timekeeper_url, ChildOptions::new().eager())
             .await
+            .with_context(|| format!("while starting up timekeeper_test from: {timekeeper_url}"))
             .unwrap();
 
         let timesource_server = builder
@@ -96,6 +111,7 @@ impl NestedTimekeeper {
                 ChildOptions::new(),
             )
             .await
+            .context("while starting up timesource_mock")
             .unwrap();
 
         let maintenance_server = builder
@@ -107,6 +123,7 @@ impl NestedTimekeeper {
                 ChildOptions::new(),
             )
             .await
+            .context("while starting up maintenance_mock")
             .unwrap();
 
         // Launch fake clock if needed.
@@ -124,6 +141,7 @@ impl NestedTimekeeper {
                         .to(Ref::parent()),
                 )
                 .await
+                .context("while setting up FakeClockControl")
                 .unwrap();
 
             builder
@@ -135,6 +153,7 @@ impl NestedTimekeeper {
                         .to(&timekeeper),
                 )
                 .await
+                .context("while setting up FakeClock")
                 .unwrap();
 
             builder
@@ -145,6 +164,7 @@ impl NestedTimekeeper {
                         .to(&fake_clock),
                 )
                 .await
+                .context("while setting up LogSink")
                 .unwrap();
         };
 
@@ -156,6 +176,7 @@ impl NestedTimekeeper {
                     .to(&timekeeper),
             )
             .await
+            .context("while setting up Maintenance")
             .unwrap();
 
         builder
@@ -205,7 +226,7 @@ impl NestedTimekeeper {
             .await
             .unwrap();
 
-        let rtc_updates = setup_rtc(initial_rtc_time, &builder, &timekeeper).await;
+        let rtc_updates = setup_rtc(rtc_options, &builder, &timekeeper).await;
         let realm_instance = builder.build().await.unwrap();
 
         let fake_clock_control = if use_fake_clock {
@@ -225,11 +246,43 @@ impl NestedTimekeeper {
         let cobalt_querier = realm_instance
             .root
             .connect_to_protocol_at_exposed_dir::<MetricEventLoggerQuerierMarker>()
-            .unwrap();
+            .expect("the connection succeeds");
 
         let nested_timekeeper = Self { _realm_instance: realm_instance };
 
         (nested_timekeeper, push_source_puppet, rtc_updates, cobalt_querier, fake_clock_control)
+    }
+}
+
+pub struct RemotePushSourcePuppet {
+    proxy: fidl_test_time_realm::PushSourcePuppetProxy,
+}
+
+impl RemotePushSourcePuppet {
+    /// Creates a new [RemotePushSourcePuppet].
+    pub fn new(proxy: fidl_test_time_realm::PushSourcePuppetProxy) -> Arc<Self> {
+        Arc::new(Self { proxy })
+    }
+
+    /// Set the next sample reported by the time source.
+    pub async fn set_sample(&self, sample: TimeSample) {
+        self.proxy.set_sample(&sample).await.expect("original API was infallible");
+    }
+
+    /// Set the next status reported by the time source.
+    pub async fn set_status(&self, status: Status) {
+        self.proxy.set_status(status).await.expect("original API was infallible");
+    }
+
+    /// Simulate a crash by closing client channels and wiping state.
+    pub async fn simulate_crash(&self) {
+        self.proxy.crash().await.expect("original local API was infallible");
+    }
+
+    /// Returns the number of cumulative connections served. This allows asserting
+    /// behavior such as whether Timekeeper has restarted a connection.
+    pub async fn lifetime_served_connections(&self) -> u32 {
+        self.proxy.get_lifetime_served_connections().await.expect("original API was infallible")
     }
 }
 
@@ -250,6 +303,7 @@ impl PushSourcePuppet {
 
     /// Serve the `PushSource` service to a client.
     fn serve_client(&self, server_end: ServerEnd<PushSourceMarker>) {
+        tracing::debug!("serve_client entry");
         let mut inner = self.inner.lock();
         // Timekeeper should only need to connect to a push source once, except when it is
         // restarting a time source. This case appears to the test as a second connection to the
@@ -263,12 +317,14 @@ impl PushSourcePuppet {
 
     /// Set the next sample reported by the time source.
     pub async fn set_sample(&self, sample: TimeSample) {
-        self.inner.lock().update(sample.into()).await;
+        let mut sink = self.inner.lock().get_sink();
+        sink.send(sample.into()).await.unwrap();
     }
 
     /// Set the next status reported by the time source.
     pub async fn set_status(&self, status: Status) {
-        self.inner.lock().update(status.into()).await;
+        let mut sink = self.inner.lock().get_sink();
+        sink.send(status.into()).await.unwrap();
     }
 
     /// Simulate a crash by closing client channels and wiping state.
@@ -321,9 +377,12 @@ impl PushSourcePuppetInner {
         }));
     }
 
-    /// Send an update to the PushSource.
-    async fn update(&mut self, update: Update) {
-        self.update_sink.send(update).await.unwrap()
+    /// Obtains the sink used to send commands to the push source puppet.
+    ///
+    /// The sink is detached from the puppet, so can be used whenever needed
+    /// without locking.
+    fn get_sink(&self) -> Sender<Update> {
+        self.update_sink.clone()
     }
 }
 
@@ -338,8 +397,28 @@ impl RtcUpdates {
     }
 }
 
-/// A wrapper around a `FakeClockControlProxy` that also allows a client to read the current fake
-/// time.
+/// Remote RTC updates - peek into the life of the RTC on the other side of a
+/// RTC connection.
+pub struct RemoteRtcUpdates {
+    proxy: fidl_test_time_realm::RtcUpdatesProxy,
+}
+
+impl RemoteRtcUpdates {
+    pub async fn to_vec(&self) -> Vec<fidl_fuchsia_hardware_rtc::Time> {
+        self.proxy
+            .get(fidl_test_time_realm::GetRequest::default())
+            .await
+            .expect("no errors or overflows") // Original API was infallible.
+            .unwrap()
+            .0
+    }
+    pub fn new(proxy: fidl_test_time_realm::RtcUpdatesProxy) -> Self {
+        RemoteRtcUpdates { proxy }
+    }
+}
+
+/// A wrapper around a `FakeClockControlProxy` that also allows a client to read
+/// the current fake time.
 pub struct FakeClockController {
     control_proxy: FakeClockControlProxy,
     clock_proxy: FakeClockProxy,
@@ -354,37 +433,122 @@ impl Deref for FakeClockController {
 }
 
 impl FakeClockController {
+    /// Re-constructs FakeClockController from the constituents.
+    pub fn new(control_proxy: FakeClockControlProxy, clock_proxy: FakeClockProxy) -> Self {
+        FakeClockController { control_proxy, clock_proxy }
+    }
+
+    /// Deconstructs [Self] into fake clock proxies.
+    pub fn into_components(self) -> (FakeClockControlProxy, FakeClockProxy) {
+        (self.control_proxy, self.clock_proxy)
+    }
+
     pub async fn get_monotonic(&self) -> Result<i64, fidl::Error> {
         self.clock_proxy.get().await
     }
 }
 
+/// The RTC configuration options.
+pub enum RtcOptions {
+    /// No real-time clock available. This configuration simulates a system that
+    /// does not have a RTC circuit available.
+    None,
+    /// Fake real-time clock. Supplied initial RTC time to report.
+    InitialRtcTime(zx::Time),
+    /// Injected real-time clock.
+    ///
+    /// This is the handle that will appear as the directory
+    /// `/dev/class/rtc` in the Timekeeper's namespace.
+    ///
+    /// The caller must set this directory up so that it serves
+    /// a RTC device (e.g. named `/dev/class/rtc/000`, and serving
+    /// the FIDL `fuchsia.hardware.rtc/Device`) from this directory.
+    ///
+    /// It is also possible to serve more RTCs from the directory, or
+    /// other files and file types at the caller's option.
+    ///
+    /// Use this option if you need to implement corner cases, or
+    /// very specific RTC behavior, such as abnormal configuration
+    /// or anomalous behavior.
+    InjectedRtc(fidl_fuchsia_io::DirectoryProxy),
+}
+
+impl From<fidl_test_time_realm::RtcOptions> for RtcOptions {
+    fn from(value: fidl_test_time_realm::RtcOptions) -> Self {
+        match value {
+            fidl_test_time_realm::RtcOptions::DevClassRtc(h) => {
+                RtcOptions::InjectedRtc(h.into_proxy().expect("can be converted to proxy"))
+            }
+            fidl_test_time_realm::RtcOptions::InitialRtcTime(t) => {
+                RtcOptions::InitialRtcTime(zx::Time::from_nanos(t))
+            }
+            _ => unimplemented!(),
+        }
+    }
+}
+
+impl From<zx::Time> for RtcOptions {
+    fn from(value: zx::Time) -> Self {
+        RtcOptions::InitialRtcTime(value)
+    }
+}
+
+impl From<Option<zx::Time>> for RtcOptions {
+    fn from(value: Option<zx::Time>) -> Self {
+        value.map(|t| t.into()).unwrap_or(Self::None)
+    }
+}
+
+/// Sets up the RTC serving.
+///
+/// Args:
+/// - `rtc_options`: options for RTC setup.
+/// - `build`: the `RealmBuilder` that will construct the realm.
+/// - `timekeeper`: the Timekeeper component instance.
+///
+/// Returns:
+/// - `RtcUpdates`: A vector of RTC updates received from a fake RTC. If the
+///   client serves the RTC directory, then the return value is useless.
 async fn setup_rtc(
-    initial_rtc_time: Option<zx::Time>,
+    rtc_options: RtcOptions,
     builder: &RealmBuilder,
     timekeeper: &ChildRef,
 ) -> RtcUpdates {
     let rtc_updates = RtcUpdates(Arc::new(Mutex::new(vec![])));
 
-    let rtc_dir = match initial_rtc_time {
-        Some(initial_time) => pseudo_directory! {
-            "class" => pseudo_directory! {
-                "rtc" => pseudo_directory! {
-                    "000" => vfs::service::host({
-                        let rtc_updates = rtc_updates.clone();
-                        move |stream| {
-                            serve_fake_rtc(initial_time, rtc_updates.clone(), stream)
-                        }
-                    })
+    let rtc_dir = match rtc_options {
+        RtcOptions::InitialRtcTime(initial_time) => {
+            tracing::debug!("using fake /dev/class/rtc/000");
+            pseudo_directory! {
+                "class" => pseudo_directory! {
+                    "rtc" => pseudo_directory! {
+                        "000" => vfs::service::host({
+                            let rtc_updates = rtc_updates.clone();
+                            move |stream| {
+                                serve_fake_rtc(initial_time, rtc_updates.clone(), stream)
+                            }
+                        })
+                    }
                 }
             }
-        },
-        None => pseudo_directory! {
-            "class" => pseudo_directory! {
-                "rtc" => pseudo_directory! {
+        }
+        RtcOptions::None => {
+            tracing::debug!("using an empty /dev/class/rtc directory");
+            pseudo_directory! {
+                "class" => pseudo_directory! {
+                    "rtc" => pseudo_directory! {
+                    }
                 }
             }
-        },
+        }
+        RtcOptions::InjectedRtc(h) => {
+            tracing::debug!("using /dev/class/rtc provided by client");
+            pseudo_directory! {
+                "class" => pseudo_directory! {
+                    "rtc" => vfs::remote::remote_dir(h)
+                }
+            }
+        }
     };
 
     let fake_rtc_server = builder
@@ -444,14 +608,17 @@ async fn serve_fake_rtc(
     while let Some(req) = stream.try_next().await.unwrap() {
         match req {
             DeviceRequest::Get { responder } => {
+                tracing::debug!("serve_fake_rtc: DeviceRequest::Get");
                 // Since timekeeper only pulls a time off of the RTC device once on startup, we
                 // don't attempt to update the sent time.
                 responder.send(Ok(&zx_time_to_rtc_time(initial_time))).unwrap();
             }
             DeviceRequest::Set { rtc, responder } => {
+                tracing::debug!("serve_fake_rtc: DeviceRequest::Set");
                 rtc_updates.0.lock().push(rtc);
                 responder.send(zx::Status::OK.into_raw()).unwrap();
             }
+            DeviceRequest::_UnknownMethod { .. } => {}
         }
     }
 }
@@ -536,8 +703,14 @@ pub const BETWEEN_SAMPLES: zx::Duration = zx::Duration::from_seconds(5);
 pub const STD_DEV: zx::Duration = zx::Duration::from_millis(50);
 
 /// Create a new clock with backstop time set to `BACKSTOP_TIME`.
+// TODO: b/306024715 - To be removed once all tests are migrated to TTRF.
 pub fn new_clock() -> Arc<zx::Clock> {
-    Arc::new(zx::Clock::create(zx::ClockOpts::empty(), Some(*BACKSTOP_TIME)).unwrap())
+    Arc::new(new_nonshareable_clock())
+}
+
+/// Create a new clock with backstop time set to `BACKSTOP_TIME`.
+pub fn new_nonshareable_clock() -> zx::Clock {
+    zx::Clock::create(zx::ClockOpts::empty(), Some(*BACKSTOP_TIME)).unwrap()
 }
 
 fn zx_time_to_rtc_time(zx_time: zx::Time) -> fidl_fuchsia_hardware_rtc::Time {
@@ -567,7 +740,7 @@ pub fn create_cobalt_event_stream(
     async_utils::hanging_get::client::HangingGetStream::new(proxy, move |p| {
         p.watch_logs(PROJECT_ID, log_method)
     })
-    .map(|res| futures::stream::iter(res.unwrap().0))
+    .map(|res| futures::stream::iter(res.expect("there should be a valid result here").0))
     .flatten()
     .boxed()
 }
@@ -583,6 +756,26 @@ macro_rules! poll_until_some {
     };
 }
 
+/// Repeatedly evaluates an async `condition` until it returns `Some(v)`. Returns `v`.
+/// Use if your condition is an async fn.
+#[macro_export]
+macro_rules! poll_until_some_async {
+    ($condition:expr) => {{
+        let loc = $crate::SourceLocation::new(file!(), line!(), column!());
+        tracing::info!("=> poll_until_some_async() for {}", &loc);
+        let mut result = None;
+        loop {
+            result = $condition.await;
+            if result.is_some() {
+                break;
+            }
+            fasync::Timer::new(fasync::Time::after($crate::RETRY_WAIT_DURATION)).await;
+        }
+        tracing::info!("=> poll_until_some_async() done for {}", &loc);
+        result.expect("we loop around while result is None")
+    }};
+}
+
 /// Repeatedly evaluates `condition` to create a `Future`, and then awaits the `Future`.
 /// Returns `()` when the (most recently created) `Future` resolves to `true`.
 #[macro_export]
@@ -593,6 +786,25 @@ macro_rules! poll_until_async {
             &$crate::SourceLocation::new(file!(), line!(), column!()),
         )
     };
+}
+
+/// A reimplementation of the above, which deals better with borrows.
+#[macro_export]
+macro_rules! poll_until_async_2 {
+    ($condition:expr) => {{
+        let loc = $crate::SourceLocation::new(file!(), line!(), column!());
+        tracing::info!("=> poll_until_async() for {}", &loc);
+        let mut result = true;
+        loop {
+            result = $condition.await;
+            if result {
+                break;
+            }
+            fasync::Timer::new(fasync::Time::after($crate::RETRY_WAIT_DURATION)).await;
+        }
+        tracing::info!("=> poll_until_async_2() done for {}", &loc);
+        result
+    }};
 }
 
 /// Repeatedly evaluates `condition` until it returns `true`. Returns `()`.
@@ -606,7 +818,8 @@ macro_rules! poll_until {
     };
 }
 
-const RETRY_WAIT_DURATION: zx::Duration = zx::Duration::from_millis(10);
+/// Wait duration for polling.
+pub const RETRY_WAIT_DURATION: zx::Duration = zx::Duration::from_millis(10);
 
 pub struct SourceLocation {
     file: &'static str,

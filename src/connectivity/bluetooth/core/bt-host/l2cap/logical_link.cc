@@ -59,12 +59,17 @@ LogicalLink::LogicalLink(hci_spec::ConnectionHandle handle, bt::LinkType type,
                          pw::bluetooth::emboss::ConnectionRole role, uint16_t max_acl_payload_size,
                          QueryServiceCallback query_service_cb,
                          hci::AclDataChannel* acl_data_channel, hci::CommandChannel* cmd_channel,
-                         bool random_channel_ids, A2dpOffloadManager& a2dp_offload_manager)
-    : handle_(handle),
+                         bool random_channel_ids, A2dpOffloadManager& a2dp_offload_manager,
+                         pw::async::Dispatcher& dispatcher)
+    : pw_dispatcher_(dispatcher),
+      handle_(handle),
       type_(type),
       role_(role),
       max_acl_payload_size_(max_acl_payload_size),
-      flush_timeout_(zx::duration::infinite(), /*convert=*/[](auto f) { return f.to_msecs(); }),
+      flush_timeout_(pw::chrono::SystemClock::duration::max(), /*convert=*/
+                     [](pw::chrono::SystemClock::duration f) {
+                       return std::chrono::duration_cast<std::chrono::milliseconds>(f).count();
+                     }),
       closed_(false),
       recombiner_(handle),
       acl_data_channel_(acl_data_channel),
@@ -83,14 +88,14 @@ LogicalLink::LogicalLink(hci_spec::ConnectionHandle handle, bt::LinkType type,
 
   // Set up the signaling channel and dynamic channels.
   if (type_ == bt::LinkType::kLE) {
-    signaling_channel_ =
-        std::make_unique<LESignalingChannel>(OpenFixedChannel(kLESignalingChannelId), role_);
+    signaling_channel_ = std::make_unique<LESignalingChannel>(
+        OpenFixedChannel(kLESignalingChannelId), role_, pw_dispatcher_);
     // TODO(armansito): Initialize LE registry when it exists.
 
     ServeConnectionParameterUpdateRequest();
   } else {
-    signaling_channel_ =
-        std::make_unique<BrEdrSignalingChannel>(OpenFixedChannel(kSignalingChannelId), role_);
+    signaling_channel_ = std::make_unique<BrEdrSignalingChannel>(
+        OpenFixedChannel(kSignalingChannelId), role_, pw_dispatcher_);
     dynamic_registry_ = std::make_unique<BrEdrDynamicChannelRegistry>(
         signaling_channel_.get(), fit::bind_member<&LogicalLink::OnChannelDisconnectRequest>(this),
         fit::bind_member<&LogicalLink::OnServiceRequest>(this), random_channel_ids);
@@ -121,8 +126,9 @@ Channel::WeakPtr LogicalLink::OpenFixedChannel(ChannelId id) {
     return Channel::WeakPtr();
   }
 
-  std::unique_ptr<ChannelImpl> chan = ChannelImpl::CreateFixedChannel(
-      id, GetWeakPtr(), cmd_channel_->AsWeakPtr(), max_acl_payload_size_, a2dp_offload_manager_);
+  std::unique_ptr<ChannelImpl> chan =
+      ChannelImpl::CreateFixedChannel(pw_dispatcher_, id, GetWeakPtr(), cmd_channel_->AsWeakPtr(),
+                                      max_acl_payload_size_, a2dp_offload_manager_);
 
   auto pp_iter = pending_pdus_.find(id);
   if (pp_iter != pending_pdus_.end()) {
@@ -146,7 +152,7 @@ Channel::WeakPtr LogicalLink::OpenFixedChannel(ChannelId id) {
   return channels_[id]->GetWeakPtr();
 }
 
-void LogicalLink::OpenChannel(PSM psm, ChannelParameters params, ChannelCallback callback) {
+void LogicalLink::OpenChannel(Psm psm, ChannelParameters params, ChannelCallback callback) {
   BT_DEBUG_ASSERT(!closed_);
 
   // TODO(fxbug.dev/968): Implement channels for LE credit-based connections
@@ -431,7 +437,7 @@ void LogicalLink::Close() {
   dynamic_registry_.reset();
 }
 
-std::optional<DynamicChannelRegistry::ServiceInfo> LogicalLink::OnServiceRequest(PSM psm) {
+std::optional<DynamicChannelRegistry::ServiceInfo> LogicalLink::OnServiceRequest(Psm psm) {
   BT_DEBUG_ASSERT(!closed_);
 
   // Query upper layer for a service handler attached to this PSM.
@@ -489,7 +495,7 @@ void LogicalLink::CompleteDynamicOpen(const DynamicChannel* dyn_chan, ChannelCal
   chan_info.flush_timeout.reset();
 
   std::unique_ptr<ChannelImpl> chan = ChannelImpl::CreateDynamicChannel(
-      local_cid, remote_cid, GetWeakPtr(), chan_info, cmd_channel_->AsWeakPtr(),
+      pw_dispatcher_, local_cid, remote_cid, GetWeakPtr(), chan_info, cmd_channel_->AsWeakPtr(),
       max_acl_payload_size_, a2dp_offload_manager_);
   auto chan_weak = chan->GetWeakPtr();
   channels_[local_cid] = std::move(chan);
@@ -596,7 +602,7 @@ void LogicalLink::RequestAclPriority(Channel::WeakPtr channel, AclPriority prior
   }
 }
 
-void LogicalLink::SetBrEdrAutomaticFlushTimeout(zx::duration flush_timeout,
+void LogicalLink::SetBrEdrAutomaticFlushTimeout(pw::chrono::SystemClock::duration flush_timeout,
                                                 hci::ResultCallback<> callback) {
   if (type_ != bt::LinkType::kACL) {
     bt_log(ERROR, "l2cap", "attempt to set flush timeout on non-ACL logical link");
@@ -612,23 +618,25 @@ void LogicalLink::SetBrEdrAutomaticFlushTimeout(zx::duration flush_timeout,
     cb(result);
   };
 
-  if (flush_timeout < zx::msec(1) || (flush_timeout > hci_spec::kMaxAutomaticFlushTimeoutDuration &&
-                                      flush_timeout != zx::duration::infinite())) {
+  if (flush_timeout < std::chrono::milliseconds(1) ||
+      (flush_timeout > hci_spec::kMaxAutomaticFlushTimeoutDuration &&
+       flush_timeout != pw::chrono::SystemClock::duration::max())) {
     callback_wrapper(ToResult(pw::bluetooth::emboss::StatusCode::INVALID_HCI_COMMAND_PARAMETERS));
     return;
   }
 
   uint16_t converted_flush_timeout;
-  if (flush_timeout == zx::duration::infinite()) {
+  if (flush_timeout == pw::chrono::SystemClock::duration::max()) {
     // The command treats a flush timeout of 0 as infinite.
     converted_flush_timeout = 0;
   } else {
     // Slight imprecision from casting or converting to ms is fine for the flush timeout (a few
     // ms difference from the requested value doesn't matter). Overflow is not possible because of
     // the max value check above.
-    converted_flush_timeout =
-        static_cast<uint16_t>(static_cast<float>(flush_timeout.to_msecs()) *
-                              hci_spec::kFlushTimeoutMsToCommandParameterConversionFactor);
+    converted_flush_timeout = static_cast<uint16_t>(
+        static_cast<float>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(flush_timeout).count()) *
+        hci_spec::kFlushTimeoutMsToCommandParameterConversionFactor);
     BT_ASSERT(converted_flush_timeout != 0);
     BT_ASSERT(converted_flush_timeout <= hci_spec::kMaxAutomaticFlushTimeoutCommandParameterValue);
   }
@@ -648,8 +656,9 @@ void LogicalLink::SetBrEdrAutomaticFlushTimeout(zx::duration flush_timeout,
                  "WriteAutomaticFlushTimeout command failed (result: %s, handle: %#.4x)",
                  bt_str(event.ToResult()), handle);
         } else {
-          bt_log(DEBUG, "hci", "automatic flush timeout updated (handle: %#.4x, timeout: %ld ms)",
-                 handle, flush_timeout.to_msecs());
+          bt_log(DEBUG, "hci", "automatic flush timeout updated (handle: %#.4x, timeout: %lld ms)",
+                 handle,
+                 std::chrono::duration_cast<std::chrono::milliseconds>(flush_timeout).count());
         }
         cb(event.ToResult());
       });

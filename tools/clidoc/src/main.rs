@@ -3,24 +3,24 @@
 // found in the LICENSE file.
 
 //! Clidoc generates documentation for host tool commands consisting of their --help output.
-use {
-    anyhow::{bail, Context, Result},
-    argh::FromArgs,
-    flate2::{write::GzEncoder, Compression},
-    lazy_static::lazy_static,
-    std::{
-        collections::HashSet,
-        env,
-        ffi::{OsStr, OsString},
-        fs::{self, File},
-        io::{BufWriter, Write},
-        path::{Path, PathBuf},
-        process::Command,
-        sync::Once,
-    },
-    tar::Builder,
-    tracing::{debug, info},
+use anyhow::{bail, Context, Result};
+use argh::FromArgs;
+use flate2::{write::GzEncoder, Compression};
+use lazy_static::lazy_static;
+use std::{
+    collections::HashSet,
+    env,
+    ffi::{OsStr, OsString},
+    fs::{self, File},
+    io::{BufWriter, Write},
+    path::{Path, PathBuf},
+    process::Command,
+    sync::Once,
 };
+use tar::Builder;
+use tracing::{debug, info};
+
+mod ffx_doc;
 
 enum HelpError {
     Ignore,
@@ -52,19 +52,31 @@ struct Opt {
     #[argh(switch, short = 'v')]
     verbose: bool,
 
-    /// path for tarball- if set the output will be compressed as a tarball
+    /// path for tarball archive of the output will be compressed as a tarball
     /// and intermediate files will be cleaned up
     /// For example: "clidoc_out.tar.gz". Note that .tar.gz is not automatically
     /// added as a file extension.
     #[argh(option)]
-    tarball_dir: Option<PathBuf>,
+    archive_path: Option<PathBuf>,
 
     /// path for depfile if clidoc is invoked as a BUILD action
     /// if set, will output a depfile based on inputs at specified location
-    /// depfile is only supported with tarball_dir flag.
+    /// depfile is only supported with archive_path flag.
     /// depfile is a Ninja term and does not need to be split into 2 words.
     #[argh(option)]
     depfile: Option<PathBuf>,
+
+    /// path to sdk manifest used to add files read by ffx to the depfile.
+    #[argh(option)]
+    sdk_manifest: Option<PathBuf>,
+
+    /// root of the sdk for ffx
+    #[argh(option)]
+    sdk_root: Option<PathBuf>,
+
+    /// isolate-dir to use with ffx
+    #[argh(option)]
+    isolate_dir: Option<PathBuf>,
 
     /// commands to run, otherwise defaults to internal list of commands.
     /// relative paths are on the input_path. Absolute paths are used as-is.
@@ -91,19 +103,21 @@ const ALLOW_LIST: &'static [&'static str] = &[
     "blobfs-compression",
     "bootserver",
     "cmc",
+    "configc",
     "ffx",
     "fidl-format",
     "fidlc",
     "fidlcat",
-    "fidlgen",
+    "fidlgen_cpp",
+    "fidlgen_hlcpp",
+    "fidlgen_rust",
     "fpublish",
     "fremote",
     "fserve",
     "fssh",
-    "fvdl",
+    "funnel",
     "minfs",
     "pm",
-    "symbolize",
     "symbolizer",
     "triage",
     "zbi",
@@ -114,14 +128,7 @@ const ALLOW_LIST: &'static [&'static str] = &[
 // when invoking --help.
 lazy_static! {
     static ref IGNORE_ERR_CODE: HashSet<&'static str> = {
-        let h = HashSet::from([
-            "bootserver",
-            "fssh",
-            "fremote",
-            "minfs",
-            "symbolizer",
-            "zxdb",
-        ]);
+        let h = HashSet::from(["bootserver", "fssh", "fremote", "minfs", "symbolizer", "zxdb"]);
         h
     };
 }
@@ -190,30 +197,44 @@ fn run(opt: Opt) -> Result<()> {
 
     // Write documentation output for each command.
     for cmd_path in cmd_paths.iter() {
-        write_formatted_output(&cmd_path, output_path).context(format!(
-            "Unable to write generate doc for {:?} to {:?}",
-            cmd_path, output_path
-        ))?;
+        // ffx can export the help info in JSON format.
+        if cmd_path.ends_with("ffx") {
+            ffx_doc::write_formatted_output_for_ffx(
+                &cmd_path,
+                output_path,
+                &opt.sdk_root,
+                &opt.sdk_manifest,
+                &opt.isolate_dir,
+            )
+            .context(format!(
+                "Unable to write generate doc for {:?} to {:?}",
+                cmd_path, output_path
+            ))?;
+        } else {
+            write_formatted_output(&cmd_path, output_path).context(format!(
+                "Unable to write generate doc for {:?} to {:?}",
+                cmd_path, output_path
+            ))?;
+        }
     }
 
     info!("Generated documentation at dir: {}", &output_path.display());
 
-    if let Some(tardir) = opt.tarball_dir {
+    if let Some(tardir) = opt.archive_path {
         // First check if depfile is needed as well since this will probably be invoked
         // as part of a BUILD action.
         if let Some(depfile_path) = opt.depfile {
-            info!("Creating depfile at {:?} with {:?}", depfile_path, cmd_paths);
             let mut f = File::create(depfile_path).expect("Unable to create file");
-            for cmd_path in cmd_paths.iter() {
-                // Documented tools live in host_x64 path of build directory
-                let p = PathBuf::from("host_x64");
+            let output_filename = tardir.display();
+            // Documented tools live in host_$ARCH path of build directory
+            let input_path_last = input_path.file_name().expect("input path trailing element");
+            let rel_path: PathBuf = PathBuf::from(input_path_last);
+
+            for cmd_path in cmd_paths {
                 let tool = cmd_path.file_name();
-                write!(
-                    f,
-                    "{}: {}\n",
-                    tardir.display(),
-                    p.join(tool.expect("get toolname")).display()
-                )?;
+                let filename = rel_path.join(tool.expect("get toolname"));
+                info!("depfile: {output_filename}: {filename:?}");
+                write!(f, "{output_filename}: {}\n", filename.display())?;
             }
         }
 
@@ -352,7 +373,7 @@ fn write_formatted_output(cmd_path: &PathBuf, output_path: &PathBuf) -> Result<(
 
     writeln!(output_writer, "{}", HEADER)?;
 
-    // Write ouput for cmd and all of its subcommands.
+    // Write output for cmd and all of its subcommands.
     recurse_cmd_output(&cmd_name, &cmd_path, output_writer, &cmd_sequence)
 }
 
@@ -438,7 +459,7 @@ fn help_output_for(tool: &Path, subcommands: &Vec<&String>) -> Result<Vec<String
 }
 
 /// Given a cmd name and a dir, create a full path ending in cmd.md.
-fn md_path(file_stem: &OsStr, dir: &PathBuf) -> PathBuf {
+pub(crate) fn md_path(file_stem: &OsStr, dir: &PathBuf) -> PathBuf {
     let mut path = Path::new(dir).join(file_stem);
     path.set_extension("md");
     path
@@ -446,7 +467,9 @@ fn md_path(file_stem: &OsStr, dir: &PathBuf) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, flate2::read::GzDecoder, tar::Archive};
+    use super::*;
+    use flate2::read::GzDecoder;
+    use tar::Archive;
 
     #[test]
     fn run_test_commands() {
@@ -474,8 +497,8 @@ mod tests {
     fn run_test_archive_and_cleanup() {
         let tmp_dir = tempfile::Builder::new().prefix("clidoc-tar-test").tempdir().unwrap();
         let argv = [
-            "--tarball-dir",
-            "clidoc_out.tar.gz",
+            "--archive-path",
+            "clidoc_archive.tar.gz",
             "-v",
             "-o",
             &tmp_dir.path().to_str().unwrap(),
@@ -485,11 +508,11 @@ mod tests {
         let opt = Opt::from_args(&[cmd], &argv).unwrap();
         run(opt).expect("tool_with_subcommands could not be generated");
 
-        // With the tarball-dir flag set, the md file should be zipped
+        // With the archive-path flag set, the md file should be zipped
         // and not exist.
         assert!(!tmp_dir.path().join("tool_with_subcommands.md").exists());
 
-        let tar_gz = File::open("clidoc_out.tar.gz").expect("open tarball");
+        let tar_gz = File::open("clidoc_archive.tar.gz").expect("open tarball");
         let tar = GzDecoder::new(tar_gz);
         let mut archive = Archive::new(tar);
         archive.unpack(".").expect("extract tar");

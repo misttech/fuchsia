@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/assembly/config_data_for_assembly.gni")
 import("//build/config.gni")
 import("//src/diagnostics/triage/build/triage_config_test.gni")
 
@@ -13,7 +14,6 @@ triage_files = [
   "audio.triage",
   "bluetooth.triage",
   "cpu.triage",
-  "crashes.triage",
   "disk.triage",
   "fonts.triage",
   "httpsdate_time_source.triage",
@@ -41,7 +41,6 @@ detect_unconditional_files = [
 ]
 
 detect_conditional_files = [
-  "detect/amlogic-display-detect.triage",
   "detect/mali-detect.triage",
   "detect/omaha-client-detect.triage",
   "detect/brcmfmac-detect.triage",
@@ -65,17 +64,13 @@ config_data("brcmfmac-detect") {
 
 # This file will be included in builds that include the
 # group src/graphics/lib/magma/gnbuild/magma-arm-mali:msd-system
-config_data("mali-detect") {
+config_data_for_assembly("mali-detect") {
   for_pkg = "triage-detect"
   sources = [ "detect/mali-detect.triage" ]
 }
 
-# This file will be included in builds that include the
-# //src/graphics/display/drivers/amlogic-display driver
-# target
-config_data("amlogic-display-detect") {
-  for_pkg = "triage-detect"
-  sources = [ "detect/amlogic-display-detect.triage" ]
+# TODO(b/317917028): Delete this target after all dependency is removed.
+group("amlogic-display-detect") {
 }
 
 group("triage") {

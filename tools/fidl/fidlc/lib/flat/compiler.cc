@@ -23,7 +23,7 @@ namespace fidl::flat {
 
 Compiler::Compiler(Libraries* all_libraries, const VersionSelection* version_selection,
                    ordinals::MethodHasher method_hasher, ExperimentalFlags experimental_flags)
-    : ReporterMixin(all_libraries->reporter()),
+    : reporter_(all_libraries->reporter()),
       library_(std::make_unique<Library>()),
       all_libraries_(all_libraries),
       version_selection(version_selection),
@@ -35,7 +35,7 @@ bool Compiler::ConsumeFile(std::unique_ptr<raw::File> file) {
 }
 
 bool Compiler::Compile() {
-  auto checkpoint = reporter()->Checkpoint();
+  auto checkpoint = reporter_->Checkpoint();
 
   if (!AvailabilityStep(this).Run())
     return false;
@@ -55,10 +55,8 @@ bool Compiler::Compile() {
     return false;
   if (!VerifyDependenciesStep(this).Run())
     return false;
-  if (experimental_flags_.IsFlagEnabled(ExperimentalFlags::Flag::kUnknownInteractions)) {
-    if (!VerifyOpenInteractionsStep(this).Run())
-      return false;
-  }
+  if (!VerifyOpenInteractionsStep(this).Run())
+    return false;
 
   if (!all_libraries_->Insert(std::move(library_)))
     return false;
@@ -82,7 +80,8 @@ VirtualSourceFile* Compiler::Step::generated_source_file() {
 bool Libraries::Insert(std::unique_ptr<Library> library) {
   auto [_, inserted] = libraries_by_name_.try_emplace(library->name, library.get());
   if (!inserted) {
-    return Fail(ErrMultipleLibrariesWithSameName, library->arbitrary_name_span, library->name);
+    return reporter_->Fail(ErrMultipleLibrariesWithSameName, library->arbitrary_name_span,
+                           library->name);
   }
   libraries_.push_back(std::move(library));
   return true;
@@ -133,12 +132,10 @@ std::set<const Library*, LibraryComparator> Libraries::Unused() const {
 static size_t EditDistance(std::string_view sequence1, std::string_view sequence2) {
   size_t s1_length = sequence1.length();
   size_t s2_length = sequence2.length();
-  size_t row1[s1_length + 1];
-  size_t row2[s1_length + 1];
-  size_t* last_row = row1;
-  size_t* this_row = row2;
-  for (size_t i = 0; i <= s1_length; i++)
-    last_row[i] = i;
+  std::vector<size_t> row1(s1_length + 1);
+  std::vector<size_t> row2(s1_length + 1);
+  size_t* last_row = row1.data();
+  size_t* this_row = row2.data();
   for (size_t j = 0; j < s2_length; j++) {
     this_row[0] = j + 1;
     auto s2c = sequence2[j];
@@ -171,7 +168,7 @@ void Libraries::WarnOnAttributeTypo(const Attribute* attribute) const {
     auto supplied_name = attribute_name;
     auto edit_distance = EditDistance(supplied_name, suspected_name);
     if (0 < edit_distance && edit_distance < 2) {
-      Warn(WarnAttributeTypo, attribute->span, supplied_name, suspected_name);
+      reporter_->Warn(WarnAttributeTypo, attribute->span, supplied_name, suspected_name);
     }
   }
 }
@@ -210,7 +207,7 @@ static std::vector<const flat::Struct*> ExternalStructs(
         }
 
         // Include the success variant of a result union, if it's an external struct.
-        if (method->has_error) {
+        if (method->HasResultUnion()) {
           ZX_ASSERT(id->type_decl->kind == Decl::Kind::kUnion);
           const auto* result_union = static_cast<const flat::Union*>(id->type_decl);
           const auto* success_variant_type = static_cast<const flat::IdentifierType*>(
@@ -470,9 +467,6 @@ std::unique_ptr<Compilation> Libraries::Filter(const VersionSelection* version_s
   compilation->external_structs = ExternalStructs(library, compilation->declarations.protocols);
   compilation->using_references = library->dependencies.library_references();
   filter(&compilation->declaration_order, library->declaration_order);
-  for (const auto& lib : libraries_) {
-    filter(&compilation->all_libraries_declaration_order, lib->declaration_order);
-  };
   auto dependencies = CalcDependencies().From(compilation->declaration_order);
   dependencies.erase(library);
   dependencies.erase(root_library());
@@ -481,6 +475,7 @@ std::unique_ptr<Compilation> Libraries::Filter(const VersionSelection* version_s
     dep.library = dep_library;
     filter_declarations(&dep.declarations, dep_library->declarations);
   }
+  compilation->version_selection_ = version_selection;
 
   return compilation;
 }

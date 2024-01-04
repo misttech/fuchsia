@@ -10,11 +10,11 @@ import("//build/test.gni")
 source_set("verified-volume-client") {
   sources = [ "verified-volume-client.cc" ]
   deps = [
-    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.block.verified:fuchsia.hardware.block.verified_cpp_wire",
+    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+    "//sdk/fidl/fuchsia.hardware.block.verified:fuchsia.hardware.block.verified_cpp",
     "//sdk/lib/device-watcher/cpp",
     "//src/lib/digest",
-    "//src/lib/storage/ramdevice_client/cpp",
+    "//src/storage/lib/ramdevice_client/cpp",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/zx",
@@ -95,7 +95,7 @@ source_set("config") {
   sources = [ "config.cc" ]
   public_deps = [ "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp" ]
   deps = [
-    "//sdk/fidl/fuchsia.hardware.block.verified:fuchsia.hardware.block.verified_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.block.verified:fuchsia.hardware.block.verified_cpp",
     "//src/lib/ddk",
   ]
 }
@@ -106,7 +106,7 @@ test("config-test") {
   sources = [ "config-tests.cc" ]
   deps = [
     ":config",
-    "//sdk/fidl/fuchsia.hardware.block.verified:fuchsia.hardware.block.verified_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.block.verified:fuchsia.hardware.block.verified_cpp",
     "//src/devices/testing/no_ddk",
     "//src/lib/ddk",
     "//zircon/system/ulib/zxtest",
@@ -117,13 +117,13 @@ driver_bind_rules("bind") {
   disable_autobind = true
   rules = "block-verity.bind"
   bind_output = "block-verity.bindbc"
-  deps = [ "//src/devices/bind/fuchsia.hardware.block" ]
+  deps = [ "//src/devices/bind/fuchsia.block" ]
 }
 
 bind_test("block-verity-bind-test") {
   rules = "block-verity.bind"
   tests = "bind-tests.json"
-  deps = [ "//src/devices/bind/fuchsia.hardware.block" ]
+  deps = [ "//src/devices/bind/fuchsia.block" ]
 }
 
 fuchsia_driver("block-verity-driver") {
@@ -148,7 +148,7 @@ fuchsia_driver("block-verity-driver") {
     ":geometry",
     ":sealer",
     "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.block.verified:fuchsia.hardware.block.verified_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.block.verified:fuchsia.hardware.block.verified_cpp",
     "//src/devices/lib/driver",
     "//src/lib/ddk",
     "//src/lib/ddktl",
@@ -170,15 +170,15 @@ test("block-verity-test") {
   sources = [ "block-verity-test.cc" ]
   deps = [
     ":verified-volume-client",
-    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.block.verified:fuchsia.hardware.block.verified_cpp_wire",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
+    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+    "//sdk/fidl/fuchsia.hardware.block.verified:fuchsia.hardware.block.verified_cpp",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//src/devices/testing/driver-integration-test-shim",
     "//src/lib/digest",
-    "//src/lib/storage/block_client/cpp",
-    "//src/lib/storage/ramdevice_client/cpp",
     "//src/storage/fvm:test_support",
+    "//src/storage/lib/block_client/cpp",
+    "//src/storage/lib/ramdevice_client/cpp",
     "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/zxtest",
   ]

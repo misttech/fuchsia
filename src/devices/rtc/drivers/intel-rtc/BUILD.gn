@@ -12,24 +12,12 @@ assert(target_cpu == "x64")
 driver_bind_rules("intel_rtc_bind") {
   rules = "intel_rtc.bind"
   tests = "bind-tests.json"
-  deps = [
-    "//src/devices/bind/fuchsia.acpi",
-    "//src/devices/bind/fuchsia.driver.framework",
-  ]
-}
-
-fidl("fuchsia.hardware.adhoc.intelrtc") {
-  sources = [ "adhoc.fidl" ]
-  visibility = [ ":*" ]
-  public_deps = [
-    "//sdk/fidl/fuchsia.hardware.nvram",
-    "//sdk/fidl/fuchsia.hardware.rtc",
-  ]
+  deps = [ "//src/devices/bind/fuchsia.acpi" ]
 }
 
 common_deps = [
-  ":fuchsia.hardware.adhoc.intelrtc_cpp_wire",
   ":intel_rtc_bind",
+  "//sdk/fidl/fuchsia.hardware.rtc:fuchsia.hardware.rtc_cpp",
   "//src/devices/lib/acpi",
   "//src/devices/lib/driver",
   "//src/devices/rtc/lib/rtc:rtc",
@@ -53,6 +41,11 @@ fuchsia_driver_component("intel-rtc") {
   component_name = "intel-rtc"
   deps = [ ":intel-rtc-driver" ]
   manifest = "meta/intel-rtc.cml"
+}
+
+fuchsia_driver_package("package") {
+  package_name = "intel-rtc"
+  driver_components = [ ":intel-rtc" ]
 }
 
 test("intel-rtc-test-bin") {

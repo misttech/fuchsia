@@ -1,110 +1,178 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use {
-    crate::{
-        capability::{Capability, Remote},
-        receiver::Message,
-        AnyCapability, AnyCloneCapability, TryIntoOpen,
-    },
-    anyhow::{Context, Error},
-    fidl::endpoints::create_request_stream,
-    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio,
-    fuchsia_zircon::{self as zx, HandleBased},
-    futures::{channel::mpsc, future::BoxFuture, FutureExt, TryStreamExt},
-    moniker::Moniker,
-    std::fmt::Debug,
-};
+use crate::{registry, AnyCast, Capability, ConversionError, Open};
+use fidl::endpoints::{create_request_stream, ClientEnd, ControlHandle, RequestStream, ServerEnd};
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
+use fuchsia_zircon::{self as zx, AsHandleRef};
+use futures::{channel::mpsc, TryStreamExt};
+use std::any;
+use std::fmt::Debug;
+use tracing::warn;
 
-/// A capability that represents a Zircon handle.
-#[derive(Debug, Clone)]
-pub struct Sender {
-    pub(crate) inner: mpsc::UnboundedSender<Message>,
-    /// The moniker of the component this sender was given to
-    pub(crate) moniker: Moniker,
+#[derive(Debug)]
+pub struct Message<T: Default + Debug + Send + Sync + 'static> {
+    pub payload: fsandbox::ProtocolPayload,
+    // TODO(fxbug.dev/315508244): Divorce target from Sender
+    pub target: T,
 }
 
-impl Sender {
-    pub fn clone_with_new_moniker(&self, moniker: Moniker) -> Self {
-        Self { inner: self.inner.clone(), moniker }
-    }
+/// A capability that transfers another capability to a [Receiver].
+#[derive(Capability, Debug)]
+pub struct Sender<T: Default + Debug + Send + Sync + 'static> {
+    inner: mpsc::UnboundedSender<Message<T>>,
 
-    pub fn send(&mut self, message: Message) {
-        self.inner.unbounded_send(message).expect("TODO: what lifecycle transitions would cause a receiver to be destroyed and leave a sender?");
+    /// The FIDL representation of this `Sender`.
+    ///
+    /// This will be `Some` if was previously converted into a `ClientEnd`, such as by calling
+    /// [into_fidl], and the capability is not currently in the registry.
+    client_end: Option<ClientEnd<fsandbox::SenderMarker>>,
+}
+
+impl<T: Default + Debug + Send + Sync + 'static> Clone for Sender<T> {
+    fn clone(&self) -> Self {
+        Self { inner: self.inner.clone(), client_end: None }
     }
 }
 
-impl Capability for Sender {}
+impl<T: Default + Debug + Send + Sync + 'static> Sender<T> {
+    pub(crate) fn new(sender: mpsc::UnboundedSender<Message<T>>) -> Self {
+        Self { inner: sender, client_end: None }
+    }
 
-impl Remote for Sender {
-    fn to_zx_handle(self: Box<Self>) -> (zx::Handle, Option<BoxFuture<'static, ()>>) {
-        let (sender_client_end, sender_stream) =
-            create_request_stream::<fsandbox::SenderMarker>().unwrap();
-        let fut = async move {
-            let mut sender = *self;
-            sender.serve_sender(sender_stream).await.expect("failed to serve Sender");
+    pub(crate) fn send_channel(
+        &self,
+        channel: zx::Channel,
+        flags: fio::OpenFlags,
+    ) -> Result<(), mpsc::TrySendError<Message<T>>> {
+        let msg = Message::<T> {
+            payload: fsandbox::ProtocolPayload { channel, flags },
+            target: Default::default(),
         };
-        (sender_client_end.into_handle(), Some(fut.boxed()))
+        self.send(msg)
     }
-}
 
-impl Sender {
-    pub async fn serve_sender(
-        &mut self,
-        mut stream: fsandbox::SenderRequestStream,
-    ) -> Result<(), Error> {
-        while let Some(request) =
-            stream.try_next().await.context("failed to read request from stream")?
-        {
+    pub fn send(&self, msg: Message<T>) -> Result<(), mpsc::TrySendError<Message<T>>> {
+        self.inner.unbounded_send(msg)
+    }
+
+    async fn serve_sender(self, mut stream: fsandbox::SenderRequestStream) {
+        while let Ok(Some(request)) = stream.try_next().await {
             match request {
-                fsandbox::SenderRequest::Send_ { capability, responder } => {
-                    if capability.is_invalid() {
-                        let _ = responder.send(Err(fsandbox::SenderError::BadHandle));
-                        continue;
+                fsandbox::SenderRequest::Send_ { channel, flags, control_handle: _ } => {
+                    if let Err(_err) = self.send_channel(channel, flags) {
+                        stream.control_handle().shutdown_with_epitaph(zx::Status::PEER_CLOSED);
+                        return;
                     }
-                    self.send(Message {
-                        handle: capability,
-                        flags: fio::OpenFlags::empty(), // TODO
-                        target_moniker: self.moniker.clone(),
-                    });
-                    let _ = responder.send(Ok(()));
+                }
+                fsandbox::SenderRequest::Clone2 { request, control_handle: _ } => {
+                    // The clone is registered under the koid of the client end.
+                    let koid = request.basic_info().unwrap().related_koid;
+                    let server_end: ServerEnd<fsandbox::SenderMarker> =
+                        request.into_channel().into();
+                    let stream = server_end.into_stream().unwrap();
+                    self.clone().serve_and_register(stream, koid);
+                }
+                fsandbox::SenderRequest::_UnknownMethod { ordinal, .. } => {
+                    warn!("Received unknown Sender request with ordinal {ordinal}");
                 }
             }
         }
-        Ok(())
+    }
+
+    /// Serves the `fuchsia.sandbox.Sender` protocol for this Sender and moves it into the registry.
+    pub fn serve_and_register(self, stream: fsandbox::SenderRequestStream, koid: zx::Koid) {
+        let sender = self.clone();
+        let fut = sender.serve_sender(stream);
+
+        // Move this capability into the registry.
+        let task = fasync::Task::spawn(fut);
+        registry::insert_with_task(Box::new(self), koid, task);
+    }
+
+    /// Sets this Sender's client end to the provided one.
+    ///
+    /// This should only be used to put a remoted client end back into the Sender after it is
+    /// removed from the registry.
+    pub(crate) fn set_client_end(&mut self, client_end: ClientEnd<fsandbox::SenderMarker>) {
+        self.client_end = Some(client_end)
     }
 }
 
-impl TryIntoOpen for Sender {}
-
-impl<'a> TryFrom<&'a AnyCapability> for &'a Sender {
-    type Error = ();
-
-    fn try_from(value: &AnyCapability) -> Result<&Sender, ()> {
-        value.as_any().downcast_ref::<Sender>().ok_or(())
+impl<T: Default + Debug + Send + Sync + 'static> Capability for Sender<T> {
+    fn try_into_capability(
+        self,
+        type_id: any::TypeId,
+    ) -> Result<Box<dyn any::Any>, ConversionError> {
+        if type_id == any::TypeId::of::<Self>() {
+            return Ok(Box::new(self) as Box<dyn any::Any>);
+        }
+        if type_id == any::TypeId::of::<Open>() {
+            return Ok(Box::new(Open::from(self)) as Box<dyn any::Any>);
+        }
+        Err(ConversionError::NotSupported)
     }
 }
 
-impl<'a> TryFrom<&'a mut AnyCapability> for &'a mut Sender {
-    type Error = ();
-
-    fn try_from(value: &mut AnyCapability) -> Result<&mut Sender, ()> {
-        value.as_any_mut().downcast_mut::<Sender>().ok_or(())
+impl<T: Default + Debug + Send + Sync + 'static> From<Sender<T>>
+    for ClientEnd<fsandbox::SenderMarker>
+{
+    /// Serves the `fuchsia.sandbox.Sender` protocol for this Sender and moves it into the registry.
+    fn from(mut sender: Sender<T>) -> ClientEnd<fsandbox::SenderMarker> {
+        sender.client_end.take().unwrap_or_else(|| {
+            let (client_end, sender_stream) =
+                create_request_stream::<fsandbox::SenderMarker>().unwrap();
+            sender.serve_and_register(sender_stream, client_end.get_koid().unwrap());
+            client_end
+        })
     }
 }
 
-impl<'a> TryFrom<&'a AnyCloneCapability> for &'a Sender {
-    type Error = ();
-
-    fn try_from(value: &AnyCloneCapability) -> Result<&Sender, ()> {
-        value.as_any().downcast_ref::<Sender>().ok_or(())
+impl<T: Default + Debug + Send + Sync + 'static> From<Sender<T>> for fsandbox::Capability {
+    fn from(sender: Sender<T>) -> Self {
+        fsandbox::Capability::Sender(sender.into())
     }
 }
 
-impl<'a> TryFrom<&'a mut AnyCloneCapability> for &'a mut Sender {
-    type Error = ();
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Receiver;
+    use fidl::endpoints::create_endpoints;
+    use fidl_fuchsia_unknown as funknown;
 
-    fn try_from(value: &mut AnyCloneCapability) -> Result<&mut Sender, ()> {
-        value.as_any_mut().downcast_mut::<Sender>().ok_or(())
+    // NOTE: sending-and-receiving tests are written in `receiver.rs`.
+
+    /// Tests that a Sender can be cloned via `fuchsia.unknown/Cloneable.Clone2`
+    /// and capabilities sent to the original and clone arrive at the same Receiver.
+    #[fuchsia::test]
+    async fn fidl_clone() {
+        let (receiver, sender) = Receiver::<()>::new();
+
+        // Send a channel through the Sender.
+        let (ch1, _ch2) = zx::Channel::create();
+        sender.send_channel(ch1, fio::OpenFlags::empty()).unwrap();
+
+        // Convert the Sender to a FIDL proxy.
+        let client_end: ClientEnd<fsandbox::SenderMarker> = sender.into();
+        let sender_proxy = client_end.into_proxy().unwrap();
+
+        // Clone the Sender with `Clone2`.
+        let (clone_client_end, clone_server_end) = create_endpoints::<funknown::CloneableMarker>();
+        let _ = sender_proxy.clone2(clone_server_end);
+        let clone_client_end: ClientEnd<fsandbox::SenderMarker> =
+            clone_client_end.into_channel().into();
+        let clone_proxy = clone_client_end.into_proxy().unwrap();
+
+        // Send a channel through the cloned Sender.
+        let (ch1, _ch2) = zx::Channel::create();
+        clone_proxy.send_(ch1, fio::OpenFlags::empty()).unwrap();
+
+        // The Receiver should receive two channels, one from each sender.
+        for _ in 0..2 {
+            let _ch = receiver.receive().await.unwrap();
+        }
     }
 }

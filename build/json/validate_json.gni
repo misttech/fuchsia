@@ -27,6 +27,7 @@ import("//build/compiled_action.gni")
 #     [bool] If true, a valico-based validator will be used instead of the
 #     previous rapidjson-based version.
 #
+#   applicable_licenses (optional)
 #   deps (optional)
 #   public_deps (optional)
 #   testonly (optional)
@@ -48,12 +49,18 @@ template("validate_json") {
   compiled_action(target_name) {
     forward_variables_from(invoker,
                            [
+                             "applicable_licenses",
                              "deps",
                              "sources",
                              "public_deps",
                              "testonly",
                              "visibility",
                            ])
+
+    # The fact that the underlying binary is chosen by the `use_valico` variable
+    # makes supporting the "previously built tools" strategy complicated. Don't
+    # bother - it's fine to rebuild this tool multiple times in subbuilds.
+    can_use_previously_built_tool = false
 
     if (use_valico) {
       tool = "//build/tools/json_validator:json_validator_valico"
@@ -103,6 +110,7 @@ template("validate_json") {
 #     Additional schema files used by the original schema file must be listed
 #     here for validation to be re-run when they change.
 #
+#   applicable_licenses (optional)
 #   deps (optional)
 #   public_deps (optional)
 #   testonly (optional)
@@ -122,6 +130,7 @@ template("validate_json5") {
   compiled_action(target_name) {
     forward_variables_from(invoker,
                            [
+                             "applicable_licenses",
                              "deps",
                              "sources",
                              "public_deps",

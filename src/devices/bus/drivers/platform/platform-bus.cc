@@ -40,7 +40,6 @@
 #include <fbl/algorithm.h>
 #include <fbl/auto_lock.h>
 
-#include "src/devices/bus/drivers/platform/cpu-trace.h"
 #include "src/devices/bus/drivers/platform/node-util.h"
 
 namespace {
@@ -405,6 +404,28 @@ void PlatformBus::GetInterruptControllerInfo(GetInterruptControllerInfoCompleter
   };
   completer.Reply(
       ZX_OK, fidl::ObjectView<fuchsia_sysinfo::wire::InterruptControllerInfo>::FromExternal(&info));
+}
+
+void PlatformBus::GetSerialNumber(GetSerialNumberCompleter::Sync& completer) {
+  auto result = GetBootItem(ZBI_TYPE_SERIAL_NUMBER, 0);
+  if (result.is_error()) {
+    zxlogf(INFO, "Boot Item ZBI_TYPE_SERIAL_NUMBER not found");
+    completer.ReplyError(result.error_value());
+    return;
+  }
+  auto& [vmo, length] = *result;
+  if (length > fuchsia_sysinfo::wire::kSerialNumberLen) {
+    completer.ReplyError(ZX_ERR_BUFFER_TOO_SMALL);
+    return;
+  }
+  char serial[fuchsia_sysinfo::wire::kSerialNumberLen];
+  zx_status_t status = vmo.read(serial, 0, length);
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "Failed to read serial number VMO %d", status);
+    completer.ReplyError(status);
+    return;
+  }
+  completer.ReplySuccess(fidl::StringView::FromExternal(serial, length));
 }
 
 void PlatformBus::GetBoardInfo(fdf::Arena& arena, GetBoardInfoCompleter::Sync& completer) {
@@ -863,24 +884,6 @@ static void sys_device_release(void* ctx) {
   delete p;
 }
 
-// cpu-trace provides access to the cpu's tracing and performance counters.
-// As such the "device" is the cpu itself.
-static void InitCpuTrace(zx_device_t* parent, const zx::iommu& dummy_iommu) {
-  zx::bti cpu_trace_bti;
-  zx_status_t status = zx::bti::create(dummy_iommu, 0, CPU_TRACE_BTI_ID, &cpu_trace_bti);
-  if (status != ZX_OK) {
-    // This is not fatal.
-    zxlogf(ERROR, "platform-bus: error %d in bti_create(cpu_trace_bti)", status);
-    return;
-  }
-
-  status = publish_cpu_trace(cpu_trace_bti.release(), parent);
-  if (status != ZX_OK) {
-    // This is not fatal.
-    zxlogf(INFO, "publish_cpu_trace returned %d", status);
-  }
-}
-
 static zx_protocol_device_t sys_device_proto = []() {
   zx_protocol_device_t result = {};
 
@@ -935,15 +938,6 @@ zx_status_t PlatformBus::Create(zx_device_t* parent, const char* name, zx::chann
   platform_bus::PlatformBus* bus_ptr = bus.release();
   suspend_ptr->pbus_instance = bus_ptr;
 
-  // Create /dev/sys/cpu-trace.
-  // But only do so if we have an iommu handle. Normally we do, but tests
-  // may create us without a root resource, and thus without the iommu
-  // handle.
-  if (bus_ptr->iommu_handle_.is_valid()) {
-    // Failure is not fatal. Error message already printed.
-    InitCpuTrace(suspend_ptr->sys_root, bus_ptr->iommu_handle_);
-  }
-
   return ZX_OK;
 }
 
@@ -977,11 +971,10 @@ zx_status_t PlatformBus::Init() {
   // Set up a dummy IOMMU protocol to use in the case where our board driver
   // does not set a real one.
   zx_iommu_desc_dummy_t desc;
-  // Please do not use get_root_resource() in new code. See fxbug.dev/31358.
-  zx::unowned_resource root_resource(get_root_resource(parent()));
-  if (root_resource->is_valid()) {
-    status =
-        zx::iommu::create(*root_resource, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc), &iommu_handle_);
+  zx::unowned_resource iommu_resource(get_iommu_resource(parent()));
+  if (iommu_resource->is_valid()) {
+    status = zx::iommu::create(*iommu_resource, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+                               &iommu_handle_);
     if (status != ZX_OK) {
       return status;
     }

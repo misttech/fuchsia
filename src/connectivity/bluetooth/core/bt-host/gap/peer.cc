@@ -4,17 +4,14 @@
 
 #include "peer.h"
 
-#include <lib/async/cpp/time.h>
-#include <lib/async/default.h>
-
-#include <iomanip>
-
 #include "src/connectivity/bluetooth/core/bt-host/common/advertising_data.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/assert.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/manufacturer_names.h"
+#include "src/connectivity/bluetooth/core/bt-host/common/uuid.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/gap.h"
 #include "src/connectivity/bluetooth/core/bt-host/hci-spec/util.h"
 #include "src/connectivity/bluetooth/core/bt-host/hci/low_energy_scanner.h"
+#include "src/connectivity/bluetooth/core/bt-host/sm/types.h"
 #include "src/connectivity/bluetooth/lib/cpp-string/string_printf.h"
 #include "src/connectivity/bluetooth/lib/cpp-string/utf_codecs.h"
 
@@ -76,9 +73,8 @@ Peer::LowEnergyData::LowEnergyData(Peer* owner)
 
 void Peer::LowEnergyData::AttachInspect(inspect::Node& parent, std::string name) {
   node_ = parent.CreateChild(name);
-  inspect_properties_.connection_state =
-      node_.CreateString(LowEnergyData::kInspectConnectionStateName,
-                         Peer::ConnectionStateToString(connection_state()));
+  inspect_properties_.connection_state = node_.CreateString(
+      LowEnergyData::kInspectConnectionStateName, ConnectionStateToString(connection_state()));
   inspect_properties_.last_adv_data_parse_failure =
       node_.CreateString(LowEnergyData::kInspectLastAdvertisingDataParseFailureName, "");
   adv_data_parse_failure_count_.AttachInspect(
@@ -88,7 +84,7 @@ void Peer::LowEnergyData::AttachInspect(inspect::Node& parent, std::string name)
 }
 
 void Peer::LowEnergyData::SetAdvertisingData(int8_t rssi, const ByteBuffer& data,
-                                             zx::time timestamp) {
+                                             pw::chrono::SystemClock::time_point timestamp) {
   // Prolong this peer's expiration in case it is temporary.
   peer_->UpdateExpiry();
 
@@ -114,11 +110,14 @@ void Peer::LowEnergyData::SetAdvertisingData(int8_t rssi, const ByteBuffer& data
     } else {
       bt_log(DEBUG, "gap-le", "%s", message.c_str());
     }
+    // Update the error if we don't have a successful parse already
+    if (parsed_adv_data_.is_error()) {
+      parsed_adv_data_ = std::move(res);
+    }
   } else {
     // Only update the adv_timestamp if the AdvertisingData parsed successfully
     adv_timestamp_ = timestamp;
-
-    parsed_adv_data_ = std::move(*res);
+    parsed_adv_data_ = std::move(res);
 
     // Do not update the name of bonded peers because advertisements are unauthenticated.
     // TODO(fxbug.dev/85365): Populate more Peer fields with relevant fields from parsed_adv_data_.
@@ -242,10 +241,7 @@ void Peer::LowEnergyData::OnConnectionStateMaybeChanged(ConnectionState previous
 }
 
 Peer::BrEdrData::BrEdrData(Peer* owner)
-    : peer_(owner),
-      eir_len_(0u),
-      link_key_(std::nullopt, [](const std::optional<sm::LTK>& l) { return l.has_value(); }),
-      services_({}, MakeContainerOfToStringConvertFunction()) {
+    : peer_(owner), services_({}, MakeContainerOfToStringConvertFunction()) {
   BT_DEBUG_ASSERT(peer_);
   BT_DEBUG_ASSERT(peer_->identity_known());
 
@@ -260,7 +256,10 @@ void Peer::BrEdrData::AttachInspect(inspect::Node& parent, std::string name) {
   node_ = parent.CreateChild(name);
   inspect_properties_.connection_state = node_.CreateString(
       BrEdrData::kInspectConnectionStateName, ConnectionStateToString(connection_state()));
-  link_key_.AttachInspect(node_, BrEdrData::kInspectLinkKeyName);
+
+  if (bonded()) {
+    link_key_.value().AttachInspect(node_, BrEdrData::kInspectLinkKeyName);
+  }
   services_.AttachInspect(node_, BrEdrData::kInspectServicesName);
 }
 
@@ -271,17 +270,21 @@ void Peer::BrEdrData::SetInquiryData(const pw::bluetooth::emboss::InquiryResultV
                  view.page_scan_repetition_mode().Read());
 }
 
-void Peer::BrEdrData::SetInquiryData(const hci_spec::InquiryResultRSSI& value) {
-  BT_DEBUG_ASSERT(peer_->address().value() == value.bd_addr);
-  SetInquiryData(value.class_of_device, value.clock_offset, value.page_scan_repetition_mode,
-                 value.rssi);
+void Peer::BrEdrData::SetInquiryData(const pw::bluetooth::emboss::InquiryResultWithRssiView& view) {
+  BT_DEBUG_ASSERT(peer_->address().value() == DeviceAddressBytes{view.bd_addr()});
+  SetInquiryData(DeviceClass(view.class_of_device().BackingStorage().ReadUInt()),
+                 view.clock_offset().BackingStorage().ReadUInt(),
+                 view.page_scan_repetition_mode().Read(), view.rssi().Read());
 }
 
-void Peer::BrEdrData::SetInquiryData(const hci_spec::ExtendedInquiryResultEventParams& value) {
-  BT_DEBUG_ASSERT(peer_->address().value() == value.bd_addr);
-  SetInquiryData(
-      value.class_of_device, value.clock_offset, value.page_scan_repetition_mode, value.rssi,
-      BufferView(value.extended_inquiry_response, sizeof(value.extended_inquiry_response)));
+void Peer::BrEdrData::SetInquiryData(
+    const pw::bluetooth::emboss::ExtendedInquiryResultEventView& view) {
+  BT_DEBUG_ASSERT(peer_->address().value() == DeviceAddressBytes(view.bd_addr()));
+  const BufferView response_view(view.extended_inquiry_response().BackingStorage().data(),
+                                 view.extended_inquiry_response().SizeInBytes());
+  SetInquiryData(DeviceClass(view.class_of_device().BackingStorage().ReadUInt()),
+                 view.clock_offset().BackingStorage().ReadUInt(),
+                 view.page_scan_repetition_mode().Read(), view.rssi().Read(), response_view);
 }
 
 Peer::InitializingConnectionToken Peer::BrEdrData::RegisterInitializingConnection() {
@@ -391,12 +394,6 @@ bool Peer::BrEdrData::SetEirData(const ByteBuffer& eir) {
   BT_DEBUG_ASSERT(eir.size());
 
   // TODO(armansito): Validate that the EIR data is not malformed?
-  if (eir_buffer_.size() < eir.size()) {
-    eir_buffer_ = DynamicByteBuffer(eir.size());
-  }
-  eir_len_ = eir.size();
-  eir.Copy(&eir_buffer_);
-
   SupplementDataReader reader(eir);
   DataType type;
   BufferView data;
@@ -404,13 +401,21 @@ bool Peer::BrEdrData::SetEirData(const ByteBuffer& eir) {
   while (reader.GetNextField(&type, &data)) {
     if (type == DataType::kCompleteLocalName) {
       // TODO(armansito): Parse more fields.
-      // TODO(armansito): SetName should be a no-op if a name was obtained via
-      // the name discovery procedure.
       // Do not update the name of bonded peers because inquiry results are unauthenticated.
       if (!peer_->bonded()) {
         changed =
             peer_->RegisterNameInternal(data.ToString(), Peer::NameSource::kInquiryResultComplete);
       }
+    } else if (type == DataType::kIncomplete16BitServiceUuids ||
+               type == DataType::kComplete16BitServiceUuids) {
+      // TODO(fxbug.dev/131973): Consider adding 32-bit and 128-bit UUIDs to the list
+      ParseUuids(data, UUIDElemSize::k16Bit, [this, &changed](const UUID& uuid) {
+        auto [_, inserted] = services_.Mutable()->insert(uuid);
+        if (inserted) {
+          changed = true;
+        }
+        return true;
+      });
     }
   }
   return changed;
@@ -423,15 +428,16 @@ void Peer::BrEdrData::SetBondData(const sm::LTK& link_key) {
   peer_->TryMakeNonTemporary();
 
   // Storing the key establishes the bond.
-  link_key_.Set(link_key);
+  link_key_ = link_key;
+  link_key_.value().AttachInspect(node_, BrEdrData::kInspectLinkKeyName);
 
   // PeerCache notifies listeners of new bonds, so no need to request that here.
   peer_->UpdatePeerAndNotifyListeners(NotifyListenersChange::kBondNotUpdated);
 }
 
 void Peer::BrEdrData::ClearBondData() {
-  BT_ASSERT(link_key_->has_value());
-  link_key_.Set(std::nullopt);
+  BT_ASSERT(link_key_.has_value());
+  link_key_ = std::nullopt;
 }
 
 void Peer::BrEdrData::AddService(UUID uuid) {
@@ -446,7 +452,7 @@ void Peer::BrEdrData::AddService(UUID uuid) {
 Peer::Peer(NotifyListenersCallback notify_listeners_callback, PeerCallback update_expiry_callback,
            PeerCallback dual_mode_callback, StoreLowEnergyBondCallback store_le_bond_callback,
            PeerId identifier, const DeviceAddress& address, bool connectable,
-           PeerMetrics* peer_metrics)
+           PeerMetrics* peer_metrics, pw::async::Dispatcher& dispatcher)
     : notify_listeners_callback_(std::move(notify_listeners_callback)),
       update_expiry_callback_(std::move(update_expiry_callback)),
       dual_mode_callback_(std::move(dual_mode_callback)),
@@ -473,7 +479,8 @@ Peer::Peer(NotifyListenersCallback notify_listeners_callback, PeerCallback updat
       temporary_(true),
       rssi_(hci_spec::kRSSIInvalid),
       peer_metrics_(peer_metrics),
-      last_updated_(async::Now(async_get_default_dispatcher())),
+      last_updated_(dispatcher.now()),
+      dispatcher_(dispatcher),
       weak_self_(this) {
   BT_DEBUG_ASSERT(notify_listeners_callback_);
   BT_DEBUG_ASSERT(update_expiry_callback_);
@@ -649,7 +656,7 @@ void Peer::MakeDualMode() {
   dual_mode_callback_(*this);
 }
 
-void Peer::OnPeerUpdate() { last_updated_ = async::Now(async_get_default_dispatcher()); }
+void Peer::OnPeerUpdate() { last_updated_ = dispatcher_.now(); }
 
 void Peer::UpdatePeerAndNotifyListeners(NotifyListenersChange change) {
   OnPeerUpdate();

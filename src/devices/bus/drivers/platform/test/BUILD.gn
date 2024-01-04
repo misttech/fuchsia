@@ -12,7 +12,7 @@ test("platform-bus") {
   output_name = "platform-bus-test"
   sources = [ "main.cc" ]
   deps = [
-    "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_cpp_wire",
+    "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_cpp",
     "//sdk/lib/fdio",
     "//src/devices/testing/devmgr-integration-test-shim",
     "//src/lib/ddk",
@@ -29,7 +29,7 @@ test("platform-bus") {
 driver_bind_rules("test-board-bind") {
   rules = "test-board.bind"
   deps = [
-    "//src/devices/bind/fuchsia.hardware.platform.bus",
+    "//src/devices/bind/fuchsia.platform",
     "//src/devices/bind/fuchsia.test.platform",
   ]
 }
@@ -42,7 +42,6 @@ fuchsia_driver("test-board-driver") {
     "test-clock.cc",
     "test-composite-node-spec.cc",
     "test-gpio.cc",
-    "test-i2c.cc",
     "test-power.cc",
     "test-spi.cc",
     "test.cc",
@@ -50,7 +49,7 @@ fuchsia_driver("test-board-driver") {
   deps = [
     ":test-board-bind",
     "//sdk/banjo/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp_driver",
+    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
     "//sdk/lib/driver/component/cpp:cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.test:fuchsia.test_cpp",
@@ -94,7 +93,7 @@ fuchsia_driver("test-gpio-driver") {
     "//sdk/banjo/fuchsia.hardware.gpio:fuchsia.hardware.gpio_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.gpioimpl:fuchsia.hardware.gpioimpl_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp_driver",
+    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
     "//src/devices/lib/driver",
     "//src/devices/lib/driver:driver_runtime",
     "//src/lib/ddk",
@@ -159,7 +158,7 @@ fuchsia_driver("test-clock-driver") {
     ":test-clock-bind",
     "//sdk/banjo/fuchsia.hardware.clockimpl:fuchsia.hardware.clockimpl_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp_driver",
+    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
     "//src/devices/lib/driver",
     "//src/devices/lib/driver:driver_runtime",
     "//src/lib/ddk",
@@ -174,38 +173,6 @@ fuchsia_driver_component("test-clock") {
   deps = [ ":test-clock-driver" ]
   info = "test-driver-info.json"
   manifest = "meta/test-clock.cml"
-}
-
-driver_bind_rules("test-i2c-bind") {
-  rules = "test/test-i2c.bind"
-  deps = [
-    "//src/devices/bind/fuchsia.platform",
-    "//src/devices/bind/fuchsia.test.platform",
-  ]
-}
-
-fuchsia_driver("test-i2c-driver") {
-  output_name = "test-i2c"
-  configs += [ "//build/config:all_source" ]
-  sources = [ "test/i2c.cc" ]
-  deps = [
-    ":test-i2c-bind",
-    "//sdk/banjo/fuchsia.hardware.i2cimpl:fuchsia.hardware.i2cimpl_banjo_cpp",
-    "//sdk/banjo/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_banjo_cpp",
-    "//src/devices/lib/driver",
-    "//src/devices/lib/driver:driver_runtime",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
-    "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/zx",
-  ]
-}
-
-fuchsia_driver_component("test-i2c") {
-  component_name = "test-i2c"
-  deps = [ ":test-i2c-driver" ]
-  info = "test-driver-info.json"
-  manifest = "meta/test-i2c.cml"
 }
 
 driver_bind_rules("test-spi-bind") {
@@ -346,14 +313,11 @@ fuchsia_unittest_package("platform-bus-test") {
     ":test-composite",
     ":test-composite-node-spec",
     ":test-gpio",
-    ":test-i2c",
     ":test-power",
     ":test-spi",
     "//src/devices/bus/drivers/platform",
     "//src/devices/clock/drivers/clock",
     "//src/devices/gpio/drivers/gpio",
-    "//src/devices/i2c/drivers/i2c",
-    "//src/devices/internal/drivers/fragment",
     "//src/devices/power/drivers/power",
     "//src/devices/spi/drivers/spi",
   ]
@@ -369,7 +333,7 @@ fidl("fuchsia.hardware.btitest") {
 driver_bind_rules("test-bti-board-bind") {
   rules = "test-bti-board.bind"
   deps = [
-    "//src/devices/bind/fuchsia.hardware.platform.bus",
+    "//src/devices/bind/fuchsia.platform",
     "//src/devices/bind/fuchsia.test.platform",
   ]
 }
@@ -380,7 +344,7 @@ fuchsia_driver("test-bti-board-driver") {
   sources = [ "test-bti-board.cc" ]
   deps = [
     ":test-bti-board-bind",
-    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp_driver",
+    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
     "//src/devices/lib/driver",
     "//src/devices/lib/driver:driver_runtime",
     "//src/lib/ddk",
@@ -408,7 +372,7 @@ fuchsia_driver("test-bti-driver") {
   configs += [ "//build/config:all_source" ]
   sources = [ "test-bti.cc" ]
   deps = [
-    ":fuchsia.hardware.btitest_cpp_wire",
+    ":fuchsia.hardware.btitest_cpp",
     ":test-bti-bind",
     "//sdk/banjo/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_banjo_cpp",
     "//src/devices/bus/lib/device-protocol-pdev",
@@ -425,38 +389,4 @@ fuchsia_driver_component("test-bti") {
   deps = [ ":test-bti-driver" ]
   info = "test-driver-info.json"
   manifest = "meta/test-bti.cml"
-}
-
-test("platform-bus-bti") {
-  output_name = "platform-bus-bti-test"
-  sources = [ "bti-test.cc" ]
-  deps = [
-    ":fuchsia.hardware.btitest_cpp_wire",
-    "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_hlcpp",
-    "//sdk/lib/device-watcher/cpp",
-    "//sdk/lib/driver_test_realm/realm_builder/cpp",
-    "//sdk/lib/fdio",
-    "//src/lib/ddk",
-    "//zircon/system/ulib/async-loop:async-loop-cpp",
-    "//zircon/system/ulib/async-loop:async-loop-default",
-    "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
-    "//zircon/system/ulib/zx",
-    "//zircon/system/ulib/zxtest",
-  ]
-
-  # TODO(fxb/38132): Migrate to the new bind rules and delete this dep.
-  deps += [ "//src/lib/ddk:ddk-deprecated-binding-headers" ]
-}
-
-fuchsia_unittest_package("platform-bus-bti-test") {
-  manifest = "meta/platform-bus-bti-test.cml"
-  deps = [
-    ":platform-bus-bti",
-    ":test-bti",
-    ":test-bti-board",
-    "//src/devices/bus/drivers/platform",
-    "//src/devices/internal/drivers/fragment",
-  ]
-  test_type = "system"
 }

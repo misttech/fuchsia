@@ -5,11 +5,10 @@
 #ifndef LIB_SYSLOG_CPP_MACROS_H_
 #define LIB_SYSLOG_CPP_MACROS_H_
 
-#if defined(__Fuchsia__)
-#include <zircon/types.h>
-#endif
-
+#include <lib/stdcompat/optional.h>
+#include <lib/stdcompat/string_view.h>
 #include <lib/syslog/cpp/log_level.h>
+#include <zircon/types.h>
 
 #include <atomic>
 #include <functional>
@@ -17,40 +16,74 @@
 #include <sstream>
 #include <vector>
 
-namespace syslog_backend {
+namespace syslog_runtime {
 
 struct LogBuffer;
 
-#define WEAK __attribute__((weak))
+// A null-safe wrapper around cpp17::optional<cpp17::string_view>
+//
+// This class is used to represent a string that may be nullptr. It is used
+// to avoid the need to check for nullptr before passing a string to the
+// syslog macros.
+//
+// This class is implicitly convertible to cpp17::optional<cpp17::string_view>.
+// NOLINT is used as implicit conversions are intentional here.
+class NullSafeStringView final {
+ public:
+  //  Constructs a NullSafeStringView from a cpp17::string_view.
+  constexpr NullSafeStringView(cpp17::string_view string_view)
+      : string_view_(string_view) {}  // NOLINT
+
+  // Constructs a NullSafeStringView from a nullptr.
+  constexpr NullSafeStringView(std::nullptr_t) : string_view_(cpp17::nullopt) {}  // NOLINT
+
+  constexpr NullSafeStringView(const NullSafeStringView&) = default;
+
+  // Constructs a NullSafeStringView from a const char* which may be nullptr.
+  // string Nullable string to construct from.
+  constexpr NullSafeStringView(const char* input) {  // NOLINT
+    if (!input) {
+      string_view_ = cpp17::nullopt;
+    } else {
+      string_view_ = cpp17::string_view(input);
+    }
+  }
+
+  // Constructs a NullSafeStringView from an std::string.
+  constexpr NullSafeStringView(const std::string& input) : string_view_(input) {}  // NOLINT
+
+  // Converts this NullSafeStringView to a cpp17::optional<cpp17::string_view>.
+  constexpr operator cpp17::optional<cpp17::string_view>() const { return string_view_; }  // NOLINT
+ private:
+  cpp17::optional<cpp17::string_view> string_view_;
+};
 
 #ifdef __Fuchsia__
-WEAK void BeginRecordWithSocket(LogBuffer* buffer, fuchsia_logging::LogSeverity severity,
-                                const char* file_name, unsigned int line, const char* msg,
-                                const char* condition, zx_handle_t socket);
-WEAK void SetInterestChangedListener(void (*callback)(void* context,
-                                                      fuchsia_logging::LogSeverity severity),
-                                     void* context);
+void BeginRecordWithSocket(LogBuffer* buffer, fuchsia_logging::LogSeverity severity,
+                           NullSafeStringView file_name, unsigned int line, NullSafeStringView msg,
+                           NullSafeStringView condition, zx_handle_t socket);
+void SetInterestChangedListener(void (*callback)(void* context,
+                                                 fuchsia_logging::LogSeverity severity),
+                                void* context);
 #endif
-WEAK void BeginRecord(LogBuffer* buffer, fuchsia_logging::LogSeverity severity, const char* file,
-                      unsigned int line, const char* msg, const char* condition);
+void BeginRecord(LogBuffer* buffer, fuchsia_logging::LogSeverity severity, NullSafeStringView file,
+                 unsigned int line, NullSafeStringView msg, NullSafeStringView condition);
 
-WEAK void WriteKeyValue(LogBuffer* buffer, const char* key, const char* value);
+void WriteKeyValue(LogBuffer* buffer, cpp17::string_view key, cpp17::string_view value);
 
-WEAK void WriteKeyValue(LogBuffer* buffer, const char* key, const char* value, size_t value_length);
+void WriteKeyValue(LogBuffer* buffer, cpp17::string_view key, int64_t value);
 
-WEAK void WriteKeyValue(LogBuffer* buffer, const char* key, int64_t value);
+void WriteKeyValue(LogBuffer* buffer, cpp17::string_view key, uint64_t value);
 
-WEAK void WriteKeyValue(LogBuffer* buffer, const char* key, uint64_t value);
+void WriteKeyValue(LogBuffer* buffer, cpp17::string_view key, double value);
 
-WEAK void WriteKeyValue(LogBuffer* buffer, const char* key, double value);
+void WriteKeyValue(LogBuffer* buffer, cpp17::string_view key, bool value);
 
-WEAK void WriteKeyValue(LogBuffer* buffer, const char* key, bool value);
+static void WriteKeyValue(LogBuffer* buffer, cpp17::string_view key, const char* value) {
+  WriteKeyValue(buffer, key, cpp17::string_view(value));
+}
 
-WEAK bool FlushRecord(LogBuffer* buffer);
-
-WEAK bool HasStructuredBackend();
-
-#undef WEAK
+bool FlushRecord(LogBuffer* buffer);
 
 template <typename... Args>
 constexpr size_t ArgsSize(Args... args) {
@@ -58,14 +91,14 @@ constexpr size_t ArgsSize(Args... args) {
 }
 
 template <typename... Args>
-struct Tuplet {
+struct Tuplet final {
   std::tuple<Args...> tuple;
   size_t size;
   constexpr Tuplet(std::tuple<Args...> tuple, size_t size) : tuple(tuple), size(size) {}
 };
 
 template <typename Key, typename Value>
-struct KeyValue {
+struct KeyValue final {
   Key key;
   Value value;
   constexpr KeyValue(Key key, Value value) : key(key), value(value) {}
@@ -84,7 +117,7 @@ constexpr bool Not() {
 // Opaque structure representing the backend encode state.
 // This structure only has meaning to the backend and application code shouldn't
 // touch these values.
-struct LogBuffer {
+struct LogBuffer final {
   // Max size of log buffer. This number may change as additional fields
   // are added to the internal encoding state. It is based on trial-and-error
   // and is adjusted when compilation fails due to it not being large enough.
@@ -119,13 +152,13 @@ struct LogBuffer {
 
   // Encodes an int64
   void Encode(KeyValue<const char*, int64_t> value) {
-    syslog_backend::WriteKeyValue(this, value.key, value.value);
+    syslog_runtime::WriteKeyValue(this, value.key, value.value);
   }
 
 #ifdef __APPLE__
   // Encodes a size_t. On Apple Clang, size_t is a special type.
   void Encode(KeyValue<const char*, size_t> value) {
-    syslog_backend::WriteKeyValue(this, value.key, static_cast<int64_t>(value.value));
+    syslog_runtime::WriteKeyValue(this, value.key, static_cast<int64_t>(value.value));
   }
 #endif
 
@@ -146,42 +179,42 @@ struct LogBuffer {
 
   // Encodes an uint64
   void Encode(KeyValue<const char*, uint64_t> value) {
-    syslog_backend::WriteKeyValue(this, value.key, value.value);
+    syslog_runtime::WriteKeyValue(this, value.key, value.value);
   }
 
   // Encodes a NULL-terminated C-string.
   void Encode(KeyValue<const char*, const char*> value) {
-    syslog_backend::WriteKeyValue(this, value.key, value.value);
+    syslog_runtime::WriteKeyValue(this, value.key, value.value);
   }
 
   // Encodes a NULL-terminated C-string.
   void Encode(KeyValue<const char*, char*> value) {
-    syslog_backend::WriteKeyValue(this, value.key, value.value);
+    syslog_runtime::WriteKeyValue(this, value.key, value.value);
   }
 
   // Encodes a C++ std::string.
   void Encode(KeyValue<const char*, std::string> value) {
-    syslog_backend::WriteKeyValue(this, value.key, value.value.data(), value.value.size());
+    syslog_runtime::WriteKeyValue(this, value.key, value.value);
   }
 
   // Encodes a C++ std::string_view.
   void Encode(KeyValue<const char*, std::string_view> value) {
-    syslog_backend::WriteKeyValue(this, value.key, value.value.data(), value.value.size());
+    syslog_runtime::WriteKeyValue(this, value.key, value.value);
   }
 
   // Encodes a double floating point value
   void Encode(KeyValue<const char*, double> value) {
-    syslog_backend::WriteKeyValue(this, value.key, value.value);
+    syslog_runtime::WriteKeyValue(this, value.key, value.value);
   }
 
   // Encodes a floating point value
   void Encode(KeyValue<const char*, float> value) {
-    syslog_backend::WriteKeyValue(this, value.key, value.value);
+    syslog_runtime::WriteKeyValue(this, value.key, value.value);
   }
 
   // Encodes a boolean value
   void Encode(KeyValue<const char*, bool> value) {
-    syslog_backend::WriteKeyValue(this, value.key, value.value);
+    syslog_runtime::WriteKeyValue(this, value.key, value.value);
   }
 
   // Encodes an arbitrary list of values recursively.
@@ -193,27 +226,27 @@ struct LogBuffer {
     Encode<i + 1, size>(value);
   }
 };
-}  // namespace syslog_backend
+}  // namespace syslog_runtime
 
 namespace fuchsia_logging {
 
 template <typename... LogArgs>
-constexpr syslog_backend::Tuplet<LogArgs...> Args(LogArgs... values) {
-  return syslog_backend::Tuplet<LogArgs...>(std::make_tuple(values...), sizeof...(values));
+constexpr syslog_runtime::Tuplet<LogArgs...> Args(LogArgs... values) {
+  return syslog_runtime::Tuplet<LogArgs...>(std::make_tuple(values...), sizeof...(values));
 }
 
 template <typename Key, typename Value>
-constexpr syslog_backend::KeyValue<Key, Value> KeyValueInternal(Key key, Value value) {
-  return syslog_backend::KeyValue<Key, Value>(key, value);
+constexpr syslog_runtime::KeyValue<Key, Value> KeyValueInternal(Key key, Value value) {
+  return syslog_runtime::KeyValue<Key, Value>(key, value);
 }
 
 // Used to denote a key-value pair for use in structured logging API calls.
 // This macro exists solely to improve readability of calls to FX_SLOG
-#define KV(a, b) a, b
+#define FX_KV(a, b) a, b
 
 template <typename Msg, typename... KeyValuePairs>
-struct LogValue {
-  constexpr LogValue(Msg msg, syslog_backend::Tuplet<KeyValuePairs...> kvps)
+struct LogValue final {
+  constexpr LogValue(Msg msg, syslog_runtime::Tuplet<KeyValuePairs...> kvps)
       : msg(msg), kvps(kvps) {}
   // FIXME(fxbug.dev/106574): With hwasan, or asan without stack-to-heap promotion for
   // detecting use-after-returns, we can encounter a stack overflow in blobfs when bringing
@@ -226,24 +259,24 @@ struct LogValue {
   __attribute__((__noinline__)) void LogNew(::fuchsia_logging::LogSeverity severity,
                                             const char* file, unsigned int line,
                                             const char* condition) const {
-    syslog_backend::LogBuffer buffer;
-    syslog_backend::BeginRecord(&buffer, severity, file, line, msg, condition);
+    syslog_runtime::LogBuffer buffer;
+    syslog_runtime::BeginRecord(&buffer, severity, file, line, msg, condition);
     // https://bugs.llvm.org/show_bug.cgi?id=41093 -- Clang loses constexpr
     // even though this should be constexpr here.
     buffer.Encode<0, sizeof...(KeyValuePairs)>(kvps);
-    syslog_backend::FlushRecord(&buffer);
+    syslog_runtime::FlushRecord(&buffer);
   }
 
   Msg msg;
-  syslog_backend::Tuplet<KeyValuePairs...> kvps;
+  syslog_runtime::Tuplet<KeyValuePairs...> kvps;
 };
 
-class LogMessageVoidify {
+class LogMessageVoidify final {
  public:
   void operator&(std::ostream&) {}
 };
 
-class LogMessage {
+class LogMessage final {
  public:
   LogMessage(LogSeverity severity, const char* file, int line, const char* condition,
              const char* tag
@@ -268,8 +301,22 @@ class LogMessage {
 #endif
 };
 
+// LogFirstNState is used by the macro FX_SLOG_FIRST_N_SECONDS below.
+class LogEveryNSecondsState final {
+ public:
+  bool ShouldLog(uint32_t n);
+  uint32_t GetCounter();
+
+ private:
+  std::chrono::high_resolution_clock::time_point GetCurrentTime();
+  bool ShouldLogInternal(uint32_t n);
+
+  std::atomic<uint32_t> counter_{0};
+  std::chrono::high_resolution_clock::time_point last_;
+};
+
 // LogFirstNState is used by the macro FX_LOGS_FIRST_N below.
-class LogFirstNState {
+class LogFirstNState final {
  public:
   bool ShouldLog(uint32_t n);
 
@@ -341,6 +388,15 @@ bool ShouldCreateLogMessage(LogSeverity severity);
 #define FX_LOGS_FIRST_N(severity, n) FX_FIRST_N(n, FX_LOGS(severity))
 #define FX_LOGST_FIRST_N(severity, n, tag) FX_FIRST_N(n, FX_LOGST(severity, tag))
 
+#define FX_FIRST_N_SECS(n, log_statement)                                                 \
+  for (bool do_log = true; do_log; do_log = false)                                        \
+    for (static ::fuchsia_logging::LogEveryNSecondsState internal_state;                  \
+         do_log && internal_state.ShouldLog(n); do_log = false)                           \
+      for ([[maybe_unused]] const uint32_t COUNTER = internal_state.GetCounter(); do_log; \
+           do_log = false)                                                                \
+  log_statement
+#define FX_SLOG_EVERY_N_SECONDS(severity, n, msg...) FX_FIRST_N_SECS(n, FX_SLOG(severity, msg))
+
 #define FX_CHECK(condition) FX_CHECKT(condition, nullptr)
 
 #define FX_CHECKT(condition, tag)                                                                \
@@ -384,19 +440,19 @@ fuchsia_logging::LogSeverity GetSeverityFromVerbosity(uint8_t verbosity);
 #define FX_NOTIMPLEMENTED() FX_LOGS(ERROR) << "Not implemented in: " << __PRETTY_FUNCTION__
 
 template <typename Msg, typename... Args>
-static auto MakeValue(Msg msg, syslog_backend::Tuplet<Args...> args) {
+static auto MakeValue(Msg msg, syslog_runtime::Tuplet<Args...> args) {
   return fuchsia_logging::LogValue<Msg, Args...>(msg, args);
 }
 
 template <size_t i, size_t size, typename... Values, typename... Tuple,
-          typename std::enable_if<syslog_backend::Not<syslog_backend::ILessThanSize<i, size>()>(),
+          typename std::enable_if<syslog_runtime::Not<syslog_runtime::ILessThanSize<i, size>()>(),
                                   int>::type = 0>
 static auto MakeKV(std::tuple<Values...> value, std::tuple<Tuple...> tuple) {
-  return syslog_backend::Tuplet<Tuple...>(tuple, size);
+  return syslog_runtime::Tuplet<Tuple...>(tuple, size);
 }
 
 template <size_t i, size_t size, typename... Values, typename... Tuple,
-          typename std::enable_if<syslog_backend::ILessThanSize<i, size>(), int>::type = 0>
+          typename std::enable_if<syslog_runtime::ILessThanSize<i, size>(), int>::type = 0>
 static auto MakeKV(std::tuple<Values...> value, std::tuple<Tuple...> tuple) {
   // Key at index i, value at index i+1
   auto k = std::get<i>(value);

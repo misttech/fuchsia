@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>
 #include <fuchsia/hardware/display/cpp/fidl.h>
+#include <fuchsia/hardware/display/types/cpp/fidl.h>
 #include <fuchsia/images2/cpp/fidl.h>
 #include <fuchsia/sysmem/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
@@ -34,7 +35,7 @@ namespace {
 
 const char* const kTag = "ImagePipeSurfaceDisplay";
 
-constexpr inline fuchsia::hardware::display::ImageId ToFidlImageId(uint32_t image_id) {
+constexpr inline fuchsia::hardware::display::types::ImageId ToFidlImageId(uint32_t image_id) {
   return {.value = image_id};
 }
 
@@ -189,7 +190,7 @@ bool ImagePipeSurfaceDisplay::WaitForAsyncMessage() {
 
 void ImagePipeSurfaceDisplay::ControllerOnDisplaysChanged(
     std::vector<fuchsia::hardware::display::Info> info,
-    std::vector<fuchsia::hardware::display::DisplayId>) {
+    std::vector<fuchsia::hardware::display::types::DisplayId>) {
   if (info.size() == 0)
     return;
   width_ = info[0].modes[0].horizontal_resolution;
@@ -279,7 +280,7 @@ bool ImagePipeSurfaceDisplay::CreateImage(VkDevice device, VkLayerDispatchTable*
     return false;
   }
 
-  fuchsia::hardware::display::ImageConfig image_config = {
+  fuchsia::hardware::display::types::ImageConfig image_config = {
       .width = extent.width,
       .height = extent.height,
   };
@@ -488,7 +489,7 @@ bool ImagePipeSurfaceDisplay::CreateImage(VkDevice device, VkLayerDispatchTable*
     }
 
     uint32_t image_id = next_image_id();
-    const fuchsia::hardware::display::ImageId fidl_image_id = ToFidlImageId(image_id);
+    const fuchsia::hardware::display::types::ImageId fidl_image_id = ToFidlImageId(image_id);
     display_coordinator_->ImportImage(image_config, /*buffer_id=*/
                                       {
                                           .buffer_collection_id = kBufferCollectionId,
@@ -518,7 +519,8 @@ bool ImagePipeSurfaceDisplay::CreateImage(VkDevice device, VkLayerDispatchTable*
   display_coordinator_->ReleaseBufferCollection(kBufferCollectionId);
 
   display_coordinator_->CreateLayer(
-      [this, &status](zx_status_t layer_status, fuchsia::hardware::display::LayerId layer_id) {
+      [this, &status](zx_status_t layer_status,
+                      fuchsia::hardware::display::types::LayerId layer_id) {
         status = layer_status;
         layer_id_ = layer_id;
         got_message_response_ = true;
@@ -532,7 +534,7 @@ bool ImagePipeSurfaceDisplay::CreateImage(VkDevice device, VkLayerDispatchTable*
   }
 
   display_coordinator_->SetDisplayLayers(
-      display_id_, std::vector<fuchsia::hardware::display::LayerId>{layer_id_});
+      display_id_, std::vector<fuchsia::hardware::display::types::LayerId>{layer_id_});
   display_coordinator_->SetLayerPrimaryConfig(layer_id_, image_config);
 
   return true;
@@ -564,7 +566,7 @@ void ImagePipeSurfaceDisplay::PresentImage(
   }
 
   fuchsia::hardware::display::EventId wait_event_id = {
-      .value = fuchsia::hardware::display::INVALID_DISP_ID};
+      .value = fuchsia::hardware::display::types::INVALID_DISP_ID};
   if (acquire_fences.size()) {
     zx::event event = static_cast<FuchsiaEvent*>(acquire_fences[0].get())->Take();
 
@@ -584,7 +586,7 @@ void ImagePipeSurfaceDisplay::PresentImage(
   }
 
   fuchsia::hardware::display::EventId signal_event_id = {
-      .value = fuchsia::hardware::display::INVALID_DISP_ID};
+      .value = fuchsia::hardware::display::types::INVALID_DISP_ID};
   if (release_fences.size()) {
     zx::event event = static_cast<FuchsiaEvent*>(release_fences[0].get())->Take();
 
@@ -604,15 +606,15 @@ void ImagePipeSurfaceDisplay::PresentImage(
   }
 
   // image_id is also used in DisplayController interface.
-  const fuchsia::hardware::display::ImageId fidl_image_id = ToFidlImageId(image_id);
+  const fuchsia::hardware::display::types::ImageId fidl_image_id = ToFidlImageId(image_id);
   display_coordinator_->SetLayerImage(layer_id_, fidl_image_id, wait_event_id, signal_event_id);
   display_coordinator_->ApplyConfig();
 
-  if (wait_event_id.value != fuchsia::hardware::display::INVALID_DISP_ID) {
+  if (wait_event_id.value != fuchsia::hardware::display::types::INVALID_DISP_ID) {
     display_coordinator_->ReleaseEvent(wait_event_id);
   }
 
-  if (signal_event_id.value != fuchsia::hardware::display::INVALID_DISP_ID) {
+  if (signal_event_id.value != fuchsia::hardware::display::types::INVALID_DISP_ID) {
     display_coordinator_->ReleaseEvent(signal_event_id);
   }
 }

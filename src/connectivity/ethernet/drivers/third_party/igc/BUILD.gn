@@ -8,10 +8,7 @@ import("//build/drivers.gni")
 driver_bind_rules("igc_bind") {
   rules = "igc.bind"
   tests = "bind-tests.json"
-  deps = [
-    "//src/devices/bind/fuchsia.driver.framework",
-    "//src/devices/bind/fuchsia.pci",
-  ]
+  deps = [ "//src/devices/bind/fuchsia.pci" ]
 }
 
 source_set("igc_core") {
@@ -31,7 +28,7 @@ source_set("igc_core") {
 
   public_deps = [
     ":igc_bind",
-    "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp",
     "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_banjo_cpp",
     "//src/lib/vmo_store",
   ]
@@ -58,6 +55,11 @@ fuchsia_driver_component("igc") {
   deps = [ ":igc-driver" ]
   info = "igc-info.json"
   manifest = "meta/igc.cml"
+}
+
+fuchsia_driver_package("package") {
+  package_name = "igc"
+  driver_components = [ ":igc" ]
 }
 
 group("tests") {

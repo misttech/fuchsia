@@ -26,7 +26,7 @@ const zbi_platform_id_t kPlatformId = []() {
 class ExampleBoardTest : public zxtest::Test {
  public:
   ExampleBoardTest()
-      : board_test_("/pkg/test-data/basic-properties.dtb", kPlatformId, loop_.dispatcher()) {
+      : board_test_("/pkg/test-data/example-board.dtb", kPlatformId, loop_.dispatcher()) {
     loop_.StartThread("test-realm");
     board_test_.SetupRealm();
   }
@@ -39,8 +39,8 @@ class ExampleBoardTest : public zxtest::Test {
 TEST_F(ExampleBoardTest, DevicetreeEnumeration) {
   std::vector<std::string> device_node_paths = {
       "sys/platform/pt",
-      "sys/platform/00:00:32",
-      "sys/platform/00:00:32:1",
+      "sys/platform/dt-root",
+      "sys/platform/sample-device-0",
   };
   ASSERT_TRUE(board_test_.StartRealm().is_ok());
   ASSERT_TRUE(board_test_.WaitOnDevices(device_node_paths).is_ok());

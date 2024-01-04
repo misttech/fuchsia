@@ -89,18 +89,18 @@ static const std::vector<fpbus::BootMetadata> emmc_boot_metadata{
 
 zx_status_t Nelson::EmmcInit() {
   // set alternate functions to enable EMMC
-  gpio_impl_.SetAltFunction(S905D3_EMMC_D0, S905D3_EMMC_D0_FN);
-  gpio_impl_.SetAltFunction(S905D3_EMMC_D1, S905D3_EMMC_D1_FN);
-  gpio_impl_.SetAltFunction(S905D3_EMMC_D2, S905D3_EMMC_D2_FN);
-  gpio_impl_.SetAltFunction(S905D3_EMMC_D3, S905D3_EMMC_D3_FN);
-  gpio_impl_.SetAltFunction(S905D3_EMMC_D4, S905D3_EMMC_D4_FN);
-  gpio_impl_.SetAltFunction(S905D3_EMMC_D5, S905D3_EMMC_D5_FN);
-  gpio_impl_.SetAltFunction(S905D3_EMMC_D6, S905D3_EMMC_D6_FN);
-  gpio_impl_.SetAltFunction(S905D3_EMMC_D7, S905D3_EMMC_D7_FN);
-  gpio_impl_.SetAltFunction(S905D3_EMMC_CLK, S905D3_EMMC_CLK_FN);
-  gpio_impl_.SetAltFunction(S905D3_EMMC_RST, S905D3_EMMC_RST_FN);
-  gpio_impl_.SetAltFunction(S905D3_EMMC_CMD, S905D3_EMMC_CMD_FN);
-  gpio_impl_.SetAltFunction(S905D3_EMMC_DS, S905D3_EMMC_DS_FN);
+  gpio_init_steps_.push_back({S905D3_EMMC_D0, GpioSetAltFunction(S905D3_EMMC_D0_FN)});
+  gpio_init_steps_.push_back({S905D3_EMMC_D1, GpioSetAltFunction(S905D3_EMMC_D1_FN)});
+  gpio_init_steps_.push_back({S905D3_EMMC_D2, GpioSetAltFunction(S905D3_EMMC_D2_FN)});
+  gpio_init_steps_.push_back({S905D3_EMMC_D3, GpioSetAltFunction(S905D3_EMMC_D3_FN)});
+  gpio_init_steps_.push_back({S905D3_EMMC_D4, GpioSetAltFunction(S905D3_EMMC_D4_FN)});
+  gpio_init_steps_.push_back({S905D3_EMMC_D5, GpioSetAltFunction(S905D3_EMMC_D5_FN)});
+  gpio_init_steps_.push_back({S905D3_EMMC_D6, GpioSetAltFunction(S905D3_EMMC_D6_FN)});
+  gpio_init_steps_.push_back({S905D3_EMMC_D7, GpioSetAltFunction(S905D3_EMMC_D7_FN)});
+  gpio_init_steps_.push_back({S905D3_EMMC_CLK, GpioSetAltFunction(S905D3_EMMC_CLK_FN)});
+  gpio_init_steps_.push_back({S905D3_EMMC_RST, GpioSetAltFunction(S905D3_EMMC_RST_FN)});
+  gpio_init_steps_.push_back({S905D3_EMMC_CMD, GpioSetAltFunction(S905D3_EMMC_CMD_FN)});
+  gpio_init_steps_.push_back({S905D3_EMMC_DS, GpioSetAltFunction(S905D3_EMMC_DS_FN)});
 
   fidl::Arena<> fidl_arena;
 
@@ -131,6 +131,11 @@ zx_status_t Nelson::EmmcInit() {
           .enable_trim(true)
           // Maintain the current Nelson behavior until we determine that cache is needed.
           .enable_cache(false)
+          // Maintain the current Nelson behavior until we determine that eMMC Packed Commands are
+          // needed.
+          .max_command_packing(0)
+          // TODO(fxbug.dev/134787): Use the FIDL SDMMC protocol.
+          .use_fidl(false)
           .Build());
   if (!sdmmc_metadata.is_ok()) {
     zxlogf(ERROR, "Failed to encode SDMMC metadata: %s",

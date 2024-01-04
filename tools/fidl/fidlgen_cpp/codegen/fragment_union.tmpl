@@ -14,7 +14,6 @@ class {{ .Name }};
 {{ if .IsResourceType }}
 {{- IfdefFuchsia -}}
 {{- end }}
-extern "C" const fidl_type_t {{ .CodingTableType.Name }};
 {{ .Docs }}
 class {{ .Name }} {
   public:
@@ -162,9 +161,9 @@ auto {{ . }}::Which() const -> {{ .TagEnum }} {
 {{- end }}
 
 void {{ . }}::SizeAndOffsetAssertionHelper() {
-  static_assert(sizeof({{ .Name }}) == sizeof(fidl_xunion_v2_t));
-  static_assert(offsetof({{ .Name }}, ordinal_) == offsetof(fidl_xunion_v2_t, tag));
-  static_assert(offsetof({{ .Name }}, envelope_) == offsetof(fidl_xunion_v2_t, envelope));
+  static_assert(sizeof({{ .Name }}) == sizeof(fidl_union_t));
+  static_assert(offsetof({{ .Name }}, ordinal_) == offsetof(fidl_union_t, tag));
+  static_assert(offsetof({{ .Name }}, envelope_) == offsetof(fidl_union_t, envelope));
 }
 
 {{- if .IsResourceType }}
@@ -226,17 +225,16 @@ struct TypeTraits<{{ . }}> {
   static constexpr uint32_t kMaxNumHandles = {{ .TypeShapeV2.MaxHandles }};
   static constexpr uint32_t kMaxDepth = {{ .TypeShapeV2.Depth }};
   static constexpr uint32_t kPrimarySize = {{ .TypeShapeV2.InlineSize }};
-  static constexpr uint32_t kPrimarySizeV1 = {{ .TypeShapeV1.InlineSize }};
   [[maybe_unused]]
   static constexpr uint32_t kMaxOutOfLine = {{ .TypeShapeV2.MaxOutOfLine }};
-  static constexpr uint32_t kMaxOutOfLineV1 = {{ .TypeShapeV1.MaxOutOfLine }};
   static constexpr bool kHasFlexibleEnvelope = {{ .TypeShapeV2.HasFlexibleEnvelope }};
-  static constexpr bool kHasEnvelope = {{ .TypeShapeV2.HasEnvelope }};
   static constexpr bool kHasPointer = {{ .TypeShapeV2.HasPointer }};
 };
 
 template <>
 struct IsFidlType<{{ . }}> : public std::true_type {};
+template <>
+struct IsWire<{{ . }}> : public std::true_type {};
 template <>
 struct IsUnion<{{ . }}> : public std::true_type {};
 static_assert(std::is_standard_layout_v<{{ . }}>);
@@ -247,11 +245,11 @@ struct ::fidl::internal::WireCodingTraits<{{ . }}, Constraint, IsRecursive> {
   static constexpr bool is_memcpy_compatible = false;
 
   static void Encode(internal::WireEncoder* encoder, {{ . }}* value, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth) {
-    fidl_xunion_v2_t* u = reinterpret_cast<fidl_xunion_v2_t*>(value);
+    fidl_union_t* u = reinterpret_cast<fidl_union_t*>(value);
 
     if (unlikely(u->tag == 0)) {
       if constexpr (Constraint::is_optional) {
-        *position.As<fidl_xunion_v2_t>() = {};
+        *position.As<fidl_union_t>() = {};
         return;
       }
       encoder->SetError(kCodingErrorInvalidUnionTag);
@@ -298,7 +296,7 @@ struct ::fidl::internal::WireCodingTraits<{{ . }}, Constraint, IsRecursive> {
         decoder->SetError(kCodingErrorInvalidUnionTag);
         return;
       }
-      static_assert(sizeof(fidl_envelope_v2_t) == sizeof(uint64_t));
+      static_assert(sizeof(fidl_envelope_t) == sizeof(uint64_t));
       if (*(position + sizeof(fidl_xunion_tag_t)).As<uint64_t>() != 0) {
         decoder->SetError(kCodingErrorZeroTagButNonZeroEnvelope);
       }

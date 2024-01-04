@@ -2,20 +2,24 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Module for handling encoding and decoding FIDL messages, as well as for handling async I/O."""
+from abc import ABC
+from abc import abstractmethod
 import asyncio
 import logging
 import os
 import sys
 import typing
+
 import fuchsia_controller_py as fc
 
 
 class _QueueWrapper(object):
-
     def __init__(self):
-        self.queue = asyncio.Queue()
+        self.queue: asyncio.Queue[int] = asyncio.Queue()
         try:
-            self.loop = asyncio.get_running_loop()
+            self.loop: asyncio.AbstractEventLoop | None = (
+                asyncio.get_running_loop()
+            )
         except RuntimeError:
             self.loop = None
 
@@ -38,11 +42,44 @@ class _QueueWrapper(object):
         self.queue.task_done()
 
 
+class EventWrapper(object):
+    def __init__(self):
+        self.event = asyncio.Event()
+        try:
+            self.loop: asyncio.AbstractEventLoop | None = (
+                asyncio.get_running_loop()
+            )
+        except RuntimeError:
+            self.loop = None
+
+    def _precheck(self):
+        """Checks if this event is being used across loops. If it is, then this will reset state."""
+        if self.loop is None or self.loop.is_closed():
+            self.loop = asyncio.get_running_loop()
+            event_state: bool = self.event.is_set()
+            self.event = asyncio.Event()
+            if event_state:
+                self.event.set()
+
+    def wait(self):
+        self._precheck()
+        return self.event.wait()
+
+    def set(self):
+        self._precheck()
+        self.event.set()
+
+    def is_set(self):
+        self._precheck()
+        self.event.is_set()
+
+
 HANDLE_READY_QUEUES: typing.Dict[int, _QueueWrapper] = {}
 
 
 def enqueue_ready_zx_handle_from_fd(
-        fd: int, handle_ready_queues: typing.Dict[int, _QueueWrapper]):
+    fd: int, handle_ready_queues: typing.Dict[int, _QueueWrapper]
+):
     """Reads zx_handle that is ready for reading, and enqueues it in the appropriate ready queue."""
     handle_no = int.from_bytes(os.read(fd, 4), sys.byteorder)
     queue = handle_ready_queues.get(handle_no)
@@ -52,8 +89,32 @@ def enqueue_ready_zx_handle_from_fd(
         logging.debug(f"Dropping notification for: {handle_no}")
 
 
-class GlobalChannelWaker(object):
-    """A class for handling notifications on a channel. By default hooks into global state."""
+class HandleWaker(ABC):
+    """Base class for a waker used with potentially blocking handles."""
+
+    @abstractmethod
+    def register(self, channel: fc.Channel) -> None:
+        """Registers a handle to receive wake notifications."""
+
+    @abstractmethod
+    def unregister(self, channel: fc.Channel) -> None:
+        """Unregisters a handle, meaning it is not possible to wait for it to be ready."""
+
+    @abstractmethod
+    def post_channel_ready(self, channel: fc.Channel):
+        """Notifies the waker that a channel is ready."""
+
+    @abstractmethod
+    async def wait_channel_ready(self, channel: fc.Channel) -> int:
+        """Waits for a channel to be ready asynchronously."""
+
+
+class GlobalHandleWaker(HandleWaker):
+    """A class for handling notifications on a readable handle.
+
+    As this is a global channel waker, this hooks into global state. This is the default waker used
+    with all client and server code, as well as async wrapper code around readable handles.
+    """
 
     def __init__(self):
         self.handle_ready_queues = HANDLE_READY_QUEUES

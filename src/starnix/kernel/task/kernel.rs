@@ -2,42 +2,53 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::endpoints::{create_endpoints, ClientEnd, ProtocolMarker, Proxy};
+use crate::{
+    device::{
+        framebuffer::Framebuffer, input::InputDevice, loop_device::LoopDeviceRegistry,
+        BinderDriver, DeviceMode, DeviceRegistry, Features,
+    },
+    fs::proc::SystemLimits,
+    mm::{FutexTable, SharedFutexKey},
+    power::PowerManager,
+    task::{
+        AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentTask, IpTables,
+        KernelStats, KernelThreads, NetstackDevices, PidTable, StopState, Syslog, UtsNamespace,
+        UtsNamespaceHandle,
+    },
+    vdso::vdso_loader::Vdso,
+    vfs::{
+        socket::{
+            GenericMessage, GenericNetlink, NetlinkSenderReceiverProvider, NetlinkToClientSender,
+            SocketAddress,
+        },
+        DelayedReleaser, FileOps, FileSystemHandle, FsNode,
+    },
+};
+use bstr::BString;
+use fidl::{
+    endpoints::{create_endpoints, ClientEnd, ProtocolMarker, Proxy},
+    AsHandleRef,
+};
 use fidl_fuchsia_io as fio;
+use fidl_fuchsia_scheduler::ProfileProviderSynchronousProxy;
 use fuchsia_async as fasync;
 use fuchsia_zircon as zx;
 use futures::FutureExt;
 use netlink::{interfaces::InterfacesHandler, Netlink, NETLINK_LOG_TAG};
 use once_cell::sync::OnceCell;
-use std::{
-    collections::{BTreeMap, HashSet},
-    iter::FromIterator,
-    sync::{atomic::AtomicU16, Arc, Weak},
+use selinux::security_server::SecurityServer;
+use starnix_lifecycle::{AtomicU32Counter, AtomicU64Counter};
+use starnix_logging::{log_error, CoreDumpList};
+use starnix_sync::{KernelIpTables, OrderedRwLock, RwLock};
+use starnix_uapi::{
+    device_type::DeviceType, errno, errors::Errno, from_status_like_fdio, open_flags::OpenFlags,
 };
-
-use crate::{
-    device::{
-        framebuffer::Framebuffer, input::InputDevice, loop_device::LoopDeviceRegistry,
-        BinderDriver, DeviceMode, DeviceOps, DeviceRegistry,
+use std::{
+    collections::BTreeMap,
+    sync::{
+        atomic::{AtomicU16, AtomicU8},
+        Arc, Weak,
     },
-    diagnostics::CoreDumpList,
-    fs::{
-        devtmpfs::devtmpfs_create_device,
-        kobject::*,
-        socket::{
-            GenericMessage, GenericNetlink, NetlinkSenderReceiverProvider, NetlinkToClientSender,
-            SocketAddress,
-        },
-        sysfs::{BlockDeviceDirectory, DeviceDirectory, SysFsDirectory},
-        FileOps, FileSystemHandle, FsNode,
-    },
-    lock::RwLock,
-    logging::{log_error, set_zx_name},
-    mm::{FutexTable, SharedFutexKey},
-    power::PowerManager,
-    task::*,
-    types::{DeviceType, Errno, OpenFlags, *},
-    vdso::vdso_loader::Vdso,
 };
 
 /// The shared, mutable state for the entire Starnix kernel.
@@ -50,9 +61,6 @@ use crate::{
 /// The structure of this object will likely need to evolve as we implement more namespacing and
 /// isolation mechanisms, such as `namespaces(7)` and `pid_namespaces(7)`.
 pub struct Kernel {
-    /// The Zircon job object that holds the processes running in this kernel.
-    pub job: zx::Job,
-
     /// The kernel threads running on behalf of this kernel.
     pub kthreads: KernelThreads,
 
@@ -70,7 +78,7 @@ pub struct Kernel {
     pub default_abstract_vsock_namespace: Arc<AbstractVsockSocketNamespace>,
 
     /// The kernel command line. Shows up in /proc/cmdline.
-    pub cmdline: Vec<u8>,
+    pub cmdline: BString,
 
     // Owned by anon_node.rs
     pub anon_fs: OnceCell<FileSystemHandle>,
@@ -86,8 +94,10 @@ pub struct Kernel {
     pub proc_fs: OnceCell<FileSystemHandle>,
     // Owned by sysfs.rs
     pub sys_fs: OnceCell<FileSystemHandle>,
-    // Owned by selinux.rs
+    // Owned by selinux/fs.rs
     pub selinux_fs: OnceCell<FileSystemHandle>,
+    // The SELinux security server. Initialized if SELinux is enabled.
+    pub security_server: Option<Arc<SecurityServer>>,
     // Owned by tracefs/fs.rs
     pub trace_fs: OnceCell<FileSystemHandle>,
 
@@ -96,7 +106,7 @@ pub struct Kernel {
 
     // The features enabled for the container this kernel is associated with, as specified in
     // the container's configuration file.
-    pub features: HashSet<String>,
+    pub features: Features,
 
     /// The service directory of the container.
     container_svc: Option<fio::DirectoryProxy>,
@@ -129,7 +139,7 @@ pub struct Kernel {
     pub binders: RwLock<BTreeMap<DeviceType, Arc<BinderDriver>>>,
 
     /// The iptables used for filtering network packets.
-    pub iptables: RwLock<IpTables>,
+    pub iptables: OrderedRwLock<IpTables, KernelIpTables>,
 
     /// The futexes shared across processes.
     pub shared_futexes: FutexTable<SharedFutexKey>,
@@ -159,16 +169,49 @@ pub struct Kernel {
     /// Diagnostics information about crashed tasks.
     pub core_dumps: CoreDumpList,
 
-    // The kinds of seccomp action that gets logged, stored as a bit vector.
-    // Each potential SeccompAction gets a bit in the vector, as specified by
-    // SeccompAction::logged_bit_offset.  If the bit is set, that means the
-    // action should be logged when it is taken, subject to the caveats
-    // described in seccomp(2).  The value of the bit vector is exposed to users
-    // in a text form in the file /proc/sys/kernel/seccomp/actions_logged.
+    /// The kinds of seccomp action that gets logged, stored as a bit vector.
+    /// Each potential SeccompAction gets a bit in the vector, as specified by
+    /// SeccompAction::logged_bit_offset.  If the bit is set, that means the
+    /// action should be logged when it is taken, subject to the caveats
+    /// described in seccomp(2).  The value of the bit vector is exposed to users
+    /// in a text form in the file /proc/sys/kernel/seccomp/actions_logged.
     pub actions_logged: AtomicU16,
 
-    /// The manger for power subsystems including reboot and suspend.
+    /// The manager for power subsystems including reboot and suspend.
     pub power_manager: PowerManager,
+
+    /// Unique IDs for new mounts and mount namespaces.
+    pub next_mount_id: AtomicU64Counter,
+    pub next_peer_group_id: AtomicU64Counter,
+    pub next_namespace_id: AtomicU64Counter,
+
+    /// Unique IDs for file objects.
+    pub next_file_object_id: AtomicU64Counter,
+
+    /// Unique cookie used to link two inotify events, usually an IN_MOVE_FROM/IN_MOVE_TO pair.
+    pub next_inotify_cookie: AtomicU32Counter,
+
+    /// Controls which processes a process is allowed to ptrace.  See Documentation/security/Yama.txt
+    pub ptrace_scope: AtomicU8,
+
+    // The Fuchsia build version returned by `fuchsia.buildinfo.Provider`.
+    pub build_version: OnceCell<String>,
+
+    pub stats: Arc<KernelStats>,
+
+    /// Resource limits that are exposed, for example, via sysctl.
+    pub system_limits: SystemLimits,
+
+    // The service to handle delayed releases. This is required for elements that requires to
+    // execute some code when released and requires a known context (both in term of lock context,
+    // as well as `CurrentTask`).
+    pub delayed_releaser: DelayedReleaser,
+
+    /// Proxy to the scheduler profile provider for adjusting task priorities.
+    pub profile_provider: Option<ProfileProviderSynchronousProxy>,
+
+    /// The syslog manager.
+    pub syslog: Syslog,
 }
 
 /// An implementation of [`InterfacesHandler`].
@@ -181,59 +224,73 @@ struct InterfacesHandlerImpl(Weak<Kernel>);
 
 impl InterfacesHandlerImpl {
     fn with_netstack_devices<
-        F: FnOnce(&Arc<NetstackDevices>, Option<&FileSystemHandle>, Option<&FileSystemHandle>),
+        F: FnOnce(
+                &CurrentTask,
+                &Arc<NetstackDevices>,
+                Option<&FileSystemHandle>,
+                Option<&FileSystemHandle>,
+            ) + Sync
+            + Send
+            + 'static,
     >(
         &mut self,
         f: F,
     ) {
-        let Self(rc) = self;
-        let Some(rc) = rc.upgrade() else {
-            // The kernel may be getting torn-down.
-            return
-        };
-        f(&rc.netstack_devices, rc.proc_fs.get(), rc.sys_fs.get())
+        if let Some(kernel) = self.0.upgrade() {
+            kernel.kthreads.spawner().spawn(move |_, current_task| {
+                let kernel = current_task.kernel();
+                f(current_task, &kernel.netstack_devices, kernel.proc_fs.get(), kernel.sys_fs.get())
+            });
+        }
     }
 }
 
 impl InterfacesHandler for InterfacesHandlerImpl {
     fn handle_new_link(&mut self, name: &str) {
-        self.with_netstack_devices(|devs, proc_fs, sys_fs| devs.add_dev(name, proc_fs, sys_fs))
+        let name = name.to_owned();
+        self.with_netstack_devices(move |current_task, devs, proc_fs, sys_fs| {
+            devs.add_dev(current_task, &name, proc_fs, sys_fs)
+        })
     }
 
     fn handle_deleted_link(&mut self, name: &str) {
-        self.with_netstack_devices(|devs, _proc_fs, _sys_fs| devs.remove_dev(name))
+        let name = name.to_owned();
+        self.with_netstack_devices(move |_current_task, devs, _proc_fs, _sys_fs| {
+            devs.remove_dev(&name)
+        })
     }
 }
 
 impl Kernel {
     pub fn new(
-        name: &[u8],
-        cmdline: &[u8],
-        features: &[String],
+        cmdline: BString,
+        features: Features,
         container_svc: Option<fio::DirectoryProxy>,
         container_data_dir: Option<fio::DirectorySynchronousProxy>,
+        profile_provider: Option<ProfileProviderSynchronousProxy>,
         inspect_node: fuchsia_inspect::Node,
     ) -> Result<Arc<Kernel>, zx::Status> {
         let unix_address_maker = Box::new(|x: Vec<u8>| -> SocketAddress { SocketAddress::Unix(x) });
         let vsock_address_maker = Box::new(|x: u32| -> SocketAddress { SocketAddress::Vsock(x) });
-        let job = fuchsia_runtime::job_default().create_child_job()?;
-        set_zx_name(&job, name);
-
-        let framebuffer = Framebuffer::new(features.iter().find(|f| f.starts_with("aspect_ratio")))
-            .expect("Failed to create framebuffer");
+        let framebuffer =
+            Framebuffer::new(features.aspect_ratio.as_ref()).expect("Failed to create framebuffer");
         let input_device = InputDevice::new(framebuffer.clone(), &inspect_node);
 
         let core_dumps = CoreDumpList::new(inspect_node.create_child("coredumps"));
 
-        let this = Arc::new(Kernel {
-            job,
-            kthreads: KernelThreads::default(),
+        let security_server = match features.selinux {
+            Some(mode) => Some(SecurityServer::new(mode)),
+            _ => None,
+        };
+
+        let this = Arc::new_cyclic(|kernel| Kernel {
+            kthreads: KernelThreads::new(kernel.clone()),
             pids: RwLock::new(PidTable::new()),
             default_abstract_socket_namespace: AbstractUnixSocketNamespace::new(unix_address_maker),
             default_abstract_vsock_namespace: AbstractVsockSocketNamespace::new(
                 vsock_address_maker,
             ),
-            cmdline: cmdline.to_vec(),
+            cmdline,
             anon_fs: OnceCell::new(),
             pipe_fs: OnceCell::new(),
             dev_tmp_fs: OnceCell::new(),
@@ -242,16 +299,17 @@ impl Kernel {
             socket_fs: OnceCell::new(),
             sys_fs: OnceCell::new(),
             selinux_fs: OnceCell::new(),
+            security_server,
             trace_fs: OnceCell::new(),
             device_registry: DeviceRegistry::new(),
-            features: HashSet::from_iter(features.iter().cloned()),
+            features,
             container_svc,
             container_data_dir,
             loop_device_registry: Default::default(),
             framebuffer,
             input_device,
             binders: Default::default(),
-            iptables: RwLock::new(IpTables::new()),
+            iptables: OrderedRwLock::new(IpTables::new()),
             shared_futexes: FutexTable::<SharedFutexKey>::default(),
             root_uts_ns: Arc::new(RwLock::new(UtsNamespace::default())),
             vdso: Vdso::new(),
@@ -262,6 +320,18 @@ impl Kernel {
             core_dumps,
             actions_logged: AtomicU16::new(0),
             power_manager: PowerManager::default(),
+            next_mount_id: AtomicU64Counter::new(1),
+            next_peer_group_id: AtomicU64Counter::new(1),
+            next_namespace_id: AtomicU64Counter::new(1),
+            next_inotify_cookie: AtomicU32Counter::new(1),
+            next_file_object_id: Default::default(),
+            system_limits: SystemLimits::default(),
+            ptrace_scope: AtomicU8::new(0),
+            build_version: OnceCell::new(),
+            stats: Arc::new(KernelStats::default()),
+            delayed_releaser: Default::default(),
+            profile_provider,
+            syslog: Default::default(),
         });
 
         // Make a copy of this Arc for the inspect lazy node to use but don't create an Arc cycle
@@ -277,67 +347,6 @@ impl Kernel {
         });
 
         Ok(this)
-    }
-
-    /// Add a device in the hierarchy tree.
-    ///
-    /// If it's a Block device, the device will be added under "block" class.
-    pub fn add_device(self: &Arc<Self>, dev_attr: KObjectDeviceAttribute) {
-        let kobj_device = match dev_attr.device.mode {
-            DeviceMode::Char => {
-                assert!(dev_attr.class.is_some(), "no class is associated with the device.");
-                dev_attr.class.unwrap().get_or_create_child(
-                    &dev_attr.name,
-                    KType::Device(dev_attr.device.clone()),
-                    DeviceDirectory::new,
-                )
-            }
-            DeviceMode::Block => {
-                let block_class = self.device_registry.virtual_bus().get_or_create_child(
-                    b"block",
-                    KType::Class,
-                    SysFsDirectory::new,
-                );
-                block_class.get_or_create_child(
-                    &dev_attr.name,
-                    KType::Device(dev_attr.device.clone()),
-                    BlockDeviceDirectory::new,
-                )
-            }
-        };
-        self.device_registry.dispatch_uevent(UEventAction::Add, kobj_device);
-        match devtmpfs_create_device(self, dev_attr.device.clone()) {
-            Ok(_) => (),
-            Err(err) => {
-                log_error!("Cannot add block device {:?} in devtmpfs ({:?})", dev_attr.device, err)
-            }
-        };
-    }
-
-    /// Add a device in the hierarchy tree and register its DeviceOps.
-    pub fn add_and_register_device(
-        self: &Arc<Self>,
-        dev_attr: KObjectDeviceAttribute,
-        dev_ops: impl DeviceOps,
-    ) {
-        match match dev_attr.device.mode {
-            DeviceMode::Char => self.device_registry.register_chrdev(
-                dev_attr.device.device_type.major(),
-                dev_attr.device.device_type.minor(),
-                1,
-                dev_ops,
-            ),
-            DeviceMode::Block => self.device_registry.register_blkdev(
-                dev_attr.device.device_type.major(),
-                dev_attr.device.device_type.minor(),
-                1,
-                dev_ops,
-            ),
-        } {
-            Ok(_) => (),
-            Err(err) => log_error!("Cannot register device {:?} ({:?})", dev_attr.device, err),
-        }
-        self.add_device(dev_attr);
     }
 
     /// Opens a device file (driver) identified by `dev`.
@@ -359,8 +368,8 @@ impl Kernel {
     pub(crate) fn generic_netlink(&self) -> &GenericNetlink<NetlinkToClientSender<GenericMessage>> {
         self.generic_netlink.get_or_init(|| {
             let (generic_netlink, generic_netlink_fut) = GenericNetlink::new();
-            self.kthreads.pool.dispatch(move || {
-                fasync::LocalExecutor::new().run_singlethreaded(generic_netlink_fut);
+            self.kthreads.spawn_future(async move {
+                generic_netlink_fut.await;
                 log_error!("Generic Netlink future unexpectedly exited");
             });
             generic_netlink
@@ -377,7 +386,7 @@ impl Kernel {
         self.network_netlink.get_or_init(|| {
             let (network_netlink, network_netlink_async_worker) =
                 Netlink::new(InterfacesHandlerImpl(Arc::downgrade(self)));
-            self.kthreads.dispatch(move || {
+            self.kthreads.spawn(move |_, _| {
                 fasync::LocalExecutor::new().run_singlethreaded(network_netlink_async_worker);
                 log_error!(tag = NETLINK_LOG_TAG, "Netlink async worker unexpectedly exited");
             });
@@ -398,8 +407,11 @@ impl Kernel {
         Ok(client_end)
     }
 
-    pub fn selinux_enabled(&self) -> bool {
-        self.features.contains("selinux_enabled")
+    /// Returns true if SELinux is enabled with a hard-coded fake policy.
+    /// This is a temporary API, for use at call-sites which the SELinux
+    /// implementation does not yet support.
+    pub fn has_fake_selinux(&self) -> bool {
+        self.security_server.as_ref().map_or(false, |s| s.is_fake())
     }
 
     fn get_thread_groups_inspect(&self) -> fuchsia_inspect::Inspector {
@@ -410,23 +422,41 @@ impl Kernel {
             let tg = thread_group.read();
 
             let tg_node = thread_groups.create_child(format!("{}", thread_group.leader));
+            if let Ok(koid) = &thread_group.process.get_koid() {
+                tg_node.record_int("koid", koid.raw_koid() as i64);
+            }
+            tg_node.record_int("pid", thread_group.leader as i64);
             tg_node.record_int("ppid", tg.get_ppid() as i64);
-            tg_node.record_bool("stopped", tg.stopped);
+            tg_node.record_bool("stopped", thread_group.load_stopped() == StopState::GroupStopped);
 
             let tasks_node = tg_node.create_child("tasks");
             for task in tg.tasks() {
-                let property = if task.id == thread_group.leader {
-                    "command".to_string()
-                } else {
-                    task.id.to_string()
+                let set_properties = |node: &fuchsia_inspect::Node| {
+                    node.record_string("command", task.command().to_str().unwrap_or("{err}"));
+
+                    let sched_policy = task.read().scheduler_policy;
+                    if !sched_policy.is_default() {
+                        node.record_string("sched_policy", format!("{sched_policy:?}"));
+                    }
                 };
-                let command = task.command();
-                tg_node.record_string(property, command.to_str().unwrap_or("{err}"));
+                if task.id == thread_group.leader {
+                    set_properties(&tg_node);
+                } else {
+                    tasks_node.record_child(task.id.to_string(), |task_node| {
+                        set_properties(task_node);
+                    });
+                };
             }
             tg_node.record(tasks_node);
             thread_groups.record(tg_node);
         }
 
         inspector
+    }
+}
+
+impl std::fmt::Debug for Kernel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Kernel").finish()
     }
 }

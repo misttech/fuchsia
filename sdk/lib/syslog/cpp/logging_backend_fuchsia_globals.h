@@ -9,25 +9,25 @@
 
 #include <cstdint>
 
-namespace syslog_backend {
+namespace syslog_runtime {
 class LogState;
-}  // namespace syslog_backend
+}  // namespace syslog_runtime
 
 extern "C" {
 
-void AcquireState();
+void FuchsiaLogAcquireState();
 
-void SetStateLocked(syslog_backend::LogState* new_state);
+void FuchsiaLogSetStateLocked(syslog_runtime::LogState* new_state);
 
-void ReleaseState();
+void FuchsiaLogReleaseState();
 
-syslog_backend::LogState* GetStateLocked();
+syslog_runtime::LogState* FuchsiaLogGetStateLocked();
 
-uint32_t GetAndResetDropped();
+uint32_t FuchsiaLogGetAndResetDropped();
 
-void AddDropped(uint32_t count);
+void FuchsiaLogAddDropped(uint32_t count);
 
-zx_koid_t GetCurrentThreadKoid();
+zx_koid_t FuchsiaLogGetCurrentThreadKoid();
 
 }  // extern "C"
 

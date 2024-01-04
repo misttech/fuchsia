@@ -5,11 +5,11 @@
 #ifndef DEVICE_REQUEST_H
 #define DEVICE_REQUEST_H
 
-#include <memory>
+#include <lib/magma/platform/platform_event.h>
+#include <lib/magma/util/short_macros.h>
+#include <lib/magma/util/status.h>
 
-#include "magma_util/short_macros.h"
-#include "magma_util/status.h"
-#include "platform_event.h"
+#include <memory>
 
 template <class Processor>
 class DeviceRequest {
@@ -47,6 +47,8 @@ class DeviceRequest {
     if (reply_)
       reply_->Signal(status);
   }
+
+  virtual uint8_t RequestType() = 0;
 
  protected:
   virtual magma::Status Process(Processor* processor) { return MAGMA_STATUS_OK; }

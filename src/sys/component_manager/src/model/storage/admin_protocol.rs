@@ -12,11 +12,12 @@
 
 use {
     crate::{
-        capability::{CapabilityProvider, CapabilitySource, PERMITTED_FLAGS},
+        capability::{
+            CapabilityProvider, CapabilitySource, DerivedCapability, InternalCapabilityProvider,
+        },
         model::{
             component::{ComponentInstance, WeakComponentInstance},
-            error::{CapabilityProviderError, ModelError},
-            hooks::{Event, EventPayload, EventType, Hook, HooksRegistration},
+            error::ModelError,
             model::Model,
             routing::{Route, RouteSource},
             storage::{self, BackingDirectoryInfo},
@@ -27,29 +28,23 @@ use {
     async_trait::async_trait,
     cm_moniker::InstancedMoniker,
     cm_rust::{ExposeDecl, OfferDecl, StorageDecl, UseDecl},
-    cm_task_scope::TaskScope,
     cm_types::Name,
-    cm_util::channel,
+    component_id_index::InstanceId,
     fidl::{endpoints::ServerEnd, prelude::*},
     fidl_fuchsia_component as fcomponent,
     fidl_fuchsia_io::{self as fio, DirectoryProxy, DirentType},
     fidl_fuchsia_sys2 as fsys, fuchsia_async as fasync,
     fuchsia_fs::directory as ffs_dir,
-    fuchsia_zircon as zx,
     futures::{
         stream::{FuturesUnordered, StreamExt},
         Future, TryFutureExt, TryStreamExt,
     },
     lazy_static::lazy_static,
     moniker::{Moniker, MonikerBase},
-    routing::{
-        component_id_index::ComponentInstanceId, component_instance::ComponentInstanceInterface,
-        RouteRequest,
-    },
+    routing::{component_instance::ComponentInstanceInterface, RouteRequest},
     std::{
         convert::{From, TryFrom},
         path::PathBuf,
-        str::FromStr,
         sync::{Arc, Weak},
     },
     tracing::{debug, error, warn},
@@ -166,63 +161,29 @@ impl StorageAdminProtocolProvider {
 }
 
 #[async_trait]
-impl CapabilityProvider for StorageAdminProtocolProvider {
-    async fn open(
-        self: Box<Self>,
-        task_scope: TaskScope,
-        flags: fio::OpenFlags,
-        relative_path: PathBuf,
-        server_end: &mut zx::Channel,
-    ) -> Result<(), CapabilityProviderError> {
-        let forbidden = flags - PERMITTED_FLAGS;
-        if !forbidden.is_empty() {
-            warn!(?forbidden, "StorageAdmin protocol");
-            return Err(CapabilityProviderError::BadFlags);
+impl InternalCapabilityProvider for StorageAdminProtocolProvider {
+    type Marker = fsys::StorageAdminMarker;
+    async fn open_protocol(self: Box<Self>, server_end: ServerEnd<Self::Marker>) {
+        if let Err(error) = self
+            .storage_admin
+            .serve(self.storage_decl, self.component, server_end.into_stream().unwrap())
+            .await
+        {
+            warn!(?error, "failed to serve storage admin protocol");
         }
-
-        if relative_path.components().count() != 0 {
-            warn!(
-                path=%relative_path.display(),
-                "StorageAdmin protocol got open request with non-empty",
-            );
-            return Err(CapabilityProviderError::BadPath);
-        }
-
-        let server_end = channel::take_channel(server_end);
-
-        let storage_decl = self.storage_decl.clone();
-        let component = self.component.clone();
-        let storage_admin = self.storage_admin.clone();
-        task_scope
-            .add_task(async move {
-                if let Err(error) = storage_admin.serve(storage_decl, component, server_end).await {
-                    warn!(?error, "failed to serve storage admin protocol");
-                }
-            })
-            .await;
-        Ok(())
     }
 }
 
-pub struct StorageAdmin {
-    model: Weak<Model>,
+pub struct StorageAdminDerivedCapability {
+    host: Arc<StorageAdmin>,
 }
 
-// `StorageAdmin` is a `Hook` that serves the `StorageAdmin` FIDL protocol.
-impl StorageAdmin {
+impl StorageAdminDerivedCapability {
     pub fn new(model: Weak<Model>) -> Self {
-        Self { model }
+        Self { host: StorageAdmin::new(model) }
     }
 
-    pub fn hooks(self: &Arc<Self>) -> Vec<HooksRegistration> {
-        vec![HooksRegistration::new(
-            "StorageAdmin",
-            vec![EventType::CapabilityRouted],
-            Arc::downgrade(self) as Weak<dyn Hook>,
-        )]
-    }
-
-    pub async fn extract_storage_decl(
+    async fn extract_storage_decl(
         source_capability: &ComponentCapability,
         component: WeakComponentInstance,
     ) -> Result<Option<StorageDecl>, ModelError> {
@@ -246,42 +207,36 @@ impl StorageAdmin {
         let decl = source_component_state.decl();
         Ok(decl.find_storage_source(source_capability_name.unwrap()).cloned())
     }
+}
 
-    /// If `capability_provider` is `None` this attempts to create a provider
-    /// based on the declaration represented by `source_capability` evaluated
-    /// in the context of `component`. If `source_capability` contains a valid
-    /// capability declaration this function returns the provider, otherwise an
-    /// error.
-    ///
-    /// # Arguments
-    /// * `source_capability`: The capability that represents the storage.
-    /// * `component`: The component that defined the storage capability.
-    /// * `capability_provider`: The provider of the capability, if any.
-    ///   Normally we expect this to be `None` because component_manager is
-    ///   usually the provider.
-    async fn on_scoped_framework_capability_routed_async<'a>(
-        self: Arc<Self>,
-        source_capability: &'a ComponentCapability,
-        component: WeakComponentInstance,
-        capability_provider: Option<Box<dyn CapabilityProvider>>,
-    ) -> Result<Option<Box<dyn CapabilityProvider>>, ModelError> {
-        // If some other capability has already been installed, then there's nothing to
-        // do here.
-        if capability_provider.is_some() {
-            return Ok(capability_provider);
-        }
-        // Find the storage decl, if it exists we're good to go
-        let storage_decl = Self::extract_storage_decl(source_capability, component.clone()).await?;
-        if let Some(storage_decl) = storage_decl {
-            return Ok(Some(Box::new(StorageAdminProtocolProvider::new(
+#[async_trait]
+impl DerivedCapability for StorageAdminDerivedCapability {
+    async fn maybe_new_provider(
+        &self,
+        source_capability: &ComponentCapability,
+        scope: WeakComponentInstance,
+    ) -> Option<Box<dyn CapabilityProvider>> {
+        let storage_decl = Self::extract_storage_decl(source_capability, scope.clone()).await;
+        if let Ok(Some(storage_decl)) = storage_decl {
+            return Some(Box::new(StorageAdminProtocolProvider::new(
                 storage_decl,
-                component,
-                self.clone(),
-            )) as Box<dyn CapabilityProvider>));
+                scope,
+                self.host.clone(),
+            )) as Box<dyn CapabilityProvider>);
         }
         // The declaration referenced either a nonexistent capability, or a capability that isn't a
         // storage capability. We can't be the provider for this.
-        Ok(None)
+        None
+    }
+}
+
+pub struct StorageAdmin {
+    model: Weak<Model>,
+}
+
+impl StorageAdmin {
+    pub fn new(model: Weak<Model>) -> Arc<Self> {
+        Arc::new(Self { model })
     }
 
     /// Serves the `fuchsia.sys2/StorageAdmin` protocol over the provided
@@ -297,7 +252,7 @@ impl StorageAdmin {
         self: Arc<Self>,
         storage_decl: StorageDecl,
         component: WeakComponentInstance,
-        server_end: zx::Channel,
+        mut stream: fsys::StorageAdminRequestStream,
     ) -> Result<(), Error> {
         let storage_source = RouteSource {
             source: CapabilitySource::Component {
@@ -317,10 +272,6 @@ impl StorageAdmin {
             )
         })?;
 
-        let mut stream = ServerEnd::<fsys::StorageAdminMarker>::new(server_end)
-            .into_stream()
-            .expect("could not convert channel into stream");
-
         while let Some(request) = stream.try_next().await? {
             match request {
                 fsys::StorageAdminRequest::OpenComponentStorage {
@@ -334,7 +285,7 @@ impl StorageAdmin {
                     let moniker =
                         component.moniker().concat(&instanced_moniker.without_instance_ids());
                     let instance_id =
-                        component.component_id_index().look_up_moniker(&moniker).cloned();
+                        component.component_id_index().id_for_moniker(&moniker).cloned();
 
                     let dir_proxy = storage::open_isolated_storage(
                         &backing_dir_source_info,
@@ -356,7 +307,7 @@ impl StorageAdmin {
                             .map_err(|_| fcomponent::Error::InvalidArguments)?;
                         let moniker = component.moniker.concat(&moniker);
                         let root_component = model
-                            .look_up(&moniker)
+                            .find_and_maybe_resolve(&moniker)
                             .await
                             .map_err(|_| fcomponent::Error::InstanceNotFound)?;
                         Ok(root_component)
@@ -383,20 +334,17 @@ impl StorageAdmin {
                 }
                 fsys::StorageAdminRequest::OpenComponentStorageById { id, object, responder } => {
                     let instance_id_index = component.component_id_index();
-                    let component_id = match ComponentInstanceId::from_str(&id) {
-                        Ok(id) => id,
-                        Err(_) => {
-                            responder.send(Err(fcomponent::Error::InvalidArguments))?;
-                            continue;
-                        }
+                    let Ok(instance_id) = id.parse::<InstanceId>() else {
+                        responder.send(Err(fcomponent::Error::InvalidArguments))?;
+                        continue;
                     };
-                    if !instance_id_index.look_up_instance_id(&component_id) {
+                    if !instance_id_index.contains_id(&instance_id) {
                         responder.send(Err(fcomponent::Error::ResourceNotFound))?;
                         continue;
                     }
                     match storage::open_isolated_storage_by_id(
                         &backing_dir_source_info,
-                        component_id,
+                        &instance_id,
                     )
                     .await
                     {
@@ -408,10 +356,20 @@ impl StorageAdmin {
                     }
                 }
                 fsys::StorageAdminRequest::DeleteComponentStorage {
-                    relative_moniker,
+                    relative_moniker: moniker_str,
                     responder,
                 } => {
-                    let response = match InstancedMoniker::try_from(relative_moniker.as_str()) {
+                    // Tolerate either an instanced moniker or a "normal" moniker here.
+                    // Most code-paths below and within `delete_isolated_storage()` ignore the instance
+                    // IDs, save for one. Those clients that require that level of specificity (unlikely)
+                    // will be able to specify them.
+                    let parsed_moniker =
+                        InstancedMoniker::try_from(moniker_str.as_str()).or_else(|_| {
+                            Moniker::try_from(moniker_str.as_str()).and_then(|m| {
+                                Ok(InstancedMoniker::from_moniker_with_zero_value_instance_ids(&m))
+                            })
+                        });
+                    let response = match parsed_moniker {
                         Err(error) => {
                             warn!(
                                 ?error,
@@ -424,7 +382,7 @@ impl StorageAdmin {
                                 .moniker()
                                 .concat(&instanced_moniker.without_instance_ids());
                             let instance_id =
-                                component.component_id_index().look_up_moniker(&moniker).cloned();
+                                component.component_id_index().id_for_moniker(&moniker).cloned();
                             let res = storage::delete_isolated_storage(
                                 backing_dir_source_info.clone(),
                                 component.persistent_storage,
@@ -824,29 +782,6 @@ impl StorageAdmin {
             responder.send(&monikers)?;
         }
         Ok(())
-    }
-}
-
-#[async_trait]
-impl Hook for StorageAdmin {
-    async fn on(self: Arc<Self>, event: &Event) -> Result<(), ModelError> {
-        match &event.payload {
-            EventPayload::CapabilityRouted {
-                source: CapabilitySource::Capability { source_capability, component },
-                capability_provider,
-            } => {
-                let mut capability_provider = capability_provider.lock().await;
-                *capability_provider = self
-                    .on_scoped_framework_capability_routed_async(
-                        source_capability,
-                        component.clone(),
-                        capability_provider.take(),
-                    )
-                    .await?;
-                Ok(())
-            }
-            _ => Ok(()),
-        }
     }
 }
 
@@ -1407,6 +1342,22 @@ mod tests {
         ) -> Result<fio::NodeAttributes2, zx::Status> {
             Err(zx::Status::INTERNAL)
         }
+
+        fn query_filesystem(&self) -> Result<fio::FilesystemInfo, zx::Status> {
+            Ok(fio::FilesystemInfo {
+                total_bytes: self.total.into(),
+                used_bytes: self.used.into(),
+                total_nodes: 0,
+                used_nodes: 0,
+                free_shared_pool_bytes: 0,
+                fs_id: 0,
+                block_size: 512,
+                max_filename_size: 100,
+                fs_type: 0,
+                padding: 0,
+                name: [0; 32],
+            })
+        }
     }
 
     #[async_trait]
@@ -1430,22 +1381,6 @@ mod tests {
 
         fn unregister_watcher(self: Arc<Self>, _key: usize) {
             panic!("not implemented!");
-        }
-
-        fn query_filesystem(&self) -> Result<fio::FilesystemInfo, zx::Status> {
-            Ok(fio::FilesystemInfo {
-                total_bytes: self.total.into(),
-                used_bytes: self.used.into(),
-                total_nodes: 0,
-                used_nodes: 0,
-                free_shared_pool_bytes: 0,
-                fs_id: 0,
-                block_size: 512,
-                max_filename_size: 100,
-                fs_type: 0,
-                padding: 0,
-                name: [0; 32],
-            })
         }
     }
 

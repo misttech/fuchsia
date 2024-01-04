@@ -76,11 +76,20 @@ config("internal.config") {
 
 config("llvm-libc.config") {
   visibility = [ "./*" ]
-  defines = [ "LIBC_COPT_USE_C_ASSERT=1" ]
+  defines = [
+    "LIBC_COPT_USE_C_ASSERT=1",
+    "LIBC_NAMESPACE=__llvm_libc",
+  ]
   include_dirs = [
     libc,
     llvm_libc,
   ]
+
+  if (is_gcc) {
+    # GCC complains about using __m128i type in template speciailization
+    # because the typedef includes attributes.
+    cflags = [ "-Wno-ignored-attributes" ]
+  }
 }
 
 config("testonly.config") {
@@ -266,8 +275,8 @@ if (zircon_toolchain == false) {
     configs += [ "//build/config/zircon:static-libc++" ]
 
     if (!is_gcc && current_cpu == "riscv64" &&
-        toolchain_variant.tags + [ "instrumentation-runtime" ] -
-        [ "instrumentation-runtime" ] != toolchain_variant.tags) {
+        toolchain_variant.tags + [ "instrumented" ] - [ "instrumented" ] !=
+        toolchain_variant.tags) {
       # TODO(fxbug.dev/121817): There is no R_RISCV_GLOB_DAT and instead
       # R_RISCV_64 is used for all GOT relocs; this means that they all must be
       # presumed to have potentially nonzero addends that matter.  The ld.so
@@ -278,7 +287,8 @@ if (zircon_toolchain == false) {
       # anyway).  However, with instrumentation that makes runtime outcalls
       # that number can increase quite a lot.  So when building with such
       # instrumentation, stick to DT_RELA format where the addend-saving hack
-      # is not required at all.
+      # is not required at all.  The profile instrumentation doesn't use
+      # outcalls but happens to increase the number of relocs too.
       ldflags = [ "-Wl,-z,rela" ]
     }
   }
@@ -308,6 +318,11 @@ if (zircon_toolchain == false) {
     # worthwhile to have PLT entries for main or __libc_start_main, since
     # they are always used eagerly anyway.
     cflags = [ "-fno-plt" ]
+
+    # The C runtime is needed for Go builds and the SDK, so always download this locally.
+    if (cxx_rbe_enable && !cxx_rbe_download_obj_files) {
+      configs += [ "//build/config:download_outputs" ]
+    }
   }
 }
 

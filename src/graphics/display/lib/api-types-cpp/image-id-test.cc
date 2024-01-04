@@ -4,6 +4,7 @@
 
 #include "src/graphics/display/lib/api-types-cpp/image-id.h"
 
+#include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>
 #include <fuchsia/hardware/display/controller/c/banjo.h>
 
@@ -50,15 +51,17 @@ TEST(ImageIdTest, ToFidlImageId) {
   EXPECT_EQ(1u, ToFidlImageId(kOne).value);
   EXPECT_EQ(2u, ToFidlImageId(kTwo).value);
   EXPECT_EQ(kLargeIdValue, ToFidlImageId(kLargeId).value);
-  EXPECT_EQ(fuchsia_hardware_display::wire::kInvalidDispId, ToFidlImageId(kInvalidImageId).value);
+  EXPECT_EQ(fuchsia_hardware_display_types::wire::kInvalidDispId,
+            ToFidlImageId(kInvalidImageId).value);
 }
 
 TEST(ImageIdTest, ToImageIdWithFidlValue) {
-  EXPECT_EQ(kOne, ToImageId(fuchsia_hardware_display::wire::ImageId{.value = 1}));
-  EXPECT_EQ(kTwo, ToImageId(fuchsia_hardware_display::wire::ImageId{.value = 2}));
-  EXPECT_EQ(kLargeId, ToImageId(fuchsia_hardware_display::wire::ImageId{.value = kLargeIdValue}));
-  EXPECT_EQ(kInvalidImageId, ToImageId(fuchsia_hardware_display::wire::ImageId{
-                                 .value = fuchsia_hardware_display::wire::kInvalidDispId}));
+  EXPECT_EQ(kOne, ToImageId(fuchsia_hardware_display_types::wire::ImageId{.value = 1}));
+  EXPECT_EQ(kTwo, ToImageId(fuchsia_hardware_display_types::wire::ImageId{.value = 2}));
+  EXPECT_EQ(kLargeId,
+            ToImageId(fuchsia_hardware_display_types::wire::ImageId{.value = kLargeIdValue}));
+  EXPECT_EQ(kInvalidImageId, ToImageId(fuchsia_hardware_display_types::wire::ImageId{
+                                 .value = fuchsia_hardware_display_types::wire::kInvalidDispId}));
 }
 
 TEST(ImageIdTest, FidlImageIdConversionRoundtrip) {

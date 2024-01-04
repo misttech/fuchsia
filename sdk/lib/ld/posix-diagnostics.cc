@@ -24,8 +24,16 @@ constexpr size_t kBufferSize = 128;
 // single line with no newline, so append one.  Then just send all the data
 // directly to stderr.
 void DiagnosticsReport::Printf(const char* format, va_list args) const {
-  __llvm_libc::printf_core::Printf<kBufferSize, __llvm_libc::printf_core::PrintfNewline::kYes>(
+  LIBC_NAMESPACE::printf_core::Printf<kBufferSize,
+                                      LIBC_NAMESPACE::printf_core::PrintfNewline::kYes>(
       StderrWrite, format, args);
+}
+
+template <>
+void DiagnosticsReport::ReportModuleLoaded<StartupModule>(const StartupModule& module) const {
+  if (startup_.ld_debug) {
+    SymbolizerContext<kBufferSize>(StderrWrite, module);
+  }
 }
 
 }  // namespace ld

@@ -18,15 +18,16 @@ def _to_verb(label):
     return verbs.custom(label_name(label))
 
 def _fuchsia_package_help_impl(ctx, make_shell_task):
+    components = ctx.attr.package[FuchsiaPackageInfo].packaged_components
     help = make_help_executable(ctx, dict((
-        [(verbs.noverb, "Run all test components within this test package.")] if ctx.attr.is_test and ctx.attr.components else []
+        [(verbs.noverb, "Run all test components within this test package.")] if ctx.attr.is_test and len(components) > 0 else []
     ) + [
         (verbs.help, "Print this help message."),
         (verbs.debug_symbols, "Register this package's debug symbols."),
         (verbs.publish, "Publish this package and register debug symbols."),
     ] + [
-        (_to_verb(component), "Publish this package and run '%s' with debug symbols." % component)
-        for component in ctx.attr.components
+        (verbs.custom(component.component_info.run_tag), "Publish this package and run '%s' with debug symbols." % component.component_info.run_tag)
+        for component in components
     ] + [
         (_to_verb(tool), "Publish this package and run '%s' with debug symbols" % tool)
         for tool in ctx.attr.tools
@@ -49,10 +50,6 @@ def _fuchsia_package_help_impl(ctx, make_shell_task):
         "package": attr.label(
             doc = "The package.",
             providers = [FuchsiaPackageInfo],
-            mandatory = True,
-        ),
-        "components": attr.string_list(
-            doc = "The component names.",
             mandatory = True,
         ),
         "tools": attr.string_list(
@@ -154,12 +151,13 @@ def fuchsia_package_tasks(
         *,
         name,
         package,
-        components,
+        component_run_tags,
         tools = {},
         is_test = False,
         tags = [],
         package_repository_name = None,
-        driver_repository_name = None,
+        disable_repository_name = None,
+        test_realm = None,
         **kwargs):
     # TODO(fxbug.dev/98996): Use ffx isolation. ffx test run currently needs
     # to access ~/.local/share/Fuchsia/ffx/ or else it crashes.
@@ -177,7 +175,6 @@ def fuchsia_package_tasks(
     fuchsia_task_register_debug_symbols(
         name = debug_symbols_task,
         deps = [package],
-        apply_fuchsia_transition = True,
         tags = top_level_tags,
         **kwargs
     )
@@ -199,6 +196,7 @@ def fuchsia_package_tasks(
             "remove",
             anonymous_repo_name,
         ],
+        default_argument_scope = "explicit",
         **kwargs
     )
     publish_only_task = "%s_only" % publish_task
@@ -214,7 +212,6 @@ def fuchsia_package_tasks(
             debug_symbols_task,
             publish_only_task,
         ],
-        apply_fuchsia_transition = True,
         tags = top_level_tags,
         **kwargs
     )
@@ -224,29 +221,29 @@ def fuchsia_package_tasks(
     _fuchsia_package_help(
         name = help_task,
         package = package,
-        components = components.keys(),
         tools = tools,
         debug_symbols_task = debug_symbols_task,
         publish_task = publish_task,
         top_level_name = name,
         is_test = is_test,
-        apply_fuchsia_transition = True,
         tags = top_level_tags,
         **kwargs
     )
 
     # For `bazel run :pkg.component`.
     component_run_tasks = []
-    for label, component in components.items():
-        component_run_task = _to_verb(label)(name)
+    for run_tag in component_run_tags:
+        component_run_task = verbs.custom(run_tag)(name)
         component_run_tasks.append("%s.run_only" % component_run_task)
         fuchsia_task_run_component(
             name = component_run_tasks[-1],
             default_argument_scope = "global",
-            repository = driver_repository_name or (package_repository_name or anonymous_repo_name),
+            repository = package_repository_name or anonymous_repo_name,
             package = package,
-            component = component,
+            run_tag = run_tag,
             tags = tags,
+            disable_repository = disable_repository_name,
+            test_realm = test_realm,
             **kwargs
         )
 
@@ -259,7 +256,6 @@ def fuchsia_package_tasks(
             ] + ([] if package_repository_name else [
                 verbs.delete_repo(anonymous_publish_task),
             ]),
-            apply_fuchsia_transition = True,
             tags = top_level_tags + manual_test,
             **kwargs
         )
@@ -286,7 +282,6 @@ def fuchsia_package_tasks(
             ] + ([] if package_repository_name else [
                 verbs.delete_repo(anonymous_publish_task),
             ]),
-            apply_fuchsia_transition = True,
             tags = top_level_tags,
             **kwargs
         )
@@ -303,7 +298,6 @@ def fuchsia_package_tasks(
         component_run_tasks = component_run_tasks,
         is_test = is_test,
         package = package,
-        apply_fuchsia_transition = True,
         tags = top_level_tags,
         **kwargs
     )

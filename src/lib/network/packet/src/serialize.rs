@@ -1235,15 +1235,13 @@ pub fn try_reuse_buffer<B: GrowBufferMut + ShrinkBuffer>(
     }
 }
 
-/// All types which implement `BufferAlloc<O>` also implement `BufferProvider<I,
-/// Either<I, O>>` for all `I` where `I` and `O` both implement [`BufferMut`].
-///
-/// Note that, if `I` and `O` are the same type, calling methods on `Either<I,
-/// O>` will often be just as fast as calling methods on `I`/`O` itself since
-/// Rust can optimize out branching on which enum variant is present. However,
-/// in this case, an impl of `BufferProvider<I, I>` is also provided.
+/// Provides an implementation of [`BufferProvider`] from a [`BufferAlloc`] `A`
+/// that attempts to reuse the input buffer and falls back to the allocator if
+/// the input buffer can't be reused.
+pub struct MaybeReuseBufferProvider<A>(pub A);
+
 impl<I: ReusableBuffer, O: ReusableBuffer, A: BufferAlloc<O>> BufferProvider<I, Either<I, O>>
-    for A
+    for MaybeReuseBufferProvider<A>
 {
     type Error = A::Error;
 
@@ -1253,8 +1251,9 @@ impl<I: ReusableBuffer, O: ReusableBuffer, A: BufferAlloc<O>> BufferProvider<I, 
         body: usize,
         suffix: usize,
     ) -> Result<Either<I, O>, Self::Error> {
+        let Self(alloc) = self;
         let need_capacity = prefix + body + suffix;
-        BufferAlloc::alloc(self, need_capacity).map(|mut buf| {
+        BufferAlloc::alloc(alloc, need_capacity).map(|mut buf| {
             buf.shrink(prefix..(prefix + body));
             Either::B(buf)
         })
@@ -1303,9 +1302,7 @@ impl<I: ReusableBuffer, O: ReusableBuffer, A: BufferAlloc<O>> BufferProvider<I, 
     }
 }
 
-/// All types which implement `BufferAlloc<B>` also implement `BufferProvider<B,
-/// B>` where `B` implements [`GrowBufferMut`] and [`ShrinkBuffer`].
-impl<B: ReusableBuffer, A: BufferAlloc<B>> BufferProvider<B, B> for A {
+impl<B: ReusableBuffer, A: BufferAlloc<B>> BufferProvider<B, B> for MaybeReuseBufferProvider<A> {
     type Error = A::Error;
 
     fn alloc_no_reuse(self, prefix: usize, body: usize, suffix: usize) -> Result<B, Self::Error> {
@@ -1325,6 +1322,34 @@ impl<B: ReusableBuffer, A: BufferAlloc<B>> BufferProvider<B, B> for A {
     fn reuse_or_realloc(self, buffer: B, prefix: usize, suffix: usize) -> Result<B, (A::Error, B)> {
         BufferProvider::<B, Either<B, B>>::reuse_or_realloc(self, buffer, prefix, suffix)
             .map(Either::into_inner)
+    }
+}
+
+/// Provides an implementation of [`BufferProvider`] from a [`BufferAlloc`] `A`
+/// that never attempts to reuse the input buffer, and always create a new
+/// buffer from the allocator `A`.
+pub struct NoReuseBufferProvider<A>(pub A);
+
+impl<I: FragmentedBuffer, O: ReusableBuffer, A: BufferAlloc<O>> BufferProvider<I, O>
+    for NoReuseBufferProvider<A>
+{
+    type Error = A::Error;
+
+    fn alloc_no_reuse(self, prefix: usize, body: usize, suffix: usize) -> Result<O, A::Error> {
+        let Self(alloc) = self;
+        alloc.alloc(prefix + body + suffix).map(|mut b| {
+            b.shrink(prefix..prefix + body);
+            b
+        })
+    }
+
+    fn reuse_or_realloc(self, buffer: I, prefix: usize, suffix: usize) -> Result<O, (A::Error, I)> {
+        BufferProvider::<I, O>::alloc_no_reuse(self, prefix, buffer.len(), suffix)
+            .map(|mut b| {
+                b.copy_from(&buffer);
+                b
+            })
+            .map_err(|e| (e, buffer))
     }
 }
 
@@ -1378,7 +1403,7 @@ pub trait Serializer: Sized {
     where
         Self::Buffer: ReusableBuffer,
     {
-        self.serialize(outer, new_buf_vec)
+        self.serialize(outer, MaybeReuseBufferProvider(new_buf_vec))
     }
 
     /// Serializes this `Serializer`, failing if the existing buffer is not
@@ -1402,15 +1427,17 @@ pub trait Serializer: Sized {
     where
         Self::Buffer: ReusableBuffer,
     {
-        self.serialize(outer, ()).map(Either::into_a).map_err(|(err, slf)| {
-            (
-                match err {
-                    SerializeError::Alloc(()) => BufferTooShortError.into(),
-                    SerializeError::SizeLimitExceeded => SerializeError::SizeLimitExceeded,
-                },
-                slf,
-            )
-        })
+        self.serialize(outer, MaybeReuseBufferProvider(())).map(Either::into_a).map_err(
+            |(err, slf)| {
+                (
+                    match err {
+                        SerializeError::Alloc(()) => BufferTooShortError.into(),
+                        SerializeError::SizeLimitExceeded => SerializeError::SizeLimitExceeded,
+                    },
+                    slf,
+                )
+            },
+        )
     }
 
     /// Serializes this `Serializer` as the outermost packet.
@@ -2449,17 +2476,18 @@ mod tests {
     }
 
     #[test]
-    fn test_buffer_alloc_buffer_provider() {
-        // Test that the blanket impl of `BufferProvider` for `A: BufferAlloc`
-        // works as expected, returning Either::A when reusing is possible, and
-        // returning Either::B when realloc'ing is needed.
-
+    fn test_maybe_reuse_buffer_provider() {
         fn test_expect(body_range: Range<usize>, prefix: usize, suffix: usize, expect_a: bool) {
             let mut bytes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
             let buffer = Buf::new(&mut bytes[..], body_range);
             let body = buffer.as_ref().to_vec();
-            let buffer =
-                BufferProvider::reuse_or_realloc(new_buf_vec, buffer, prefix, suffix).unwrap();
+            let buffer = BufferProvider::reuse_or_realloc(
+                MaybeReuseBufferProvider(new_buf_vec),
+                buffer,
+                prefix,
+                suffix,
+            )
+            .unwrap();
             match &buffer {
                 Either::A(_) if expect_a => {}
                 Either::B(_) if !expect_a => {}
@@ -2493,6 +2521,37 @@ mod tests {
         // If we don't have enough capacity, it fails and must realloc.
         test_expect_realloc(0..9, 1, 1);
         test_expect_realloc(1..10, 1, 1);
+    }
+
+    #[test]
+    fn test_no_reuse_buffer_provider() {
+        #[track_caller]
+        fn test_expect(body_range: Range<usize>, prefix: usize, suffix: usize) {
+            let mut bytes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+            // The buffer that will not be reused.
+            let internal_buffer: Buf<&mut [u8]> = Buf::new(&mut bytes[..], body_range);
+            let body = internal_buffer.as_ref().to_vec();
+            // The newly allocated buffer, note the type is different from
+            // internal_buffer.
+            let buffer: Buf<Vec<u8>> = BufferProvider::reuse_or_realloc(
+                NoReuseBufferProvider(new_buf_vec),
+                internal_buffer,
+                prefix,
+                suffix,
+            )
+            .unwrap();
+            let bytes: &[u8] = buffer.as_ref();
+            assert_eq!(bytes, body.as_slice());
+            assert_eq!(buffer.prefix_len(), prefix);
+            assert_eq!(buffer.suffix_len(), suffix);
+        }
+        // No prefix or suffix trivially succeeds, reuse opportunity is ignored.
+        test_expect(0..10, 0, 0);
+        // If we have enough prefix/suffix, reuse opportunity is ignored.
+        test_expect(1..9, 1, 1);
+        // Prefix and suffix and properly allocated and the body is copied.
+        test_expect(0..9, 10, 10);
+        test_expect(1..10, 15, 15);
     }
 
     /// Simple Vec-backed buffer to test fragmented buffers implementation.

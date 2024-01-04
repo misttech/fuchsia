@@ -8,18 +8,14 @@ import("//build/components/fuchsia_unittest_component.gni")
 import("//build/components/fuchsia_unittest_package.gni")
 import("//build/test.gni")
 import("//build/testing/environments.gni")
+import("//build/testing/perf/test.gni")
+import("//src/starnix/tests/build/starnix_host_test_component.gni")
 
 test("loopback_socket_benchmarks") {
   sources = [
     "../../os.h",
     "loopback_socket_benchmarks.cc",
   ]
-  if (is_fuchsia) {
-    sources += [
-      "tracing.cc",
-      "tracing.h",
-    ]
-  }
 
   deps = [
     "//sdk/lib/syslog/cpp",
@@ -30,10 +26,8 @@ test("loopback_socket_benchmarks") {
   ]
   if (is_fuchsia) {
     deps += [
-      "//sdk/fidl/fuchsia.tracing.controller:fuchsia.tracing.controller_cpp",
-      "//sdk/lib/component/incoming/cpp",
+      "//src/performance/lib/test_utils:trace_controller",
       "//zircon/system/ulib/trace",
-      "//zircon/system/ulib/trace-provider",
     ]
   }
 }
@@ -46,8 +40,19 @@ fuchsia_unittest_component("loopback-socket-benchmarks-with-netstack3") {
   ]
 }
 
-fuchsia_test_package("loopback-socket-benchmarks-tests-netstack3") {
-  test_components = [ ":loopback-socket-benchmarks-with-netstack3" ]
+fuchsia_unittest_component("loopback-socket-benchmarks-with-fake-netstack") {
+  manifest = "meta/loopback-socket-benchmarks-with-fake-netstack.cml"
+  deps = [
+    ":loopback_socket_benchmarks",
+    "//src/connectivity/network/tests/benchmarks/fake-netstack",
+  ]
+}
+
+fuchsia_test_package("loopback-socket-benchmarks-tests") {
+  test_components = [
+    ":loopback-socket-benchmarks-with-netstack3",
+    ":loopback-socket-benchmarks-with-fake-netstack",
+  ]
 }
 
 fuchsia_unittest_component(
@@ -70,6 +75,24 @@ fuchsia_test_package("loopback-socket-benchmarks-with-tracing-pkg-netstack3") {
   }
 }
 
+benchmark_test_configs = [
+  {
+    package = ":loopback-socket-benchmarks-tests"
+    tests = [
+      {
+        name = "loopback_socket_benchmarks_with_netstack3"
+        component = "loopback-socket-benchmarks-with-netstack3"
+        expected_metric_names_filepath = "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.network.socket.loopback.netstack3.txt"
+      },
+      {
+        name = "loopback_socket_benchmarks_with_fake_netstack"
+        component = "loopback-socket-benchmarks-with-fake-netstack"
+        expected_metric_names_filepath = "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.network.socket.loopback.fake_netstack.txt"
+      },
+    ]
+  },
+]
+
 # The Go runtime on Fuchsia does not support RISC-V.
 if (target_cpu != "riscv64") {
   fuchsia_unittest_component("loopback-socket-benchmarks") {
@@ -88,21 +111,30 @@ if (target_cpu != "riscv64") {
     ]
   }
 
-  fuchsia_unittest_component("loopback-socket-benchmarks-with-fake-netstack") {
-    manifest = "meta/loopback-socket-benchmarks-with-fake-netstack.cml"
-    deps = [
-      ":loopback_socket_benchmarks",
-      "//src/connectivity/network/tests/benchmarks/fake-netstack",
-    ]
-  }
-
   fuchsia_test_package("loopback-socket-benchmarks-tests-netstack2") {
     test_components = [
       ":loopback-socket-benchmarks",
       ":loopback-socket-benchmarks-with-fast-udp",
-      ":loopback-socket-benchmarks-with-fake-netstack",
     ]
   }
+
+  benchmark_test_configs += [
+    {
+      package = ":loopback-socket-benchmarks-tests-netstack2"
+      tests = [
+        {
+          name = "loopback_socket_benchmarks_test"
+          component = "loopback-socket-benchmarks"
+          expected_metric_names_filepath = "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.network.socket.loopback.txt"
+        },
+        {
+          name = "loopback_socket_benchmarks_with_fast_udp"
+          component = "loopback-socket-benchmarks-with-fast-udp"
+          expected_metric_names_filepath = "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.network.socket.loopback.fastudp.txt"
+        },
+      ]
+    },
+  ]
 
   fuchsia_unittest_component("loopback-socket-benchmarks-with-tracing") {
     manifest = "meta/loopback-socket-benchmarks-with-tracing.cml"
@@ -139,17 +171,180 @@ if (target_cpu != "riscv64") {
   }
 
   ns2_test_targets = [
-    ":loopback-socket-benchmarks-tests-netstack2",
     ":loopback-socket-benchmarks-with-tracing-pkg-netstack2",
+    ":loopback-socket-benchmarks-tests-netstack2",
   ]
+  ns2_benchmark_targets =
+      [ ":loopback-socket-benchmarks-with-tracing-pkg-netstack2" ]
 } else {
+  ns2_benchmark_targets = []
   ns2_test_targets = []
 }
 
+# TODO(b/298565565): Enable these on vim3.
+if (host_os == "linux" && target_cpu == "x64" && !is_asan) {
+  starnix_host_test_component("loopback-socket-benchmarks-starnix") {
+    test_label = ":loopback_socket_benchmarks"
+    test_binary = "loopback_socket_benchmarks"
+
+    manifest = "meta/loopback-socket-benchmarks-starnix.cml"
+
+    test_type = "starnix"
+  }
+
+  starnix_host_test_component(
+      "loopback-socket-benchmarks-starnix-with-netstack3") {
+    test_label = ":loopback_socket_benchmarks"
+    test_binary = "loopback_socket_benchmarks"
+
+    manifest = "meta/loopback-socket-benchmarks-starnix-with-netstack3.cml"
+
+    test_type = "starnix"
+  }
+
+  starnix_host_test_component(
+      "loopback-socket-benchmarks-starnix-with-fake-netstack") {
+    test_label = ":loopback_socket_benchmarks"
+    test_binary = "loopback_socket_benchmarks"
+
+    manifest = "meta/loopback-socket-benchmarks-starnix-with-fake-netstack.cml"
+
+    test_type = "starnix"
+  }
+
+  fuchsia_test_package("loopback-socket-benchmarks-starnix-pkg") {
+    package_name = "loopback-socket-benchmarks-starnix"
+    test_components = [ ":loopback-socket-benchmarks-starnix" ]
+
+    subpackages = [
+      "//src/starnix/containers/debian:debian_package",
+      "//src/starnix/kernel:starnix_kernel_package",
+      "//src/connectivity/network:netstack2",
+    ]
+  }
+
+  fuchsia_package("netstack3") {
+    package_name = "netstack"
+    deps = [ "//src/connectivity/network/netstack3:component-dropin" ]
+  }
+
+  fuchsia_test_package(
+      "loopback-socket-benchmarks-starnix-with-netstack3-pkg") {
+    package_name = "loopback-socket-benchmarks-starnix-with-netstack3"
+    test_components = [ ":loopback-socket-benchmarks-starnix-with-netstack3" ]
+
+    subpackages = [
+      "//src/starnix/containers/debian:debian_package",
+      "//src/starnix/kernel:starnix_kernel_package",
+      ":netstack3",
+    ]
+  }
+
+  fuchsia_test_package(
+      "loopback-socket-benchmarks-starnix-with-fake-netstack-pkg") {
+    package_name = "loopback-socket-benchmarks-starnix-with-fake-netstack"
+    test_components =
+        [ ":loopback-socket-benchmarks-starnix-with-fake-netstack" ]
+
+    subpackages = [
+      "//src/starnix/containers/debian:debian_package",
+      "//src/starnix/kernel:starnix_kernel_package",
+      "//src/connectivity/network/tests/benchmarks/fake-netstack:fake-netstack-pkg",
+    ]
+  }
+
+  starnix_benchmarks = [
+    ":loopback-socket-benchmarks-starnix-pkg",
+    ":loopback-socket-benchmarks-starnix-with-netstack3-pkg",
+    ":loopback-socket-benchmarks-starnix-with-fake-netstack-pkg",
+  ]
+
+  # TODO(https://issuetracker.google.com/296292263): The run count can be
+  # doubled once the pathological slow-down has been addressed, because the
+  # bulk of runtime is spent in these cases for NS3 and we expect runtime to
+  # approximately halve.
+  #
+  # Reduce the number of runs for the starnix benchmarks to avoid hitting a
+  # timeout in Infra.
+  _starnix_runs = 120
+  benchmark_test_configs += [
+    {
+      package = ":loopback-socket-benchmarks-starnix"
+      runs = _starnix_runs
+      test_type = "starnix"
+      tests = [
+        {
+          name = "loopback_socket_benchmarks_starnix"
+          component = "loopback-socket-benchmarks-starnix"
+          expected_metric_names_filepath = "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.network.socket.loopback.starnix.txt"
+        },
+      ]
+    },
+    {
+      package = ":loopback-socket-benchmarks-starnix-with-netstack3"
+      runs = _starnix_runs
+      test_type = "starnix"
+      tests = [
+        {
+          name = "loopback_socket_benchmarks_starnix_with_netstack3"
+          component = "loopback-socket-benchmarks-starnix-with-netstack3"
+          expected_metric_names_filepath = "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.network.socket.loopback.starnix.netstack3.txt"
+        },
+      ]
+    },
+    {
+      package = ":loopback-socket-benchmarks-starnix-with-fake-netstack"
+      runs = _starnix_runs
+      test_type = "starnix"
+      tests = [
+        {
+          name = "loopback_socket_benchmarks_starnix_with_fake_netstack"
+          component = "loopback-socket-benchmarks-starnix-with-fake-netstack"
+          expected_metric_names_filepath = "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.network.socket.loopback.starnix.fake_netstack.txt"
+        },
+      ]
+    },
+  ]
+} else {
+  starnix_benchmarks = []
+}
+
 all_test_targets = [
-                     ":loopback-socket-benchmarks-tests-netstack3",
+                     ":loopback-socket-benchmarks-tests",
                      ":loopback-socket-benchmarks-with-tracing-pkg-netstack3",
-                   ] + ns2_test_targets
+                   ] + ns2_test_targets + starnix_benchmarks
+all_benchmark_targets =
+    [ ":loopback-socket-benchmarks-with-tracing-pkg-netstack3" ] +
+    ns2_benchmark_targets + starnix_benchmarks
+
+foreach(test_config, benchmark_test_configs) {
+  foreach(test, test_config.tests) {
+    fuchsia_component_perf_test(test.name) {
+      package = test_config.package
+      component_name = test.component
+      expected_metric_names_filepath = test.expected_metric_names_filepath
+      test_component_args = [
+        "-p",
+        "--quiet",
+      ]
+
+      if (defined(test_config.runs)) {
+        test_component_args += [
+          "--runs",
+          "${test_config.runs}",
+        ]
+      }
+
+      if (defined(test_config.test_type)) {
+        test_type = test_config.test_type
+      }
+
+      results_path_test_arg = "--out"
+    }
+
+    all_benchmark_targets += [ ":${test.name}" ]
+  }
+}
 
 group("tests") {
   testonly = true
@@ -161,5 +356,5 @@ group("tests") {
 
 group("benchmarks") {
   testonly = true
-  deps = all_test_targets
+  deps = all_benchmark_targets
 }

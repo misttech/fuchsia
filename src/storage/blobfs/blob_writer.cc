@@ -17,7 +17,6 @@
 
 #include <fbl/ref_ptr.h>
 
-#include "src/lib/storage/vfs/cpp/journal/data_streamer.h"
 #include "src/storage/blobfs/blob_data_producer.h"
 #include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/blobfs.h"
@@ -29,6 +28,7 @@
 #include "src/storage/blobfs/iterator/extent_iterator.h"
 #include "src/storage/blobfs/iterator/node_populator.h"
 #include "src/storage/blobfs/iterator/vector_extent_iterator.h"
+#include "src/storage/lib/vfs/cpp/journal/data_streamer.h"
 
 namespace blobfs {
 
@@ -55,11 +55,7 @@ const size_t kSystemPageSize = zx_system_get_page_size();
 }  // namespace
 
 Blob::Writer::Writer(const Blob& blob, bool is_delivery_blob)
-    : blob_(blob), is_delivery_blob_(is_delivery_blob) {
-  if (is_delivery_blob) {
-    ZX_ASSERT(blobfs().allow_delivery_blobs());
-  }
-}
+    : blob_(blob), is_delivery_blob_(is_delivery_blob) {}
 
 zx::result<Blob::WrittenBlob> Blob::Writer::WriteNullBlob(Blob& blob) {
   ZX_DEBUG_ASSERT(&blob_ == &blob);

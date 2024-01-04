@@ -54,5 +54,15 @@
             protocol: "fuchsia.fxfs.Volumes",
             from: "#fxfs",
         },
+        {
+            protocol: "fuchsia.fxfs.BlobCreator",
+            from: "void",
+            availability: "optional",
+        },
+        {
+            protocol: "fuchsia.fxfs.BlobReader",
+            from: "void",
+            availability: "optional",
+        },
     ],
 }

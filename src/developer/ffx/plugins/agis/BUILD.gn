@@ -10,11 +10,12 @@ ffx_plugin("ffx_agis") {
   edition = "2021"
   with_unit_tests = true
   deps = [
-    "//sdk/fidl/fuchsia.developer.ffx:fuchsia.developer.ffx_rust",
     "//sdk/fidl/fuchsia.gpu.agis:fuchsia.gpu.agis_rust",
     "//src/developer/ffx/config:lib",
+    "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
+    "//src/developer/ffx/lib/target:lib",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
@@ -36,8 +37,27 @@ ffx_tool("ffx_agis_tool") {
     "//src/lib/fuchsia-async",
   ]
   sources = [ "src/main.rs" ]
+
+  sdk_target_name = "sdk"
+  sdk_category = "partner"
 }
 
 group("ffx") {
   deps = [ ":ffx_agis" ]
+}
+
+group("agis") {
+  public_deps = [
+    ":ffx_agis_tool",
+    ":ffx_agis_tool_host_tool",
+  ]
+}
+
+group("bin") {
+  public_deps = [ ":ffx_agis_tool_versioned" ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":ffx_agis_tests($host_toolchain)" ]
 }

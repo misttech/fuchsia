@@ -46,7 +46,7 @@ zx_status_t AudioDeviceManager::Init() {
 
   // Start monitoring for plug/unplug events of pluggable audio output devices.
   zx_status_t res =
-      plug_detector_->Start(fit::bind_member<&AudioDeviceManager::AddDeviceByChannel>(this));
+      plug_detector_->Start(fit::bind_member<&AudioDeviceManager::AddDeviceFromDevFs>(this));
   if (res != ZX_OK) {
     FX_PLOGS(ERROR, res) << "AudioDeviceManager failed to start plug detector";
     return res;
@@ -150,8 +150,8 @@ fpromise::promise<void, zx_status_t> AudioDeviceManager::UpdatePipelineConfig(
   // protects from devices being plugged or unplugged during update of the PipelineConfig,
   // as well as ensures only one update to the PipelineConfig will be processed at a time.
   if (!device->routable()) {
-    FX_LOGS(INFO) << "Device unroutable BAD_STATE (token_id " << dev->token_id << ", unique_id '"
-                  << device_id << "')";
+    FX_LOGS(WARNING) << "Device unroutable BAD_STATE (token_id " << dev->token_id << ", unique_id '"
+                     << device_id << "')";
     return fpromise::make_error_promise(ZX_ERR_BAD_STATE);
   }
 
@@ -262,8 +262,10 @@ void AudioDeviceManager::RemoveDevice(const std::shared_ptr<AudioDevice>& device
   TRACE_DURATION("audio", "AudioDeviceManager::RemoveDevice");
   FX_DCHECK(device != nullptr);
 
-  FX_LOGS(INFO) << "Removing " << (device->is_input() ? "input" : "output") << " '"
-                << device->name() << "'";
+  if constexpr (kLogAddRemoveDevice) {
+    FX_LOGS(INFO) << "Removing " << (device->is_input() ? "input" : "output") << " '"
+                  << device->name() << "'";
+  }
 
   // If device was active: reset the default (based on most-recently-plugged).
   OnPlugStateChanged(device, false, device->plug_time());
@@ -287,20 +289,22 @@ void AudioDeviceManager::OnPlugStateChanged(const std::shared_ptr<AudioDevice>& 
 
   // Update our bookkeeping for device's plug state. If no change, we're done.
   if (!device->UpdatePlugState(plugged, plug_time)) {
-    // TODO(fxbug.dev/73947): remove after debugging
-    FX_LOGS(INFO) << "Ignoring OnPlugStateChanged event (no change): "
-                  << (device->is_input() ? "input" : "output") << " '" << device->name()
-                  << "', plugged=" << plugged << ", t=" << plug_time.get();
+    if constexpr (kLogDevicePlugUnplug) {
+      FX_LOGS(INFO) << "Ignoring OnPlugStateChanged event (no change): "
+                    << (device->is_input() ? "input" : "output") << " '" << device->name()
+                    << "', plugged=" << plugged << ", t=" << plug_time.get();
+    }
     return;
   }
 
   // If the device is not yet activated, we should not be changing routes.
   bool activated = devices_.find(device->token()) != devices_.end();
   if (!activated) {
-    // TODO(fxbug.dev/73947): remove after debugging
-    FX_LOGS(INFO) << "Ignoring OnPlugStateChanged event (not activated): "
-                  << (device->is_input() ? "input" : "output") << " '" << device->name()
-                  << "', plugged=" << plugged << ", t=" << plug_time.get();
+    if constexpr (kLogDevicePlugUnplug) {
+      FX_LOGS(INFO) << "Ignoring OnPlugStateChanged event (not activated): "
+                    << (device->is_input() ? "input" : "output") << " '" << device->name()
+                    << "', plugged=" << plugged << ", t=" << plug_time.get();
+    }
     return;
   }
 
@@ -366,14 +370,6 @@ void AudioDeviceManager::SetDeviceGain(uint64_t device_token,
   // Change the gain and then report the new settings to our clients.
   dev->SetGainInfo(gain_info, set_flags);
   NotifyDeviceGainChanged(*dev);
-}
-
-void AudioDeviceManager::GetDefaultInputDevice(GetDefaultInputDeviceCallback cbk) {
-  cbk(default_input_token_);
-}
-
-void AudioDeviceManager::GetDefaultOutputDevice(GetDefaultOutputDeviceCallback cbk) {
-  cbk(default_output_token_);
 }
 
 std::shared_ptr<AudioDevice> AudioDeviceManager::FindLastPlugged(AudioObject::Type type,
@@ -472,13 +468,35 @@ void AudioDeviceManager::UpdateDefaultDevice(bool input) {
   }
 }
 
+// The entry point from AudioDeviceEnumerator FIDL method
 void AudioDeviceManager::AddDeviceByChannel(
     std::string device_name, bool is_input,
     fidl::InterfaceHandle<fuchsia::hardware::audio::StreamConfig> stream_config) {
-  TRACE_DURATION("audio", "AudioDeviceManager::AddDeviceByChannel");
-  if constexpr (kLogAddDevice) {
+  if constexpr (kLogAddRemoveDevice) {
+    FX_LOGS(INFO) << __FUNCTION__ << (is_input ? ": Input '" : ": Output '") << device_name
+                  << "' from AudioDeviceEnumerator";
+  }
+  AddDeviceInternal(device_name, is_input, std::move(stream_config));
+}
+
+// The entry point from PlugDetector device-watcher (devfs)
+void AudioDeviceManager::AddDeviceFromDevFs(
+    const std::string& device_name, bool is_input,
+    fidl::InterfaceHandle<fuchsia::hardware::audio::StreamConfig> stream_config) {
+  if constexpr (kLogAddRemoveDevice) {
     FX_LOGS(INFO) << __FUNCTION__ << (is_input ? ": Input '" : ": Output '") << device_name << "'";
   }
+  AddDeviceInternal(device_name, is_input, std::move(stream_config));
+}
+
+// The common code, once these parallel device-discovery streams come together.
+void AudioDeviceManager::AddDeviceInternal(
+    const std::string& device_name, bool is_input,
+    fidl::InterfaceHandle<fuchsia::hardware::audio::StreamConfig> stream_config) {
+  if constexpr (kLogAddRemoveDevice) {
+    FX_LOGS(INFO) << __FUNCTION__ << (is_input ? ": Input '" : ": Output '") << device_name << "'";
+  }
+  TRACE_DURATION("audio", "AudioDeviceManager::AddDeviceByChannel");
 
   // Hand the stream off to the proper type of class to manage.
   std::shared_ptr<AudioDevice> new_device;
@@ -499,7 +517,7 @@ void AudioDeviceManager::AddDeviceByChannel(
     return;
   }
 
-  if constexpr (kLogAddDevice) {
+  if constexpr (kLogAddRemoveDevice) {
     FX_LOGS(INFO) << __FUNCTION__ << " instantiated audio " << (is_input ? "input '" : "output '")
                   << device_name << "': " << new_device.get();
   }

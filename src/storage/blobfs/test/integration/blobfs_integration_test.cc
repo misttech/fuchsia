@@ -5,11 +5,9 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <fidl/fuchsia.blobfs/cpp/wire.h>
 #include <fidl/fuchsia.fs/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <fidl/fuchsia.update.verify/cpp/wire.h>
-#include <fuchsia/blobfs/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async-loop/loop.h>
@@ -21,7 +19,6 @@
 #include <lib/fdio/fd.h>
 #include <lib/fidl/cpp/binding.h>
 #include <lib/inspect/cpp/hierarchy.h>
-#include <lib/inspect/service/cpp/reader.h>
 #include <lib/inspect/testing/cpp/inspect.h>
 #include <lib/sync/completion.h>
 #include <lib/zx/vmo.h>
@@ -48,34 +45,18 @@
 #include <safemath/safe_conversions.h>
 
 #include "src/lib/digest/digest.h"
-#include "src/lib/storage/block_client/cpp/remote_block_device.h"
-#include "src/lib/storage/fs_management/cpp/mount.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/blobfs/test/integration/blobfs_fixtures.h"
 #include "src/storage/blobfs/test/integration/fdio_test.h"
 #include "src/storage/fvm/format.h"
+#include "src/storage/lib/block_client/cpp/remote_block_device.h"
+#include "src/storage/lib/fs_management/cpp/mount.h"
 
 namespace blobfs {
 namespace {
 
 using BlobfsIntegrationTest = ParameterizedBlobfsTest;
-
-// Class emulating a corruption handler service.
-class CorruptBlobHandlerImpl final : public fuchsia::blobfs::CorruptBlobHandler {
- public:
-  void CorruptBlob(::std::vector<uint8_t> merkleroot) override {
-    sync_completion_signal(&notified_);
-  }
-
-  bool WasCalled() {
-    zx_status_t status = sync_completion_wait(&notified_, ZX_TIME_INFINITE);
-    return status == ZX_OK;
-  }
-
- private:
-  sync_completion_t notified_;
-};
 
 // Go over the parent device logic and test fixture.
 TEST_P(BlobfsIntegrationTest, Trivial) {}
@@ -104,88 +85,6 @@ TEST_P(BlobfsIntegrationTest, Basics) {
 
     ASSERT_EQ(unlink(info->path), 0);
   }
-}
-
-TEST_P(BlobfsIntegrationTest, CorruptBlobNotify) {
-  ssize_t device_block_size = fs().options().device_block_size;
-
-  // Create a small blob and add it to blobfs.
-  std::unique_ptr<BlobInfo> info = GenerateRandomBlob(fs().mount_path(), device_block_size);
-  fbl::unique_fd blob_fd;
-  ASSERT_NO_FATAL_FAILURE(MakeBlob(*info, &blob_fd));
-  blob_fd.reset();
-
-  // Unmount blobfs before corrupting the blob. Blobfs needs to be remounted to ensure that the
-  // uncorrupted blob wasn't cached.
-  ASSERT_EQ(fs().Unmount().status_value(), ZX_OK);
-
-  // Find the blob within the block device and corrupt it.
-  zx::result path = fs().DevicePath();
-  ASSERT_TRUE(path.is_ok()) << path.status_string();
-  zx::result device = component::Connect<fuchsia_hardware_block::Block>(path.value());
-  ASSERT_TRUE(device.is_ok()) << device.status_string();
-
-  // Read the superblock to find where the data blocks start.
-  Superblock superblock;
-  {
-    zx_status_t status =
-        block_client::SingleReadBytes(device.value(), &superblock, sizeof(superblock), 0);
-    ASSERT_EQ(status, ZX_OK) << zx_status_get_string(status);
-  }
-  uint64_t data_start_block = DataStartBlock(superblock);
-  uint64_t data_block_count = DataBlocks(superblock);
-  auto data = std::make_unique<uint8_t[]>(device_block_size);
-  bool was_blob_corrupted = false;
-  // Loop through the data blocks looking for the blob. Blobs always start on a block boundary.
-  for (uint64_t block = 0; block < data_block_count; ++block) {
-    off_t device_offset =
-        safemath::checked_cast<off_t>((data_start_block + block) * kBlobfsBlockSize);
-
-    {
-      zx_status_t status = block_client::SingleReadBytes(device.value(), data.get(),
-                                                         device_block_size, device_offset);
-      ASSERT_EQ(status, ZX_OK) << zx_status_get_string(status);
-    }
-
-    if (memcmp(info->data.get(), data.get(), device_block_size) == 0) {
-      // Corrupt the first byte by flipping all of the bits.
-      data[0] = ~data[0];
-      {
-        zx_status_t status = block_client::SingleWriteBytes(device.value(), data.get(),
-                                                            device_block_size, device_offset);
-        ASSERT_EQ(status, ZX_OK) << zx_status_get_string(status);
-      }
-      was_blob_corrupted = true;
-      break;
-    }
-  }
-  ASSERT_TRUE(was_blob_corrupted) << "The blob didn't get corrupted";
-
-  ASSERT_EQ(fs().Mount().status_value(), ZX_OK);
-
-  // Start the corrupt blob handler server.
-  async::Loop loop(&kAsyncLoopConfigNoAttachToCurrentThread);
-  ASSERT_EQ(ZX_OK, loop.StartThread("corruption-dispatcher"));
-  CorruptBlobHandlerImpl corrupt_blob_handler;
-  fidl::Binding<fuchsia::blobfs::CorruptBlobHandler> binding(&corrupt_blob_handler);
-  auto client_end = fidl::ClientEnd<fuchsia_blobfs::CorruptBlobHandler>(
-      binding.NewBinding(loop.dispatcher()).TakeChannel());
-
-  // Pass the corrupt blob handler server to blobfs.
-  auto blobfs = component::ConnectAt<fuchsia_blobfs::Blobfs>(fs().ServiceDirectory());
-  ASSERT_EQ(blobfs.status_value(), ZX_OK);
-
-  ASSERT_EQ(fidl::WireCall(*blobfs)->SetCorruptBlobHandler(std::move(client_end)).status(), ZX_OK);
-
-  blob_fd.reset(open(info->path, O_RDONLY));
-  ASSERT_TRUE(blob_fd.is_valid());
-  EXPECT_EQ(pread(blob_fd.get(), data.get(), device_block_size, 0), -1);
-
-  EXPECT_TRUE(corrupt_blob_handler.WasCalled());
-
-  // Format blobfs to remove the corruption so the fsck that is run in the destructor will pass.
-  ASSERT_EQ(fs().Unmount().status_value(), ZX_OK);
-  EXPECT_EQ(fs().Format().status_value(), ZX_OK);
 }
 
 TEST_P(BlobfsIntegrationTest, UnallocatedBlob) {
@@ -1374,9 +1273,8 @@ class BlobfsMetricIntegrationTest : public FdioTest {
   void GetReadBytes(uint64_t* total_read_bytes) {
     const std::array<std::string, 2> algorithms = {"uncompressed", "chunked"};
     const std::array<std::string, 2> read_methods = {"paged_read_stats", "unpaged_read_stats"};
-    fpromise::result<inspect::Hierarchy> snapshot = TakeSnapshot();
-    ASSERT_TRUE(snapshot.is_ok());
-    inspect::Hierarchy hierarchy = std::move(snapshot.value());
+    inspect::Hierarchy hierarchy;
+    TakeSnapshot(&hierarchy);
     *total_read_bytes = 0;
     for (const std::string& algorithm : algorithms) {
       for (const std::string& stat : read_methods) {
@@ -1426,36 +1324,34 @@ TEST_F(BlobfsMetricIntegrationTest, BlobfsInspectTree) {
   using namespace inspect::testing;
   using namespace ::testing;
 
-  fpromise::result<inspect::Hierarchy> snapshot = TakeSnapshot();
-  ASSERT_TRUE(snapshot.is_ok());
-
-  const inspect::Hierarchy* root_node = &snapshot.value();
+  inspect::Hierarchy hierarchy;
+  TakeSnapshot(&hierarchy);
 
   // Ensure that all nodes we expect exist.
   for (const char* name :
        {fs_inspect::kInfoNodeName, fs_inspect::kUsageNodeName, fs_inspect::kFvmNodeName}) {
-    ASSERT_NE(root_node->GetByPath({name}), nullptr)
+    ASSERT_NE(hierarchy.GetByPath({name}), nullptr)
         << "Could not find expected node in Blobfs inspect hierarchy: " << name;
   }
 
   // Test known values specific to Blobfs.
-  const inspect::Hierarchy* info_node = root_node->GetByPath({fs_inspect::kInfoNodeName});
+  const inspect::Hierarchy* info_node = hierarchy.GetByPath({fs_inspect::kInfoNodeName});
   ASSERT_NE(info_node, nullptr);
   EXPECT_THAT(
       *info_node,
       NodeMatches(AllOf(
           NameMatches(fs_inspect::kInfoNodeName),
           PropertyList(IsSupersetOf({StringIs(fs_inspect::InfoData::kPropName, "blobfs"),
-                                     UintIs(fs_inspect::InfoData::kPropMaxFilenameLength, 64),
+                                     IntIs(fs_inspect::InfoData::kPropMaxFilenameLength, 64),
                                      StringIs(fs_inspect::InfoData::kPropOldestVersion,
                                               ::testing::MatchesRegex("^[0-9]+\\/[0-9]+$"))})))));
 
-  const inspect::Hierarchy* usage_node = root_node->GetByPath({fs_inspect::kUsageNodeName});
+  const inspect::Hierarchy* usage_node = hierarchy.GetByPath({fs_inspect::kUsageNodeName});
   ASSERT_NE(usage_node, nullptr);
   EXPECT_THAT(*usage_node,
               NodeMatches(AllOf(
                   NameMatches(fs_inspect::kUsageNodeName),
-                  PropertyList(IsSupersetOf({UintIs(fs_inspect::UsageData::kPropUsedNodes, 0)})))));
+                  PropertyList(IsSupersetOf({IntIs(fs_inspect::UsageData::kPropUsedNodes, 0)})))));
 
   // Create a file to increase the used inode count.
   {
@@ -1468,16 +1364,14 @@ TEST_F(BlobfsMetricIntegrationTest, BlobfsInspectTree) {
   }
 
   // Take a new snapshot of the tree and check that the used node count went up.
-  snapshot = TakeSnapshot();
-  ASSERT_TRUE(snapshot.is_ok());
-  root_node = &snapshot.value();
+  TakeSnapshot(&hierarchy);
 
-  usage_node = root_node->GetByPath({fs_inspect::kUsageNodeName});
+  usage_node = hierarchy.GetByPath({fs_inspect::kUsageNodeName});
   ASSERT_NE(usage_node, nullptr);
   EXPECT_THAT(*usage_node,
               NodeMatches(AllOf(
                   NameMatches(fs_inspect::kUsageNodeName),
-                  PropertyList(IsSupersetOf({UintIs(fs_inspect::UsageData::kPropUsedNodes, 1)})))));
+                  PropertyList(IsSupersetOf({IntIs(fs_inspect::UsageData::kPropUsedNodes, 1)})))));
 }
 
 INSTANTIATE_TEST_SUITE_P(/*no prefix*/, BlobfsIntegrationTest,

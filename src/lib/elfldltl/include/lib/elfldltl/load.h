@@ -93,9 +93,8 @@ constexpr auto LoadHeadersFromFile(Diagnostics& diagnostics, File& file,
 // to permit callbacks with either data format (byte order) as well as either
 // class.  The final optional argument gives the machine architecture to match,
 // and likewise can be std::nullopt to accept any machine.
-template <class Diagnostics, class File, class PhdrAllocator, typename Callback>
-constexpr bool WithLoadHeadersFromFile(Diagnostics& diagnostics, File& file,
-                                       PhdrAllocator&& phdr_allocator, Callback&& callback,
+template <template <typename> class PhdrAllocator, class Diagnostics, class File, typename Callback>
+constexpr bool WithLoadHeadersFromFile(Diagnostics& diagnostics, File& file, Callback&& callback,
                                        std::optional<ElfData> expected_data = ElfData::kNative,
                                        std::optional<ElfMachine> machine = ElfMachine::kNative) {
   using namespace std::literals::string_view_literals;
@@ -111,8 +110,8 @@ constexpr bool WithLoadHeadersFromFile(Diagnostics& diagnostics, File& file,
     if (!ehdr.Loadable(diagnostics, machine)) [[unlikely]] {
       return false;
     }
-    auto read_phdrs =
-        ReadPhdrsFromFile(diagnostics, file, std::forward<PhdrAllocator>(phdr_allocator), ehdr);
+    PhdrAllocator<Phdr> phdr_allocator;
+    auto read_phdrs = ReadPhdrsFromFile(diagnostics, file, phdr_allocator, ehdr);
     if (!read_phdrs) [[unlikely]] {
       return false;
     }
@@ -159,6 +158,10 @@ constexpr bool WithLoadHeadersFromFile(Diagnostics& diagnostics, File& file,
   }
 }
 
+// The default template parameter for LoadInfo; see below.
+template <class SegmentType>
+using NoSegmentWrapper = SegmentType;
+
 // elfldltl::LoadInfo<Elf, Container, ...> holds all the information an ELF
 // loader needs to know.  It holds representations of the PT_LOAD segments
 // in terms that matter to loading, using Container<Segment, ...>.  The
@@ -186,6 +189,21 @@ constexpr bool WithLoadHeadersFromFile(Diagnostics& diagnostics, File& file,
 //
 //  * ZeroFillSegment has only vaddr() and memsz().
 //
+// The optional SegmentWrapper template template parameter can be provided to
+// modify the segment types above.  Each of the named segment types will be the
+// instantiation of that template with the original built-in segment type.
+// This can override the methods and/or add additional ones.  The segments will
+// be constructed only as the built-in types are constructed, so subclasses
+// should just delegate to the base class constructors (`using Base::Base;`)
+// with any new members default-constructed. elfldltl::NoSegmentWrapper is a
+// do-nothing template alias that's the default for SegmentWrapper.
+//
+// In addition to the standard members, a segment subclass should override the
+// (templated) `bool CanMerge(const auto&) const` method to return false if
+// the segment cannot be merged with an adjacent semantic of compatible flags.
+// Such merging may reconstruct a new segment object and remove the old two,
+// default-constructing any subclass members and losing such state.
+//
 // The GetPhdrObserver method is used with elfldltl::DecodePhdrs (see phdr.h)
 // to call AddSegment, which can also be called directly with a valid sequence
 // of PT_LOAD segments.
@@ -201,7 +219,8 @@ constexpr bool WithLoadHeadersFromFile(Diagnostics& diagnostics, File& file,
 // using std::visit.
 //
 template <class Elf, template <typename> class Container,
-          PhdrLoadPolicy Policy = PhdrLoadPolicy::kBasic>
+          PhdrLoadPolicy Policy = PhdrLoadPolicy::kBasic,
+          template <class SegmentType> class SegmentWrapper = NoSegmentWrapper>
 class LoadInfo {
  private:
   using Types = internal::LoadSegmentTypes<typename Elf::size_type>;
@@ -211,10 +230,11 @@ class LoadInfo {
   using Region = typename Types::Region;
   using Phdr = typename Elf::Phdr;
 
-  using ConstantSegment = typename Types::template ConstantSegment<Policy>;
-  using DataSegment = typename Types::template DataSegment<Policy>;
-  using DataWithZeroFillSegment = typename Types::template DataWithZeroFillSegment<Policy>;
-  using ZeroFillSegment = typename Types::ZeroFillSegment;
+  using ConstantSegment = SegmentWrapper<typename Types::template ConstantSegment<Policy>>;
+  using DataSegment = SegmentWrapper<typename Types::template DataSegment<Policy>>;
+  using DataWithZeroFillSegment =
+      SegmentWrapper<typename Types::template DataWithZeroFillSegment<Policy>>;
+  using ZeroFillSegment = SegmentWrapper<typename Types::ZeroFillSegment>;
 
   using Segment =
       std::variant<ConstantSegment, DataSegment, DataWithZeroFillSegment, ZeroFillSegment>;
@@ -226,14 +246,18 @@ class LoadInfo {
 
   constexpr size_type vaddr_size() const { return vaddr_size_; }
 
-  // Add a PT_LOAD segment.
+  // Add a PT_LOAD segment.  Merge with the preceding segment if they are
+  // adjacent and compatible, unless merge=false.
   template <class Diagnostics>
-  constexpr bool AddSegment(Diagnostics& diagnostics, size_type page_size, const Phdr& phdr) {
+  constexpr bool AddSegment(Diagnostics& diagnostics, size_type page_size, const Phdr& phdr,
+                            bool merge = true) {
     // Merge with the last segment if possible, or else append a new one.
-    // Types::Merge overloads match each specific type as it's created below.
-    auto add = [this, &diagnostics](auto&& segment) -> bool {
-      return (!segments_.empty() && Types::Merge(segments_.back(), segment)) ||
-             segments_.emplace_back(diagnostics, internal::kTooManyLoads, segment);
+    // SegmentMerger::Merge overloads match each specific type as it's created below.
+    auto add = [this, &diagnostics, merge](auto&& segment) -> bool {
+      using T = decltype(segment);
+      return (merge && !segments_.empty() &&
+              SegmentMerger::Merge(segments_.back(), std::forward<T>(segment))) ||
+             segments_.emplace_back(diagnostics, internal::kTooManyLoads, std::forward<T>(segment));
     };
 
     // Normalize the file and memory bounds to whole pages.
@@ -257,11 +281,14 @@ class LoadInfo {
     return add(DataSegment(offset, vaddr, memsz, filesz));
   }
 
-  // Get an ephemeral object to pass to elfldltl::DecodePhdrs.  The
-  // returned observer object must not outlive this LoadInfo object.
-  constexpr auto GetPhdrObserver(size_type page_size) {
-    auto add_segment = [this, page_size](auto& diagnostics, const Phdr& phdr) {
-      return this->AddSegment(diagnostics, page_size, phdr);
+  // Get an ephemeral object to pass to elfldltl::DecodePhdrs.  The returned
+  // observer object must not outlive this LoadInfo object.  The optional
+  // merge=false argument prevents merging adjacent segments that are
+  // apparently compatible.  This can be avoided if it will be done later after
+  // possibly changing segments' mergeability, as when ApplyRelro is used.
+  constexpr auto GetPhdrObserver(size_type page_size, bool merge = true) {
+    auto add_segment = [this, page_size, merge](auto& diagnostics, const Phdr& phdr) {
+      return this->AddSegment(diagnostics, page_size, phdr, merge);
     };
     return GetPhdrObserver(page_size, add_segment);
   }
@@ -279,7 +306,7 @@ class LoadInfo {
   }
 
   template <typename T>
-  constexpr bool VisitSegment(T&& visitor, const Segment& segment) const {
+  static constexpr bool VisitSegment(T&& visitor, const Segment& segment) {
     return internal::Visit(visitor, segment);
   }
 
@@ -413,6 +440,8 @@ class LoadInfo {
   }
 
  private:
+  using SegmentMerger = internal::SegmentMerger<LoadInfo>;
+
   // Making this static with a universal reference parameter avoids having to
   // repeat the actual body in the const and non-const methods that call it.
   template <typename T, class C>
@@ -450,7 +479,7 @@ class LoadInfo {
 
     assert(relro_size <= segment.memsz());
     if (relro_size == segment.memsz()) {
-      return {relro_segment, {}};
+      return {std::move(relro_segment), std::nullopt};
     }
 
     auto offset = segment.offset() + relro_size;
@@ -459,50 +488,55 @@ class LoadInfo {
     auto filesz = segment.filesz() - relro_size;
 
     if (std::is_same_v<SegmentType, DataSegment>) {
-      return {relro_segment, DataSegment{offset, vaddr, memsz, filesz}};
+      return {std::move(relro_segment), DataSegment{offset, vaddr, memsz, filesz}};
     }
 
     assert((std::is_same_v<SegmentType, DataWithZeroFillSegment>));
     if (segment.filesz() - relro_size == 0) {
-      return {relro_segment, ZeroFillSegment{vaddr, memsz}};
+      return {std::move(relro_segment), ZeroFillSegment{vaddr, memsz}};
     }
-    return {relro_segment, DataWithZeroFillSegment{offset, vaddr, memsz, filesz}};
+    return {std::move(relro_segment), DataWithZeroFillSegment{offset, vaddr, memsz, filesz}};
   }
 
   // Complete ApplyRelro once the specific segment has been found.  This is
-  // instantiated separately for DataSegment and DataWithZeroFillSegment.
-  // It firsts creates a new ConstantSegment spanning relro_size.  If relro_size
+  // instantiated separately for DataSegment and DataWithZeroFillSegment.  It
+  // firsts creates a new ConstantSegment spanning relro_size.  If relro_size
   // is less than the full segment size a second segment will be inserted after
-  // the relro segment.  Merging is attempted on the two new segments.  Note that
-  // because the two new segments will never be mergeable together we only need
-  // to try merging the relro segment with the segment behind it, and the split
-  // segment with the one in front of it.  AddSegment will always merge if
-  // possible, so no new merging opportunities will become available after those
-  // two attempted merges have taken place.
-  // This is useful in cases where the segments will be copied after applying relro
-  // like in out of process dynamic linking. This can reduce the number of segments
-  // that need to be copied over into that processes address space. It doesn't make
-  // sense for traditional dynamic linking because all segments have already been
-  // mapped in before relocation can take place, so there is no efficiency to be
-  // found using this.
+  // the relro segment.  Merging is attempted on the two new segments.  Note
+  // that because the two new segments will never be mergeable together we only
+  // need to try merging the relro segment with the segment behind it, and the
+  // split segment with the one in front of it.  AddSegment will always merge
+  // if possible, so no new merging opportunities will become available after
+  // those two attempted merges have taken place.  This is useful in cases
+  // where the segments will be copied after applying relro like in out of
+  // process dynamic linking. This can reduce the number of segments that need
+  // to be copied over into that processes address space. It doesn't make sense
+  // for traditional dynamic linking because all segments have already been
+  // mapped in before relocation can take place, so there is no efficiency to
+  // be found using this.
   template <class Diagnostics, class SegmentType>
-  constexpr bool FixupRelro(Diagnostics& diagnostics, typename Container<Segment>::iterator it,
-                            SegmentType segment, size_type relro_size, bool merge_ro) {
+  constexpr bool FixupRelro(  //
+      Diagnostics& diagnostics,
+      // This iterator points to (the std::variant containing) this segment,
+      // but segment's type provides the deduced template parameter and saves
+      // repeating the iterator dereference and the std::get from the variant.
+      typename Container<Segment>::iterator it, const SegmentType& segment,  //
+      size_type relro_size, bool merge_ro) {
     auto [relro_segment, split_segment] = SplitRelro(segment, relro_size, merge_ro);
 
     auto merge = [this](auto it1, auto it2) {
-      if (!Types::Merge(*it1, *it2)) {
+      if (!SegmentMerger::Merge(*it1, *it2)) {
         return it2;
       }
-      // Distances are used in place of iterators because they can be invalidated
-      // by insert/erase.
+      // Distances are used in place of iterators because they can be
+      // invalidated by insert/erase.
       auto dist = std::distance(segments().begin(), it1);
       segments().erase(it2);
       return segments().begin() + dist;
     };
 
     // Replace the current segment instead of erase + insert.
-    *it = relro_segment;
+    *it = std::move(relro_segment);
 
     if (it != segments().begin()) {
       it = merge(it - 1, it);
@@ -510,7 +544,8 @@ class LoadInfo {
 
     if (split_segment) {
       it += 1;
-      auto it_or_err = segments().emplace(diagnostics, internal::kTooManyLoads, it, *split_segment);
+      auto it_or_err =
+          segments().emplace(diagnostics, internal::kTooManyLoads, it, *std::move(split_segment));
       if (!it_or_err) {
         return false;
       }
@@ -527,6 +562,18 @@ class LoadInfo {
   Container<Segment> segments_;
   size_type vaddr_start_ = 0, vaddr_size_ = 0;
 };
+
+// Given some `LoadInfo::...Segment` type, this is true if and only if its
+// writable() method ever returns true.
+template <class SegmentType>
+inline constexpr bool kSegmentWritable =
+    !std::is_same_v<decltype(std::declval<SegmentType>().writable()), std::false_type>;
+
+// Given some `LoadInfo::...Segment` type, this is true if and only if its
+// filesz() can ever return nonzero.
+template <class SegmentType>
+inline constexpr bool kSegmentHasFilesz =
+    std::is_same_v<decltype(std::declval<SegmentType>().filesz()), typename SegmentType::size_type>;
 
 }  // namespace elfldltl
 

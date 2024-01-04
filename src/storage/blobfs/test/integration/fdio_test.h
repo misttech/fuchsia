@@ -12,11 +12,11 @@
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
-#include "src/lib/storage/block_client/cpp/fake_block_device.h"
 #include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/blobfs.h"
 #include "src/storage/blobfs/component_runner.h"
 #include "src/storage/blobfs/mount.h"
+#include "src/storage/lib/block_client/cpp/fake_block_device.h"
 
 namespace blobfs {
 
@@ -43,7 +43,7 @@ class FdioTest : public testing::Test {
   void set_vmex_resource(zx::resource resource) { vmex_resource_ = std::move(resource); }
 
   // Fetches a fresh Inspect snapshot from the running blobfs instance.
-  fpromise::result<inspect::Hierarchy> TakeSnapshot();
+  void TakeSnapshot(inspect::Hierarchy* output);
 
   // Takes an inspect snapshot `hierarchy` and navigates through the nodes using
   // the `path` given and fetches the `property` there to be stored in `value`.

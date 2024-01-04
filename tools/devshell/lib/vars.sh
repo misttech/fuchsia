@@ -4,11 +4,28 @@
 
 if [[ -n "${ZSH_VERSION:-}" ]]; then
   devshell_lib_dir=${${(%):-%x}:a:h}
+  FUCHSIA_DIR="$(dirname "$(dirname "$(dirname "${devshell_lib_dir}")")")"
 else
-  devshell_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+  # NOTE: Replace use of dirname with BASH substitutions to save 20ms of
+  # startup time for all fx commands.
+  #
+  # Equivalent to "$(dirname ${BASH_SOURCE[0]"}) but 350x faster.
+  # Exception: BASH_SOURCE[0] will be the script name when invoked directly
+  # from Bash (e.g. cd tools/devshell/lib && bash vars.sh). In this case
+  # the substitution will not change anything, so provide fallback case.
+  devshell_lib_dir="${BASH_SOURCE[0]%/*}"
+  if [[ "${devshell_lib_dir}" == "${BASH_SOURCE[0]}" ]]; then
+    devshell_lib_dir="."
+  fi
+  # Get absolute path.
+  devshell_lib_dir="$(cd "${devshell_lib_dir}" >/dev/null 2>&1 && pwd)"
+  # Compute absolute path to $devshell_lib_dir/../../..
+  FUCHSIA_DIR="${devshell_lib_dir}"
+  FUCHSIA_DIR="${FUCHSIA_DIR%/*}"
+  FUCHSIA_DIR="${FUCHSIA_DIR%/*}"
+  FUCHSIA_DIR="${FUCHSIA_DIR%/*}"
 fi
 
-FUCHSIA_DIR="$(dirname "$(dirname "$(dirname "${devshell_lib_dir}")")")"
 export FUCHSIA_DIR
 export FUCHSIA_OUT_DIR="${FUCHSIA_OUT_DIR:-${FUCHSIA_DIR}/out}"
 source "${devshell_lib_dir}/platform.sh"
@@ -61,6 +78,7 @@ function fx-rbe-enabled {
   # wrapped with ${RBE_WRAPPER[@]}.
   grep -q -e "^[ \t]*rust_rbe_enable[ ]*=[ ]*true" \
     -e "^[ \t]*cxx_rbe_enable[ ]*=[ ]*true" \
+    -e "^[ \t]*link_rbe_enable[ ]*=[ ]*true" \
     -e "^[ \t]*enable_rbe[ ]*=[ ]*true" \
     "${FUCHSIA_BUILD_DIR}/args.gn"
 }
@@ -199,7 +217,6 @@ function fx-build-config-load {
 
   export FUCHSIA_BUILD_DIR FUCHSIA_ARCH
 
-  # TODO(mangini): revisit once fxbug.dev/38436 is fixed.
   if [[ "${HOST_OUT_DIR:0:1}" != "/" ]]; then
     HOST_OUT_DIR="${FUCHSIA_BUILD_DIR}/${HOST_OUT_DIR}"
   fi
@@ -207,9 +224,16 @@ function fx-build-config-load {
   return 0
 }
 
+# Sets FUCHSIA_BUILD_DIR once, to an absolute path.
 function fx-build-dir-if-present {
-  if [[ -n "${_FX_BUILD_DIR:-}" ]]; then
+  if [[ -n "${FUCHSIA_BUILD_DIR:-}" ]]; then
+    # already set by this function earlier
+    return 0
+  elif [[ -n "${_FX_BUILD_DIR:-}" ]]; then
     export FUCHSIA_BUILD_DIR="${_FX_BUILD_DIR}"
+    # This can be set by --dir.
+    # Unset to prevent subprocess from acting on it again.
+    unset _FX_BUILD_DIR
   else
     if [[ ! -f "${FUCHSIA_DIR}/.fx-build-dir" ]]; then
       return 1
@@ -241,15 +265,13 @@ function fx-config-read {
 }
 
 function _query_product_bundle_path {
-  local -r manifest_path="${FUCHSIA_BUILD_DIR}/product_bundles.json"
-  local -r paths="$(fx-command-run jq --raw-output '.[] | .path' ${manifest_path})"
-  # Currently product_bundles.json should always contain one and only one
-  # product bundle.
-  if [[ ${#paths[@]} -gt 1 ]]; then
-    fx-error "Expecting exactly 1 product bundle in ${manifest_path}, found ${#paths[@]}"
-    exit 1
-  fi
-  printf %s "${paths[0]}"
+  local args_json_path="${FUCHSIA_BUILD_DIR}/args.json"
+  local product=$(fx-command-run jq .build_info_product ${args_json_path})
+  local board=$(fx-command-run jq .build_info_board ${args_json_path})
+  local product_name="\"${product//\"}.${board//\"}\""
+  local product_bundles_path="${FUCHSIA_BUILD_DIR}/product_bundles.json"
+  local product_bundle_path=$(fx-command-run jq ".[] | select(.name==${product_name}) | .path" ${product_bundles_path} | tr -d '"')
+  echo $product_bundle_path
 }
 
 function fx-change-build-dir {
@@ -273,6 +295,7 @@ function fx-change-build-dir {
   # Set relevant variables in the ffx build-level config file
   json-config-set "${FUCHSIA_BUILD_DIR}.json" "repository.default" "$(ffx-default-repository-name)"
   json-config-set "${FUCHSIA_BUILD_DIR}.json" "sdk.root" '$BUILD_DIR'
+  json-config-set "${FUCHSIA_BUILD_DIR}.json" "fidl.ir.path" '$BUILD_DIR/fidling/gen/ir_root'
 
   local -r pb_path="$(_query_product_bundle_path)"
   # Only set product bundle path if a product bundle is produced by the build.
@@ -341,12 +364,64 @@ function json-config-del {
   fi
 }
 
+# Get a configuration value in a build config file:
+# `json-config-get path/to/file.json path.to.value`
+#
+# Returns 1 and prints an empty line if the file does not exist or
+# the path given was not already set.
+function json-config-get {
+  local json_file="$1"
+  local path="$2"
+
+  if ! [[ -f "${json_file}" ]] ; then
+    echo
+    return 1
+  else
+    fx-command-run jq -e -r ".${path} | values" "${json_file}"
+  fi
+}
+
 function get-device-pair {
-  # Uses a file outside the build dir so that it is not removed by `gn clean`
+  # Get the ffx configured device
+  local ffx_build_device=$(json-config-get "${FUCHSIA_BUILD_DIR}.json" target.default)
+  # And the older fx-written device
+  # TODO(123887): Remove checking this after some time has passed.
+  # Note: Uses a file outside the build dir so that it is not removed by `gn clean`
   local pairfile="${FUCHSIA_BUILD_DIR}.device"
-  # If .device file exists, use that
+  local fx_build_device=""
   if [[ -f "${pairfile}" ]]; then
-    echo "$(<"${pairfile}")"
+    fx_build_device="$(<"${pairfile}")"
+  fi
+  # If only one is set, use that. If both are set, make sure they're the same.
+  # If they're not, tell the user to resolve the ambiguity by re-running
+  # `fx set-device` but use the one from ffx.
+  if [[ -n "${ffx_build_device}" && -z "${fx_build_device}" ]] ; then
+    echo "${ffx_build_device}"
+    return 0
+  elif [[ -z "${ffx_build_device}" && -n "${fx_build_device}" ]] ; then
+    echo "${fx_build_device}"
+    return 0
+  elif [[ -n "${ffx_build_device}" && -n "${fx_build_device}" ]] ; then
+    if [[ "${ffx_build_device}" == "${fx_build_device}" ]]; then
+      echo "${ffx_build_device}"
+      return 0
+    else
+      fx-warn "Mismatch between fx and ffx build-level default device"
+      fx-warn "configurations ('${fx_build_device}' vs. '${ffx_build_device}')."
+      fx-warn "Re-run 'fx set-device' with the correct device to resolve the"
+      fx-warn "ambiguity and clear this warning."
+      fx-warn "Using ffx-set '${ffx_build_device}' by default."
+      echo "${ffx_build_device}"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+function get-global-default-device {
+  local ffx_global_device=$(fx-command-run host-tool ffx target default get --build-dir "${FUCHSIA_BUILD_DIR}")
+  if [[ -n ${ffx_global_device} ]] ; then
+    echo "${ffx_global_device}"
     return 0
   fi
   return 1
@@ -365,7 +440,7 @@ function get-device-raw {
     fi
     device="${FUCHSIA_DEVICE_NAME}"
   else
-    device=$(get-device-pair)
+    device=$(get-device-pair || get-global-default-device)
   fi
   if ! is-valid-device "${device}"; then
     fx-error "Invalid device name or address: '${device}'. Some valid examples are:
@@ -390,7 +465,7 @@ function is-valid-device {
 export _FX_REMOTE_WORKFLOW_DEVICE_ADDR='[::1]:8022'
 
 function is-remote-workflow-device {
-  [[ $(get-device-pair) == "${_FX_REMOTE_WORKFLOW_DEVICE_ADDR}" ]]
+  [[ $(get-device-pair 2>/dev/null) == "${_FX_REMOTE_WORKFLOW_DEVICE_ADDR}" ]]
 }
 
 # fx-export-device-address is "public API" to commands that wish to
@@ -879,17 +954,21 @@ function fx-run-ninja {
   # the build, so that RBE-enabled build actions can operate through the proxy.
   #
   local rbe_wrapper=()
-  local user_env=()
+  local user_rbe_env=()
   if fx-rbe-enabled
   then
     rbe_wrapper=("FUCHSIA_BUILD_DIR=${FUCHSIA_BUILD_DIR}" "${RBE_WRAPPER[@]}")
-    # Automatic auth with gcert (from re-client bootstrap) needs $USER.
-    user_env=( "USER=${USER}" )
+    user_rbe_env=(
+      # Automatic auth with gcert (from re-client bootstrap) needs $USER.
+      "USER=${USER}"
+      # Honor environment variable to disable RBE build metrics.
+      "FX_REMOTE_BUILD_METRICS=${FX_REMOTE_BUILD_METRICS}"
+    )
   fi
 
   full_cmdline=(
     env -i
-    "${user_env[@]}"
+    "${user_rbe_env[@]}"
     "TERM=${TERM}"
     "PATH=${PATH}"
     # By default, also show the number of actively running actions.
@@ -897,6 +976,9 @@ function fx-run-ninja {
     # By default, print the 4 oldest commands that are still running.
     "NINJA_STATUS_MAX_COMMANDS=${NINJA_STATUS_MAX_COMMANDS:-4}"
     "NINJA_STATUS_REFRESH_MILLIS=${NINJA_STATUS_REFRESH_MILLIS:-100}"
+    "NINJA_PERSISTENT_MODE=${NINJA_PERSISTENT_MODE:-0}"
+    ${NINJA_PERSISTENT_TIMEOUT_SECONDS+"NINJA_PERSISTENT_TIMEOUT_SECONDS=$NINJA_PERSISTENT_TIMEOUT_SECONDS"}
+    ${NINJA_PERSISTENT_LOG_FILE+"NINJA_PERSISTENT_LOG_FILE=$NINJA_PERSISTENT_LOG_FILE"}
     ${GOMA_DISABLED+"GOMA_DISABLED=$GOMA_DISABLED"}
     ${TMPDIR+"TMPDIR=$TMPDIR"}
     ${CLICOLOR_FORCE+"CLICOLOR_FORCE=$CLICOLOR_FORCE"}

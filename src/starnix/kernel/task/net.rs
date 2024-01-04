@@ -2,14 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{fs::proc::ProcSysNetDev, fs::*, lock::Mutex, task::*, types::*};
+use crate::{
+    fs::proc::ProcSysNetDev,
+    task::CurrentTask,
+    vfs::{
+        emit_dotdot, fileops_impl_directory, fs_node_impl_dir_readonly, unbounded_seek,
+        DirectoryEntryType, DirentSink, FileObject, FileOps, FileSystemHandle, FsNode,
+        FsNodeHandle, FsNodeOps, FsStr, FsString, SeekTarget, StaticDirectoryBuilder,
+    },
+};
+use starnix_sync::Mutex;
+use starnix_uapi::{errno, errors::Errno, off_t, open_flags::OpenFlags};
 use std::{collections::HashMap, sync::Arc};
 
 struct NetstackDevice {
     /// The device-specific directories that are found under `/proc/sys/net`.
     proc_sys_net: Option<ProcSysNetDev>,
     /// The device-specific node found under `/sys/class.net`.
-    sys_class_net: Option<Arc<FsNode>>,
+    sys_class_net: Option<FsNodeHandle>,
 }
 
 /// Keeps track of network devices and their [`NetstackDevice`].
@@ -21,12 +31,13 @@ pub struct NetstackDevices {
 impl NetstackDevices {
     pub fn add_dev(
         &self,
+        current_task: &CurrentTask,
         name: &str,
         proc_fs: Option<&FileSystemHandle>,
         sys_fs: Option<&FileSystemHandle>,
     ) {
         // procfs or sysfs may not be mounted.
-        let proc_sys_net = proc_fs.map(ProcSysNetDev::new);
+        let proc_sys_net = proc_fs.map(|fs| ProcSysNetDev::new(current_task, fs));
         let sys_class_net = sys_fs.map(|sys_fs| {
             // nodes in `/sys/class/net` are normally symlinks into
             // `/sys/devices`. However, currently known use-cases only enumerate
@@ -35,7 +46,7 @@ impl NetstackDevices {
             //
             // TODO(https://fxbug.dev/128794): Support `/sys/class/net`
             // properly.
-            StaticDirectoryBuilder::new(sys_fs).build()
+            StaticDirectoryBuilder::new(sys_fs).build(current_task)
         });
 
         let mut entries = self.entries.lock();
@@ -52,32 +63,28 @@ impl NetstackDevices {
 /// An implementation of a directory holding netstack interface-specific
 /// directories such as those found under `/proc/sys/net` and `/sys/class/net`.
 pub struct NetstackDevicesDirectory {
-    inner: Arc<NetstackDevices>,
-    dir_fn: fn(&NetstackDevice) -> Option<&Arc<FsNode>>,
+    dir_fn: fn(&NetstackDevice) -> Option<&FsNodeHandle>,
 }
 
 impl NetstackDevicesDirectory {
-    pub fn new_proc_sys_net_ipv4_neigh(inner: Arc<NetstackDevices>) -> Arc<Self> {
-        Self::new(inner, |d| d.proc_sys_net.as_ref().map(ProcSysNetDev::get_ipv4_neigh))
+    pub fn new_proc_sys_net_ipv4_neigh() -> Arc<Self> {
+        Self::new(|d| d.proc_sys_net.as_ref().map(ProcSysNetDev::get_ipv4_neigh))
     }
 
-    pub fn new_proc_sys_net_ipv6_conf(inner: Arc<NetstackDevices>) -> Arc<Self> {
-        Self::new(inner, |d| d.proc_sys_net.as_ref().map(ProcSysNetDev::get_ipv6_conf))
+    pub fn new_proc_sys_net_ipv6_conf() -> Arc<Self> {
+        Self::new(|d| d.proc_sys_net.as_ref().map(ProcSysNetDev::get_ipv6_conf))
     }
 
-    pub fn new_proc_sys_net_ipv6_neigh(inner: Arc<NetstackDevices>) -> Arc<Self> {
-        Self::new(inner, |d| d.proc_sys_net.as_ref().map(ProcSysNetDev::get_ipv6_neigh))
+    pub fn new_proc_sys_net_ipv6_neigh() -> Arc<Self> {
+        Self::new(|d| d.proc_sys_net.as_ref().map(ProcSysNetDev::get_ipv6_neigh))
     }
 
-    pub fn new_sys_class_net(inner: Arc<NetstackDevices>) -> Arc<Self> {
-        Self::new(inner, |d| d.sys_class_net.as_ref())
+    pub fn new_sys_class_net() -> Arc<Self> {
+        Self::new(|d| d.sys_class_net.as_ref())
     }
 
-    fn new(
-        inner: Arc<NetstackDevices>,
-        dir_fn: fn(&NetstackDevice) -> Option<&Arc<FsNode>>,
-    ) -> Arc<Self> {
-        Arc::new(Self { inner, dir_fn })
+    fn new(dir_fn: fn(&NetstackDevice) -> Option<&FsNodeHandle>) -> Arc<Self> {
+        Arc::new(Self { dir_fn })
     }
 }
 
@@ -96,10 +103,10 @@ impl FsNodeOps for Arc<NetstackDevicesDirectory> {
     fn lookup(
         &self,
         _node: &FsNode,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         name: &FsStr,
-    ) -> Result<Arc<FsNode>, Errno> {
-        let entries = self.inner.entries.lock();
+    ) -> Result<FsNodeHandle, Errno> {
+        let entries = current_task.kernel().netstack_devices.entries.lock();
         entries.get(name).and_then(self.dir_fn).map(Arc::clone).ok_or_else(|| {
             errno!(
                 ENOENT,
@@ -132,14 +139,14 @@ impl FileOps for Arc<NetstackDevicesDirectory> {
     fn readdir(
         &self,
         file: &FileObject,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         sink: &mut dyn DirentSink,
     ) -> Result<(), Errno> {
         emit_dotdot(file, sink)?;
 
         // Skip through the entries until the current offset is reached.
         // Subtract 2 from the offset to account for `.` and `..`.
-        let entries = self.inner.entries.lock();
+        let entries = current_task.kernel().netstack_devices.entries.lock();
         for (name, node) in entries.iter().skip(sink.offset() as usize - 2) {
             let Some(node) = (self.dir_fn)(node) else { continue };
             sink.add(

@@ -21,11 +21,6 @@ struct OverlayMemberUsed;
 }  // namespace flat
 
 enum class WireFormat {
-  kV1NoEe,  // The v1-no-ee wire format, where "union" is an extensible union on-the-wire,
-            // but without efficient envelope support. Request and response structs do not receive
-            // any special treatment (e.g. having their size increased by 16 for the transactional
-            // header).
-
   kV2,  // The v2 wire format, using efficient envelopes. Request and response structs do not
         // receive any special treatment (e.g. having their size increased by 16 for the
         // transactional header).
@@ -58,7 +53,6 @@ struct TypeShape {
   // flexible types, which doesn't make it very useful.)
   bool has_padding;
 
-  bool has_envelope;
   bool has_flexible_envelope;
 
   // This is a named constructor for the specific case of generating a type
@@ -74,7 +68,6 @@ struct TypeShape {
         max_handles(0),
         max_out_of_line(0),
         has_padding(false),
-        has_envelope(false),
         has_flexible_envelope(false) {}
 };
 

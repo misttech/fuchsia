@@ -12,7 +12,7 @@ use {
     anyhow::{format_err, Error},
     async_trait::async_trait,
     derivative::Derivative,
-    fuchsia_inspect,
+    fuchsia_inspect::{self, health::Reporter},
     metrics_registry::*,
     std::{convert::From, rc::Rc},
 };
@@ -123,6 +123,14 @@ impl UnhandledInputHandler for PointerDisplayScaleHandler {
             }
             _ => vec![input_device::InputEvent::from(unhandled_input_event)],
         }
+    }
+
+    fn set_handler_healthy(self: std::rc::Rc<Self>) {
+        self.inspect_status.health_node.borrow_mut().set_ok();
+    }
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
+        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
     }
 }
 
@@ -625,7 +633,7 @@ mod tests {
             &fake_handlers_node,
             metrics::MetricsLogger::default(),
         );
-        fuchsia_inspect::assert_data_tree!(inspector, root: {
+        diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_handlers_node: {
                 pointer_display_scale_handler: {
                     events_received_count: 0u64,
@@ -635,7 +643,7 @@ mod tests {
                         status: "STARTING_UP",
                         // Timestamp value is unpredictable and not relevant in this context,
                         // so we only assert that the property is present.
-                        start_timestamp_nanos: fuchsia_inspect::AnyProperty
+                        start_timestamp_nanos: diagnostics_assertions::AnyProperty
                     },
                 }
             }
@@ -705,7 +713,7 @@ mod tests {
 
         let last_received_event_time: u64 = event_time2.into_nanos().try_into().unwrap();
 
-        fuchsia_inspect::assert_data_tree!(inspector, root: {
+        diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_handlers_node: {
                 pointer_display_scale_handler: {
                     events_received_count: 2u64,
@@ -715,7 +723,7 @@ mod tests {
                         status: "STARTING_UP",
                         // Timestamp value is unpredictable and not relevant in this context,
                         // so we only assert that the property is present.
-                        start_timestamp_nanos: fuchsia_inspect::AnyProperty
+                        start_timestamp_nanos: diagnostics_assertions::AnyProperty
                     },
                 }
             }

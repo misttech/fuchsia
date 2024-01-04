@@ -9,6 +9,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"go.fuchsia.dev/fuchsia/src/sys/pkg/bin/pm/build"
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 )
 
@@ -159,13 +162,13 @@ func DecodePackagesJSON(rd io.Reader) (*PackageJSON, error) {
 // express purpose of returning a map of package names and variant keys
 // to the package's Merkle root as a value. This mimics the behavior of the
 // function that parsed the legacy "packages" file format.
-func ParsePackagesJSON(rd io.Reader) (map[string]string, error) {
+func ParsePackagesJSON(rd io.Reader) (map[string]build.MerkleRoot, error) {
 	p, err := DecodePackagesJSON(rd)
 	if err != nil {
 		return nil, err
 	}
 
-	packages := make(map[string]string)
+	packages := make(map[string]build.MerkleRoot)
 	for _, pkgURL := range p.Content {
 		u, err := url.Parse(pkgURL)
 		if err != nil {
@@ -181,9 +184,14 @@ func ParsePackagesJSON(rd io.Reader) (map[string]string, error) {
 			pathComponents := strings.Split(u.Path, "/")
 			if len(pathComponents) >= 1 {
 				if hash, ok := u.Query()["hash"]; ok {
-					packages[u.Path[1:]] = hash[0]
+					merkle, err := build.DecodeMerkleRoot([]byte(hash[0]))
+					if err != nil {
+						return nil, err
+					}
+
+					packages[u.Path[1:]] = merkle
 				} else {
-					packages[u.Path[1:]] = ""
+					return nil, fmt.Errorf("package %s doesn't have a merkle", u.Path[1:])
 				}
 			}
 		}
@@ -213,28 +221,208 @@ func RehostPackagesJSON(rd io.Reader, w io.Writer, newHostname string) error {
 	return json.NewEncoder(w).Encode(p)
 }
 
-func UpdateHashValuePackagesJSON(rd io.Reader, w io.Writer, repoName string, pkgUrlPath string, value string) error {
-	p, err := DecodePackagesJSON(rd)
-	if err != nil {
-		return err
-	}
+func UpdateHashValuePackagesJSON(
+	path string,
+	repoName string,
+	pkgUrlPath string,
+	merkle build.MerkleRoot,
+) error {
+	if err := AtomicallyWriteFile(path, 0600, func(f *os.File) error {
+		src, err := os.Open(path)
+		if err != nil {
+			return fmt.Errorf("failed to open packages.json %q: %w", path, err)
+		}
+		defer src.Close()
 
-	for i, pkgURL := range p.Content {
-		u, err := url.Parse(pkgURL)
+		p, err := DecodePackagesJSON(src)
 		if err != nil {
 			return err
 		}
 
-		if u.Host == repoName && u.Path == "/"+pkgUrlPath {
-			queryValues := u.Query()
-			queryValues.Set("hash", value)
-			u.RawQuery = queryValues.Encode()
+		for i, pkgURL := range p.Content {
+			u, err := url.Parse(pkgURL)
+			if err != nil {
+				return err
+			}
+
+			if u.Host == repoName && u.Path == "/"+pkgUrlPath {
+				queryValues := u.Query()
+				queryValues.Set("hash", merkle.String())
+				u.RawQuery = queryValues.Encode()
+			}
+
+			p.Content[i] = u.String()
 		}
 
-		p.Content[i] = u.String()
+		return json.NewEncoder(f).Encode(p)
+	}); err != nil {
+		return fmt.Errorf("failed to atomically overwrite %q: %w", path, err)
 	}
 
-	return json.NewEncoder(w).Encode(p)
+	return nil
+}
+
+func ParseImagesJSON(rd io.Reader) (ImagesManifest, error) {
+	var i ImagesManifest
+
+	if err := json.NewDecoder(rd).Decode(&i); err != nil {
+		return ImagesManifest{}, err
+	}
+
+	if i.Version != "1" {
+		return ImagesManifest{}, fmt.Errorf("images.json version 1 is supported; found version %s", i.Version)
+	}
+
+	return i, nil
+}
+
+func UpdateImagesJSON(
+	path string,
+	images ImagesManifest,
+) error {
+	return AtomicallyWriteFile(path, 0600, func(f *os.File) error {
+		return json.NewEncoder(f).Encode(images)
+	})
+}
+
+func Sha256File(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", nil
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// ParsePackageUrl parses a string into a URL and a MerkleRoot
+func ParsePackageUrl(urlString string) (*url.URL, build.MerkleRoot, error) {
+	url, err := url.Parse(urlString)
+	if err != nil {
+		return nil, build.MerkleRoot{}, fmt.Errorf("could not parse url %s: %w", urlString, err)
+	}
+
+	merkleString := url.Query()["hash"]
+	merkle, err := build.DecodeMerkleRoot([]byte(merkleString[0]))
+	if err != nil {
+		return nil, build.MerkleRoot{}, fmt.Errorf("failed to decode merkle from %s: %w", urlString, err)
+	}
+
+	return url, merkle, nil
+}
+
+type ImagesManifest struct {
+	Version  string        `json:"version"`
+	Contents ImagesContent `json:"contents"`
+}
+
+func (i *ImagesManifest) Clone() ImagesManifest {
+	partitions := []ImagePartition{}
+	for _, p := range i.Contents.Partitions {
+		partitions = append(partitions, p)
+	}
+
+	firmware := []ImageFirmware{}
+	for _, f := range i.Contents.Firmware {
+		firmware = append(firmware, f)
+	}
+
+	return ImagesManifest{
+		Version: i.Version,
+		Contents: ImagesContent{
+			Partitions: partitions,
+			Firmware:   firmware,
+		},
+	}
+}
+
+func (i *ImagesManifest) Rehost(newHostName string) error {
+	for idx, p := range i.Contents.Partitions {
+		u, err := url.Parse(p.Url)
+		if err != nil {
+			return err
+		}
+
+		u.Host = newHostName
+		p.Url = u.String()
+
+		i.Contents.Partitions[idx] = p
+	}
+
+	for idx, f := range i.Contents.Firmware {
+		u, err := url.Parse(f.Url)
+		if err != nil {
+			return err
+		}
+
+		u.Host = newHostName
+		f.Url = u.String()
+
+		i.Contents.Firmware[idx] = f
+	}
+
+	return nil
+}
+
+func (i *ImagesManifest) GetPartition(slot string, typ string) (*url.URL, build.MerkleRoot, error) {
+	found := false
+	var partition ImagePartition
+	for _, p := range i.Contents.Partitions {
+		if p.Slot == slot && p.Type == typ {
+			found = true
+			partition = p
+			break
+		}
+	}
+	if !found {
+		return nil, build.MerkleRoot{}, fmt.Errorf("missing entry for zbi")
+	}
+
+	return ParsePackageUrl(partition.Url)
+}
+
+func (i *ImagesManifest) SetPartition(slot string, typ string, url string, path string) error {
+	hash, err := Sha256File(path)
+	if err != nil {
+		return err
+	}
+
+	for idx := 0; idx < len(i.Contents.Partitions); idx++ {
+		p := &i.Contents.Partitions[idx]
+
+		if p.Slot == slot && p.Type == typ {
+			p.Url = url
+			p.Hash = hash
+			return nil
+		}
+	}
+
+	return fmt.Errorf("could not find partition %s %s", slot, typ)
+}
+
+type ImagesContent struct {
+	Partitions []ImagePartition `json:"partitions"`
+	Firmware   []ImageFirmware  `json:"firmware"`
+}
+
+type ImagePartition struct {
+	Slot string `json:"slot"`
+	Type string `json:"type"`
+	Size int64  `json:"size"`
+	Hash string `json:"hash"`
+	Url  string `json:"url"`
+}
+
+type ImageFirmware struct {
+	Type string `json:"type"`
+	Size int64  `json:"size"`
+	Hash string `json:"hash"`
+	Url  string `json:"url"`
 }
 
 func AtomicallyWriteFile(path string, mode os.FileMode, writeFileFunc func(*os.File) error) error {

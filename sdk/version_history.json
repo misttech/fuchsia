@@ -33,7 +33,7 @@
             },
             "11": {
                 "abi_revision": "0x406C7CA7EF077DB4",
-                "status": "supported"
+                "status": "unsupported"
             },
             "12": {
                 "abi_revision": "0x57904F5A17FA3B22",
@@ -45,6 +45,18 @@
             },
             "14": {
                 "abi_revision": "0x099D5AB9C26B64DA",
+                "status": "supported"
+            },
+            "15": {
+                "abi_revision": "0x7D68E46C02F819AE",
+                "status": "supported"
+            },
+            "16": {
+                "abi_revision": "0x5669335A144B052A",
+                "status": "supported"
+            },
+            "17": {
+                "abi_revision": "0x30FA7BA4F2FF24E0",
                 "status": "in-development"
             }
         }

@@ -48,10 +48,8 @@ rustc_binary("input_helper_bin") {
   edition = "2021"
   deps = [
     ":lib",
-    "//sdk/fidl/fuchsia.input.injection:fuchsia.input.injection_rust",
     "//sdk/fidl/fuchsia.ui.test.input:fuchsia.ui.test.input_rust",
     "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
@@ -62,7 +60,6 @@ rustc_binary("input_helper_bin") {
 }
 
 fuchsia_component("input-helper-component") {
-  testonly = true
   component_name = "input-helper"
   manifest = "meta/input-helper.cml"
   deps = [ ":input_helper_bin" ]

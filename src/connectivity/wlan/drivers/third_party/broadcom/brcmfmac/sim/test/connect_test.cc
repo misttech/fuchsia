@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fuchsia/hardware/wlan/fullmac/c/banjo.h>
-#include <fuchsia/wlan/common/c/banjo.h>
 #include <fuchsia/wlan/ieee80211/cpp/fidl.h>
 #include <fuchsia/wlan/internal/c/banjo.h>
 #include <fuchsia/wlan/stats/cpp/fidl.h>
@@ -70,6 +68,7 @@ const uint8_t kIes[] = {
 const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 const common::MacAddr kMadeupClient({0xde, 0xad, 0xbe, 0xef, 0x00, 0x01});
 constexpr auto kDefaultApDisassocReason = wlan_ieee80211::ReasonCode::kUnspecifiedReason;
+constexpr auto kDefaultClientDisassocReason = wlan_ieee80211::ReasonCode::kUnspecifiedReason;
 constexpr auto kDefaultApDeauthReason = wlan_ieee80211::ReasonCode::kInvalidAuthentication;
 constexpr auto kDefaultClientDeauthReason = wlan_ieee80211::ReasonCode::kLeavingNetworkDisassoc;
 // Sim firmware returns these values for SNR and RSSI.
@@ -141,17 +140,17 @@ class ConnectTest : public SimTest {
   void ConnectErrorEventInject(brcmf_fweh_event_status_t ret_status,
                                wlan_ieee80211::StatusCode ret_reason);
 
-  void GetIfaceCounterStats(wlan_fullmac::WlanFullmacIfaceCounterStats* out_stats);
-  void GetIfaceHistogramStats(wlan_fullmac::WlanFullmacIfaceHistogramStats* out_stats);
+  void GetIfaceCounterStats(wlan_fullmac_wire::WlanFullmacIfaceCounterStats* out_stats);
+  void GetIfaceHistogramStats(wlan_fullmac_wire::WlanFullmacIfaceHistogramStats* out_stats);
   void DetailedHistogramErrorInject();
 
   // Event handlers
-  void OnConnectConf(const wlan_fullmac::WlanFullmacConnectConfirm* resp);
-  void OnDisassocInd(const wlan_fullmac::WlanFullmacDisassocIndication* ind);
-  void OnDisassocConf(const wlan_fullmac::WlanFullmacDisassocConfirm* resp);
-  void OnDeauthConf(const wlan_fullmac::WlanFullmacDeauthConfirm* resp);
-  void OnDeauthInd(const wlan_fullmac::WlanFullmacDeauthIndication* ind);
-  void OnSignalReport(const wlan_fullmac::WlanFullmacSignalReportIndication* ind);
+  void OnConnectConf(const wlan_fullmac_wire::WlanFullmacConnectConfirm* resp);
+  void OnDisassocInd(const wlan_fullmac_wire::WlanFullmacDisassocIndication* ind);
+  void OnDisassocConf(const wlan_fullmac_wire::WlanFullmacDisassocConfirm* resp);
+  void OnDeauthConf(const wlan_fullmac_wire::WlanFullmacImplIfcDeauthConfRequest* resp);
+  void OnDeauthInd(const wlan_fullmac_wire::WlanFullmacDeauthIndication* ind);
+  void OnSignalReport(const wlan_fullmac_wire::WlanFullmacSignalReportIndication* ind);
 
  protected:
   struct ConnectContext {
@@ -264,7 +263,7 @@ void ConnectInterface::DisassocConf(DisassocConfRequestView request, fdf::Arena&
 }
 void ConnectInterface::DeauthConf(DeauthConfRequestView request, fdf::Arena& arena,
                                   DeauthConfCompleter::Sync& completer) {
-  test_->OnDeauthConf(&request->resp);
+  test_->OnDeauthConf(request);
   completer.buffer(arena).Reply();
 }
 void ConnectInterface::DeauthInd(DeauthIndRequestView request, fdf::Arena& arena,
@@ -356,7 +355,7 @@ void ConnectTest::DisassocFromAp() {
   }
 }
 
-void ConnectTest::OnConnectConf(const wlan_fullmac::WlanFullmacConnectConfirm* resp) {
+void ConnectTest::OnConnectConf(const wlan_fullmac_wire::WlanFullmacConnectConfirm* resp) {
   context_.connect_resp_count++;
   EXPECT_EQ(resp->result_code, context_.expected_results.front());
 
@@ -384,17 +383,17 @@ void ConnectTest::OnConnectConf(const wlan_fullmac::WlanFullmacConnectConfirm* r
   }
 }
 
-void ConnectTest::OnDisassocConf(const wlan_fullmac::WlanFullmacDisassocConfirm* resp) {
+void ConnectTest::OnDisassocConf(const wlan_fullmac_wire::WlanFullmacDisassocConfirm* resp) {
   if (resp->status == ZX_OK) {
     context_.disassoc_conf_count++;
   }
 }
 
-void ConnectTest::OnDeauthConf(const wlan_fullmac::WlanFullmacDeauthConfirm* resp) {
+void ConnectTest::OnDeauthConf(const wlan_fullmac_wire::WlanFullmacImplIfcDeauthConfRequest* resp) {
   context_.deauth_conf_count++;
 }
 
-void ConnectTest::OnDeauthInd(const wlan_fullmac::WlanFullmacDeauthIndication* ind) {
+void ConnectTest::OnDeauthInd(const wlan_fullmac_wire::WlanFullmacDeauthIndication* ind) {
   context_.deauth_ind_count++;
   if (ind->locally_initiated) {
     context_.ind_locally_initiated_count++;
@@ -402,7 +401,7 @@ void ConnectTest::OnDeauthInd(const wlan_fullmac::WlanFullmacDeauthIndication* i
   client_ifc_.stats_.deauth_indications.push_back(*ind);
 }
 
-void ConnectTest::OnDisassocInd(const wlan_fullmac::WlanFullmacDisassocIndication* ind) {
+void ConnectTest::OnDisassocInd(const wlan_fullmac_wire::WlanFullmacDisassocIndication* ind) {
   context_.disassoc_ind_count++;
   if (ind->locally_initiated) {
     context_.ind_locally_initiated_count++;
@@ -415,7 +414,7 @@ void ConnectTest::OnDisassocInd(const wlan_fullmac::WlanFullmacDisassocIndicatio
   }
 }
 
-void ConnectTest::OnSignalReport(const wlan_fullmac::WlanFullmacSignalReportIndication* ind) {
+void ConnectTest::OnSignalReport(const wlan_fullmac_wire::WlanFullmacSignalReportIndication* ind) {
   context_.signal_ind_count++;
   context_.signal_ind_rssi = ind->rssi_dbm;
   context_.signal_ind_snr = ind->snr_db;
@@ -423,24 +422,27 @@ void ConnectTest::OnSignalReport(const wlan_fullmac::WlanFullmacSignalReportIndi
 
 void ConnectTest::StartConnect() {
   // Send connect request
-  auto builder = wlan_fullmac::WlanFullmacImplConnectReqRequest::Builder(client_ifc_.test_arena_);
+  auto builder = wlan_fullmac_wire::WlanFullmacImplConnectRequest::Builder(client_ifc_.test_arena_);
   fuchsia_wlan_internal::wire::BssDescription bss;
   std::memcpy(bss.bssid.data(), context_.bssid.byte, ETH_ALEN);
   bss.ies = fidl::VectorView<uint8_t>(client_ifc_.test_arena_, context_.ies);
   bss.channel = context_.tx_info.channel;
   builder.selected_bss(bss);
-  builder.auth_type(wlan_fullmac::WlanAuthType::kOpenSystem);
+  builder.auth_type(wlan_fullmac_wire::WlanAuthType::kOpenSystem);
   builder.connect_failure_timeout(1000);  // ~1s (although value is ignored for now)
-  auto result = client_ifc_.client_.buffer(client_ifc_.test_arena_)->ConnectReq(builder.Build());
+  auto result = client_ifc_.client_.buffer(client_ifc_.test_arena_)->Connect(builder.Build());
   EXPECT_TRUE(result.ok());
 }
 
 void ConnectTest::StartReconnect() {
   // Send reconnect request
   // This is what SME does on a disassoc ind.
-  wlan_fullmac::WlanFullmacReconnectReq reconnect_req;
-  std::memcpy(reconnect_req.peer_sta_address.data(), context_.bssid.byte, ETH_ALEN);
-  auto result = client_ifc_.client_.buffer(client_ifc_.test_arena_)->ReconnectReq(reconnect_req);
+  auto builder =
+      wlan_fullmac_wire::WlanFullmacImplReconnectRequest::Builder(client_ifc_.test_arena_);
+  ::fidl::Array<uint8_t, 6> peer_sta_address;
+  std::memcpy(peer_sta_address.data(), context_.bssid.byte, ETH_ALEN);
+  builder.peer_sta_address(peer_sta_address);
+  auto result = client_ifc_.client_.buffer(client_ifc_.test_arena_)->Reconnect(builder.Build());
   EXPECT_TRUE(result.ok());
 }
 
@@ -467,7 +469,7 @@ TEST_F(ConnectTest, SignalReportTest) {
   EXPECT_EQ(context_.signal_ind_rssi, kDefaultSimFwRssi);
 }
 
-void ConnectTest::GetIfaceCounterStats(wlan_fullmac::WlanFullmacIfaceCounterStats* out_stats) {
+void ConnectTest::GetIfaceCounterStats(wlan_fullmac_wire::WlanFullmacIfaceCounterStats* out_stats) {
   auto result = client_ifc_.client_.buffer(client_ifc_.test_arena_)->GetIfaceCounterStats();
   EXPECT_TRUE(result.ok());
   if (!result->is_error()) {
@@ -475,7 +477,8 @@ void ConnectTest::GetIfaceCounterStats(wlan_fullmac::WlanFullmacIfaceCounterStat
   }
 }
 
-void ConnectTest::GetIfaceHistogramStats(wlan_fullmac::WlanFullmacIfaceHistogramStats* out_stats) {
+void ConnectTest::GetIfaceHistogramStats(
+    wlan_fullmac_wire::WlanFullmacIfaceHistogramStats* out_stats) {
   auto result = client_ifc_.client_.buffer(client_ifc_.test_arena_)->GetIfaceHistogramStats();
   EXPECT_TRUE(result.ok());
   // Copy the pointers out, the data still exist in client_ifc_.test_arena_.
@@ -493,7 +496,7 @@ TEST_F(ConnectTest, GetIfaceCounterStatsTest) {
   ap.EnableBeacon(zx::msec(100));
 
   context_.expected_results.push_front(wlan_ieee80211::StatusCode::kSuccess);
-  wlan_fullmac::WlanFullmacIfaceCounterStats stats = {};
+  wlan_fullmac_wire::WlanFullmacIfaceCounterStats stats = {};
 
   env_->ScheduleNotification(std::bind(&ConnectTest::StartConnect, this), zx::msec(10));
   env_->ScheduleNotification(std::bind(&ConnectTest::GetIfaceCounterStats, this, &stats),
@@ -523,7 +526,7 @@ TEST_F(ConnectTest, GetIfaceHistogramStatsTest) {
   ap.EnableBeacon(zx::msec(100));
 
   context_.expected_results.push_front(wlan_ieee80211::StatusCode::kSuccess);
-  wlan_fullmac::WlanFullmacIfaceHistogramStats stats;
+  wlan_fullmac_wire::WlanFullmacIfaceHistogramStats stats;
 
   env_->ScheduleNotification(std::bind(&ConnectTest::StartConnect, this), zx::msec(10));
   env_->ScheduleNotification(std::bind(&ConnectTest::GetIfaceHistogramStats, this, &stats),
@@ -532,8 +535,8 @@ TEST_F(ConnectTest, GetIfaceHistogramStatsTest) {
   env_->Run(kTestDuration);
 
   // Sim firmware returns these fake values for per-antenna histograms.
-  const auto& expected_hist_scope = wlan_fullmac::WlanFullmacHistScope::kPerAntenna;
-  const auto& expected_antenna_freq = wlan_fullmac::WlanFullmacAntennaFreq::kAntenna2G;
+  const auto& expected_hist_scope = wlan_fullmac_wire::WlanFullmacHistScope::kPerAntenna;
+  const auto& expected_antenna_freq = wlan_fullmac_wire::WlanFullmacAntennaFreq::kAntenna2G;
   const uint8_t expected_antenna_index = 0;
   const uint8_t expected_snr_index = 60;
   const uint8_t expected_snr_num_frames = 50;
@@ -586,7 +589,7 @@ TEST_F(ConnectTest, GetIfaceHistogramStatsNotSupportedTest) {
   ap.EnableBeacon(zx::msec(100));
 
   context_.expected_results.push_front(wlan_ieee80211::StatusCode::kSuccess);
-  wlan_fullmac::WlanFullmacIfaceHistogramStats stats = {};
+  wlan_fullmac_wire::WlanFullmacIfaceHistogramStats stats = {};
 
   DetailedHistogramErrorInject();
   env_->ScheduleNotification(std::bind(&ConnectTest::StartConnect, this), zx::msec(10));
@@ -638,18 +641,28 @@ void ConnectTest::StartDeauth() {
 }
 
 void ConnectTest::DisassocClient(const common::MacAddr& mac_addr) {
-  wlan_fullmac::WlanFullmacDisassocReq disassoc_req;
+  auto builder =
+      fuchsia_wlan_fullmac::wire::WlanFullmacImplDisassocRequest::Builder(client_ifc_.test_arena_);
 
-  std::memcpy(disassoc_req.peer_sta_address.data(), mac_addr.byte, ETH_ALEN);
-  auto result = client_ifc_.client_.buffer(client_ifc_.test_arena_)->DisassocReq(disassoc_req);
+  ::fidl::Array<uint8_t, ETH_ALEN> peer_sta_address;
+  std::memcpy(peer_sta_address.data(), mac_addr.byte, ETH_ALEN);
+  builder.peer_sta_address(peer_sta_address);
+  builder.reason_code(kDefaultClientDisassocReason);
+
+  auto result = client_ifc_.client_.buffer(client_ifc_.test_arena_)->Disassoc(builder.Build());
   EXPECT_TRUE(result.ok());
 }
 
 void ConnectTest::DeauthClient() {
-  wlan_fullmac::WlanFullmacDeauthReq deauth_req = {.reason_code = kDefaultClientDeauthReason};
+  auto builder =
+      fuchsia_wlan_fullmac::wire::WlanFullmacImplDeauthRequest::Builder(client_ifc_.test_arena_);
 
-  std::memcpy(deauth_req.peer_sta_address.data(), context_.bssid.byte, ETH_ALEN);
-  auto result = client_ifc_.client_.buffer(client_ifc_.test_arena_)->DeauthReq(deauth_req);
+  ::fidl::Array<uint8_t, ETH_ALEN> peer_sta_address;
+  std::memcpy(peer_sta_address.data(), context_.bssid.byte, ETH_ALEN);
+  builder.peer_sta_address(peer_sta_address);
+  builder.reason_code(kDefaultClientDeauthReason);
+
+  auto result = client_ifc_.client_.buffer(client_ifc_.test_arena_)->Deauth(builder.Build());
   EXPECT_TRUE(result.ok());
 }
 
@@ -1063,10 +1076,11 @@ TEST_F(ConnectTest, AssocWhileScanning) {
   env_->ScheduleNotification(std::bind(&ConnectTest::StartConnect, this), zx::msec(10));
 
   const uint8_t channels_list[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
-  auto builder = wlan_fullmac::WlanFullmacImplStartScanRequest::Builder(client_ifc_.test_arena_);
+  auto builder =
+      wlan_fullmac_wire::WlanFullmacImplStartScanRequest::Builder(client_ifc_.test_arena_);
 
   builder.txn_id(42);
-  builder.scan_type(wlan_fullmac::WlanScanType::kPassive);
+  builder.scan_type(wlan_fullmac_wire::WlanScanType::kPassive);
   auto channels = std::vector<uint8_t>(channels_list, channels_list + sizeof(channels_list));
   builder.channels(fidl::VectorView<uint8_t>(client_ifc_.test_arena_, channels));
   builder.min_channel_time(0);
@@ -1195,7 +1209,7 @@ TEST_F(ConnectTest, DisassocFromAPTest) {
   EXPECT_EQ(context_.ind_locally_initiated_count, 0U);
 
   EXPECT_EQ(client_ifc_.stats_.disassoc_indications.size(), 1U);
-  const wlan_fullmac::WlanFullmacDisassocIndication& disassoc_ind =
+  const wlan_fullmac_wire::WlanFullmacDisassocIndication& disassoc_ind =
       client_ifc_.stats_.disassoc_indications.front();
   EXPECT_EQ(disassoc_ind.locally_initiated, false);
 }

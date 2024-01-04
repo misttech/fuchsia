@@ -24,9 +24,7 @@
 #include "src/ui/a11y/bin/a11y_manager/tests/mocks/mock_property_provider.h"
 #include "src/ui/a11y/bin/a11y_manager/tests/mocks/mock_setui_accessibility.h"
 #include "src/ui/a11y/bin/a11y_manager/tests/util/util.h"
-#include "src/ui/a11y/lib/annotation/tests/mocks/mock_annotation_view.h"
 #include "src/ui/a11y/lib/gesture_manager/recognizers/one_finger_n_tap_recognizer.h"
-#include "src/ui/a11y/lib/magnifier/tests/mocks/mock_magnification_handler.h"
 #include "src/ui/a11y/lib/screen_reader/tests/mocks/mock_screen_reader_context.h"
 #include "src/ui/a11y/lib/screen_reader/tests/mocks/mock_tts_engine.h"
 #include "src/ui/a11y/lib/semantics/tests/mocks/mock_semantic_listener.h"
@@ -59,7 +57,6 @@ class UnitTest : public LoopFixture {
         mock_setui_(&context_provider_),
         mock_focus_chain_(&context_provider_),
         mock_property_provider_(&context_provider_),
-        mock_annotation_view_factory_(new MockAnnotationViewFactory()),
         mock_boot_info_manager_(context_, true),
         tts_manager_(context_),
         color_transform_manager_(context_),
@@ -70,7 +67,6 @@ class UnitTest : public LoopFixture {
     view_manager_ = std::make_unique<a11y::ViewManager>(
         std::make_unique<a11y::SemanticTreeServiceFactory>(),
         std::make_unique<a11y::A11yViewSemanticsFactory>(),
-        std::unique_ptr<MockAnnotationViewFactory>(mock_annotation_view_factory_),
         std::make_unique<MockViewInjectorFactory>(), std::make_unique<MockSemanticsEventManager>(),
         std::move(mock_a11y_view), context_provider_.context());
     mock_semantic_provider_ = std::make_unique<MockSemanticProvider>(view_manager_.get());
@@ -142,7 +138,6 @@ class UnitTest : public LoopFixture {
   MockSetUIAccessibility mock_setui_;
   MockFocusChain mock_focus_chain_;
   MockPropertyProvider mock_property_provider_;
-  MockAnnotationViewFactory* mock_annotation_view_factory_;
   MockBootInfoManager mock_boot_info_manager_;
   std::unique_ptr<a11y::ViewManager> view_manager_;
   a11y::TtsManager tts_manager_;
@@ -200,34 +195,6 @@ TEST_F(AppUnitTest, NoListenerInitially) {
   mock_setui_.Set({}, [](auto) {});
 
   RunLoopUntilIdle();
-}
-
-// Makes sure gesture priorities are right. If they're not, screen reader would intercept this
-// gesture.
-TEST_F(AppUnitTest, MagnifierGestureWithScreenReader) {
-  auto app = GetApp();
-  MockMagnificationHandler mag_handler;
-  fidl::Binding<fuchsia::accessibility::MagnificationHandler> mag_handler_binding(&mag_handler);
-  {
-    fuchsia::accessibility::MagnifierPtr magnifier;
-    context_provider_.ConnectToPublicService(magnifier.NewRequest());
-    magnifier->RegisterHandler(mag_handler_binding.NewBinding());
-  }
-
-  fuchsia::settings::AccessibilitySettings settings;
-  settings.set_screen_reader(true);
-  settings.set_enable_magnification(true);
-  mock_setui_.Set(std::move(settings), [](auto) {});
-  RunLoopUntilIdle();
-
-  mock_local_hit_.EnqueueTapToEvents();
-  mock_local_hit_.EnqueueTapToEvents();
-  mock_local_hit_.EnqueueTapToEvents();
-  mock_local_hit_.SimulateEnqueuedEvents();
-
-  RunLoopFor(a11y::Magnifier2::kTransitionPeriod);
-
-  EXPECT_GT(mag_handler.transform().scale, 1);
 }
 
 TEST_F(AppUnitTest, ColorCorrectionApplied) {

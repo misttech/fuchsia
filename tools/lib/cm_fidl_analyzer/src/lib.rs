@@ -5,9 +5,7 @@
 pub mod component_instance;
 pub mod component_model;
 pub mod environment;
-pub mod node_path;
 pub mod route;
-pub mod serde_ext;
 
 use {
     crate::{
@@ -225,7 +223,7 @@ impl ComponentInstanceVisitor for ModelMappingVisitor {
         &mut self,
         instance: &Arc<ComponentInstanceForAnalyzer>,
     ) -> Result<(), anyhow::Error> {
-        self.visited.push((instance.node_path().to_string(), instance.url().to_string()));
+        self.visited.push((instance.moniker().to_string(), instance.url().to_string()));
         Ok(())
     }
 }
@@ -238,13 +236,11 @@ mod tests {
             ModelMappingVisitor, PkgUrlMatch,
         },
         crate::component_model::ModelBuilderForAnalyzer,
+        cm_config::RuntimeConfig,
         cm_rust::ComponentDecl,
         cm_rust_testing::ComponentDeclBuilder,
         fuchsia_url::AbsoluteComponentUrl,
-        routing::{
-            component_id_index::ComponentIdIndex, config::RuntimeConfig,
-            environment::RunnerRegistry,
-        },
+        routing::environment::RunnerRegistry,
         std::{collections::HashMap, iter::FromIterator, sync::Arc},
         url::Url,
     };
@@ -390,7 +386,7 @@ mod tests {
         let build_model_result = ModelBuilderForAnalyzer::new(a_url.clone()).build(
             make_decl_map(components),
             config,
-            Arc::new(ComponentIdIndex::default()),
+            Arc::new(component_id_index::Index::default()),
             RunnerRegistry::default(),
         );
         assert_eq!(build_model_result.errors.len(), 0);
@@ -405,16 +401,16 @@ mod tests {
         // The visitor should visit both "b" and "c" before "d", but may visit "b" and "c" in either order.
         assert!(
             (map == &vec![
-                ("/".to_string(), a_url.to_string()),
-                ("/b".to_string(), b_url.to_string()),
-                ("/c".to_string(), c_url.to_string()),
-                ("/c/d".to_string(), d_url.to_string())
+                (".".to_string(), a_url.to_string()),
+                ("b".to_string(), b_url.to_string()),
+                ("c".to_string(), c_url.to_string()),
+                ("c/d".to_string(), d_url.to_string())
             ]) || (map
                 == &vec![
-                    ("/".to_string(), a_url.to_string()),
-                    ("/c".to_string(), c_url.to_string()),
-                    ("/b".to_string(), b_url.to_string()),
-                    ("/c/d".to_string(), d_url.to_string())
+                    (".".to_string(), a_url.to_string()),
+                    ("c".to_string(), c_url.to_string()),
+                    ("b".to_string(), b_url.to_string()),
+                    ("c/d".to_string(), d_url.to_string())
                 ])
         );
 

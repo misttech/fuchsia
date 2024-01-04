@@ -16,6 +16,9 @@ rustc_library("platform_configuration") {
     "src/lib.rs",
     "src/subsystems.rs",
     "src/subsystems/battery.rs",
+    "src/subsystems/bluetooth.rs",
+    "src/subsystems/build_info.rs",
+    "src/subsystems/component.rs",
     "src/subsystems/connectivity.rs",
     "src/subsystems/development.rs",
     "src/subsystems/diagnostics.rs",
@@ -25,40 +28,52 @@ rustc_library("platform_configuration") {
     "src/subsystems/forensics.rs",
     "src/subsystems/graphics.rs",
     "src/subsystems/hwinfo.rs",
+    "src/subsystems/icu.rs",
     "src/subsystems/identity.rs",
-    "src/subsystems/input.rs",
+    "src/subsystems/input_groups.rs",
     "src/subsystems/intl.rs",
+    "src/subsystems/kernel.rs",
     "src/subsystems/media.rs",
+    "src/subsystems/power.rs",
     "src/subsystems/radar.rs",
     "src/subsystems/rcs.rs",
+    "src/subsystems/recovery.rs",
     "src/subsystems/session.rs",
     "src/subsystems/setui.rs",
     "src/subsystems/starnix.rs",
     "src/subsystems/storage.rs",
     "src/subsystems/swd.rs",
     "src/subsystems/thermal.rs",
+    "src/subsystems/timekeeper.rs",
     "src/subsystems/ui.rs",
     "src/subsystems/virtualization.rs",
+    "src/util.rs",
   ]
   deps = [
     "//src/developer/ffx/config:lib",
+    "//src/diagnostics/lib/sampler-config",
+    "//src/lib/assembly/component_id_index",
+    "//src/lib/assembly/component_manager_config",
+    "//src/lib/assembly/config_capabilities",
     "//src/lib/assembly/config_schema",
     "//src/lib/assembly/images_config",
+    "//src/lib/assembly/named_file_map",
     "//src/lib/assembly/util",
+    "//src/lib/fuchsia-url",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:camino",
     "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:handlebars",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
+    "//third_party/rust_crates:tempfile",
   ]
   test_deps = [
     "//src/lib/assembly/images_config",
     "//src/lib/assembly/util",
+    "//src/lib/utf8_path",
     "//third_party/rust_crates:lazy_static",
+    "//third_party/rust_crates:tempfile",
   ]
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
-}
-
-group("host_tests") {
-  testonly = true
-  deps = [ ":platform_configuration_test" ]
 }

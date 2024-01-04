@@ -1,11 +1,11 @@
 // Copyright 2021 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
+#include <lib/async/cpp/task.h>
 #include <lib/mock-function/mock-function.h>
 #include <lib/stdcompat/span.h>
 
-#include <functional>
-
+#include <sdk/lib/driver/logging/cpp/logger.h>
 #include <wlan/drivers/components/frame_container.h>
 #include <wlan/drivers/components/frame_storage.h>
 #include <wlan/drivers/components/network_device.h>
@@ -23,19 +23,24 @@ using wlan::drivers::components::FrameContainer;
 using wlan::drivers::components::FrameStorage;
 using wlan::drivers::components::NetworkDevice;
 
+using fuchsia_logger::LogSink;
+
 // Test implementation of the NetworkDevice base class we're testing
 struct TestNetworkDevice : public NetworkDevice::Callbacks {
+  TestNetworkDevice() : network_device_(this) {}
   explicit TestNetworkDevice(zx_device_t* parent) : network_device_(parent, this) {}
   void NetDevRelease() override {
     if (release_.HasExpectations()) {
       release_.Call();
     }
+    release_called_.Signal();
   }
-  zx_status_t NetDevInit() override {
+  void NetDevInit(NetworkDevice::Callbacks::InitTxn txn) override {
     if (init_.HasExpectations()) {
-      return init_.Call();
+      txn.Reply(init_.Call());
+    } else {
+      txn.Reply(ZX_OK);
     }
-    return ZX_OK;
   }
   void NetDevStart(NetworkDevice::Callbacks::StartTxn txn) override {
     txn.Reply(ZX_OK);
@@ -45,7 +50,7 @@ struct TestNetworkDevice : public NetworkDevice::Callbacks {
     txn.Reply();
     stop_.Call(std::move(txn));
   }
-  void NetDevGetInfo(device_info_t* out_info) override { get_info_.Call(out_info); }
+  void NetDevGetInfo(device_impl_info_t* out_info) override { get_info_.Call(out_info); }
   void NetDevQueueTx(cpp20::span<Frame> buffers) override { queue_tx_.Call(buffers); }
   void NetDevQueueRxSpace(const rx_space_buffer_t* buffers_list, size_t buffers_count,
                           uint8_t* vmo_addrs[]) override {
@@ -60,11 +65,12 @@ struct TestNetworkDevice : public NetworkDevice::Callbacks {
   void NetDevReleaseVmo(uint8_t vmo_id) override { release_vmo_.Call(vmo_id); }
   void NetDevSetSnoopEnabled(bool snoop) override { set_snoop_enabled_.Call(snoop); }
 
+  libsync::Completion release_called_;
   mock_function::MockFunction<void> release_;
   mock_function::MockFunction<zx_status_t> init_;
   mock_function::MockFunction<void, NetworkDevice::Callbacks::StartTxn> start_;
   mock_function::MockFunction<void, NetworkDevice::Callbacks::StopTxn> stop_;
-  mock_function::MockFunction<void, device_info_t*> get_info_;
+  mock_function::MockFunction<void, device_impl_info_t*> get_info_;
   mock_function::MockFunction<void, cpp20::span<Frame>> queue_tx_;
   mock_function::MockFunction<void, const rx_space_buffer_t*, size_t, uint8_t**> queue_rx_space_;
   mock_function::MockFunction<void, uint8_t, zx::vmo&&, uint8_t*, size_t> prepare_vmo_;
@@ -76,9 +82,16 @@ struct TestNetworkDevice : public NetworkDevice::Callbacks {
   NetworkDevice network_device_;
 };
 
-TEST(NetworkDeviceTest, Constructible) { TestNetworkDevice device(nullptr); }
+TEST(NetworkDeviceTest, ConstructibleDFv1) { TestNetworkDevice device(nullptr); }
 
-TEST(NetworkDeviceTest, InitRelease) {
+TEST(NetworkDeviceTest, ConstructibleDFv2) {
+  fdf::Logger logger("test", FUCHSIA_LOG_INFO, zx::socket{}, fidl::WireClient<LogSink>{});
+  fdf::Logger::SetGlobalInstance(&logger);
+
+  TestNetworkDevice device;
+}
+
+TEST(NetworkDeviceTest, InitReleaseDFv1) {
   auto parent = MockDevice::FakeRootParent();
   TestNetworkDevice device(parent.get());
 
@@ -93,6 +106,35 @@ TEST(NetworkDeviceTest, InitRelease) {
   device.release_.ExpectCall();
   parent.reset();
   device.release_.VerifyAndClear();
+}
+
+TEST(NetworkDeviceTest, InitReleaseDFv2) {
+  fdf_testing::DriverRuntime runtime;
+
+  fdf::Logger logger("test", FUCHSIA_LOG_INFO, zx::socket{}, fidl::WireClient<LogSink>{});
+  fdf::Logger::SetGlobalInstance(&logger);
+
+  // Env dispatcher runs in the background because we need to make sync calls into it.
+  fdf::UnownedSynchronizedDispatcher dispatcher = runtime.StartBackgroundDispatcher();
+  auto endpoints = fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
+  ASSERT_OK(endpoints.status_value());
+
+  std::unique_ptr<TestNetworkDevice> device;
+
+  libsync::Completion initialized;
+  async::PostTask(dispatcher->async_dispatcher(), [&] {
+    device = std::make_unique<TestNetworkDevice>();
+    device->network_device_.Init(std::move(endpoints->client), dispatcher->async_dispatcher());
+    initialized.Signal();
+  });
+  initialized.Wait();
+
+  // Closing the node server channel should shut everything down.
+  device->release_.ExpectCall();
+  endpoints->server.Close(ZX_OK);
+  // In DFv2 the call to release is asynchronous, wait for it to happen.
+  device->release_called_.Wait();
+  device->release_.VerifyAndClear();
 }
 
 TEST(NetworkDeviceTest, PrepareVmo) {
@@ -179,18 +221,6 @@ TEST(NetworkDeviceTest, Stop) {
   device.stop_.VerifyAndClear();
 }
 
-TEST(NetworkDeviceTest, NetDevIfcProto) {
-  auto parent = MockDevice::FakeRootParent();
-  TestNetworkDevice device(parent.get());
-  wlan::drivers::components::test::TestNetworkDeviceIfc netdev_ifc;
-  network_device_ifc_protocol_t proto = netdev_ifc.GetProto();
-
-  ASSERT_OK(device.network_device_.NetworkDeviceImplInit(&proto));
-
-  EXPECT_EQ(device.network_device_.NetDevIfcProto().ctx, proto.ctx);
-  EXPECT_EQ(device.network_device_.NetDevIfcProto().ops, proto.ops);
-}
-
 struct NetworkDeviceTestFixture : public ::zxtest::Test {
   static constexpr uint8_t kVmoId = 13;
   static constexpr uint8_t kPortId = 8;
@@ -199,7 +229,16 @@ struct NetworkDeviceTestFixture : public ::zxtest::Test {
 
   void SetUp() override {
     kVmoSize = zx_system_get_page_size();
-    device_.network_device_.NetworkDeviceImplInit(&netdev_ifc_.GetProto());
+    libsync::Completion initialized;
+    device_.network_device_.NetworkDeviceImplInit(
+        &netdev_ifc_.GetProto(),
+        [](void* ctx, zx_status_t status) {
+          libsync::Completion* initialized = static_cast<libsync::Completion*>(ctx);
+          EXPECT_OK(status);
+          initialized->Signal();
+        },
+        &initialized);
+    initialized.Wait();
     // Make sure we have these correct or tests are gonna start crashing.
     ASSERT_EQ(device_.network_device_.NetDevIfcProto().ctx, netdev_ifc_.GetProto().ctx);
     ASSERT_EQ(device_.network_device_.NetDevIfcProto().ops, netdev_ifc_.GetProto().ops);
@@ -421,7 +460,7 @@ TEST_F(NetworkDeviceTestFixture, CompleteRxEmptyFrames) {
 
 TEST_F(NetworkDeviceTestFixture, GetInfo) {
   // This call should just forward to the base object, the network device can't fill out this info.
-  device_info_t info;
+  device_impl_info_t info;
   device_.get_info_.ExpectCall(&info);
   device_.network_device_.NetworkDeviceImplGetInfo(&info);
   device_.get_info_.VerifyAndClear();

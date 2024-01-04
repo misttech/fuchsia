@@ -2,16 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::{
+    dynamic_thread_spawner::DynamicThreadSpawner,
+    task::{CurrentTask, Kernel, ThreadGroup},
+};
+use fragile::Fragile;
 use fuchsia_async as fasync;
 use fuchsia_zircon as zx;
 use once_cell::sync::OnceCell;
-use std::{ffi::CString, sync::Arc};
-
-use crate::{
-    dynamic_thread_pool::DynamicThreadPool,
-    fs::FsContext,
-    task::{CurrentTask, Kernel, Task},
-    types::*,
+use pin_project::pin_project;
+use starnix_sync::{Locked, Unlocked};
+use starnix_uapi::{errno, errors::Errno, ownership::Releasable};
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::{Arc, Weak},
+    task::{Context, Poll},
 };
 
 /// The threads that the kernel runs internally.
@@ -24,66 +30,104 @@ pub struct KernelThreads {
 
     /// A handle to the async executor running in `starnix_process`.
     ///
-    /// You can spawn tasks on this executor using `fasync::Task::spawn_on`.
-    /// However, those task must not block. If you need to block, you can dispatch to
-    /// a worker thread using `thread_pool`.
-    pub ehandle: fasync::EHandle,
+    /// You can spawn tasks on this executor using `spawn_future`. However, those task must not
+    /// block. If you need to block, you can spawn a worker thread using `spawner`.
+    ehandle: fasync::EHandle,
 
-    /// The thread pool to dispatch blocking calls to.
-    pub pool: DynamicThreadPool,
+    /// The thread pool to spawn blocking calls to.
+    spawner: OnceCell<DynamicThreadSpawner>,
 
-    /// A task object for the kernel threads.
-    system_task: OnceCell<OwnedRef<CurrentTask>>,
+    /// Information about the main system task that is bound to the kernel main thread.
+    system_task: OnceCell<SystemTask>,
+
+    /// A weak reference to the kernel owning this struct.
+    kernel: Weak<Kernel>,
 }
 
-impl Default for KernelThreads {
-    fn default() -> Self {
+impl KernelThreads {
+    pub fn new(kernel: Weak<Kernel>) -> Self {
         KernelThreads {
             starnix_process: fuchsia_runtime::process_self()
                 .duplicate(zx::Rights::SAME_RIGHTS)
                 .expect("Failed to duplicate process self"),
             ehandle: fasync::EHandle::local(),
-            pool: DynamicThreadPool::new(2),
-            system_task: OnceCell::new(),
+            spawner: Default::default(),
+            system_task: Default::default(),
+            kernel,
         }
+    }
+    pub fn init(&self, system_task: CurrentTask) -> Result<(), Errno> {
+        self.system_task.set(SystemTask::new(system_task)).map_err(|_| errno!(EEXIST))?;
+        self.spawner
+            .set(DynamicThreadSpawner::new(2, self.system_task().weak_task()))
+            .map_err(|_| errno!(EEXIST))?;
+        Ok(())
+    }
+
+    pub fn spawn_future(&self, future: impl Future<Output = ()> + 'static) {
+        self.ehandle.spawn_local_detached(WrappedFuture(self.kernel.clone(), future));
+    }
+
+    pub fn spawner(&self) -> &DynamicThreadSpawner {
+        self.spawner.get().as_ref().unwrap()
+    }
+
+    /// Access the `CurrentTask` for the kernel main thread. This can only be called from the
+    /// kernel main thread itself.
+    pub fn system_task(&self) -> &CurrentTask {
+        self.system_task.get().expect("KernelThreads::init must be called").system_task.get()
+    }
+
+    /// Access the `ThreadGroup` for the system tasks. This can be safely called from anywhere as
+    /// soon as KernelThreads::init has been called.
+    pub fn system_thread_group(&self) -> &Arc<ThreadGroup> {
+        &self.system_task.get().expect("KernelThreads::init must be called").system_thread_group
+    }
+
+    pub fn spawn<F>(&self, f: F)
+    where
+        F: FnOnce(&mut Locked<'_, Unlocked>, &CurrentTask) + Send + 'static,
+    {
+        self.spawner().spawn(f)
     }
 }
 
 impl Drop for KernelThreads {
     fn drop(&mut self) {
-        let system_task = self.system_task.take().unwrap();
-        system_task.release(&());
+        if let Some(system_task) = self.system_task.take() {
+            system_task.system_task.into_inner().release(());
+        }
     }
 }
 
-impl KernelThreads {
-    pub fn init(&self, kernel: &Arc<Kernel>, fs: Arc<FsContext>) -> Result<(), Errno> {
-        self.system_task
-            .set(OwnedRef::new(Task::create_kernel_task(
-                kernel,
-                CString::new("[kthreadd]").unwrap(),
-                fs,
-            )?))
-            .map_err(|_| errno!(EEXIST))?;
-        Ok(())
-    }
+struct SystemTask {
+    /// The system task is bound to the kernel main thread. `Fragile` ensures a runtime crash if it
+    /// is accessed from any other thread.
+    system_task: Fragile<CurrentTask>,
 
-    pub fn system_task(&self) -> &CurrentTask {
-        self.system_task.get().as_ref().unwrap()
-    }
+    /// The system `ThreadGroup` is accessible from everywhere.
+    system_thread_group: Arc<ThreadGroup>,
+}
 
-    pub fn weak_system_task(&self) -> WeakRef<CurrentTask> {
-        self.system_task.get().unwrap().into()
+impl SystemTask {
+    fn new(system_task: CurrentTask) -> Self {
+        let system_thread_group = Arc::clone(&system_task.thread_group);
+        Self { system_task: system_task.into(), system_thread_group }
     }
+}
 
-    pub fn new_system_thread(&self) -> Result<CurrentTask, Errno> {
-        Task::create_kernel_thread(self.system_task(), CString::new("[kthread]").unwrap())
-    }
+#[pin_project]
+struct WrappedFuture<F: Future<Output = ()> + 'static>(Weak<Kernel>, #[pin] F);
+impl<F: Future<Output = ()> + 'static> Future for WrappedFuture<F> {
+    type Output = ();
 
-    pub fn dispatch<F>(&self, f: F)
-    where
-        F: FnOnce() + Send + 'static,
-    {
-        self.pool.dispatch(f)
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let kernel = self.0.clone();
+        let result = self.project().1.poll(cx);
+
+        if let Some(kernel) = kernel.upgrade() {
+            kernel.kthreads.system_task().trigger_delayed_releaser();
+        }
+        result
     }
 }

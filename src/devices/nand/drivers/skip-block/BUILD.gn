@@ -22,6 +22,11 @@ fuchsia_driver_component("skip-block") {
   manifest = "meta/skip-block.cml"
 }
 
+fuchsia_driver_package("package") {
+  package_name = "skip-block"
+  driver_components = [ ":skip-block" ]
+}
+
 driver_bind_rules("skip-block-bind") {
   rules = "skip-block.bind"
   bind_output = "skip-block.bindbc"
@@ -44,7 +49,7 @@ source_set("common") {
   public_deps = [
     "//sdk/banjo/fuchsia.hardware.badblock:fuchsia.hardware.badblock_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.nand:fuchsia.hardware.nand_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.skipblock:fuchsia.hardware.skipblock_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.skipblock:fuchsia.hardware.skipblock_cpp",
     "//src/devices/lib/dev-operation",
     "//src/lib/ddk",
     "//src/lib/ddktl",

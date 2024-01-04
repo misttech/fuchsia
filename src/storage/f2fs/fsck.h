@@ -8,8 +8,8 @@
 #include <map>
 
 #include "src/storage/f2fs/bcache.h"
+#include "src/storage/f2fs/common.h"
 #include "src/storage/f2fs/f2fs_layout.h"
-#include "src/storage/f2fs/f2fs_types.h"
 #include "src/storage/f2fs/node.h"
 #include "src/storage/f2fs/segment.h"
 
@@ -41,8 +41,8 @@ struct FsckInfo {
   } result;
 
   std::map<nid_t, InodeLinkInfo> inode_link_map;
-  std::unique_ptr<uint8_t[]> main_area_bitmap;
-  std::unique_ptr<uint8_t[]> nat_area_bitmap;
+  RawBitmap main_area_bitmap;
+  RawBitmap nat_area_bitmap;
   std::set<nid_t> data_exist_flag_set;
 
   uint64_t main_area_bitmap_size = 0;
@@ -90,7 +90,8 @@ class FsckWorker {
   FsckWorker &operator=(const FsckWorker &) = delete;
   FsckWorker(FsckWorker &&) = delete;
   FsckWorker &operator=(FsckWorker &&) = delete;
-  FsckWorker(std::unique_ptr<Bcache> bc, const FsckOptions &options) : fsck_options_(options) {
+  FsckWorker(std::unique_ptr<BcacheMapper> bc, const FsckOptions &options)
+      : fsck_options_(options) {
     bc_ = std::move(bc);
   }
   ~FsckWorker() { DoUmount(); }
@@ -105,10 +106,10 @@ class FsckWorker {
 
   // Even in a successful return, the returned pair can be |{*nullptr*, node_info}| if
   // |node_info.blkaddr| is |kNewAddr|.
-  zx::result<NodeInfo> ReadNodeBlock(nid_t nid, FsBlock<Node> &block);
+  zx::result<NodeInfo> ReadNodeBlock(nid_t nid, BlockBuffer<Node> &block);
   zx_status_t ValidateNodeBlock(const Node &node_block, NodeInfo node_info, FileType ftype,
                                 NodeType ntype);
-  // This function checks the sanity of a node block with respect to the traverse context and
+  // This function checks the validity of a node block with respect to the traverse context and
   // updates the context. In a successful return, this function returns a bool value to indicate
   // whether the caller should traverse deeper.
   zx::result<bool> UpdateContext(const Node &node_block, NodeInfo node_info, FileType ftype,
@@ -130,7 +131,7 @@ class FsckWorker {
                              uint16_t index_in_node, uint8_t ver);
   zx_status_t CheckDentries(uint32_t &child_count, uint32_t &child_files, int last_block,
                             const uint8_t *dentry_bitmap, const DirEntry *dentries,
-                            const uint8_t (*filename)[kNameLen], uint32_t max_entries);
+                            const uint8_t (*filename)[kNameLen], size_t max_entries);
   zx_status_t CheckDentryBlock(uint32_t block_address, uint32_t &child_count, uint32_t &child_files,
                                int last_block);
 
@@ -181,13 +182,9 @@ class FsckWorker {
   void DoUmount();
   zx_status_t Run();
 
-  void InitSuperblockInfo();
-  zx::result<> GetSuperblock(block_t index, FsBlock<> &superblock);
-  zx_status_t SanityCheckRawSuper(const Superblock *raw_super);
   zx_status_t GetValidSuperblock();
-  zx::result<std::pair<std::unique_ptr<FsBlock<Checkpoint>>, uint64_t>> ValidateCheckpoint(
+  zx::result<std::pair<std::unique_ptr<BlockBuffer<Checkpoint>>, uint64_t>> ValidateCheckpoint(
       block_t cp_addr);
-  zx_status_t SanityCheckCkpt();
   zx_status_t GetValidCheckpoint();
   zx_status_t InitNodeManager();
   zx_status_t BuildNodeManager();
@@ -205,11 +202,11 @@ class FsckWorker {
   // this function reads each block's footer in the segment and
   // restores nid part of entries in |summary_block|.
   zx_status_t RestoreNodeSummary(uint32_t segno, SummaryBlock &summary_block);
-  SegType GetSumBlockInfo(uint32_t segno, FsBlock<SummaryBlock> &summary_block);
+  SegType GetSumBlockInfo(uint32_t segno, BlockBuffer<SummaryBlock> &summary_block);
   std::pair<SegType, Summary> GetSummaryEntry(uint32_t block_address);
   void ResetCurseg(CursegType type, int modified);
   zx_status_t RestoreCursegSummaries();
-  std::unique_ptr<FsBlock<SitBlock>> GetCurrentSitPage(uint32_t segno);
+  std::unique_ptr<BlockBuffer<SitBlock>> GetCurrentSitPage(uint32_t segno);
   void SegmentInfoFromRawSit(SegmentEntry &segment_entry, const SitEntry &raw_sit);
   void CheckBlockCount(uint32_t segno, const SitEntry &raw_sit);
   zx::result<RawNatEntry> LookupNatInJournal(nid_t nid);
@@ -229,12 +226,12 @@ class FsckWorker {
   bool IsValidNid(nid_t nid);
   bool IsValidBlockAddress(uint32_t addr);
   block_t StartSummaryBlock() {
-    return superblock_info_.StartCpAddr() +
-           LeToCpu(superblock_info_.GetCheckpoint().cp_pack_start_sum);
+    return superblock_info_->StartCpAddr() +
+           LeToCpu(superblock_info_->GetCheckpoint().cp_pack_start_sum);
   }
   block_t SummaryBlockAddress(int base, int type) {
-    return superblock_info_.StartCpAddr() +
-           LeToCpu(superblock_info_.GetCheckpoint().cp_pack_total_block_count) - (base + 1) + type;
+    return superblock_info_->StartCpAddr() +
+           LeToCpu(superblock_info_->GetCheckpoint().cp_pack_total_block_count) - (base + 1) + type;
   }
   static void NodeInfoFromRawNat(NodeInfo &ni, RawNatEntry &raw_nat) {
     ni.ino = LeToCpu(raw_nat.ino);
@@ -250,7 +247,7 @@ class FsckWorker {
   int dump_inode_from_blkaddr(SuperblockInfo *sbi, uint32_t blk_addr);
 #endif
 
-  std::unique_ptr<Bcache> Destroy() {
+  std::unique_ptr<BcacheMapper> Destroy() {
     DoUmount();
     return std::move(bc_);
   }
@@ -268,26 +265,25 @@ class FsckWorker {
   }
 
   // For testing
-  SuperblockInfo &GetSuperblockInfo() { return superblock_info_; }
+  SuperblockInfo &GetSuperblockInfo() { return *superblock_info_; }
 
  private:
   // Saves the traverse context. It should be re-initialized every traverse.
   FsckInfo fsck_;
   const FsckOptions fsck_options_;
-  std::unique_ptr<Superblock> sb_;
-  SuperblockInfo superblock_info_;
+  std::unique_ptr<SuperblockInfo> superblock_info_;
   std::unique_ptr<NodeManager> node_manager_;
   std::unique_ptr<SegmentManager> segment_manager_;
-  std::unique_ptr<Bcache> bc_;
+  std::unique_ptr<BcacheMapper> bc_;
 
   bool mounted_ = false;
 
-  std::unique_ptr<uint8_t[]> sit_area_bitmap_;
+  RawBitmap sit_area_bitmap_;
   uint32_t sit_area_bitmap_size_ = 0;
 };
 
-zx_status_t Fsck(std::unique_ptr<Bcache> bc, const FsckOptions &options,
-                 std::unique_ptr<Bcache> *out = nullptr);
+zx_status_t Fsck(std::unique_ptr<BcacheMapper> bc, const FsckOptions &options,
+                 std::unique_ptr<BcacheMapper> *out = nullptr);
 
 }  // namespace f2fs
 

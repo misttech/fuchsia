@@ -109,37 +109,35 @@ void VmObjectDispatcher::on_zero_handles() {
   vmo_->SetChildObserver(nullptr);
 }
 
-zx_status_t VmObjectDispatcher::Read(VmAspace* current_aspace, user_out_ptr<char> user_data,
-                                     size_t length, uint64_t offset, size_t* out_actual) {
+zx_status_t VmObjectDispatcher::Read(user_out_ptr<char> user_data, size_t length, uint64_t offset,
+                                     size_t* out_actual) {
   canary_.Assert();
 
-  return vmo_->ReadUser(current_aspace, user_data, offset, length, VmObjectReadWriteOptions::None,
-                        out_actual);
+  return vmo_->ReadUser(user_data, offset, length, VmObjectReadWriteOptions::None, out_actual);
 }
 
-zx_status_t VmObjectDispatcher::ReadVector(VmAspace* current_aspace, user_out_iovec_t user_data,
-                                           size_t length, uint64_t offset, size_t* out_actual) {
+zx_status_t VmObjectDispatcher::ReadVector(user_out_iovec_t user_data, size_t length,
+                                           uint64_t offset, size_t* out_actual) {
   canary_.Assert();
 
-  return vmo_->ReadUserVector(current_aspace, user_data, offset, length, out_actual);
+  return vmo_->ReadUserVector(user_data, offset, length, out_actual);
 }
 
 zx_status_t VmObjectDispatcher::WriteVector(
-    VmAspace* current_aspace, user_in_iovec_t user_data, size_t length, uint64_t offset,
-    size_t* out_actual, VmObject::OnWriteBytesTransferredCallback on_bytes_transferred) {
+    user_in_iovec_t user_data, size_t length, uint64_t offset, size_t* out_actual,
+    VmObject::OnWriteBytesTransferredCallback on_bytes_transferred) {
   canary_.Assert();
 
-  return vmo_->WriteUserVector(current_aspace, user_data, offset, length, out_actual,
-                               on_bytes_transferred);
+  return vmo_->WriteUserVector(user_data, offset, length, out_actual, on_bytes_transferred);
 }
 
 zx_status_t VmObjectDispatcher::Write(
-    VmAspace* current_aspace, user_in_ptr<const char> user_data, size_t length, uint64_t offset,
-    size_t* out_actual, VmObject::OnWriteBytesTransferredCallback on_bytes_transferred) {
+    user_in_ptr<const char> user_data, size_t length, uint64_t offset, size_t* out_actual,
+    VmObject::OnWriteBytesTransferredCallback on_bytes_transferred) {
   canary_.Assert();
 
-  return vmo_->WriteUser(current_aspace, user_data, offset, length, VmObjectReadWriteOptions::None,
-                         out_actual, on_bytes_transferred);
+  return vmo_->WriteUser(user_data, offset, length, VmObjectReadWriteOptions::None, out_actual,
+                         on_bytes_transferred);
 }
 
 zx_status_t VmObjectDispatcher::SetSize(uint64_t size) {
@@ -188,7 +186,8 @@ zx_status_t VmObjectDispatcher::GetSize(uint64_t* size) {
   return ZX_OK;
 }
 
-zx_info_vmo_t VmoToInfoEntry(const VmObject* vmo, bool is_handle, zx_rights_t handle_rights) {
+zx_info_vmo_t VmoToInfoEntry(const VmObject* vmo, VmoOwnership ownership,
+                             zx_rights_t handle_rights) {
   zx_info_vmo_t entry = {};
   entry.koid = vmo->user_id();
   vmo->get_name(entry.name, sizeof(entry.name));
@@ -202,15 +201,27 @@ zx_info_vmo_t VmoToInfoEntry(const VmObject* vmo, bool is_handle, zx_rights_t ha
                 (vmo->is_discardable() ? ZX_INFO_VMO_DISCARDABLE : 0) |
                 (vmo->is_user_pager_backed() ? ZX_INFO_VMO_PAGER_BACKED : 0) |
                 (vmo->is_contiguous() ? ZX_INFO_VMO_CONTIGUOUS : 0);
-  VmObject::AttributionCounts page_counts = vmo->AttributedPages();
-  // TODO(fxb/60238): Handle compressed page counting.
+  // As an implementation detail, both ends of an IOBuffer keep a child reference to a shared parent
+  // which is dropped. Since references aren't normally attributed pages otherwise, we specifically
+  // request their page count.
+  VmObject::AttributionCounts page_counts = ownership == VmoOwnership::kIoBuffer
+                                                ? vmo->AttributedPagesInReferenceOwner()
+                                                : vmo->AttributedPages();
   entry.committed_bytes = page_counts.uncompressed * PAGE_SIZE;
+  entry.populated_bytes = (page_counts.compressed + page_counts.uncompressed) * PAGE_SIZE;
   entry.cache_policy = vmo->GetMappingCachePolicy();
-  if (is_handle) {
-    entry.flags |= ZX_INFO_VMO_VIA_HANDLE;
-    entry.handle_rights = handle_rights;
-  } else {
-    entry.flags |= ZX_INFO_VMO_VIA_MAPPING;
+  switch (ownership) {
+    case VmoOwnership::kHandle:
+      entry.flags |= ZX_INFO_VMO_VIA_HANDLE;
+      entry.handle_rights = handle_rights;
+      break;
+    case VmoOwnership::kMapping:
+      entry.flags |= ZX_INFO_VMO_VIA_MAPPING;
+      break;
+    case VmoOwnership::kIoBuffer:
+      entry.flags |= ZX_INFO_VMO_VIA_IOB_HANDLE;
+      entry.handle_rights = handle_rights;
+      break;
   }
   if (vmo->child_type() == VmObject::ChildType::kCowClone) {
     entry.flags |= ZX_INFO_VMO_IS_COW_CLONE;
@@ -222,7 +233,7 @@ zx_info_vmo_t VmoToInfoEntry(const VmObject* vmo, bool is_handle, zx_rights_t ha
 }
 
 zx_info_vmo_t VmObjectDispatcher::GetVmoInfo(zx_rights_t rights) {
-  zx_info_vmo_t info = VmoToInfoEntry(vmo().get(), true, rights);
+  zx_info_vmo_t info = VmoToInfoEntry(vmo().get(), VmoOwnership::kHandle, rights);
   if (initial_mutability_ == InitialMutability::kImmutable) {
     info.flags |= ZX_INFO_VMO_IMMUTABLE;
   }
@@ -434,11 +445,7 @@ zx_status_t VmObjectDispatcher::CreateChild(
     type = CloneType::Snapshot;
   } else if (options & ZX_VMO_CHILD_SNAPSHOT_AT_LEAST_ON_WRITE) {
     options &= ~ZX_VMO_CHILD_SNAPSHOT_AT_LEAST_ON_WRITE;
-    if (vmo_->is_snapshot_at_least_on_write_supported()) {
-      type = CloneType::SnapshotAtLeastOnWrite;
-    } else {
-      type = CloneType::Snapshot;
-    }
+    type = CloneType::SnapshotAtLeastOnWrite;
   } else {
     return ZX_ERR_INVALID_ARGS;
   }

@@ -5,7 +5,7 @@
 #ifndef LIB_DRIVER_COMPONENT_CPP_DRIVER_BASE_H_
 #define LIB_DRIVER_COMPONENT_CPP_DRIVER_BASE_H_
 
-#if __Fuchsia_API_level__ >= 13
+#if __Fuchsia_API_level__ >= 15
 
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <lib/component/outgoing/cpp/structured_config.h>
@@ -15,6 +15,11 @@
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/fdf/cpp/dispatcher.h>
+
+namespace fdf_internal {
+template <typename DriverBaseImpl>
+class DriverServer;
+}  // namespace fdf_internal
 
 namespace fdf {
 
@@ -30,13 +35,11 @@ extern bool logger_wait_for_initial_interest;
 // |Start| which must be overridden.
 // |PrepareStop|, |Stop|, and the destructor |~DriverBase|, are optional to override.
 //
-// In order to work with the default |BasicFactory| factory implementation,
+// In order to work with the default FUCHSIA_DRIVER_EXPORT macro,
 // classes which inherit from |DriverBase| must implement a constructor with the following
 // signature and forward said parameters to the |DriverBase| base class:
 //
 //   T(DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher);
-//
-// Otherwise a custom factory must be created and used to call constructors of any other shape.
 //
 // The following illustrates an example:
 //
@@ -74,6 +77,16 @@ extern bool logger_wait_for_initial_interest;
 // https://fuchsia.dev/fuchsia-src/development/languages/c-cpp/thread-safe-async#synchronized-dispatcher
 class DriverBase {
  public:
+#if __Fuchsia_API_level__ >= 15
+  // Gets the DriverBase instance from the given token. This is only intended for testing.
+  template <typename DriverBaseImpl>
+  static DriverBaseImpl* GetInstanceFromTokenForTesting(void* token) {
+    fdf_internal::DriverServer<DriverBaseImpl>* driver_server =
+        static_cast<fdf_internal::DriverServer<DriverBaseImpl>*>(token);
+    return static_cast<DriverBaseImpl*>(driver_server->GetDriverBaseImpl());
+  }
+#endif
+
   DriverBase(std::string_view name, DriverStartArgs start_args,
              fdf::UnownedSynchronizedDispatcher driver_dispatcher);
 
@@ -132,10 +145,13 @@ class DriverBase {
 
   template <typename StructuredConfig>
   StructuredConfig take_config() {
-    static_assert(component::IsDriverStructuredConfigV<StructuredConfig>,
-                  "Invalid type supplied. StructuredConfig must be a driver flavored "
+    static_assert(component::IsStructuredConfigV<StructuredConfig>,
+                  "Invalid type supplied. StructuredConfig must be a "
                   "structured config type. Example usage: take_config<my_driverconfig::Config>().");
-    return StructuredConfig::TakeFromStartArgs(start_args_);
+    std::optional config_vmo = std::move(start_args_.config());
+    ZX_ASSERT_MSG(config_vmo.has_value(),
+                  "Config VMO handle must be provided and cannot already have been taken.");
+    return StructuredConfig::CreateFromVmo(std::move(config_vmo.value()));
   }
 
   // The name of the driver that is given to the DriverBase constructor.

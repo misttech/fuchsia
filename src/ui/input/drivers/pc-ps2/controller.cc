@@ -52,16 +52,14 @@ void Controller::DdkInit(ddk::InitTxn txn) {
       txn.Reply(status);
     });
 
-    // Please do not use get_root_resource() in new code. See fxbug.dev/31358.
-    if (get_root_resource(parent()) != ZX_HANDLE_INVALID) {
+    if (get_ioport_resource(parent()) != ZX_HANDLE_INVALID) {
       // TODO(simonshields): We should use ACPI to get these resources.
-      // Please do not use get_root_resource() in new code. See fxbug.dev/31358.
-      status = zx_ioports_request(get_root_resource(parent()), kCommandReg, 1);
+      status = zx_ioports_request(get_ioport_resource(parent()), kCommandReg, 1);
       if (status != ZX_OK) {
         return;
       }
-      // Please do not use get_root_resource() in new code. See fxbug.dev/31358.
-      status = zx_ioports_request(get_root_resource(parent()), kDataReg, 1);
+
+      status = zx_ioports_request(get_ioport_resource(parent()), kDataReg, 1);
       if (status != ZX_OK) {
         return;
       }
@@ -164,7 +162,6 @@ void Controller::DdkInit(ddk::InitTxn txn) {
     }
 
     cancel.cancel();
-    txn.Reply(ZX_OK);
 
     // Failure here won't fail everything else.
     zx_status_t bind_status = I8042Device::Bind(this, dispatcher, Port::kPort1);
@@ -180,7 +177,19 @@ void Controller::DdkInit(ddk::InitTxn txn) {
     }
 
     sync_completion_signal(&added_children_);
+
+    txn.Reply(ZX_OK);
   });
+}
+
+void Controller::DdkUnbind(ddk::UnbindTxn txn) {
+  JoinInitThread();
+  txn.Reply();
+}
+
+void Controller::DdkSuspend(ddk::SuspendTxn txn) {
+  JoinInitThread();
+  txn.Reply(ZX_OK, txn.requested_state());
 }
 
 zx::result<std::vector<uint8_t>> Controller::SendControllerCommand(
@@ -260,6 +269,12 @@ StatusReg Controller::ReadStatus() {
 }
 
 uint8_t Controller::ReadData() { return inp(kDataReg); }
+
+void Controller::JoinInitThread() {
+  if (init_thread_.joinable()) {
+    init_thread_.join();
+  }
+}
 
 bool Controller::WaitWrite() {
   size_t i = 0;

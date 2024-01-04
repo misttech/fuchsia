@@ -195,12 +195,12 @@ static acpi::status<> walk_devices_callback(ACPI_HANDLE object, ResourceContext*
  * Walks the ACPI namespace and use the reported current resources to inform
    the kernel PCI interface about what memory it shouldn't use.
  *
- * @param root_resource_handle The handle to pass to the kernel when talking
+ * @param mmio_resource_handle The handle to pass to the kernel when talking
  * to the PCI driver.
  *
  * @return ZX_OK on success
  */
-zx_status_t scan_acpi_tree_for_resources(acpi::Acpi* acpi, zx_handle_t root_resource_handle) {
+zx_status_t scan_acpi_tree_for_resources(acpi::Acpi* acpi, zx_handle_t mmio_resource_handle) {
   // First we search for resources to add, then we subtract out things that
   // are being consumed elsewhere.  This forces an ordering on the
   // operations so that it should be consistent, and should protect against
@@ -209,7 +209,7 @@ zx_status_t scan_acpi_tree_for_resources(acpi::Acpi* acpi, zx_handle_t root_reso
   // Walk the device tree and add to the PCIe IO ranges any resources
   // "produced" by the PCI root in the ACPI namespace.
   ResourceContext ctx = {
-      .pci_handle = root_resource_handle,
+      .pci_handle = mmio_resource_handle,
       .device_is_root_bridge = false,
       .add_pass = true,
   };
@@ -289,7 +289,7 @@ zx_status_t pci_init_interrupts(zx_device_t* parent, acpi::Acpi* acpi, ACPI_HAND
     const uint32_t& vector = e.first;
     const acpi_legacy_irq& irq_cfg = e.second;
     zx::resource resource;
-    zx_status_t status = zx::resource::create(*zx::unowned_resource(get_root_resource(parent)),
+    zx_status_t status = zx::resource::create(*zx::unowned_resource(get_irq_resource(parent)),
                                               ZX_RSRC_KIND_IRQ | ZX_RSRC_FLAG_EXCLUSIVE, vector, 1,
                                               name.data(), name.size(), &resource);
 
@@ -374,9 +374,8 @@ zx_status_t pci_init_segment_and_ecam(zx_device_t* parent, acpi::Acpi* acpi, ACP
     // The range from start_bus_num to end_bus_num is inclusive.
     size_t ecam_size = (pinfo.end_bus_num - pinfo.start_bus_num + 1) * PCIE_ECAM_BYTES_PER_BUS;
     zx_paddr_t vmo_base = mcfg_alloc.address + (pinfo.start_bus_num * PCIE_ECAM_BYTES_PER_BUS);
-    // Please do not use get_root_resource() in new code. See fxbug.dev/31358.
     status =
-        zx_vmo_create_physical(get_root_resource(parent), vmo_base, ecam_size, &pinfo.ecam_vmo);
+        zx_vmo_create_physical(get_mmio_resource(parent), vmo_base, ecam_size, &pinfo.ecam_vmo);
     if (status != ZX_OK) {
       zxlogf(ERROR, "couldn't create VMO for ecam, mmio cfg will not work: %s!",
              zx_status_get_string(status));
@@ -413,7 +412,8 @@ zx_status_t pci_root_host_init(zx_device_t* parent, acpi::Acpi* acpi) {
     io_type = PCI_ADDRESS_SPACE_MEMORY;
 #endif
     RootHost =
-        std::make_unique<PciRootHost>(zx::unowned_resource(get_root_resource(parent)), io_type);
+        std::make_unique<PciRootHost>(zx::unowned_resource(get_root_resource(parent)),
+                                      zx::unowned_resource(get_mmio_resource(parent)), io_type);
   }
 
   zx_status_t st = read_mcfg_table(&RootHost->mcfgs());
@@ -422,7 +422,7 @@ zx_status_t pci_root_host_init(zx_device_t* parent, acpi::Acpi* acpi) {
            zx_status_get_string(st));
   }
 
-  st = scan_acpi_tree_for_resources(acpi, get_root_resource(parent));
+  st = scan_acpi_tree_for_resources(acpi, get_mmio_resource(parent));
   if (st != ZX_OK) {
     zxlogf(ERROR, "Scanning acpi resources failed: %s", zx_status_get_string(st));
     return st;

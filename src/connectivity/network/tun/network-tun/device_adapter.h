@@ -70,10 +70,11 @@ class DeviceAdapter : public ddk::NetworkDeviceImplProtocol<DeviceAdapter> {
   void TeardownSync();
 
   // NetworkDeviceImpl protocol:
-  zx_status_t NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface);
+  void NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
+                             network_device_impl_init_callback callback, void* cookie);
   void NetworkDeviceImplStart(network_device_impl_start_callback callback, void* cookie);
   void NetworkDeviceImplStop(network_device_impl_stop_callback callback, void* cookie);
-  void NetworkDeviceImplGetInfo(device_info_t* out_info);
+  void NetworkDeviceImplGetInfo(device_impl_info_t* out_info);
   void NetworkDeviceImplQueueTx(const tx_buffer_t* buf_list, size_t buf_count);
   void NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buf_list, size_t buf_count);
   void NetworkDeviceImplPrepareVmo(uint8_t vmo_id, zx::vmo vmo,
@@ -119,7 +120,7 @@ class DeviceAdapter : public ddk::NetworkDeviceImplProtocol<DeviceAdapter> {
   // Handles status change notifications from port with `port_id`.
   void OnPortStatusChanged(uint8_t port_id, const port_status_t& new_status);
   // Adds |port| to the device.
-  void AddPort(PortAdapter& port);
+  zx_status_t AddPort(PortAdapter& port);
   // Removes port with |port_id|.
   void RemovePort(uint8_t port_id);
 
@@ -164,7 +165,7 @@ class DeviceAdapter : public ddk::NetworkDeviceImplProtocol<DeviceAdapter> {
   size_t return_rx_parts_count_ __TA_GUARDED(rx_lock_) = 0;
   std::vector<tx_result_t> return_tx_list_ __TA_GUARDED(tx_lock_);
   ddk::NetworkDeviceIfcProtocolClient device_iface_;
-  const device_info_t device_info_;
+  const device_impl_info_t device_info_;
   std::array<std::atomic_bool, MAX_PORTS> port_online_status_;
 };
 }  // namespace tun

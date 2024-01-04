@@ -5,7 +5,7 @@
 #ifndef LIB_DRIVER_TESTING_CPP_TEST_NODE_H_
 #define LIB_DRIVER_TESTING_CPP_TEST_NODE_H_
 
-#if __Fuchsia_API_level__ >= 13
+#if __Fuchsia_API_level__ >= 15
 
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 
@@ -33,20 +33,11 @@ namespace fdf_testing {
 // See
 // https://fuchsia.dev/fuchsia-src/development/languages/c-cpp/thread-safe-async#synchronized-dispatcher
 //
-// If the dispatcher used for it is a default dispatcher, the TestNode does not need to be
-// wrapped in a DispatcherBound. Example:
-// ```
-// fdf::TestSynchronizedDispatcher test_env_dispatcher_{fdf::kDispatcherDefault};
-// fdf_testing::TestNode node_server_{"root"};
-// ```
+// If the dispatcher used for it is the foreground dispatcher, the TestNode does not need to be
+// wrapped in a DispatcherBound.
 //
-// If the dispatcher is not the default dispatcher of the main thread, the suggestion is to wrap
-// this inside of an |async_patterns::TestDispatcherBound|. Example:
-// ```
-// fdf::TestSynchronizedDispatcher test_env_dispatcher_{fdf::kDispatcherManaged};
-// async_patterns::TestDispatcherBound<fdf_testing::TestNode> node_server_{
-//      test_env_dispatcher_.dispatcher(), std::in_place, std::string("root")};
-// ```
+// If the dispatcher is a background dispatcher, the suggestion is to wrap this inside of an
+// |async_patterns::TestDispatcherBound|.
 class TestNode : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
                  public fidl::WireServer<fuchsia_driver_framework::Node> {
  public:
@@ -122,6 +113,13 @@ class TestNode : public fidl::WireServer<fuchsia_driver_framework::NodeControlle
 
   void Remove(RemoveCompleter::Sync& completer) override { RemoveFromParent(); }
   void RequestBind(RequestBindRequestView request, RequestBindCompleter::Sync& completer) override;
+
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_driver_framework::NodeController> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
+
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_driver_framework::Node> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override;
 
   void SetParent(TestNode* parent,
                  fidl::ServerEnd<fuchsia_driver_framework::NodeController> controller);

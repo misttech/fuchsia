@@ -5,7 +5,7 @@
 use {
     fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_mlme as fidl_mlme,
     futures::channel::mpsc,
-    ieee80211::MacAddr,
+    ieee80211::{MacAddr, MacAddrBytes},
     wlan_common::{
         ie::{
             rsn::{
@@ -65,7 +65,7 @@ pub fn ptk() -> Ptk {
     // that if our code, for example, mistakenly uses KCK instead of TK, test would fail.
     ptk_bytes.extend(vec![0xAAu8; akm().kck_bytes().unwrap() as usize]);
     ptk_bytes.extend(vec![0xBBu8; akm().kek_bytes().unwrap() as usize]);
-    ptk_bytes.extend(vec![0xCCu8; cipher().tk_bytes().unwrap()]);
+    ptk_bytes.extend(vec![0xCCu8; cipher().tk_bytes().unwrap() as usize]);
     Ptk::from_ptk(ptk_bytes, &akm(), cipher()).expect("expect valid ptk")
 }
 
@@ -77,24 +77,24 @@ pub fn wpa1_ptk() -> Ptk {
     let cipher = wpa1_cipher();
     ptk_bytes.extend(vec![0xAAu8; akm.kck_bytes().unwrap() as usize]);
     ptk_bytes.extend(vec![0xBBu8; akm.kek_bytes().unwrap() as usize]);
-    ptk_bytes.extend(vec![0xCCu8; cipher.tk_bytes().unwrap()]);
+    ptk_bytes.extend(vec![0xCCu8; cipher.tk_bytes().unwrap() as usize]);
     Ptk::from_ptk(ptk_bytes, &akm, cipher).expect("expect valid ptk")
 }
 
-pub fn gtk_bytes() -> Vec<u8> {
-    vec![0xDD; 16]
+pub fn gtk_bytes() -> Box<[u8]> {
+    vec![0xDD; 16].into_boxed_slice()
 }
 
 pub fn gtk() -> Gtk {
-    Gtk::from_gtk(gtk_bytes(), 2, cipher(), 0).expect("failed creating GTK")
+    Gtk::from_bytes(gtk_bytes(), cipher(), 2, 0).expect("failed creating GTK")
 }
 
-pub fn wpa1_gtk_bytes() -> Vec<u8> {
-    vec![0xDD; 32]
+pub fn wpa1_gtk_bytes() -> Box<[u8]> {
+    vec![0xDD; 32].into_boxed_slice()
 }
 
 pub fn wpa1_gtk() -> Gtk {
-    Gtk::from_gtk(wpa1_gtk_bytes(), 2, wpa1_cipher(), 0).expect("failed creating GTK")
+    Gtk::from_bytes(wpa1_gtk_bytes(), wpa1_cipher(), 2, 0).expect("failed creating GTK")
 }
 
 pub fn akm() -> Akm {
@@ -115,7 +115,7 @@ pub fn wpa1_cipher() -> Cipher {
 
 pub fn fake_device_info(sta_addr: MacAddr) -> fidl_mlme::DeviceInfo {
     fidl_mlme::DeviceInfo {
-        sta_addr,
+        sta_addr: sta_addr.to_array(),
         role: fidl_common::WlanMacRole::Client,
         bands: vec![
             fake_2ghz_band_capability_vht(),
@@ -130,14 +130,14 @@ pub fn fake_device_info(sta_addr: MacAddr) -> fidl_mlme::DeviceInfo {
 pub fn fake_device_info_ht(chanwidth: ChanWidthSet) -> fidl_mlme::DeviceInfo {
     fidl_mlme::DeviceInfo {
         bands: vec![fake_5ghz_band_capability_ht_cbw(chanwidth)],
-        ..fake_device_info([0; 6])
+        ..fake_device_info([0; 6].into())
     }
 }
 
 pub fn fake_device_info_vht(chanwidth: ChanWidthSet) -> fidl_mlme::DeviceInfo {
     fidl_mlme::DeviceInfo {
         bands: vec![fake_5ghz_band_capability_vht(chanwidth)],
-        ..fake_device_info([0; 6])
+        ..fake_device_info([0; 6].into())
     }
 }
 

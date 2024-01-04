@@ -5,9 +5,8 @@
 #ifndef SRC_CONNECTIVITY_BLUETOOTH_CORE_BT_HOST_TRANSPORT_TRANSPORT_H_
 #define SRC_CONNECTIVITY_BLUETOOTH_CORE_BT_HOST_TRANSPORT_TRANSPORT_H_
 
-#include <lib/async-loop/cpp/loop.h>
-#include <lib/async-loop/default.h>
 #include <lib/async/cpp/wait.h>
+#include <lib/async/default.h>
 #include <lib/async/dispatcher.h>
 
 #include <atomic>
@@ -29,7 +28,8 @@ namespace bt::hci {
 // and receive HCI packets from the underlying Bluetooth controller.
 class Transport final : public WeakSelf<Transport> {
  public:
-  explicit Transport(std::unique_ptr<pw::bluetooth::Controller> hci);
+  explicit Transport(std::unique_ptr<pw::bluetooth::Controller> hci,
+                     pw::async::Dispatcher& dispatcher);
 
   // Initializes the command channel and features. The result will be reported via
   // |complete_callback|.
@@ -86,6 +86,8 @@ class Transport final : public WeakSelf<Transport> {
  private:
   // Callback called by CommandChannel or ACLDataChannel on errors.
   void OnChannelError();
+
+  pw::async::Dispatcher& dispatcher_;
 
   // HCI inspect node.
   inspect::Node hci_node_;

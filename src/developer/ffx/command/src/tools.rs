@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::{collections::HashSet, fmt::Write, path::PathBuf, process::ExitStatus};
-
-use crate::{Error, FfxCommandLine, MetricsSession, Result};
+use crate::{args_info::CliArgsInfo, Error, FfxCommandLine, MetricsSession, Result};
 use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
+use std::{collections::HashSet, fmt::Write, path::PathBuf, process::ExitStatus};
 
 /// Where the command was discovered
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub enum FfxToolSource {
     /// built directly into the executable
     BuiltIn,
@@ -99,29 +98,8 @@ pub trait ToolSuite: Sized {
         self.command_list().await.into_iter().find(|cmd| cmd.name == name)
     }
 
-    /// Use this with `map_err` on a result from [`crate::FfxCommandLine::from_env`]
-    /// call to append the global command list to the help, if that's the kind of error
-    /// this had.
-    fn add_globals_to_help(err: Error) -> Error {
-        match err {
-            Error::Help { command, mut output, code } => {
-                let cmd = command.join(" ");
-                writeln!(&mut output).and_then(|_| {
-                    writeln!(&mut output)?;
-                    print_command_list(
-                        &mut output,
-                        &Vec::from_iter(
-                            Self::global_command_list().iter().cloned().map(FfxToolInfo::from),
-                        ),
-                    )?;
-                    writeln!(&mut output, "Note: There may be more commands available, use `{cmd} commands` for a complete list.")?;
-                    writeln!(&mut output, "See '{cmd} <command> help' for more information on a specific command.")
-                }).expect("Failed to append command list to help");
-                Error::Help { command, output, code }
-            }
-            err => err,
-        }
-    }
+    /// Gets the command line argument information.
+    async fn get_args_info(&self) -> Result<CliArgsInfo, Error>;
 }
 
 fn print_command_list(w: &mut impl Write, commands: &[FfxToolInfo]) -> Result<(), std::fmt::Error> {
@@ -129,7 +107,13 @@ fn print_command_list(w: &mut impl Write, commands: &[FfxToolInfo]) -> Result<()
     let mut built_in = None;
     let mut workspace = None;
     let mut sdk = None;
-    for cmd in commands {
+    let mut sorted_commands = commands.to_vec();
+    sorted_commands.sort_by(|a, b| match a.name.cmp(&b.name) {
+        std::cmp::Ordering::Less => std::cmp::Ordering::Less,
+        std::cmp::Ordering::Greater => std::cmp::Ordering::Greater,
+        std::cmp::Ordering::Equal => a.source.cmp(&b.source),
+    });
+    for cmd in sorted_commands.into_iter() {
         use FfxToolSource::*;
         if !found.contains(&cmd.name) {
             found.insert(cmd.name.clone());

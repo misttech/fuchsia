@@ -252,6 +252,9 @@ func fuchsiaLogChecks() []FailureModeCheck {
 		// an error if logged by unit tests.
 		&stringInLogCheck{String: "intel-i915: No displays detected.", Type: serialLogType},
 		&stringInLogCheck{String: "intel-i915: No displays detected.", Type: syslogType},
+		// for fxbug.dev/132130. Broken HDMI emulator on vim3.
+		&stringInLogCheck{String: "Failed to parse edid (0 bytes) \"Failed to validate base edid\"", Type: serialLogType},
+		&stringInLogCheck{String: "Failed to parse edid (0 bytes) \"Failed to validate base edid\"", Type: syslogType},
 		// For fxbug.dev/105382 dwc2 bug that breaks usb cdc networking
 		&stringInLogCheck{String: "diepint.timeout", Type: serialLogType, SkipAllPassedTests: true},
 		// For devices which, typically as a result of wear, fail to read any copy of the
@@ -337,21 +340,10 @@ func fuchsiaLogChecks() []FailureModeCheck {
 
 	ret = append(ret, []FailureModeCheck{
 		// These may be in the output of tests, but the syslogType doesn't contain any test output.
-		&stringInLogCheck{String: "ASSERT FAILED", Type: syslogType},
+		// `ASSERT FAILED` may show up in crash hexdumps, so prepend with a space to match it when
+		// it's at the start of a logline.
+		&stringInLogCheck{String: " ASSERT FAILED", Type: syslogType},
 		&stringInLogCheck{String: "DEVICE SUSPEND TIMED OUT", Type: syslogType},
-		// For fxbug.dev/61419.
-		// Error is being logged at https://fuchsia.googlesource.com/fuchsia/+/675c6b9cc2452cd7108f075d91e048218b92ae69/garnet/bin/run_test_component/main.cc#431
-		&stringInLogCheck{
-			String: ".cmx canceled due to timeout.",
-			Type:   swarmingOutputType,
-			ExceptBlocks: []*logBlock{
-				{
-					startString: "[ RUN      ] RunFixture.TestTimeout",
-					endString:   "RunFixture.TestTimeout (",
-				},
-			},
-			OnlyOnStates: []string{"TIMED_OUT"},
-		},
 		&stringInLogCheck{
 			String: "Got no package for fuchsia-pkg://",
 			Type:   swarmingOutputType,
@@ -386,6 +378,13 @@ func infraToolLogChecks() []FailureModeCheck {
 		&stringInLogCheck{
 			String: fmt.Sprintf("%s: signal: segmentation fault", botanistconstants.QEMUInvocationErrorMsg),
 			Type:   swarmingOutputType,
+		},
+		// For fxbug.dev/129363.
+		&stringInLogCheck{
+			// LINT.IfChange(fastboot_timeout)
+			String: "Timed out while waiting to rediscover device in Fastboot",
+			// LINT.ThenChange(/src/developer/ffx/lib/fastboot/src/common/fidl_fastboot_compatibility.rs:fastboot_timeout)
+			Type: swarmingOutputType,
 		},
 		// For fxbug.dev/61452.
 		&stringInLogCheck{
@@ -518,6 +517,11 @@ func infraToolLogChecks() []FailureModeCheck {
 		// For fxbug.dev/127372.
 		&stringInLogCheck{
 			String: "FFX Daemon was told not to autostart",
+			Type:   swarmingOutputType,
+		},
+		// For fxbug.dev/133846.
+		&stringInLogCheck{
+			String: "Timed out waiting for the ffx daemon on the Overnet mesh over socket",
 			Type:   swarmingOutputType,
 		},
 		// This error happens when `botanist run` exceeds its timeout, e.g.

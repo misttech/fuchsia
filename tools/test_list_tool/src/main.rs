@@ -5,7 +5,7 @@
 //! test_list_tool generates test-list.json.
 
 use {
-    anyhow::{format_err, Error},
+    anyhow::{format_err, Context, Error},
     camino::{Utf8Path, Utf8PathBuf},
     fidl::unpersist,
     fidl_fuchsia_component_decl::Component,
@@ -33,9 +33,10 @@ const HERMETIC_TEST_REALM: &'static str = "hermetic";
 
 mod error;
 mod opts;
+mod test_config;
 
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
-struct TestsJsonEntry {
+pub struct TestsJsonEntry {
     test: TestEntry,
 }
 
@@ -308,16 +309,9 @@ fn update_tags_from_manifest(
 ) -> Result<(), Error> {
     let pkg_url = AbsoluteComponentUrl::parse(&package_url)?;
     let cm_path = pkg_url.resource();
-    // CFv1 manifests don't generate the same FIDL declarations, so just skip generating tags
-    // from them.
-    if &cm_path[cm_path.len() - 3..] == "cmx" {
-        test_tags.legacy_test = Some(true);
-        Ok(())
-    } else {
-        let decl = cm_decl_from_meta_far(&meta_far_path, cm_path)?;
-        update_tags_from_facets(test_tags, &decl.facets.unwrap_or(fdata::Dictionary::default()))?;
-        Ok(())
-    }
+    let decl = cm_decl_from_meta_far(&meta_far_path, cm_path)?;
+    update_tags_from_facets(test_tags, &decl.facets.unwrap_or(fdata::Dictionary::default()))?;
+    Ok(())
 }
 
 fn write_depfile(
@@ -330,7 +324,11 @@ fn write_depfile(
     }
     let contents =
         format!("{}: {}\n", output, &inputs.iter().map(|i| format!(" {}", i)).collect::<String>(),);
-    fs::write(depfile, contents)?;
+    if let Some(depfile_dir) = depfile.parent() {
+        std::fs::create_dir_all(depfile_dir)
+            .with_context(|| format!("Creating directory for depfile: {}", depfile))?;
+    }
+    fs::write(depfile, contents).with_context(|| format!("Writing depfile to: {}", depfile))?;
     Ok(())
 }
 
@@ -343,7 +341,10 @@ fn run_tool() -> Result<(), Error> {
     let test_components_map = TestComponentsJsonEntry::convert_to_map(test_components_json)?;
 
     use rayon::prelude::*;
-    let (data, inputs): (Vec<Option<TestListEntry>>, Vec<Vec<Utf8PathBuf>>) = tests_json
+    let (data, inputs): (
+        Vec<(Option<TestListEntry>, Option<test_config::TestConfig>)>,
+        Vec<Vec<Utf8PathBuf>>,
+    ) = tests_json
         .par_iter()
         .map(|entry| {
             let realm = match &entry.test.component_label {
@@ -372,7 +373,7 @@ fn run_tool() -> Result<(), Error> {
                         &pkg_manifest,
                         res.unwrap_err()
                     );
-                    return (None, inputs);
+                    return ((None, None), inputs);
                 }
                 let meta_far_path = res.unwrap();
                 inputs.push(meta_far_path.clone());
@@ -388,17 +389,42 @@ fn run_tool() -> Result<(), Error> {
 
             update_tags_with_test_entry(&mut test_tags, &entry.test);
             test_list_entry.tags = test_tags.into_vec();
-            (Some(test_list_entry), inputs)
+            let mut config = None;
+            if opt.test_config_output.is_some() {
+                if let Some(ExecutionEntry::FuchsiaComponent(execution_entry)) =
+                    &test_list_entry.execution
+                {
+                    config = Some(test_config::create_test_config_entry(
+                        test_list_entry.tags.clone(),
+                        &entry,
+                        execution_entry,
+                    ));
+                }
+            }
+
+            ((Some(test_list_entry), config), inputs)
         })
         .unzip();
-    let data = data.into_par_iter().flatten().collect();
+
+    let (test_list_entries, test_configs): (
+        Vec<Option<TestListEntry>>,
+        Vec<Option<test_config::TestConfig>>,
+    ) = data.into_par_iter().unzip();
+
+    let test_list_entries = test_list_entries.into_par_iter().flatten().collect();
     let inputs = inputs.into_par_iter().flatten().collect();
 
-    let test_list = TestList::Experimental { data };
+    let test_list = TestList::Experimental { data: test_list_entries };
     let test_list_json = serde_json::to_string_pretty(&test_list)?;
     fs::write(&opt.output, test_list_json)?;
     if let Some(depfile) = opt.depfile {
         write_depfile(&depfile, &opt.output, &inputs)?;
+    }
+    if let Some(outfile) = opt.test_config_output {
+        let test_configs: Vec<test_config::TestConfig> =
+            test_configs.into_par_iter().flatten().collect();
+        let test_config_json = serde_json::to_string_pretty(&test_configs)?;
+        fs::write(outfile, test_config_json)?;
     }
     Ok(())
 }

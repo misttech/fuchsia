@@ -3,23 +3,42 @@
 // found in the LICENSE file.
 
 use crate::{
-    target::{Target, TargetAddrType},
+    target::{
+        self, DiscoveredTarget, Identity, IdentityCmp, SharedIdentity, Target, TargetAddrEntry,
+        TargetAddrStatus, TargetUpdate, WeakIdentity,
+    },
     MDNS_MAX_AGE,
 };
 use addr::TargetAddr;
 use anyhow::Result;
 use async_trait::async_trait;
+use async_utils::event::Event;
 use chrono::Utc;
-use ffx::DaemonError;
 use ffx_daemon_core::events::{self, EventSynthesizer};
-use ffx_daemon_events::{DaemonEvent, TargetEvent, TargetInfo};
+use ffx_daemon_events::{DaemonEvent, TargetEvent, TargetEventInfo};
 use fidl_fuchsia_developer_ffx as ffx;
-use std::{cell::RefCell, collections::HashMap, fmt::Debug, net::IpAddr, rc::Rc};
+use netext::IsLocalAddr;
+use std::{
+    borrow::Borrow,
+    cell::RefCell,
+    collections::{hash_map::Entry, HashMap},
+    fmt::Debug,
+    net::IpAddr,
+    net::SocketAddr,
+    ops::ControlFlow,
+    rc::Rc,
+    sync::Arc,
+};
 
-#[derive(Default)]
 pub struct TargetCollection {
     targets: RefCell<HashMap<u64, Rc<Target>>>,
+    // This list is always small so O(n) lookups do not matter.
+    // Dangling references removed on iteration & use.
+    identities: RefCell<Vec<target::WeakIdentity>>,
     events: RefCell<Option<events::Queue<DaemonEvent>>>,
+    // Unlike the daemon event, these also fire for discovered targets.
+    // TODO(b/303144137): Stop publishing events to the daemon-wide event queue.
+    on_targets_changed: RefCell<Event>,
 }
 
 #[async_trait(?Send)]
@@ -30,7 +49,7 @@ impl EventSynthesizer<DaemonEvent> for TargetCollection {
         let mut res = Vec::with_capacity(self.targets.borrow().len());
         let targets = self.targets.borrow().values().cloned().collect::<Vec<_>>();
         for target in targets.into_iter() {
-            if target.is_connected() {
+            if target.is_enabled() {
                 res.push(DaemonEvent::NewTarget(target.target_info()));
             }
         }
@@ -40,7 +59,12 @@ impl EventSynthesizer<DaemonEvent> for TargetCollection {
 
 impl TargetCollection {
     pub fn new() -> Self {
-        Self { targets: RefCell::new(HashMap::new()), events: RefCell::new(None) }
+        Self {
+            targets: RefCell::new(HashMap::new()),
+            identities: vec![].into(),
+            events: RefCell::new(None),
+            on_targets_changed: RefCell::new(Event::new()),
+        }
     }
 
     #[cfg(test)]
@@ -55,8 +79,205 @@ impl TargetCollection {
         self.events.replace(Some(q));
     }
 
-    pub fn targets(&self) -> Vec<Rc<Target>> {
-        self.targets.borrow().values().cloned().collect()
+    // TODO(b/297896647): Filter discovered targets and introduce `discover_targets` as the new
+    // multi-target discovery method.
+    pub fn targets(&self, query: Option<&TargetQuery>) -> Vec<ffx::TargetInfo> {
+        // Merge targets by shared identity.
+
+        #[derive(Clone, Debug, PartialEq)]
+        struct AddrKey(ffx::TargetAddrInfo);
+
+        impl Eq for AddrKey {}
+
+        impl std::hash::Hash for AddrKey {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                let (ip, port, scope_id) = match &self.0 {
+                    ffx::TargetAddrInfo::Ip(ip) => (ip.ip, 0, ip.scope_id),
+                    ffx::TargetAddrInfo::IpPort(ip) => (ip.ip, ip.port, ip.scope_id),
+                };
+
+                ip.hash(state);
+                state.write_u16(port);
+                state.write_u32(scope_id);
+            }
+        }
+
+        struct MergeState {
+            info: ffx::TargetInfo,
+            // Address -> Age mapping.
+            // Determines how addresses are sorted.
+            addrs: HashMap<AddrKey, u64>,
+        }
+
+        fn merge<T>(lhs: &mut Option<T>, rhs: Option<T>, f: impl FnOnce(&mut T, T)) {
+            let Some(rhs) = rhs else { return };
+            match lhs {
+                Some(lhs) => f(lhs, rhs),
+                None => {}
+            }
+        }
+
+        fn check_eq<T: PartialEq + Debug>(lhs: &Option<T>, rhs: &Option<T>, name: &str) {
+            let Some(lhs) = lhs else { return };
+            let Some(rhs) = rhs else { return };
+            if lhs != rhs {
+                tracing::warn!("Identical target with mismatching {name}: {lhs:?} vs {rhs:?}");
+            }
+        }
+
+        fn addr_age(addr: &ffx::TargetAddrInfo, target: &Target, age_ms: Option<u64>) -> u64 {
+            if target.rcs_address() == Some(SocketAddr::from(TargetAddr::from(addr.clone()))) {
+                // Give the RCS address the highest priority possible.
+                u64::MAX
+            } else {
+                age_ms.unwrap_or(0)
+            }
+        }
+
+        // One invariant that `Self::merge_insert_identity` maintains is that identities will always
+        // be equal by pointer. This makes merging _significantly_ faster.
+        let mut merged = HashMap::<*const Identity, MergeState>::new();
+        let mut unidentified = Vec::new();
+
+        for target in self.targets.borrow().values() {
+            if let Some(query) = query {
+                if !query.matches(target) {
+                    continue;
+                }
+            }
+
+            let info = ffx::TargetInfo::from(&**target);
+
+            let Some(key) = target.identity() else {
+                unidentified.push(info);
+                continue;
+            };
+
+            match merged.entry(&*key) {
+                Entry::Occupied(mut other) => {
+                    let MergeState { info: prev, addrs } = other.get_mut();
+
+                    tracing::info!("Merging {prev:?} + {info:?}");
+
+                    let ffx::TargetInfo {
+                        nodename: _,
+                        addresses,
+                        age_ms,
+                        rcs_state,
+                        target_state,
+                        product_config,
+                        board_config,
+                        serial_number: _,
+                        ssh_address,
+                        fastboot_interface,
+                        ssh_host_address,
+                        compatibility,
+                        // Intentionally opt-in to compilation failures when new fields are added.
+                        __source_breaking: _,
+                    } = info;
+
+                    // Nodename and Serial already match.
+
+                    // Addresses are sorted and added to the merged target later.
+                    addresses.into_iter().flatten().for_each(|addr| {
+                        let age_ms = addr_age(&addr, &target, age_ms);
+
+                        addrs
+                            .entry(AddrKey(addr))
+                            .and_modify(|addr_age_ms| {
+                                if *addr_age_ms < age_ms {
+                                    *addr_age_ms = age_ms;
+                                }
+                            })
+                            .or_insert(age_ms);
+                    });
+
+                    merge(&mut prev.rcs_state, rcs_state, |old, new| {
+                        *old = match (*old, new) {
+                            (ffx::RemoteControlState::Up, _) | (_, ffx::RemoteControlState::Up) => {
+                                ffx::RemoteControlState::Up
+                            }
+                            (ffx::RemoteControlState::Down, _)
+                            | (_, ffx::RemoteControlState::Down) => ffx::RemoteControlState::Down,
+                            _ => return,
+                        };
+                    });
+
+                    if prev.rcs_state == Some(ffx::RemoteControlState::Up) {
+                        check_eq(
+                            &prev.target_state,
+                            &Some(ffx::TargetState::Product),
+                            "target_state",
+                        );
+
+                        // Always override state if RCS is up.
+                        prev.target_state = Some(ffx::TargetState::Product);
+                    } else if target_state.is_some() {
+                        // Override state by age.
+                        match (prev.age_ms, age_ms) {
+                            (Some(prev_age), Some(cur_age)) if cur_age >= prev_age => {
+                                prev.target_state = target_state;
+                            }
+                            (None, Some(_)) => {
+                                prev.target_state = target_state;
+                            }
+                            _ => {
+                                merge(&mut prev.target_state, target_state, |old, new| {
+                                    if *old == ffx::TargetState::Disconnected {
+                                        *old = new;
+                                    } else {
+                                        tracing::warn!("Conflicting state: {old:?} vs {new:?}");
+                                    }
+                                });
+                            }
+                        }
+                    }
+
+                    check_eq(&prev.product_config, &product_config, "product_config");
+                    check_eq(&prev.board_config, &board_config, "board_config");
+                    check_eq(&prev.ssh_address, &ssh_address, "ssh_address");
+                    check_eq(&prev.fastboot_interface, &fastboot_interface, "fastboot_interface");
+                    check_eq(&prev.ssh_host_address, &ssh_host_address, "ssh_host_address");
+                    check_eq(&prev.compatibility, &compatibility, "compatibility");
+
+                    merge(&mut prev.age_ms, age_ms, |old, new| {
+                        if *old < new {
+                            *old = new;
+                        }
+                    });
+                }
+                Entry::Vacant(vacant) => {
+                    let addrs =
+                        HashMap::from_iter(info.addresses.as_deref().into_iter().flatten().map(
+                            |addr| (AddrKey(addr.clone()), addr_age(&addr, &target, info.age_ms)),
+                        ));
+                    vacant.insert(MergeState { info, addrs });
+                }
+            }
+        }
+
+        for merge_state in merged.values_mut() {
+            if merge_state.addrs.is_empty() {
+                continue;
+            }
+
+            let addrs = &mut merge_state.info.addresses;
+            let addrs = addrs.get_or_insert(Vec::new());
+            addrs.clear();
+            addrs.extend(merge_state.addrs.keys().map(|key| key.0.clone()));
+            addrs.sort_by(|addr_a, addr_b| {
+                let a = merge_state.addrs.get(&AddrKey(addr_a.clone())).copied().unwrap_or(0);
+                let b = merge_state.addrs.get(&AddrKey(addr_b.clone())).copied().unwrap_or(0);
+                b.cmp(&a).then_with(|| {
+                    // If the ages are equal, compare addresses to maintain stability.
+                    SocketAddr::from(TargetAddr::from(addr_b.clone()))
+                        .cmp(&SocketAddr::from(TargetAddr::from(addr_a.clone())))
+                })
+            });
+        }
+
+        unidentified.extend(merged.into_iter().map(|(_, v)| v.info));
+        unidentified
     }
 
     pub fn is_empty(&self) -> bool {
@@ -64,10 +285,10 @@ impl TargetCollection {
     }
 
     pub fn remove_target(&self, target_id: String) -> bool {
-        if let Some(t) = self.get(target_id) {
+        if let Ok(Some(t)) = self.query_any_single_target(&target_id.into(), |_| true) {
             let target = self.targets.borrow_mut().remove(&t.id());
             if let Some(target) = target {
-                target.disconnect()
+                target.disable();
             }
             true
         } else {
@@ -76,7 +297,110 @@ impl TargetCollection {
     }
 
     pub fn remove_ephemeral_target(&self, target: Rc<Target>) -> bool {
-        self.targets.borrow_mut().remove(&target.id()).is_some()
+        let Some(target) = self.targets.borrow_mut().remove(&target.id()) else { return false };
+        target.disable();
+        true
+    }
+
+    /// Checks and expires stale targets.
+    ///
+    /// Returns the list of expired manual addresses.
+    pub fn expire_targets(&self, overnet_node: &Arc<overnet_core::Router>) -> Vec<SocketAddr> {
+        let mut expired_manual_addrs = Vec::new();
+        let mut expired = Vec::new();
+        for target in Vec::from_iter(self.targets.borrow().values()) {
+            target.expire_state();
+            if target.is_manual() && !target.is_connected() {
+                // If a manual target has been allowed to transition to the
+                // "disconnected" state, it should be removed from the collection.
+                let ssh_port = target.ssh_port();
+                for addr in target.manual_addrs() {
+                    let mut sockaddr = SocketAddr::from(addr);
+                    ssh_port.map(|p| sockaddr.set_port(p));
+                    expired_manual_addrs.push(sockaddr);
+                }
+                expired.push(target.clone());
+            } else if target.is_manual() {
+                // Manually-added remote targets will not be discovered by mDNS,
+                // and as a result will not have host-pipe triggered automatically
+                // by the mDNS event handler.
+                target.run_host_pipe(overnet_node);
+            }
+        }
+
+        for target in expired {
+            self.remove_ephemeral_target(target);
+        }
+
+        if !expired_manual_addrs.is_empty() {
+            tracing::debug!("Expired manual addresses: {expired_manual_addrs:?}");
+        }
+        expired_manual_addrs
+    }
+
+    // Merge intersecting identities.
+    // If multiple identities intersect then update targets that use them.
+    // e.g. [(nodename: foo), (serial: bar)] + (nodename: foo, serial: bar)
+    fn merge_insert_identity(&self, mut identity: Identity) -> Rc<Identity> {
+        let mut idents = self.identities.borrow_mut();
+
+        let mut merge = false;
+        let mut duplicate = None;
+
+        // Merge overlapping identities into the incoming identity
+        for id in idents.iter_mut() {
+            let Some(id) = id.upgrade() else { continue };
+
+            let Some(cmp) = id.cmp_to(&identity) else { continue };
+
+            if cmp == IdentityCmp::Intersects {
+                // Incoming identity has more knowledge than this identity.
+                // (nodename, serial) > (nodename)
+                tracing::info!("Merge identity {:?} with {:?}", identity, id);
+                identity.join((*id).clone());
+                merge = true;
+            } else {
+                // This identity has the same or more knowledge than the incoming identity.
+                duplicate = Some(id);
+            }
+        }
+
+        if let Some(duplicate) = duplicate.filter(|_| !merge) {
+            // No need to update anything, reusing an existing one.
+            return duplicate;
+        }
+
+        let identity = SharedIdentity::new(identity);
+        let mut targets_changed = false;
+
+        idents.retain_mut(|id| {
+            let Some(id) = id.upgrade() else { return false };
+            if !identity.is_same(&id) {
+                return true;
+            }
+
+            // Update all targets _specifically_ using the old identity to the new one.
+            for target in self.targets.borrow().values() {
+                let is_ptr_eq =
+                    target.try_with_identity(|ident| Rc::ptr_eq(ident, &id)).unwrap_or(false);
+
+                if is_ptr_eq {
+                    tracing::info!("Updating identity of {:?}", target);
+                    target.replace_shared_identity(Rc::clone(&identity));
+                    targets_changed |= true;
+                }
+            }
+
+            false
+        });
+
+        idents.push(Rc::downgrade(&identity));
+
+        if targets_changed {
+            self.signal_targets_changed();
+        }
+
+        identity
     }
 
     fn find_matching_target(&self, new_target: &Target) -> (Option<Rc<Target>>, bool) {
@@ -88,22 +412,15 @@ impl TargetCollection {
 
         // If we haven't yet found a target, try to find one by all IDs, nodename, serial, or address.
         if to_update.is_none() {
-            let new_nodename = new_target.nodename();
             let new_ips =
                 new_target.addrs().iter().map(|addr| addr.ip().clone()).collect::<Vec<IpAddr>>();
             let new_port = new_target.ssh_port();
-            let new_serial = new_target.serial();
+            let new_identity = new_target.identity();
 
             for target in self.targets.borrow().values() {
-                let serials_match = || match (target.serial().as_ref(), new_serial.as_ref()) {
-                    (Some(s), Some(other_s)) => s == other_s,
-                    _ => false,
-                };
-
-                // Only match the new nodename if it is Some and the same.
-                let nodenames_match = || match (&new_nodename, target.nodename()) {
-                    (Some(ref left), Some(ref right)) => left == right,
-                    _ => false,
+                let identity_match = || {
+                    let Some(new_id) = &new_identity else { return false };
+                    target.try_with_identity(|old_id| new_id.is_same(old_id)).unwrap_or(false)
                 };
 
                 // If there is a port and addr in both the new and target,
@@ -133,19 +450,15 @@ impl TargetCollection {
                 // At somepoint it might be a good idea to prioritize these matches
                 // for example, a match on ip and port might be more authoritative
                 // than matching on nodename, more analysis is needed.
-                if target.has_id(new_ids.iter())
-                    || serials_match()
-                    || nodenames_match()
-                    || address_match()
-                {
+                if target.has_id(new_ids.iter()) || identity_match() || address_match() {
                     tracing::debug!(
-                        "Matched target has_id: {id} serials:\
-                     {serial} name: {name} address: {addr}\
+                        "Matched target has_id: {id} identity:\
+                     {identity} address: {addr}\
                      for {new_nodename:?} {new_ips:?}\
                      ssh: {new_port:?}",
+                        new_nodename = target.nodename(),
                         id = target.has_id(new_ids.iter()),
-                        serial = serials_match(),
-                        name = nodenames_match(),
+                        identity = identity_match(),
                         addr = address_match()
                     );
                     to_update.replace(target.clone());
@@ -180,11 +493,89 @@ impl TargetCollection {
         (to_update, network_changed)
     }
 
+    fn try_push_new_target_event(&self, target: &Target) {
+        // Only send event if it is considered in-use.
+        // Discovered targets do not post events.
+        if target.is_enabled() {
+            if let Some(event_queue) = self.events.borrow().as_ref() {
+                event_queue
+                    .push(DaemonEvent::NewTarget(target.target_info()))
+                    .unwrap_or_else(|e| tracing::warn!("unable to push new target event: {}", e));
+            }
+        }
+    }
+
+    // Wait for targets until the predicate exits the loop.
+    //
+    // Panics if the predicate attempts to mutate the target collection.
+    async fn wait_for_change<B>(&self, mut predicate: impl FnMut() -> ControlFlow<B>) -> B {
+        // A timeout is not needed here as timeouts are handled downstream and may be
+        // undesired. Futures can be dropped before completion, so the loop will always exit.
+        loop {
+            // Guard against modification while running the predicate.
+            // It is also important that the predicate is synchronous as we do not want to race
+            // with merge_insert.
+            let guard = self.targets.borrow();
+            if let ControlFlow::Break(b) = predicate() {
+                return b;
+            }
+            drop(guard);
+
+            tracing::debug!("Waiting for next change...");
+
+            // TODO(b/297896647): Move synchronous polled discovery here. Make sure to clone the
+            // event before doing sync polling.
+
+            // TODO(b/297896647): Kick off discovery advertisement every 10 seconds when not found.
+            // Benign discovery types (USB) can poll here. Just make it explicit that we're waiting
+            // on discovery.
+
+            self.on_targets_changed.clone().into_inner().wait().await;
+        }
+    }
+
+    fn do_enable_target(&self, target: &Target) {
+        let was_disabled = !target.is_enabled();
+        target.enable();
+
+        if was_disabled {
+            tracing::info!("Enabling discovered target: {}@{}", target.nodename_str(), target.id());
+
+            // Discovered target went from unused to used.
+            // Broadcast NewTarget event since we do not broadcast events for discovered
+            // targets.
+            self.try_push_new_target_event(target);
+        }
+    }
+
+    fn signal_targets_changed(&self) {
+        self.on_targets_changed.replace(Event::new()).signal();
+    }
+
+    // TODO(b/304312166): Test-only now.
+    // Will be removed once "targets" are associated with a single address.
+    #[doc(hidden)]
     #[tracing::instrument(skip(self))]
     pub fn merge_insert(&self, new_target: Rc<Target>) -> Rc<Target> {
         // Drop non-manual loopback address entries, as matching against
         // them could otherwise match every target in the collection.
         new_target.drop_loopback_addrs();
+
+        // Canonicalize new_target's identity.
+        if let Some(new_identity) = new_target.take_identity() {
+            let ident = if self.identities.borrow().iter().any(|rc| {
+                // Shortcut if the identity is already known:
+                WeakIdentity::ptr_eq(rc, &SharedIdentity::downgrade(&new_identity))
+            }) {
+                new_identity
+            } else {
+                self.merge_insert_identity(
+                    Rc::try_unwrap(new_identity).unwrap_or_else(|id| (*id).clone()),
+                )
+            };
+
+            new_target.replace_shared_identity(ident);
+        }
 
         let (to_update, network_changed) = self.find_matching_target(&new_target);
 
@@ -202,23 +593,23 @@ impl TargetCollection {
             tracing::info!("adding new target: {:?}", new_target);
             self.targets.borrow_mut().insert(new_target.id(), new_target.clone());
 
-            if let Some(event_queue) = self.events.borrow().as_ref() {
-                event_queue
-                    .push(DaemonEvent::NewTarget(new_target.target_info()))
-                    .unwrap_or_else(|e| tracing::warn!("unable to push new target event: {}", e));
-            }
+            self.try_push_new_target_event(&*new_target);
+            self.signal_targets_changed();
             return new_target;
         };
 
         if let Some(config) = new_target.build_config() {
             to_update.build_config.borrow_mut().replace(config);
         }
-        if let Some(serial) = new_target.serial() {
-            to_update.serial.borrow_mut().replace(serial);
+
+        if new_target.has_identity() && !to_update.has_identity() {
+            to_update.replace_shared_identity(new_target.identity().unwrap());
+        } else if new_target.has_identity() && !new_target.identity_matches(&to_update) {
+            let identity = new_target.identity().unwrap();
+            tracing::info!("Changing identity of {:?} to {:?}", to_update, identity);
+            to_update.replace_shared_identity(identity);
         }
-        if let Some(new_name) = new_target.nodename() {
-            to_update.set_nodename(new_name);
-        }
+
         if let Some(ssh_port) = new_target.ssh_port() {
             to_update.set_ssh_port(Some(ssh_port));
         }
@@ -230,7 +621,7 @@ impl TargetCollection {
             let is_too_old = Utc::now().signed_duration_since(t.timestamp).num_milliseconds()
                 as i128
                 > MDNS_MAX_AGE.as_millis() as i128;
-            !is_too_old || matches!(t.addr_type, TargetAddrType::Manual(_))
+            !is_too_old || t.is_manual()
         });
         to_update.update_boot_timestamp(new_target.boot_timestamp_nanos());
 
@@ -261,123 +652,374 @@ impl TargetCollection {
             }
         }
 
+        to_update.set_compatibility_status(&new_target.get_compatibility_status());
+
+        if let Some(fastboot_interface) = new_target.fastboot_interface() {
+            *to_update.fastboot_interface.borrow_mut() = Some(fastboot_interface);
+        }
+
         to_update.update_connection_state(|_| new_target.get_connection_state());
 
+        if new_target.is_transient() {
+            to_update.mark_transient();
+        }
+
+        if new_target.is_enabled() {
+            self.do_enable_target(&*to_update);
+        }
+
+        self.signal_targets_changed();
+
+        // Misnomer. Event should be renamed to `Updated`
         to_update.events.push(TargetEvent::Rediscovered).unwrap_or_else(|err| {
             tracing::warn!("unable to enqueue rediscovered event: {:#}", err)
         });
-        if let Some(event_queue) = self.events.borrow().as_ref() {
-            event_queue
-                .push(DaemonEvent::UpdatedTarget(new_target.target_info()))
-                .unwrap_or_else(|e| tracing::warn!("unable to push target update event: {}", e));
-        } else {
-            tracing::debug!("No event queue for this target collection.");
+
+        if to_update.is_enabled() {
+            if let Some(event_queue) = self.events.borrow().as_ref() {
+                event_queue
+                    .push(DaemonEvent::UpdatedTarget(to_update.target_info()))
+                    .unwrap_or_else(|e| {
+                        tracing::warn!("unable to push target update event: {}", e)
+                    });
+            } else {
+                tracing::debug!("No event queue for this target collection.");
+            }
         }
 
         to_update
     }
 
-    /// wait_for_match attempts to find a target matching "matcher". If no
-    /// matcher is provided, either the default target is matched, or, if there
-    /// is no default a single target is returned iff it is the only target in
-    /// the collection. If there is neither a matcher or a default, and there are
-    /// several targets in the collection when the query starts, a
-    /// DaemonError::TargetAmbiguous error is returned. The matcher is converted to a
-    /// TargetQuery for matching, and follows the TargetQuery semantics.
-    #[tracing::instrument(skip(self))]
-    pub async fn wait_for_match(&self, matcher: Option<String>) -> Result<Rc<Target>, DaemonError> {
-        // If there's nothing to match against, unblock on the first target.
-        tracing::debug!("Using matcher: {:?}", matcher);
-        let target_query = TargetQuery::from(matcher.clone());
+    /// Updates targets matching any of the update filters, optionally creating one if it
+    /// doesn't exist.
+    ///
+    /// Returns the number of updated targets.
+    pub fn update_target<'a, F>(
+        &self,
+        filters: &'a [F],
+        mut update: TargetUpdate<'a>,
+        create_new: bool,
+    ) -> usize
+    where
+        F: Borrow<TargetUpdateFilter<'a>> + Debug,
+    {
+        // For all matching targets, create a temporary target by id and update it.
+        tracing::debug!("Updating targets matching {filters:?} with {update:?}");
 
-        // If there is no matcher, and there are already multiple targets in the
-        // target collection, we know that the target is ambiguous and thus
-        // produce an actionable error to the user.
-        if let TargetQuery::First = target_query {
-            // PERFORMANCE: it's possible to avoid the discarded clones here, with more work.
+        // Merge identities early so filters match on _merged_ identities.
+        if let Some(identity) = update.identity.take() {
+            update.identity = Some(self.merge_insert_identity(
+                Rc::try_unwrap(identity).unwrap_or_else(|rc| (*rc).clone()),
+            ));
+        }
 
-            // This is a stop-gap UX check. The other option is to
-            // just display disconnected targets in `ffx target list` to make it
-            // clear that an ambiguous target error is about having more than
-            // one target in the cache rather than giving an ambiguous target
-            // error around targets that cannot be displayed in the frontend.
-            if self.targets.borrow().values().filter(|t| t.is_connected()).count() > 1 {
-                return Err(DaemonError::TargetAmbiguous);
+        let mut merge_targets = self
+            .targets
+            .borrow()
+            .values()
+            .filter(|target| filters.iter().any(|f| f.borrow().matches(target)))
+            .map(|target| {
+                // Create a target with the same ID so we can specifically update it.
+                let target = Target::new_with_id(target.id());
+                // Apply update to the newly created target since we are reusing merge_insert.
+                target.apply_update(update.clone());
+                target
+            })
+            .collect::<Vec<_>>();
+
+        if create_new && merge_targets.is_empty() {
+            // Insert a fresh & empty target to apply an update against.
+            let target = self.merge_insert(Target::new());
+
+            let target = Target::new_with_id(target.id());
+            target.apply_update(update.clone());
+
+            merge_targets.push(target);
+        }
+
+        let matches = merge_targets.len();
+
+        for merge_target in merge_targets {
+            // TODO(b/304312166): Stop depending on merge_insert here.
+            // merge_insert is used to maintain previous behaviors. If direct usage of
+            // Target::apply_update introduces a regression the corresponding revert will be much
+            // smaller.
+            self.merge_insert(merge_target);
+        }
+
+        matches
+    }
+
+    pub fn try_to_reconnect_target<'a, F>(
+        &self,
+        filters: &'a [F],
+        overnet_node: &Arc<overnet_core::Router>,
+    ) -> bool
+    where
+        F: Borrow<TargetUpdateFilter<'a>> + Debug,
+    {
+        let mut ret = None;
+        for target in self.targets.borrow().values() {
+            if !filters.iter().any(|f| f.borrow().matches(target)) {
+                continue;
+            }
+
+            if let Some(prev) = ret.as_mut() {
+                Self::select_preferred_target(target, prev)
+            } else {
+                ret = Some(target.clone());
             }
         }
 
-        // Infinite timeout here is fine, as the client dropping connection
-        // will lead to this being cleaned up eventually. It is the client's
-        // responsibility to determine their respective timeout(s).
-        self.events
-            .borrow()
-            .as_ref()
-            .expect("target event queue must be initialized by now")
-            .wait_for(None, move |e| match e {
-                DaemonEvent::NewTarget(ref target_info)
-                | DaemonEvent::UpdatedTarget(ref target_info) => {
-                    target_query.match_info(target_info)
+        match ret {
+            Some(target) if target.is_enabled() => {
+                if !target.is_host_pipe_running() {
+                    tracing::debug!("Reconnecting to {:?}", &target.addrs());
+                    target.run_host_pipe(overnet_node);
                 }
-                _ => false,
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn has_unidentified_target(&self) -> bool {
+        // An unidentified target is a target without a nodename or serial. Manual targets will get
+        // these when the RCS connection is established.
+        // These could end up matching _any_ query, however we should be careful as some manual targets
+        // may fail to connect to RCS.
+        let mut found = false;
+        for target in self.targets.borrow().values() {
+            if target.is_waiting_for_rcs_identity() {
+                tracing::info!(
+                    "Unidentified Target waiting for RCS: {:?}@{}",
+                    target.addrs(),
+                    target.id()
+                );
+                found = true;
+            }
+        }
+        found
+    }
+
+    // In typical (synchronous) usage, targets should not disappear between query -> enable/get info.
+
+    /// With consent from the user (explicit ffx invocation), enable and use a discovered target.
+    ///
+    /// Using random targets will result in unintended behavior, as devices in multi-device
+    /// environments may be in use by different ffx daemons.
+    pub fn use_target(&self, discovered: DiscoveredTarget, user_reason: &str) -> Rc<Target> {
+        let target = discovered.0;
+
+        match self.targets.borrow().get(&target.id()) {
+            Some(found) if Rc::ptr_eq(&target, found) => {
+                // Exact target is still within collection.
+            }
+            _ => {
+                // Not found/somehow replaced. This only happens if a discovered target is held for
+                // a long period of time.
+                // We simply close the target and return it. It is already invalid and should not be
+                // used.
+                tracing::warn!(
+                    "Internal Inconsistency: Attempted to enable target not in collection"
+                );
+
+                if target.is_enabled() {
+                    tracing::warn!("Disabling inconsistent target");
+
+                    target.disable();
+                }
+
+                return target;
+            }
+        }
+
+        if !target.is_enabled() {
+            tracing::info!(
+                "Using discovered target: {} (USER REASON: {user_reason})",
+                target.nodename_str()
+            );
+        }
+        self.do_enable_target(&target);
+        target
+    }
+
+    fn query_any_target<B>(
+        &self,
+        query: &TargetQuery,
+        mut f: impl FnMut(&Rc<Target>) -> ControlFlow<B>,
+    ) -> Option<B> {
+        for target in self.targets.borrow().values() {
+            if !query.matches(target) {
+                continue;
+            }
+
+            let cf = f(target);
+            if let ControlFlow::Break(b) = cf {
+                return Some(b);
+            }
+        }
+
+        None
+    }
+
+    fn select_preferred_target(new: &Rc<Target>, current: &mut Rc<Target>) {
+        'preferred: {
+            if new.is_host_pipe_running() && !current.is_host_pipe_running() {
+                tracing::info!("Prioritizing duplicate with established connection");
+                break 'preferred;
+            } else if new.rcs().is_some() && !current.rcs().is_some() {
+                tracing::info!("Prioritizing duplicate with RCS connection");
+                break 'preferred;
+            }
+
+            if new.is_connected() {
+                if !current.is_connected() {
+                    tracing::info!("Prioritizing duplicate, other one has expired");
+                    break 'preferred;
+                } else if new.last_response() > current.last_response() {
+                    tracing::info!("Prioritizing recently seen duplicate");
+                    break 'preferred;
+                }
+            }
+
+            return;
+        }
+
+        *current = new.clone();
+    }
+
+    fn query_any_single_target(
+        &self,
+        query: &TargetQuery,
+        predicate: impl Fn(&Target) -> bool,
+    ) -> Result<Option<Rc<Target>>, ()> {
+        let mut selected: Option<Rc<Target>> = None;
+        let mut found_multiple = false;
+        self.query_any_target::<()>(query, |target| {
+            if !predicate(target) {
+                return ControlFlow::Continue(());
+            }
+
+            if let Some(selected) = selected.as_mut() {
+                // Do not mark the query as ambiguous when the targets share the same identity or
+                // address. Instead, pick the most preferred one.
+                if (query.is_query_on_identity() && selected.identity_matches(target))
+                    || query.is_query_on_address()
+                {
+                    tracing::info!("Found duplicate target with matching identity: {target:?}");
+                    Self::select_preferred_target(target, selected);
+                } else {
+                    if !found_multiple {
+                        // Print out the header with the first selected target, then
+                        // subsequent log lines print the rest of the matching targets.
+                        tracing::error!("Target query {query:?} matched multiple targets:");
+                        tracing::error!("{:?}", selected);
+                        found_multiple = true;
+                    }
+
+                    tracing::error!("& {:?}", target);
+                }
+            } else {
+                selected = Some(target.clone());
+            }
+            ControlFlow::Continue(())
+        });
+
+        if found_multiple {
+            Err(())
+        } else {
+            Ok(selected)
+        }
+    }
+
+    // Filters through targets, returning info for matching targets. Targets must be previously
+    // enabled by `use_target`.
+    pub fn query_enabled_targets<B>(
+        &self,
+        query: &TargetQuery,
+        mut f: impl FnMut(&Rc<Target>) -> ControlFlow<B>,
+    ) -> Option<B> {
+        self.query_any_target(query, move |target| {
+            if !target.is_enabled() {
+                tracing::debug!("Skipping inactive target {target:?}");
+                ControlFlow::Continue(())
+            } else {
+                f(target)
+            }
+        })
+    }
+
+    pub fn query_single_enabled_target(
+        &self,
+        query: &TargetQuery,
+    ) -> Result<Option<Rc<Target>>, ()> {
+        self.query_any_single_target(query, |target| {
+            if !target.is_enabled() {
+                tracing::debug!("Skipping inactive target {target:?}");
+                false
+            } else {
+                true
+            }
+        })
+    }
+
+    /// Waits to find a single matching target, without filtering out discovered/disabled targets.
+    ///
+    /// Use `query_enabled_targets` to find a previously used target.
+    ///
+    /// Returns an error if multiple targets match. In an environment where targets are discovered
+    /// asynchronously this error will not consistently fire.
+    #[tracing::instrument(skip(self))]
+    pub async fn discover_target(&self, query: &TargetQuery) -> Result<DiscoveredTarget, ()> {
+        tracing::debug!("Using query: {:?}", query);
+
+        // A timeout is not needed here as timeouts are handled downstream and may be
+        // undesired. Futures can be dropped before completion, so the loop will always exit.
+        let target = self
+            .wait_for_change(|| {
+                // Prefer enabled targets over discovered targets.
+                // Functions as a way to silo usages of the "first" matcher.
+                let Ok(enabled_target) = self.query_single_enabled_target(query) else {
+                    return ControlFlow::Break(Err(()));
+                };
+
+                if let Some(found) = enabled_target {
+                    return ControlFlow::Break(Ok(found));
+                }
+
+                // Otherwise match against all targets.
+                ControlFlow::Break(match self.query_any_single_target(query, |_| true) {
+                    Ok(Some(found)) => Ok(found),
+                    Ok(None) => return ControlFlow::Continue(()),
+                    Err(_) => {
+                        tracing::warn!("Too many targets matched query");
+
+                        // Manual targets may not have a nodename yet. The nodename is fetched
+                        // once the RCS connection is established.
+                        // NOTE: Only applies if the query is a wildcard matcher.
+                        if self.has_unidentified_target() {
+                            tracing::info!(
+                                "Waiting for unidentified manual target(s) to finish identification"
+                            );
+                            return ControlFlow::Continue(());
+                        }
+
+                        Err(())
+                    }
+                })
             })
-            .await
-            .map_err(|e| {
-                tracing::warn!("{}", e);
-                DaemonError::TargetCacheError
-            })?;
+            .await?;
 
-        // TODO(awdavies): It's possible something might happen between the new
-        // target event and now, so it would make sense to give the
-        // user some information on what happened: likely something
-        // to do with the target suddenly being forced out of the cache
-        // (this isn't a problem yet, but will be once more advanced
-        // lifetime tracking is implemented). If a name isn't specified it's
-        // possible a secondary/tertiary target showed up, and those cases are
-        // handled here.
-        let matched_target = self.get_connected(matcher).ok_or(DaemonError::TargetNotFound);
-        tracing::debug!("Matched {matched_target:?}");
-        matched_target
-    }
-
-    #[tracing::instrument(skip(self, tq))]
-    pub fn get_connected<TQ>(&self, tq: TQ) -> Option<Rc<Target>>
-    where
-        TQ: Into<TargetQuery>,
-    {
-        let target_query: TargetQuery = tq.into();
-        tracing::debug!("checking if target is connected with query: {:?}", target_query);
-        self.targets
-            .borrow()
-            .values()
-            .filter(|t| t.is_connected())
-            .filter(|target| target_query.matches(target))
-            .cloned()
-            .next()
-    }
-
-    pub fn get<TQ>(&self, t: TQ) -> Option<Rc<Target>>
-    where
-        TQ: Into<TargetQuery>,
-    {
-        let query: TargetQuery = t.into();
-        self.targets
-            .borrow()
-            .values()
-            // TODO(raggi): cleanup query matching so that targets can match themselves against a query
-            .find(|target| query.match_info(&target.target_info()))
-            .map(Clone::clone)
+        tracing::debug!("Matched {target:?}");
+        Ok(DiscoveredTarget(target))
     }
 }
 
-pub trait MatchTarget {
-    fn match_target<TQ>(self, t: TQ) -> Option<Target>
-    where
-        TQ: Into<TargetQuery>;
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TargetQuery {
     /// Attempts to match the nodename, falling back to serial (in that order).
+    /// TODO(b/299345828): Make this an exact match by default, fall back to substring matching
     NodenameOrSerial(String),
     AddrPort((TargetAddr, u16)),
     Addr(TargetAddr),
@@ -385,7 +1027,15 @@ pub enum TargetQuery {
 }
 
 impl TargetQuery {
-    pub fn match_info(&self, t: &TargetInfo) -> bool {
+    fn is_query_on_identity(&self) -> bool {
+        matches!(self, TargetQuery::NodenameOrSerial(..) | TargetQuery::First)
+    }
+
+    fn is_query_on_address(&self) -> bool {
+        matches!(self, TargetQuery::AddrPort(..) | TargetQuery::Addr(..))
+    }
+
+    pub fn match_info(&self, t: &TargetEventInfo) -> bool {
         match self {
             Self::NodenameOrSerial(arg) => {
                 if let Some(ref nodename) = t.nodename {
@@ -469,10 +1119,65 @@ impl From<TargetAddr> for TargetQuery {
     }
 }
 
+/// A filter to select targets to update. Unlike `TargetQuery`, this cannot be parsed from a string.
+#[derive(Clone, Debug)]
+pub enum TargetUpdateFilter<'a> {
+    /// Update a target by ID.
+    Ids(&'a [u64]),
+    /// Update a target by Overnet Node ID.
+    OvernetNodeId(u64),
+    /// Update a target by (authoritative USB) serial.
+    Serial(&'a str),
+    /// Update a target by nodename.
+    /// For backwards compatibility with mDNS discovery.
+    LegacyNodeName(&'a str),
+    /// Update a target by net address.
+    NetAddrs(&'a [SocketAddr]),
+}
+
+impl<'a> TargetUpdateFilter<'a> {
+    fn matches(&self, target: &Target) -> bool {
+        match *self {
+            Self::Ids(ids) => target.has_id(ids.iter()),
+            Self::OvernetNodeId(id) => target.overnet_node_id() == Some(id),
+            Self::Serial(serial) => {
+                Some(serial) == target.identity().as_ref().map(|i| i.serial()).flatten()
+            }
+            Self::LegacyNodeName(name) => {
+                Some(name) == target.identity().as_ref().map(|i| i.name()).flatten()
+            }
+            Self::NetAddrs(addrs) => {
+                let target_addrs = target.addrs.borrow();
+                addrs.iter().any(|addr| {
+                    // Because of Rust's strange handling of scoped IPv6 addresses, link-local IPv6
+                    // address filtering requires special logic to match addresses correctly.
+                    match addr {
+                        SocketAddr::V6(addr)
+                            if addr.ip().is_link_local_addr() && addr.scope_id() == 0 =>
+                        {
+                            // Wildcard scope
+                            target_addrs.iter().any(|entry| {
+                                (entry.addr.ip(), entry.addr.port())
+                                    == (IpAddr::from(*addr.ip()), addr.port())
+                            })
+                        }
+                        _ => target_addrs.contains(&TargetAddrEntry::new(
+                            (*addr).into(),
+                            // NOTE: The following fields do not matter for address lookups
+                            chrono::MIN_DATETIME,
+                            TargetAddrStatus::ssh(),
+                        )),
+                    }
+                })
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::target::{clone_target, TargetAddrEntry, TargetAddrType};
+    use crate::target::{TargetAddrEntry, TargetProtocol, TargetTransport, TargetUpdateBuilder};
     use chrono::{TimeZone, Utc};
     use ffx_daemon_events::TargetConnectionState;
     use fuchsia_async::Task;
@@ -485,41 +1190,61 @@ mod tests {
         time::Instant,
     };
 
+    mod update;
+
+    #[track_caller]
+    fn expect_target(tc: &TargetCollection, query: &TargetQuery) -> Rc<Target> {
+        tc.query_any_single_target(query, |_| true)
+            .expect("Multiple targets found")
+            .expect("No target found")
+    }
+
+    #[track_caller]
+    fn expect_enabled_target(tc: &TargetCollection, query: &TargetQuery) -> Rc<Target> {
+        tc.query_single_enabled_target(query)
+            .expect("Multiple targets found")
+            .expect("No target found")
+    }
+
+    #[track_caller]
+    fn expect_no_target(tc: &TargetCollection, query: &TargetQuery) {
+        let opt = tc.query_any_single_target(query, |_| true).expect("Multiple targets found");
+        assert!(opt.is_none(), "Target found")
+    }
+
+    #[track_caller]
+    fn expect_no_enabled_target(tc: &TargetCollection, query: &TargetQuery) {
+        let opt = tc.query_single_enabled_target(query).expect("Multiple targets found");
+        assert!(opt.is_none(), "Target found")
+    }
+
+    #[track_caller]
+    fn expect_ambiguous_target(tc: &TargetCollection, query: &TargetQuery) {
+        tc.query_single_enabled_target(query).expect_err("Query not ambiguous");
+    }
+
     #[fuchsia_async::run_singlethreaded(test)]
-    async fn test_target_collection_insert_new_not_connected() {
+    async fn test_target_collection_insert_new_disabled() {
         let tc = TargetCollection::new_with_queue();
         let nodename = String::from("what");
+        let query = nodename.clone().into();
         let t = Target::new_with_time(&nodename, Utc.ymd(2014, 10, 31).and_hms(9, 10, 12));
-        tc.merge_insert(clone_target(&t));
-        let other_target = tc.get(nodename.clone()).unwrap();
-        assert_eq!(other_target, t);
-        match tc.get_connected(nodename.clone()) {
-            Some(_) => panic!("string lookup should return None"),
-            _ => (),
-        }
-        let now = Instant::now();
-        other_target.update_connection_state(|s| {
-            assert_eq!(s, TargetConnectionState::Disconnected);
-            TargetConnectionState::Mdns(now)
-        });
-        t.update_connection_state(|s| {
-            assert_eq!(s, TargetConnectionState::Disconnected);
-            TargetConnectionState::Mdns(now)
-        });
-        assert_eq!(&tc.get_connected(nodename.clone()).unwrap(), &t);
+        tc.merge_insert(t.clone());
+        expect_no_enabled_target(&tc, &query);
+        assert_eq!(expect_target(&tc, &query), t);
+        tc.merge_insert(Target::new_autoconnected(&nodename));
+        assert_eq!(expect_enabled_target(&tc, &query), t);
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_target_collection_insert_new() {
         let tc = TargetCollection::new_with_queue();
         let nodename = String::from("what");
+        let query = nodename.clone().into();
         let t = Target::new_with_time(&nodename, Utc.ymd(2014, 10, 31).and_hms(9, 10, 12));
         tc.merge_insert(t.clone());
-        assert_eq!(tc.get(nodename.clone()).unwrap(), t);
-        match tc.get("oihaoih") {
-            Some(_) => panic!("string lookup should return None"),
-            _ => (),
-        }
+        assert_eq!(expect_target(&tc, &query), t);
+        expect_no_target(&tc, &"oihaoih".into())
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -535,22 +1260,22 @@ mod tests {
         let tae1 = TargetAddrEntry {
             addr: TargetAddr::new(a1, 1, 0),
             timestamp: Utc.ymd(2014, 10, 31).and_hms(9, 10, 12),
-            addr_type: TargetAddrType::Ssh,
+            status: TargetAddrStatus::ssh(),
         };
         let tae2 = TargetAddrEntry {
             addr: TargetAddr::new(a2, 1, 0),
             timestamp: Utc.ymd(2014, 10, 31).and_hms(9, 10, 12),
-            addr_type: TargetAddrType::Ssh,
+            status: TargetAddrStatus::ssh(),
         };
         let tae3 = TargetAddrEntry {
             addr: TargetAddr::new(a3, 1, 0),
             timestamp: Utc.ymd(2014, 10, 31).and_hms(9, 10, 12),
-            addr_type: TargetAddrType::Manual(None),
+            status: TargetAddrStatus::ssh().manually_added(),
         };
         t.addrs.borrow_mut().insert(tae1);
         t.addrs.borrow_mut().insert(tae2);
         t.addrs.borrow_mut().insert(tae3);
-        tc.merge_insert(clone_target(&t));
+        tc.merge_insert(t.clone());
         let t2 = Target::new_with_time(&nodename, Utc.ymd(2014, 11, 2).and_hms(13, 2, 1));
         let a1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10));
         t2.addrs_insert(TargetAddr::new(a1.clone(), 1, 0));
@@ -569,15 +1294,12 @@ mod tests {
         let t2 = Target::new_with_time(&nodename, Utc.ymd(2014, 11, 2).and_hms(13, 2, 1));
         let a1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
         let a2 = IpAddr::V6(Ipv6Addr::new(
-            0xfe80, 0xcafe, 0xf00d, 0xf000, 0xb412, 0xb455, 0x1337, 0xfeed,
+            0xfe80, 0x0000, 0x0000, 0x0000, 0xb412, 0xb455, 0x1337, 0xfeed,
         ));
         t1.addrs_insert(TargetAddr::new(a1.clone(), 1, 0));
         t2.addrs_insert(TargetAddr::new(a2.clone(), 1, 0));
-        tc.merge_insert(clone_target(&t2));
-        tc.merge_insert(clone_target(&t1));
-        let merged_target = tc.get(nodename.clone()).unwrap();
-        assert_ne!(merged_target, t1);
-        assert_ne!(merged_target, t2);
+        tc.merge_insert(t2);
+        let merged_target = tc.merge_insert(t1);
         assert_eq!(merged_target.addrs().len(), 2);
         assert_eq!(*merged_target.last_response.borrow(), Utc.ymd(2014, 11, 2).and_hms(13, 2, 1));
         assert!(merged_target.addrs().contains(&TargetAddr::new(a1, 1, 0)));
@@ -588,16 +1310,83 @@ mod tests {
         // collection.
         let t3 = Target::new_with_time(&nodename, Utc.ymd(2014, 10, 31).and_hms(9, 10, 12));
         t3.addrs_insert(TargetAddr::new(a2.clone(), 0, 0));
-        tc.merge_insert(clone_target(&t3));
-        let merged_target = tc.get(nodename.clone()).unwrap();
-        assert_eq!(merged_target.addrs().len(), 2);
+        let merged_target = tc.merge_insert(t3);
+        let addrs = merged_target.addrs();
+        assert_eq!(addrs.len(), 2);
+        assert!(addrs.contains(&TargetAddr::new(a1, 1, 0)));
+        assert!(addrs.contains(&TargetAddr::new(a2, 1, 0)), "does not contain addr: {addrs:?}");
 
         // Insert another instance of the a2 address, but with a new scope_id, and ensure that the new scope is used.
         let t3 = Target::new_with_time(&nodename, Utc.ymd(2014, 10, 31).and_hms(9, 10, 12));
         t3.addrs_insert(TargetAddr::new(a2.clone(), 3, 0));
-        tc.merge_insert(clone_target(&t3));
-        let merged_target = tc.get(nodename.clone()).unwrap();
-        assert_eq!(merged_target.addrs().iter().filter(|addr| addr.scope_id() == 3).count(), 1);
+        let merged_target = tc.merge_insert(t3);
+        assert_eq!(merged_target.addrs().len(), 2);
+        assert!(merged_target.addrs().contains(&TargetAddr::new(a1, 1, 0)));
+        assert!(merged_target.addrs().contains(&TargetAddr::new(a2, 3, 0)));
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_target_collection_merge_disjointed() {
+        let tc = TargetCollection::new_with_queue();
+
+        const NODENAME: &str = "bananas";
+        const SERIAL: &str = "pears";
+
+        let t1 = tc.merge_insert(Target::new_named(NODENAME));
+        let t2 = tc.merge_insert(Target::new_for_usb(SERIAL));
+
+        // Disjointed, cannot compare
+        assert_eq!(
+            t1.identity().unwrap().cmp_to(&t2.identity().unwrap()),
+            None,
+            "{:?} != {:?}",
+            t1.identity(),
+            t2.identity()
+        );
+
+        let addr = "192.0.2.0:55556".parse().unwrap();
+
+        tc.update_target(
+            &[TargetUpdateFilter::Serial(SERIAL)],
+            TargetUpdateBuilder::new()
+                .identity(Identity::try_from_name_serial(Some(NODENAME), Some(SERIAL)).unwrap())
+                .discovered(TargetProtocol::Fastboot, TargetTransport::Network)
+                .net_addresses(&[addr])
+                .build(),
+            true,
+        );
+
+        assert_eq!(
+            t1.identity().unwrap().cmp_to(&t2.identity().unwrap()),
+            Some(IdentityCmp::Eq),
+            "{:?} != {:?}",
+            t1.identity(),
+            t2.identity()
+        );
+
+        // The most recent matching target should be returned for both queries.
+        let query_name = expect_target(&tc, &TargetQuery::NodenameOrSerial(NODENAME.into()));
+        let query_serial = expect_target(&tc, &TargetQuery::NodenameOrSerial(SERIAL.into()));
+        // Both targets have updated
+        assert!(Rc::ptr_eq(&query_name, &t1) || Rc::ptr_eq(&query_name, &t2));
+        // Target returned from queries should be consistent.
+        assert!(Rc::ptr_eq(&query_name, &query_serial));
+
+        // The state of both targets are merged together when requesting TargetEventInfo:
+        let targets = tc.targets(None);
+        let [target_info] = &targets[..] else {
+            panic!("Too many target info structs: {targets:?}");
+        };
+
+        println!("{target_info:?}");
+        println!("{:?}", ffx::TargetInfo::from(&*t1));
+        println!("{:?}", ffx::TargetInfo::from(&*t2));
+
+        assert_eq!(target_info.nodename.as_deref(), Some(NODENAME));
+        assert_eq!(target_info.serial_number.as_deref(), Some(SERIAL));
+        assert_eq!(target_info.addresses.as_deref(), Some(&[TargetAddr::from(addr).into()][..]));
+        assert_eq!(target_info.target_state, Some(ffx::TargetState::Fastboot));
+        assert_eq!(target_info.fastboot_interface, Some(ffx::FastbootInterface::Tcp));
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -612,11 +1401,8 @@ mod tests {
         ));
         t1.addrs_insert(TargetAddr::new(a1.clone(), 0, 0));
         t2.addrs_insert(TargetAddr::new(a2.clone(), 0, 0));
-        tc.merge_insert(clone_target(&t2));
-        tc.merge_insert(clone_target(&t1));
-        let merged_target = tc.get(nodename.clone()).unwrap();
-        assert_ne!(&merged_target, &t1);
-        assert_ne!(&merged_target, &t2);
+        tc.merge_insert(t2);
+        let merged_target = tc.merge_insert(t1);
         assert_eq!(merged_target.addrs().len(), 1);
         assert_eq!(*merged_target.last_response.borrow(), Utc.ymd(2014, 11, 2).and_hms(13, 2, 1));
         assert!(merged_target.addrs().contains(&TargetAddr::new(a1, 0, 0)));
@@ -624,27 +1410,32 @@ mod tests {
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
-    async fn test_target_by_addr() {
-        let addr: TargetAddr = TargetAddr::new(IpAddr::from([192, 168, 0, 1]), 0, 0);
-        let t = Target::new_named("foo");
-        t.addrs_insert(addr.clone());
-        let tc = TargetCollection::new_with_queue();
-        tc.merge_insert(clone_target(&t));
-        assert_eq!(tc.get(addr).unwrap(), t);
-        assert_eq!(tc.get("192.168.0.1").unwrap(), t);
-        assert!(tc.get("fe80::dead:beef:beef:beef").is_none());
+    async fn test_query_target_by_addr() {
+        let ipv4_addr: TargetAddr = TargetAddr::new(IpAddr::from([192, 168, 0, 1]), 0, 0);
 
-        let addr: TargetAddr = TargetAddr::new(
+        let ipv6_addr: TargetAddr = TargetAddr::new(
             IpAddr::from([0xfe80, 0x0, 0x0, 0x0, 0xdead, 0xbeef, 0xbeef, 0xbeef]),
             3,
             0,
         );
+
+        let t = Target::new_named("foo");
+        t.addrs_insert(ipv4_addr);
+        let tc = TargetCollection::new_with_queue();
+        tc.merge_insert(t.clone());
+
+        let ipv4_query = TargetQuery::Addr(ipv4_addr);
+        let ipv6_query = TargetQuery::Addr(ipv6_addr);
+
+        assert_eq!(expect_target(&tc, &ipv4_query), t);
+        expect_no_target(&tc, &ipv6_query);
+
         let t = Target::new_named("fooberdoober");
-        t.addrs_insert(addr.clone());
-        tc.merge_insert(clone_target(&t));
-        assert_eq!(tc.get("fe80::dead:beef:beef:beef").unwrap(), t);
-        assert_eq!(tc.get(addr.clone()).unwrap(), t);
-        assert_eq!(tc.get("fooberdoober").unwrap(), t);
+        t.addrs_insert(ipv6_addr);
+        tc.merge_insert(t.clone());
+
+        assert_eq!(expect_target(&tc, &ipv6_query), t);
+        assert_ne!(expect_target(&tc, &ipv4_query), t);
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -654,16 +1445,13 @@ mod tests {
         tc.merge_insert(t.clone());
         let vec = tc.synthesize_events().await;
         assert_eq!(vec.len(), 0);
-        t.update_connection_state(|s| {
-            assert_eq!(s, TargetConnectionState::Disconnected);
-            TargetConnectionState::Mdns(Instant::now())
-        });
+        tc.use_target(t.into(), "test");
         let vec = tc.synthesize_events().await;
         assert_eq!(vec.len(), 1);
         assert_eq!(
             vec.iter().next().expect("events empty"),
-            &DaemonEvent::NewTarget(TargetInfo {
-                nodename: Some("clopperdoop".to_string()),
+            &DaemonEvent::NewTarget(TargetEventInfo {
+                nodename: Some("clopperdoop".to_owned()),
                 ..Default::default()
             })
         );
@@ -684,18 +1472,18 @@ mod tests {
         let events = tc.synthesize_events().await;
         assert_eq!(events.len(), 3);
         assert!(events.iter().any(|e| e
-            == &DaemonEvent::NewTarget(TargetInfo {
-                nodename: Some("clam-chowder-is-tasty".to_string()),
+            == &DaemonEvent::NewTarget(TargetEventInfo {
+                nodename: Some("clam-chowder-is-tasty".to_owned()),
                 ..Default::default()
             })));
         assert!(events.iter().any(|e| e
-            == &DaemonEvent::NewTarget(TargetInfo {
-                nodename: Some("this-is-a-crunchy-falafel".to_string()),
+            == &DaemonEvent::NewTarget(TargetEventInfo {
+                nodename: Some("this-is-a-crunchy-falafel".to_owned()),
                 ..Default::default()
             })));
         assert!(events.iter().any(|e| e
-            == &DaemonEvent::NewTarget(TargetInfo {
-                nodename: Some("i-should-probably-eat-lunch".to_string()),
+            == &DaemonEvent::NewTarget(TargetEventInfo {
+                nodename: Some("i-should-probably-eat-lunch".to_owned()),
                 ..Default::default()
             })));
     }
@@ -731,7 +1519,7 @@ mod tests {
     #[async_trait(?Send)]
     impl events::EventHandler<DaemonEvent> for EventPusher {
         async fn on_event(&self, event: DaemonEvent) -> Result<events::Status> {
-            if let DaemonEvent::NewTarget(TargetInfo { nodename: Some(s), .. }) = event {
+            if let DaemonEvent::NewTarget(TargetEventInfo { nodename: Some(s), .. }) = event {
                 self.got.send(s).await.unwrap();
                 Ok(events::Status::Waiting)
             } else {
@@ -742,9 +1530,9 @@ mod tests {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_target_collection_events() {
-        let t = Target::new_named("clam-chowder-is-tasty");
-        let t2 = Target::new_named("this-is-a-crunchy-falafel");
-        let t3 = Target::new_named("i-should-probably-eat-lunch");
+        let t = Target::new_autoconnected("clam-chowder-is-tasty");
+        let t2 = Target::new_autoconnected("this-is-a-crunchy-falafel");
+        let t3 = Target::new_autoconnected("i-should-probably-eat-lunch");
 
         let tc = Rc::new(TargetCollection::new());
         let queue = events::Queue::new(&tc);
@@ -755,38 +1543,37 @@ mod tests {
         tc.merge_insert(t2);
         tc.merge_insert(t3);
         let results = rx.take(3).collect::<Vec<_>>().await;
-        assert!(results.iter().any(|e| e == &"clam-chowder-is-tasty".to_string()));
-        assert!(results.iter().any(|e| e == &"this-is-a-crunchy-falafel".to_string()));
-        assert!(results.iter().any(|e| e == &"i-should-probably-eat-lunch".to_string()));
+        assert!(results.iter().any(|e| e == &"clam-chowder-is-tasty".to_owned()));
+        assert!(results.iter().any(|e| e == &"this-is-a-crunchy-falafel".to_owned()));
+        assert!(results.iter().any(|e| e == &"i-should-probably-eat-lunch".to_owned()));
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
-    async fn test_target_wait_for_match() {
+    async fn test_discover_target() {
         let default = "clam-chowder-is-tasty";
         let t = Target::new_autoconnected(default);
-        let t2 = Target::new_autoconnected("this-is-a-crunchy-falafel");
+        let t2 = Target::new_named("this-is-a-crunchy-falafel");
         let tc = TargetCollection::new_with_queue();
-        tc.merge_insert(clone_target(&t));
-        assert_eq!(tc.wait_for_match(Some(default.to_string())).await.unwrap(), t);
-        assert_eq!(tc.wait_for_match(None).await.unwrap(), t);
-        tc.merge_insert(t2);
-        assert_eq!(tc.wait_for_match(Some(default.to_string())).await.unwrap(), t);
-        assert!(tc.wait_for_match(None).await.is_err());
-    }
+        tc.merge_insert(t.clone());
 
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn test_target_wait_for_match_matches_contains() {
-        let default = "clam-chowder-is-tasty";
-        let t = Target::new_autoconnected(default);
-        let t2 = Target::new_autoconnected("this-is-a-crunchy-falafel");
-        let tc = TargetCollection::new_with_queue();
-        tc.merge_insert(clone_target(&t));
-        assert_eq!(tc.wait_for_match(Some(default.to_string())).await.unwrap(), t);
-        assert_eq!(tc.wait_for_match(None).await.unwrap(), t);
-        tc.merge_insert(t2);
-        assert_eq!(tc.wait_for_match(Some(default.to_string())).await.unwrap(), t);
-        assert!(tc.wait_for_match(None).await.is_err());
-        assert_eq!(tc.wait_for_match(Some("clam".to_string())).await.unwrap(), t);
+        let query = TargetQuery::from(default.to_owned());
+        assert_eq!(tc.discover_target(&query).await.unwrap(), t);
+        assert_eq!(tc.discover_target(&TargetQuery::First).await.unwrap(), t);
+
+        let query2 = TargetQuery::from(t2.nodename());
+        tc.merge_insert(t2.clone());
+
+        assert_eq!(tc.discover_target(&query).await.unwrap(), t);
+        assert_eq!(tc.discover_target(&query2).await.unwrap(), t2);
+
+        // Targets in use are preferred
+        assert_eq!(tc.discover_target(&TargetQuery::First).await.unwrap(), t);
+
+        // Find by partial match
+        assert_eq!(tc.discover_target(&TargetQuery::from("clam".to_owned())).await.unwrap(), t);
+
+        tc.merge_insert(Target::new_autoconnected("this-is-a-crunchy-falafel"));
+        tc.discover_target(&TargetQuery::First).await.unwrap_err(); // Too many targets found
     }
 
     struct TargetUpdatedFut<F> {
@@ -858,7 +1645,7 @@ mod tests {
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
-    async fn test_target_wait_for_match_updated_target() {
+    async fn test_discover_target_updated_target() {
         let address = "f111::1";
         let ip = address.parse().unwrap();
         let mut addr_set = BTreeSet::new();
@@ -867,18 +1654,22 @@ mod tests {
         let tc = TargetCollection::new_with_queue();
         tc.merge_insert(t);
         let target_name = "fesenjoon-is-my-jam";
-        let wait_fut =
-            Box::pin(async { tc.wait_for_match(Some(target_name.to_string())).await.unwrap() });
+        let wait_fut = Box::pin(async {
+            tc.use_target(
+                tc.discover_target(&TargetQuery::from(target_name.to_owned())).await.unwrap(),
+                "test",
+            )
+        });
         // Now we will update the target with a nodename. This should merge into
         // the collection and create an updated target event.
         let t2 = Target::new_autoconnected(target_name);
         t2.addrs.borrow_mut().replace(TargetAddrEntry::new(
             TargetAddr::new(ip, 0, 0),
             Utc::now(),
-            TargetAddrType::Ssh,
+            TargetAddrStatus::ssh(),
         ));
-        let fut = TargetUpdatedFut::new(clone_target(&t2), tc.clone(), wait_fut);
-        assert_eq!(fut.await, t2);
+        let fut = TargetUpdatedFut::new(t2, tc.clone(), wait_fut);
+        assert_eq!(fut.await.nodename().unwrap(), target_name);
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -899,13 +1690,14 @@ mod tests {
         t2.addrs.borrow_mut().replace(TargetAddrEntry::new(
             TargetAddr::new(ip, 0xbadf00d, 0),
             Utc::now(),
-            TargetAddrType::Ssh,
+            TargetAddrStatus::ssh(),
         ));
 
         let tc = TargetCollection::new_with_queue();
         tc.merge_insert(t1);
         tc.merge_insert(t2);
-        let mut targets = tc.targets().into_iter();
+        let targets = tc.targets.borrow();
+        let mut targets = targets.values();
         let target = targets.next().expect("Merging resulted in no targets.");
         assert!(targets.next().is_none());
         assert_eq!(target.nodename_str(), "this-is-a-crunchy-falafel");
@@ -932,7 +1724,8 @@ mod tests {
         tc.merge_insert(t1);
         tc.merge_insert(t2);
 
-        let mut targets = tc.targets().into_iter().collect::<Vec<Rc<Target>>>();
+        let targets = tc.targets.borrow();
+        let mut targets = Vec::from_iter(targets.values());
 
         assert_eq!(targets.len(), 2);
 
@@ -968,7 +1761,8 @@ mod tests {
         tc.merge_insert(t1);
         tc.merge_insert(t2);
 
-        let mut targets = tc.targets().into_iter().collect::<Vec<Rc<Target>>>();
+        let targets = tc.targets.borrow();
+        let mut targets = Vec::from_iter(targets.values());
 
         assert_eq!(targets.len(), 2);
 
@@ -979,7 +1773,7 @@ mod tests {
 
         assert_eq!(found1.addrs().into_iter().next().unwrap().ip(), ip);
         assert_eq!(found1.ssh_port(), Some(8022));
-        assert_eq!(found1.nodename(), Some("t1".to_string()));
+        assert_eq!(found1.nodename(), Some("t1".to_owned()));
 
         assert_eq!(found2.addrs().into_iter().next().unwrap().ip(), ip);
         assert_eq!(found2.ssh_port(), Some(8023));
@@ -987,23 +1781,33 @@ mod tests {
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
-    async fn test_target_wait_for_match_successful() {
-        let default = "clam-chowder-is-tasty";
-        let t = Target::new_autoconnected(default);
-        let tc = TargetCollection::new_with_queue();
-        tc.merge_insert(clone_target(&t));
-        assert_eq!(tc.wait_for_match(Some(default.to_string())).await.unwrap(), t);
-    }
+    async fn test_target_merge_enabled_and_transient() {
+        let tc = TargetCollection::new();
 
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn test_target_wait_for_match_ambiguous() {
-        let default = "clam-chowder-is-tasty";
-        let t = Target::new_autoconnected(default);
-        let t2 = Target::new_autoconnected("this-is-a-crunchy-falafel");
-        let tc = TargetCollection::new_with_queue();
-        tc.merge_insert(clone_target(&t));
-        tc.merge_insert(t2);
-        assert_eq!(Err(DaemonError::TargetAmbiguous), tc.wait_for_match(None).await);
+        const NAME: &str = "foo";
+
+        let target = tc.merge_insert(Target::new_named(NAME));
+
+        assert!(!target.is_enabled());
+        assert!(!target.is_transient());
+
+        tc.merge_insert({
+            let target = Target::new_named(NAME);
+            target.enable();
+            target
+        });
+
+        assert!(target.is_enabled());
+        assert!(!target.is_transient());
+
+        tc.merge_insert({
+            let target = Target::new_named(NAME);
+            target.mark_transient();
+            target
+        });
+
+        assert!(target.is_enabled());
+        assert!(target.is_transient());
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -1018,22 +1822,31 @@ mod tests {
         t2.addrs.borrow_mut().replace(TargetAddr::new(ip2, 0, 0).into());
         tc.merge_insert(t1);
         tc.merge_insert(t2);
-        let mut targets = tc.targets().into_iter();
-        let mut target1 = targets.next().expect("Merging resulted in no targets.");
-        let mut target2 = targets.next().expect("Merging resulted in only one target.");
 
-        if target1.nodename().is_none() {
-            std::mem::swap(&mut target1, &mut target2)
+        {
+            let targets = tc.targets.borrow();
+            let mut targets = targets.values();
+            let mut target1 = targets.next().expect("Merging resulted in no targets.");
+            let mut target2 = targets.next().expect("Merging resulted in only one target.");
+
+            if target1.nodename().is_none() {
+                std::mem::swap(&mut target1, &mut target2)
+            }
+
+            assert!(targets.next().is_none());
+            assert_eq!(target1.nodename_str(), "this-is-a-crunchy-falafel");
+            assert_eq!(target2.nodename(), None);
         }
 
-        assert!(targets.next().is_none());
-        assert_eq!(target1.nodename_str(), "this-is-a-crunchy-falafel");
-        assert_eq!(target2.nodename(), None);
         assert!(tc.remove_target("f111::3".to_owned()));
-        let mut targets = tc.targets().into_iter();
-        let target = targets.next().expect("Merging resulted in no targets.");
-        assert!(targets.next().is_none());
-        assert_eq!(target.nodename_str(), "this-is-a-crunchy-falafel");
+
+        {
+            let targets = tc.targets.borrow();
+            let mut targets = targets.values();
+            let target = targets.next().expect("Merging resulted in no targets.");
+            assert!(targets.next().is_none());
+            assert_eq!(target.nodename_str(), "this-is-a-crunchy-falafel");
+        }
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -1048,21 +1861,30 @@ mod tests {
         t2.addrs.borrow_mut().replace(TargetAddr::new(ip2, 0, 0).into());
         tc.merge_insert(t1);
         tc.merge_insert(t2);
-        let mut targets = tc.targets().into_iter();
-        let mut target1 = targets.next().expect("Merging resulted in no targets.");
-        let mut target2 = targets.next().expect("Merging resulted in only one target.");
 
-        if target1.nodename().is_none() {
-            std::mem::swap(&mut target1, &mut target2);
+        {
+            let targets = tc.targets.borrow();
+            let mut targets = targets.values();
+            let mut target1 = targets.next().expect("Merging resulted in no targets.");
+            let mut target2 = targets.next().expect("Merging resulted in only one target.");
+
+            if target1.nodename().is_none() {
+                std::mem::swap(&mut target1, &mut target2);
+            }
+            assert!(targets.next().is_none());
+            assert_eq!(target1.nodename_str(), "this-is-a-crunchy-falafel");
+            assert_eq!(target2.nodename(), None);
         }
-        assert!(targets.next().is_none());
-        assert_eq!(target1.nodename_str(), "this-is-a-crunchy-falafel");
-        assert_eq!(target2.nodename(), None);
+
         assert!(tc.remove_target("f111::4".to_owned()));
-        let mut targets = tc.targets().into_iter();
-        let target = targets.next().expect("Merging resulted in no targets.");
-        assert!(targets.next().is_none());
-        assert_eq!(target.nodename(), None);
+
+        {
+            let targets = tc.targets.borrow();
+            let mut targets = targets.values();
+            let target = targets.next().expect("Merging resulted in no targets.");
+            assert!(targets.next().is_none());
+            assert_eq!(target.nodename(), None);
+        }
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -1077,29 +1899,44 @@ mod tests {
         t2.addrs.borrow_mut().replace(TargetAddr::new(ip2, 0, 0).into());
         tc.merge_insert(t1);
         tc.merge_insert(t2);
-        let mut targets = tc.targets().into_iter();
-        let mut target1 = targets.next().expect("Merging resulted in no targets.");
-        let mut target2 = targets.next().expect("Merging resulted in only one target.");
 
-        if target1.nodename().is_none() {
-            std::mem::swap(&mut target1, &mut target2);
+        {
+            let targets = tc.targets.borrow();
+            let mut targets = targets.values();
+            let mut target1 = targets.next().expect("Merging resulted in no targets.");
+            let mut target2 = targets.next().expect("Merging resulted in only one target.");
+
+            if target1.nodename().is_none() {
+                std::mem::swap(&mut target1, &mut target2);
+            }
+
+            assert!(targets.next().is_none());
+            assert_eq!(target1.nodename_str(), "this-is-a-crunchy-falafel");
+            assert_eq!(target2.nodename(), None);
         }
 
-        assert!(targets.next().is_none());
-        assert_eq!(target1.nodename_str(), "this-is-a-crunchy-falafel");
-        assert_eq!(target2.nodename(), None);
         assert!(tc.remove_target("this-is-a-crunchy-falafel".to_owned()));
-        let mut targets = tc.targets().into_iter();
-        let target = targets.next().expect("Merging resulted in no targets.");
-        assert!(targets.next().is_none());
-        assert_eq!(target.nodename(), None);
+
+        {
+            let targets = tc.targets.borrow();
+            let mut targets = targets.values();
+            let target = targets.next().expect("Merging resulted in no targets.");
+            assert!(targets.next().is_none());
+            assert_eq!(target.nodename(), None);
+        }
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_collection_removal_disconnects_target() {
+        use crate::target::HostPipeState;
+        let local_node = overnet_core::Router::new(None).unwrap();
         let target = Target::new_named("soggy-falafel");
         target.set_state(TargetConnectionState::Mdns(Instant::now()));
-        target.host_pipe.borrow_mut().replace(Task::local(future::pending()));
+        target.host_pipe.borrow_mut().replace(HostPipeState {
+            task: Task::local(future::pending()),
+            overnet_node: local_node,
+            ssh_addr: None,
+        });
 
         let collection = TargetCollection::new();
         collection.merge_insert(target.clone());
@@ -1112,38 +1949,69 @@ mod tests {
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_target_match_serial() {
         let string = "turritopsis-dohrnii-is-an-immortal-jellyfish";
-        let t = Target::new_with_serial(string);
+        let t = Target::new_for_usb(string);
         let tc = TargetCollection::new_with_queue();
-        tc.merge_insert(clone_target(&t));
-        let found_target = tc.get(string).expect("target serial should match");
+        tc.merge_insert(t.clone());
+        let found_target = expect_target(&tc, &TargetQuery::NodenameOrSerial(string.to_owned()));
         assert_eq!(string, found_target.serial().expect("target should have serial number"));
         assert!(found_target.nodename().is_none());
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
-    async fn test_no_ambiguous_target_when_disconnected() {
-        // While this is an implementation detail, the naming of these targets
-        // are important. The match order of the targets, if not filtering by
-        // whether they are connected, is such that the disconnected target
-        // would come first. With filtering, though, the "this-is-connected"
-        // target would be found.
-        let t = Target::new_autoconnected("this-is-connected");
-        let t2 = Target::new_named("this-is-not-connected");
+    async fn test_no_ambiguous_target_when_disabled() {
         let tc = TargetCollection::new_with_queue();
-        tc.merge_insert(clone_target(&t2));
-        tc.merge_insert(clone_target(&t));
-        let found_target = tc.wait_for_match(None).await.expect("should match");
+
+        tc.merge_insert(Target::new_named("this-is-not-connected"));
+        tc.merge_insert(Target::new_autoconnected("this-is-connected"));
+
+        let found_target = expect_enabled_target(&tc, &TargetQuery::First);
         assert_eq!(
             "this-is-connected",
             found_target.nodename().expect("target should have nodename")
         );
-        let found_target =
-            tc.wait_for_match(Some("connected".to_owned())).await.expect("should match");
+
+        let found_target = expect_enabled_target(&tc, &TargetQuery::from("connected".to_owned()));
         assert_eq!(
             "this-is-connected",
             found_target.nodename().expect("target should have nodename")
         );
     }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_no_ambiguous_target_when_matching_identity() {
+        let tc = TargetCollection::new_with_queue();
+
+        let anonymous = tc.merge_insert(Target::new());
+        let connected = tc.merge_insert(Target::new_autoconnected("this-is-connected"));
+        let other = tc.merge_insert(Target::new_named("this-is-not-connected"));
+
+        tc.merge_insert({
+            let updated = Target::new_with_id(anonymous.id());
+            updated.replace_identity(Identity::from_name("this-is-connected"));
+            updated.enable();
+            updated
+        });
+
+        for query in [TargetQuery::from("this-is-connected".to_owned()), TargetQuery::First] {
+            let found_target = expect_enabled_target(&tc, &query);
+            assert!(
+                Rc::ptr_eq(&connected, &found_target),
+                "expected connected target to be preferred, got {found_target:?}"
+            );
+        }
+
+        tc.merge_insert({
+            let updated = Target::new_with_id(other.id());
+            updated.enable();
+            updated
+        });
+
+        for query in [TargetQuery::from("connected".to_owned()), TargetQuery::First] {
+            expect_ambiguous_target(&tc, &query);
+        }
+    }
+
+    /* TARGET QUERIES */
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_target_query_matches_nodename() {
@@ -1155,7 +2023,7 @@ mod tests {
     #[test]
     fn test_target_query_from_socketaddr_both_zero_port() {
         let tq = TargetQuery::from("127.0.0.1:0");
-        let ti = TargetInfo {
+        let ti = TargetEventInfo {
             addresses: vec![TargetAddr::new("127.0.0.1".parse::<IpAddr>().unwrap(), 0, 0)],
             ssh_port: None,
             ..Default::default()
@@ -1169,7 +2037,7 @@ mod tests {
     #[test]
     fn test_target_query_from_socketaddr_zero_port_to_standard_ssh_port_fails() {
         let tq = TargetQuery::from("127.0.0.1:0");
-        let ti = TargetInfo {
+        let ti = TargetEventInfo {
             addresses: vec![TargetAddr::new("127.0.0.1".parse::<IpAddr>().unwrap(), 0, 0)],
             ssh_port: Some(22),
             ..Default::default()
@@ -1183,7 +2051,7 @@ mod tests {
     #[test]
     fn test_target_query_from_socketaddr_standard_port_to_no_port() {
         let tq = TargetQuery::from("127.0.0.1:22");
-        let ti = TargetInfo {
+        let ti = TargetEventInfo {
             addresses: vec![TargetAddr::new("127.0.0.1".parse::<IpAddr>().unwrap(), 0, 0)],
             ssh_port: None,
             ..Default::default()
@@ -1197,7 +2065,7 @@ mod tests {
     #[test]
     fn test_target_query_from_socketaddr_both_standard_port() {
         let tq = TargetQuery::from("127.0.0.1:22");
-        let ti = TargetInfo {
+        let ti = TargetEventInfo {
             addresses: vec![TargetAddr::new("127.0.0.1".parse::<IpAddr>().unwrap(), 0, 0)],
             ssh_port: Some(22),
             ..Default::default()
@@ -1211,7 +2079,7 @@ mod tests {
     #[test]
     fn test_target_query_from_socketaddr_random_port_no_target_port_fails() {
         let tq = TargetQuery::from("127.0.0.1:2342");
-        let ti = TargetInfo {
+        let ti = TargetEventInfo {
             addresses: vec![TargetAddr::new("127.0.0.1".parse::<IpAddr>().unwrap(), 0, 0)],
             ssh_port: None,
             ..Default::default()
@@ -1225,7 +2093,7 @@ mod tests {
     #[test]
     fn test_target_query_from_socketaddr_zero_port_to_random_target_port_fails() {
         let tq = TargetQuery::from("127.0.0.1:0");
-        let ti = TargetInfo {
+        let ti = TargetEventInfo {
             addresses: vec![TargetAddr::new("127.0.0.1".parse::<IpAddr>().unwrap(), 0, 0)],
             ssh_port: Some(2223),
             ..Default::default()
@@ -1239,7 +2107,7 @@ mod tests {
     #[test]
     fn test_target_query_from_sockaddr() {
         let tq = TargetQuery::from("127.0.0.1:8022");
-        let ti = TargetInfo {
+        let ti = TargetEventInfo {
             addresses: vec![TargetAddr::new("127.0.0.1".parse::<IpAddr>().unwrap(), 0, 0)],
             ssh_port: Some(8022),
             ..Default::default()
@@ -1250,7 +2118,7 @@ mod tests {
         assert!(tq.match_info(&ti));
 
         let tq = TargetQuery::from("[::1]:8022");
-        let ti = TargetInfo {
+        let ti = TargetEventInfo {
             addresses: vec![TargetAddr::new("::1".parse::<IpAddr>().unwrap(), 0, 0)],
             ssh_port: Some(8022),
             ..Default::default()
@@ -1261,7 +2129,7 @@ mod tests {
         assert!(tq.match_info(&ti));
 
         let tq = TargetQuery::from("[::1]");
-        let ti = TargetInfo {
+        let ti = TargetEventInfo {
             addresses: vec![TargetAddr::new("::1".parse::<IpAddr>().unwrap(), 0, 0)],
             ssh_port: None,
             ..Default::default()
@@ -1270,7 +2138,7 @@ mod tests {
         assert!(tq.match_info(&ti));
 
         let tq = TargetQuery::from("[fe80::1]:22");
-        let ti = TargetInfo {
+        let ti = TargetEventInfo {
             addresses: vec![TargetAddr::new("fe80::1".parse::<IpAddr>().unwrap(), 0, 0)],
             ssh_port: Some(22),
             ..Default::default()
@@ -1281,7 +2149,7 @@ mod tests {
         assert!(tq.match_info(&ti));
 
         let tq = TargetQuery::from("192.168.0.1:22");
-        let ti = TargetInfo {
+        let ti = TargetEventInfo {
             addresses: vec![TargetAddr::new("192.168.0.1".parse::<IpAddr>().unwrap(), 0, 0)],
             ssh_port: Some(22),
             ..Default::default()
@@ -1293,7 +2161,7 @@ mod tests {
 
         // Note: socketaddr only supports numeric scopes
         let tq = TargetQuery::from("[fe80::1%1]:22");
-        let ti = TargetInfo {
+        let ti = TargetEventInfo {
             addresses: vec![TargetAddr::new("fe80::1".parse::<IpAddr>().unwrap(), 1, 0)],
             ssh_port: Some(22),
             ..Default::default()
@@ -1318,6 +2186,6 @@ mod tests {
             0,
         );
         let tq = TargetQuery::from("fe80::dead:beef:beef:beef");
-        assert!(tq.match_info(&TargetInfo { addresses: vec![addr], ..Default::default() }))
+        assert!(tq.match_info(&TargetEventInfo { addresses: vec![addr], ..Default::default() }))
     }
 }

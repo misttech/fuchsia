@@ -7,6 +7,7 @@
 
 #include "adapter.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/device_address.h"
+#include "src/connectivity/bluetooth/core/bt-host/gap/gap.h"
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/fake_channel.h"
 
 namespace bt::gap::testing {
@@ -15,7 +16,7 @@ namespace bt::gap::testing {
 // FIDL tests).
 class FakeAdapter final : public Adapter {
  public:
-  FakeAdapter();
+  explicit FakeAdapter(pw::async::Dispatcher& pw_dispatcher);
   ~FakeAdapter() override = default;
 
   AdapterState& mutable_state() { return state_; }
@@ -75,7 +76,7 @@ class FakeAdapter final : public Adapter {
     void Pair(PeerId peer_id, sm::SecurityLevel pairing_level, sm::BondableMode bondable_mode,
               sm::ResultFunction<> cb) override {}
 
-    void SetSecurityMode(LESecurityMode mode) override {}
+    void SetLESecurityMode(LESecurityMode mode) override {}
 
     LESecurityMode security_mode() const override { return adapter_->le_security_mode_; }
 
@@ -104,9 +105,9 @@ class FakeAdapter final : public Adapter {
 
     std::optional<UInt128> irk() const override { return std::nullopt; }
 
-    void set_request_timeout_for_testing(zx::duration value) override {}
+    void set_request_timeout_for_testing(pw::chrono::SystemClock::duration value) override {}
 
-    void set_scan_period_for_testing(zx::duration period) override {}
+    void set_scan_period_for_testing(pw::chrono::SystemClock::duration period) override {}
 
    private:
     FakeAdapter* adapter_;
@@ -168,7 +169,7 @@ class FakeAdapter final : public Adapter {
 
     bool Disconnect(PeerId peer_id, DisconnectReason reason) override { return false; }
 
-    void OpenL2capChannel(PeerId peer_id, l2cap::PSM psm,
+    void OpenL2capChannel(PeerId peer_id, l2cap::Psm psm,
                           BrEdrSecurityRequirements security_requirements,
                           l2cap::ChannelParameters params, l2cap::ChannelCallback cb) override;
 
@@ -181,6 +182,10 @@ class FakeAdapter final : public Adapter {
 
     void Pair(PeerId peer_id, BrEdrSecurityRequirements security,
               hci::ResultFunction<> callback) override {}
+
+    void SetBrEdrSecurityMode(BrEdrSecurityMode mode) override {}
+
+    BrEdrSecurityMode security_mode() const override { return BrEdrSecurityMode::Mode4; }
 
     void SetConnectable(bool connectable, hci::ResultFunction<> status_cb) override {}
 
@@ -256,7 +261,6 @@ class FakeAdapter final : public Adapter {
 
   InitState init_state_;
   AdapterState state_;
-  PeerCache peer_cache_;
   std::unique_ptr<FakeLowEnergy> fake_le_;
   std::unique_ptr<FakeBrEdr> fake_bredr_;
   bool is_discoverable_ = true;
@@ -265,6 +269,8 @@ class FakeAdapter final : public Adapter {
   DeviceClass device_class_;
   LESecurityMode le_security_mode_;
 
+  pw::async::HeapDispatcher heap_dispatcher_;
+  PeerCache peer_cache_;
   WeakSelf<Adapter> weak_self_;
 };
 

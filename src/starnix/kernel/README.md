@@ -8,12 +8,18 @@ welcome!
 
 ### Configure your build
 
-In order to run starnix, we need to build `//src/starnix`:
+In order to run starnix, we need to build `//src/starnix`.
+
+For faster iteration, configure your build with incremental compilation:
 
 ```sh
-fx set core.x64 --with //src/starnix,//src/starnix:tests
+fx set core.x64 --auto-dir --args 'rust_incremental="incremental"' --with //src/starnix,//src/starnix:tests
 fx build
 ```
+
+> Note: While we recommend using incremental compilation, you may experience a rust
+> internal compiler error.
+> If so, simply `rm -rf out/default/incremental/*` and try again.
 
 > Note: If you have `//vendor/google` in your source tree, you might want to add
 > `//vendor/google/starnix:tests` to the `fx set` command above to include some
@@ -176,6 +182,23 @@ fx test epoll_test --output --test-filter="EpollTest.AllWritable"
 
 Specifying `*` as the filter turns on all tests in the binary.
 
+### Copying files to and from a container
+
+Suppose you have a container running as follows:
+
+```sh
+ffx component run /core/starnix_runner/playground:debian fuchsia-pkg://fuchsia.com/debian#meta/debian_container.cm
+```
+
+You can use the `ffx component copy` command to copy files to and from the container's root file
+system:
+
+```sh
+ffx component copy myfile.txt core/starnix_runner/playground:debian::out::fs_root/tmp
+```
+
+This command copies the local `myfile.txt` file to `/tmp/myfile.txt` in that container.
+
 ### Making changes to Starnix when using ffx
 
 The Starnix instances that `ffx` connects are static in the component hieararchy. This means that
@@ -249,7 +272,17 @@ the "syscall_stats" feature):
 ffx inspect show core/starnix_runner/bionic:root:syscall_stats
 ```
 
+## Logging
+
+By default, starnix compiles-out trace and debug logging in release builds for
+performance reasons. To compile-in trace and debug logging in release builds,
+set the `starnix_enable_trace_and_debug_logs_in_release` GN arg to `true` and
+rebuild.
+
 ## Tracing
+
+By default, starnix compiles-out tracing. To compile-in tracking, set the
+`starnix_enable_tracing` GN arg to `true` and rebuild.
 
 To start a trace with an increased buffer size, run:
 
@@ -272,9 +305,6 @@ select avg(dur), count(*)
 from slice join args using (arg_set_id)
 where key='name' and display_value='clock_getres' and name='RunTaskLoop'
 ```
-
-Tracing can be compiled out by setting `starnix_disable_tracing=true` in your
-GN args.
 
 [adb.docs]: https://developer.android.com/studio/command-line/adb#copyfiles
 [local-args]: /docs/development/build/fx.md#defining_persistent_local_build_arguments

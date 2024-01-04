@@ -6,7 +6,7 @@
 #define SRC_UI_SCENIC_LIB_FLATLAND_ENGINE_ENGINE_H_
 
 #include <fuchsia/ui/display/color/cpp/fidl.h>
-#include <lib/sys/inspect/cpp/component.h>
+#include <lib/inspect/component/cpp/component.h>
 #include <lib/zx/eventpair.h>
 
 // TODO(fxbug.dev/76640): delete when we delete hack_seen_display_id_values_.
@@ -57,6 +57,9 @@ class Engine {
   // Returns all renderables reachable from the display's root transform.
   Renderables GetRenderables(const FlatlandDisplay& display);
 
+  // Signal all release fences and skip rendering.
+  void SkipRender(scheduling::FramePresentedCallback callback);
+
  private:
   // Initialize all inspect::Nodes, so that the Engine state can be observed.
   void InitializeInspectObjects();
@@ -84,7 +87,8 @@ class Engine {
 
   // TODO(fxbug.dev/76640): hack so that we can call DisplayCompositor::AddDisplay() when we first
   // encounter a new display.  Need a more straightforward way to call AddDisplay().
-  std::set</*fuchsia::hardware::display::DisplayId::value*/ uint64_t> hack_seen_display_id_values_;
+  std::set</*fuchsia::hardware::display::types::DisplayId::value*/ uint64_t>
+      hack_seen_display_id_values_;
 
   inspect::Node inspect_node_;
   inspect::LazyNode inspect_scene_dump_;

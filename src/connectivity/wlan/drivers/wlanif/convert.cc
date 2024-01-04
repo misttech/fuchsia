@@ -44,7 +44,7 @@ fuchsia_wlan_fullmac::WlanScanType ConvertScanType(wlan_scan_type_t scan_type) {
   }
 }
 
-void ConvertScanReq(const wlan_fullmac_scan_req_t& in,
+void ConvertScanReq(const wlan_fullmac_impl_start_scan_request_t& in,
                     fuchsia_wlan_fullmac::wire::WlanFullmacImplStartScanRequest* out,
                     fidl::AnyArena& arena) {
   auto builder = fuchsia_wlan_fullmac::wire::WlanFullmacImplStartScanRequest::Builder(arena);
@@ -197,17 +197,38 @@ fuchsia_wlan_ieee80211::wire::CipherSuiteType ConvertCipherSuiteType(const ciphe
   }
 }
 
-void ConvertSetKeyDescriptor(const set_key_descriptor_t& in,
-                             fuchsia_wlan_fullmac::wire::SetKeyDescriptor* out,
-                             fidl::AnyArena& arena) {
+fuchsia_wlan_common::wire::WlanProtection ConvertWlanProtection(const wlan_protection_t& in) {
+  switch (in) {
+    case WLAN_PROTECTION_NONE:
+      return fuchsia_wlan_common::wire::WlanProtection::kNone;
+    case WLAN_PROTECTION_RX:
+      return fuchsia_wlan_common::wire::WlanProtection::kRx;
+    case WLAN_PROTECTION_TX:
+      return fuchsia_wlan_common::wire::WlanProtection::kTx;
+    case WLAN_PROTECTION_RX_TX:
+      return fuchsia_wlan_common::wire::WlanProtection::kRxTx;
+    default:
+      ZX_PANIC("Unknown protection %u", in);
+  }
+}
+
+fuchsia_wlan_common::wire::WlanKeyConfig ConvertWlanKeyConfig(const wlan_key_config_t& in,
+                                                              fidl::AnyArena& arena) {
   auto key_vec = std::vector<uint8_t>(in.key_list, in.key_list + in.key_count);
-  out->key = fidl::VectorView<uint8_t>(arena, key_vec);
-  out->key_id = in.key_id;
-  out->key_type = ConvertWlanKeyType(in.key_type);
-  memcpy(out->address.data(), in.address, out->address.size());
-  out->rsc = in.rsc;
-  memcpy(out->cipher_suite_oui.data(), in.cipher_suite_oui, 3);
-  out->cipher_suite_type = ConvertCipherSuiteType(in.cipher_suite_type);
+
+  fidl::Array<uint8_t, ETH_ALEN> peer_addr;
+  memcpy(peer_addr.data(), in.peer_addr, ETH_ALEN);
+
+  return fuchsia_wlan_common::wire::WlanKeyConfig::Builder(arena)
+      .protection(ConvertWlanProtection(in.protection))
+      .cipher_oui({in.cipher_oui[0], in.cipher_oui[1], in.cipher_oui[2]})
+      .cipher_type(ConvertCipherSuiteType(in.cipher_type))
+      .key_type(ConvertWlanKeyType(in.key_type))
+      .peer_addr(peer_addr)
+      .key_idx(in.key_idx)
+      .key(fidl::VectorView<uint8_t>(arena, key_vec))
+      .rsc(in.rsc)
+      .Build();
 }
 
 void ConvertDeleteKeyDescriptor(const delete_key_descriptor_t& in,
@@ -217,10 +238,10 @@ void ConvertDeleteKeyDescriptor(const delete_key_descriptor_t& in,
   memcpy(out->address.data(), in.address, fuchsia_wlan_ieee80211::wire::kMacAddrLen);
 }
 
-void ConvertConnectReq(const wlan_fullmac_connect_req_t& in,
-                       fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectReqRequest* out,
+void ConvertConnectReq(const wlan_fullmac_impl_connect_request_t& in,
+                       fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectRequest* out,
                        fidl::AnyArena& arena) {
-  auto builder = fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectReqRequest::Builder(arena);
+  auto builder = fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectRequest::Builder(arena);
   fuchsia_wlan_internal::wire::BssDescription bss;
   ConvertBssDecription(in.selected_bss, &bss, arena);
   builder.selected_bss(bss);
@@ -229,9 +250,7 @@ void ConvertConnectReq(const wlan_fullmac_connect_req_t& in,
   auto sae_password =
       std::vector<uint8_t>(in.sae_password_list, in.sae_password_list + in.sae_password_count);
   builder.sae_password(fidl::VectorView<uint8_t>(arena, sae_password));
-  fuchsia_wlan_fullmac::wire::SetKeyDescriptor set_key_descriptor;
-  ConvertSetKeyDescriptor(in.wep_key, &set_key_descriptor, arena);
-  builder.wep_key(set_key_descriptor);
+  builder.wep_key(ConvertWlanKeyConfig(in.wep_key, arena));
   auto security_ie =
       std::vector<uint8_t>(in.security_ie_list, in.security_ie_list + in.security_ie_count);
   builder.security_ie(fidl::VectorView<uint8_t>(arena, security_ie));
@@ -256,19 +275,6 @@ fuchsia_wlan_fullmac::wire::WlanAuthResult ConvertAuthResult(uint8_t in) {
     default:
       ZX_PANIC("bad auth result code: %hhu\n", in);
   }
-}
-
-fuchsia_wlan_ieee80211::wire::ReasonCode ConvertReasonCode(uint16_t reason_code) {
-  if (0 == reason_code) {
-    return fuchsia_wlan_ieee80211::wire::ReasonCode::kReserved0;
-  }
-  if (67 <= reason_code && reason_code <= 127) {
-    return fuchsia_wlan_ieee80211::wire::ReasonCode::kReserved67To127;
-  }
-  if (130 <= reason_code && reason_code <= UINT16_MAX) {
-    return fuchsia_wlan_ieee80211::wire::ReasonCode::kReserved130To65535;
-  }
-  return static_cast<fuchsia_wlan_ieee80211::wire::ReasonCode>(reason_code);
 }
 
 fuchsia_wlan_fullmac::wire::WlanAssocResult ConvertAssocResult(uint8_t code) {
@@ -313,7 +319,7 @@ void ConvertHtCapabilities(const fuchsia_wlan_ieee80211::wire::HtCapabilities& i
                            ht_capabilities_t* out) {
   ZX_ASSERT(sizeof(out->bytes) == in.bytes.size());
   // TODO(fxbug.dev/95240): The underlying bytes in
-  // fuchsia.hardware.wlan.fullmac/HtCapabilitiesField are @packed so that copying them directly to
+  // fuchsia.wlan.fullmac/HtCapabilitiesField are @packed so that copying them directly to
   // a byte array works. We may wish to change the FIDL definition in the future so this copy is
   // however more obviously correct.
   memcpy(out->bytes, in.bytes.data(), in.bytes.size());
@@ -323,7 +329,7 @@ void ConvertVhtCapabilities(const fuchsia_wlan_ieee80211::wire::VhtCapabilities&
                             vht_capabilities_t* out) {
   ZX_ASSERT(sizeof(out->bytes) == in.bytes.size());
   // TODO(fxbug.dev/95240): The underlying bytes in
-  // fuchsia.hardware.wlan.fullmac/VhtCapabilitiesField are @packed so that copying them directly to
+  // fuchsia.wlan.fullmac/VhtCapabilitiesField are @packed so that copying them directly to
   // a byte array works. We may wish to change the definition in the future so this copy is however
   // more obviously correct.
   memcpy(out->bytes, in.bytes.data(), in.bytes.size());
@@ -363,7 +369,6 @@ void ConvertQueryInfo(fuchsia_wlan_fullmac::wire::WlanFullmacQueryInfo& in,
                       wlan_fullmac_query_info_t* out) {
   memcpy(out->sta_addr, in.sta_addr.data(), fuchsia_wlan_ieee80211::wire::kMacAddrLen);
   out->role = ConvertWlanMacRole(in.role);
-  out->features = in.features;
   out->band_cap_count = in.band_cap_count;
   for (size_t band_idx = 0; band_idx < in.band_cap_count; band_idx++) {
     ConvertBandCapability(in.band_cap_list.data()[band_idx], &out->band_cap_list[band_idx]);
@@ -769,26 +774,11 @@ void ConvertAuthInd(const fuchsia_wlan_fullmac::wire::WlanFullmacAuthInd& in,
   out->auth_type = ConvertWlanAuthType(in.auth_type);
 }
 
-uint16_t ConvertReasonCode(fuchsia_wlan_ieee80211::wire::ReasonCode reason_code) {
-  uint16_t code = static_cast<uint16_t>(reason_code);
-
-  if (0 == code) {
-    return REASON_CODE_RESERVED_0;
-  }
-  if (67 <= code && code <= 127) {
-    return REASON_CODE_RESERVED_67_TO_127;
-  }
-  if (130 <= code && code <= UINT16_MAX) {
-    return REASON_CODE_RESERVED_130_TO_65535;
-  }
-  return code;
-}
-
 void ConvertDeauthInd(const fuchsia_wlan_fullmac::wire::WlanFullmacDeauthIndication& in,
                       wlan_fullmac_deauth_indication_t* out) {
   memcpy(out->peer_sta_address, in.peer_sta_address.data(),
          fuchsia_wlan_ieee80211::wire::kMacAddrLen);
-  out->reason_code = ConvertReasonCode(in.reason_code);
+  out->reason_code = static_cast<reason_code_t>(in.reason_code);
   out->locally_initiated = in.locally_initiated;
 }
 
@@ -815,7 +805,7 @@ void ConvertDisassocInd(const fuchsia_wlan_fullmac::wire::WlanFullmacDisassocInd
                         wlan_fullmac_disassoc_indication_t* out) {
   memcpy(out->peer_sta_address, in.peer_sta_address.data(),
          fuchsia_wlan_ieee80211::wire::kMacAddrLen);
-  out->reason_code = ConvertReasonCode(in.reason_code);
+  out->reason_code = static_cast<reason_code_t>(in.reason_code);
   out->locally_initiated = in.locally_initiated;
 }
 

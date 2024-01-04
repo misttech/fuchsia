@@ -464,9 +464,22 @@ pub struct ObjectAttributes {
     pub posix_attributes: Option<PosixAttributes>,
     /// The number of bytes allocated to all extents across all attributes for this object.
     pub allocated_size: u64,
+    /// The timestamp at which the object was last read (i.e. atime).
+    pub access_time: Timestamp,
+    /// The timestamp at which the object's status was last modified (i.e. ctime).
+    pub change_time: Timestamp,
+}
+#[derive(Debug, Default, Deserialize, Migrate, Serialize, TypeFingerprint)]
+pub struct ObjectAttributesV31 {
+    pub creation_time: Timestamp,
+    pub modification_time: Timestamp,
+    pub project_id: u64,
+    pub posix_attributes: Option<PosixAttributes>,
+    pub allocated_size: u64,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, TypeFingerprint)]
+#[derive(Debug, Default, Deserialize, Migrate, Serialize, TypeFingerprint)]
+#[migrate_to_version(ObjectAttributesV31)]
 pub struct ObjectAttributesV30 {
     creation_time: Timestamp,
     modification_time: Timestamp,
@@ -496,7 +509,7 @@ pub enum ExtendedAttributeValue {
     /// certain size, it should be stored as an attribute with extents instead.
     Inline(Vec<u8>),
     /// The extended attribute value is stored as an attribute with extents. The attribute id
-    /// should be chosen to be within the range of 64-2048.
+    /// should be chosen to be within the range of 64-512.
     AttributeId(u64),
 }
 
@@ -508,6 +521,22 @@ pub struct ChildValue {
     pub object_id: u64,
     /// Describes the type of the child.
     pub object_descriptor: ObjectDescriptor,
+}
+
+#[derive(
+    Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize, TypeFingerprint,
+)]
+#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+pub enum RootDigest {
+    Sha256([u8; 32]),
+    Sha512(Vec<u8>),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TypeFingerprint, Versioned)]
+#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+pub struct FsverityMetadata {
+    pub root_digest: RootDigest,
+    pub salt: Vec<u8>,
 }
 
 /// ObjectValue is the value of an item in the object store.
@@ -542,6 +571,23 @@ pub enum ObjectValue {
     /// A value for an extended attribute. Either inline or a redirection to an attribute with
     /// extents.
     ExtendedAttribute(ExtendedAttributeValue),
+    /// An attribute associated with a verified file object. |size| is the size of the attribute
+    /// in bytes. |fsverity_metadata| holds the descriptor for the fsverity-enabled file.
+    VerifiedAttribute { size: u64, fsverity_metadata: FsverityMetadata },
+}
+
+#[derive(Debug, Deserialize, Migrate, Serialize, Versioned, TypeFingerprint)]
+pub enum ObjectValueV31 {
+    None,
+    Some,
+    Object { kind: ObjectKind, attributes: ObjectAttributesV31 },
+    Keys(EncryptionKeys),
+    Attribute { size: u64 },
+    Extent(ExtentValue),
+    Child(ChildValue),
+    Trim,
+    BytesAndNodes { bytes: i64, nodes: i64 },
+    ExtendedAttribute(ExtendedAttributeValue),
 }
 
 #[derive(Debug, Deserialize, Serialize, Versioned, TypeFingerprint)]
@@ -561,7 +607,7 @@ pub enum ObjectValueV30 {
 // Manual migration from V30 -> V31 (current). If the ObjectKind is file, move the allocated_size
 // from the kind type to ObjectAttributes. For other kinds the allocated_size is initialized as
 // zero.
-impl From<ObjectValueV30> for ObjectValue {
+impl From<ObjectValueV30> for ObjectValueV31 {
     fn from(value: ObjectValueV30) -> Self {
         match value {
             ObjectValueV30::Object {
@@ -590,9 +636,9 @@ impl From<ObjectValueV30> for ObjectValue {
                     ObjectKindV30::Graveyard => (ObjectKind::Graveyard, 0),
                 };
 
-                ObjectValue::Object {
+                ObjectValueV31::Object {
                     kind: new_kind,
-                    attributes: ObjectAttributes {
+                    attributes: ObjectAttributesV31 {
                         creation_time,
                         modification_time,
                         project_id,
@@ -603,17 +649,17 @@ impl From<ObjectValueV30> for ObjectValue {
             }
 
             // The rest are 1:1 mappings
-            ObjectValueV30::None => ObjectValue::None,
-            ObjectValueV30::Some => ObjectValue::Some,
-            ObjectValueV30::Keys(keys) => ObjectValue::Keys(keys),
-            ObjectValueV30::Attribute { size } => ObjectValue::Attribute { size },
-            ObjectValueV30::Extent(extent_value) => ObjectValue::Extent(extent_value),
-            ObjectValueV30::Child(child) => ObjectValue::Child(child),
-            ObjectValueV30::Trim => ObjectValue::Trim,
+            ObjectValueV30::None => ObjectValueV31::None,
+            ObjectValueV30::Some => ObjectValueV31::Some,
+            ObjectValueV30::Keys(keys) => ObjectValueV31::Keys(keys),
+            ObjectValueV30::Attribute { size } => ObjectValueV31::Attribute { size },
+            ObjectValueV30::Extent(extent_value) => ObjectValueV31::Extent(extent_value),
+            ObjectValueV30::Child(child) => ObjectValueV31::Child(child),
+            ObjectValueV30::Trim => ObjectValueV31::Trim,
             ObjectValueV30::BytesAndNodes { bytes, nodes } => {
-                ObjectValue::BytesAndNodes { bytes, nodes }
+                ObjectValueV31::BytesAndNodes { bytes, nodes }
             }
-            ObjectValueV30::ExtendedAttribute(v) => ObjectValue::ExtendedAttribute(v),
+            ObjectValueV30::ExtendedAttribute(v) => ObjectValueV31::ExtendedAttribute(v),
         }
     }
 }
@@ -667,6 +713,8 @@ impl ObjectValue {
         allocated_size: u64,
         creation_time: Timestamp,
         modification_time: Timestamp,
+        access_time: Timestamp,
+        change_time: Timestamp,
         project_id: u64,
         posix_attributes: Option<PosixAttributes>,
     ) -> ObjectValue {
@@ -678,6 +726,8 @@ impl ObjectValue {
                 project_id,
                 posix_attributes,
                 allocated_size,
+                access_time,
+                change_time,
             },
         }
     }
@@ -687,6 +737,10 @@ impl ObjectValue {
     /// Creates an ObjectValue for an object attribute.
     pub fn attribute(size: u64) -> ObjectValue {
         ObjectValue::Attribute { size }
+    }
+    /// Creates an ObjectValue for an object attribute of a verified file.
+    pub fn verified_attribute(size: u64, fsverity_metadata: FsverityMetadata) -> ObjectValue {
+        ObjectValue::VerifiedAttribute { size, fsverity_metadata }
     }
     /// Creates an ObjectValue for an insertion/replacement of an object extent.
     pub fn extent(device_offset: u64) -> ObjectValue {
@@ -724,9 +778,13 @@ impl ObjectValue {
     pub fn inline_extended_attribute(value: impl Into<Vec<u8>>) -> ObjectValue {
         ObjectValue::ExtendedAttribute(ExtendedAttributeValue::Inline(value.into()))
     }
+    pub fn extended_attribute(attribute_id: u64) -> ObjectValue {
+        ObjectValue::ExtendedAttribute(ExtendedAttributeValue::AttributeId(attribute_id))
+    }
 }
 
 pub type ObjectItem = Item<ObjectKey, ObjectValue>;
+pub type ObjectItemV31 = Item<ObjectKey, ObjectValueV31>;
 pub type ObjectItemV30 = Item<ObjectKey, ObjectValueV30>;
 pub type ObjectItemV29 = Item<ObjectKeyV25, ObjectValueV29>;
 pub type ObjectItemV25 = Item<ObjectKeyV25, ObjectValueV25>;

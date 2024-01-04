@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/inspect/testing/cpp/zxtest/inspect.h>
 #include <lib/simple-codec/simple-codec-client.h>
 #include <lib/simple-codec/simple-codec-server.h>
 #include <lib/sync/completion.h>
 
-#include <sdk/lib/inspect/testing/cpp/zxtest/inspect.h>
 #include <zxtest/zxtest.h>
 
 #include "src/devices/testing/mock-ddk/mock-device.h"
@@ -139,6 +139,7 @@ class TestCodecWithSignalProcessing : public SimpleCodecServer,
     result.set_response(std::move(response));
     callback(std::move(result));
   }
+  void WatchTopology(WatchTopologyCallback callback) override {}
   void SetTopology(uint64_t topology_id, SetTopologyCallback callback) override {
     if (topology_id != kTopologyId) {
       callback(signal_fidl::SignalProcessing_SetTopology_Result::WithErr(ZX_ERR_INVALID_ARGS));

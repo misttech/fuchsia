@@ -10,6 +10,7 @@
 #include <optional>
 
 #include "tools/fidl/fidlc/include/fidl/diagnostics.h"
+#include "tools/fidl/fidlc/include/fidl/experimental_flags.h"
 #include "tools/fidl/fidlc/include/fidl/flat/attribute_schema.h"
 #include "tools/fidl/fidlc/include/fidl/flat/name.h"
 #include "tools/fidl/fidlc/include/fidl/flat/type_resolver.h"
@@ -168,7 +169,7 @@ void CompileStep::CompileDecl(Decl* decl) {
     return;
   }
   if (auto cycle = GetDeclCycle(decl); cycle) {
-    Fail(ErrIncludeCycle, decl->name.span().value(), cycle.value());
+    reporter()->Fail(ErrIncludeCycle, decl->name.span().value(), cycle.value());
     return;
   }
   Compiling guard(decl, decl_stack_);
@@ -225,7 +226,7 @@ bool CompileStep::ResolveOrOperatorConstant(Constant* constant, std::optional<co
   if (type == nullptr)
     return false;
   if (type->kind != Type::Kind::kPrimitive) {
-    return Fail(ErrOrOperatorOnNonPrimitiveValue, constant->span);
+    return reporter()->Fail(ErrOrOperatorOnNonPrimitiveValue, constant->span);
   }
   std::unique_ptr<ConstantValue> left_operand_u64;
   std::unique_ptr<ConstantValue> right_operand_u64;
@@ -362,7 +363,8 @@ bool CompileStep::ResolveIdentifierConstant(IdentifierConstant* identifier_const
       break;
     }
     default: {
-      return Fail(ErrExpectedValueButGotType, reference.span(), reference.resolved().name());
+      return reporter()->Fail(ErrExpectedValueButGotType, reference.span(),
+                              reference.resolved().name());
       break;
     }
   }
@@ -416,8 +418,8 @@ bool CompileStep::ResolveIdentifierConstant(IdentifierConstant* identifier_const
 
       auto fail_with_mismatched_type = [this, identifier_type,
                                         identifier_constant](const Name& type_name) {
-        return Fail(ErrMismatchedNameTypeAssignment, identifier_constant->span,
-                    identifier_type->type_decl->name, type_name);
+        return reporter()->Fail(ErrMismatchedNameTypeAssignment, identifier_constant->span,
+                                identifier_type->type_decl->name, type_name);
       };
 
       switch (parent->kind) {
@@ -450,8 +452,8 @@ bool CompileStep::ResolveIdentifierConstant(IdentifierConstant* identifier_const
   return true;
 
 fail_cannot_convert:
-  return Fail(ErrTypeCannotBeConvertedToType, reference.span(), identifier_constant, const_type,
-              type);
+  return reporter()->Fail(ErrTypeCannotBeConvertedToType, reference.span(), identifier_constant,
+                          const_type, type);
 }
 
 bool CompileStep::ResolveLiteralConstant(LiteralConstant* literal_constant,
@@ -459,8 +461,8 @@ bool CompileStep::ResolveLiteralConstant(LiteralConstant* literal_constant,
   auto inferred_type = InferType(static_cast<flat::Constant*>(literal_constant));
   const Type* type = opt_type ? opt_type.value() : inferred_type;
   if (!TypeIsConvertibleTo(inferred_type, type)) {
-    return Fail(ErrTypeCannotBeConvertedToType, literal_constant->literal->span(), literal_constant,
-                inferred_type, type);
+    return reporter()->Fail(ErrTypeCannotBeConvertedToType, literal_constant->literal->span(),
+                            literal_constant, inferred_type, type);
   }
   switch (literal_constant->literal->kind) {
     case raw::Literal::Kind::kDocComment: {
@@ -535,7 +537,7 @@ bool CompileStep::ResolveLiteralConstantKindNumericLiteral(LiteralConstant* lite
       // to the data being too large, rather than bad input.
       [[fallthrough]];
     case utils::ParseNumericResult::kOutOfBounds:
-      return Fail(ErrConstantOverflowsType, span, literal_constant, type);
+      return reporter()->Fail(ErrConstantOverflowsType, span, literal_constant, type);
   }
 }
 
@@ -592,10 +594,10 @@ void CompileStep::CompileAttributeList(AttributeList* attributes) {
     if (!result.ok()) {
       const auto previous_span = result.previous_occurrence();
       if (original_name == previous_span.data()) {
-        Fail(ErrDuplicateAttribute, attribute->name, original_name, previous_span);
+        reporter()->Fail(ErrDuplicateAttribute, attribute->name, original_name, previous_span);
       } else {
-        Fail(ErrDuplicateAttributeCanonical, attribute->name, original_name, previous_span.data(),
-             previous_span, canonical_name);
+        reporter()->Fail(ErrDuplicateAttributeCanonical, attribute->name, original_name,
+                         previous_span.data(), previous_span, canonical_name);
       }
     }
     CompileAttribute(attribute.get());
@@ -618,10 +620,11 @@ void CompileStep::CompileAttribute(Attribute* attribute, bool early) {
     if (!result.ok()) {
       const auto previous_span = result.previous_occurrence();
       if (original_name == previous_span.data()) {
-        Fail(ErrDuplicateAttributeArg, attribute->span, attribute, original_name, previous_span);
+        reporter()->Fail(ErrDuplicateAttributeArg, attribute->span, attribute, original_name,
+                         previous_span);
       } else {
-        Fail(ErrDuplicateAttributeArgCanonical, attribute->span, attribute, original_name,
-             previous_span.data(), previous_span, canonical_name);
+        reporter()->Fail(ErrDuplicateAttributeArgCanonical, attribute->span, attribute,
+                         original_name, previous_span.data(), previous_span, canonical_name);
       }
     }
   }
@@ -731,8 +734,8 @@ void CompileStep::CompileBits(Bits* bits_declaration) {
   }
 
   if (bits_declaration->subtype_ctor->type->kind != Type::Kind::kPrimitive) {
-    Fail(ErrBitsTypeMustBeUnsignedIntegralPrimitive, bits_declaration->name.span().value(),
-         bits_declaration->subtype_ctor->type);
+    reporter()->Fail(ErrBitsTypeMustBeUnsignedIntegralPrimitive,
+                     bits_declaration->name.span().value(), bits_declaration->subtype_ctor->type);
     return;
   }
 
@@ -777,8 +780,8 @@ void CompileStep::CompileBits(Bits* bits_declaration) {
     case types::PrimitiveSubtype::kZxUintptr64:
     case types::PrimitiveSubtype::kFloat32:
     case types::PrimitiveSubtype::kFloat64:
-      Fail(ErrBitsTypeMustBeUnsignedIntegralPrimitive, bits_declaration->name.span().value(),
-           bits_declaration->subtype_ctor->type);
+      reporter()->Fail(ErrBitsTypeMustBeUnsignedIntegralPrimitive,
+                       bits_declaration->name.span().value(), bits_declaration->subtype_ctor->type);
       return;
   }
 }
@@ -791,9 +794,9 @@ void CompileStep::CompileConst(Const* const_declaration) {
     return;
   }
   if (!TypeCanBeConst(const_type)) {
-    Fail(ErrInvalidConstantType, const_declaration->name.span().value(), const_type);
+    reporter()->Fail(ErrInvalidConstantType, const_declaration->name.span().value(), const_type);
   } else if (!ResolveConstant(const_declaration->value.get(), const_type)) {
-    Fail(ErrCannotResolveConstantValue, const_declaration->name.span().value());
+    reporter()->Fail(ErrCannotResolveConstantValue, const_declaration->name.span().value());
   }
 }
 
@@ -809,8 +812,8 @@ void CompileStep::CompileEnum(Enum* enum_declaration) {
   }
 
   if (enum_declaration->subtype_ctor->type->kind != Type::Kind::kPrimitive) {
-    Fail(ErrEnumTypeMustBeIntegralPrimitive, enum_declaration->name.span().value(),
-         enum_declaration->subtype_ctor->type);
+    reporter()->Fail(ErrEnumTypeMustBeIntegralPrimitive, enum_declaration->name.span().value(),
+                     enum_declaration->subtype_ctor->type);
     return;
   }
 
@@ -880,15 +883,13 @@ void CompileStep::CompileEnum(Enum* enum_declaration) {
     case types::PrimitiveSubtype::kZxUsize64:
     case types::PrimitiveSubtype::kZxUintptr64:
     case types::PrimitiveSubtype::kZxUchar:
-      Fail(ErrEnumTypeMustBeIntegralPrimitive, enum_declaration->name.span().value(),
-           enum_declaration->subtype_ctor->type);
+      reporter()->Fail(ErrEnumTypeMustBeIntegralPrimitive, enum_declaration->name.span().value(),
+                       enum_declaration->subtype_ctor->type);
       break;
   }
 }
 
 void CompileStep::CompileResource(Resource* resource_declaration) {
-  Scope<std::string> scope;
-
   CompileAttributeList(resource_declaration->attributes.get());
   CompileTypeConstructor(resource_declaration->subtype_ctor.get());
   if (!resource_declaration->subtype_ctor->type) {
@@ -898,25 +899,12 @@ void CompileStep::CompileResource(Resource* resource_declaration) {
   if (resource_declaration->subtype_ctor->type->kind != Type::Kind::kPrimitive ||
       static_cast<const PrimitiveType*>(resource_declaration->subtype_ctor->type)->subtype !=
           types::PrimitiveSubtype::kUint32) {
-    Fail(ErrResourceMustBeUint32Derived, resource_declaration->name.span().value(),
-         resource_declaration->name);
+    reporter()->Fail(ErrResourceMustBeUint32Derived, resource_declaration->name.span().value(),
+                     resource_declaration->name);
   }
 
   for (auto& property : resource_declaration->properties) {
     CompileAttributeList(property.attributes.get());
-    const auto original_name = property.name.data();
-    const auto canonical_name = utils::canonicalize(original_name);
-    const auto name_result = scope.Insert(canonical_name, property.name);
-    if (!name_result.ok()) {
-      const auto previous_span = name_result.previous_occurrence();
-      if (original_name == previous_span.data()) {
-        Fail(ErrDuplicateElementName, property.name, Element::Kind::kResourceProperty,
-             original_name, previous_span);
-      } else {
-        Fail(ErrDuplicateElementNameCanonical, property.name, Element::Kind::kResourceProperty,
-             original_name, previous_span.data(), previous_span, canonical_name);
-      }
-    }
     CompileTypeConstructor(property.type_ctor.get());
   }
 
@@ -929,12 +917,12 @@ void CompileStep::CompileResource(Resource* resource_declaration) {
     // property could not possibly be an enum declaration.
     if (subtype_type == nullptr || subtype_type->kind != Type::Kind::kIdentifier ||
         static_cast<const IdentifierType*>(subtype_type)->type_decl->kind != Decl::Kind::kEnum) {
-      Fail(ErrResourceSubtypePropertyMustReferToEnum, subtype_property->name,
-           resource_declaration->name);
+      reporter()->Fail(ErrResourceSubtypePropertyMustReferToEnum, subtype_property->name,
+                       resource_declaration->name);
     }
   } else {
-    Fail(ErrResourceMissingSubtypeProperty, resource_declaration->name.span().value(),
-         resource_declaration->name);
+    reporter()->Fail(ErrResourceMissingSubtypeProperty, resource_declaration->name.span().value(),
+                     resource_declaration->name);
   }
 
   auto rights_property = resource_declaration->LookupProperty("rights");
@@ -944,8 +932,8 @@ void CompileStep::CompileResource(Resource* resource_declaration) {
     if (!(rights_underlying_type->kind == Type::Kind::kPrimitive &&
           static_cast<const PrimitiveType*>(rights_underlying_type)->subtype ==
               types::PrimitiveSubtype::kUint32)) {
-      Fail(ErrResourceRightsPropertyMustReferToBits, rights_property->name,
-           resource_declaration->name);
+      reporter()->Fail(ErrResourceRightsPropertyMustReferToBits, rights_property->name,
+                       resource_declaration->name);
     }
   }
 }
@@ -980,11 +968,12 @@ void CompileStep::CompileProtocol(Protocol* protocol_declaration) {
       if (!name_result.ok()) {
         const auto previous_span = name_result.previous_occurrence();
         if (original_name == previous_span.data()) {
-          Fail(ErrDuplicateElementName, method.name, Element::Kind::kProtocolMethod, original_name,
-               previous_span);
+          reporter()->Fail(ErrNameCollision, method.name, Element::Kind::kProtocolMethod,
+                           original_name, Element::Kind::kProtocolMethod, previous_span);
         } else {
-          Fail(ErrDuplicateElementNameCanonical, method.name, Element::Kind::kProtocolMethod,
-               original_name, previous_span.data(), previous_span, canonical_name);
+          reporter()->Fail(ErrNameCollisionCanonical, method.name, Element::Kind::kProtocolMethod,
+                           original_name, Element::Kind::kProtocolMethod, previous_span.data(),
+                           previous_span, canonical_name);
         }
       }
       if (!method.generated_ordinal64) {
@@ -995,13 +984,13 @@ void CompileStep::CompileProtocol(Protocol* protocol_declaration) {
         continue;
       }
       if (method.generated_ordinal64->value == 0) {
-        Fail(ErrGeneratedZeroValueOrdinal, method.generated_ordinal64->span());
+        reporter()->Fail(ErrGeneratedZeroValueOrdinal, method.generated_ordinal64->span());
       }
       auto ordinal_result =
           method_scope.ordinals.Insert(method.generated_ordinal64->value, method.name);
       if (!ordinal_result.ok()) {
-        Fail(ErrDuplicateMethodOrdinal, method.generated_ordinal64->span(),
-             ordinal_result.previous_occurrence());
+        reporter()->Fail(ErrDuplicateMethodOrdinal, method.generated_ordinal64->span(),
+                         ordinal_result.previous_occurrence());
       }
 
       // Add a pointer to this method to the protocol_declarations list.
@@ -1021,13 +1010,13 @@ void CompileStep::CompileProtocol(Protocol* protocol_declaration) {
     auto target = composed_protocol.reference.resolved().element();
     auto span = composed_protocol.reference.span();
     if (target->kind != Element::Kind::kProtocol) {
-      Fail(ErrComposingNonProtocol, span);
+      reporter()->Fail(ErrComposingNonProtocol, span);
       continue;
     }
     auto target_protocol = static_cast<Protocol*>(target);
     auto result = scope.Insert(target_protocol, span);
     if (!result.ok()) {
-      Fail(ErrProtocolComposedMultipleTimes, span, result.previous_occurrence());
+      reporter()->Fail(ErrProtocolComposedMultipleTimes, span, result.previous_occurrence());
     }
     CompileDecl(target_protocol);
   }
@@ -1036,15 +1025,16 @@ void CompileStep::CompileProtocol(Protocol* protocol_declaration) {
     auto selector = fidl::ordinals::GetSelector(method.attributes.get(), method.name);
     if (!utils::IsValidIdentifierComponent(selector) &&
         !utils::IsValidFullyQualifiedMethodIdentifier(selector)) {
-      Fail(ErrInvalidSelectorValue,
-           method.attributes->Get("selector")->GetArg(AttributeArg::kDefaultAnonymousName)->span);
+      reporter()->Fail(
+          ErrInvalidSelectorValue,
+          method.attributes->Get("selector")->GetArg(AttributeArg::kDefaultAnonymousName)->span);
       continue;
     }
     // TODO(fxbug.dev/77623): Remove.
     auto library_name = library()->name;
     if (library_name.size() == 2 && library_name[0] == "fuchsia" && library_name[1] == "io" &&
         selector.find('/') == std::string::npos) {
-      Fail(ErrFuchsiaIoExplicitOrdinals, method.name);
+      reporter()->Fail(ErrFuchsiaIoExplicitOrdinals, method.name);
       continue;
     }
     method.generated_ordinal64 = std::make_unique<raw::Ordinal64>(method_hasher()(
@@ -1064,7 +1054,7 @@ void CompileStep::CompileProtocol(Protocol* protocol_declaration) {
         auto compiler_generated =
             anonymous && anonymous->provenance == Name::Provenance::kGeneratedEmptySuccessStruct;
         if (empty && !compiler_generated) {
-          Fail(ErrEmptyPayloadStructs, method_name, method_name.data());
+          reporter()->Fail(ErrEmptyPayloadStructs, method_name, method_name.data());
         }
         break;
       }
@@ -1082,14 +1072,14 @@ void CompileStep::CompileProtocol(Protocol* protocol_declaration) {
             break;
           }
           default: {
-            Fail(ErrInvalidMethodPayloadLayoutClass, method_name, decl->kind);
+            reporter()->Fail(ErrInvalidMethodPayloadLayoutClass, method_name, decl->kind);
             break;
           }
         }
         break;
       }
       default: {
-        Fail(ErrInvalidMethodPayloadLayoutClass, method_name, decl->kind);
+        reporter()->Fail(ErrInvalidMethodPayloadLayoutClass, method_name, decl->kind);
         break;
       }
     }
@@ -1102,7 +1092,7 @@ void CompileStep::CompileProtocol(Protocol* protocol_declaration) {
         auto struct_decl = static_cast<const Struct*>(decl);
         for (auto& member : struct_decl->members) {
           if (member.maybe_default_value != nullptr) {
-            Fail(ErrPayloadStructHasDefaultMembers, member.name);
+            reporter()->Fail(ErrPayloadStructHasDefaultMembers, member.name);
             break;
           }
         }
@@ -1120,7 +1110,7 @@ void CompileStep::CompileProtocol(Protocol* protocol_declaration) {
       CompileTypeConstructor(method.maybe_request.get());
       if (auto type = method.maybe_request->type) {
         if (type->kind != Type::Kind::kIdentifier) {
-          Fail(ErrInvalidMethodPayloadType, method.name, type);
+          reporter()->Fail(ErrInvalidMethodPayloadType, method.name, type);
         } else {
           ZX_ASSERT(type->kind == Type::Kind::kIdentifier);
           auto decl = static_cast<const flat::IdentifierType*>(type)->type_decl;
@@ -1134,7 +1124,7 @@ void CompileStep::CompileProtocol(Protocol* protocol_declaration) {
       CompileTypeConstructor(method.maybe_response.get());
       if (auto type = method.maybe_response->type) {
         if (type->kind != Type::Kind::kIdentifier) {
-          Fail(ErrInvalidMethodPayloadType, method.name, type);
+          reporter()->Fail(ErrInvalidMethodPayloadType, method.name, type);
         } else {
           ZX_ASSERT(type->kind == Type::Kind::kIdentifier);
           auto decl = static_cast<const flat::IdentifierType*>(type)->type_decl;
@@ -1147,7 +1137,7 @@ void CompileStep::CompileProtocol(Protocol* protocol_declaration) {
             const auto* success_variant_type = result_union->members[0].maybe_used->type_ctor->type;
             if (success_variant_type) {
               if (success_variant_type->kind != Type::Kind::kIdentifier) {
-                Fail(ErrInvalidMethodPayloadType, method.name, success_variant_type);
+                reporter()->Fail(ErrInvalidMethodPayloadType, method.name, success_variant_type);
               } else {
                 const auto* success_decl =
                     static_cast<const IdentifierType*>(success_variant_type)->type_decl;
@@ -1186,16 +1176,124 @@ void CompileStep::CompileProtocol(Protocol* protocol_declaration) {
         return;
       }
     }
-    Fail(ErrEventErrorSyntaxDeprecated, event.name, event.name.data());
+    reporter()->Fail(ErrEventErrorSyntaxDeprecated, event.name, event.name.data());
   };
   for (auto& method : protocol_declaration->methods) {
     if (method.has_response && !method.has_request) {
       CheckNoEventErrorSyntax(method);
     }
   }
+
+  // Ensure that only methods from a small allow-list use the @transitional attribute.
+  static const auto transitional_allowlist = std::set<std::string_view>{
+      "fidl.test.protocoleventadd.Example.OnNewEvent",
+      "fidl.test.protocoleventremove.Example.OnOldEvent",
+      "fidl.test.protocolmethodadd.Example.NewMethod",
+      "fidl.test.protocolmethodremove.Example.OldMethod",
+      "fuchsia.accessibility.semantics.SemanticTree.SendSemanticEvent",
+      "fuchsia.bluetooth.gatt2.LocalService.OnSuppressDiscovery",
+      "fuchsia.bluetooth.gatt2.LocalService.PeerUpdate",
+      "fuchsia.bluetooth.gatt2.Server.PublishService",
+      "fuchsia.bluetooth.le.Connection.RequestGattClient",
+      "fuchsia.camera.Manager.CreateStreamV2",
+      "fuchsia.camera3.Device.GetConfigurations",
+      "fuchsia.camera3.Device.GetConfigurations2",
+      "fuchsia.camera3.Stream.GetNextFrame",
+      "fuchsia.camera3.Stream.GetNextFrame2",
+      "fuchsia.camera3.Stream.GetProperties",
+      "fuchsia.camera3.Stream.GetProperties2",
+      "fuchsia.element.AnnotationController.WatchAnnotations",
+      "fuchsia.feedback.CrashReportingProductRegister.UpsertWithAck",
+      "fuchsia.hardware.display.Coordinator.ApplyConfig2",
+      "fuchsia.io.Directory2.AddInotifyFilter",
+      "fuchsia.io.Directory2.CreateSymlink",
+      "fuchsia.io.Node2.GetExtendedAttribute",
+      "fuchsia.io.Node2.ListExtendedAttributes",
+      "fuchsia.io.Node2.RemoveExtendedAttribute",
+      "fuchsia.io.Node2.SetExtendedAttribute",
+      "fuchsia.media.AudioCore.CreateAudioCapturerWithConfiguration",
+      "fuchsia.media.AudioCore.EnableDeviceSettings",
+      "fuchsia.media.AudioCore.GetDbFromVolume",
+      "fuchsia.media.AudioCore.GetVolumeFromDb",
+      "fuchsia.media.sounds.Player.StopPlayingSound",
+      "fuchsia.modular.ComponentContext.DeprecatedConnectToAgent",
+      "fuchsia.modular.ComponentContext.DeprecatedConnectToAgentService",
+      "fuchsia.modular.SessionShell.AttachView",
+      "fuchsia.modular.SessionShell.AttachView2",
+      "fuchsia.modular.SessionShell.AttachView3",
+      "fuchsia.modular.SessionShellContext.Logout",
+      "fuchsia.modular.StoryController.GetInfo",
+      "fuchsia.modular.StoryController.GetInfo2",
+      "fuchsia.modular.StoryProvider.GetStories",
+      "fuchsia.modular.StoryProvider.GetStories2",
+      "fuchsia.modular.StoryProvider.GetStoryInfo",
+      "fuchsia.modular.StoryProvider.GetStoryInfo2",
+      "fuchsia.modular.StoryProviderWatcher.OnChange",
+      "fuchsia.modular.StoryProviderWatcher.OnChange2",
+      "fuchsia.modular.StoryShell.AddSurface",
+      "fuchsia.modular.StoryShell.AddSurface2",
+      "fuchsia.modular.StoryShell.AddSurface3",
+      "fuchsia.modular.StoryShell.UpdateSurface",
+      "fuchsia.modular.StoryShell.UpdateSurface2",
+      "fuchsia.modular.StoryShell.UpdateSurface3",
+      "fuchsia.settings.Setup.Set",
+      "fuchsia.starnix.binder.ProcessAccessor.FileRequest",
+      "fuchsia.sysinfo.SysInfo.GetBoardRevision",
+      "fuchsia.ui.accessibility.view.Registry.CreateAccessibilityViewport",
+      "fuchsia.ui.app.ViewProvider.CreateView2",
+      "fuchsia.ui.app.ViewProvider.CreateViewWithViewRef",
+      "fuchsia.ui.composition.Flatland.CreateView2",
+      "fuchsia.ui.composition.Flatland.SetInfiniteHitRegion",
+      "fuchsia.ui.input.InputMethodEditor.DispatchKey3",
+      "fuchsia.ui.policy.DeviceListenerRegistry.RegisterListener",
+      "fuchsia.ui.policy.DeviceListenerRegistry.RegisterMediaButtonsListener",
+      "fuchsia.ui.policy.MediaButtonsListener.OnEvent",
+      "fuchsia.ui.policy.MediaButtonsListener.OnMediaButtonsEvent",
+      "fuchsia.ui.scenic.Scenic.CreateSessionT",
+      "fuchsia.ui.scenic.Scenic.UsesFlatland",
+      "fuchsia.ui.views.View.Present",
+      "fuchsia.weave.Signer.SignHashWithPrivateKey",
+      "fuchsia.web.Frame.Close",
+      "fuchsia.web.Frame.CreateView",
+      "fuchsia.web.Frame.CreateView2",
+      "fuchsia.web.Frame.CreateViewWithViewRef",
+      "fuchsia.web.Frame.SetMediaSessionId",
+      "fuchsia.web.Frame.SetMediaSettings",
+      "fuchsia.web.Frame.SetNavigationEventListener",
+      "fuchsia.web.Frame.SetNavigationEventListener2",
+      "fuchsia.web.Frame.SetPageScale",
+      "fuchsia.web.Frame.SetPreferredTheme",
+      "fuchsia.web.NavigationController.GetVisibleEntry",
+      "test.protocols.Transitional.Event",
+      "test.protocols.Transitional.OneWay",
+      "test.protocols.Transitional.Request",
+      "test.transitional.TransitionalEvent.Event",
+      "test.transitional.TransitionMethods.UnimplementedMethod",
+  };
+  if (experimental_flags().IsFlagEnabled(ExperimentalFlags::Flag::kTransitionalAllowList)) {
+    for (auto& method : protocol_declaration->methods) {
+      auto attribute = method.attributes->Get("transitional");
+      if (attribute == nullptr) {
+        continue;
+      }
+      std::ostringstream method_name;
+      for (const auto part : library()->name) {
+        method_name << part << '.';
+      }
+      method_name << protocol_declaration->name.decl_name() << "." << method.name.data();
+      bool allowed = transitional_allowlist.find(method_name.str()) != transitional_allowlist.end();
+
+      if (!allowed) {
+        reporter()->Fail(ErrTransitionalNotAllowed, attribute->span, method.name.data());
+      }
+    }
+  }
 }
 
 void CompileStep::ValidateDomainErrorType(const Union* result_union) {
+  if (experimental_flags().IsFlagEnabled(ExperimentalFlags::Flag::kAllowArbitraryErrorTypes)) {
+    return;
+  }
   auto& error_member = result_union->members[1];
   if (!error_member.maybe_used) {
     return;
@@ -1217,45 +1315,31 @@ void CompileStep::ValidateDomainErrorType(const Union* result_union) {
   }
   if (!error_primitive || (error_primitive->subtype != types::PrimitiveSubtype::kInt32 &&
                            error_primitive->subtype != types::PrimitiveSubtype::kUint32)) {
-    Fail(ErrInvalidErrorType, result_union->name.span().value());
+    reporter()->Fail(ErrInvalidErrorType, result_union->name.span().value());
   }
 }
 
 void CompileStep::CompileService(Service* service_decl) {
-  Scope<std::string> scope;
   std::string_view associated_transport;
   std::string_view first_member_with_that_transport;
 
   CompileAttributeList(service_decl->attributes.get());
   for (auto& member : service_decl->members) {
     CompileAttributeList(member.attributes.get());
-    const auto original_name = member.name.data();
-    const auto canonical_name = utils::canonicalize(original_name);
-    const auto name_result = scope.Insert(canonical_name, member.name);
-    if (!name_result.ok()) {
-      const auto previous_span = name_result.previous_occurrence();
-      if (original_name == previous_span.data()) {
-        Fail(ErrDuplicateElementName, member.name, Element::Kind::kServiceMember, original_name,
-             previous_span);
-      } else {
-        Fail(ErrDuplicateElementNameCanonical, member.name, Element::Kind::kServiceMember,
-             original_name, previous_span.data(), previous_span, canonical_name);
-      }
-    }
     CompileTypeConstructor(member.type_ctor.get());
     if (!member.type_ctor->type) {
       continue;
     }
     if (member.type_ctor->type->kind != Type::Kind::kTransportSide) {
-      Fail(ErrOnlyClientEndsInServices, member.name);
+      reporter()->Fail(ErrOnlyClientEndsInServices, member.name);
       continue;
     }
     const auto transport_side_type = static_cast<const TransportSideType*>(member.type_ctor->type);
     if (transport_side_type->end != TransportSide::kClient) {
-      Fail(ErrOnlyClientEndsInServices, member.name);
+      reporter()->Fail(ErrOnlyClientEndsInServices, member.name);
     }
     if (member.type_ctor->type->IsNullable()) {
-      Fail(ErrOptionalServiceMember, member.name);
+      reporter()->Fail(ErrOptionalServiceMember, member.name);
     }
 
     // Enforce that all client_end members are over the same transport.
@@ -1266,34 +1350,19 @@ void CompileStep::CompileService(Service* service_decl) {
       continue;
     }
     if (associated_transport != transport_side_type->protocol_transport) {
-      Fail(ErrMismatchedTransportInServices, member.name, member.name.data(),
-           transport_side_type->protocol_transport, first_member_with_that_transport,
-           associated_transport);
+      reporter()->Fail(ErrMismatchedTransportInServices, member.name, member.name.data(),
+                       transport_side_type->protocol_transport, first_member_with_that_transport,
+                       associated_transport);
     }
   }
 }
 
 void CompileStep::CompileStruct(Struct* struct_declaration) {
-  Scope<std::string> scope;
   DeriveResourceness derive_resourceness(&struct_declaration->resourceness);
 
   CompileAttributeList(struct_declaration->attributes.get());
   for (auto& member : struct_declaration->members) {
     CompileAttributeList(member.attributes.get());
-    const auto original_name = member.name.data();
-    const auto canonical_name = utils::canonicalize(original_name);
-    const auto name_result = scope.Insert(canonical_name, member.name);
-    if (!name_result.ok()) {
-      const auto previous_span = name_result.previous_occurrence();
-      if (original_name == previous_span.data()) {
-        Fail(ErrDuplicateElementName, member.name, Element::Kind::kStructMember, original_name,
-             previous_span);
-      } else {
-        Fail(ErrDuplicateElementNameCanonical, member.name, Element::Kind::kStructMember,
-             original_name, previous_span.data(), previous_span, canonical_name);
-      }
-    }
-
     CompileTypeConstructor(member.type_ctor.get());
     if (!member.type_ctor->type) {
       continue;
@@ -1301,10 +1370,10 @@ void CompileStep::CompileStruct(Struct* struct_declaration) {
     if (member.maybe_default_value) {
       const auto* default_value_type = member.type_ctor->type;
       if (!TypeCanBeConst(default_value_type)) {
-        Fail(ErrInvalidStructMemberType, struct_declaration->name.span().value(),
-             NameIdentifier(member.name), default_value_type);
+        reporter()->Fail(ErrInvalidStructMemberType, struct_declaration->name.span().value(),
+                         NameIdentifier(member.name), default_value_type);
       } else if (!ResolveConstant(member.maybe_default_value.get(), default_value_type)) {
-        Fail(ErrCouldNotResolveMemberDefault, member.name, NameIdentifier(member.name));
+        reporter()->Fail(ErrCouldNotResolveMemberDefault, member.name, NameIdentifier(member.name));
       }
     }
     derive_resourceness.AddType(member.type_ctor->type);
@@ -1312,12 +1381,11 @@ void CompileStep::CompileStruct(Struct* struct_declaration) {
 }
 
 void CompileStep::CompileTable(Table* table_declaration) {
-  Scope<std::string> name_scope;
   Ordinal64Scope ordinal_scope;
 
   CompileAttributeList(table_declaration->attributes.get());
   if (table_declaration->members.size() > kMaxTableOrdinals) {
-    Fail(ErrTooManyTableOrdinals, table_declaration->name.span().value());
+    reporter()->Fail(ErrTooManyTableOrdinals, table_declaration->name.span().value());
   }
 
   for (size_t i = 0; i < table_declaration->members.size(); i++) {
@@ -1325,40 +1393,27 @@ void CompileStep::CompileTable(Table* table_declaration) {
     CompileAttributeList(member.attributes.get());
     const auto ordinal_result = ordinal_scope.Insert(member.ordinal->value, member.ordinal->span());
     if (!ordinal_result.ok()) {
-      Fail(ErrDuplicateTableFieldOrdinal, member.ordinal->span(),
-           ordinal_result.previous_occurrence());
+      reporter()->Fail(ErrDuplicateTableFieldOrdinal, member.ordinal->span(),
+                       ordinal_result.previous_occurrence());
     }
     if (!member.maybe_used) {
       continue;
     }
     auto& member_used = *member.maybe_used;
-    const auto original_name = member_used.name.data();
-    const auto canonical_name = utils::canonicalize(original_name);
-    const auto name_result = name_scope.Insert(canonical_name, member_used.name);
-    if (!name_result.ok()) {
-      const auto previous_span = name_result.previous_occurrence();
-      if (original_name == previous_span.data()) {
-        Fail(ErrDuplicateElementName, member_used.name, Element::Kind::kTableMember, original_name,
-             previous_span);
-      } else {
-        Fail(ErrDuplicateElementNameCanonical, member_used.name, Element::Kind::kTableMember,
-             original_name, previous_span.data(), previous_span, canonical_name);
-      }
-    }
     CompileTypeConstructor(member_used.type_ctor.get());
     if (!member_used.type_ctor->type) {
       continue;
     }
     if (member_used.type_ctor->type->IsNullable()) {
-      Fail(ErrOptionalTableMember, member_used.name);
+      reporter()->Fail(ErrOptionalTableMember, member_used.name);
     }
     if (i == kMaxTableOrdinals - 1) {
       if (member_used.type_ctor->type->kind != Type::Kind::kIdentifier) {
-        Fail(ErrMaxOrdinalNotTable, member_used.name);
+        reporter()->Fail(ErrMaxOrdinalNotTable, member_used.name);
       } else {
         auto identifier_type = static_cast<const IdentifierType*>(member_used.type_ctor->type);
         if (identifier_type->type_decl->kind != Decl::Kind::kTable) {
-          Fail(ErrMaxOrdinalNotTable, member_used.name);
+          reporter()->Fail(ErrMaxOrdinalNotTable, member_used.name);
         }
       }
     }
@@ -1366,12 +1421,11 @@ void CompileStep::CompileTable(Table* table_declaration) {
 
   if (auto ordinal_and_loc = FindFirstNonDenseOrdinal(ordinal_scope)) {
     auto [ordinal, span] = *ordinal_and_loc;
-    Fail(ErrNonDenseOrdinal, span, ordinal);
+    reporter()->Fail(ErrNonDenseOrdinal, span, ordinal);
   }
 }
 
 void CompileStep::CompileUnion(Union* union_declaration) {
-  Scope<std::string> scope;
   Ordinal64Scope ordinal_scope;
   DeriveResourceness derive_resourceness(&union_declaration->resourceness);
 
@@ -1381,8 +1435,8 @@ void CompileStep::CompileUnion(Union* union_declaration) {
     CompileAttributeList(member.attributes.get());
     const auto ordinal_result = ordinal_scope.Insert(member.ordinal->value, member.ordinal->span());
     if (!ordinal_result.ok()) {
-      Fail(ErrDuplicateUnionMemberOrdinal, member.ordinal->span(),
-           ordinal_result.previous_occurrence());
+      reporter()->Fail(ErrDuplicateUnionMemberOrdinal, member.ordinal->span(),
+                       ordinal_result.previous_occurrence());
     }
     if (!member.maybe_used) {
       continue;
@@ -1390,49 +1444,35 @@ void CompileStep::CompileUnion(Union* union_declaration) {
 
     contains_non_reserved_member = true;
     const auto& member_used = *member.maybe_used;
-    const auto original_name = member_used.name.data();
-    const auto canonical_name = utils::canonicalize(original_name);
-    const auto name_result = scope.Insert(canonical_name, member_used.name);
-    if (!name_result.ok()) {
-      const auto previous_span = name_result.previous_occurrence();
-      if (original_name == previous_span.data()) {
-        Fail(ErrDuplicateElementName, member_used.name, Element::Kind::kUnionMember, original_name,
-             previous_span);
-      } else {
-        Fail(ErrDuplicateElementNameCanonical, member_used.name, Element::Kind::kUnionMember,
-             original_name, previous_span.data(), previous_span, canonical_name);
-      }
-    }
-
     CompileTypeConstructor(member_used.type_ctor.get());
     if (!member_used.type_ctor->type) {
       continue;
     }
     if (member_used.type_ctor->type->IsNullable()) {
-      Fail(ErrOptionalUnionMember, member_used.name);
+      reporter()->Fail(ErrOptionalUnionMember, member_used.name);
     }
     derive_resourceness.AddType(member_used.type_ctor->type);
   }
 
   if (union_declaration->strictness == types::Strictness::kStrict &&
       !contains_non_reserved_member) {
-    Fail(ErrStrictUnionMustHaveNonReservedMember, union_declaration->name.span().value());
+    reporter()->Fail(ErrStrictUnionMustHaveNonReservedMember,
+                     union_declaration->name.span().value());
   }
 
   if (auto ordinal_and_loc = FindFirstNonDenseOrdinal(ordinal_scope)) {
     auto [ordinal, span] = *ordinal_and_loc;
-    Fail(ErrNonDenseOrdinal, span, ordinal);
+    reporter()->Fail(ErrNonDenseOrdinal, span, ordinal);
   }
 }
 
 void CompileStep::CompileOverlay(Overlay* overlay_declaration) {
   if (overlay_declaration->strictness != types::Strictness::kStrict) {
-    Fail(ErrOverlayMustBeStrict, overlay_declaration->name.span().value());
+    reporter()->Fail(ErrOverlayMustBeStrict, overlay_declaration->name.span().value());
   }
   if (overlay_declaration->resourceness == types::Resourceness::kResource) {
-    Fail(ErrOverlayMustBeValue, overlay_declaration->name.span().value());
+    reporter()->Fail(ErrOverlayMustBeValue, overlay_declaration->name.span().value());
   }
-  Scope<std::string> scope;
   Ordinal64Scope ordinal_scope;
 
   CompileAttributeList(overlay_declaration->attributes.get());
@@ -1441,29 +1481,14 @@ void CompileStep::CompileOverlay(Overlay* overlay_declaration) {
     const auto ordinal_result = ordinal_scope.Insert(member.ordinal->value, member.ordinal->span());
     if (!ordinal_result.ok()) {
       // TODO(fxbug.dev/123989): Consolidate errors for duplicate member ordinals.
-      Fail(ErrDuplicateUnionMemberOrdinal, member.ordinal->span(),
-           ordinal_result.previous_occurrence());
+      reporter()->Fail(ErrDuplicateUnionMemberOrdinal, member.ordinal->span(),
+                       ordinal_result.previous_occurrence());
     }
     if (!member.maybe_used) {
-      Fail(ErrOverlayMustNotContainReserved, member.span.value());
+      reporter()->Fail(ErrOverlayMustNotContainReserved, member.span.value());
       continue;
     }
-
     const auto& member_used = *member.maybe_used;
-    const auto original_name = member_used.name.data();
-    const auto canonical_name = utils::canonicalize(original_name);
-    const auto name_result = scope.Insert(canonical_name, member_used.name);
-    if (!name_result.ok()) {
-      const auto previous_span = name_result.previous_occurrence();
-      if (original_name == previous_span.data()) {
-        Fail(ErrDuplicateElementName, member_used.name, Element::Kind::kOverlayMember,
-             original_name, previous_span);
-      } else {
-        Fail(ErrDuplicateElementNameCanonical, member_used.name, Element::Kind::kOverlayMember,
-             original_name, previous_span.data(), previous_span, canonical_name);
-      }
-    }
-
     CompileTypeConstructor(member_used.type_ctor.get());
     if (!member_used.type_ctor->type) {
       continue;
@@ -1472,7 +1497,7 @@ void CompileStep::CompileOverlay(Overlay* overlay_declaration) {
 
   if (auto ordinal_and_loc = FindFirstNonDenseOrdinal(ordinal_scope)) {
     auto [ordinal, span] = *ordinal_and_loc;
-    Fail(ErrNonDenseOrdinal, span, ordinal);
+    reporter()->Fail(ErrNonDenseOrdinal, span, ordinal);
   }
 }
 
@@ -1559,28 +1584,11 @@ bool CompileStep::ValidateMembers(DeclType* decl, MemberValidator<MemberType> va
   ZX_ASSERT(decl != nullptr);
   auto checkpoint = reporter()->Checkpoint();
 
-  Scope<std::string> name_scope;
   Scope<MemberType> value_scope;
   for (const auto& member : decl->members) {
     ZX_ASSERT_MSG(member.value != nullptr, "member value is null");
-
-    // Check that the member identifier hasn't been used yet
-    const auto original_name = member.name.data();
-    const auto canonical_name = utils::canonicalize(original_name);
-    const auto name_result = name_scope.Insert(canonical_name, member.name);
-    if (!name_result.ok()) {
-      const auto previous_span = name_result.previous_occurrence();
-      // We can log the error and then continue validating for other issues in the decl
-      if (original_name == name_result.previous_occurrence().data()) {
-        Fail(ErrDuplicateElementName, member.name, member.kind, original_name, previous_span);
-      } else {
-        Fail(ErrDuplicateElementNameCanonical, member.name, member.kind, original_name,
-             previous_span.data(), previous_span, canonical_name);
-      }
-    }
-
     if (!ResolveConstant(member.value.get(), decl->subtype_ctor->type)) {
-      Fail(ErrCouldNotResolveMember, member.name, decl->kind);
+      reporter()->Fail(ErrCouldNotResolveMember, member.name, decl->kind);
       continue;
     }
 
@@ -1590,13 +1598,13 @@ bool CompileStep::ValidateMembers(DeclType* decl, MemberValidator<MemberType> va
     if (!value_result.ok()) {
       const auto previous_span = value_result.previous_occurrence();
       // We can log the error and then continue validating other members for other bugs
-      Fail(ErrDuplicateMemberValue, member.name, decl->kind, original_name, previous_span.data(),
-           previous_span);
+      reporter()->Fail(ErrDuplicateMemberValue, member.name, decl->kind, member.name.data(),
+                       previous_span.data(), previous_span);
     }
 
     auto err = validator(value, member.attributes.get(), member.name);
     if (err) {
-      Report(std::move(err));
+      reporter()->Report(std::move(err));
     }
   }
 
@@ -1650,7 +1658,7 @@ bool CompileStep::ValidateEnumMembersAndCalcUnknownValue(Enum* enum_decl,
     }
     if (member.attributes->Get("unknown") != nullptr) {
       if (explicit_unknown_value.has_value()) {
-        return Fail(ErrUnknownAttributeOnMultipleEnumMembers, member.name);
+        return reporter()->Fail(ErrUnknownAttributeOnMultipleEnumMembers, member.name);
       }
       explicit_unknown_value =
           static_cast<const NumericConstantValue<MemberType>&>(member.value->Value()).value;

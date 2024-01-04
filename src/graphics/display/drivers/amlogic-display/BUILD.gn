@@ -6,6 +6,7 @@ import("//build/bind/bind.gni")
 import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
+import("//build/zbi/kernel_cmdline.gni")
 
 driver_bind_rules("amlogic_display_bind") {
   rules = "amlogic-display.bind"
@@ -19,9 +20,8 @@ driver_bind_rules("amlogic_display_bind") {
   deps = [
     "//sdk/fidl/fuchsia.hardware.amlogiccanvas:fuchsia.hardware.amlogiccanvas_bindlib",
     "//src/devices/bind/fuchsia.amlogic.platform",
-    "//src/devices/bind/fuchsia.hardware.dsi",
-    "//src/devices/bind/fuchsia.hardware.gpio",
-    "//src/devices/bind/fuchsia.hardware.hdmi",
+    "//src/devices/bind/fuchsia.display.dsi",
+    "//src/devices/bind/fuchsia.gpio",
     "//src/devices/bind/fuchsia.platform",
     "//src/devices/bind/fuchsia.sysmem",
   ]
@@ -33,36 +33,77 @@ source_set("common_srcs") {
     "//build/config/fuchsia:enable_zircon_asserts",
   ]
   sources = [
+    "amlogic-display.cc",
+    "amlogic-display.h",
+    "board-resources.cc",
+    "board-resources.h",
+    "capture.cc",
+    "capture.h",
+    "clock-regs.cc",
+    "clock-regs.h",
     "clock.cc",
+    "clock.h",
+    "common.h",
     "dsi-host.cc",
+    "dsi-host.h",
+    "dsi.h",
+    "fixed-point-util.h",
+    "gpio-mux-regs.h",
     "hdmi-host.cc",
+    "hdmi-host.h",
+    "hdmi-transmitter-top-regs.h",
+    "hdmi-transmitter.cc",
+    "hdmi-transmitter.h",
     "hdmitx-clk.cc",
+    "hhi-regs.h",
+    "hot-plug-detection.cc",
+    "hot-plug-detection.h",
+    "initcodes-inl.h",
+    "irq-handler-loop-util.cc",
+    "irq-handler-loop-util.h",
     "lcd.cc",
+    "lcd.h",
     "mipi-phy.cc",
-    "osd.cc",
+    "mipi-phy.h",
+    "panel-config.cc",
+    "panel-config.h",
+    "pixel-grid-size2d.h",
+    "power-regs.h",
+    "rdma-regs.h",
     "rdma.cc",
+    "rdma.h",
+    "video-input-regs.h",
+    "video-input-unit.cc",
+    "video-input-unit.h",
     "vout.cc",
+    "vout.h",
+    "vpp-regs.h",
+    "vpu-regs.h",
     "vpu.cc",
+    "vpu.h",
   ]
   public_deps = [
+    ":amlogic_display_bind",
     "//sdk/banjo/fuchsia.hardware.display.clamprgb:fuchsia.hardware.display.clamprgb_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.display.controller:fuchsia.hardware.display.controller_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.dsiimpl:fuchsia.hardware.dsiimpl_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.i2cimpl:fuchsia.hardware.i2cimpl_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.amlogiccanvas:fuchsia.hardware.amlogiccanvas_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.hdmi:fuchsia.hardware.hdmi_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.sysmem:fuchsia.hardware.sysmem_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.amlogiccanvas:fuchsia.hardware.amlogiccanvas_cpp",
+    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
+    "//sdk/fidl/fuchsia.hardware.sysmem:fuchsia.hardware.sysmem_cpp",
     "//src/devices/bus/lib/device-protocol-pdev",
     "//src/devices/lib/driver",
     "//src/devices/lib/mmio",
     "//src/graphics/display/lib/api-types-cpp",
+    "//src/graphics/display/lib/designware:hdmi-transmitter-controller-impl",
     "//src/graphics/display/lib/device-protocol-display",
     "//src/graphics/display/lib/mipi-dsi",
     "//src/lib/ddk",
     "//src/lib/ddk:ddk-metadata-headers",
     "//src/lib/ddktl",
     "//src/lib/fsl",
+    "//zircon/system/ulib/async:async-cpp",
+    "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/bitmap",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
@@ -78,24 +119,14 @@ source_set("common_srcs") {
   # TODO(fxbug.dev/94768): This target uses mutable tables which are deprecated,
   # rather than builders.
   configs += [ "//build/cpp:fidl-wire-deprecated-mutable-tables" ]
-}
 
-source_set("amlogic_display_driver_src") {
-  configs += [
-    "//build/config:all_source",
-    "//build/config/fuchsia:enable_zircon_asserts",
-  ]
-  public_deps = [
-    ":amlogic_display_bind",
-    ":common_srcs",
-  ]
-  sources = [ "amlogic-display.cc" ]
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 }
 
 fuchsia_driver("amlogic-display-driver") {
   output_name = "amlogic-display"
   deps = [
-    ":amlogic_display_driver_src",
     ":common_srcs",
     "//sdk/lib/syslog/cpp:backend",
   ]
@@ -108,21 +139,37 @@ fuchsia_driver_component("amlogic-display") {
   manifest = "meta/amlogic-display.cml"
 }
 
+fuchsia_driver_package("package") {
+  package_name = "amlogic-display"
+  driver_components = [ ":amlogic-display" ]
+}
+
 test("amlogic-display-test") {
   configs += [ "//build/config:all_source" ]
   sources = [
     "amlogic-display-test.cc",
     "clock-regs-test.cc",
+    "clock-test.cc",
+    "common-test.cc",
+    "fixed-point-util-test.cc",
+    "hdmi-transmitter-test.cc",
+    "hot-plug-detection-test.cc",
+    "panel-config-test.cc",
+    "pixel-grid-size2d-test.cc",
+    "power-regs-test.cc",
     "video-input-regs-test.cc",
-    "vout-test.cc",
   ]
   public_deps = [
-    ":amlogic_display_driver_src",
-    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp_wire_testing",
+    ":common_srcs",
+    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp_testing",
     "//sdk/lib/async_patterns/testing/cpp",
+    "//src/devices/gpio/testing/fake-gpio",
+    "//src/devices/testing/mock-mmio-range",
     "//src/devices/testing/no_ddk",
     "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/loop_fixture",
     "//src/lib/testing/predicates",
+    "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
@@ -130,22 +177,9 @@ test("amlogic-display-test") {
   ]
 }
 
-test("clock-test") {
-  configs += [ "//build/config:all_source" ]
-  sources = [ "clock-test.cc" ]
-  deps = [
-    ":amlogic_display_driver_src",
-    ":common_srcs",
-    "//src/lib/fxl/test:gtest_main",
-    "//src/lib/testing/predicates",
-    "//third_party/googletest:gtest",
-  ]
-}
-
 group("tests") {
   testonly = true
   deps = [
-    ":amlogic-clock-test-package",
     ":amlogic-display-test-package",
     ":amlogic_display_bind_test",
   ]
@@ -156,7 +190,6 @@ fuchsia_unittest_package("amlogic-display-test-package") {
   deps = [ ":amlogic-display-test" ]
 }
 
-fuchsia_unittest_package("amlogic-clock-test-package") {
-  package_name = "amlogic-clock-test"
-  deps = [ ":clock-test" ]
+kernel_cmdline("full-hardware-reset") {
+  args = [ "driver.amlogic_display.full_hardware_reset=true" ]
 }

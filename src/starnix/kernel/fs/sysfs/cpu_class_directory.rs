@@ -1,20 +1,19 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::{
-    auth::FsCred,
-    fs::{
-        kobject::{KObject, KObjectHandle},
-        sysfs::SysFsOps,
-        tmpfs::TmpfsDirectory,
-        *,
-    },
-    task::CurrentTask,
-    types::*,
-};
 
+use crate::{
+    device::kobject::{KObject, KObjectHandle},
+    fs::{sysfs::SysfsOps, tmpfs::TmpfsDirectory},
+    task::CurrentTask,
+    vfs::{
+        fs_node_impl_dir_readonly, BytesFile, DirectoryEntryType, FileOps, FsNode, FsNodeHandle,
+        FsNodeInfo, FsNodeOps, FsStr, VecDirectory, VecDirectoryEntry,
+    },
+};
 use fuchsia_zircon as zx;
-use std::sync::{Arc, Weak};
+use starnix_uapi::{auth::FsCred, error, errors::Errno, file_mode::mode, open_flags::OpenFlags};
+use std::sync::Weak;
 
 pub struct CpuClassDirectory {
     kobject: Weak<KObject>,
@@ -26,9 +25,9 @@ impl CpuClassDirectory {
     }
 }
 
-impl SysFsOps for CpuClassDirectory {
+impl SysfsOps for CpuClassDirectory {
     fn kobject(&self) -> KObjectHandle {
-        self.kobject.clone().upgrade().expect("Weak references to kobject must always be valid")
+        self.kobject.upgrade().expect("Weak references to kobject must always be valid")
     }
 }
 
@@ -76,19 +75,22 @@ impl FsNodeOps for CpuClassDirectory {
     fn lookup(
         &self,
         node: &FsNode,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         name: &FsStr,
-    ) -> Result<Arc<FsNode>, Errno> {
+    ) -> Result<FsNodeHandle, Errno> {
         match name {
             name if name.starts_with(b"cpu") => Ok(node.fs().create_node(
+                current_task,
                 TmpfsDirectory::new(),
                 FsNodeInfo::new_factory(mode!(IFDIR, 0o755), FsCred::root()),
             )),
             b"online" => Ok(node.fs().create_node(
+                current_task,
                 BytesFile::new_node(format!("0-{}\n", zx::system_get_num_cpus() - 1).into_bytes()),
                 FsNodeInfo::new_factory(mode!(IFREG, 0o444), FsCred::root()),
             )),
             b"possible" => Ok(node.fs().create_node(
+                current_task,
                 BytesFile::new_node(format!("0-{}\n", zx::system_get_num_cpus() - 1).into_bytes()),
                 FsNodeInfo::new_factory(mode!(IFREG, 0o444), FsCred::root()),
             )),

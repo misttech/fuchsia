@@ -9,6 +9,10 @@
 #include <lib/device-protocol/pdev-fidl.h>
 #include <lib/fidl/epitaph.h>
 
+#include <string>
+
+#include <bind/fuchsia/register/cpp/bind.h>
+
 namespace registers {
 
 namespace {
@@ -45,7 +49,7 @@ std::optional<Ty> GetMask(const fuchsia_hardware_registers::wire::Mask& mask) {
 
 template <typename T>
 zx_status_t Register<T>::Init(const RegistersMetadataEntry& config) {
-  id_ = config.bind_id();
+  id_ = std::string(config.name().data(), config.name().size());
 
   for (const auto& m : config.masks()) {
     auto mask = GetMask<T>(m.mask());
@@ -131,10 +135,6 @@ zx_status_t RegistersDevice<T>::Init(zx_device_t* parent, Metadata metadata) {
     zxlogf(ERROR, "%s: Could not get device info", __func__);
     return status;
   }
-  if (metadata.mmio().count() != device_info.mmio_count) {
-    zxlogf(ERROR, "%s: MMIO metadata size doesn't match MMIO count.", __func__);
-    return ZX_ERR_INTERNAL;
-  }
 
   // Get MMIOs
   std::map<uint32_t, std::vector<T>> overlap;
@@ -152,24 +152,24 @@ zx_status_t RegistersDevice<T>::Init(zx_device_t* parent, Metadata metadata) {
     }
 
     std::vector<fbl::Mutex> tmp_locks(register_count);
-    mmios_.emplace(metadata.mmio()[i].id(), std::make_shared<MmioInfo>(MmioInfo{
-                                                .mmio = *std::move(tmp_mmio),
-                                                .locks = std::move(tmp_locks),
-                                            }));
+    mmios_.emplace(i, std::make_shared<MmioInfo>(MmioInfo{
+                          .mmio = *std::move(tmp_mmio),
+                          .locks = std::move(tmp_locks),
+                      }));
 
-    overlap.emplace(metadata.mmio()[i].id(), std::vector<T>(register_count, 0));
+    overlap.emplace(i, std::vector<T>(register_count, 0));
   }
 
   // Check for overlapping bits.
   for (const auto& reg : metadata.registers()) {
-    if (!reg.has_bind_id() && !reg.has_mmio_id() && !reg.has_masks()) {
+    if (!reg.has_name() && !reg.has_mmio_id() && !reg.has_masks()) {
       // Doesn't have to have all Register IDs.
       continue;
     }
 
     if (mmios_.find(reg.mmio_id()) == mmios_.end()) {
-      zxlogf(ERROR, "%s: Invalid MMIO ID %u for Register %u.\n", __func__, reg.mmio_id(),
-             reg.bind_id());
+      zxlogf(ERROR, "%s: Invalid MMIO ID %u for Register %.*s.\n", __func__, reg.mmio_id(),
+             static_cast<int>(reg.name().size()), reg.name().data());
       return ZX_ERR_INTERNAL;
     }
 
@@ -201,7 +201,7 @@ zx_status_t RegistersDevice<T>::Init(zx_device_t* parent, Metadata metadata) {
 
   // Create Registers
   for (auto& reg : metadata.registers()) {
-    if (!reg.has_bind_id() && !reg.has_mmio_id() && !reg.has_masks()) {
+    if (!reg.has_name() && !reg.has_mmio_id() && !reg.has_masks()) {
       // Doesn't have to have all Register IDs.
       continue;
     }
@@ -212,11 +212,16 @@ zx_status_t RegistersDevice<T>::Init(zx_device_t* parent, Metadata metadata) {
     if (!ac.check()) {
       return ZX_ERR_NO_MEMORY;
     }
-    zx_device_prop_t props[] = {
-        {BIND_REGISTER_ID, 0, reg.bind_id()},
+
+    std::string register_name = std::string(reg.name().data(), reg.name().size());
+    zx_device_str_prop_t props[] = {
+        {bind_fuchsia_register::NAME.c_str(), str_prop_str_val(register_name.c_str())},
     };
-    char name[20];
-    snprintf(name, sizeof(name), "register-%u", reg.bind_id());
+
+    char name[ZX_DEVICE_NAME_MAX + 1];
+    snprintf(name, sizeof(name), "register-%.*s", static_cast<int>(reg.name().size()),
+             reg.name().data());
+    name[ZX_DEVICE_NAME_MAX] = 0;
 
     zx::result outgoing_directory_result = tmp_register->CreateAndServeOutgoingDirectory();
     if (outgoing_directory_result.is_error()) {
@@ -230,7 +235,7 @@ zx_status_t RegistersDevice<T>::Init(zx_device_t* parent, Metadata metadata) {
     auto status = tmp_register->DdkAdd(
         ddk::DeviceAddArgs(name)
             .set_flags(DEVICE_ADD_ALLOW_MULTI_COMPOSITE)
-            .set_props(props)
+            .set_str_props(props)
             .set_fidl_service_offers(offers)
             .set_outgoing_dir(outgoing_directory_result.value().TakeChannel()));
     if (status != ZX_OK) {
@@ -276,31 +281,26 @@ zx_status_t Bind(void* ctx, zx_device_t* parent) {
   // Get metadata
   auto decoded = ddk::GetEncodedMetadata<Metadata>(parent, DEVICE_METADATA_REGISTERS);
   if (!decoded.is_ok()) {
+    zxlogf(ERROR, "Metadata not found");
     return decoded.error_value();
   }
 
   const Metadata& metadata = *decoded.value();
 
   // Validate
-  if (!metadata.has_mmio() || !metadata.has_registers()) {
+  if (!metadata.has_registers()) {
     zxlogf(ERROR, "Metadata incomplete");
     return ZX_ERR_INTERNAL;
-  }
-  for (const auto& mmio : metadata.mmio()) {
-    if (!mmio.has_id()) {
-      zxlogf(ERROR, "Metadata incomplete");
-      return ZX_ERR_INTERNAL;
-    }
   }
   bool begin = true;
   fuchsia_hardware_registers::wire::Mask::Tag tag;
   for (const auto& reg : metadata.registers()) {
-    if (!reg.has_bind_id() && !reg.has_mmio_id() && !reg.has_masks()) {
+    if (!reg.has_name() && !reg.has_mmio_id() && !reg.has_masks()) {
       // Doesn't have to have all Register IDs.
       continue;
     }
 
-    if (!reg.has_bind_id() || !reg.has_mmio_id() || !reg.has_masks()) {
+    if (!reg.has_name() || !reg.has_mmio_id() || !reg.has_masks()) {
       zxlogf(ERROR, "Metadata incomplete");
       return ZX_ERR_INTERNAL;
     }

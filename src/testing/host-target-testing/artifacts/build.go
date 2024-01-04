@@ -11,10 +11,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"golang.org/x/crypto/ssh"
 
+	pmBuild "go.fuchsia.dev/fuchsia/src/sys/pkg/bin/pm/build"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/avb"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/ffx"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/flasher"
@@ -200,25 +202,62 @@ type proxyBlobStore struct {
 	dir string
 }
 
-func (fs *proxyBlobStore) OpenBlob(ctx context.Context, merkle string) (*os.File, error) {
-	path := filepath.Join(fs.dir, merkle)
+func (fs *proxyBlobStore) BlobPath(ctx context.Context, deliveryBlobType *int, merkle pmBuild.MerkleRoot) (string, error) {
+	var path string
+	if deliveryBlobType == nil {
+		path = filepath.Join(fs.dir, merkle.String())
+	} else {
+		path = filepath.Join(fs.dir, strconv.Itoa(*deliveryBlobType), merkle.String())
+	}
 
 	// First, try to read the blob from the directory
-	if f, err := os.Open(path); err == nil {
-		return f, nil
+	if _, err := os.Stat(path); err == nil {
+		return path, nil
 	}
 
 	// Otherwise, start downloading the blob. The package resolver will only
 	// fetch a blob once, so we don't need to deduplicate requests on our side.
 
-	logger.Infof(ctx, "download blob from build %s: %s", fs.b.id, merkle)
+	var src string
+	if deliveryBlobType == nil {
+		src = filepath.Join("blobs", merkle.String())
+	} else {
+		src = filepath.Join("blobs", strconv.Itoa(*deliveryBlobType), merkle.String())
+	}
 
-	src := filepath.Join("blobs", merkle)
+	logger.Infof(ctx, "downloading %s from build %s", src, fs.b.id)
+
 	if err := fs.b.archive.download(ctx, fs.b.id, true, path, []string{src}); err != nil {
+		return "", err
+	}
+
+	return path, nil
+}
+
+func (fs *proxyBlobStore) OpenBlob(ctx context.Context, deliveryBlobType *int, merkle pmBuild.MerkleRoot) (*os.File, error) {
+	path, err := fs.BlobPath(ctx, deliveryBlobType, merkle)
+	if err != nil {
 		return nil, err
 	}
 
 	return os.Open(path)
+}
+
+func (fs *proxyBlobStore) BlobSize(ctx context.Context, deliveryBlobType *int, merkle pmBuild.MerkleRoot) (uint64, error) {
+	f, err := fs.OpenBlob(ctx, deliveryBlobType, merkle)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	if s, err := f.Stat(); err == nil {
+		if s.Size() < 0 {
+			return 0, fmt.Errorf("merkle %s has size less than zero: %d", merkle, s.Size())
+		}
+		return uint64(s.Size()), nil
+	} else {
+		return 0, err
+	}
 }
 
 func (fs *proxyBlobStore) Dir() string {
@@ -547,7 +586,7 @@ func (b *ProductBundleDirBuild) GetFlashManifest(ctx context.Context) (string, e
 }
 
 func (b *ProductBundleDirBuild) GetPackageRepository(ctx context.Context, blobFetchMode BlobFetchMode, ffx *ffx.FFXTool) (*packages.Repository, error) {
-	// TODO (fxb/114760) Change to use ffx tool to start package server
+	// TODO(fxb/114760) Change to use ffx tool to start package server
 	pbJSON := filepath.Join(b.dir, ProductBundleManifest)
 	f, err := os.Open(pbJSON)
 	if err != nil {

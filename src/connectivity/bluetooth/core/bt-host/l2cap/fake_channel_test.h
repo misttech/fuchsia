@@ -7,11 +7,12 @@
 
 #include <memory>
 
+#include <pw_async/fake_dispatcher_fixture.h>
+
 #include "src/connectivity/bluetooth/core/bt-host/common/macros.h"
 #include "src/connectivity/bluetooth/core/bt-host/hci-spec/protocol.h"
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/fake_channel.h"
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/l2cap_defs.h"
-#include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 
 namespace bt::l2cap::testing {
 
@@ -20,7 +21,7 @@ namespace bt::l2cap::testing {
 //
 //   * A simple way to initialize and access a FakeChannel.
 //   * Basic command<->response expectation.
-class FakeChannelTest : public ::gtest::TestLoopFixture {
+class FakeChannelTest : public pw::async::test::FakeDispatcherFixture {
  public:
   FakeChannelTest() = default;
   ~FakeChannelTest() override = default;

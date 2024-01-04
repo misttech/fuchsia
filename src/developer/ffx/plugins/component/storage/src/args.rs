@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use argh::FromArgs;
+use argh::{ArgsInfo, FromArgs};
 use ffx_core::ffx_command;
 
 #[ffx_command()]
-#[derive(FromArgs, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "storage", description = "Manages storage capabilities of components")]
 pub struct StorageCommand {
     #[argh(subcommand)]
@@ -24,16 +24,17 @@ pub struct StorageCommand {
     pub capability: String,
 }
 
-#[derive(FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
 #[argh(subcommand)]
 pub enum SubCommandEnum {
     Copy(CopyArgs),
     Delete(DeleteArgs),
     List(ListArgs),
     MakeDirectory(MakeDirectoryArgs),
+    DeleteAll(DeleteAllArgs),
 }
 
-#[derive(FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
 #[argh(
     subcommand,
     name = "list",
@@ -61,7 +62,7 @@ pub struct ListArgs {
     pub path: String,
 }
 
-#[derive(FromArgs, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(
     subcommand,
     name = "make-directory",
@@ -85,7 +86,7 @@ pub struct MakeDirectoryArgs {
     pub path: String,
 }
 
-#[derive(FromArgs, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(
     subcommand,
     name = "copy",
@@ -113,7 +114,7 @@ pub struct CopyArgs {
     pub destination_path: String,
 }
 
-#[derive(FromArgs, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(
     subcommand,
     name = "delete",
@@ -131,4 +132,21 @@ pub struct DeleteArgs {
     #[argh(positional)]
     /// the path of the file to be deleted
     pub path: String,
+}
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
+#[argh(
+    subcommand,
+    name = "delete-all",
+    description = "Delete the contents of the storage for a specific component.",
+    example = "To delete the contents of the storage for a component with moniker `foo`:
+
+    $ ffx component storage delete-all foo
+
+Note: although unusual, the user may specify internal instance IDs in the moniker such as `foo:0/bar:2`."
+)]
+pub struct DeleteAllArgs {
+    #[argh(positional)]
+    /// the moniker for the specific component to delete storage
+    pub moniker: String,
 }

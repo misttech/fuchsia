@@ -12,13 +12,13 @@ executable("vk_timer_query_bin") {
   sources = [ "main.cc" ]
 
   deps = [
-    "$magma_build_root/include:magma",
-    "$magma_build_root/src/magma_util/platform:semaphore",
     "../vkreadback:helper",
     "//sdk/lib/fdio",
+    "//sdk/lib/magma_client:magma_headers",
     "//src/graphics/drivers/msd-arm-mali/include",
     "//src/graphics/lib/magma/src/libmagma",
-    "//src/graphics/lib/magma/tests/helper:test_device_helper",
+    "//src/graphics/magma/lib/magma/platform:semaphore",
+    "//src/graphics/magma/lib/magma_client/test_util:test_device_helper",
     "//src/lib/fxl/test:test_settings",
     "//third_party/googletest:gtest",
     "//zircon/system/ulib/zx",
@@ -28,7 +28,7 @@ executable("vk_timer_query_bin") {
 }
 
 fuchsia_test_component("vk_timer_query_cmp") {
-  component_name = "vk_timer_query"
+  component_name = "vk_timer_query_test"
   deps = [
     ":vk_timer_query_bin",
     "//src/lib/vulkan/validation_layers",
@@ -39,7 +39,7 @@ fuchsia_test_component("vk_timer_query_cmp") {
 }
 
 fuchsia_test_package("vk-timer-query-pkg") {
-  package_name = "vk_timer_query"
+  package_name = "vk_timer_query_test"
   test_components = [ ":vk_timer_query_cmp" ]
   test_specs = {
     environments = magma_libvulkan_arm_hardware_envs

@@ -2,20 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use {
-    anyhow::Error,
-    fidl::endpoints::RequestStream,
-    fidl_fuchsia_bluetooth_avrcp::*,
-    fidl_fuchsia_bluetooth_avrcp_test::*,
-    fuchsia_async as fasync,
-    futures::{
-        self,
-        future::{FutureExt, TryFutureExt},
-        stream::StreamExt,
-    },
-    std::collections::VecDeque,
-    tracing::warn,
+use anyhow::Error;
+use fidl::endpoints::RequestStream;
+use fidl_fuchsia_bluetooth_avrcp::*;
+use fidl_fuchsia_bluetooth_avrcp_test::*;
+use fuchsia_async as fasync;
+use futures::{
+    self,
+    future::{FutureExt, TryFutureExt},
+    stream::StreamExt,
 };
+use std::collections::VecDeque;
+use tracing::{error, trace, warn};
 
 use crate::{
     packets::PlaybackStatus as PacketPlaybackStatus,
@@ -82,6 +80,21 @@ impl ControllerService {
         }
     }
 
+    fn browse_to_controller_error(src: BrowseControllerError) -> ControllerError {
+        match src {
+            BrowseControllerError::UnknownFailure => ControllerError::UnknownFailure,
+            BrowseControllerError::TimedOut => ControllerError::TimedOut,
+            BrowseControllerError::RemoteNotConnected => ControllerError::RemoteNotConnected,
+            BrowseControllerError::CommandNotImplemented => ControllerError::CommandNotImplemented,
+            BrowseControllerError::CommandRejected => ControllerError::CommandRejected,
+            BrowseControllerError::CommandUnexpected => ControllerError::CommandUnexpected,
+            BrowseControllerError::PacketEncoding => ControllerError::PacketEncoding,
+            BrowseControllerError::ProtocolError => ControllerError::ProtocolError,
+            BrowseControllerError::ConnectionError => ControllerError::ConnectionError,
+            _ => ControllerError::CommandRejected,
+        }
+    }
+
     async fn handle_fidl_request(&mut self, request: ControllerRequest) -> Result<(), Error> {
         match request {
             ControllerRequest::GetPlayerApplicationSettings { attribute_ids, responder } => {
@@ -99,8 +112,24 @@ impl ControllerService {
                 }?;
             }
             ControllerRequest::GetMediaAttributes { responder } => {
-                match self.controller.get_media_attributes().await {
-                    Ok(response) => responder.send(Ok(&response)),
+                if self.controller.get_browsed_player().is_err() {
+                    match self.controller.get_media_attributes().await {
+                        Ok(r) => return Ok(responder.send(Ok(&r))?),
+                        Err(e) => return Ok(responder.send(Err(e.into()))?),
+                    }
+                }
+
+                let result = if let Some(id) = self.notification_state.track_id {
+                    self.controller
+                        .get_item_attributes(id)
+                        .await
+                        .map_err(Self::browse_to_controller_error)
+                } else {
+                    error!("Cannot get media attributes because currently playing track UID is unknown.");
+                    Err(ControllerError::InvalidArguments)
+                };
+                match result {
+                    Ok(r) => responder.send(Ok(&r)),
                     Err(e) => responder.send(Err(e.into())),
                 }?;
             }
@@ -133,7 +162,7 @@ impl ControllerService {
                 if self.notification_window_counter < Self::EVENT_WINDOW_LIMIT {
                     match self.notification_queue.pop_front() {
                         Some((timestamp, event)) => {
-                            self.handle_controller_event(timestamp, event)?;
+                            self.handle_controller_event(timestamp, event).await?;
                         }
                         None => {}
                     }
@@ -195,11 +224,25 @@ impl ControllerService {
         }
     }
 
-    fn handle_controller_event(
+    async fn handle_controller_event(
         &mut self,
         timestamp: i64,
         event: PeerControllerEvent,
     ) -> Result<(), Error> {
+        match event {
+            PeerControllerEvent::AvailablePlayersChanged => {
+                // TODO(fxbug.dev/130791): get all the available players instead of just 10.
+                if let Err(e) = self.controller.get_media_player_items(0, 9, true).await {
+                    trace!(?e, "Failed to get updated media player items");
+                }
+            }
+            PeerControllerEvent::AddressedPlayerChanged(id) => {
+                if let Err(e) = self.controller.set_browsed_player(id).await {
+                    trace!(?e, "Failed to set browsed player to addressed player {id:?}. Clearing previously set browsed player");
+                }
+            }
+            _ => {}
+        };
         self.notification_window_counter += 1;
         let control_handle: ControllerControlHandle = self.fidl_stream.control_handle();
         let mut notification = Notification::default();
@@ -285,7 +328,7 @@ impl ControllerService {
                         if self.notification_window_counter > Self::EVENT_WINDOW_LIMIT {
                             self.notification_queue.push_back((timestamp, event));
                         } else {
-                            self.handle_controller_event(timestamp, event)?;
+                            self.handle_controller_event(timestamp, event).await?;
                         }
                     }
                 }
@@ -375,35 +418,61 @@ pub fn spawn_ext_service(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::packets::*;
+    use crate::peer::tests::*;
     use crate::peer::RemotePeerHandle;
     use crate::peer_manager::TargetDelegate;
+    use crate::profile::{AvrcpProtocolVersion, AvrcpService, AvrcpTargetFeatures};
+    use assert_matches::assert_matches;
     use async_test_helpers::run_while;
+    use async_utils::PollExt;
+    use bt_avctp::{AvcPeer, AvctpPeer};
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_bluetooth_bredr::ProfileMarker;
+    use fuchsia_bluetooth::profile::Psm;
+    use fuchsia_bluetooth::types::Channel;
     use fuchsia_bluetooth::types::PeerId;
+    use packet_encoding::Decodable;
     use pin_utils::pin_mut;
     use std::sync::Arc;
 
-    fn setup() -> Controller {
-        let (profile_proxy, _profile_requests) =
+    /// Sets up control and browse connections for a peer acting as AVRCP Target role.
+    fn set_up() -> (Controller, AvcPeer, AvctpPeer) {
+        let (profile_proxy, mut _profile_requests) =
             create_proxy_and_stream::<ProfileMarker>().expect("should have initialized");
         let peer = RemotePeerHandle::spawn_peer(
             PeerId(0x1),
             Arc::new(TargetDelegate::new()),
             profile_proxy,
         );
+        peer.set_target_descriptor(AvrcpService::Target {
+            features: AvrcpTargetFeatures::CATEGORY1 | AvrcpTargetFeatures::SUPPORTSBROWSING,
+            psm: Psm::AVCTP,
+            protocol_version: AvrcpProtocolVersion(1, 6),
+        });
 
-        Controller::new(peer)
+        let (local_avc, remote_avc) = Channel::create();
+        let (local_avctp, remote_avctp) = Channel::create();
+
+        let remote_avc_peer = AvcPeer::new(remote_avc);
+        let remote_avctp_peer = AvctpPeer::new(remote_avctp);
+
+        peer.set_control_connection(AvcPeer::new(local_avc));
+        peer.set_browse_connection(AvctpPeer::new(local_avctp));
+
+        let controller = Controller::new(peer);
+
+        (controller, remote_avc_peer, remote_avctp_peer)
     }
 
-    #[fuchsia::test]
     /// Tests that the client stream handler will spawn a controller when a controller request
     /// successfully sets up a controller.
+    #[fuchsia::test]
     fn run_client() {
         let mut exec = fasync::TestExecutor::new();
 
         // Set up for testing.
-        let controller = setup();
+        let controller = set_up().0;
 
         // Initialize client.
         let (proxy, server) =
@@ -417,7 +486,7 @@ mod tests {
         let (_, mut run_fut) = run_while(&mut exec, run_fut, request_fut);
 
         // Verify that the client is still running.
-        assert!(exec.run_until_stalled(&mut run_fut).is_pending());
+        exec.run_until_stalled(&mut run_fut).expect_pending("should be pending");
     }
 
     /// Tests that the client stream handler will spawn a test controller when a
@@ -427,7 +496,7 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
 
         // Set up testing.
-        let controller = setup();
+        let controller = set_up().0;
 
         // Initialize client.
         let (proxy, server) =
@@ -442,7 +511,7 @@ mod tests {
         let (_, mut run_fut) = run_while(&mut exec, run_fut, request_fut);
 
         // Verify that the client is still running.
-        assert!(exec.run_until_stalled(&mut run_fut).is_pending());
+        exec.run_until_stalled(&mut run_fut).expect_pending("should be pending");
     }
 
     /// Tests that the notification object is updated based on the controller
@@ -471,6 +540,69 @@ mod tests {
         assert_eq!(notification, Notification { addressed_player: Some(4), ..Default::default() });
     }
 
+    /// Tests that the notification object is updated based on the controller
+    /// event value.
+    #[fuchsia::test]
+    fn handle_controller_event() {
+        let mut exec = fasync::TestExecutor::new();
+
+        let (controller, remote_avc_peer, remote_avctp_peer) = set_up();
+        let mut avctp_cmd_stream = remote_avctp_peer.take_command_stream();
+        let mut avc_cmd_stream = remote_avc_peer.take_command_stream();
+
+        // Initially expect some outgoing commands as part of peer spawn.
+        // Expect get folder items command with media player scope.
+        expect_outgoing_commands(&mut exec, &mut avc_cmd_stream, &mut avctp_cmd_stream);
+
+        // Initialize client.
+        let (_proxy, server) =
+            create_proxy_and_stream::<ControllerMarker>().expect("Controller proxy creation");
+        let mut client = ControllerService::new(controller, server);
+
+        // When available players changed notification is sent, available players are fetched.
+        {
+            let handle_available_players = client.handle_controller_event(
+                fuchsia_runtime::utc_time().into_nanos(),
+                PeerControllerEvent::AvailablePlayersChanged,
+            );
+            pin_mut!(handle_available_players);
+            exec.run_until_stalled(&mut handle_available_players)
+                .expect_pending("should be pending");
+
+            let command = get_next_avctp_command(&mut exec, &mut avctp_cmd_stream);
+            let params = decode_avctp_command(&command, PduId::GetFolderItems);
+            let cmd =
+                GetFolderItemsCommand::decode(&params).expect("should have received valid command");
+            assert_matches!(cmd.scope(), Scope::MediaPlayerList);
+            let mock_resp = GetFolderItemsResponse::new_success(1, vec![]);
+            send_avctp_response(PduId::GetFolderItems, &mock_resp, &command);
+
+            let _ = exec.run_until_stalled(&mut handle_available_players).expect("should be ready");
+        }
+
+        // When addressed player is changed, browsed player is updated.
+        {
+            let handle_addressed_player = client.handle_controller_event(
+                fuchsia_runtime::utc_time().into_nanos(),
+                PeerControllerEvent::AddressedPlayerChanged(1004),
+            );
+            pin_mut!(handle_addressed_player);
+            exec.run_until_stalled(&mut handle_addressed_player)
+                .expect_pending("should be pending");
+
+            let command = get_next_avctp_command(&mut exec, &mut avctp_cmd_stream);
+            let params = decode_avctp_command(&command, PduId::SetBrowsedPlayer);
+            let cmd = SetBrowsedPlayerCommand::decode(&params)
+                .expect("should have received valid command");
+            assert_matches!(cmd.player_id(), 1004);
+            let mock_resp =
+                SetBrowsedPlayerResponse::new_success(0, 1, vec![]).expect("should not fail");
+            send_avctp_response(PduId::SetBrowsedPlayer, &mock_resp, &command);
+
+            let _ = exec.run_until_stalled(&mut handle_addressed_player).expect("should be ready");
+        }
+    }
+
     /// Tests that controller events are filtered based on the notification
     /// filter set on the server.
     #[fuchsia::test]
@@ -478,7 +610,7 @@ mod tests {
         let _exec = fasync::TestExecutor::new();
 
         // Set up for testing.
-        let controller = setup();
+        let controller = set_up().0;
 
         // Initialize client.
         let (_proxy, server) =
@@ -500,5 +632,84 @@ mod tests {
         // Since notification filter does not include volume changed event, should have returned false.
         let excluded_event = PeerControllerEvent::VolumeChanged(2);
         assert!(!client.filter_controller_event(&excluded_event));
+    }
+
+    /// Tests getting media attributes through the control channel, which happens.
+    /// when the browsed player is not set.
+    #[fuchsia::test]
+    fn get_media_attributes_control_channel() {
+        let mut exec = fasync::TestExecutor::new();
+
+        let (controller, remote_avc_peer, remote_avctp_peer) = set_up();
+        let mut avc_cmd_stream = remote_avc_peer.take_command_stream();
+        let mut avctp_cmd_stream = remote_avctp_peer.take_command_stream();
+
+        // Initially expect some outgoing commands as part of peer spawn.
+        // Expect get folder items command with media player scope.
+        expect_outgoing_commands(&mut exec, &mut avc_cmd_stream, &mut avctp_cmd_stream);
+
+        // Initialize client.
+        let (proxy, server) =
+            create_proxy_and_stream::<ControllerMarker>().expect("Controller proxy creation");
+        let mut client = ControllerService::new(controller, server);
+        let run_fut = client.run();
+        pin_mut!(run_fut);
+        exec.run_until_stalled(&mut run_fut).expect_pending("should be pending");
+
+        // Verify that `GetElementAttributes` command is sent when browsed player is not set.
+        let mut request_fut = proxy.get_media_attributes();
+        exec.run_until_stalled(&mut run_fut).expect_pending("should be pending");
+        exec.run_until_stalled(&mut request_fut).expect_pending("should be pending");
+
+        let command = get_next_avc_command(&mut exec, &mut avc_cmd_stream);
+        let (pdu_id, _) = decode_avc_vendor_command(&command).expect("should be ok");
+        assert_eq!(pdu_id, PduId::GetElementAttributes);
+    }
+
+    /// Tests getting media attributes through the browse channel, which happens.
+    /// when the browsed player and track ID are set.
+    #[fuchsia::test]
+    fn get_media_attributes_browse_channel() {
+        let mut exec = fasync::TestExecutor::new();
+
+        let (controller, remote_avc_peer, remote_avctp_peer) = set_up();
+        let mut avc_cmd_stream = remote_avc_peer.take_command_stream();
+        let mut avctp_cmd_stream = remote_avctp_peer.take_command_stream();
+
+        // Initially expect some outgoing commands as part of peer spawn.
+        // Expect get folder items command with media player scope.
+        expect_outgoing_commands(&mut exec, &mut avc_cmd_stream, &mut avctp_cmd_stream);
+
+        // Set the browsed player for test.
+        {
+            let setup_fut = controller.set_browsed_player(1);
+            pin_mut!(setup_fut);
+            exec.run_until_stalled(&mut setup_fut).expect_pending("should be pending");
+            let command = get_next_avctp_command(&mut exec, &mut avctp_cmd_stream);
+            let _ = decode_avctp_command(&command, PduId::SetBrowsedPlayer);
+            let mock_resp =
+                SetBrowsedPlayerResponse::new_success(0, 0, vec![]).expect("should be ok");
+            send_avctp_response(PduId::SetBrowsedPlayer, &mock_resp, &command);
+            let _ = exec.run_until_stalled(&mut setup_fut).expect("should be ready");
+        }
+
+        // Initialize client.
+        let (proxy, server) =
+            create_proxy_and_stream::<ControllerMarker>().expect("Controller proxy creation");
+        let mut client = ControllerService::new(controller, server);
+        client.cache_controller_notification_state(&PeerControllerEvent::TrackIdChanged(2));
+        let run_fut = client.run();
+        pin_mut!(run_fut);
+        exec.run_until_stalled(&mut run_fut).expect_pending("should be pending");
+
+        {
+            // Verify that `GetElementAttributes` command is sent when browsed player is not set.
+            let mut request_fut = proxy.get_media_attributes();
+            exec.run_until_stalled(&mut run_fut).expect_pending("should be pending");
+            exec.run_until_stalled(&mut request_fut).expect_pending("should be pending");
+
+            let command = get_next_avctp_command(&mut exec, &mut avctp_cmd_stream);
+            let _ = decode_avctp_command(&command, PduId::GetItemAttributes);
+        }
     }
 }

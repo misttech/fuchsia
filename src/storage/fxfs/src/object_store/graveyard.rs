@@ -4,7 +4,6 @@
 
 use {
     crate::{
-        async_enter,
         errors::FxfsError,
         log::*,
         lsm_tree::{
@@ -65,6 +64,7 @@ enum Message {
     Flush(oneshot::Sender<()>),
 }
 
+#[fxfs_trace::trace]
 impl Graveyard {
     /// Creates a new instance of the graveyard manager.
     pub fn new(object_manager: Arc<ObjectManager>) -> Arc<Self> {
@@ -154,11 +154,11 @@ impl Graveyard {
     /// behaviour: the entries might or might not be immediately tombstoned, so callers should wait
     /// for this to return before changing to a state where more entries can be added.  Once this
     /// has returned, entries will be tombstoned in the background.
+    #[trace]
     pub async fn initial_reap(self: &Arc<Self>, store: &ObjectStore) -> Result<usize, Error> {
         if store.filesystem().options().skip_initial_reap {
             return Ok(0);
         }
-        async_enter!("Graveyard::initial_reap");
         let mut count = 0;
         let layer_set = store.tree().layer_set();
         let mut merger = layer_set.merger();
@@ -199,7 +199,7 @@ impl Graveyard {
         let store = self
             .object_manager
             .store(store_id)
-            .context(format!("Failed to get store {}", store_id))?;
+            .with_context(|| format!("Failed to get store {}", store_id))?;
         // For now, it's safe to assume that all objects in the root parent and root store should
         // return space to the metadata reservation, but we might have to revisit that if we end up
         // with objects that are in other stores.
@@ -222,7 +222,7 @@ impl Graveyard {
         let store = self
             .object_manager
             .store(store_id)
-            .context(format!("Failed to get store {}", store_id))?;
+            .with_context(|| format!("Failed to get store {}", store_id))?;
         store.trim(object_id).await.context("Failed to trim object")
     }
 
@@ -314,9 +314,9 @@ mod tests {
     use {
         super::Graveyard,
         crate::{
-            filesystem::{Filesystem, FxFilesystem},
+            filesystem::FxFilesystem,
             object_store::object_record::ObjectValue,
-            object_store::transaction::{Options, TransactionHandler},
+            object_store::transaction::{lock_keys, Options},
         },
         assert_matches::assert_matches,
         storage_device::{fake_device::FakeDevice, DeviceHolder},
@@ -333,7 +333,7 @@ mod tests {
         // Create and add two objects to the graveyard.
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
 
@@ -358,7 +358,7 @@ mod tests {
         // Remove one of the objects.
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         root_store.remove_from_graveyard(&mut transaction, 4);

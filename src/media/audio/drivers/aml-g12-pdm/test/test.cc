@@ -2,17 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fuchsia/hardware/gpio/cpp/banjo-mock.h>
 #include <lib/async-loop/default.h>
 #include <lib/async-loop/loop.h>
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/ddk/metadata.h>
 #include <lib/fidl/cpp/wire/connect_service.h>
+#include <lib/inspect/testing/cpp/zxtest/inspect.h>
 #include <lib/sync/completion.h>
 
 #include <fake-mmio-reg/fake-mmio-reg.h>
-#include <sdk/lib/inspect/testing/cpp/zxtest/inspect.h>
 #include <soc/aml-s905d2/s905d2-hw.h>
 #include <zxtest/zxtest.h>
 
@@ -47,9 +46,7 @@ class FakeMmio {
   FakeMmio() : mmio_(sizeof(uint32_t), kRegCount) {}
 
   fdf::MmioBuffer mmio() { return mmio_.GetMmioBuffer(); }
-  ddk_fake::FakeMmioReg& reg(size_t ix) {
-    return mmio_[ix];
-  }
+  ddk_fake::FakeMmioReg& reg(size_t ix) { return mmio_[ix]; }
 
  private:
   static constexpr size_t kRegCount =
@@ -116,7 +113,7 @@ struct AudioStreamInTest : public inspect::InspectTestHelper, public zxtest::Tes
     });
     ASSERT_NO_FATAL_FAILURE();
     fake_parent_->AddFidlService(fuchsia_hardware_platform_device::Service::Name,
-                                 std::move(outgoing_endpoints->client));
+                                 std::move(outgoing_endpoints->client), "pdev");
   }
 
   void TestRingBufferSize(uint8_t number_of_channels, uint32_t frames_req,

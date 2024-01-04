@@ -10,13 +10,15 @@ use {
     anyhow::anyhow,
     assert_matches::assert_matches,
     blobfs_ramdisk::BlobfsRamdisk,
+    diagnostics_assertions::TreeAssertion,
     fidl::endpoints::DiscoverableProtocolMarker as _,
-    fidl_fuchsia_boot as fboot, fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio,
-    fidl_fuchsia_metrics as fmetrics, fidl_fuchsia_pkg as fpkg, fidl_fuchsia_pkg_ext as fpkg_ext,
-    fidl_fuchsia_space as fspace, fidl_fuchsia_update as fupdate,
-    fidl_fuchsia_update_verify as fupdate_verify, fuchsia_async as fasync,
+    fidl_fuchsia_boot as fboot, fidl_fuchsia_component_resolution as fcomponent_resolution,
+    fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio, fidl_fuchsia_metrics as fmetrics,
+    fidl_fuchsia_pkg as fpkg, fidl_fuchsia_pkg_ext as fpkg_ext, fidl_fuchsia_space as fspace,
+    fidl_fuchsia_update as fupdate, fidl_fuchsia_update_verify as fupdate_verify,
+    fuchsia_async as fasync,
     fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route},
-    fuchsia_inspect::{reader::DiagnosticsHierarchy, testing::TreeAssertion},
+    fuchsia_inspect::reader::DiagnosticsHierarchy,
     fuchsia_merkle::Hash,
     fuchsia_pkg_testing::{get_inspect_hierarchy, BlobContents, Package},
     fuchsia_zircon::{self as zx, Status},
@@ -24,6 +26,7 @@ use {
     mock_boot_arguments::MockBootArgumentsService,
     mock_metrics::MockMetricEventLoggerFactory,
     mock_paver::{MockPaverService, MockPaverServiceBuilder},
+    mock_reboot::{MockRebootService, RebootReason},
     mock_verifier::MockVerifierService,
     parking_lot::Mutex,
     std::{collections::HashMap, sync::Arc, time::Duration},
@@ -39,7 +42,10 @@ mod inspect;
 mod pkgfs;
 mod retained_packages;
 mod space;
+mod startup;
 mod sync;
+
+static SHELL_COMMANDS_BIN_PATH: &'static str = "shell-commands-bin";
 
 #[derive(Debug)]
 enum WriteBlobError {
@@ -133,6 +139,7 @@ async fn get_missing_blobs(proxy: &fpkg::NeededBlobsProxy) -> Vec<fpkg::BlobInfo
 // Verifies that:
 //   1. all requested blobs are actually needed by the package
 //   2. no blob is requested more than once
+// Uses OpenPackageTracking protection.
 async fn get_and_verify_package(
     package_cache: &fpkg::PackageCacheProxy,
     pkg: &Package,
@@ -144,7 +151,12 @@ async fn get_and_verify_package(
         fidl::endpoints::create_proxy::<fpkg::NeededBlobsMarker>().unwrap();
     let (dir, dir_server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>().unwrap();
     let get_fut = package_cache
-        .get(&meta_blob_info, needed_blobs_server_end, Some(dir_server_end))
+        .get(
+            &meta_blob_info,
+            fpkg::GcProtection::OpenPackageTracking,
+            needed_blobs_server_end,
+            Some(dir_server_end),
+        )
         .map_ok(|res| res.map_err(zx::Status::from_raw));
 
     let (meta_far, _) = pkg.contents();
@@ -237,7 +249,12 @@ async fn verify_package_cached(
     let (dir, dir_server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>().unwrap();
 
     let get_fut = proxy
-        .get(&meta_blob_info, needed_blobs_server_end, Some(dir_server_end))
+        .get(
+            &meta_blob_info,
+            fpkg::GcProtection::OpenPackageTracking,
+            needed_blobs_server_end,
+            Some(dir_server_end),
+        )
         .map_ok(|res| res.map_err(Status::from_raw));
 
     // If the package is active in the dynamic index, the server will send a `ZX_OK` epitaph then
@@ -305,6 +322,7 @@ trait Blobfs {
     fn root_proxy(&self) -> fio::DirectoryProxy;
     fn svc_dir(&self) -> fio::DirectoryProxy;
     fn blob_creator_proxy(&self) -> Option<ffxfs::BlobCreatorProxy>;
+    fn blob_reader_proxy(&self) -> Option<ffxfs::BlobReaderProxy>;
 }
 
 impl Blobfs for BlobfsRamdisk {
@@ -316,6 +334,9 @@ impl Blobfs for BlobfsRamdisk {
     }
     fn blob_creator_proxy(&self) -> Option<ffxfs::BlobCreatorProxy> {
         self.blob_creator_proxy().unwrap()
+    }
+    fn blob_reader_proxy(&self) -> Option<ffxfs::BlobReaderProxy> {
+        self.blob_reader_proxy().unwrap()
     }
 }
 
@@ -444,6 +465,28 @@ where
                     fmetrics::MetricEventLoggerFactoryMarker::PROTOCOL_NAME,
                     vfs::service::host(move |stream| {
                         Arc::clone(&logger_factory).run_logger_factory(stream)
+                    }),
+                )
+                .unwrap();
+        }
+
+        let reboot_reasons = Arc::new(Mutex::new(vec![]));
+        let reboot_service = Arc::new(MockRebootService::new(Box::new({
+            let reboot_reasons = Arc::clone(&reboot_reasons);
+            move |reason| {
+                reboot_reasons.lock().push(reason);
+                Ok(())
+            }
+        })));
+        {
+            let reboot_service = Arc::clone(&reboot_service);
+            local_child_svc_dir
+                .add_entry(
+                    fidl_fuchsia_hardware_power_statecontrol::AdminMarker::PROTOCOL_NAME,
+                    vfs::service::host(move |stream| {
+                        Arc::clone(&reboot_service).run_reboot_service(stream).unwrap_or_else(|e| {
+                            panic!("error running reboot service: {:#}", anyhow!(e))
+                        })
                     }),
                 )
                 .unwrap();
@@ -599,6 +642,9 @@ where
                     .capability(
                         Capability::protocol::<fidl_fuchsia_tracing_provider::RegistryMarker>(),
                     )
+                    .capability(Capability::protocol::<
+                        fidl_fuchsia_hardware_power_statecontrol::AdminMarker,
+                    >())
                     .capability(
                         Capability::directory("blob-exec")
                             .path("/blob")
@@ -617,6 +663,12 @@ where
                             Capability::protocol::<ffxfs::BlobCreatorMarker>().path(format!(
                                 "/blob-svc/{}",
                                 ffxfs::BlobCreatorMarker::PROTOCOL_NAME
+                            )),
+                        )
+                        .capability(
+                            Capability::protocol::<ffxfs::BlobReaderMarker>().path(format!(
+                                "/blob-svc/{}",
+                                ffxfs::BlobReaderMarker::PROTOCOL_NAME
                             )),
                         )
                         .from(&service_reflector)
@@ -653,6 +705,9 @@ where
                     .capability(Capability::protocol::<fpkg::PackageCacheMarker>())
                     .capability(Capability::protocol::<fpkg::RetainedPackagesMarker>())
                     .capability(Capability::protocol::<fspace::ManagerMarker>())
+                    .capability(Capability::protocol::<fpkg::PackageResolverMarker>())
+                    .capability(Capability::protocol::<fcomponent_resolution::ResolverMarker>())
+                    .capability(Capability::directory(SHELL_COMMANDS_BIN_PATH))
                     .capability(Capability::directory("pkgfs"))
                     .capability(Capability::directory("system"))
                     .capability(Capability::directory("pkgfs-packages"))
@@ -701,9 +756,11 @@ where
             apps: Apps { realm_instance },
             blobfs,
             system_image,
+            reboot_reasons,
             proxies,
             mocks: Mocks {
                 logger_factory,
+                reboot_service,
                 _paver_service: paver_service,
                 _verifier_service: verifier_service,
             },
@@ -722,6 +779,7 @@ struct Proxies {
 
 pub struct Mocks {
     pub logger_factory: Arc<MockMetricEventLoggerFactory>,
+    pub reboot_service: Arc<MockRebootService>,
     _paver_service: Arc<MockPaverService>,
     _verifier_service: Arc<MockVerifierService>,
 }
@@ -734,6 +792,7 @@ struct TestEnv<B = BlobfsRamdisk> {
     apps: Apps,
     blobfs: B,
     system_image: Option<Hash>,
+    reboot_reasons: Arc<Mutex<Vec<RebootReason>>>,
     proxies: Proxies,
     pub mocks: Mocks,
 }
@@ -780,6 +839,7 @@ impl<B: Blobfs> TestEnv<B> {
             .package_cache
             .get(
                 &fpkg::BlobInfo { blob_id: fpkg::BlobId { merkle_root: [0; 32] }, length: 0 },
+                fpkg::GcProtection::OpenPackageTracking,
                 needed_blobs,
                 None,
             )
@@ -823,8 +883,13 @@ impl<B: Blobfs> TestEnv<B> {
     }
 
     async fn write_to_blobfs(&self, hash: &Hash, contents: &[u8]) {
-        let blobfs =
-            blobfs::Client::new(self.blobfs.root_proxy(), self.blobfs.blob_creator_proxy());
+        let blobfs = blobfs::Client::new(
+            self.blobfs.root_proxy(),
+            self.blobfs.blob_creator_proxy(),
+            self.blobfs.blob_reader_proxy(),
+            None,
+        )
+        .unwrap();
         // c++blobfs supports uncompressed and delivery blobs and FxBlob only supports delivery
         // blobs, so we always write delivery blobs.
         let () = compress_and_write_blob(
@@ -833,5 +898,9 @@ impl<B: Blobfs> TestEnv<B> {
         )
         .await
         .unwrap();
+    }
+
+    fn take_reboot_reasons(&self) -> Vec<RebootReason> {
+        std::mem::replace(&mut *self.reboot_reasons.lock(), vec![])
     }
 }

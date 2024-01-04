@@ -8,29 +8,18 @@ use crate::{
 };
 use anyhow::{bail, format_err, Error};
 use fidl::Channel;
-use fidl_fuchsia_overnet::{ConnectionInfo, ServiceProviderProxyInterface};
 use futures::lock::Mutex;
 use std::collections::{btree_map, BTreeMap};
 
-/// A type that can be converted into a fidl_fuchsia_overnet::Peer
+/// A type that can be converted into a super::Peer
 #[derive(Debug, Clone, PartialEq)]
 pub struct ListablePeer {
-    node_id: NodeId,
-    is_self: bool,
-    services: Vec<String>,
-}
-
-impl From<ListablePeer> for fidl_fuchsia_overnet::Peer {
-    fn from(p: ListablePeer) -> fidl_fuchsia_overnet::Peer {
-        fidl_fuchsia_overnet::Peer {
-            id: p.node_id.into(),
-            is_self: p.is_self,
-            description: fidl_fuchsia_overnet_protocol::PeerDescription {
-                services: Some(p.services),
-                ..Default::default()
-            },
-        }
-    }
+    /// Node ID of this peer.
+    pub node_id: NodeId,
+    /// Whether this peer is the node producing the list.
+    pub is_self: bool,
+    /// Services offered by this peer.
+    pub services: Vec<String>,
 }
 
 struct ListablePeerSet {
@@ -50,7 +39,7 @@ impl ListablePeerSet {
 }
 
 pub struct ServiceMapInner {
-    local_services: BTreeMap<String, Box<dyn ServiceProviderProxyInterface>>,
+    local_services: BTreeMap<String, Box<dyn Fn(fidl::Channel) -> Result<(), Error> + Send>>,
     local_service_list: Observable<Vec<String>>,
     list_peers: Observable<Vec<ListablePeer>>,
     listable_peer_set: ListablePeerSet,
@@ -79,30 +68,25 @@ impl ServiceMap {
         }
     }
 
-    pub async fn connect(
-        &self,
-        service_name: &str,
-        chan: Channel,
-        connection_info: &ConnectionInfo,
-    ) -> Result<(), Error> {
-        self.inner
+    pub async fn connect(&self, service_name: &str, chan: Channel) -> Result<(), Error> {
+        (self
+            .inner
             .lock()
             .await
             .local_services
             .get(service_name)
-            .ok_or_else(|| format_err!("Service not found: {}", service_name))?
-            .connect_to_service(chan, connection_info)?;
+            .ok_or_else(|| format_err!("Service not found: {}", service_name))?)(chan)?;
         Ok(())
     }
 
     pub async fn register_service(
         &self,
         service_name: String,
-        provider: Box<dyn ServiceProviderProxyInterface>,
+        provider: impl Fn(fidl::Channel) -> Result<(), Error> + Send + 'static,
     ) {
         tracing::trace!("Request register_service '{}'", service_name);
         let mut inner = self.inner.lock().await;
-        if inner.local_services.insert(service_name.clone(), provider).is_none() {
+        if inner.local_services.insert(service_name.clone(), Box::new(provider)).is_none() {
             tracing::trace!("Publish new service '{}'", service_name);
             let services: Vec<String> = inner.local_services.keys().cloned().collect();
             inner.local_service_list.maybe_push(services).await;

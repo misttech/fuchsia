@@ -12,17 +12,10 @@
 // This datasheet is distributed by Khadas for the VIM3, at
 // https://dl.khadas.com/hardware/VIM3/Datasheet/A311D_Datasheet_08_Wesion.pdf
 
-#define READ32_HHI_REG(a) hhi_mmio_->Read32(a)
-#define WRITE32_HHI_REG(a, v) hhi_mmio_->Write32(v, a)
-
 // clang-format off
 #define HHI_MIPI_CNTL0 (0x000 << 2)
 #define HHI_MIPI_CNTL1 (0x001 << 2)
 #define HHI_MIPI_CNTL2 (0x002 << 2)
-#define HHI_MEM_PD_REG0 (0x040 << 2)
-#define HHI_VPU_MEM_PD_REG0 (0x041 << 2)
-#define HHI_VPU_MEM_PD_REG1 (0x042 << 2)
-#define HHI_VPU_MEM_PD_REG2 (0x04d << 2)
 #define HHI_GCLK_MPEG2 (0x052 << 2)
 #define HHI_VID_PLL_CLK_DIV (0x068 << 2)
 #define HHI_VDAC_CNTL0_G12A (0x0bb << 2)
@@ -84,26 +77,8 @@
 #define L_VSYNC_HE_ADDR (0x145a << 2)
 #define L_VSYNC_VS_ADDR (0x145b << 2)
 #define L_VSYNC_VE_ADDR (0x145c << 2)
-#define L_OEH_HS_ADDR (0x1418 << 2)
-#define L_OEH_HE_ADDR (0x1419 << 2)
-#define L_OEH_VS_ADDR (0x141a << 2)
-#define L_OEH_VE_ADDR (0x141b << 2)
-#define L_OEV1_HS_ADDR (0x142f << 2)
-#define L_OEV1_HE_ADDR (0x1430 << 2)
-#define L_OEV1_VS_ADDR (0x1431 << 2)
-#define L_OEV1_VE_ADDR (0x1432 << 2)
 #define L_RGB_BASE_ADDR (0x1405 << 2)
 #define L_RGB_COEFF_ADDR (0x1406 << 2)
-#define L_STH1_HS_ADDR (0x1410 << 2)
-#define L_STH1_HE_ADDR (0x1411 << 2)
-#define L_STH1_VS_ADDR (0x1412 << 2)
-#define L_STH1_VE_ADDR (0x1413 << 2)
-#define L_TCON_MISC_SEL_ADDR (0x1441 << 2)
-#define L_STV1_HS_ADDR (0x1427 << 2)
-#define L_STV1_HE_ADDR (0x1428 << 2)
-#define L_STV1_VS_ADDR (0x1429 << 2)
-#define L_STV1_VE_ADDR (0x142a << 2)
-#define L_INV_CNT_ADDR (0x1440 << 2)
 
 #define VPP_MISC (0x1d26 << 2)
 #define VPP_OUT_SATURATE (1 << 0)
@@ -293,18 +268,6 @@ class HhiVidPllClkDivReg : public hwreg::RegisterBase<HhiVidPllClkDivReg, uint32
   DEF_FIELD(14, 0, shift_preset);
 
   static auto Get() { return hwreg::RegisterAddr<HhiVidPllClkDivReg>(HHI_VID_PLL_CLK_DIV); }
-};
-
-class HhiMemPdReg0 : public hwreg::RegisterBase<HhiMemPdReg0, uint32_t> {
- public:
-  // Memory PD
-  DEF_FIELD(21, 20, axi_srame);
-  DEF_FIELD(19, 18, apical_gdc);
-  DEF_FIELD(15, 8, hdmi);
-  DEF_FIELD(5, 4, audio);
-  DEF_FIELD(3, 2, ethernet);
-
-  static auto Get() { return hwreg::RegisterAddr<HhiMemPdReg0>(HHI_MEM_PD_REG0); }
 };
 
 class HhiGclkMpeg2Reg : public hwreg::RegisterBase<HhiGclkMpeg2Reg, uint32_t> {

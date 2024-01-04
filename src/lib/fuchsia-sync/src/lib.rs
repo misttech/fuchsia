@@ -4,9 +4,18 @@
 
 //! Fuchsia-native synchronization primitives.
 
+#[cfg(target_os = "fuchsia")]
 mod mutex;
+#[cfg(target_os = "fuchsia")]
 mod rwlock;
-mod zx;
 
+#[cfg(target_os = "fuchsia")]
 pub use mutex::*;
+#[cfg(target_os = "fuchsia")]
 pub use rwlock::*;
+
+#[cfg(not(target_os = "fuchsia"))]
+pub use parking_lot::{
+    MappedMutexGuard, Mutex, MutexGuard, RawMutex as RawSyncMutex, RawRwLock as RawSyncRwLock,
+    RwLock, RwLockReadGuard, RwLockWriteGuard,
+};

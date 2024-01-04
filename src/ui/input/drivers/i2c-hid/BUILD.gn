@@ -29,14 +29,14 @@ fuchsia_driver("i2c-hid-driver") {
   sources = [ "i2c-hid.cc" ]
   deps = [
     "//sdk/banjo/fuchsia.hardware.hidbus:fuchsia.hardware.hidbus_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.acpi:fuchsia.hardware.acpi_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.acpi:fuchsia.hardware.acpi_cpp",
     "//src/devices/i2c/lib/device-protocol-i2c-channel",
     "//src/devices/lib/acpi",
     "//src/devices/lib/driver",
     "//src/devices/lib/fragment-irq:dfv1",
     "//src/lib/ddk",
+    "//src/ui/input/lib/hid",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/hid",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/trace",
   ]
@@ -52,6 +52,11 @@ fuchsia_driver_component("i2c-hid") {
   manifest = "meta/i2c-hid.cml"
 }
 
+fuchsia_driver_package("package") {
+  package_name = "i2c-hid"
+  driver_components = [ ":i2c-hid" ]
+}
+
 test("i2c-hid-test") {
   configs += [ "//build/config:all_source" ]
   sources = [
@@ -61,7 +66,7 @@ test("i2c-hid-test") {
   deps = [
     ":i2c_hid_bind",
     "//sdk/banjo/fuchsia.hardware.hidbus:fuchsia.hardware.hidbus_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.acpi:fuchsia.hardware.acpi_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.acpi:fuchsia.hardware.acpi_cpp",
     "//sdk/lib/async_patterns/cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//src/devices/i2c/lib/device-protocol-i2c-channel",
@@ -71,13 +76,13 @@ test("i2c-hid-test") {
     "//src/devices/lib/fragment-irq:dfv1",
     "//src/devices/testing/mock-ddk",
     "//src/lib/ddk",
+    "//src/ui/input/lib/hid",
     "//src/ui/input/testing/fake-hidbus-ifc",
     "//zircon/system/ulib/async:async-cpp",
     "//zircon/system/ulib/async-default",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/async-loop:async-loop-default",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/hid",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/trace",
     "//zircon/system/ulib/zxtest",

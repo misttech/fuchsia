@@ -4,6 +4,8 @@
 
 #include <fidl/fuchsia.device/cpp/wire.h>
 #include <lib/magma/magma.h>
+#include <lib/magma/util/short_macros.h>
+#include <lib/magma_client/test_util/test_device_helper.h>
 #include <lib/zx/channel.h>
 
 #include <shared_mutex>
@@ -11,8 +13,7 @@
 
 #include <gtest/gtest.h>
 
-#include "helper/test_device_helper.h"
-#include "magma_util/short_macros.h"
+#include "driver_registry.h"
 #include "src/graphics/drivers/msd-arm-mali/include/magma_vendor_queries.h"
 
 namespace {
@@ -80,6 +81,8 @@ static void looper_thread_entry() {
 }
 
 static void test_shutdown(uint32_t iters) {
+  RegisteredTestDriver test_driver;
+  ASSERT_NO_FATAL_FAILURE(test_driver.Init());
   for (uint32_t i = 0; i < iters; i++) {
     complete_count = 0;
 
@@ -92,9 +95,16 @@ static void test_shutdown(uint32_t iters) {
         // connections while the device is torn down, just so it's easier to test that device
         // creation is working.
         std::unique_lock lock(connection_create_mutex);
-        // TODO(fxbug.dev/124976): Unify rebind and production drivers.
-        const char* kRebindDriverPath = "libmsd_arm_rebind.cm";
-        magma::TestDeviceBase::RebindParentDeviceFromId(MAGMA_VENDOR_ID_MALI, kRebindDriverPath);
+        if (test_driver.is_dfv2()) {
+          auto parent_device = component::Connect<fuchsia_device::Controller>(
+              std::string(test_driver.GetParentTopologicalPath()) + "/device_controller");
+
+          EXPECT_EQ(ZX_OK, parent_device.status_value());
+          magma::TestDeviceBase::RebindDevice(*parent_device, test_driver.GetRebindDriverSuffix());
+        } else {
+          magma::TestDeviceBase::RebindParentDeviceFromId(MAGMA_VENDOR_ID_MALI,
+                                                          test_driver.GetRebindDriverSuffix());
+        }
         count += kRestartCount;
       }
       std::this_thread::yield();

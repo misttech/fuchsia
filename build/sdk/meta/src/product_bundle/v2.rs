@@ -141,6 +141,7 @@ pub enum Type {
     Flash,
     Emu,
     Update,
+    Bootloader,
 }
 
 impl FromStr for Type {
@@ -150,7 +151,11 @@ impl FromStr for Type {
             "flash" => Ok(Type::Flash),
             "emu" => Ok(Type::Emu),
             "update" => Ok(Type::Update),
-            _ => Err(anyhow!("Invalid Type: {}. Expect one of : flash, emu, update", value)),
+            "bootloader" => Ok(Type::Bootloader),
+            _ => Err(anyhow!(
+                "Invalid Type: {}. Expect one of : flash, emu, update, bootloader",
+                value
+            )),
         }
     }
 }
@@ -171,13 +176,15 @@ impl ProductBundleV2 {
 
         // Canonicalize the path. If the path does not exist, print a warning
         // and skip canonicalization.
-        let mut canonicalize_path = |path: &Utf8Path, image_type: Type| -> Utf8PathBuf {
+        let mut canonicalize_path = |path: &Utf8Path, image_types: Vec<Type>| -> Utf8PathBuf {
             let product_bundle_path = product_bundle_dir.join(path);
             match product_bundle_path.canonicalize_utf8() {
                 Ok(p) => p,
                 Err(_) => {
                     eprintln!("Cannot canonicalize {}", &path);
-                    not_supported.insert(image_type);
+                    for image_type in &image_types {
+                        not_supported.insert(image_type.clone());
+                    }
                     product_bundle_dir.join(path).to_owned()
                 }
             }
@@ -185,25 +192,29 @@ impl ProductBundleV2 {
 
         // Canonicalize the partitions.
         for part in &mut self.partitions.bootstrap_partitions {
-            part.image = canonicalize_path(&part.image, Type::Flash);
+            part.image = canonicalize_path(&part.image, vec![Type::Flash]);
         }
         for part in &mut self.partitions.bootloader_partitions {
-            part.image = canonicalize_path(&part.image, Type::Flash);
+            part.image = canonicalize_path(&part.image, vec![Type::Flash]);
         }
         for cred in &mut self.partitions.unlock_credentials {
-            *cred = canonicalize_path(&cred, Type::Flash);
+            *cred = canonicalize_path(&cred, vec![Type::Flash]);
         }
 
         // Canonicalize the systems.
         let mut canonicalize_system = |system: &mut Option<Vec<Image>>| -> Result<()> {
             if let Some(system) = system {
                 for image in system.iter_mut() {
-                    let image_type = match image {
-                        Image::QemuKernel(_) | Image::FVM(_) => Type::Emu,
-                        _ => Type::Flash,
+                    let image_types = match image {
+                        Image::ZBI { path: _, signed: _ }
+                        | Image::Fxfs { path: _, contents: _ } => vec![Type::Emu, Type::Flash],
+                        Image::QemuKernel(_) | Image::FVM(_) => vec![Type::Emu],
+                        Image::FVMFastboot(_) | Image::VBMeta(_) => vec![Type::Flash],
+                        _ => vec![],
                     };
 
-                    image.set_source(&canonicalize_path(&image.source().to_path_buf(), image_type));
+                    image
+                        .set_source(&canonicalize_path(&image.source().to_path_buf(), image_types));
                 }
             }
             Ok(())
@@ -217,10 +228,11 @@ impl ProductBundleV2 {
                 let dir = product_bundle_dir.join(path);
                 // Create the directory to ensure that canonicalize will work.
                 if !dir.exists() {
-                    std::fs::create_dir_all(&dir)
-                        .with_context(|| format!("Creating the directory: {}", dir))?;
+                    if let Err(e) = std::fs::create_dir_all(&dir) {
+                        eprintln!("Cannot create directory: {}, {:#?}", dir, e);
+                    }
                 }
-                let path = canonicalize_path(path, Type::Update);
+                let path = canonicalize_path(path, vec![Type::Update]);
                 Ok(path)
             };
             repository.metadata_path = canonicalize_dir(&repository.metadata_path)?;
@@ -380,7 +392,8 @@ mod tests {
     #[test]
     fn test_canonicalize_with_paths() {
         let tmp = TempDir::new().unwrap();
-        let tempdir = Utf8Path::from_path(tmp.path()).unwrap();
+        // Canonicalize tempdir because on macOS /tmp is a symlink to /private/tmp
+        let tempdir = Utf8Path::from_path(tmp.path()).unwrap().canonicalize_utf8().unwrap();
 
         let create_temp_file = |name: &str| {
             let path = tempdir.join(name);
@@ -429,7 +442,7 @@ mod tests {
             update_package_hash: None,
             virtual_devices_path: Some("device".into()),
         };
-        let result = pb.canonicalize_paths(tempdir);
+        let result = pb.canonicalize_paths(&tempdir);
         assert!(result.is_ok());
 
         // Validate system_a. Note the fvm file does not exist in tempdir.

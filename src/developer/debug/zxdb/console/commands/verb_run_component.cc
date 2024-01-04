@@ -23,20 +23,19 @@ const char kHelp[] =
 
   Runs the component with the given URL.
 
-  V2 components will be launched in the "ffx-laboratory" collection, similar to
-  the behavior of "ffx component run --recreate". The collection only provides
+  Components will be launched in the "ffx-laboratory" collection, similar to
+  the behavior of "ffx component run --recreate". The collection provides
   a restricted set of capabilities and is only suitable for running some demo
   components. If any other capabilities are needed, it's recommended to declare
-  it statically and attach to it from the debugger.
+  it statically or create it elsewhere in the topology, and attach to it from
+  the debugger.
 
   See https://fuchsia.dev/fuchsia-src/development/components/run#ffx-laboratory.
 
 Arguments
 
   <url>
-      The URL of the component to run. Both v1 and v2 components are supported.
-      v1 components have their URLs ending with ".cmx", while v2 components have
-      their URLs ending with ".cm".
+      The URL of the component to run.
 
   <args>*
 
@@ -45,7 +44,6 @@ Arguments
 
 Examples
 
-  run-component fuchsia-pkg://fuchsia.com/crasher#meta/cpp_crasher.cmx log_fatal
   run-component fuchsia-pkg://fuchsia.com/crasher#meta/cpp_crasher.cm
 )";
 
@@ -69,27 +67,6 @@ void RunVerbRunComponent(const Command& cmd, fxl::RefPtr<CommandContext> cmd_con
   OutputBuffer warning(Syntax::kWarning, GetExclamation());
   warning.Append(" run-component won't work for many v2 components. See \"help run-component\".\n");
   cmd_context->Output(warning);
-
-  // Launch the component.
-  if (cmd.target()->session()->ipc_version() < 56) {
-    // For compatibility.
-    // TODO: remove me after kMinimumProtocolVersion >= 56.
-    debug_ipc::RunBinaryRequest request;
-    request.inferior_type = debug_ipc::InferiorType::kComponent;
-    request.argv = cmd.args();
-
-    cmd.target()->session()->remote_api()->RunBinary(
-        request, [cmd_context](Err err, debug_ipc::RunBinaryReply reply) mutable {
-          if (!err.has_error() && reply.status.has_error()) {
-            return cmd_context->ReportError(
-                Err("Failed to launch component: %s", reply.status.message().c_str()));
-          }
-          if (err.has_error()) {
-            cmd_context->ReportError(err);
-          }
-        });
-    return;
-  }
 
   debug_ipc::RunComponentRequest request;
   request.url = cmd.args()[0];

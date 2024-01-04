@@ -7,6 +7,8 @@ import("//src/sys/core/build/core_shard.gni")
 
 source_set("lib") {
   sources = [
+    "component.cc",
+    "component_watcher.cc",
     "job_watcher.cc",
     "process_watcher.cc",
     "sampler.cc",
@@ -14,10 +16,15 @@ source_set("lib") {
     "symbolizer_markup.cc",
     "targets.cc",
     "taskfinder.cc",
+    "unowned_component.cc",
   ]
 
   public_deps = [
+    "//sdk/fidl/fuchsia.component:fuchsia.component_cpp",
     "//sdk/fidl/fuchsia.cpu.profiler:fuchsia.cpu.profiler_cpp",
+    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
+    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_cpp",
+    "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fidl/cpp",
     "//sdk/lib/syslog/cpp",
@@ -29,6 +36,9 @@ source_set("lib") {
     "//zircon/system/ulib/elf-search",
     "//zircon/system/ulib/task-utils",
   ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 }
 
 executable("bin") {
@@ -43,6 +53,7 @@ executable("bin") {
   deps = [
     ":lib",
     "//sdk/fidl/fuchsia.cpu.profiler:fuchsia.cpu.profiler_cpp",
+    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fidl/cpp",
     "//sdk/lib/syslog/cpp",

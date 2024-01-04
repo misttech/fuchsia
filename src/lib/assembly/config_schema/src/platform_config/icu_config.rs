@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use include_str_from_working_dir::include_str_from_working_dir_env;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
@@ -11,12 +12,12 @@ pub struct ICUMap(pub std::collections::HashMap<Revision, String>);
 // See `rustenv` in //src/lib/assembly/config_schema:config_schema.
 pub static ICU_CONFIG_INFO: Lazy<ICUMap> = Lazy::new(|| {
     serde_json::from_value(
-        serde_json::from_str(include_str!(env!("ICU_GIT_INFO_JSON_FILE"))).unwrap(),
+        serde_json::from_str(include_str_from_working_dir_env!("ICU_GIT_INFO_JSON_FILE")).unwrap(),
     )
     .unwrap()
 });
 
-#[derive(Debug, Default, Deserialize, Serialize, PartialEq, Hash, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Revision {
     /// Whatever revision is currently 'default'.
@@ -53,12 +54,18 @@ impl std::fmt::Display for Revision {
 }
 
 /// System assembly configuration for the ICU subsystem.
-#[derive(Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq, Clone)]
 pub struct ICUConfig {
     /// The revision (corresponding to either one of the labels, or a git commit ID) of the ICU
     /// library to use in system assembly. This revision is constrained to the commit IDs available
     /// in the repos at `//third_party/icu/{default,stable,latest}`,
+    #[serde(default)]
     pub revision: Revision,
+
+    /// A list of packages that should receive ICU tzdata in their config directory.
+    /// TODO(b/297214394): Remove this option once all components use tzdata_provider.
+    #[serde(default)]
+    pub legacy_tzdata_packages: Vec<String>,
 }
 
 #[cfg(test)]
@@ -74,11 +81,25 @@ mod tests {
         let tests = vec![
             TestCase {
                 input: r#"{ "revision": { "commit_id": "deadbeef" } }"#,
-                expected: ICUConfig { revision: Revision::CommitId("deadbeef".into()) },
+                expected: ICUConfig {
+                    revision: Revision::CommitId("deadbeef".into()),
+                    legacy_tzdata_packages: vec![],
+                },
             },
             TestCase {
                 input: r#"{ "revision": "stable" }"#,
-                expected: ICUConfig { revision: Revision::Stable },
+                expected: ICUConfig { revision: Revision::Stable, legacy_tzdata_packages: vec![] },
+            },
+            TestCase {
+                input: r#"{}"#,
+                expected: ICUConfig { revision: Revision::Default, legacy_tzdata_packages: vec![] },
+            },
+            TestCase {
+                input: r#"{ "legacy_tzdata_packages": [ "one", "two" ] }"#,
+                expected: ICUConfig {
+                    revision: Revision::Default,
+                    legacy_tzdata_packages: vec!["one".to_string(), "two".to_string()],
+                },
             },
         ];
         for test in tests {

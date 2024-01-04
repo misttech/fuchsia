@@ -22,14 +22,19 @@ class CompositeNodeSpecV2 : public CompositeNodeSpec {
     return parent_set_collector_ ? parent_set_collector_->completed_composite_node() : std::nullopt;
   }
 
+  // Exposed for testing.
+  bool has_parent_set_collector_for_testing() const { return parent_set_collector_.has_value(); }
+
  protected:
   zx::result<std::optional<DeviceOrNode>> BindParentImpl(
-      fuchsia_driver_index::wire::MatchedCompositeNodeSpecInfo info,
+      fuchsia_driver_framework::wire::CompositeParent composite_parent,
       const DeviceOrNode& device_or_node) override;
 
  private:
-  fuchsia_driver_development::wire::CompositeInfo GetCompositeInfo(
+  fuchsia_driver_development::wire::CompositeNodeInfo GetCompositeInfo(
       fidl::AnyArena& arena) const override;
+
+  void RemoveImpl(RemoveCompositeNodeCallback callback) override;
 
   std::optional<ParentSetCollector> parent_set_collector_;
 
@@ -37,6 +42,10 @@ class CompositeNodeSpecV2 : public CompositeNodeSpec {
 
   async_dispatcher_t* const dispatcher_;
   NodeManager* node_manager_;
+
+  // Store our composite_info for easy responses to GetCompositeInfo.
+  // This is set the first time |BindParentImpl| is called.
+  std::optional<fuchsia_driver_framework::CompositeInfo> composite_info_ = std::nullopt;
 };
 
 }  // namespace dfv2

@@ -4,7 +4,9 @@
 
 use {
     crate::{
+        checksum::Checksum,
         debug_assert_not_too_long,
+        filesystem::TxnGuard,
         log::*,
         lsm_tree::types::Item,
         object_handle::INVALID_OBJECT_ID,
@@ -12,40 +14,35 @@ use {
             allocator::{AllocatorItem, Reservation},
             object_manager::{reserved_space_from_journal_usage, ObjectManager},
             object_record::{
-                ObjectItem, ObjectItemV25, ObjectItemV29, ObjectItemV30, ObjectItemV5, ObjectKey,
-                ObjectKeyData, ObjectValue, ProjectProperty,
+                ObjectItem, ObjectItemV25, ObjectItemV29, ObjectItemV30, ObjectItemV31,
+                ObjectItemV5, ObjectKey, ObjectKeyData, ObjectValue, ProjectProperty,
             },
         },
         serialized_types::{migrate_nodefault, migrate_to_version, Migrate, Versioned},
     },
     anyhow::Error,
-    async_trait::async_trait,
     either::{Either, Left, Right},
     fprint::TypeFingerprint,
     futures::{future::poll_fn, pin_mut},
     fxfs_crypto::WrappedKey,
+    rustc_hash::FxHashMap as HashMap,
     scopeguard::ScopeGuard,
     serde::{Deserialize, Serialize},
     std::{
         cell::UnsafeCell,
         cmp::Ordering,
-        collections::{
-            hash_map::{Entry, HashMap},
-            BTreeSet,
-        },
+        collections::{hash_map::Entry, BTreeSet},
         convert::{From, Into},
         fmt,
         marker::PhantomPinned,
         mem,
         ops::{Deref, DerefMut, Range},
-        sync::{Arc, Mutex},
+        sync::Mutex,
         task::{Poll, Waker},
         vec::Vec,
     },
 };
 
-/// `Options` are provided to types that expose the `TransactionHandler` trait.
-///
 /// This allows for special handling of certain transactions such as deletes and the
 /// extension of Journal extents. For most other use cases it is appropriate to use
 /// `default()` here.
@@ -66,6 +63,9 @@ pub struct Options<'a> {
     /// no free space.  The intention is that this should be used for things like the journal which
     /// require guaranteed space.
     pub allocator_reservation: Option<&'a Reservation>,
+
+    /// An existing transaction guard to be used.
+    pub txn_guard: Option<&'a TxnGuard<'a>>,
 }
 
 // This is the amount of space that we reserve for metadata when we are creating a new transaction.
@@ -80,59 +80,6 @@ pub const TRANSACTION_METADATA_MAX_AMOUNT: u64 =
 
 #[must_use]
 pub struct TransactionLocks<'a>(pub WriteGuard<'a>);
-
-impl TransactionLocks<'_> {
-    pub async fn commit_prepare(&self) {
-        self.0.manager.commit_prepare_keys(&self.0.lock_keys).await;
-    }
-}
-
-#[async_trait]
-pub trait TransactionHandler: AsRef<LockManager> + Send + Sync {
-    /// Initiates a new transaction.  Implementations should check to see that a transaction can be
-    /// created (for example, by checking to see that the journaling system can accept more
-    /// transactions), and then call Transaction::new.
-    async fn new_transaction<'a>(
-        self: Arc<Self>,
-        lock_keys: &[LockKey],
-        options: Options<'a>,
-    ) -> Result<Transaction<'a>, Error>;
-
-    /// Acquires transaction locks for |lock_keys| which can later be put into a transaction via
-    /// new_transaction_with_locks.
-    /// This is useful in situations where the lock needs to be held before the transaction options
-    /// can be determined, e.g. to take the allocator reservation.
-    async fn transaction_lock<'a>(&'a self, lock_keys: &[LockKey]) -> TransactionLocks<'a>;
-
-    /// Implementations should perform any required journaling and then apply the mutations via
-    /// ObjectManager's apply_mutation method.  Any mutations within the transaction should be
-    /// removed so that drop_transaction can tell that the transaction was committed.  If
-    /// successful, returns the journal offset that the transaction was written to.  `callback` will
-    /// be called if the transaction commits successfully and whilst locks are held.  See the
-    /// comment in Transaction::commit_with_callback for the reason why it's the type that it is.
-    async fn commit_transaction(
-        self: Arc<Self>,
-        transaction: &mut Transaction<'_>,
-        callback: &mut (dyn FnMut(u64) + Send),
-    ) -> Result<u64, Error>;
-
-    /// Drops a transaction (rolling back if not committed).  Committing a transaction should have
-    /// removed the mutations.  This is called automatically when Transaction is dropped, which is
-    /// why this isn't async.
-    fn drop_transaction(&self, transaction: &mut Transaction<'_>);
-
-    /// Acquires a read lock for the given keys.  Read locks are only blocked whilst a transaction
-    /// is being committed for the same locks.  They are only necessary where consistency is
-    /// required between different mutations within a transaction.  For example, a write might
-    /// change the size and extents for an object, in which case a read lock is required so that
-    /// observed size and extents are seen together or not at all.  Implementations should call
-    /// through to LockManager's read_lock implementation.
-    async fn read_lock<'a>(&'a self, lock_keys: &[LockKey]) -> ReadGuard<'a>;
-
-    /// Acquires a write lock for the given keys.  Write locks provide exclusive access to the
-    /// requested lock keys.
-    async fn write_lock<'a>(&'a self, lock_keys: &[LockKey]) -> WriteGuard<'a>;
-}
 
 /// The journal consists of these records which will be replayed at mount time.  Within a
 /// transaction, these are stored as a set which allows some mutations to be deduplicated and found
@@ -158,6 +105,19 @@ pub enum Mutation {
 }
 
 #[derive(Debug, Deserialize, Migrate, Serialize, Versioned, TypeFingerprint)]
+pub enum MutationV31 {
+    ObjectStore(ObjectStoreMutationV31),
+    EncryptedObjectStore(Box<[u8]>),
+    Allocator(AllocatorMutation),
+    BeginFlush,
+    EndFlush,
+    DeleteVolume,
+    UpdateBorrowed(u64),
+    UpdateMutationsKey(UpdateMutationsKey),
+}
+
+#[derive(Debug, Deserialize, Migrate, Serialize, Versioned, TypeFingerprint)]
+#[migrate_to_version(MutationV31)]
 pub enum MutationV30 {
     ObjectStore(ObjectStoreMutationV30),
     EncryptedObjectStore(Box<[u8]>),
@@ -252,6 +212,14 @@ pub struct ObjectStoreMutation {
 
 #[derive(Debug, Deserialize, Migrate, Serialize, TypeFingerprint)]
 #[migrate_nodefault]
+pub struct ObjectStoreMutationV31 {
+    item: ObjectItemV31,
+    op: Operation,
+}
+
+#[derive(Debug, Deserialize, Migrate, Serialize, TypeFingerprint)]
+#[migrate_nodefault]
+#[migrate_to_version(ObjectStoreMutationV31)]
 pub struct ObjectStoreMutationV30 {
     item: ObjectItemV30,
     op: Operation,
@@ -427,7 +395,7 @@ impl PartialEq for UpdateMutationsKey {
 
 /// When creating a transaction, locks typically need to be held to prevent two or more writers
 /// trying to make conflicting mutations at the same time.  LockKeys are used for this.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Copy)]
 pub enum LockKey {
     /// Used to lock changes to a particular object attribute (e.g. writes).
     ObjectAttribute {
@@ -442,18 +410,8 @@ pub enum LockKey {
         object_id: u64,
     },
 
-    /// Used to lock changes to the root volume (e.g. adding or removing a volume).
-    RootVolume,
-
     /// Locks the entire filesystem.
     Filesystem,
-
-    /// Used to lock cached writes to an object attribute.
-    CachedWrite {
-        store_object_id: u64,
-        object_id: u64,
-        attribute_id: u64,
-    },
 
     ProjectId {
         store_object_id: u64,
@@ -473,26 +431,141 @@ pub enum LockKey {
 }
 
 impl LockKey {
-    pub fn object_attribute(store_object_id: u64, object_id: u64, attribute_id: u64) -> Self {
+    pub const fn object_attribute(store_object_id: u64, object_id: u64, attribute_id: u64) -> Self {
         LockKey::ObjectAttribute { store_object_id, object_id, attribute_id }
     }
 
-    pub fn object(store_object_id: u64, object_id: u64) -> Self {
+    pub const fn object(store_object_id: u64, object_id: u64) -> Self {
         LockKey::Object { store_object_id, object_id }
     }
 
-    pub fn cached_write(store_object_id: u64, object_id: u64, attribute_id: u64) -> Self {
-        LockKey::CachedWrite { store_object_id, object_id, attribute_id }
-    }
-
-    pub fn flush(object_id: u64) -> Self {
+    pub const fn flush(object_id: u64) -> Self {
         LockKey::Flush { object_id }
     }
 
-    pub fn truncate(store_object_id: u64, object_id: u64) -> Self {
+    pub const fn truncate(store_object_id: u64, object_id: u64) -> Self {
         LockKey::Truncate { store_object_id, object_id }
     }
 }
+
+/// A container for holding `LockKey` objects. Can store a single `LockKey` inline.
+#[derive(Clone, Debug)]
+pub enum LockKeys {
+    None,
+    Inline(LockKey),
+    Vec(Vec<LockKey>),
+}
+
+impl LockKeys {
+    pub fn with_capacity(capacity: usize) -> Self {
+        if capacity > 1 {
+            LockKeys::Vec(Vec::with_capacity(capacity))
+        } else {
+            LockKeys::None
+        }
+    }
+
+    pub fn push(&mut self, key: LockKey) {
+        match self {
+            Self::None => *self = LockKeys::Inline(key),
+            Self::Inline(inline) => {
+                *self = LockKeys::Vec(vec![*inline, key]);
+            }
+            Self::Vec(vec) => vec.push(key),
+        }
+    }
+
+    pub fn truncate(&mut self, len: usize) {
+        match self {
+            Self::None => {}
+            Self::Inline(_) => {
+                if len == 0 {
+                    *self = Self::None;
+                }
+            }
+            Self::Vec(vec) => vec.truncate(len),
+        }
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            Self::None => 0,
+            Self::Inline(_) => 1,
+            Self::Vec(vec) => vec.len(),
+        }
+    }
+
+    fn contains(&self, key: &LockKey) -> bool {
+        match self {
+            Self::None => false,
+            Self::Inline(single) => single == key,
+            Self::Vec(vec) => vec.contains(key),
+        }
+    }
+
+    fn sort_unstable(&mut self) {
+        match self {
+            Self::Vec(vec) => vec.sort_unstable(),
+            _ => {}
+        }
+    }
+
+    fn dedup(&mut self) {
+        match self {
+            Self::Vec(vec) => vec.dedup(),
+            _ => {}
+        }
+    }
+
+    fn iter(&self) -> LockKeysIter<'_> {
+        match self {
+            LockKeys::None => LockKeysIter::None,
+            LockKeys::Inline(key) => LockKeysIter::Inline(key),
+            LockKeys::Vec(keys) => LockKeysIter::Vec(keys.into_iter()),
+        }
+    }
+}
+
+enum LockKeysIter<'a> {
+    None,
+    Inline(&'a LockKey),
+    Vec(<&'a Vec<LockKey> as IntoIterator>::IntoIter),
+}
+
+impl<'a> Iterator for LockKeysIter<'a> {
+    type Item = &'a LockKey;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::None => None,
+            Self::Inline(inline) => {
+                let next = *inline;
+                *self = Self::None;
+                Some(next)
+            }
+            Self::Vec(vec) => vec.next(),
+        }
+    }
+}
+
+impl Default for LockKeys {
+    fn default() -> Self {
+        LockKeys::None
+    }
+}
+
+#[macro_export]
+macro_rules! lock_keys {
+    () => {
+        $crate::object_store::transaction::LockKeys::None
+    };
+    ($lock_key:expr $(,)?) => {
+        $crate::object_store::transaction::LockKeys::Inline($lock_key)
+    };
+    ($($lock_keys:expr),+ $(,)?) => {
+        $crate::object_store::transaction::LockKeys::Vec(vec![$($lock_keys),+])
+    };
+}
+pub use lock_keys;
 
 /// Mutations can be associated with an object so that when mutations are applied, updates can be
 /// applied to in-memory structures.  For example, we cache object sizes, so when a size change is
@@ -533,7 +606,7 @@ pub struct TxnMutation<'a> {
 }
 
 // We store TxnMutation in a set, and for that, we only use object_id and mutation and not the
-// associated object.
+// associated object or checksum.
 impl Ord for TxnMutation<'_> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.object_id.cmp(&other.object_id).then_with(|| self.mutation.cmp(&other.mutation))
@@ -580,16 +653,13 @@ pub enum MetadataReservation {
 
 /// A transaction groups mutation records to be committed as a group.
 pub struct Transaction<'a> {
-    handler: Arc<dyn TransactionHandler>,
+    txn_guard: TxnGuard<'a>,
 
     // The mutations that make up this transaction.
     mutations: BTreeSet<TxnMutation<'a>>,
 
     // The locks that this transaction currently holds.
-    txn_locks: Vec<LockKey>,
-
-    // The read locks that this transaction currently holds.
-    read_locks: Vec<LockKey>,
+    txn_locks: LockKeys,
 
     /// If set, an allocator reservation that should be used for allocations.
     pub allocator_reservation: Option<&'a Reservation>,
@@ -600,33 +670,48 @@ pub struct Transaction<'a> {
     // Keep track of objects explicitly created by this transaction. No locks are required for them.
     // Addressed by (owner_object_id, object_id).
     new_objects: BTreeSet<(u64, u64)>,
+
+    /// Any data checksums which should be evaluated when replaying this transaction.
+    checksums: Vec<(Range<u64>, Vec<Checksum>)>,
 }
 
 impl<'a> Transaction<'a> {
-    /// Creates a new transaction.  This should typically be called by a TransactionHandler's
-    /// implementation of new_transaction.  The read locks are acquired before the transaction
-    /// locks (see LockManager for the semantics of the different kinds of locks).
-    pub async fn new<H: TransactionHandler + 'static>(
-        handler: Arc<H>,
-        metadata_reservation: MetadataReservation,
-        read_locks: &[LockKey],
-        txn_locks: &[LockKey],
-    ) -> Transaction<'a> {
-        let (read_locks, txn_locks) = {
-            let lock_manager: &LockManager = handler.as_ref().as_ref();
-            let mut read_guard = debug_assert_not_too_long!(lock_manager.read_lock(read_locks));
-            let mut write_guard = debug_assert_not_too_long!(lock_manager.txn_lock(txn_locks));
-            (std::mem::take(&mut read_guard.lock_keys), std::mem::take(&mut write_guard.lock_keys))
+    /// Creates a new transaction.  `txn_locks` are read locks that can be upgraded to write locks
+    /// at commit time.
+    pub async fn new(
+        txn_guard: TxnGuard<'a>,
+        options: Options<'a>,
+        txn_locks: LockKeys,
+    ) -> Result<Transaction<'a>, Error> {
+        txn_guard.fs.add_transaction(options.skip_journal_checks).await;
+        let fs = txn_guard.fs.clone();
+        let guard = scopeguard::guard((), |_| fs.sub_transaction());
+        let (metadata_reservation, allocator_reservation, hold) =
+            txn_guard.fs.reservation_for_transaction(options).await?;
+
+        let txn_locks = {
+            let lock_manager = txn_guard.fs.lock_manager();
+            let mut write_guard = lock_manager.txn_lock(txn_locks).await;
+            std::mem::take(&mut write_guard.0.lock_keys)
         };
-        Transaction {
-            handler,
+        let mut transaction = Transaction {
+            txn_guard,
             mutations: BTreeSet::new(),
             txn_locks,
-            read_locks,
             allocator_reservation: None,
             metadata_reservation,
             new_objects: BTreeSet::new(),
-        }
+            checksums: Vec::new(),
+        };
+
+        ScopeGuard::into_inner(guard);
+        hold.map(|h| h.forget()); // Transaction takes ownership from here on.
+        transaction.allocator_reservation = allocator_reservation;
+        Ok(transaction)
+    }
+
+    pub fn txn_guard(&self) -> &TxnGuard<'_> {
+        &self.txn_guard
     }
 
     pub fn mutations(&self) -> &BTreeSet<TxnMutation<'a>> {
@@ -674,6 +759,14 @@ impl<'a> Transaction<'a> {
         let txn_mutation = TxnMutation { object_id, mutation, associated_object };
         self.verify_locks(&txn_mutation);
         self.mutations.replace(txn_mutation).map(|m| m.mutation)
+    }
+
+    pub fn add_checksum(&mut self, range: Range<u64>, checksums: Vec<Checksum>) {
+        self.checksums.push((range, checksums));
+    }
+
+    pub fn take_checksums(&mut self) -> Vec<(Range<u64>, Vec<Checksum>)> {
+        std::mem::replace(&mut self.checksums, Vec::new())
     }
 
     fn verify_locks(&mut self, mutation: &TxnMutation<'_>) {
@@ -775,7 +868,20 @@ impl<'a> Transaction<'a> {
                     Operation::Merge => {}
                 },
                 ObjectKeyData::ExtendedAttribute { .. } => {
-                    // TODO(fxbug.dev/122975): Check lock requirements.
+                    let id = key.object_id;
+                    if !self.txn_locks.contains(&LockKey::object(*store_object_id, id))
+                        && !self.new_objects.contains(&(*store_object_id, id))
+                    {
+                        debug_assert!(
+                            false,
+                            "Not holding required lock for object {id} \
+                                in store {store_object_id} while mutating extended attribute"
+                        );
+                        error!(
+                            "Not holding required lock for object {id} in store \
+                                {store_object_id} while mutating extended attribute"
+                        )
+                    }
                 }
             }
         }
@@ -809,7 +915,7 @@ impl<'a> Transaction<'a> {
     /// Commits a transaction.  If successful, returns the journal offset of the transaction.
     pub async fn commit(mut self) -> Result<u64, Error> {
         debug!(txn = ?&self, "Commit");
-        self.handler.clone().commit_transaction(&mut self, &mut |_| {}).await
+        self.txn_guard.fs.clone().commit_transaction(&mut self, &mut |_| {}).await
     }
 
     /// Commits and then runs the callback whilst locks are held.  The callback accepts a single
@@ -823,7 +929,8 @@ impl<'a> Transaction<'a> {
         // do that (for performance reasons), hence the reason for the following.
         let mut f = Some(f);
         let mut result = None;
-        self.handler
+        self.txn_guard
+            .fs
             .clone()
             .commit_transaction(&mut self, &mut |offset| {
                 result = Some(f.take().unwrap()(offset));
@@ -836,19 +943,19 @@ impl<'a> Transaction<'a> {
     /// dropped (but transaction locks will get downgraded to read locks).
     pub async fn commit_and_continue(&mut self) -> Result<(), Error> {
         debug!(txn = ?self, "Commit");
-        self.handler.clone().commit_transaction(self, &mut |_| {}).await?;
+        self.txn_guard.fs.clone().commit_transaction(self, &mut |_| {}).await?;
         assert!(self.mutations.is_empty());
-        self.handler.as_ref().as_ref().downgrade_locks(&self.txn_locks);
+        self.txn_guard.fs.lock_manager().downgrade_locks(&self.txn_locks);
         Ok(())
     }
 }
 
 impl Drop for Transaction<'_> {
     fn drop(&mut self) {
-        // Call the TransactionHandler implementation of drop_transaction which should, as a
-        // minimum, call LockManager's drop_transaction to ensure the locks are released.
+        // Call the filesystem implementation of drop_transaction which should, as a minimum, call
+        // LockManager's drop_transaction to ensure the locks are released.
         debug!(txn = ?&self, "Drop");
-        self.handler.clone().drop_transaction(self);
+        self.txn_guard.fs.clone().drop_transaction(self);
     }
 }
 
@@ -857,9 +964,36 @@ impl std::fmt::Debug for Transaction<'_> {
         f.debug_struct("Transaction")
             .field("mutations", &self.mutations)
             .field("txn_locks", &self.txn_locks)
-            .field("read_locks", &self.read_locks)
             .field("reservation", &self.allocator_reservation)
             .finish()
+    }
+}
+
+pub enum BorrowedOrOwned<'a, T> {
+    Borrowed(&'a T),
+    Owned(T),
+}
+
+impl<T> Deref for BorrowedOrOwned<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            BorrowedOrOwned::Borrowed(b) => b,
+            BorrowedOrOwned::Owned(o) => &o,
+        }
+    }
+}
+
+impl<'a, T> From<&'a T> for BorrowedOrOwned<'a, T> {
+    fn from(value: &'a T) -> Self {
+        BorrowedOrOwned::Borrowed(value)
+    }
+}
+
+impl<T> From<T> for BorrowedOrOwned<'_, T> {
+    fn from(value: T) -> Self {
+        BorrowedOrOwned::Owned(value)
     }
 }
 
@@ -912,23 +1046,23 @@ impl Locks {
         }
     }
 
-    fn drop_read_locks(&mut self, lock_keys: Vec<LockKey>) {
-        for lock in lock_keys {
-            self.drop_lock(lock, LockState::ReadLock);
+    fn drop_read_locks(&mut self, lock_keys: LockKeys) {
+        for lock in lock_keys.iter() {
+            self.drop_lock(*lock, LockState::ReadLock);
         }
     }
 
-    fn drop_write_locks(&mut self, lock_keys: Vec<LockKey>) {
-        for lock in lock_keys {
+    fn drop_write_locks(&mut self, lock_keys: LockKeys) {
+        for lock in lock_keys.iter() {
             // This is a bit hacky, but this works for locks in either the Locked or WriteLock
             // states.
-            self.drop_lock(lock, LockState::WriteLock);
+            self.drop_lock(*lock, LockState::WriteLock);
         }
     }
 
     // Downgrades locks from WriteLock to Locked.
-    fn downgrade_locks(&mut self, lock_keys: &[LockKey]) {
-        for lock in lock_keys {
+    fn downgrade_locks(&mut self, lock_keys: &LockKeys) {
+        for lock in lock_keys.iter() {
             // SAFETY: The lock in `LockManager::locks` is held.
             unsafe {
                 self.keys.get_mut(lock).unwrap().downgrade_lock();
@@ -1013,7 +1147,7 @@ impl LockWaker {
                     if self.is_upgrade {
                         locks.keys.get_mut(&self.key).unwrap().downgrade_lock();
                     } else {
-                        locks.drop_lock(self.key.clone(), self.target_state);
+                        locks.drop_lock(self.key, self.target_state);
                     }
                 } else {
                     // We haven't been woken but we've been dropped so we must remove ourself from
@@ -1055,49 +1189,54 @@ enum LockState {
 
 impl LockManager {
     pub fn new() -> Self {
-        LockManager { locks: Mutex::new(Locks { keys: HashMap::new() }) }
+        LockManager { locks: Mutex::new(Locks { keys: HashMap::default() }) }
     }
 
     /// Acquires the locks.  It is the caller's responsibility to ensure that drop_transaction is
-    /// called when a transaction is dropped i.e. implementers of TransactionHandler's
-    /// drop_transaction method should call LockManager's drop_transaction method.
-    pub async fn txn_lock<'a>(&'a self, lock_keys: &[LockKey]) -> WriteGuard<'a> {
-        self.lock(lock_keys, LockState::Locked).await.right().unwrap()
+    /// called when a transaction is dropped i.e. the filesystem's drop_transaction method should
+    /// call LockManager's drop_transaction method.
+    pub async fn txn_lock<'a>(&'a self, lock_keys: LockKeys) -> TransactionLocks<'a> {
+        TransactionLocks(
+            debug_assert_not_too_long!(self.lock(lock_keys, LockState::Locked)).right().unwrap(),
+        )
     }
 
     // `state` indicates the kind of lock required.  ReadLock means acquire a read lock.  Locked
     // means lock other writers, but still allow readers.  WriteLock means acquire a write lock.
     async fn lock<'a>(
         &'a self,
-        lock_keys: &[LockKey],
+        mut lock_keys: LockKeys,
         target_state: LockState,
     ) -> Either<ReadGuard<'a>, WriteGuard<'a>> {
         let mut guard = match &target_state {
-            LockState::ReadLock => Left(ReadGuard { manager: self, lock_keys: Vec::new() }),
-            LockState::Locked | LockState::WriteLock => {
-                Right(WriteGuard { manager: self, lock_keys: Vec::new() })
-            }
+            LockState::ReadLock => Left(ReadGuard {
+                manager: self,
+                lock_keys: LockKeys::with_capacity(lock_keys.len()),
+            }),
+            LockState::Locked | LockState::WriteLock => Right(WriteGuard {
+                manager: self,
+                lock_keys: LockKeys::with_capacity(lock_keys.len()),
+            }),
         };
         let guard_keys = match &mut guard {
             Left(g) => &mut g.lock_keys,
             Right(g) => &mut g.lock_keys,
         };
-        let mut lock_keys = lock_keys.to_vec();
         lock_keys.sort_unstable();
         lock_keys.dedup();
-        for lock in lock_keys {
+        for lock in lock_keys.iter() {
             let lock_waker = None;
             pin_mut!(lock_waker);
             {
                 let mut locks = self.locks.lock().unwrap();
-                match locks.keys.entry(lock.clone()) {
+                match locks.keys.entry(*lock) {
                     Entry::Vacant(vacant) => {
                         vacant.insert(LockEntry {
                             read_count: if let LockState::ReadLock = target_state {
-                                guard_keys.push(lock.clone());
+                                guard_keys.push(*lock);
                                 1
                             } else {
-                                guard_keys.push(lock.clone());
+                                guard_keys.push(*lock);
                                 0
                             },
                             state: target_state,
@@ -1111,10 +1250,10 @@ impl LockManager {
                         if unsafe { entry.is_allowed(target_state, entry.head.is_null()) } {
                             if let LockState::ReadLock = target_state {
                                 entry.read_count += 1;
-                                guard_keys.push(lock.clone());
+                                guard_keys.push(*lock);
                             } else {
                                 entry.state = target_state;
-                                guard_keys.push(lock.clone());
+                                guard_keys.push(*lock);
                             }
                         } else {
                             // Initialise a waker and push it on the tail of the list.
@@ -1123,7 +1262,7 @@ impl LockManager {
                                 *lock_waker.as_mut().get_unchecked_mut() = Some(LockWaker {
                                     next: UnsafeCell::new(std::ptr::null()),
                                     prev: UnsafeCell::new(entry.tail),
-                                    key: lock.clone(),
+                                    key: *lock,
                                     waker: UnsafeCell::new(WakerState::Pending),
                                     target_state: target_state,
                                     is_upgrade: false,
@@ -1146,17 +1285,16 @@ impl LockManager {
             }
             if let Some(waker) = &*lock_waker {
                 waker.wait(self).await;
-                guard_keys.push(lock);
+                guard_keys.push(*lock);
             }
         }
         guard
     }
 
-    /// This should be called by a TransactionHandler drop_transaction implementation.
+    /// This should be called by the filesystem's drop_transaction implementation.
     pub fn drop_transaction(&self, transaction: &mut Transaction<'_>) {
         let mut locks = self.locks.lock().unwrap();
         locks.drop_write_locks(std::mem::take(&mut transaction.txn_locks));
-        locks.drop_read_locks(std::mem::take(&mut transaction.read_locks));
     }
 
     /// Prepares to commit by waiting for readers to finish.
@@ -1164,8 +1302,8 @@ impl LockManager {
         self.commit_prepare_keys(&transaction.txn_locks).await;
     }
 
-    async fn commit_prepare_keys(&self, lock_keys: &[LockKey]) {
-        for lock in lock_keys {
+    async fn commit_prepare_keys(&self, lock_keys: &LockKeys) {
+        for lock in lock_keys.iter() {
             let lock_waker = None;
             pin_mut!(lock_waker);
             {
@@ -1182,7 +1320,7 @@ impl LockManager {
                         *lock_waker.as_mut().get_unchecked_mut() = Some(LockWaker {
                             next: UnsafeCell::new(entry.head),
                             prev: UnsafeCell::new(std::ptr::null()),
-                            key: lock.clone(),
+                            key: *lock,
                             waker: UnsafeCell::new(WakerState::Pending),
                             target_state: LockState::WriteLock,
                             is_upgrade: true,
@@ -1208,17 +1346,24 @@ impl LockManager {
         }
     }
 
-    pub async fn read_lock<'a>(&'a self, lock_keys: &[LockKey]) -> ReadGuard<'a> {
-        self.lock(lock_keys, LockState::ReadLock).await.left().unwrap()
+    /// Acquires a read lock for the given keys.  Read locks are only blocked whilst a transaction
+    /// is being committed for the same locks.  They are only necessary where consistency is
+    /// required between different mutations within a transaction.  For example, a write might
+    /// change the size and extents for an object, in which case a read lock is required so that
+    /// observed size and extents are seen together or not at all.
+    pub async fn read_lock<'a>(&'a self, lock_keys: LockKeys) -> ReadGuard<'a> {
+        debug_assert_not_too_long!(self.lock(lock_keys, LockState::ReadLock)).left().unwrap()
     }
 
-    pub async fn write_lock<'a>(&'a self, lock_keys: &[LockKey]) -> WriteGuard<'a> {
-        self.lock(lock_keys, LockState::WriteLock).await.right().unwrap()
+    /// Acquires a write lock for the given keys.  Write locks provide exclusive access to the
+    /// requested lock keys.
+    pub async fn write_lock<'a>(&'a self, lock_keys: LockKeys) -> WriteGuard<'a> {
+        debug_assert_not_too_long!(self.lock(lock_keys, LockState::WriteLock)).right().unwrap()
     }
 
     /// Downgrades locks from the WriteLock state to Locked state.  This will panic if the locks are
     /// not in the WriteLock state.
-    pub fn downgrade_locks(&self, lock_keys: &[LockKey]) {
+    pub fn downgrade_locks(&self, lock_keys: &LockKeys) {
         self.locks.lock().unwrap().downgrade_locks(lock_keys);
     }
 }
@@ -1333,7 +1478,7 @@ impl LockEntry {
 #[must_use]
 pub struct ReadGuard<'a> {
     manager: &'a LockManager,
-    lock_keys: Vec<LockKey>,
+    lock_keys: LockKeys,
 }
 
 impl Drop for ReadGuard<'_> {
@@ -1355,7 +1500,7 @@ impl fmt::Debug for ReadGuard<'_> {
 #[must_use]
 pub struct WriteGuard<'a> {
     manager: &'a LockManager,
-    lock_keys: Vec<LockKey>,
+    lock_keys: LockKeys,
 }
 
 impl Drop for WriteGuard<'_> {
@@ -1377,14 +1522,14 @@ impl fmt::Debug for WriteGuard<'_> {
 #[cfg(test)]
 mod tests {
     use {
-        super::{LockKey, LockManager, LockState, Mutation, Options, TransactionHandler},
+        super::{lock_keys, LockKey, LockKeys, LockManager, LockState, Mutation, Options},
         crate::filesystem::FxFilesystem,
         fuchsia_async as fasync,
         futures::{
             channel::oneshot::channel, future::FutureExt, join, pin_mut, stream::FuturesUnordered,
             StreamExt,
         },
-        std::{sync::Mutex, task::Poll, time::Duration},
+        std::{sync::Mutex, task::Poll, time::Duration, vec::Vec},
         storage_device::{fake_device::FakeDevice, DeviceHolder},
     };
 
@@ -1394,7 +1539,7 @@ mod tests {
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
         let mut t = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         t.add(1, Mutation::BeginFlush);
@@ -1409,11 +1554,15 @@ mod tests {
         let (send2, recv2) = channel();
         let (send3, recv3) = channel();
         let done = Mutex::new(false);
-        join!(
+        let mut futures = FuturesUnordered::new();
+        futures.push(
             async {
                 let _t = fs
                     .clone()
-                    .new_transaction(&[LockKey::object_attribute(1, 2, 3)], Options::default())
+                    .new_transaction(
+                        lock_keys![LockKey::object_attribute(1, 2, 3)],
+                        Options::default(),
+                    )
                     .await
                     .expect("new_transaction failed");
                 send1.send(()).unwrap(); // Tell the next future to continue.
@@ -1422,28 +1571,42 @@ mod tests {
                 // This is a halting problem so all we can do is sleep.
                 fasync::Timer::new(Duration::from_millis(100)).await;
                 assert!(!*done.lock().unwrap());
-            },
+            }
+            .boxed(),
+        );
+        futures.push(
             async {
                 recv1.await.unwrap();
                 // This should not block since it is a different key.
                 let _t = fs
                     .clone()
-                    .new_transaction(&[LockKey::object_attribute(2, 2, 3)], Options::default())
+                    .new_transaction(
+                        lock_keys![LockKey::object_attribute(2, 2, 3)],
+                        Options::default(),
+                    )
                     .await
                     .expect("new_transaction failed");
                 // Tell the first future to continue.
                 send2.send(()).unwrap();
-            },
+            }
+            .boxed(),
+        );
+        futures.push(
             async {
                 // This should block until the first future has completed.
                 recv3.await.unwrap();
                 let _t = fs
                     .clone()
-                    .new_transaction(&[LockKey::object_attribute(1, 2, 3)], Options::default())
+                    .new_transaction(
+                        lock_keys![LockKey::object_attribute(1, 2, 3)],
+                        Options::default(),
+                    )
                     .await;
                 *done.lock().unwrap() = true;
             }
+            .boxed(),
         );
+        while let Some(()) = futures.next().await {}
     }
 
     #[fuchsia::test]
@@ -1457,7 +1620,10 @@ mod tests {
             async {
                 let t = fs
                     .clone()
-                    .new_transaction(&[LockKey::object_attribute(1, 2, 3)], Options::default())
+                    .new_transaction(
+                        lock_keys![LockKey::object_attribute(1, 2, 3)],
+                        Options::default(),
+                    )
                     .await
                     .expect("new_transaction failed");
                 send1.send(()).unwrap(); // Tell the next future to continue.
@@ -1468,7 +1634,10 @@ mod tests {
             async {
                 recv1.await.unwrap();
                 // Reads should not be blocked until the transaction is committed.
-                let _guard = fs.read_lock(&[LockKey::object_attribute(1, 2, 3)]).await;
+                let _guard = fs
+                    .lock_manager()
+                    .read_lock(lock_keys![LockKey::object_attribute(1, 2, 3)])
+                    .await;
                 // Tell the first future to continue.
                 send2.send(()).unwrap();
                 // It shouldn't proceed until we release our read lock, but it's a halting
@@ -1489,8 +1658,11 @@ mod tests {
         join!(
             async {
                 // Reads should not be blocked until the transaction is committed.
-                let _guard = fs.read_lock(&[LockKey::object_attribute(1, 2, 3)]).await;
-                // Tell the next future to continue and then nwait.
+                let _guard = fs
+                    .lock_manager()
+                    .read_lock(lock_keys![LockKey::object_attribute(1, 2, 3)])
+                    .await;
+                // Tell the next future to continue and then wait.
                 send1.send(()).unwrap();
                 recv2.await.unwrap();
                 // It shouldn't proceed until we release our read lock, but it's a halting
@@ -1502,7 +1674,10 @@ mod tests {
                 recv1.await.unwrap();
                 let t = fs
                     .clone()
-                    .new_transaction(&[LockKey::object_attribute(1, 2, 3)], Options::default())
+                    .new_transaction(
+                        lock_keys![LockKey::object_attribute(1, 2, 3)],
+                        Options::default(),
+                    )
                     .await
                     .expect("new_transaction failed");
                 send2.send(()).unwrap(); // Tell the first future to continue;
@@ -1516,28 +1691,28 @@ mod tests {
     async fn test_drop_uncommitted_transaction() {
         let device = DeviceHolder::new(FakeDevice::new(4096, 1024));
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
-        let key = LockKey::object(1, 1);
+        let key = lock_keys![LockKey::object(1, 1)];
 
         // Dropping while there's a reader.
         {
             let _write_lock = fs
                 .clone()
-                .new_transaction(&[key.clone()], Options::default())
+                .new_transaction(key.clone(), Options::default())
                 .await
                 .expect("new_transaction failed");
-            let _read_lock = fs.read_lock(&[key.clone()]).await;
+            let _read_lock = fs.lock_manager().read_lock(key.clone()).await;
         }
         // Dropping while there's no reader.
         {
             let _write_lock = fs
                 .clone()
-                .new_transaction(&[key.clone()], Options::default())
+                .new_transaction(key.clone(), Options::default())
                 .await
                 .expect("new_transaction failed");
         }
         // Make sure we can take the lock again (i.e. it was actually released).
         fs.clone()
-            .new_transaction(&[key.clone()], Options::default())
+            .new_transaction(key.clone(), Options::default())
             .await
             .expect("new_transaction failed");
     }
@@ -1545,10 +1720,11 @@ mod tests {
     #[fuchsia::test]
     async fn test_drop_waiting_write_lock() {
         let manager = LockManager::new();
-        let keys = &[LockKey::object(1, 1)];
+        let keys = lock_keys![LockKey::object(1, 1)];
         {
-            let _guard = manager.lock(keys, LockState::ReadLock).await;
-            if let Poll::Ready(_) = futures::poll!(manager.lock(keys, LockState::WriteLock).boxed())
+            let _guard = manager.lock(keys.clone(), LockState::ReadLock).await;
+            if let Poll::Ready(_) =
+                futures::poll!(manager.lock(keys.clone(), LockState::WriteLock).boxed())
             {
                 assert!(false);
             }
@@ -1559,20 +1735,22 @@ mod tests {
     #[fuchsia::test]
     async fn test_write_lock_blocks_everything() {
         let manager = LockManager::new();
-        let keys = &[LockKey::object(1, 1)];
+        let keys = lock_keys![LockKey::object(1, 1)];
         {
-            let _guard = manager.lock(keys, LockState::WriteLock).await;
-            if let Poll::Ready(_) = futures::poll!(manager.lock(keys, LockState::WriteLock).boxed())
+            let _guard = manager.lock(keys.clone(), LockState::WriteLock).await;
+            if let Poll::Ready(_) =
+                futures::poll!(manager.lock(keys.clone(), LockState::WriteLock).boxed())
             {
                 assert!(false);
             }
-            if let Poll::Ready(_) = futures::poll!(manager.lock(keys, LockState::ReadLock).boxed())
+            if let Poll::Ready(_) =
+                futures::poll!(manager.lock(keys.clone(), LockState::ReadLock).boxed())
             {
                 assert!(false);
             }
         }
         {
-            let _guard = manager.lock(keys, LockState::WriteLock).await;
+            let _guard = manager.lock(keys.clone(), LockState::WriteLock).await;
         }
         {
             let _guard = manager.lock(keys, LockState::ReadLock).await;
@@ -1582,17 +1760,18 @@ mod tests {
     #[fuchsia::test]
     async fn test_downgrade_locks() {
         let manager = LockManager::new();
-        let keys = &[LockKey::object(1, 1)];
-        let _guard = manager.txn_lock(keys).await;
-        manager.commit_prepare_keys(keys).await;
+        let keys = lock_keys![LockKey::object(1, 1)];
+        let _guard = manager.txn_lock(keys.clone()).await;
+        manager.commit_prepare_keys(&keys).await;
 
         // Use FuturesUnordered so that we can check that the waker is woken.
-        let mut read_lock: FuturesUnordered<_> = std::iter::once(manager.read_lock(keys)).collect();
+        let mut read_lock: FuturesUnordered<_> =
+            std::iter::once(manager.read_lock(keys.clone())).collect();
 
         // Trying to acquire a read lock now should be blocked.
         assert!(futures::poll!(read_lock.next()).is_pending());
 
-        manager.downgrade_locks(keys);
+        manager.downgrade_locks(&keys);
 
         // After downgrading, it should be possible to take a read lock.
         assert!(futures::poll!(read_lock.next()).is_ready());
@@ -1601,10 +1780,10 @@ mod tests {
     #[fuchsia::test]
     async fn test_dropped_write_lock_wakes() {
         let manager = LockManager::new();
-        let keys = &[LockKey::object(1, 1)];
-        let _guard = manager.lock(keys, LockState::ReadLock).await;
-        let read_lock = manager.lock(keys, LockState::ReadLock);
-        pin_mut!(read_lock);
+        let keys = lock_keys![LockKey::object(1, 1)];
+        let _guard = manager.lock(keys.clone(), LockState::ReadLock).await;
+        let mut read_lock = FuturesUnordered::new();
+        read_lock.push(manager.lock(keys.clone(), LockState::ReadLock));
 
         {
             let write_lock = manager.lock(keys, LockState::WriteLock);
@@ -1614,23 +1793,23 @@ mod tests {
             assert!(futures::poll!(write_lock).is_pending());
 
             // Another read lock should be blocked because of the write lock.
-            assert!(futures::poll!(read_lock.as_mut()).is_pending());
+            assert!(futures::poll!(read_lock.next()).is_pending());
         }
 
         // Dropping the write lock should allow the read lock to proceed.
-        assert!(futures::poll!(read_lock).is_ready());
+        assert!(futures::poll!(read_lock.next()).is_ready());
     }
 
     #[fuchsia::test]
     async fn test_drop_upgrade() {
         let manager = LockManager::new();
-        let keys = &[LockKey::object(1, 1)];
-        let _guard = manager.lock(keys, LockState::Locked).await;
+        let keys = lock_keys![LockKey::object(1, 1)];
+        let _guard = manager.lock(keys.clone(), LockState::Locked).await;
 
         {
-            let commit_prepare = manager.commit_prepare_keys(keys);
+            let commit_prepare = manager.commit_prepare_keys(&keys);
             pin_mut!(commit_prepare);
-            let _read_guard = manager.lock(keys, LockState::ReadLock).await;
+            let _read_guard = manager.lock(keys.clone(), LockState::ReadLock).await;
             assert!(futures::poll!(commit_prepare).is_pending());
 
             // Now we test dropping read_guard which should wake commit_prepare and
@@ -1638,26 +1817,26 @@ mod tests {
         }
 
         // We should be able to still commit_prepare.
-        manager.commit_prepare_keys(keys).await;
+        manager.commit_prepare_keys(&keys).await;
     }
 
     #[fasync::run_singlethreaded(test)]
     async fn test_woken_upgrade_blocks_reads() {
         let manager = LockManager::new();
-        let keys = &[LockKey::object(1, 1)];
+        let keys = lock_keys![LockKey::object(1, 1)];
         // Start with a transaction lock.
-        let guard = manager.lock(keys, LockState::Locked).await;
+        let guard = manager.lock(keys.clone(), LockState::Locked).await;
 
         // Take a read lock.
-        let read1 = manager.lock(keys, LockState::ReadLock).await;
+        let read1 = manager.lock(keys.clone(), LockState::ReadLock).await;
 
         // Try and upgrade the transaction lock, which should not be possible because of the read.
-        let commit_prepare = manager.commit_prepare_keys(keys);
+        let commit_prepare = manager.commit_prepare_keys(&keys);
         pin_mut!(commit_prepare);
         assert!(futures::poll!(commit_prepare.as_mut()).is_pending());
 
         // Taking another read should also be blocked.
-        let read2 = manager.lock(keys, LockState::ReadLock);
+        let read2 = manager.lock(keys.clone(), LockState::ReadLock);
         pin_mut!(read2);
         assert!(futures::poll!(read2.as_mut()).is_pending());
 
@@ -1671,5 +1850,153 @@ mod tests {
         // If we drop the write lock now, the read should be unblocked.
         std::mem::drop(guard);
         assert!(futures::poll!(read2).is_ready());
+    }
+
+    static LOCK_KEY_1: LockKey = LockKey::flush(1);
+    static LOCK_KEY_2: LockKey = LockKey::flush(2);
+    static LOCK_KEY_3: LockKey = LockKey::flush(3);
+
+    // The keys, storage method, and capacity must all match.
+    fn assert_lock_keys_equal(value: &LockKeys, expected: &LockKeys) {
+        match (value, expected) {
+            (LockKeys::None, LockKeys::None) => {}
+            (LockKeys::Inline(key1), LockKeys::Inline(key2)) => {
+                if key1 != key2 {
+                    panic!("{key1:?} != {key2:?}");
+                }
+            }
+            (LockKeys::Vec(vec1), LockKeys::Vec(vec2)) => {
+                if vec1 != vec2 {
+                    panic!("{vec1:?} != {vec2:?}");
+                }
+                if vec1.capacity() != vec2.capacity() {
+                    panic!(
+                        "LockKeys have different capacity: {} != {}",
+                        vec1.capacity(),
+                        vec2.capacity()
+                    );
+                }
+            }
+            (_, _) => panic!("{value:?} != {expected:?}"),
+        }
+    }
+
+    // Only the keys must match. Storage method and capacity don't matter.
+    fn assert_lock_keys_equivalent(value: &LockKeys, expected: &LockKeys) {
+        let value: Vec<_> = value.iter().collect();
+        let expected: Vec<_> = expected.iter().collect();
+        assert_eq!(value, expected);
+    }
+
+    #[test]
+    fn test_lock_keys_macro() {
+        assert_lock_keys_equal(&lock_keys![], &LockKeys::None);
+        assert_lock_keys_equal(&lock_keys![LOCK_KEY_1], &LockKeys::Inline(LOCK_KEY_1));
+        assert_lock_keys_equal(
+            &lock_keys![LOCK_KEY_1, LOCK_KEY_2],
+            &LockKeys::Vec(vec![LOCK_KEY_1, LOCK_KEY_2]),
+        );
+    }
+
+    #[test]
+    fn test_lock_keys_with_capacity() {
+        assert_lock_keys_equal(&LockKeys::with_capacity(0), &LockKeys::None);
+        assert_lock_keys_equal(&LockKeys::with_capacity(1), &LockKeys::None);
+        assert_lock_keys_equal(&LockKeys::with_capacity(2), &LockKeys::Vec(Vec::with_capacity(2)));
+    }
+
+    #[test]
+    fn test_lock_keys_len() {
+        assert_eq!(lock_keys![].len(), 0);
+        assert_eq!(lock_keys![LOCK_KEY_1].len(), 1);
+        assert_eq!(lock_keys![LOCK_KEY_1, LOCK_KEY_2].len(), 2);
+    }
+
+    #[test]
+    fn test_lock_keys_contains() {
+        assert_eq!(lock_keys![].contains(&LOCK_KEY_1), false);
+        assert_eq!(lock_keys![LOCK_KEY_1].contains(&LOCK_KEY_1), true);
+        assert_eq!(lock_keys![LOCK_KEY_1].contains(&LOCK_KEY_2), false);
+        assert_eq!(lock_keys![LOCK_KEY_1, LOCK_KEY_2].contains(&LOCK_KEY_1), true);
+        assert_eq!(lock_keys![LOCK_KEY_1, LOCK_KEY_2].contains(&LOCK_KEY_2), true);
+        assert_eq!(lock_keys![LOCK_KEY_1, LOCK_KEY_2].contains(&LOCK_KEY_3), false);
+    }
+
+    #[test]
+    fn test_lock_keys_push() {
+        let mut keys = lock_keys![];
+        keys.push(LOCK_KEY_1);
+        assert_lock_keys_equal(&keys, &LockKeys::Inline(LOCK_KEY_1));
+        keys.push(LOCK_KEY_2);
+        assert_lock_keys_equal(&keys, &LockKeys::Vec(vec![LOCK_KEY_1, LOCK_KEY_2]));
+        keys.push(LOCK_KEY_3);
+        assert_lock_keys_equivalent(
+            &keys,
+            &LockKeys::Vec(vec![LOCK_KEY_1, LOCK_KEY_2, LOCK_KEY_3]),
+        );
+    }
+
+    #[test]
+    fn test_lock_keys_sort_unstable() {
+        let mut keys = lock_keys![];
+        keys.sort_unstable();
+        assert_lock_keys_equal(&keys, &lock_keys![]);
+
+        let mut keys = lock_keys![LOCK_KEY_1];
+        keys.sort_unstable();
+        assert_lock_keys_equal(&keys, &lock_keys![LOCK_KEY_1]);
+
+        let mut keys = lock_keys![LOCK_KEY_2, LOCK_KEY_1];
+        keys.sort_unstable();
+        assert_lock_keys_equal(&keys, &lock_keys![LOCK_KEY_1, LOCK_KEY_2]);
+    }
+
+    #[test]
+    fn test_lock_keys_dedup() {
+        let mut keys = lock_keys![];
+        keys.dedup();
+        assert_lock_keys_equal(&keys, &lock_keys![]);
+
+        let mut keys = lock_keys![LOCK_KEY_1];
+        keys.dedup();
+        assert_lock_keys_equal(&keys, &lock_keys![LOCK_KEY_1]);
+
+        let mut keys = lock_keys![LOCK_KEY_1, LOCK_KEY_1];
+        keys.dedup();
+        assert_lock_keys_equivalent(&keys, &lock_keys![LOCK_KEY_1]);
+    }
+
+    #[test]
+    fn test_lock_keys_truncate() {
+        let mut keys = lock_keys![];
+        keys.truncate(5);
+        assert_lock_keys_equal(&keys, &lock_keys![]);
+        keys.truncate(0);
+        assert_lock_keys_equal(&keys, &lock_keys![]);
+
+        let mut keys = lock_keys![LOCK_KEY_1];
+        keys.truncate(5);
+        assert_lock_keys_equal(&keys, &lock_keys![LOCK_KEY_1]);
+        keys.truncate(0);
+        assert_lock_keys_equal(&keys, &lock_keys![]);
+
+        let mut keys = lock_keys![LOCK_KEY_1, LOCK_KEY_2];
+        keys.truncate(5);
+        assert_lock_keys_equal(&keys, &lock_keys![LOCK_KEY_1, LOCK_KEY_2]);
+        keys.truncate(1);
+        // Although there's only 1 key after truncate the key is not stored inline.
+        assert_lock_keys_equivalent(&keys, &lock_keys![LOCK_KEY_1]);
+    }
+
+    #[test]
+    fn test_lock_keys_iter() {
+        assert_eq!(lock_keys![].iter().collect::<Vec<_>>(), Vec::<&LockKey>::new());
+
+        assert_eq!(lock_keys![LOCK_KEY_1].iter().collect::<Vec<_>>(), vec![&LOCK_KEY_1]);
+
+        assert_eq!(
+            lock_keys![LOCK_KEY_1, LOCK_KEY_2].iter().collect::<Vec<_>>(),
+            vec![&LOCK_KEY_1, &LOCK_KEY_2]
+        );
     }
 }

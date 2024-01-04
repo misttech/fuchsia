@@ -2,21 +2,28 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#[cfg(target_arch = "aarch64")]
+use crate::builtin::smc_resource::SmcResource;
+
+#[cfg(target_arch = "x86_64")]
+use crate::builtin::ioport_resource::IoportResource;
+
 use {
     crate::{
         bootfs::BootfsSvc,
         builtin::{
             arguments::Arguments as BootArguments,
-            capability::BuiltinCapability,
+            builtin_resolver::{BuiltinResolver, SCHEME as BUILTIN_SCHEME},
             cpu_resource::CpuResource,
             crash_introspect::CrashIntrospectSvc,
             debug_resource::DebugResource,
             energy_info_resource::EnergyInfoResource,
             factory_items::FactoryItems,
-            fuchsia_boot_resolver::{FuchsiaBootResolver, SCHEME as BOOT_SCHEME},
+            framebuffer_resource::FramebufferResource,
+            fuchsia_boot_resolver::{FuchsiaBootResolverBuiltinCapability, SCHEME as BOOT_SCHEME},
             hypervisor_resource::HypervisorResource,
             info_resource::InfoResource,
-            ioport_resource::IoportResource,
+            iommu_resource::IommuResource,
             irq_resource::IrqResource,
             items::Items,
             kernel_stats::KernelStats,
@@ -24,69 +31,84 @@ use {
             mexec_resource::MexecResource,
             mmio_resource::MmioResource,
             power_resource::PowerResource,
-            process_launcher::ProcessLauncherSvc,
+            profile_resource::ProfileResource,
             realm_builder::{
-                RealmBuilderResolver, RealmBuilderRunner, RUNNER_NAME as REALM_BUILDER_RUNNER_NAME,
-                SCHEME as REALM_BUILDER_SCHEME,
+                RealmBuilderResolver, RealmBuilderRunnerFactory,
+                RUNNER_NAME as REALM_BUILDER_RUNNER_NAME, SCHEME as REALM_BUILDER_SCHEME,
             },
-            root_job::{RootJob, ROOT_JOB_CAPABILITY_NAME, ROOT_JOB_FOR_INSPECT_CAPABILITY_NAME},
+            root_job::RootJob,
             root_resource::RootResource,
             runner::{BuiltinRunner, BuiltinRunnerFactory},
-            smc_resource::SmcResource,
             svc_stash_provider::SvcStashCapability,
             system_controller::SystemController,
             time::{create_utc_clock, UtcTimeMaintainer},
             vmex_resource::VmexResource,
         },
+        capability::{BuiltinCapability, DerivedCapability, FrameworkCapability},
         diagnostics::{startup::ComponentEarlyStartupTimeStats, task_metrics::ComponentTreeStats},
         directory_ready_notifier::DirectoryReadyNotifier,
         framework::{
-            binder::BinderCapabilityHost, lifecycle_controller::LifecycleController,
-            pkg_dir::PkgDirectory, realm::RealmCapabilityHost, realm_query::RealmQuery,
-            route_validator::RouteValidator,
+            binder::BinderFrameworkCapability,
+            factory::FactoryFrameworkCapability,
+            lifecycle_controller::{LifecycleController, LifecycleControllerFrameworkCapability},
+            namespace::NamespaceFrameworkCapability,
+            pkg_dir::PkgDirectoryFrameworkCapability,
+            realm::RealmFrameworkCapability,
+            realm_query::{RealmQuery, RealmQueryFrameworkCapability},
+            route_validator::RouteValidatorFrameworkCapability,
         },
+        inspect_sink_provider::InspectSinkProvider,
         model::events::registry::EventSubscription,
         model::{
             component::ComponentManagerInstance,
             environment::Environment,
             event_logger::EventLogger,
             events::{
-                registry::EventRegistry, serve::serve_event_stream_as_stream,
-                source_factory::EventSourceFactory, stream_provider::EventStreamProvider,
+                registry::EventRegistry,
+                serve::serve_event_stream_as_stream,
+                source_factory::{EventSourceFactory, EventSourceFactoryCapability},
+                stream_provider::EventStreamProvider,
             },
             hooks::EventType,
             model::{Model, ModelParams},
-            resolver::{BuiltinResolver, ResolverRegistry},
-            storage::admin_protocol::StorageAdmin,
+            resolver::{box_arc_resolver, ResolverRegistry},
+            storage::admin_protocol::StorageAdminDerivedCapability,
         },
         root_stop_notifier::RootStopNotifier,
+        sandbox_util::{new_terminating_router, DictExt, LaunchTaskOnReceive},
     },
     ::routing::{
-        config::{RuntimeConfig, VmexSource},
+        capability_source::{CapabilitySource, InternalCapability},
         environment::{DebugRegistry, RunnerRegistry},
+        policy::GlobalPolicyChecker,
     },
     anyhow::{format_err, Context as _, Error},
+    cm_config::{RuntimeConfig, VmexSource},
     cm_rust::{Availability, RunnerRegistration, UseEventStreamDecl, UseSource},
     cm_types::Name,
+    cm_util::TaskGroup,
     cstr::cstr,
     elf_runner::{
         crash_info::CrashRecords,
+        process_launcher::ProcessLauncher,
         vdso_vmo::{get_next_vdso_vmo, get_stable_vdso_vmo, get_vdso_vmo},
-        ElfRunner,
     },
-    fidl::endpoints::{create_proxy, ServerEnd},
+    fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker, RequestStream},
+    fidl_fuchsia_boot as fboot,
     fidl_fuchsia_component_internal::BuiltinBootResolver,
     fidl_fuchsia_diagnostics_types::Task as DiagnosticsTask,
-    fidl_fuchsia_io as fio, fuchsia_async as fasync,
+    fidl_fuchsia_io as fio, fidl_fuchsia_kernel as fkernel, fidl_fuchsia_process as fprocess,
+    fidl_fuchsia_sys2 as fsys, fidl_fuchsia_time as ftime, fuchsia_async as fasync,
     fuchsia_component::server::*,
     fuchsia_inspect::{self as inspect, component, health::Reporter, Inspector},
     fuchsia_runtime::{take_startup_handle, HandleInfo, HandleType},
     fuchsia_zbi::{ZbiParser, ZbiType},
     fuchsia_zircon::{self as zx, Clock, HandleBased, Resource},
-    futures::prelude::*,
+    futures::{future::BoxFuture, sink::drain, stream::FuturesUnordered, FutureExt, StreamExt},
     moniker::{Moniker, MonikerBase},
-    std::sync::Arc,
-    tracing::{info, warn},
+    sandbox::{Dict, Receiver},
+    std::{iter, sync::Arc},
+    tracing::info,
 };
 
 #[cfg(test)]
@@ -98,6 +120,7 @@ pub static SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_sec
 pub struct BuiltinEnvironmentBuilder {
     // TODO(60804): Make component manager's namespace injectable here.
     runtime_config: Option<RuntimeConfig>,
+    top_instance: Option<Arc<ComponentManagerInstance>>,
     bootfs_svc: Option<BootfsSvc>,
     runners: Vec<(Name, Arc<dyn BuiltinRunnerFactory>)>,
     resolvers: ResolverRegistry,
@@ -111,6 +134,7 @@ impl Default for BuiltinEnvironmentBuilder {
     fn default() -> Self {
         Self {
             runtime_config: None,
+            top_instance: None,
             bootfs_svc: None,
             runners: vec![],
             resolvers: ResolverRegistry::default(),
@@ -128,12 +152,18 @@ impl BuiltinEnvironmentBuilder {
     }
 
     pub fn set_runtime_config(mut self, runtime_config: RuntimeConfig) -> Self {
+        assert!(self.runtime_config.is_none());
+        let top_instance = Arc::new(ComponentManagerInstance::new(
+            runtime_config.namespace_capabilities.clone(),
+            runtime_config.builtin_capabilities.clone(),
+        ));
         self.runtime_config = Some(runtime_config);
+        self.top_instance = Some(top_instance);
         self
     }
 
-    pub fn set_bootfs_svc(mut self, bootfs_svc: Option<BootfsSvc>) -> Self {
-        self.bootfs_svc = bootfs_svc;
+    pub fn set_bootfs_svc(mut self, bootfs_svc: BootfsSvc) -> Self {
+        self.bootfs_svc = Some(bootfs_svc);
         self
     }
 
@@ -160,24 +190,31 @@ impl BuiltinEnvironmentBuilder {
         Ok(self)
     }
 
-    pub fn add_elf_runner(self) -> Result<Self, Error> {
+    pub fn add_builtin_runner(self) -> Result<Self, Error> {
+        use crate::builtin::builtin_runner::BuiltinRunner;
+        use crate::builtin::builtin_runner::ElfRunnerResources;
+
         let runtime_config = self
             .runtime_config
             .as_ref()
-            .ok_or(format_err!("Runtime config should be set to add elf runner."))?;
+            .ok_or(format_err!("Runtime config should be set to add builtin runner."))?;
 
-        let launcher_connector: elf_runner::process_launcher::Connector =
+        let launcher_connector: fn() -> elf_runner::process_launcher::Connector =
             if runtime_config.use_builtin_process_launcher {
-                Box::new(elf_runner::process_launcher::BuiltInConnector {})
+                || Box::new(elf_runner::process_launcher::BuiltInConnector {})
             } else {
-                Box::new(elf_runner::process_launcher::NamespaceConnector {})
+                || Box::new(elf_runner::process_launcher::NamespaceConnector {})
             };
-        let runner = Arc::new(ElfRunner::new(
-            launcher_connector,
-            self.utc_clock.clone(),
-            self.crash_records.clone(),
+        let runner = Arc::new(BuiltinRunner::new(
+            self.top_instance.clone().unwrap().task_group(),
+            ElfRunnerResources {
+                security_policy: runtime_config.security_policy.clone(),
+                launcher_connector,
+                utc_clock: self.utc_clock.clone(),
+                crash_records: self.crash_records.clone(),
+            },
         ));
-        Ok(self.add_runner("elf".parse().unwrap(), runner))
+        Ok(self.add_runner("builtin".parse().unwrap(), runner))
     }
 
     pub fn add_runner(mut self, name: Name, runner: Arc<dyn BuiltinRunnerFactory>) -> Self {
@@ -256,6 +293,8 @@ impl BuiltinEnvironmentBuilder {
             }
         };
 
+        register_builtin_resolver(&mut self.resolvers);
+
         let boot_resolver = if self.add_environment_resolvers {
             register_boot_resolver(&mut self.resolvers, &runtime_config).await?
         } else {
@@ -266,7 +305,7 @@ impl BuiltinEnvironmentBuilder {
             fidl_fuchsia_component_internal::RealmBuilderResolverAndRunner::Namespace => {
                 self.runners.push((
                     REALM_BUILDER_RUNNER_NAME.parse().unwrap(),
-                    Arc::new(RealmBuilderRunner::new()?),
+                    Arc::new(RealmBuilderRunnerFactory::new()),
                 ));
                 Some(register_realm_builder_resolver(&mut self.resolvers)?)
             }
@@ -289,11 +328,8 @@ impl BuiltinEnvironmentBuilder {
             .collect();
 
         let runtime_config = Arc::new(runtime_config);
-        let top_instance = Arc::new(ComponentManagerInstance::new(
-            runtime_config.namespace_capabilities.clone(),
-            runtime_config.builtin_capabilities.clone(),
-        ));
 
+        let top_instance = self.top_instance.unwrap().clone();
         let params = ModelParams {
             root_component_url: root_component_url.as_str().to_owned(),
             root_environment: Environment::new_root(
@@ -312,7 +348,7 @@ impl BuiltinEnvironmentBuilder {
             .runners
             .into_iter()
             .map(|(name, runner)| {
-                Arc::new(BuiltinRunner::new(name, runner, runtime_config.security_policy.clone()))
+                BuiltinRunner::new(name, runner, runtime_config.security_policy.clone())
             })
             .collect();
 
@@ -331,6 +367,81 @@ impl BuiltinEnvironmentBuilder {
     }
 }
 
+/// Constructs a [Dict] that contains built-in capabilities.
+struct BuiltinDictBuilder {
+    dict: Dict,
+    builtin_task_launchers: Vec<LaunchTaskOnReceive>,
+    top_instance: Arc<ComponentManagerInstance>,
+    policy_checker: GlobalPolicyChecker,
+    builtin_capabilities: Vec<cm_rust::CapabilityDecl>,
+}
+
+impl BuiltinDictBuilder {
+    fn new(
+        top_instance: Arc<ComponentManagerInstance>,
+        runtime_config: &Arc<RuntimeConfig>,
+    ) -> Self {
+        Self {
+            dict: Dict::new(),
+            builtin_task_launchers: Vec::new(),
+            top_instance,
+            policy_checker: GlobalPolicyChecker::new(runtime_config.security_policy.clone()),
+            builtin_capabilities: runtime_config.builtin_capabilities.clone(),
+        }
+    }
+
+    /// Adds a new builtin protocol to the dict that will be given to the root component. If the
+    /// protocol is not listed in `self.builtin_capabilities`, then it will silently be omitted
+    /// from the dict.
+    fn add_protocol_if_enabled<P>(
+        &mut self,
+        task_to_launch: impl Fn(P::RequestStream) -> BoxFuture<'static, Result<(), anyhow::Error>>
+            + Sync
+            + Send
+            + 'static,
+    ) where
+        P: DiscoverableProtocolMarker + ProtocolMarker,
+    {
+        let name = Name::new(P::PROTOCOL_NAME).unwrap();
+        // TODO: check capability type too
+        // TODO: if we store the capabilities in a hashmap by name, then we can remove them as
+        // they're added and confirm at the end that we've not been asked to enable something
+        // unknown.
+        if self.builtin_capabilities.iter().find(|decl| decl.name() == &name).is_none() {
+            // This builtin protocol is not enabled based on the runtime config, so don't add the
+            // capability to the dict.
+            return;
+        }
+        let (receiver, sender) = Receiver::new();
+        let router = new_terminating_router(sender);
+        self.dict.insert_capability(iter::once(P::PROTOCOL_NAME), router);
+
+        let capability_source = CapabilitySource::Builtin {
+            capability: InternalCapability::Protocol(name.clone()),
+            top_instance: Arc::downgrade(&self.top_instance),
+        };
+        self.builtin_task_launchers.push(LaunchTaskOnReceive::new(
+            self.top_instance.task_group().as_weak(),
+            name,
+            receiver,
+            Some((self.policy_checker.clone(), capability_source)),
+            Arc::new(move |server_end, _| {
+                task_to_launch(crate::sandbox_util::take_handle_as_stream::<P>(server_end)).boxed()
+            }),
+        ));
+    }
+
+    fn build(self) -> (Dict, fasync::Task<()>) {
+        let builtin_receivers_future: FuturesUnordered<_> =
+            self.builtin_task_launchers.into_iter().map(LaunchTaskOnReceive::run).collect();
+        let builtin_receivers_task = fasync::Task::spawn(async move {
+            // The result here is irrelevant because the stream is infallible
+            let _ = builtin_receivers_future.map(Result::Ok).forward(drain()).await;
+        });
+        (self.dict, builtin_receivers_task)
+    }
+}
+
 /// The built-in environment consists of the set of the root services and framework services. Use
 /// BuiltinEnvironmentBuilder to construct one.
 ///
@@ -342,56 +453,22 @@ impl BuiltinEnvironmentBuilder {
 pub struct BuiltinEnvironment {
     pub model: Arc<Model>,
 
-    // Framework capabilities.
-    pub boot_args: Arc<BootArguments>,
-    pub cpu_resource: Option<Arc<CpuResource>>,
-    pub energy_info_resource: Option<Arc<EnergyInfoResource>>,
-    pub debug_resource: Option<Arc<DebugResource>>,
-    pub hypervisor_resource: Option<Arc<HypervisorResource>>,
-    pub info_resource: Option<Arc<InfoResource>>,
-    #[cfg(target_arch = "x86_64")]
-    pub ioport_resource: Option<Arc<IoportResource>>,
-    pub irq_resource: Option<Arc<IrqResource>>,
-    pub kernel_stats: Option<Arc<KernelStats>>,
-    pub process_launcher: Option<Arc<ProcessLauncherSvc>>,
-    pub root_job: Arc<RootJob>,
-    pub root_job_for_inspect: Arc<RootJob>,
-    pub read_only_log: Option<Arc<ReadOnlyLog>>,
-    pub write_only_log: Option<Arc<WriteOnlyLog>>,
-    pub factory_items_service: Option<Arc<FactoryItems>>,
-    pub items_service: Option<Arc<Items>>,
-    pub mexec_resource: Option<Arc<MexecResource>>,
-    pub mmio_resource: Option<Arc<MmioResource>>,
-    pub power_resource: Option<Arc<PowerResource>>,
-    pub root_resource: Option<Arc<RootResource>>,
-    #[cfg(target_arch = "aarch64")]
-    pub smc_resource: Option<Arc<SmcResource>>,
-    pub system_controller: Arc<SystemController>,
-    pub utc_time_maintainer: Option<Arc<UtcTimeMaintainer>>,
-    pub vmex_resource: Option<Arc<VmexResource>>,
-    pub crash_records_svc: Arc<CrashIntrospectSvc>,
-    pub svc_stash_provider: Option<Arc<SvcStashCapability>>,
-
-    pub binder_capability_host: Arc<BinderCapabilityHost>,
-    pub realm_capability_host: Arc<RealmCapabilityHost>,
-    pub storage_admin_capability_host: Arc<StorageAdmin>,
     pub realm_query: Option<Arc<RealmQuery>>,
     pub lifecycle_controller: Option<Arc<LifecycleController>>,
-    pub route_validator: Option<Arc<RouteValidator>>,
-    pub pkg_directory: Arc<PkgDirectory>,
-    pub builtin_runners: Vec<Arc<BuiltinRunner>>,
     pub event_registry: Arc<EventRegistry>,
     pub event_source_factory: Arc<EventSourceFactory>,
     pub stop_notifier: Arc<RootStopNotifier>,
     pub directory_ready_notifier: Arc<DirectoryReadyNotifier>,
+    pub inspect_sink_provider: Arc<InspectSinkProvider>,
     pub event_stream_provider: Arc<EventStreamProvider>,
     pub event_logger: Option<Arc<EventLogger>>,
     pub component_tree_stats: Arc<ComponentTreeStats<DiagnosticsTask>>,
     pub component_startup_time_stats: Arc<ComponentEarlyStartupTimeStats>,
     pub debug: bool,
     pub num_threads: usize,
-    pub inspector: Inspector,
     pub realm_builder_resolver: Option<Arc<RealmBuilderResolver>>,
+    pub dict: Dict,
+    _builtin_receivers_task_group: TaskGroup,
     _service_fs_task: Option<fasync::Task<()>>,
 }
 
@@ -400,8 +477,8 @@ impl BuiltinEnvironment {
         model: Arc<Model>,
         runtime_config: Arc<RuntimeConfig>,
         system_resource_handle: Option<Resource>,
-        builtin_runners: Vec<Arc<BuiltinRunner>>,
-        boot_resolver: Option<Arc<FuchsiaBootResolver>>,
+        builtin_runners: Vec<BuiltinRunner>,
+        boot_resolver: Option<FuchsiaBootResolverBuiltinCapability>,
         realm_builder_resolver: Option<Arc<RealmBuilderResolver>>,
         utc_clock: Option<Arc<Clock>>,
         inspector: Inspector,
@@ -418,29 +495,37 @@ impl BuiltinEnvironment {
         } else {
             None
         };
+
+        let mut builtin_dict_builder =
+            BuiltinDictBuilder::new(model.top_instance().clone(), &runtime_config);
+
         // Set up ProcessLauncher if available.
-        let process_launcher = if runtime_config.use_builtin_process_launcher {
-            let process_launcher = Arc::new(ProcessLauncherSvc::new());
-            model.root().hooks.install(process_launcher.hooks()).await;
-            Some(process_launcher)
-        } else {
-            None
-        };
+        if runtime_config.use_builtin_process_launcher {
+            builtin_dict_builder.add_protocol_if_enabled::<fprocess::LauncherMarker>(|stream| {
+                async move {
+                        ProcessLauncher::serve(stream).await.map_err(|e| format_err!("{:?}", e))
+                    }
+                    .boxed()
+            });
+        }
 
         // Set up RootJob service.
-        let root_job = RootJob::new(&ROOT_JOB_CAPABILITY_NAME, zx::Rights::SAME_RIGHTS);
-        model.root().hooks.install(root_job.hooks()).await;
+        builtin_dict_builder.add_protocol_if_enabled::<fkernel::RootJobMarker>(|stream| {
+            RootJob::serve(stream, zx::Rights::SAME_RIGHTS).boxed()
+        });
 
         // Set up RootJobForInspect service.
-        let root_job_for_inspect = RootJob::new(
-            &ROOT_JOB_FOR_INSPECT_CAPABILITY_NAME,
-            zx::Rights::INSPECT
-                | zx::Rights::ENUMERATE
-                | zx::Rights::DUPLICATE
-                | zx::Rights::TRANSFER
-                | zx::Rights::GET_PROPERTY,
+        builtin_dict_builder.add_protocol_if_enabled::<fkernel::RootJobForInspectMarker>(
+            |stream| {
+                let stream = stream.cast_stream::<fkernel::RootJobRequestStream>();
+                let rights = zx::Rights::INSPECT
+                    | zx::Rights::ENUMERATE
+                    | zx::Rights::DUPLICATE
+                    | zx::Rights::TRANSFER
+                    | zx::Rights::GET_PROPERTY;
+                RootJob::serve(stream, rights).boxed()
+            },
         );
-        model.root().hooks.install(root_job_for_inspect.hooks()).await;
 
         let mmio_resource_handle =
             take_startup_handle(HandleType::MmioResource.into()).map(zx::Resource::from);
@@ -476,30 +561,35 @@ impl BuiltinEnvironment {
         let svc_stash_provider = take_startup_handle(HandleInfo::new(HandleType::User0, 0))
             .map(zx::Channel::from)
             .map(SvcStashCapability::new);
-        if let Some(svc_stash_provider) = svc_stash_provider.as_ref() {
-            model.root().hooks.install(svc_stash_provider.hooks()).await;
+        if let Some(svc_stash_provider) = svc_stash_provider {
+            builtin_dict_builder.add_protocol_if_enabled::<fboot::SvcStashProviderMarker>(
+                move |stream| svc_stash_provider.clone().serve(stream).boxed(),
+            );
         }
 
         // Set up BootArguments service.
         let boot_args = BootArguments::new(&mut zbi_parser).await?;
-        model.root().hooks.install(boot_args.hooks()).await;
+        builtin_dict_builder.add_protocol_if_enabled::<fboot::ArgumentsMarker>(move |stream| {
+            boot_args.clone().serve(stream).boxed()
+        });
 
-        let (factory_items_service, items_service) = match zbi_parser {
-            None => (None, None),
-            Some(mut zbi_parser) => {
-                let factory_items = FactoryItems::new(&mut zbi_parser)?;
-                model.root().hooks.install(factory_items.hooks()).await;
+        if let Some(mut zbi_parser) = zbi_parser {
+            let factory_items = FactoryItems::new(&mut zbi_parser)?;
+            builtin_dict_builder.add_protocol_if_enabled::<fboot::FactoryItemsMarker>(
+                move |stream| factory_items.clone().serve(stream).boxed(),
+            );
 
-                let items = Items::new(zbi_parser)?;
-                model.root().hooks.install(items.hooks()).await;
-
-                (Some(factory_items), Some(items))
-            }
-        };
+            let items = Items::new(zbi_parser)?;
+            builtin_dict_builder.add_protocol_if_enabled::<fboot::ItemsMarker>(move |stream| {
+                items.clone().serve(stream).boxed()
+            });
+        }
 
         // Set up CrashRecords service.
         let crash_records_svc = CrashIntrospectSvc::new(crash_records);
-        model.root().hooks.install(crash_records_svc.hooks()).await;
+        builtin_dict_builder.add_protocol_if_enabled::<fsys::CrashIntrospectMarker>(
+            move |stream| crash_records_svc.clone().serve(stream).boxed(),
+        );
 
         // Set up KernelStats service.
         let info_resource_handle = system_resource_handle
@@ -517,9 +607,10 @@ impl BuiltinEnvironment {
                 }
             })
             .flatten();
-        let kernel_stats = info_resource_handle.map(KernelStats::new);
-        if let Some(kernel_stats) = kernel_stats.as_ref() {
-            model.root().hooks.install(kernel_stats.hooks()).await;
+        if let Some(kernel_stats) = info_resource_handle.map(KernelStats::new) {
+            builtin_dict_builder.add_protocol_if_enabled::<fkernel::StatsMarker>(move |stream| {
+                kernel_stats.clone().serve(stream).boxed()
+            });
         }
 
         // Set up ReadOnlyLog service.
@@ -530,66 +621,69 @@ impl BuiltinEnvironment {
                     .expect("Failed to duplicate root resource handle"),
             )
         });
-        if let Some(read_only_log) = read_only_log.as_ref() {
-            model.root().hooks.install(read_only_log.hooks()).await;
+        if let Some(read_only_log) = read_only_log {
+            builtin_dict_builder.add_protocol_if_enabled::<fboot::ReadOnlyLogMarker>(
+                move |stream| read_only_log.clone().serve(stream).boxed(),
+            );
         }
 
         // Set up WriteOnlyLog service.
         let write_only_log = root_resource_handle.as_ref().map(|handle| {
             WriteOnlyLog::new(zx::DebugLog::create(handle, zx::DebugLogOpts::empty()).unwrap())
         });
-        if let Some(write_only_log) = write_only_log.as_ref() {
-            model.root().hooks.install(write_only_log.hooks()).await;
+        if let Some(write_only_log) = write_only_log {
+            builtin_dict_builder.add_protocol_if_enabled::<fboot::WriteOnlyLogMarker>(
+                move |stream| write_only_log.clone().serve(stream).boxed(),
+            );
         }
 
         // Register the UTC time maintainer.
-        let utc_time_maintainer = if let Some(clock) = utc_clock {
+        if let Some(clock) = utc_clock {
             let utc_time_maintainer = Arc::new(UtcTimeMaintainer::new(clock));
-            model.root().hooks.install(utc_time_maintainer.hooks()).await;
-            Some(utc_time_maintainer)
-        } else {
-            None
-        };
+            builtin_dict_builder.add_protocol_if_enabled::<ftime::MaintenanceMarker>(
+                move |stream| utc_time_maintainer.clone().serve(stream).boxed(),
+            );
+        }
 
         // Set up the MmioResource service.
         let mmio_resource = mmio_resource_handle.map(MmioResource::new);
-        if let Some(mmio_resource) = mmio_resource.as_ref() {
-            model.root().hooks.install(mmio_resource.hooks()).await;
+        if let Some(mmio_resource) = mmio_resource {
+            builtin_dict_builder.add_protocol_if_enabled::<fkernel::MmioResourceMarker>(
+                move |stream| mmio_resource.clone().serve(stream).boxed(),
+            );
         }
 
-        let _ioport_resource: Option<Arc<IoportResource>>;
         #[cfg(target_arch = "x86_64")]
-        {
-            let ioport_resource_handle =
-                take_startup_handle(HandleType::IoportResource.into()).map(zx::Resource::from);
-            _ioport_resource = ioport_resource_handle.map(IoportResource::new);
-            if let Some(_ioport_resource) = _ioport_resource.as_ref() {
-                model.root().hooks.install(_ioport_resource.hooks()).await;
-            }
+        if let Some(handle) = take_startup_handle(HandleType::IoportResource.into()) {
+            let ioport_resource = IoportResource::new(handle.into());
+            builtin_dict_builder.add_protocol_if_enabled::<fkernel::IoportResourceMarker>(
+                move |stream| ioport_resource.clone().serve(stream).boxed(),
+            );
         }
 
         // Set up the IrqResource service.
         let irq_resource = irq_resource_handle.map(IrqResource::new);
-        if let Some(irq_resource) = irq_resource.as_ref() {
-            model.root().hooks.install(irq_resource.hooks()).await;
+        if let Some(irq_resource) = irq_resource {
+            builtin_dict_builder.add_protocol_if_enabled::<fkernel::IrqResourceMarker>(
+                move |stream| irq_resource.clone().serve(stream).boxed(),
+            );
         }
 
         // Set up RootResource service.
         let root_resource = root_resource_handle.map(RootResource::new);
-        if let Some(root_resource) = root_resource.as_ref() {
-            model.root().hooks.install(root_resource.hooks()).await;
+        if let Some(root_resource) = root_resource {
+            builtin_dict_builder.add_protocol_if_enabled::<fboot::RootResourceMarker>(
+                move |stream| root_resource.clone().serve(stream).boxed(),
+            );
         }
 
         // Set up the SMC resource.
-        let _smc_resource: Option<Arc<SmcResource>>;
         #[cfg(target_arch = "aarch64")]
-        {
-            let smc_resource_handle =
-                take_startup_handle(HandleType::SmcResource.into()).map(zx::Resource::from);
-            _smc_resource = smc_resource_handle.map(SmcResource::new);
-            if let Some(_smc_resource) = _smc_resource.as_ref() {
-                model.root().hooks.install(_smc_resource.hooks()).await;
-            }
+        if let Some(handle) = take_startup_handle(HandleType::SmcResource.into()) {
+            let smc_resource = SmcResource::new(handle.into());
+            builtin_dict_builder.add_protocol_if_enabled::<fkernel::SmcResourceMarker>(
+                move |stream| smc_resource.clone().serve(stream).boxed(),
+            );
         }
 
         // Set up the CpuResource service.
@@ -608,8 +702,10 @@ impl BuiltinEnvironment {
             })
             .map(CpuResource::new)
             .and_then(Result::ok);
-        if let Some(cpu_resource) = cpu_resource.as_ref() {
-            model.root().hooks.install(cpu_resource.hooks()).await;
+        if let Some(cpu_resource) = cpu_resource {
+            builtin_dict_builder.add_protocol_if_enabled::<fkernel::CpuResourceMarker>(
+                move |stream| cpu_resource.clone().serve(stream).boxed(),
+            );
         }
 
         // Set up the EnergyInfoResource service.
@@ -628,8 +724,10 @@ impl BuiltinEnvironment {
             })
             .map(EnergyInfoResource::new)
             .and_then(Result::ok);
-        if let Some(energy_info_resource) = energy_info_resource.as_ref() {
-            model.root().hooks.install(energy_info_resource.hooks()).await;
+        if let Some(energy_info_resource) = energy_info_resource {
+            builtin_dict_builder.add_protocol_if_enabled::<fkernel::EnergyInfoResourceMarker>(
+                move |stream| energy_info_resource.clone().serve(stream).boxed(),
+            );
         }
 
         // Set up the DebugResource service.
@@ -648,8 +746,32 @@ impl BuiltinEnvironment {
             })
             .map(DebugResource::new)
             .and_then(Result::ok);
-        if let Some(debug_resource) = debug_resource.as_ref() {
-            model.root().hooks.install(debug_resource.hooks()).await;
+        if let Some(debug_resource) = debug_resource {
+            builtin_dict_builder.add_protocol_if_enabled::<fkernel::DebugResourceMarker>(
+                move |stream| debug_resource.clone().serve(stream).boxed(),
+            );
+        }
+
+        // Set up the FramebufferResource service.
+        let framebuffer_resource = system_resource_handle
+            .as_ref()
+            .and_then(|handle| {
+                handle
+                    .create_child(
+                        zx::ResourceKind::SYSTEM,
+                        None,
+                        zx::sys::ZX_RSRC_SYSTEM_FRAMEBUFFER_BASE,
+                        1,
+                        b"framebuffer",
+                    )
+                    .ok()
+            })
+            .map(FramebufferResource::new)
+            .and_then(Result::ok);
+        if let Some(framebuffer_resource) = framebuffer_resource {
+            builtin_dict_builder.add_protocol_if_enabled::<fkernel::FramebufferResourceMarker>(
+                move |stream| framebuffer_resource.clone().serve(stream).boxed(),
+            );
         }
 
         // Set up the HypervisorResource service.
@@ -668,8 +790,10 @@ impl BuiltinEnvironment {
             })
             .map(HypervisorResource::new)
             .and_then(Result::ok);
-        if let Some(hypervisor_resource) = hypervisor_resource.as_ref() {
-            model.root().hooks.install(hypervisor_resource.hooks()).await;
+        if let Some(hypervisor_resource) = hypervisor_resource {
+            builtin_dict_builder.add_protocol_if_enabled::<fkernel::HypervisorResourceMarker>(
+                move |stream| hypervisor_resource.clone().serve(stream).boxed(),
+            );
         }
 
         // Set up the InfoResource service.
@@ -688,8 +812,32 @@ impl BuiltinEnvironment {
             })
             .map(InfoResource::new)
             .and_then(Result::ok);
-        if let Some(info_resource) = info_resource.as_ref() {
-            model.root().hooks.install(info_resource.hooks()).await;
+        if let Some(info_resource) = info_resource {
+            builtin_dict_builder.add_protocol_if_enabled::<fkernel::InfoResourceMarker>(
+                move |stream| info_resource.clone().serve(stream).boxed(),
+            );
+        }
+
+        // Set up the IommuResource service.
+        let iommu_resource = system_resource_handle
+            .as_ref()
+            .and_then(|handle| {
+                handle
+                    .create_child(
+                        zx::ResourceKind::SYSTEM,
+                        None,
+                        zx::sys::ZX_RSRC_SYSTEM_IOMMU_BASE,
+                        1,
+                        b"iommu",
+                    )
+                    .ok()
+            })
+            .map(IommuResource::new)
+            .and_then(Result::ok);
+        if let Some(iommu_resource) = iommu_resource {
+            builtin_dict_builder.add_protocol_if_enabled::<fkernel::IommuResourceMarker>(
+                move |stream| iommu_resource.clone().serve(stream).boxed(),
+            );
         }
 
         // Set up the MexecResource service.
@@ -708,8 +856,10 @@ impl BuiltinEnvironment {
             })
             .map(MexecResource::new)
             .and_then(Result::ok);
-        if let Some(mexec_resource) = mexec_resource.as_ref() {
-            model.root().hooks.install(mexec_resource.hooks()).await;
+        if let Some(mexec_resource) = mexec_resource {
+            builtin_dict_builder.add_protocol_if_enabled::<fkernel::MexecResourceMarker>(
+                move |stream| mexec_resource.clone().serve(stream).boxed(),
+            );
         }
 
         // Set up the PowerResource service.
@@ -728,8 +878,32 @@ impl BuiltinEnvironment {
             })
             .map(PowerResource::new)
             .and_then(Result::ok);
-        if let Some(power_resource) = power_resource.as_ref() {
-            model.root().hooks.install(power_resource.hooks()).await;
+        if let Some(power_resource) = power_resource {
+            builtin_dict_builder.add_protocol_if_enabled::<fkernel::PowerResourceMarker>(
+                move |stream| power_resource.clone().serve(stream).boxed(),
+            );
+        }
+
+        // Set up the ProfileResource service.
+        let profile_resource = system_resource_handle
+            .as_ref()
+            .and_then(|handle| {
+                handle
+                    .create_child(
+                        zx::ResourceKind::SYSTEM,
+                        None,
+                        zx::sys::ZX_RSRC_SYSTEM_PROFILE_BASE,
+                        1,
+                        b"profile",
+                    )
+                    .ok()
+            })
+            .map(ProfileResource::new)
+            .and_then(Result::ok);
+        if let Some(profile_resource) = profile_resource {
+            builtin_dict_builder.add_protocol_if_enabled::<fkernel::ProfileResourceMarker>(
+                move |stream| profile_resource.clone().serve(stream).boxed(),
+            );
         }
 
         // Set up the VmexResource service.
@@ -748,36 +922,74 @@ impl BuiltinEnvironment {
             })
             .map(VmexResource::new)
             .and_then(Result::ok);
-        if let Some(vmex_resource) = vmex_resource.as_ref() {
-            model.root().hooks.install(vmex_resource.hooks()).await;
+        if let Some(vmex_resource) = vmex_resource {
+            builtin_dict_builder.add_protocol_if_enabled::<fkernel::VmexResourceMarker>(
+                move |stream| vmex_resource.clone().serve(stream).boxed(),
+            );
         }
 
         // Set up System Controller service.
-        let system_controller =
-            Arc::new(SystemController::new(Arc::downgrade(&model), SHUTDOWN_TIMEOUT));
-        model.root().hooks.install(system_controller.hooks()).await;
+        let weak_model = Arc::downgrade(&model);
+        builtin_dict_builder.add_protocol_if_enabled::<fsys::SystemControllerMarker>(
+            move |stream| {
+                SystemController::new(weak_model.clone(), SHUTDOWN_TIMEOUT).serve(stream).boxed()
+            },
+        );
 
-        // Set up the realm service.
-        let realm_capability_host =
-            Arc::new(RealmCapabilityHost::new(Arc::downgrade(&model), runtime_config.clone()));
-        model.root().hooks.install(realm_capability_host.hooks()).await;
+        // Set up the directory ready notifier.
+        let directory_ready_notifier =
+            Arc::new(DirectoryReadyNotifier::new(Arc::downgrade(&model)));
+        model.root().hooks.install(directory_ready_notifier.hooks()).await;
 
-        // Set up the binder service.
-        let binder_capability_host = Arc::new(BinderCapabilityHost::new(Arc::downgrade(&model)));
-        model.root().hooks.install(binder_capability_host.hooks()).await;
+        // Set up the Inspect sink provider.
+        let inspect_sink_provider = Arc::new(InspectSinkProvider::new(inspector));
 
-        // Set up the storage admin protocol
-        let storage_admin_capability_host = Arc::new(StorageAdmin::new(Arc::downgrade(&model)));
-        model.root().hooks.install(storage_admin_capability_host.hooks()).await;
+        // Set up the event registry.
+        let event_registry = {
+            let mut event_registry = EventRegistry::new(Arc::downgrade(&model));
+            event_registry.register_synthesis_provider(
+                EventType::DirectoryReady,
+                directory_ready_notifier.clone(),
+            );
+            event_registry.register_synthesis_provider(
+                EventType::CapabilityRequested,
+                inspect_sink_provider.clone(),
+            );
+            Arc::new(event_registry)
+        };
+        model.root().hooks.install(event_registry.hooks()).await;
+
+        let event_stream_provider =
+            Arc::new(EventStreamProvider::new(Arc::downgrade(&event_registry)));
+        model.root().hooks.install(event_stream_provider.hooks()).await;
+
+        let event_source_factory = EventSourceFactory::new(
+            Arc::downgrade(model.top_instance()),
+            Arc::downgrade(&event_registry),
+            Arc::downgrade(&event_stream_provider),
+        );
+
+        let mut builtin_capabilities: Vec<Box<dyn BuiltinCapability>> =
+            vec![Box::new(EventSourceFactoryCapability::new(event_source_factory.clone()))];
+        let mut framework_capabilities: Vec<Box<dyn FrameworkCapability>> = vec![
+            Box::new(RealmFrameworkCapability::new(Arc::downgrade(&model), runtime_config.clone())),
+            Box::new(BinderFrameworkCapability::new()),
+            Box::new(FactoryFrameworkCapability::new()),
+            Box::new(NamespaceFrameworkCapability::new()),
+            Box::new(PkgDirectoryFrameworkCapability::new()),
+            Box::new(EventSourceFactoryCapability::new(event_source_factory.clone())),
+        ];
+        let derived_capabilities: Vec<Box<dyn DerivedCapability>> =
+            vec![Box::new(StorageAdminDerivedCapability::new(Arc::downgrade(&model)))];
 
         // Set up the builtin runners.
-        for runner in &builtin_runners {
-            model.root().hooks.install(runner.hooks()).await;
+        for runner in builtin_runners {
+            builtin_capabilities.push(Box::new(runner));
         }
 
         // Set up the boot resolver so it is routable from "above root".
         if let Some(boot_resolver) = boot_resolver {
-            model.root().hooks.install(boot_resolver.hooks()).await;
+            builtin_capabilities.push(Box::new(boot_resolver));
         }
 
         // Set up the root realm stop notifier.
@@ -785,34 +997,38 @@ impl BuiltinEnvironment {
         model.root().hooks.install(stop_notifier.hooks()).await;
 
         let realm_query = if runtime_config.enable_introspection {
-            let realm_query = Arc::new(RealmQuery::new(model.clone()));
-            model.root().hooks.install(realm_query.hooks()).await;
-            Some(realm_query)
+            let host = RealmQuery::new(Arc::downgrade(&model));
+            framework_capabilities.push(Box::new(RealmQueryFrameworkCapability::new(host.clone())));
+            Some(host)
         } else {
             None
         };
 
         let lifecycle_controller = if runtime_config.enable_introspection {
-            let realm_control = Arc::new(LifecycleController::new(model.clone()));
-            model.root().hooks.install(realm_control.hooks()).await;
-            Some(realm_control)
+            let host = LifecycleController::new(Arc::downgrade(&model));
+            framework_capabilities
+                .push(Box::new(LifecycleControllerFrameworkCapability::new(host.clone())));
+            Some(host)
         } else {
             None
         };
 
-        let route_validator = if runtime_config.enable_introspection {
-            let route_validator = Arc::new(RouteValidator::new(model.clone()));
-            model.root().hooks.install(route_validator.hooks()).await;
-            Some(route_validator)
-        } else {
-            None
-        };
+        if runtime_config.enable_introspection {
+            framework_capabilities
+                .push(Box::new(RouteValidatorFrameworkCapability::new(Arc::downgrade(&model))));
+        }
 
-        // Set up the handler for routes involving the "pkg" directory
-        let pkg_directory = Arc::new(PkgDirectory {});
-        model.root().hooks.install(pkg_directory.hooks()).await;
+        model
+            .context()
+            .init_internal_capabilities(
+                builtin_capabilities,
+                framework_capabilities,
+                derived_capabilities,
+            )
+            .await;
 
         // Set up the Component Tree Diagnostics runtime statistics.
+        let inspector = inspect_sink_provider.inspector();
         let component_tree_stats =
             ComponentTreeStats::new(inspector.root().create_child("stats")).await;
         component_tree_stats.track_component_manager_stats().await;
@@ -828,84 +1044,28 @@ impl BuiltinEnvironment {
         let node = inspect::stats::Node::new(&inspector, inspector.root());
         inspector.root().record(node.take());
 
-        // Set up the directory ready notifier.
-        let directory_ready_notifier =
-            Arc::new(DirectoryReadyNotifier::new(Arc::downgrade(&model)));
-        model.root().hooks.install(directory_ready_notifier.hooks()).await;
-
-        // Set up the event registry.
-        let event_registry = {
-            let mut event_registry = EventRegistry::new(Arc::downgrade(&model));
-            event_registry.register_synthesis_provider(
-                EventType::DirectoryReady,
-                directory_ready_notifier.clone(),
-            );
-            Arc::new(event_registry)
-        };
-        model.root().hooks.install(event_registry.hooks()).await;
-
-        let event_stream_provider =
-            Arc::new(EventStreamProvider::new(Arc::downgrade(&event_registry)));
-
-        // Set up the event source factory.
-        let event_source_factory = Arc::new(EventSourceFactory::new(
-            Arc::downgrade(&model),
-            Arc::downgrade(&event_registry),
-            Arc::downgrade(&event_stream_provider),
-        ));
-        model.root().hooks.install(event_source_factory.hooks()).await;
-        model.root().hooks.install(event_stream_provider.hooks()).await;
+        let (dict, builtin_receivers_task) = builtin_dict_builder.build();
+        let builtin_receivers_task_group = TaskGroup::new();
+        builtin_receivers_task_group.spawn(builtin_receivers_task);
 
         Ok(BuiltinEnvironment {
             model,
-            boot_args,
-            process_launcher,
-            root_job,
-            root_job_for_inspect,
-            kernel_stats,
-            read_only_log,
-            write_only_log,
-            factory_items_service,
-            items_service,
-            cpu_resource,
-            energy_info_resource,
-            debug_resource,
-            hypervisor_resource,
-            info_resource,
-            #[cfg(target_arch = "x86_64")]
-            ioport_resource: _ioport_resource,
-            irq_resource,
-            mexec_resource,
-            mmio_resource,
-            power_resource,
-            #[cfg(target_arch = "aarch64")]
-            smc_resource: _smc_resource,
-            vmex_resource,
-            crash_records_svc,
-            svc_stash_provider,
-            root_resource,
-            system_controller,
-            utc_time_maintainer,
-            binder_capability_host,
-            realm_capability_host,
-            storage_admin_capability_host,
             realm_query,
             lifecycle_controller,
-            route_validator,
-            pkg_directory,
-            builtin_runners,
             event_registry,
             event_source_factory,
             stop_notifier,
             directory_ready_notifier,
+            inspect_sink_provider,
             event_stream_provider,
             event_logger,
             component_tree_stats,
             component_startup_time_stats,
             debug,
             num_threads,
-            inspector,
             realm_builder_resolver,
+            dict,
+            _builtin_receivers_task_group: builtin_receivers_task_group,
             _service_fs_task: None,
         })
     }
@@ -918,47 +1078,37 @@ impl BuiltinEnvironment {
         // Install the root fuchsia.sys2.LifecycleController
         if let Some(lifecycle_controller) = &self.lifecycle_controller {
             let lifecycle_controller = lifecycle_controller.clone();
-            let scope = self.model.top_instance().task_scope().clone();
+            let scope = self.model.top_instance().task_group().clone();
             service_fs.dir("svc").add_fidl_service(move |stream| {
                 let lifecycle_controller = lifecycle_controller.clone();
                 let scope = scope.clone();
                 // Spawn a short-lived task that adds the lifecycle controller serve to
                 // component manager's task scope.
-                fasync::Task::spawn(async move {
-                    scope
-                        .add_task(async move {
-                            lifecycle_controller.serve(Moniker::root(), stream).await;
-                        })
-                        .await;
-                })
-                .detach();
+                scope.spawn(async move {
+                    lifecycle_controller.serve(Moniker::root(), stream).await;
+                });
             });
         }
 
         // Install the root fuchsia.sys2.RealmQuery
         if let Some(realm_query) = &self.realm_query {
             let realm_query = realm_query.clone();
-            let scope = self.model.top_instance().task_scope().clone();
+            let scope = self.model.top_instance().task_group().clone();
             service_fs.dir("svc").add_fidl_service(move |stream| {
                 let realm_query = realm_query.clone();
                 let scope = scope.clone();
                 // Spawn a short-lived task that adds the realm query serve to
                 // component manager's task scope.
-                fasync::Task::spawn(async move {
-                    scope
-                        .add_task(async move {
-                            realm_query.serve(Moniker::root(), stream).await;
-                        })
-                        .await;
-                })
-                .detach();
+                scope.spawn(async move {
+                    realm_query.serve(Moniker::root(), stream).await;
+                });
             });
         }
 
         // If component manager is in debug mode, create an event source scoped at the
         // root and offer it via ServiceFs to the outside world.
         if self.debug {
-            let event_source = self.event_source_factory.create_for_above_root().await?;
+            let event_source = self.event_source_factory.create_for_above_root();
 
             service_fs.dir("svc").add_fidl_service(move |stream| {
                 let mut event_source = event_source.clone();
@@ -1051,10 +1201,6 @@ impl BuiltinEnvironment {
             });
         }
 
-        inspect_runtime::serve(component::inspector(), &mut service_fs).unwrap_or_else(|error| {
-            warn!(%error, "Failed to serve inspect");
-        });
-
         Ok(service_fs)
     }
 
@@ -1067,10 +1213,6 @@ impl BuiltinEnvironment {
 
         // Bind to the channel
         service_fs.serve_connection(channel)?;
-
-        self.emit_diagnostics(&mut service_fs).unwrap_or_else(|error| {
-            warn!(%error, "Failed to serve diagnostics");
-        });
 
         // Start up ServiceFs
         self._service_fs_task = Some(fasync::Task::spawn(async move {
@@ -1096,33 +1238,47 @@ impl BuiltinEnvironment {
         self.bind_service_fs(server_end).await
     }
 
-    fn emit_diagnostics<'a>(
-        &self,
-        service_fs: &mut ServiceFs<ServiceObj<'a, ()>>,
-    ) -> Result<(), Error> {
-        let (service_fs_proxy, service_fs_server_end) =
-            create_proxy::<fio::DirectoryMarker>().unwrap();
-        service_fs.serve_connection(service_fs_server_end)?;
+    #[cfg(test)]
+    /// Adds a protocol to the root dict, replacing prior entries. This must be called before
+    /// the model is started.
+    pub async fn add_protocol_to_root_dict<P>(
+        &mut self,
+        name: Name,
+        task_to_launch: impl Fn(P::RequestStream) -> BoxFuture<'static, Result<(), anyhow::Error>>
+            + Sync
+            + Send
+            + 'static,
+    ) where
+        P: ProtocolMarker,
+    {
+        let (receiver, sender) = Receiver::new();
+        let router = new_terminating_router(sender);
+        self.dict.insert_capability(iter::once(name.as_str()), router);
 
-        let (node, server_end) = fidl::endpoints::create_proxy::<fio::NodeMarker>().unwrap();
-        service_fs_proxy.open(
-            fio::OpenFlags::RIGHT_READABLE | fio::OpenFlags::DIRECTORY,
-            fio::ModeType::empty(),
-            "diagnostics",
-            ServerEnd::new(server_end.into_channel()),
-        )?;
+        let capability_source = CapabilitySource::Builtin {
+            capability: InternalCapability::Protocol(name.clone()),
+            top_instance: Arc::downgrade(self.model.top_instance()),
+        };
 
-        self.directory_ready_notifier.register_component_manager_capability("diagnostics", node);
+        let launch_task_on_receive = LaunchTaskOnReceive::new(
+            self.model.top_instance().task_group().as_weak(),
+            name,
+            receiver,
+            Some((self.model.root().context.policy().clone(), capability_source)),
+            Arc::new(move |server_end, _| {
+                task_to_launch(crate::sandbox_util::take_handle_as_stream::<P>(server_end)).boxed()
+            }),
+        );
 
-        Ok(())
+        self._builtin_receivers_task_group.spawn(launch_task_on_receive.run());
     }
 
     #[cfg(test)]
-    pub(crate) fn emit_diagnostics_for_test<'a>(
-        &self,
-        service_fs: &mut ServiceFs<ServiceObj<'a, ()>>,
-    ) -> Result<(), Error> {
-        self.emit_diagnostics(service_fs)
+    /// Causes the root component to be discovered, which provides the root component with the
+    /// dict from the builtin environment. This is called in some tests because the tests create
+    /// a new model but do not call `Model::start`.
+    pub async fn discover_root_component(&self) {
+        self.model.discover_root_component(self.dict.clone()).await;
     }
 
     pub async fn wait_for_root_stop(&self) {
@@ -1131,7 +1287,7 @@ impl BuiltinEnvironment {
 
     pub async fn run_root(&mut self) -> Result<(), Error> {
         self.bind_service_fs_to_out().await?;
-        self.model.start().await;
+        self.model.start(self.dict.clone()).await;
         component::health().set_ok();
         self.wait_for_root_stop().await;
 
@@ -1140,6 +1296,15 @@ impl BuiltinEnvironment {
         drop(self._service_fs_task.take());
         Ok(())
     }
+
+    #[cfg(test)]
+    pub fn inspector(&self) -> &Inspector {
+        self.inspect_sink_provider.inspector()
+    }
+}
+
+fn register_builtin_resolver(resolvers: &mut ResolverRegistry) {
+    resolvers.register(BUILTIN_SCHEME.to_string(), Box::new(BuiltinResolver {}));
 }
 
 // Creates a FuchsiaBootResolver if the /boot directory is installed in component_manager's
@@ -1148,23 +1313,22 @@ impl BuiltinEnvironment {
 async fn register_boot_resolver(
     resolvers: &mut ResolverRegistry,
     runtime_config: &RuntimeConfig,
-) -> Result<Option<Arc<FuchsiaBootResolver>>, Error> {
+) -> Result<Option<FuchsiaBootResolverBuiltinCapability>, Error> {
     let path = match &runtime_config.builtin_boot_resolver {
         BuiltinBootResolver::Boot => "/boot",
         BuiltinBootResolver::None => return Ok(None),
     };
-    let boot_resolver =
-        FuchsiaBootResolver::new(path).await.context("Failed to create boot resolver")?;
+    let boot_resolver = FuchsiaBootResolverBuiltinCapability::new(path)
+        .await
+        .context("Failed to create boot resolver")?;
     match boot_resolver {
         None => {
             info!(%path, "fuchsia-boot resolver unavailable, not in namespace");
             Ok(None)
         }
         Some(boot_resolver) => {
-            let resolver = Arc::new(boot_resolver);
-            resolvers
-                .register(BOOT_SCHEME.to_string(), Box::new(BuiltinResolver(resolver.clone())));
-            Ok(Some(resolver))
+            resolvers.register(BOOT_SCHEME.to_string(), box_arc_resolver(boot_resolver.host()));
+            Ok(Some(boot_resolver))
         }
     }
 }
@@ -1175,7 +1339,6 @@ fn register_realm_builder_resolver(
     let realm_builder_resolver =
         RealmBuilderResolver::new().context("Failed to create realm builder resolver")?;
     let resolver = Arc::new(realm_builder_resolver);
-    resolvers
-        .register(REALM_BUILDER_SCHEME.to_string(), Box::new(BuiltinResolver(resolver.clone())));
+    resolvers.register(REALM_BUILDER_SCHEME.to_string(), box_arc_resolver(&resolver));
     Ok(resolver)
 }

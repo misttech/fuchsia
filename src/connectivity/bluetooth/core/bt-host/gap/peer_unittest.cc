@@ -6,14 +6,13 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <pw_async/fake_dispatcher_fixture.h>
 
 #include "src/connectivity/bluetooth/core/bt-host/common/advertising_data.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/byte_buffer.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/manufacturer_names.h"
 #include "src/connectivity/bluetooth/core/bt-host/hci-spec/util.h"
-#include "src/connectivity/bluetooth/core/bt-host/testing/inspect.h"
 #include "src/connectivity/bluetooth/core/bt-host/testing/inspect_util.h"
-#include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 
 namespace bt::gap {
 namespace {
@@ -30,6 +29,7 @@ constexpr uint16_t kSubversion = 0x0002;
 const StaticByteBuffer kAdvData(0x05,  // Length
                                 0x09,  // AD type: Complete Local Name
                                 'T', 'e', 's', 't');
+
 const StaticByteBuffer kInvalidAdvData{
     // 32 bit service UUIDs are supposed to be 4 bytes, but the value in this TLV field is only 3
     // bytes long, hence the AdvertisingData is not valid.
@@ -51,20 +51,16 @@ const bt::sm::LTK kSecureBrEdrKey(sm::SecurityProperties(/*encrypted=*/true, /*a
                                                          sm::kMaxEncryptionKeySize),
                                   hci_spec::LinkKey(UInt128{4}, 5, 6));
 
-class PeerTest : public ::gtest::TestLoopFixture {
+class PeerTest : public pw::async::test::FakeDispatcherFixture {
  public:
   PeerTest() = default;
 
   void SetUp() override {
-    TestLoopFixture::SetUp();
     // Set up a default peer.
     SetUpPeer(/*address=*/kAddrLePublic, /*connectable=*/true);
   }
 
-  void TearDown() override {
-    peer_.reset();
-    TestLoopFixture::TearDown();
-  }
+  void TearDown() override { peer_.reset(); }
 
  protected:
   // Can be used to override or reset the default peer. Resets metrics to prevent interference
@@ -75,7 +71,7 @@ class PeerTest : public ::gtest::TestLoopFixture {
                                    fit::bind_member<&PeerTest::UpdateExpiryCallback>(this),
                                    fit::bind_member<&PeerTest::DualModeCallback>(this),
                                    fit::bind_member<&PeerTest::StoreLowEnergyBondCallback>(this),
-                                   PeerId(1), address_, connectable, &metrics_);
+                                   PeerId(1), address_, connectable, &metrics_, dispatcher());
     peer_->AttachInspect(peer_inspector_.GetRoot());
     // Reset metrics as they should only apply to the new peer under test.
     metrics_.AttachInspect(metrics_inspector_.GetRoot());
@@ -206,6 +202,66 @@ TEST_F(PeerTest, InspectHierarchy) {
 
   peer().MutBrEdr().AddService(UUID(uint16_t{0x110b}));
 
+  auto bredr_data_matcher = AllOf(NodeMatches(
+      AllOf(NameMatches(Peer::BrEdrData::kInspectNodeName),
+            PropertyList(UnorderedElementsAre(
+                StringIs(Peer::BrEdrData::kInspectConnectionStateName,
+                         Peer::ConnectionStateToString(peer().bredr()->connection_state())),
+                StringIs(Peer::BrEdrData::kInspectServicesName,
+                         "{ 0000110b-0000-1000-8000-00805f9b34fb }"))))));
+
+  auto le_data_matcher = AllOf(NodeMatches(
+      AllOf(NameMatches(Peer::LowEnergyData::kInspectNodeName),
+            PropertyList(UnorderedElementsAre(
+                StringIs(Peer::LowEnergyData::kInspectConnectionStateName,
+                         Peer::ConnectionStateToString(peer().le()->connection_state())),
+                IntIs(Peer::LowEnergyData::kInspectAdvertisingDataParseFailureCountName, 0),
+                StringIs(Peer::LowEnergyData::kInspectLastAdvertisingDataParseFailureName, ""),
+                BoolIs(Peer::LowEnergyData::kInspectBondDataName, peer().le()->bonded()),
+                StringIs(Peer::LowEnergyData::kInspectFeaturesName, "0x0000000000000001"))))));
+
+  auto peer_matcher = AllOf(
+      NodeMatches(PropertyList(UnorderedElementsAre(
+          StringIs(Peer::kInspectPeerIdName, peer().identifier().ToString()),
+          StringIs(Peer::kInspectPeerNameName,
+                   peer().name().value() + " [source: " +
+                       Peer::NameSourceToString(Peer::NameSource::kGenericAccessService) + "]"),
+          StringIs(Peer::kInspectTechnologyName, TechnologyTypeToString(peer().technology())),
+          StringIs(Peer::kInspectAddressName, peer().address().ToString()),
+          BoolIs(Peer::kInspectConnectableName, peer().connectable()),
+          BoolIs(Peer::kInspectTemporaryName, peer().temporary()),
+          StringIs(Peer::kInspectFeaturesName, peer().features().ToString()),
+          StringIs(Peer::kInspectVersionName,
+                   hci_spec::HCIVersionToString(peer().version().value())),
+          StringIs(Peer::kInspectManufacturerName, GetManufacturerName(kManufacturer))))),
+      ChildrenMatch(UnorderedElementsAre(bredr_data_matcher, le_data_matcher)));
+  // clang-format on
+  inspect::Hierarchy hierarchy = ReadPeerInspect();
+  EXPECT_THAT(hierarchy, AllOf(ChildrenMatch(UnorderedElementsAre(peer_matcher))));
+}
+#endif  // NINSPECT
+
+#ifndef NINSPECT
+TEST_F(PeerTest, SetBrEdrBondDataUpdatesInspectProperties) {
+  const char* const kInspectLevelPropertyName = "level";
+  const char* const kInspectEncryptedPropertyName = "encrypted";
+  const char* const kInspectSecureConnectionsPropertyName = "secure_connections";
+  const char* const kInspectAuthenticatedPropertyName = "authenticated";
+  const char* const kInspectKeyTypePropertyName = "key_type";
+
+  peer().set_version(pw::bluetooth::emboss::CoreSpecificationVersion::V5_0, kManufacturer,
+                     kSubversion);
+
+  peer().RegisterName("Sapphire💖", Peer::NameSource::kGenericAccessService);
+
+  peer().MutLe();
+  ASSERT_TRUE(peer().le().has_value());
+
+  peer().MutLe().SetFeatures(hci_spec::LESupportedFeatures{0x0000000000000001});
+
+  peer().MutBrEdr().AddService(UUID(uint16_t{0x110b}));
+  peer().MutBrEdr().SetBondData(kLTK);
+
   // clang-format off
   auto bredr_data_matcher = AllOf(
     NodeMatches(AllOf(
@@ -213,7 +269,6 @@ TEST_F(PeerTest, InspectHierarchy) {
       PropertyList(UnorderedElementsAre(
         StringIs(Peer::BrEdrData::kInspectConnectionStateName,
                  Peer::ConnectionStateToString(peer().bredr()->connection_state())),
-        BoolIs(Peer::BrEdrData::kInspectLinkKeyName, peer().bredr()->bonded()),
         StringIs(Peer::BrEdrData::kInspectServicesName, "{ 0000110b-0000-1000-8000-00805f9b34fb }")
         )))));
 
@@ -246,6 +301,59 @@ TEST_F(PeerTest, InspectHierarchy) {
   // clang-format on
   inspect::Hierarchy hierarchy = ReadPeerInspect();
   EXPECT_THAT(hierarchy, AllOf(ChildrenMatch(UnorderedElementsAre(peer_matcher))));
+
+  peer().MutBrEdr().SetBondData(kSecureBrEdrKey);
+
+  const sm::SecurityProperties security_properties = peer().bredr()->link_key().value().security();
+  auto link_key_matcher = AllOf(NodeMatches(AllOf(
+      NameMatches("link_key"),
+      PropertyList(UnorderedElementsAre(
+          StringIs(kInspectLevelPropertyName, LevelToString(security_properties.level())),
+          BoolIs(kInspectEncryptedPropertyName, security_properties.encrypted()),
+          BoolIs(kInspectSecureConnectionsPropertyName, security_properties.secure_connections()),
+          BoolIs(kInspectAuthenticatedPropertyName, security_properties.authenticated()),
+          StringIs(
+              kInspectKeyTypePropertyName,
+              hci_spec::LinkKeyTypeToString(security_properties.GetLinkKeyType().value())))))));
+
+  auto bredr_data_matcher2 =
+      AllOf(NodeMatches(AllOf(
+                NameMatches(Peer::BrEdrData::kInspectNodeName),
+                PropertyList(UnorderedElementsAre(
+                    StringIs(Peer::BrEdrData::kInspectConnectionStateName,
+                             Peer::ConnectionStateToString(peer().bredr()->connection_state())),
+                    StringIs(Peer::BrEdrData::kInspectServicesName,
+                             "{ 0000110b-0000-1000-8000-00805f9b34fb }"))))),
+            ChildrenMatch(UnorderedElementsAre(link_key_matcher)));
+
+  auto le_data_matcher2 = AllOf(NodeMatches(
+      AllOf(NameMatches(Peer::LowEnergyData::kInspectNodeName),
+            PropertyList(UnorderedElementsAre(
+                StringIs(Peer::LowEnergyData::kInspectConnectionStateName,
+                         Peer::ConnectionStateToString(peer().le()->connection_state())),
+                IntIs(Peer::LowEnergyData::kInspectAdvertisingDataParseFailureCountName, 0),
+                StringIs(Peer::LowEnergyData::kInspectLastAdvertisingDataParseFailureName, ""),
+                BoolIs(Peer::LowEnergyData::kInspectBondDataName, peer().le()->bonded()),
+                StringIs(Peer::LowEnergyData::kInspectFeaturesName, "0x0000000000000001"))))));
+
+  auto peer_matcher2 = AllOf(
+      NodeMatches(PropertyList(UnorderedElementsAre(
+          StringIs(Peer::kInspectPeerIdName, peer().identifier().ToString()),
+          StringIs(Peer::kInspectPeerNameName,
+                   peer().name().value() + " [source: " +
+                       Peer::NameSourceToString(Peer::NameSource::kGenericAccessService) + "]"),
+          StringIs(Peer::kInspectTechnologyName, TechnologyTypeToString(peer().technology())),
+          StringIs(Peer::kInspectAddressName, peer().address().ToString()),
+          BoolIs(Peer::kInspectConnectableName, peer().connectable()),
+          BoolIs(Peer::kInspectTemporaryName, peer().temporary()),
+          StringIs(Peer::kInspectFeaturesName, peer().features().ToString()),
+          StringIs(Peer::kInspectVersionName,
+                   hci_spec::HCIVersionToString(peer().version().value())),
+          StringIs(Peer::kInspectManufacturerName, GetManufacturerName(kManufacturer))))),
+      ChildrenMatch(UnorderedElementsAre(bredr_data_matcher2, le_data_matcher2)));
+  // clang-format on
+  hierarchy = ReadPeerInspect();
+  EXPECT_THAT(hierarchy, AllOf(ChildrenMatch(UnorderedElementsAre(peer_matcher2))));
 }
 #endif  // NINSPECT
 
@@ -301,7 +409,7 @@ TEST_F(PeerTest, LowEnergyDataSetAdvDataWithInvalidUtf8NameDoesNotUpdatePeerName
                                   0xFF  // 0xFF should not appear in a valid UTF-8 string
   );
 
-  peer().MutLe().SetAdvertisingData(/*rssi=*/0, kAdvData, zx::time());
+  peer().MutLe().SetAdvertisingData(/*rssi=*/0, kAdvData, pw::chrono::SystemClock::time_point());
   EXPECT_TRUE(listener_notified);  // Fresh AD still results in an update
   EXPECT_FALSE(peer().name().has_value());
 }
@@ -318,13 +426,14 @@ TEST_F(PeerTest, BrEdrDataSetEirDataWithInvalidUtf8NameDoesNotUpdatePeerName) {
                                   'T', 'e', 's',
                                   0xFF  // 0xFF should not appear in a valid UTF-8 string
   );
-  hci_spec::ExtendedInquiryResultEventParams eirep;
-  eirep.num_responses = 1;
-  eirep.bd_addr = peer().address().value();
-  MutableBufferView(eirep.extended_inquiry_response, sizeof(eirep.extended_inquiry_response))
-      .Write(kEirData);
 
-  peer().MutBrEdr().SetInquiryData(eirep);
+  StaticPacket<pw::bluetooth::emboss::ExtendedInquiryResultEventWriter> eirep;
+  eirep.view().num_responses().Write(1);
+  eirep.view().bd_addr().CopyFrom(peer().address().value().view());
+  eirep.view().extended_inquiry_response().BackingStorage().CopyFrom(
+      ::emboss::support::ReadOnlyContiguousBuffer(&kEirData), kEirData.size());
+
+  peer().MutBrEdr().SetInquiryData(eirep.view());
   EXPECT_TRUE(listener_notified);  // Fresh EIR data still results in an update
   EXPECT_FALSE(peer().name().has_value());
 }
@@ -343,144 +452,176 @@ TEST_F(PeerTest, RegisterNameWithInvalidUtf8NameDoesNotUpdatePeerName) {
 
 TEST_F(PeerTest, LowEnergyAdvertisingDataTimestamp) {
   EXPECT_FALSE(peer().MutLe().parsed_advertising_data_timestamp());
-  peer().MutLe().SetAdvertisingData(/*rssi=*/0, kAdvData, zx::time(1));
+  peer().MutLe().SetAdvertisingData(
+      /*rssi=*/0, kAdvData, pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(1)));
   ASSERT_TRUE(peer().MutLe().parsed_advertising_data_timestamp());
-  EXPECT_EQ(peer().MutLe().parsed_advertising_data_timestamp().value(), zx::time(1));
+  EXPECT_EQ(peer().MutLe().parsed_advertising_data_timestamp().value(),
+            pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(1)));
 
-  peer().MutLe().SetAdvertisingData(/*rssi=*/0, kAdvData, zx::time(2));
+  peer().MutLe().SetAdvertisingData(
+      /*rssi=*/0, kAdvData, pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(2)));
   ASSERT_TRUE(peer().MutLe().parsed_advertising_data_timestamp());
-  EXPECT_EQ(peer().MutLe().parsed_advertising_data_timestamp().value(), zx::time(2));
+  EXPECT_EQ(peer().MutLe().parsed_advertising_data_timestamp().value(),
+            pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(2)));
 
   // SetAdvertisingData with data that fails to parse should not update the advertising data
   // timestamp.
-  peer().MutLe().SetAdvertisingData(/*rssi=*/0, kInvalidAdvData, zx::time(3));
+  peer().MutLe().SetAdvertisingData(
+      /*rssi=*/0, kInvalidAdvData,
+      pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(3)));
   ASSERT_TRUE(peer().MutLe().parsed_advertising_data_timestamp());
-  EXPECT_EQ(peer().MutLe().parsed_advertising_data_timestamp().value(), zx::time(2));
+  EXPECT_EQ(peer().MutLe().parsed_advertising_data_timestamp().value(),
+            pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(2)));
 }
 
 TEST_F(PeerTest, SettingLowEnergyAdvertisingDataUpdatesLastUpdated) {
-  EXPECT_EQ(peer().last_updated(), zx::time(0));
+  EXPECT_EQ(peer().last_updated(),
+            pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(0)));
 
   int notify_count = 0;
   set_notify_listeners_cb([&](const Peer&, Peer::NotifyListenersChange) {
-    EXPECT_EQ(peer().last_updated(), zx::time(2));
+    EXPECT_EQ(peer().last_updated(),
+              pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(2)));
     notify_count++;
   });
 
-  RunLoopFor(zx::duration(2));
-  peer().MutLe().SetAdvertisingData(/*rssi=*/0, kAdvData, zx::time(1));
-  EXPECT_EQ(peer().last_updated(), zx::time(2));
+  RunFor(pw::chrono::SystemClock::duration(2));
+  peer().MutLe().SetAdvertisingData(
+      /*rssi=*/0, kAdvData, pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(1)));
+  EXPECT_EQ(peer().last_updated(),
+            pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(2)));
   EXPECT_GE(notify_count, 1);
 }
 
 TEST_F(PeerTest, RegisteringLowEnergyInitializingConnectionUpdatesLastUpdated) {
-  EXPECT_EQ(peer().last_updated(), zx::time(0));
+  EXPECT_EQ(peer().last_updated(),
+            pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(0)));
 
   int notify_count = 0;
   set_notify_listeners_cb([&](const Peer&, Peer::NotifyListenersChange) {
-    EXPECT_EQ(peer().last_updated(), zx::time(2));
+    EXPECT_EQ(peer().last_updated(),
+              pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(2)));
     notify_count++;
   });
 
-  RunLoopFor(zx::duration(2));
+  RunFor(pw::chrono::SystemClock::duration(2));
   Peer::InitializingConnectionToken token = peer().MutLe().RegisterInitializingConnection();
-  EXPECT_EQ(peer().last_updated(), zx::time(2));
+  EXPECT_EQ(peer().last_updated(),
+            pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(2)));
   EXPECT_GE(notify_count, 1);
 }
 
 TEST_F(PeerTest, SettingLowEnergyBondDataUpdatesLastUpdated) {
-  EXPECT_EQ(peer().last_updated(), zx::time(0));
+  EXPECT_EQ(peer().last_updated(),
+            pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(0)));
 
   int notify_count = 0;
   set_notify_listeners_cb([&](const Peer&, Peer::NotifyListenersChange) {
-    EXPECT_EQ(peer().last_updated(), zx::time(2));
+    EXPECT_EQ(peer().last_updated(),
+              pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(2)));
     notify_count++;
   });
 
-  RunLoopFor(zx::duration(2));
+  RunFor(pw::chrono::SystemClock::duration(2));
   sm::PairingData data;
   data.peer_ltk = kLTK;
   data.local_ltk = kLTK;
   peer().MutLe().SetBondData(data);
-  EXPECT_EQ(peer().last_updated(), zx::time(2));
+  EXPECT_EQ(peer().last_updated(),
+            pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(2)));
   EXPECT_GE(notify_count, 1);
 }
 
 TEST_F(PeerTest, RegisteringBrEdrInitializingConnectionUpdatesLastUpdated) {
-  EXPECT_EQ(peer().last_updated(), zx::time(0));
+  EXPECT_EQ(peer().last_updated(),
+            pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(0)));
 
   int notify_count = 0;
   set_notify_listeners_cb([&](const Peer&, Peer::NotifyListenersChange) {
-    EXPECT_EQ(peer().last_updated(), zx::time(2));
+    EXPECT_EQ(peer().last_updated(),
+              pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(2)));
     notify_count++;
   });
 
-  RunLoopFor(zx::duration(2));
+  RunFor(pw::chrono::SystemClock::duration(2));
   Peer::InitializingConnectionToken token = peer().MutBrEdr().RegisterInitializingConnection();
-  EXPECT_EQ(peer().last_updated(), zx::time(2));
+  EXPECT_EQ(peer().last_updated(),
+            pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(2)));
   EXPECT_GE(notify_count, 1);
 }
 
 TEST_F(PeerTest, SettingInquiryDataUpdatesLastUpdated) {
   SetUpPeer(/*address=*/kAddrLeAlias, /*connectable=*/true);
-  EXPECT_EQ(peer().last_updated(), zx::time(0));
+  EXPECT_EQ(peer().last_updated(),
+            pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(0)));
 
   int notify_count = 0;
   set_notify_listeners_cb([&](const Peer&, Peer::NotifyListenersChange) {
-    EXPECT_EQ(peer().last_updated(), zx::time(2));
+    EXPECT_EQ(peer().last_updated(),
+              pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(2)));
     notify_count++;
   });
 
-  RunLoopFor(zx::duration(2));
+  RunFor(pw::chrono::SystemClock::duration(2));
   StaticPacket<pw::bluetooth::emboss::InquiryResultWriter> ir;
   ir.view().bd_addr().CopyFrom(kAddrLeAlias.value().view());
   peer().MutBrEdr().SetInquiryData(ir.view());
-  EXPECT_EQ(peer().last_updated(), zx::time(2));
+  EXPECT_EQ(peer().last_updated(),
+            pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(2)));
   EXPECT_GE(notify_count, 1);
 }
 
 TEST_F(PeerTest, SettingBrEdrBondDataUpdatesLastUpdated) {
-  EXPECT_EQ(peer().last_updated(), zx::time(0));
+  EXPECT_EQ(peer().last_updated(),
+            pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(0)));
 
   int notify_count = 0;
   set_notify_listeners_cb([&](const Peer&, Peer::NotifyListenersChange) {
-    EXPECT_EQ(peer().last_updated(), zx::time(2));
+    EXPECT_EQ(peer().last_updated(),
+              pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(2)));
     notify_count++;
   });
 
-  RunLoopFor(zx::duration(2));
+  RunFor(pw::chrono::SystemClock::duration(2));
   peer().MutBrEdr().SetBondData(kSecureBrEdrKey);
-  EXPECT_EQ(peer().last_updated(), zx::time(2));
+  EXPECT_EQ(peer().last_updated(),
+            pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(2)));
   EXPECT_GE(notify_count, 1);
 }
 
 TEST_F(PeerTest, SettingAddingBrEdrServiceUpdatesLastUpdated) {
-  EXPECT_EQ(peer().last_updated(), zx::time(0));
+  EXPECT_EQ(peer().last_updated(),
+            pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(0)));
 
   int notify_count = 0;
   set_notify_listeners_cb([&](const Peer&, Peer::NotifyListenersChange) {
-    EXPECT_EQ(peer().last_updated(), zx::time(2));
+    EXPECT_EQ(peer().last_updated(),
+              pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(2)));
     notify_count++;
   });
 
-  RunLoopFor(zx::duration(2));
+  RunFor(pw::chrono::SystemClock::duration(2));
   peer().MutBrEdr().AddService(UUID(uint16_t{0x110b}));
-  EXPECT_EQ(peer().last_updated(), zx::time(2));
+  EXPECT_EQ(peer().last_updated(),
+            pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(2)));
   EXPECT_GE(notify_count, 1);
 }
 
 TEST_F(PeerTest, RegisteringNameUpdatesLastUpdated) {
-  EXPECT_EQ(peer().last_updated(), zx::time(0));
+  EXPECT_EQ(peer().last_updated(),
+            pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(0)));
 
   int notify_count = 0;
   set_notify_listeners_cb([&](const Peer&, Peer::NotifyListenersChange) {
-    EXPECT_EQ(peer().last_updated(), zx::time(2));
+    EXPECT_EQ(peer().last_updated(),
+              pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(2)));
     notify_count++;
   });
 
-  RunLoopFor(zx::duration(2));
+  RunFor(pw::chrono::SystemClock::duration(2));
   peer().RegisterName("name");
-  EXPECT_EQ(peer().last_updated(), zx::time(2));
+  EXPECT_EQ(peer().last_updated(),
+            pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(2)));
   EXPECT_GE(notify_count, 1);
 }
 
@@ -771,7 +912,7 @@ TEST_F(PeerTest, SetValidAdvertisingData) {
       kLocalName[0], kLocalName[1],
       kLocalName[2], kLocalName[3],
   };
-  peer().MutLe().SetAdvertisingData(/*rssi=*/32, raw_data, zx::time());
+  peer().MutLe().SetAdvertisingData(/*rssi=*/32, raw_data, pw::chrono::SystemClock::time_point());
   // Setting an AdvertisingData with a local name field should update the peer's local name.
   ASSERT_TRUE(peer().name().has_value());
   EXPECT_EQ(kLocalName, peer().name().value());
@@ -790,14 +931,15 @@ TEST_F(PeerTest, SetShortenedLocalName) {
       kLocalName[0], kLocalName[1],
       kLocalName[2], kLocalName[3],
   };
-  peer().MutLe().SetAdvertisingData(/*rssi=*/32, raw_data, zx::time());
+  peer().MutLe().SetAdvertisingData(/*rssi=*/32, raw_data, pw::chrono::SystemClock::time_point());
   ASSERT_TRUE(peer().name().has_value());
   EXPECT_EQ(kLocalName, peer().name().value());
   EXPECT_EQ(Peer::NameSource::kAdvertisingDataShortened, peer().name_source());
 }
 
 TEST_F(PeerTest, SetInvalidAdvertisingData) {
-  peer().MutLe().SetAdvertisingData(/*rssi=*/32, kInvalidAdvData, zx::time());
+  peer().MutLe().SetAdvertisingData(/*rssi=*/32, kInvalidAdvData,
+                                    pw::chrono::SystemClock::time_point());
 
 #ifndef NINSPECT
   EXPECT_EQ(1, InspectAdvertisingDataParseFailureCount());
@@ -1105,7 +1247,8 @@ TEST_F(PeerTest, SettingLeAdvertisingDataOfBondedPeerDoesNotUpdateName) {
   const StaticByteBuffer kAdvData(0x08,  // Length
                                   0x09,  // AD type: Complete Local Name
                                   'M', 'a', 'l', 'l', 'o', 'r', 'y');
-  peer().MutLe().SetAdvertisingData(/*rssi=*/0, kAdvData, zx::time(0));
+  peer().MutLe().SetAdvertisingData(
+      /*rssi=*/0, kAdvData, pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(0)));
 
   ASSERT_TRUE(peer().name().has_value());
   EXPECT_EQ(peer().name().value(), "alice");
@@ -1118,15 +1261,60 @@ TEST_F(PeerTest, SettingInquiryDataOfBondedPeerDoesNotUpdateName) {
   const StaticByteBuffer kEirData(0x08,  // Length
                                   0x09,  // AD type: Complete Local Name
                                   'M', 'a', 'l', 'l', 'o', 'r', 'y');
-  hci_spec::ExtendedInquiryResultEventParams eirep;
-  eirep.num_responses = 1;
-  eirep.bd_addr = peer().address().value();
-  MutableBufferView(eirep.extended_inquiry_response, sizeof(eirep.extended_inquiry_response))
-      .Write(kEirData);
-  peer().MutBrEdr().SetInquiryData(eirep);
+  StaticPacket<pw::bluetooth::emboss::ExtendedInquiryResultEventWriter> eirep;
+  eirep.view().num_responses().Write(1);
+  eirep.view().bd_addr().CopyFrom(peer().address().value().view());
+  eirep.view().extended_inquiry_response().BackingStorage().CopyFrom(
+      ::emboss::support::ReadOnlyContiguousBuffer(&kEirData), kEirData.size());
+
+  peer().MutBrEdr().SetInquiryData(eirep.view());
 
   ASSERT_TRUE(peer().name().has_value());
   EXPECT_EQ(peer().name().value(), "alice");
+}
+
+TEST_F(PeerTest, BrEdrDataSetEirDataDoesUpdatePeerName) {
+  peer().MutBrEdr();  // Initialize BrEdrData.
+  ASSERT_FALSE(peer().name().has_value());
+
+  bool listener_notified = false;
+  set_notify_listeners_cb([&](auto&, Peer::NotifyListenersChange) { listener_notified = true; });
+
+  const StaticByteBuffer kEirData(0x0D,  // Length (13)
+                                  0x09,  // AD type: Complete Local Name
+                                  'S', 'a', 'p', 'p', 'h', 'i', 'r', 'e', 0xf0, 0x9f, 0x92, 0x96);
+
+  StaticPacket<pw::bluetooth::emboss::ExtendedInquiryResultEventWriter> eirep;
+  eirep.view().num_responses().Write(1);
+  eirep.view().bd_addr().CopyFrom(peer().address().value().view());
+  eirep.view().extended_inquiry_response().BackingStorage().CopyFrom(
+      ::emboss::support::ReadOnlyContiguousBuffer(&kEirData), kEirData.size());
+
+  peer().MutBrEdr().SetInquiryData(eirep.view());
+
+  EXPECT_TRUE(listener_notified);  // Fresh EIR data results in an update
+  ASSERT_TRUE(peer().name().has_value());
+  EXPECT_EQ(peer().name().value(), "Sapphire💖");
+}
+
+TEST_F(PeerTest, SetEirDataUpdatesServiceUUIDs) {
+  peer().MutBrEdr();  // Initialize BrEdrData.
+                      // clang-format off
+  const StaticByteBuffer kEirJustServiceUuids{
+      // One 16-bit UUID: AudioSink
+      0x03, static_cast<uint8_t>(DataType::kIncomplete16BitServiceUuids), 0x0A, 0x11,
+  };
+
+  StaticPacket<pw::bluetooth::emboss::ExtendedInquiryResultEventWriter> eirep;
+  eirep.view().num_responses().Write(1);
+  eirep.view().bd_addr().CopyFrom(peer().address().value().view());
+  eirep.view().extended_inquiry_response().BackingStorage().CopyFrom(
+      ::emboss::support::ReadOnlyContiguousBuffer(&kEirJustServiceUuids),
+      kEirJustServiceUuids.size());
+  peer().MutBrEdr().SetInquiryData(eirep.view());
+
+  EXPECT_EQ(peer().bredr()->services().size(), 1u);
+  EXPECT_EQ(peer().bredr()->services().count(UUID((uint16_t)0x110A)), 1u);
 }
 
 TEST_F(PeerTest, LowEnergyStoreBondCallsCallback) {

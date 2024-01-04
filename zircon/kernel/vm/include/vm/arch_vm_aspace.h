@@ -35,6 +35,11 @@ const uint ARCH_ASPACE_FLAG_KERNEL = (1u << 0);
 const uint ARCH_ASPACE_FLAG_GUEST = (1u << 1);
 
 // per arch base class api to encapsulate the mmu routines on an aspace
+//
+// Beyond construction/destruction lifetimes users of this object must ensure that none of the
+// main methods are called before calling Init or after calling Destroy. Doing so is allowed to
+// cause a panic.
+// Aside from Init and Destroy, the main methods are all thread-safe.
 class ArchVmAspaceInterface {
  public:
   ArchVmAspaceInterface() = default;
@@ -44,7 +49,32 @@ class ArchVmAspaceInterface {
   // page tables.
   using page_alloc_fn_t = zx_status_t (*)(uint alloc_flags, vm_page** p, paddr_t* pa);
 
+  // The Init* methods are used to initialize the ArchVmAspace. The method that should be used is
+  // dependent on the type of address space being created.
+  //
+  // `Init`: This is used to create a regular address space with no special features. In
+  //    architectures that do not support unified address spaces, it is also used to create shared
+  //    and restricted address spaces. However, when unified address spaces are supported, the
+  //    shared and restricted address spaces should be created with `InitShared` and
+  //    `InitRestricted`.
+  //
+  // `InitShared`: This is used to create a shared address space, whose contents can be
+  //    accessed from multiple unified address spaces. These address spaces have a statically
+  //    initialized top level page.
+  //
+  // `InitRestricted`: This is used to create a restricted address space, whose contents can be
+  //    accessed from a single unified address space.
+  //
+  // `InitUnified`: This is used to create a unified address space. This type of address space
+  //    owns no mappings of its own; rather, it is composed of a shared address space and a
+  //    restricted address space. As a result, it expects `InitShared` to have been called
+  //    on the shared address space, and expects `InitRestricted` to have been called on the
+  //    restricted address space.
   virtual zx_status_t Init() = 0;
+  virtual zx_status_t InitShared() = 0;
+  virtual zx_status_t InitRestricted() = 0;
+  virtual zx_status_t InitUnified(ArchVmAspaceInterface& shared,
+                                  ArchVmAspaceInterface& restricted) = 0;
 
   // This method puts the instance into read-only mode and asserts that it contains no mappings.
   //
@@ -57,14 +87,16 @@ class ArchVmAspaceInterface {
   // ArchVmAspaceInterface.
   virtual void DisableUpdates() = 0;
 
-  // Destroy expects the aspace to be fully unmapped, as any mapped regions
-  // indicate incomplete cleanup at the higher layers.
+  // Destroy expects the aspace to be fully unmapped, as any mapped regions indicate incomplete
+  // cleanup at the higher layers. Note that this does not apply to unified aspaces, which may
+  // still contain some mappings when Destroy() is called.
   //
-  // It is safe to call Destroy even if Init failed.
+  // It is safe to call Destroy even if Init, InitShared, InitRestricted, or InitUnified failed.
+  // Once destroy has been called it is a user error to call any of the other methods on the aspace,
+  // unless specifically stated otherwise, and doing so may cause a panic.
   virtual zx_status_t Destroy() = 0;
 
   // main methods
-
   // Map a physically contiguous region into the virtual address space
   virtual zx_status_t MapContiguous(vaddr_t vaddr, paddr_t paddr, size_t count, uint mmu_flags,
                                     size_t* mapped) = 0;
@@ -139,6 +171,10 @@ class ArchVmAspaceInterface {
   // This is intended for use by the harvester to avoid scanning for any accessed or dirty bits if
   // the aspace has not been active in the mmu, since an aspace that has not been active cannot
   // generate new information.
+  //
+  // Note that restricted and shared ArchVmAspace's will report that they have been active if an
+  // associated unified ArchVmAspace has been run. However, the reverse is not true; the unified
+  // ArchVmAspace will not return true if the associated shared/restricted aspaces have been run.
   //
   // The |clear| flag controls whether the aspace having been active should be cleared or not. Not
   // clearing makes this function const and not modify any state.

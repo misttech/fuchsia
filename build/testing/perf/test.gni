@@ -1,0 +1,251 @@
+# Copyright 2023 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/components/fuchsia_test_component.gni")
+import("//build/python/python_action.gni")
+import("//build/python/python_mobly_test.gni")
+import("//build/testing/host_test_data.gni")
+
+# Define a Python-driven performance test, specifying a Python host-side entry point specific to
+# the test. This is for tests that involve some test-specific host-side logic. If your test consists
+# of a Fuchsia component that generates a fuchsiaperf file and that requires no test-specific
+# host-side logic, you can use fuchsia_component_perf_test instead.
+#
+# Parameters
+#   main_source (required)
+#     The entrypoint that contains the __main__ to execute the test.
+#     Type: path
+#
+#   expected_metric_names_filepath (optional)
+#     The absolute path to the file containing the expected metrics.
+#     Type: string
+#
+#   libraries (optional)
+#     Additional libraries that the test depends on if any.
+#     Type: list(string)
+#     Default: empty list
+#
+#   target_deps (optional)
+#     Fuchsia dependencies to bring into the build graph that the test needs.
+#     Type: list(string)
+#     Default: empty list
+#
+#   transport (optional)
+#     Force a specific host->device transport.
+#     Any transport supported by honeydew can be used here, but recommended
+#     values are "sl4f", "fc", or "fuchsia-controller".
+#     Type: string
+#     Default: "fuchsia-controller"
+#
+#   timeout_secs (optional)
+#     See test_spec in build/testing/test_spec.gni
+template("python_perf_test") {
+  if (is_host) {
+    assert(defined(invoker.main_source), "main_source is required")
+
+    _test_target_name = "${target_name}_test"
+    _runtime_deps_target = "${_test_target_name}_runtime_deps"
+    _runtime_deps_dir = "${target_out_dir}/${_test_target_name}/runtime_deps"
+    host_test_data(_runtime_deps_target) {
+      sources = [
+        "${root_out_dir}/catapult_converter",
+        "${root_out_dir}/trace2json",
+      ]
+
+      if (defined(invoker.expected_metric_names_filepath)) {
+        sources += [ "${invoker.expected_metric_names_filepath}" ]
+      }
+      outputs = [ "${_runtime_deps_dir}/{{source_file_part}}" ]
+      deps = [
+        "//src/performance/trace2json:bin",
+        "//src/testing/catapult_converter:converter_bin",
+      ]
+    }
+
+    if (defined(invoker.expected_metric_names_filepath)) {
+      # This action checks that expected_metric_names_filepath refers to a file
+      # in an allowlisted directory. Ideally we would do this check directly in
+      # GN.
+      python_action("${_test_target_name}_verify") {
+        binary_label = "//build/testing/perf:verify_expected_metric_path"
+
+        output_file = "$target_gen_dir/$target_name.verified"
+
+        inputs = [ invoker.expected_metric_names_filepath ]
+        outputs = [ output_file ]
+        args = [
+          "--expected-metric-names-filepath",
+          invoker.expected_metric_names_filepath,
+          "--output-file",
+          rebase_path(output_file, root_build_dir),
+        ]
+      }
+    }
+
+    python_mobly_test("${_test_target_name}") {
+      test_name = "${target_name}"
+      forward_variables_from(invoker,
+                             [
+                               "main_source",
+                               "params_source",
+                               "params_source_deps",
+                               "timeout_secs",
+                             ])
+      if (defined(invoker.libraries)) {
+        libraries = invoker.libraries
+      }
+
+      deps = [ ":${_runtime_deps_target}" ]
+      if (defined(invoker.deps)) {
+        deps += invoker.deps
+      }
+
+      # Enabling on internal builders is primarily controlled by GN groups and not by the
+      # "environments" list
+      environments = [
+        astro_env,
+        nelson_env,
+        nuc_env,
+        sherlock_env,
+        vim3_env,
+      ]
+
+      transport = "fuchsia-controller"
+      if (defined(invoker.transport)) {
+        transport = invoker.transport
+      }
+    }
+  } else {
+    not_needed(invoker, "*")
+  }
+
+  group("${target_name}") {
+    testonly = true
+    deps = [ ":${target_name}_test($host_toolchain)" ]
+
+    if (defined(invoker.expected_metric_names_filepath)) {
+      deps += [ ":${target_name}_test_verify($host_toolchain)" ]
+    }
+    if (defined(invoker.target_deps)) {
+      foreach(target_dep, invoker.target_deps) {
+        deps += [ "${target_dep}($target_toolchain)" ]
+      }
+    }
+  }
+}
+
+# This template is for tests where the test consists of a Fuchsia component that generates a
+# fuchsiaperf file and that requires no test-specific host-side logic. If your test requires
+# test-specific host-side logic, use python_perf_test instead.
+#
+# Parameters
+#   package (required)
+#     The label of the package that provides the performance tests.
+#     type: string
+#
+#   package_name (optional)
+#     The name of the package that the given package label generates. This is only necessary if the
+#     name of the package that the label generates doesn't match the name of the label.
+#     type: string
+#     Default: get_label_info(package, "name")
+#
+#   component_name (required)
+#     The name of the test component inside the given package.
+#     Type: string
+#
+#   expected_metric_names_filepath (required)
+#     The absolute path to the file containing the expected metrics.
+#     Type: string
+#
+#   test_type (optional)
+#     The type of test (as also used in fuchsia_test_component) that specifies in which realm to
+#     run the test.
+#     Type: string
+#     Default: none, which would result in running the test in the regular hermetic tests realm.
+#
+#   process_runs (optional)
+#     How many times to run the test. This is useful for tests which exhibit between-process
+#     variation in results.
+#     Type: number
+#     Default: 1
+#
+#   test_component_args (optional)
+#     CLI args to pass to the test component (in addition to the default output path).
+#     Type: list(string)
+#     Default: none
+#
+#   results_path_test_arg (optional)
+#     The arg name passed to the test to specify the output path.
+#     Important: this is just the option (ex: "--out"). The value will be passed by the test.
+#     Type: string
+#     Default: ""
+#
+template("fuchsia_component_perf_test") {
+  assert(defined(invoker.component_name), "component_name is required")
+  assert(defined(invoker.expected_metric_names_filepath),
+         "expected_metric_names_filepath is required")
+  assert(defined(invoker.package), "package is required")
+
+  if (defined(invoker.package_name)) {
+    _package_name = invoker.package_name
+  } else {
+    _package_name = get_label_info(invoker.package, "name")
+  }
+
+  _config_file = "${target_gen_dir}/${target_name}_config.json"
+  generated_file("${target_name}_generated_config") {
+    output_conversion = "json"
+    _package = _package_name
+    _component = invoker.component_name
+    contents = {
+      ffx_test_url =
+          "fuchsia-pkg://fuchsia.com/${_package}#meta/${_component}.cm"
+
+      if (defined(invoker.expected_metric_names_filepath)) {
+        expected_metric_names_filepath = invoker.expected_metric_names_filepath
+      }
+
+      if (defined(invoker.process_runs)) {
+        process_runs = invoker.process_runs
+      }
+
+      ffx_test_args = []
+
+      if (defined(invoker.test_type)) {
+        ffx_test_args += [
+          "--realm",
+          type_moniker_map[invoker.test_type],
+        ]
+      }
+
+      if (defined(invoker.test_component_args)) {
+        test_component_args = invoker.test_component_args
+      }
+
+      if (defined(invoker.results_path_test_arg)) {
+        results_path_test_arg = invoker.results_path_test_arg
+      }
+    }
+    outputs = [ _config_file ]
+  }
+
+  python_perf_test(target_name) {
+    forward_variables_from(invoker,
+                           [
+                             "environments",
+                             "expected_metric_names_filepath",
+                           ])
+    main_source =
+        "//src/performance/lib/perf_test/fuchsia_component_perf_test.py"
+    params_source = _config_file
+    params_source_deps = [ ":${target_name}_generated_config" ]
+    libraries = [
+      "//src/performance/lib/perf_publish",
+      "//src/testing/end_to_end/honeydew",
+      "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
+      "//third_party/mobly",
+    ]
+    target_deps = [ invoker.package ]
+  }
+}

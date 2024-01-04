@@ -5,24 +5,26 @@
 package packages
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
-	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/avb"
+	"go.fuchsia.dev/fuchsia/src/sys/pkg/bin/pm/build"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/ffx"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/util"
-	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/zbi"
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
+	"go.fuchsia.dev/fuchsia/tools/lib/osmisc"
 )
 
 type BlobStore interface {
 	Dir() string
-	OpenBlob(ctx context.Context, merkle string) (*os.File, error)
+	BlobPath(ctx context.Context, deliveryBlobType *int, merkle build.MerkleRoot) (string, error)
+	OpenBlob(ctx context.Context, deliveryBlobType *int, merkle build.MerkleRoot) (*os.File, error)
+	BlobSize(ctx context.Context, deliveryBlobType *int, merkle build.MerkleRoot) (uint64, error)
 }
 
 type DirBlobStore struct {
@@ -33,8 +35,39 @@ func NewDirBlobStore(dir string) BlobStore {
 	return &DirBlobStore{dir}
 }
 
-func (fs *DirBlobStore) OpenBlob(ctx context.Context, merkle string) (*os.File, error) {
-	return os.Open(filepath.Join(fs.dir, merkle))
+func (fs *DirBlobStore) BlobPath(ctx context.Context, deliveryBlobType *int, merkle build.MerkleRoot) (string, error) {
+	if deliveryBlobType == nil {
+		return filepath.Join(fs.dir, merkle.String()), nil
+	} else {
+		return filepath.Join(fs.dir, strconv.Itoa(*deliveryBlobType), merkle.String()), nil
+	}
+}
+
+func (fs *DirBlobStore) OpenBlob(ctx context.Context, deliveryBlobType *int, merkle build.MerkleRoot) (*os.File, error) {
+	path, err := fs.BlobPath(ctx, deliveryBlobType, merkle)
+	if err != nil {
+		return nil, err
+	}
+	return os.Open(path)
+}
+
+func (fs *DirBlobStore) BlobSize(ctx context.Context, deliveryBlobType *int, merkle build.MerkleRoot) (uint64, error) {
+	path, err := fs.BlobPath(ctx, deliveryBlobType, merkle)
+	if err != nil {
+		return 0, err
+	}
+
+	s, err := os.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+
+	size := s.Size()
+	if size < 0 {
+		return 0, fmt.Errorf("merkle %s has size less than zero: %d", merkle, size)
+	}
+
+	return uint64(size), nil
 }
 
 func (fs *DirBlobStore) Dir() string {
@@ -42,9 +75,9 @@ func (fs *DirBlobStore) Dir() string {
 }
 
 type Repository struct {
-	Dir string
-	// BlobsDir should be a directory called `blobs` where all the blobs are.
-	BlobStore        BlobStore
+	rootDir          string
+	metadataDir      string
+	blobStore        BlobStore
 	ffx              *ffx.FFXTool
 	deliveryBlobType *int
 }
@@ -77,8 +110,9 @@ func NewRepository(ctx context.Context, dir string, blobStore BlobStore, ffx *ff
 	}
 
 	return &Repository{
-		Dir:              filepath.Join(dir, "repository"),
-		BlobStore:        blobStore,
+		rootDir:          dir,
+		metadataDir:      filepath.Join(dir, "repository"),
+		blobStore:        blobStore,
 		ffx:              ffx,
 		deliveryBlobType: deliveryBlobType,
 	}, nil
@@ -92,13 +126,31 @@ func NewRepositoryFromTar(ctx context.Context, dst string, src string, ffx *ffx.
 		return nil, fmt.Errorf("failed to extract packages: %w", err)
 	}
 
-	return NewRepository(ctx, filepath.Join(dst, "amber-files"), NewDirBlobStore(filepath.Join(dst, "amber-files", "repository", "blobs")), ffx, deliveryBlobType)
+	return NewRepository(
+		ctx,
+		filepath.Join(dst, "amber-files"),
+		NewDirBlobStore(filepath.Join(dst, "amber-files", "repository", "blobs")),
+		ffx,
+		deliveryBlobType,
+	)
+}
+
+// This clones this repository, copying the repository metadata into this
+// directory.
+func (r *Repository) CloneIntoDir(ctx context.Context, path string) (*Repository, error) {
+	logger.Infof(ctx, "Cloning repository %s into %s", r.metadataDir, path)
+
+	if _, err := osmisc.CopyDir(r.rootDir, path, osmisc.RaiseError); err != nil {
+		return nil, err
+	}
+
+	return NewRepository(ctx, path, r.blobStore, r.ffx, r.deliveryBlobType)
 }
 
 // OpenPackage opens a package from the repository.
 func (r *Repository) OpenPackage(ctx context.Context, path string) (Package, error) {
 	// Parse the targets file so we can access packages locally.
-	f, err := os.Open(filepath.Join(r.Dir, "targets.json"))
+	f, err := os.Open(filepath.Join(r.metadataDir, "targets.json"))
 	if err != nil {
 		return Package{}, err
 	}
@@ -110,72 +162,111 @@ func (r *Repository) OpenPackage(ctx context.Context, path string) (Package, err
 	}
 
 	if target, ok := s.Signed.Targets[path]; ok {
-		return newPackage(ctx, r, target.Custom.Merkle)
+		merkle, err := build.DecodeMerkleRoot([]byte(target.Custom.Merkle))
+		if err != nil {
+			return Package{}, fmt.Errorf(
+				"failed to parse package %s merkle %q from TUF: %w",
+				path,
+				merkle,
+				err,
+			)
+		}
+
+		return newPackage(ctx, r, path, merkle)
 	}
 
 	return Package{}, fmt.Errorf("could not find package: %q", path)
+}
+
+func (r *Repository) UncompressedBlobPath(ctx context.Context, merkle build.MerkleRoot) (string, error) {
+	return r.blobStore.BlobPath(ctx, nil, merkle)
+}
+
+func (r *Repository) OpenUncompressedBlob(ctx context.Context, merkle build.MerkleRoot) (*os.File, error) {
+	return r.blobStore.OpenBlob(ctx, nil, merkle)
+}
+
+func (r *Repository) OpenUpdatePackage(ctx context.Context, path string) (*UpdatePackage, error) {
+	p, err := r.OpenPackage(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	return newUpdatePackage(ctx, r, p)
+}
+
+func (r *Repository) OpenBlob(ctx context.Context, merkle build.MerkleRoot) (*os.File, error) {
+	return r.blobStore.OpenBlob(ctx, r.deliveryBlobType, merkle)
+}
+
+func (r *Repository) BlobSize(ctx context.Context, merkle build.MerkleRoot) (uint64, error) {
+	return r.blobStore.BlobSize(ctx, r.deliveryBlobType, merkle)
+}
+
+func (r *Repository) AlignedBlobSize(ctx context.Context, merkle build.MerkleRoot) (uint64, error) {
+	size, err := r.BlobSize(ctx, merkle)
+	if err != nil {
+		return 0, err
+	}
+
+	// Align the number to the next block.
+	remainder := size % BlobBlockSize
+	if remainder != 0 {
+		size += BlobBlockSize - remainder
+	}
+
+	return size, nil
 
 }
 
-func (r *Repository) OpenBlob(ctx context.Context, merkle string) (*os.File, error) {
-	return r.BlobStore.OpenBlob(ctx, merkle)
+// sumBlobSizes sums up all the blob sizes from the blob store.
+func (r *Repository) sumAlignedBlobSizes(ctx context.Context, blobs map[build.MerkleRoot]struct{}) (uint64, error) {
+	totalSize := uint64(0)
+	for blob := range blobs {
+		size, err := r.AlignedBlobSize(ctx, blob)
+		if err != nil {
+			return 0, nil
+		}
+
+		totalSize += size
+	}
+
+	return totalSize, nil
 }
 
 func (r *Repository) Serve(ctx context.Context, localHostname string, repoName string, repoPort int) (*Server, error) {
-	return newServer(ctx, r.Dir, r.BlobStore, localHostname, repoName, repoPort)
+	return newServer(ctx, r.metadataDir, r.blobStore, localHostname, repoName, repoPort)
 }
 
-func (r *Repository) LookupUpdateSystemImageMerkle(ctx context.Context) (string, error) {
-	return r.lookupUpdateContentPackageMerkle(ctx, "update/0", "system_image/0")
-}
-
-func (r *Repository) LookupUpdatePrimeSystemImage2Merkle(ctx context.Context) (string, error) {
-	return r.lookupUpdateContentPackageMerkle(ctx, "update_prime2/0", "system_image/0")
-}
-
-func (r *Repository) VerifyMatchesAnyUpdateSystemImageMerkle(ctx context.Context, merkle string) error {
-	systemImageMerkle, err := r.LookupUpdateSystemImageMerkle(ctx)
+func (r *Repository) VerifyMatchesAnyUpdateSystemImageMerkle(ctx context.Context, merkle build.MerkleRoot) error {
+	update, err := r.OpenUpdatePackage(ctx, "update/0")
 	if err != nil {
 		return err
 	}
-	if merkle == systemImageMerkle {
+
+	systemImage, err := update.OpenPackage(ctx, "system_image/0")
+	if err != nil {
+		return err
+	}
+	if merkle == systemImage.Merkle() {
 		return nil
 	}
 
-	systemPrimeImage2Merkle, err := r.LookupUpdatePrimeSystemImage2Merkle(ctx)
+	updatePrime, err := r.OpenUpdatePackage(ctx, "update_prime/0")
 	if err != nil {
 		return err
 	}
-	if merkle == systemPrimeImage2Merkle {
+
+	systemImagePrime, err := updatePrime.OpenPackage(ctx, "system_image/0")
+	if err != nil {
+		return err
+	}
+	if merkle == systemImagePrime.Merkle() {
 		return nil
 	}
 
 	return fmt.Errorf("expected device to be running a system image of %s or %s, got %s",
-		systemImageMerkle, systemPrimeImage2Merkle, merkle)
-}
-
-func (r *Repository) lookupUpdateContentPackageMerkle(ctx context.Context, updatePackageName string, contentPackageName string) (string, error) {
-	// Extract the "packages" file from the "update" package.
-	p, err := r.OpenPackage(ctx, updatePackageName)
-	if err != nil {
-		return "", err
-	}
-	f, err := p.Open(ctx, "packages.json")
-	if err != nil {
-		return "", err
-	}
-
-	packages, err := util.ParsePackagesJSON(f)
-	if err != nil {
-		return "", err
-	}
-
-	merkle, ok := packages[contentPackageName]
-	if !ok {
-		return "", fmt.Errorf("could not find %s merkle", contentPackageName)
-	}
-
-	return merkle, nil
+		systemImage.Merkle(), systemImagePrime.Merkle(), merkle)
 }
 
 // CreatePackage creates a package in this repository named `packagePath` by:
@@ -187,42 +278,42 @@ func (r *Repository) CreatePackage(
 	ctx context.Context,
 	packagePath string,
 	createFunc func(path string) error,
-) (string, error) {
+) (Package, error) {
 	logger.Infof(ctx, "creating package %q", packagePath)
 
 	// Extract the package name from the path. The variant currently is optional, but if specified, must be "0".
 	packageName, packageVariant, found := strings.Cut(packagePath, "/")
 	if found && packageVariant != "0" {
-		return "", fmt.Errorf("invalid package path found: %q", packagePath)
+		return Package{}, fmt.Errorf("invalid package path found: %q", packagePath)
 	}
 	packageVariant = "0"
 
 	// Create temp directory. The content of this directory will be included in the package.
 	tempDir, err := os.MkdirTemp("", "")
 	if err != nil {
-		return "", fmt.Errorf("failed to create a temp directory: %w", err)
+		return Package{}, fmt.Errorf("failed to create a temp directory: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
 
 	// Package content will be created by the user by leveraging the createFunc closure.
 	if err := createFunc(tempDir); err != nil {
-		return "", fmt.Errorf("failed to create content of the package: %w", err)
+		return Package{}, fmt.Errorf("failed to create content of the package: %w", err)
 	}
 
 	// Create package from the temp directory. The package builder doesn't use
 	// the repository name, so it can be set as `testrepository.com`.
 	pkgBuilder, err := NewPackageBuilderFromDir(tempDir, packageName, packageVariant, "testrepository.com")
 	if err != nil {
-		return "", fmt.Errorf("failed to parse the package from %q: %w", tempDir, err)
+		return Package{}, fmt.Errorf("failed to parse the package from %q: %w", tempDir, err)
 	}
 
-	// Publish the package and ger the merkle of the package.
-	_, pkgMerkle, err := pkgBuilder.Publish(ctx, r)
+	// Publish the package and get the merkle of the package.
+	pkg, err := pkgBuilder.Publish(ctx, r)
 	if err != nil {
-		return "", fmt.Errorf("failed to publish the package %q: %w", packagePath, err)
+		return Package{}, fmt.Errorf("failed to publish the package %q: %w", packagePath, err)
 	}
 
-	return pkgMerkle, nil
+	return pkg, nil
 }
 
 // EditPackage takes the content of the source package from srcPackagePath,
@@ -230,192 +321,33 @@ func (r *Repository) CreatePackage(
 // content at destination with the help of editFunc closure.
 func (r *Repository) EditPackage(
 	ctx context.Context,
-	srcPackagePath string,
+	srcPackage Package,
 	dstPackagePath string,
 	editFunc func(path string) error,
 ) (Package, error) {
-	logger.Infof(ctx, "editing package %q. will create %q", srcPackagePath, dstPackagePath)
-
-	// First get the source package located at srcPackagePath
-	pkg, err := r.OpenPackage(ctx, srcPackagePath)
-	if err != nil {
-		return Package{}, fmt.Errorf("failed to open the package %q: %w", srcPackagePath, err)
-	}
+	logger.Infof(ctx, "editing package %q. will create %q", srcPackage.Path(), dstPackagePath)
 
 	// Next create a destination package based on the content oft the source package.
-	pkgMerkle, err := r.CreatePackage(ctx, dstPackagePath, func(tempDir string) error {
-		if err := pkg.Expand(ctx, tempDir); err != nil {
+	pkg, err := r.CreatePackage(ctx, dstPackagePath, func(tempDir string) error {
+		if err := srcPackage.Expand(ctx, tempDir); err != nil {
 			return fmt.Errorf("failed to expand the package to %s: %w", tempDir, err)
 		}
 
 		// User can edit the content and return it.
 		return editFunc(tempDir)
 	})
-
 	if err != nil {
 		return Package{}, fmt.Errorf("failed to create the package %q: %w", dstPackagePath, err)
-	}
-
-	// Get the newly edited package located at pkgMerkle and return it.
-	pkg, err = newPackage(ctx, r, pkgMerkle)
-	if err != nil {
-		return Package{}, fmt.Errorf("failed to edit the package %q: %w", pkgMerkle, err)
 	}
 
 	return pkg, nil
 }
 
-// Extracts the update package into a temporary directory, and injects the
-// specified vbmeta property files into the vbmeta.
-func (r *Repository) EditUpdatePackageWithVBMetaProperties(
-	ctx context.Context,
-	avbTool *avb.AVBTool,
-	srcUpdatePackage string,
-	dstUpdatePackage string,
-	repoName string,
-	vbmetaPropertyFiles map[string]string,
-	editFunc func(path string) error) (Package, error) {
-	return r.EditPackage(ctx, srcUpdatePackage, dstUpdatePackage, func(tempDir string) error {
-		if err := editFunc(tempDir); err != nil {
-			return err
-		}
-
-		packagesJsonPath := filepath.Join(tempDir, "packages.json")
-		logger.Infof(ctx, "setting host name in %q to %q", packagesJsonPath, repoName)
-
-		err := util.AtomicallyWriteFile(packagesJsonPath, 0600, func(f *os.File) error {
-			src, err := os.Open(packagesJsonPath)
-			if err != nil {
-				return fmt.Errorf("failed to open packages.json %q: %w", packagesJsonPath, err)
-			}
-
-			if err := util.RehostPackagesJSON(bufio.NewReader(src), bufio.NewWriter(f), repoName); err != nil {
-				return fmt.Errorf("failed to rehost package.json: %w", err)
-			}
-
-			return nil
-		})
-
-		if err != nil {
-			return fmt.Errorf("failed to atomically overwrite %q: %w", packagesJsonPath, err)
-		}
-
-		srcVbmetaPath := filepath.Join(tempDir, "fuchsia.vbmeta")
-		if _, err := os.Stat(srcVbmetaPath); err != nil {
-			return fmt.Errorf("vbmeta %q does not exist in repo: %w", srcVbmetaPath, err)
-		}
-
-		logger.Infof(ctx, "updating vbmeta %q", srcVbmetaPath)
-
-		err = util.AtomicallyWriteFile(srcVbmetaPath, 0600, func(f *os.File) error {
-			if err := avbTool.MakeVBMetaImage(ctx, f.Name(), srcVbmetaPath, vbmetaPropertyFiles); err != nil {
-				return fmt.Errorf("failed to update vbmeta: %w", err)
-			}
-			return nil
-		})
-
-		if err != nil {
-			return fmt.Errorf("failed to atomically overwrite %q: %w", srcVbmetaPath, err)
-		}
-
-		return nil
-	})
-}
-
-// Extract the update package `srcUpdatePackage` into a temporary directory,
-// then build and publish it to the repository as the `dstUpdatePackage` name.
-// It will automatically rewrite the `packages.json` file to use `repoName`
-// path, to avoid collisions with the `fuchsia.com` repository name.
-func (r *Repository) EditUpdatePackage(
-	ctx context.Context,
-	avbTool *avb.AVBTool,
-	zbiTool *zbi.ZBITool,
-	srcUpdatePackage string,
-	dstUpdatePackage string,
-	repoName string,
-	editFunc func(path string) error,
-) (Package, error) {
-	vbmetaPropertyFiles := map[string]string{}
-
-	return r.EditUpdatePackageWithVBMetaProperties(
-		ctx,
-		avbTool,
-		srcUpdatePackage,
-		dstUpdatePackage,
-		repoName,
-		vbmetaPropertyFiles,
-		func(path string) error {
-			return editFunc(path)
-		})
-}
-
-func (r *Repository) EditUpdatePackageWithNewSystemImageMerkle(
-	ctx context.Context,
-	avbTool *avb.AVBTool,
-	zbiTool *zbi.ZBITool,
-	systemImageMerkle string,
-	srcUpdatePackagePath string,
-	dstUpdatePackagePath string,
-	bootfsCompression string,
-	editFunc func(path string) error,
-) (Package, error) {
-	repoName := "fuchsia.com"
-
-	return r.EditUpdatePackage(ctx,
-		avbTool, zbiTool,
-		srcUpdatePackagePath,
-		dstUpdatePackagePath,
-		repoName,
-		func(tempDir string) error {
-			if err := zbiTool.UpdateZBIWithNewSystemImageMerkle(ctx,
-				systemImageMerkle,
-				tempDir,
-				bootfsCompression,
-			); err != nil {
-				return err
-			}
-
-			pathToZbi := filepath.Join(tempDir, "zbi")
-			vbmetaPath := filepath.Join(tempDir, "fuchsia.vbmeta")
-			if err := avbTool.MakeVBMetaImageWithZbi(ctx, vbmetaPath, vbmetaPath, pathToZbi); err != nil {
-				return err
-			}
-
-			packagesJsonPath := filepath.Join(tempDir, "packages.json")
-			err := util.AtomicallyWriteFile(packagesJsonPath, 0600, func(f *os.File) error {
-				src, err := os.Open(packagesJsonPath)
-				if err != nil {
-					return fmt.Errorf("failed to open packages.json %q: %w", packagesJsonPath, err)
-				}
-
-				if err := util.UpdateHashValuePackagesJSON(
-					bufio.NewReader(src),
-					bufio.NewWriter(f),
-					repoName,
-					"system_image/0",
-					systemImageMerkle,
-				); err != nil {
-					return fmt.Errorf("failed to update system_image_merkle in package.json: %w", err)
-				}
-
-				return nil
-			})
-
-			if err != nil {
-				return fmt.Errorf("failed to atomically overwrite %q: %w", packagesJsonPath, err)
-			}
-
-			return editFunc(tempDir)
-		})
-}
-
 func (r *Repository) Publish(ctx context.Context, packageManifestPath string) error {
-	repoDir := filepath.Dir(r.Dir)
-
-	extraArgs := []string{"--blob-repo-dir", r.BlobStore.Dir()}
+	extraArgs := []string{"--blob-repo-dir", r.blobStore.Dir()}
 	if r.deliveryBlobType != nil {
 		extraArgs = append(extraArgs, "--delivery-blob-type", fmt.Sprint(*r.deliveryBlobType))
 	}
 
-	return r.ffx.RepositoryPublish(ctx, repoDir, []string{packageManifestPath}, extraArgs...)
+	return r.ffx.RepositoryPublish(ctx, r.rootDir, []string{packageManifestPath}, extraArgs...)
 }

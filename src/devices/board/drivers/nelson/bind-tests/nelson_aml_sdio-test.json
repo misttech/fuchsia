@@ -22,7 +22,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.hardware.gpio.BIND_FIDL_PROTOCOL.SERVICE",
+                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.gpio.BIND_FIDL_PROTOCOL.SERVICE",
                     "fuchsia.BIND_GPIO_PIN": "fuchsia.amlogic.platform.s905d3.GPIOX_PIN_ID.PIN_6"
                 }
             }
@@ -35,7 +35,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.BIND_INIT_STEP": "fuchsia.hardware.pwm.BIND_INIT_STEP.PWM"
+                    "fuchsia.BIND_INIT_STEP": "fuchsia.pwm.BIND_INIT_STEP.PWM"
                 }
             }
         ]

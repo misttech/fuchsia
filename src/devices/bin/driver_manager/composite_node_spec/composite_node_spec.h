@@ -16,6 +16,8 @@ class Node;
 
 using DeviceOrNode = std::variant<std::weak_ptr<DeviceV1Wrapper>, std::weak_ptr<dfv2::Node>>;
 
+using RemoveCompositeNodeCallback = fit::callback<void(zx::result<>)>;
+
 struct CompositeNodeSpecCreateInfo {
   std::string name;
   size_t size;
@@ -35,14 +37,20 @@ class CompositeNodeSpec {
   // Returns ZX_ERR_ALREADY_BOUND if it's already bound. See BindParentImpl() for return type
   // details.
   zx::result<std::optional<DeviceOrNode>> BindParent(
-      fuchsia_driver_index::wire::MatchedCompositeNodeSpecInfo info,
+      fuchsia_driver_framework::wire::CompositeParent composite_parent,
       const DeviceOrNode& device_or_node);
 
-  virtual fuchsia_driver_development::wire::CompositeInfo GetCompositeInfo(
+  virtual fuchsia_driver_development::wire::CompositeNodeInfo GetCompositeInfo(
       fidl::AnyArena& arena) const = 0;
+
+  // Remove the underlying composite node and unmatch all of its parents. Called for
+  // rebind.
+  void Remove(RemoveCompositeNodeCallback callback);
 
   // Exposed for testing.
   const std::vector<std::optional<DeviceOrNode>>& parent_specs() const { return parent_specs_; }
+
+  const std::string& name() const { return name_; }
 
  protected:
   // Subclass implementation for binding the DeviceOrNode to its composite. If the composite is not
@@ -51,10 +59,12 @@ class CompositeNodeSpec {
   // Otherwise, it returns std::nullopt. The lifetime of this node object is managed by
   // the parent nodes.
   virtual zx::result<std::optional<DeviceOrNode>> BindParentImpl(
-      fuchsia_driver_index::wire::MatchedCompositeNodeSpecInfo info,
+      fuchsia_driver_framework::wire::CompositeParent composite_parent,
       const DeviceOrNode& device_or_node) = 0;
 
-  const std::string& name() const { return name_; }
+  // Subclass implementation for Remove(). Subclasses are expected to remove the underlying
+  // composite node and unmatch all of the parents from it.
+  virtual void RemoveImpl(RemoveCompositeNodeCallback callback) = 0;
 
   size_t size() const { return parent_specs_.size(); }
 

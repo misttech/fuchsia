@@ -6,8 +6,9 @@
 
 namespace f2fs {
 
-Writer::Writer(Bcache *bc, size_t capacity) : transaction_handler_(bc) {
-  write_buffer_ = std::make_unique<StorageBuffer>(bc, capacity, kBlockSize, "WriteBuffer");
+Writer::Writer(BcacheMapper *bcache_mapper, size_t capacity) : bcache_mapper_(bcache_mapper) {
+  write_buffer_ =
+      std::make_unique<StorageBuffer>(bcache_mapper, capacity, kBlockSize, "WriteBuffer");
 }
 
 Writer::~Writer() {
@@ -54,7 +55,7 @@ fpromise::promise<> Writer::GetTaskForWriteIO(sync_completion_t *completion) {
       }
       // No need to release vmo buffers of |operations| in the same order they are reserved in
       // StorageBuffer.
-      zx_status_t io_status = transaction_handler_->RunRequests(operations.TakeOperations());
+      zx_status_t io_status = bcache_mapper_->RunRequests(operations.TakeOperations());
       if (auto ret = operations.Completion(
               io_status,
               [pages = std::move(pages)](const StorageOperations &operation,
@@ -66,7 +67,7 @@ fpromise::promise<> Writer::GetTaskForWriteIO(sync_completion_t *completion) {
                         io_status == ZX_ERR_PEER_CLOSED) {
                       // When it fails to write metadata or the block device is not available,
                       // set kCpErrorFlag to enter read-only mode.
-                      page->GetVnode().fs()->GetSuperblockInfo().SetCpFlags(CpFlag::kCpErrorFlag);
+                      page->fs()->GetSuperblockInfo().SetCpFlags(CpFlag::kCpErrorFlag);
                     } else {
                       // When IO errors occur with node and data Pages, just set a dirty flag
                       // to retry it with another LBA.
@@ -74,6 +75,8 @@ fpromise::promise<> Writer::GetTaskForWriteIO(sync_completion_t *completion) {
                       locked_page.SetDirty();
                     }
                   }
+                  page->ClearSync();
+                  page->ClearCommit();
                   page->ClearColdData();
                   page->ClearWriteback();
                 }

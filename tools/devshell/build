@@ -156,11 +156,16 @@ function main {
   if [ -n "${fint_params_path}" ]; then
     readonly fint="${FX_CACHE_DIR}/fint"
     "$FUCHSIA_DIR/tools/integration/bootstrap.sh" -o "$fint" || exit $?
+
+    local rbe_wrapper=()
+    if fx-rbe-enabled
+    then
+      rbe_wrapper=("${RBE_WRAPPER[@]}")
+    fi
+
     # It's not ideal that we resort to constructing the textproto file as a
     # string, but it's easier than writing a Go tool solely for the purpose of
     # constructing a protobuf with a couple top-level string fields set.
-    local rbe_wrapper=()
-    if fx-rbe-enabled; then rbe_wrapper=("${RBE_WRAPPER[@]}"); fi
     "${rbe_wrapper[@]}" "$fint" -log-level=error build -static="${fint_params_path}" -context=<(echo "
 checkout_dir: \"${FUCHSIA_DIR}\"
 build_dir: \"${FUCHSIA_BUILD_DIR}\"
@@ -177,6 +182,23 @@ build_dir: \"${FUCHSIA_BUILD_DIR}\"
 
 function goma-check {
   if grep -q "^ *use_goma = true" "${FUCHSIA_BUILD_DIR}/args.gn"; then
+    cat <<EOF
+**************** NOTICE ****************
+Goma is deprecated and will be shutting down for Fuchsia soon.
+You can replace it with re-client (linux-x64 only right now)
+with the following steps.
+
+  * In args.gn (fx args), set:
+
+    cxx_rbe_enable = true
+    use_goma = false
+
+  * Make sure you have valid 'gcert' credentials.
+  * Resume your typical workflows.
+
+See the go/fuchsia-goma-shutdown-psa announcement.
+****************************************
+EOF
     if ! fx-command-run goma_ctl status >/dev/null 2>&1; then
       fx-warn "Goma is enabled but not started."
       fx-info "Starting Goma..."

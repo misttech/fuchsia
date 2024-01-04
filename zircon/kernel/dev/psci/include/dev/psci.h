@@ -14,6 +14,7 @@
 #include <arch/arm64/mp.h>
 #include <dev/power.h>
 
+// Known PSCI calls as of PSCI 1.2, Document DEN0022E
 #define PSCI64_PSCI_VERSION (0x84000000)
 #define PSCI64_CPU_SUSPEND (0xC4000001)
 #define PSCI64_CPU_OFF (0x84000002)
@@ -33,6 +34,8 @@
 #define PSCI64_PSCI_SET_SUSPEND_MODE (0x8400000F)
 #define PSCI64_PSCI_STAT_RESIDENCY (0xC4000010)
 #define PSCI64_PSCI_STAT_COUNT (0xC4000011)
+#define PSCI64_MEM_PROTECT (0x84000013)
+#define PSCI64_MEM_PROTECT_RANGE (0xC4000014)
 
 // See: "Firmware interfaces for mitigating cache speculation vulnerabilities"
 //      "System Software on Arm Systems"
@@ -51,6 +54,9 @@
 #define PSCI_NOT_PRESENT -7
 #define PSCI_DISABLED -8
 #define PSCI_INVALID_ADDRESS -9
+#define PSCI_TIMEOUT -10
+#define PSCI_RATE_LIMITED -11
+#define PSCI_BUSY -12
 
 /* TODO NOTE: - currently these routines assume cpu topologies that are described only in AFF0 and
    AFF1. If a system is architected such that AFF2 or AFF3 are non-zero then this code will need to
@@ -64,13 +70,12 @@ uint32_t psci_get_version();
 uint32_t psci_get_feature(uint32_t psci_call);
 
 /* powers down the calling cpu - only returns if call fails */
-uint32_t psci_cpu_off();
-uint32_t psci_cpu_on(uint64_t mpid, paddr_t entry);
-uint32_t psci_get_affinity_info(uint64_t cluster, uint64_t cpuid);
+zx_status_t psci_cpu_off();
+zx_status_t psci_cpu_on(uint64_t mpid, paddr_t entry, uint64_t context);
+int64_t psci_get_affinity_info(uint64_t mpid);
+zx::result<power_cpu_state> psci_get_cpu_state(uint64_t mpid);
 
-void psci_system_off();
-
-/* called from assembly, mark as C external */
-extern "C" void psci_system_reset(enum reboot_flags flags);
+zx_status_t psci_system_off();
+zx_status_t psci_system_reset(power_reboot_flags flags);
 
 #endif  // ZIRCON_KERNEL_DEV_PSCI_INCLUDE_DEV_PSCI_H_

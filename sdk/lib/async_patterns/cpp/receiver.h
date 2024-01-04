@@ -6,14 +6,13 @@
 #define LIB_ASYNC_PATTERNS_CPP_RECEIVER_H_
 
 #include <lib/async/dispatcher.h>
+#include <lib/async_patterns/cpp/callback.h>
+#include <lib/async_patterns/cpp/function.h>
+#include <lib/async_patterns/cpp/internal/receiver_base.h>
 #include <lib/fit/function_traits.h>
 #include <lib/fit/nullable.h>
 
 #include <memory>
-
-#include <sdk/lib/async_patterns/cpp/callback.h>
-#include <sdk/lib/async_patterns/cpp/function.h>
-#include <sdk/lib/async_patterns/cpp/internal/receiver_base.h>
 
 namespace async_patterns {
 
@@ -57,7 +56,8 @@ class Receiver : private internal::ReceiverBase {
   // number of arguments.
   template <typename Member>
   auto Once(Member Owner::*member) {
-    return BindImpl<Callback>(std::mem_fn(member), typename fit::callable_traits<Member>::args{});
+    return BindImpl<Callback, typename fit::callable_traits<Member>::return_type>(
+        std::mem_fn(member), typename fit::callable_traits<Member>::args{});
   }
 
   // Mints a |Callback| object that holds a capability to send |Args| to the
@@ -74,7 +74,7 @@ class Receiver : private internal::ReceiverBase {
     // they're safe.
     static_assert(internal::is_stateless<StatelessLambda>,
                   "|callable| must not capture any state.");
-    return BindImpl<Callback>(
+    return BindImpl<Callback, typename fit::callable_traits<StatelessLambda>::return_type>(
         callable, typename Pop<typename fit::callable_traits<StatelessLambda>::args>::pack{});
   }
 
@@ -87,7 +87,8 @@ class Receiver : private internal::ReceiverBase {
   // number of arguments.
   template <typename Member>
   auto Repeating(Member Owner::*member) {
-    return BindImpl<Function>(std::mem_fn(member), typename fit::callable_traits<Member>::args{});
+    return BindImpl<Function, typename fit::callable_traits<Member>::return_type>(
+        std::mem_fn(member), typename fit::callable_traits<Member>::args{});
   }
 
   // Mints a |Function| object that holds a capability to send |Args| to the
@@ -104,19 +105,21 @@ class Receiver : private internal::ReceiverBase {
     // they're safe.
     static_assert(internal::is_stateless<StatelessLambda>,
                   "|callable| must not capture any state.");
-    return BindImpl<Function>(
+    return BindImpl<Function, typename fit::callable_traits<StatelessLambda>::return_type>(
         callable, typename Pop<typename fit::callable_traits<StatelessLambda>::args>::pack{});
   }
 
  private:
-  template <template <typename... Args> typename FunctionOrCallback, typename Callable,
-            typename... Args>
-  FunctionOrCallback<Args...> BindImpl(Callable&& callable, fit::parameter_pack<Args...>) {
-    return FunctionOrCallback<Args...>{
+  template <template <typename... Args> typename FunctionOrCallback, typename ReturnType,
+            typename Callable, typename... Args>
+  FunctionOrCallback<ReturnType(Args...)> BindImpl(Callable&& callable,
+                                                   fit::parameter_pack<Args...>) {
+    return FunctionOrCallback<ReturnType(Args...)>{
         task_queue_handle(),
         [callable = std::forward<Callable>(callable), owner = owner_](Args... args) mutable {
           internal::CheckArguments<Args...>::Check();
-          callable(owner, std::forward<Args>(args)...);
+          internal::CheckArguments<ReturnType>::Check();
+          return callable(owner, std::forward<Args>(args)...);
         }};
   }
 

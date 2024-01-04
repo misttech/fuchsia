@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use argh::FromArgs;
+use argh::{ArgsInfo, FromArgs};
 use ffx_core::ffx_command;
 use pbms::AuthFlowChoice;
 
 /// Retrieve image data.
 #[ffx_command()]
-#[derive(FromArgs, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(
     subcommand,
     name = "lookup",
@@ -27,7 +27,7 @@ pub struct LookupCommand {
 
     /// where to look for product bundles manifest.
     #[argh(option)]
-    pub base_url: String,
+    pub base_url: Option<String>,
 
     /// filter on products with <name>.
     #[argh(positional)]

@@ -8,15 +8,14 @@ use {
         model::{
             component::{ComponentInstance, ExtendedInstance, StartReason, WeakComponentInstance},
             error::{ModelError, OpenError},
-            hooks::{Event, EventPayload},
             routing::{
                 providers::{
                     DefaultComponentCapabilityProvider, DirectoryEntryCapabilityProvider,
                     NamespaceCapabilityProvider,
                 },
                 service::{
-                    AggregateServiceDirectoryProvider, CollectionServiceDirectory,
-                    CollectionServiceRoute, FilteredServiceProvider,
+                    AnonymizedAggregateServiceDir, AnonymizedServiceRoute,
+                    FilteredAggregateServiceProvider,
                 },
                 RouteSource,
             },
@@ -28,7 +27,6 @@ use {
     cm_util::channel,
     fidl::endpoints::ServerEnd,
     fidl_fuchsia_io as fio, fuchsia_zircon as zx,
-    futures::lock::Mutex,
     moniker::MonikerBase,
     std::{path::PathBuf, sync::Arc},
 };
@@ -108,34 +106,23 @@ impl<'a> OpenRequest<'a> {
         {
             provider
         } else {
-            // Dispatch a CapabilityRouted event to get a capability provider
-            let mutexed_provider = Arc::new(Mutex::new(None));
-
-            let event = Event::new(
-                &target,
-                EventPayload::CapabilityRouted {
-                    source: source.clone(),
-                    capability_provider: mutexed_provider.clone(),
-                },
-            );
-
-            // Get a capability provider from the tree
-            target.hooks.dispatch(&event).await;
-
-            let provider = mutexed_provider.lock().await.take();
-            provider.ok_or(OpenError::CapabilityProviderNotFound)?
+            target
+                .context
+                .find_internal_provider(&source, target.as_weak())
+                .await
+                .ok_or(OpenError::CapabilityProviderNotFound)?
         };
 
         let OpenOptions { flags, relative_path, mut server_chan } = open_options;
 
         let source_instance =
             source.source_instance().upgrade().map_err(|_| OpenError::SourceInstanceNotFound)?;
-        let task_scope = match source_instance {
-            ExtendedInstance::AboveRoot(top) => top.task_scope(),
-            ExtendedInstance::Component(component) => component.nonblocking_task_scope(),
+        let task_group = match source_instance {
+            ExtendedInstance::AboveRoot(top) => top.task_group(),
+            ExtendedInstance::Component(component) => component.nonblocking_task_group(),
         };
         capability_provider
-            .open(task_scope, flags, PathBuf::from(relative_path), &mut server_chan)
+            .open(task_group, flags, PathBuf::from(relative_path), &mut server_chan)
             .await?;
         Ok(())
     }
@@ -155,7 +142,7 @@ impl<'a> OpenRequest<'a> {
             &source,
             target.persistent_storage,
             moniker.clone(),
-            target.instance_id().as_ref(),
+            target.instance_id(),
         )
         .await
         .map_err(|e| ModelError::from(e))?;
@@ -217,31 +204,10 @@ impl<'a> OpenRequest<'a> {
                 }
                 _ => Ok(None),
             },
-            CapabilitySource::FilteredService {
-                capability,
-                component,
-                source_instance_filter,
-                instance_name_source_to_target,
-            } => match capability.source_path() {
-                Some(_) => {
-                    let base_capability_source = Arc::new(CapabilitySource::Component {
-                        capability: capability.clone(),
-                        component: component.clone(),
-                    });
-                    let provider = FilteredServiceProvider::new(
-                        base_capability_source,
-                        source_instance_filter.clone(),
-                        instance_name_source_to_target.clone(),
-                    )
-                    .await?;
-                    Ok(Some(Box::new(provider)))
-                }
-                _ => Ok(None),
-            },
-            CapabilitySource::OfferAggregate { capability_provider, component, .. } => {
+            CapabilitySource::FilteredAggregate { capability_provider, component, .. } => {
                 // TODO(fxbug.dev/4776): This should cache the directory
                 Ok(Some(Box::new(
-                    AggregateServiceDirectoryProvider::new(
+                    FilteredAggregateServiceProvider::new(
                         component.clone(),
                         target,
                         capability_provider.clone(),
@@ -249,17 +215,17 @@ impl<'a> OpenRequest<'a> {
                     .await?,
                 )))
             }
-            CapabilitySource::CollectionAggregate {
+            CapabilitySource::AnonymizedAggregate {
                 capability,
                 component,
                 aggregate_capability_provider,
-                collections,
+                members,
             } => {
                 let source_component_instance = component.upgrade()?;
 
-                let route = CollectionServiceRoute {
+                let route = AnonymizedServiceRoute {
                     source_moniker: source_component_instance.moniker.clone(),
-                    collections: collections.clone(),
+                    members: members.clone(),
                     service_name: capability.source_name().clone(),
                 };
 
@@ -278,7 +244,7 @@ impl<'a> OpenRequest<'a> {
                 // If there is an existing collection service directory, provide it.
                 {
                     let state = source_component_instance.lock_resolved_state().await?;
-                    if let Some(service_dir) = state.collection_services.get(&route) {
+                    if let Some(service_dir) = state.anonymized_services.get(&route) {
                         let provider = DirectoryEntryCapabilityProvider {
                             execution_scope: state.execution_scope().clone(),
                             entry: service_dir.dir_entry().await,
@@ -289,7 +255,7 @@ impl<'a> OpenRequest<'a> {
 
                 // Otherwise, create one. This must be done while the component ResolvedInstanceState
                 // is unlocked because the AggregateCapabilityProvider uses locked state.
-                let service_dir = Arc::new(CollectionServiceDirectory::new(
+                let service_dir = Arc::new(AnonymizedAggregateServiceDir::new(
                     component.clone(),
                     route.clone(),
                     aggregate_capability_provider.clone_boxed(),
@@ -302,7 +268,7 @@ impl<'a> OpenRequest<'a> {
                     let execution_scope = state.execution_scope().clone();
                     let entry = service_dir.dir_entry().await;
 
-                    state.collection_services.insert(route, service_dir.clone());
+                    state.anonymized_services.insert(route, service_dir.clone());
 
                     DirectoryEntryCapabilityProvider { execution_scope, entry }
                 };
@@ -313,12 +279,12 @@ impl<'a> OpenRequest<'a> {
 
                 Ok(Some(Box::new(provider)))
             }
+            // These capabilities do not have a default provider.
             CapabilitySource::Framework { .. }
+            | CapabilitySource::Void { .. }
             | CapabilitySource::Capability { .. }
-            | CapabilitySource::Builtin { .. } => {
-                // There is no default provider for a framework or builtin capability
-                Ok(None)
-            }
+            | CapabilitySource::Builtin { .. }
+            | CapabilitySource::Environment { .. } => Ok(None),
         }
     }
 }

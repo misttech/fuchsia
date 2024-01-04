@@ -3,90 +3,60 @@
 // found in the LICENSE file.
 use {
     crate::{
-        capability::{CapabilityProvider, CapabilitySource},
-        model::{
-            error::{CapabilityProviderError, ModelError},
-            hooks::{Event, EventPayload, EventType, Hook, HooksRegistration},
-        },
+        capability::{BuiltinCapability, CapabilityProvider},
+        model::{component::WeakComponentInstance, error::CapabilityProviderError},
     },
-    ::routing::{
-        capability_source::InternalCapability, config::SecurityPolicy, policy::ScopedPolicyChecker,
-    },
+    ::routing::{capability_source::InternalCapability, policy::ScopedPolicyChecker},
     async_trait::async_trait,
-    cm_runner::{Runner, StartInfo},
-    cm_task_scope::TaskScope,
+    cm_config::SecurityPolicy,
     cm_types::Name,
     cm_util::channel,
+    cm_util::TaskGroup,
     fidl::endpoints::ServerEnd,
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_runner as fcrunner,
-    fidl_fuchsia_io as fio, fuchsia_zircon as zx,
-    futures::stream::TryStreamExt,
-    std::{
-        path::PathBuf,
-        sync::{Arc, Weak},
-    },
-    tracing::{error, warn},
+    fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_io as fio, fuchsia_zircon as zx,
+    std::{path::PathBuf, sync::Arc},
 };
 
 /// Trait for built-in runner services. Wraps the generic Runner trait to provide a
 /// ScopedPolicyChecker for the realm of the component being started, so that runners can enforce
 /// security policy.
 pub trait BuiltinRunnerFactory: Send + Sync {
-    fn get_scoped_runner(self: Arc<Self>, checker: ScopedPolicyChecker) -> Arc<dyn Runner>;
+    /// Get a connection to a scoped runner by pipelining a
+    /// `fuchsia.component.runner/ComponentRunner` server endpoint.
+    fn get_scoped_runner(
+        self: Arc<Self>,
+        checker: ScopedPolicyChecker,
+        server_end: ServerEnd<fcrunner::ComponentRunnerMarker>,
+    );
 }
 
 /// Provides a hook for routing built-in runners to realms.
 pub struct BuiltinRunner {
     name: Name,
-    runner: Arc<dyn BuiltinRunnerFactory>,
+    factory: Arc<dyn BuiltinRunnerFactory>,
     security_policy: Arc<SecurityPolicy>,
 }
 
 impl BuiltinRunner {
     pub fn new(
         name: Name,
-        runner: Arc<dyn BuiltinRunnerFactory>,
+        factory: Arc<dyn BuiltinRunnerFactory>,
         security_policy: Arc<SecurityPolicy>,
     ) -> Self {
-        Self { name, runner, security_policy }
-    }
-
-    /// Construct a `HooksRegistration` that will route our runner as a framework capability.
-    pub fn hooks(self: &Arc<Self>) -> Vec<HooksRegistration> {
-        vec![HooksRegistration::new(
-            "BuiltinRunner",
-            vec![EventType::CapabilityRouted],
-            Arc::downgrade(self) as Weak<dyn Hook>,
-        )]
+        Self { name, factory, security_policy }
     }
 }
 
-#[async_trait]
-impl Hook for BuiltinRunner {
-    async fn on(self: Arc<Self>, event: &Event) -> Result<(), ModelError> {
-        if let EventPayload::CapabilityRouted {
-            source: CapabilitySource::Builtin { capability, .. },
-            capability_provider,
-        } = &event.payload
-        {
-            // If we are being asked about the runner capability we own, pass a copy back to the
-            // caller.
-            if let InternalCapability::Runner(runner_name) = capability {
-                let target_moniker = event
-                    .target_moniker
-                    .unwrap_instance_moniker_or(ModelError::UnexpectedComponentManagerMoniker)?;
-                if *runner_name == self.name {
-                    let checker = ScopedPolicyChecker::new(
-                        self.security_policy.clone(),
-                        target_moniker.clone(),
-                    );
-                    let runner = self.runner.clone().get_scoped_runner(checker);
-                    *capability_provider.lock().await =
-                        Some(Box::new(RunnerCapabilityProvider::new(runner)));
-                }
-            }
-        }
-        Ok(())
+impl BuiltinCapability for BuiltinRunner {
+    fn matches(&self, capability: &InternalCapability) -> bool {
+        matches!(capability, InternalCapability::Runner(n) if *n == self.name)
+    }
+
+    fn new_provider(&self, target: WeakComponentInstance) -> Box<dyn CapabilityProvider> {
+        let checker =
+            ScopedPolicyChecker::new(self.security_policy.clone(), target.moniker.clone());
+        let runner = self.factory.clone();
+        Box::new(RunnerCapabilityProvider::new(runner, checker))
     }
 }
 
@@ -94,12 +64,13 @@ impl Hook for BuiltinRunner {
 /// as is required by the capability routing code.
 #[derive(Clone)]
 struct RunnerCapabilityProvider {
-    runner: Arc<dyn Runner>,
+    factory: Arc<dyn BuiltinRunnerFactory>,
+    checker: ScopedPolicyChecker,
 }
 
 impl RunnerCapabilityProvider {
-    pub fn new(runner: Arc<dyn Runner>) -> Self {
-        RunnerCapabilityProvider { runner }
+    fn new(factory: Arc<dyn BuiltinRunnerFactory>, checker: ScopedPolicyChecker) -> Self {
+        RunnerCapabilityProvider { factory, checker }
     }
 }
 
@@ -107,41 +78,13 @@ impl RunnerCapabilityProvider {
 impl CapabilityProvider for RunnerCapabilityProvider {
     async fn open(
         self: Box<Self>,
-        task_scope: TaskScope,
+        _task_group: TaskGroup,
         _flags: fio::OpenFlags,
         _relative_path: PathBuf,
         server_end: &mut zx::Channel,
     ) -> Result<(), CapabilityProviderError> {
-        let runner = Arc::clone(&self.runner);
         let server_end = channel::take_channel(server_end);
-        let mut stream = ServerEnd::<fcrunner::ComponentRunnerMarker>::new(server_end)
-            .into_stream()
-            .map_err(|_| CapabilityProviderError::StreamCreationError)?;
-        task_scope
-            .add_task(async move {
-                // Keep handling requests until the stream closes.
-                while let Ok(Some(request)) = stream.try_next().await {
-                    let fcrunner::ComponentRunnerRequest::Start { start_info, controller, .. } =
-                        request;
-                    let start_info = match StartInfo::try_from(start_info) {
-                        Ok(start_info) => start_info,
-                        Err(err) => {
-                            error!(error = %err, "Failed to start component, invalid ComponentStartInfo");
-                            let epitaph = zx::Status::from_raw(
-                                i32::try_from(fcomponent::Error::InvalidArguments.into_primitive())
-                                    .unwrap(),
-                            );
-                            controller
-                                .close_with_epitaph(epitaph)
-                                .unwrap_or_else(|error| warn!(%error, "failed to send epitaph"));
-                            return;
-                        }
-                    };
-
-                    runner.start(start_info, controller).await;
-                }
-            })
-            .await;
+        self.factory.get_scoped_runner(self.checker, server_end.into());
         Ok(())
     }
 }
@@ -150,18 +93,14 @@ impl CapabilityProvider for RunnerCapabilityProvider {
 mod tests {
     use {
         super::*,
-        crate::model::{
-            hooks::Hooks,
-            testing::{mocks::MockRunner, routing_test_helpers::*},
-        },
-        ::routing::config::{AllowlistEntryBuilder, JobPolicyAllowlists, SecurityPolicy},
+        crate::model::testing::{mocks::MockRunner, routing_test_helpers::*},
         anyhow::Error,
         assert_matches::assert_matches,
+        cm_config::SecurityPolicy,
         cm_rust::{CapabilityDecl, RunnerDecl},
         cm_rust_testing::*,
-        futures::{lock::Mutex, prelude::*},
+        futures::prelude::*,
         moniker::{Moniker, MonikerBase},
-        std::sync::Weak,
     };
 
     fn sample_start_info(name: &str) -> fcrunner::ComponentStartInfo {
@@ -175,81 +114,6 @@ mod tests {
         }
     }
 
-    async fn start_component_through_hooks(
-        hooks: &Hooks,
-        moniker: Moniker,
-        url: &str,
-    ) -> Result<TaskScope, Error> {
-        let provider_result = Arc::new(Mutex::new(None));
-        hooks
-            .dispatch(&Event::new_for_test(
-                moniker,
-                url,
-                EventPayload::CapabilityRouted {
-                    source: CapabilitySource::Builtin {
-                        capability: InternalCapability::Runner("elf".parse().unwrap()),
-                        top_instance: Weak::new(),
-                    },
-                    capability_provider: provider_result.clone(),
-                },
-            ))
-            .await;
-        let provider = provider_result.lock().await.take().expect("did not get runner cap");
-
-        // Open a connection to the provider.
-        let (client, server) = fidl::endpoints::create_proxy::<fcrunner::ComponentRunnerMarker>()?;
-        let (_, server_controller) =
-            fidl::endpoints::create_endpoints::<fcrunner::ComponentControllerMarker>();
-        let mut server = server.into_channel();
-        let task_scope = TaskScope::new();
-        provider
-            .open(task_scope.clone(), fio::OpenFlags::empty(), PathBuf::from("."), &mut server)
-            .await?;
-
-        // Start the component.
-        client.start(sample_start_info(url), server_controller)?;
-
-        Ok(task_scope)
-    }
-
-    // Test plumbing a `BuiltinRunner` through the hook system.
-    #[fuchsia::test]
-    async fn builtin_runner_hook() -> Result<(), Error> {
-        let policy = Arc::new(SecurityPolicy {
-            job_policy: JobPolicyAllowlists {
-                ambient_mark_vmo_exec: vec![AllowlistEntryBuilder::new().exact("foo").build()],
-                ..Default::default()
-            },
-            ..Default::default()
-        });
-        let runner = Arc::new(MockRunner::new());
-        let builtin_runner =
-            Arc::new(BuiltinRunner::new("elf".parse().unwrap(), runner.clone(), policy));
-
-        let hooks = Hooks::new();
-        hooks.install(builtin_runner.hooks()).await;
-
-        // Ensure we see the start events and that an appropriate PolicyChecker was provided to the
-        // runner depending on the moniker of the component being run.
-
-        // Case 1: The started component's moniker matches the allowlist entry above.
-        let url = "xxx://test";
-        let _task_scope =
-            start_component_through_hooks(&hooks, Moniker::try_from(vec!["foo"]).unwrap(), url)
-                .await?;
-        runner.wait_for_url(&url).await;
-        let checker = runner.last_checker().expect("No PolicyChecker held by MockRunner");
-        assert_matches!(checker.ambient_mark_vmo_exec_allowed(), Ok(()));
-
-        // Case 2: Moniker does not match allowlist entry.
-        let _task_scope = start_component_through_hooks(&hooks, Moniker::root(), url).await?;
-        runner.wait_for_url(&url).await;
-        let checker = runner.last_checker().expect("No PolicyChecker held by MockRunner");
-        assert_matches!(checker.ambient_mark_vmo_exec_allowed(), Err(_));
-
-        Ok(())
-    }
-
     // Test sending a start command to a failing runner.
     #[fuchsia::test]
     async fn capability_provider_error_from_runner() -> Result<(), Error> {
@@ -257,14 +121,17 @@ mod tests {
         // target URL.
         let mock_runner = Arc::new(MockRunner::new());
         mock_runner.add_failing_url("xxx://failing");
-        let provider = Box::new(RunnerCapabilityProvider { runner: mock_runner });
+        let policy = Arc::new(SecurityPolicy::default());
+        let moniker = Moniker::try_from(vec!["foo"]).unwrap();
+        let checker = ScopedPolicyChecker::new(policy, moniker);
+        let provider = Box::new(RunnerCapabilityProvider { factory: mock_runner, checker });
 
         // Open a connection to the provider.
         let (client, server) = fidl::endpoints::create_proxy::<fcrunner::ComponentRunnerMarker>()?;
         let mut server = server.into_channel();
-        let task_scope = TaskScope::new();
+        let task_group = TaskGroup::new();
         provider
-            .open(task_scope.clone(), fio::OpenFlags::empty(), PathBuf::from("."), &mut server)
+            .open(task_group.clone(), fio::OpenFlags::empty(), PathBuf::from("."), &mut server)
             .await?;
 
         // Ensure errors are propagated back to the caller.

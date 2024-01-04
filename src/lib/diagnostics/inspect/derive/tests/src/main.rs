@@ -9,10 +9,9 @@ use futures::lock;
 use serde::Serialize;
 use std::{cell, rc, sync};
 
+use diagnostics_assertions::assert_data_tree;
 use fuchsia_async as fasync;
-use fuchsia_inspect::{
-    assert_data_tree, Inspector, Node, NumericProperty, Property, StringProperty, UintProperty,
-};
+use fuchsia_inspect::{Inspector, Node, NumericProperty, Property, StringProperty, UintProperty};
 use fuchsia_inspect_derive::{AttachError, IDebug, IValue, Inspect, Unit, WithInspect};
 
 // TODO(fxbug.dev/49049): Add negative tests when compile failure tests are possible.
@@ -82,7 +81,7 @@ struct PowerYak {
     size: rc::Rc<lock::Mutex<IValue<String>>>,
     ty: cell::RefCell<IDebug<Horse>>,
     counter: Box<UintProperty>,
-    last_words: parking_lot::RwLock<StringProperty>,
+    last_words: fuchsia_sync::RwLock<StringProperty>,
     // TODO(fxbug.dev/69493): Remove this or explain why it's here.
     #[allow(dead_code)]
     inspect_node: Node,
@@ -150,7 +149,7 @@ impl AutoYak {
 struct AutoYakWrapper {
     // Attaches the inner field to parent[name]
     #[inspect(forward)]
-    inner: parking_lot::Mutex<AutoYak>,
+    inner: fuchsia_sync::Mutex<AutoYak>,
 
     // `wrapper_data` is ignored, because we have forwarded to inner.
     _wrapper_data: IValue<String>,

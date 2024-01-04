@@ -7,6 +7,7 @@ package testsharder
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -20,15 +21,15 @@ const (
 	fuchsia = "fuchsia"
 	linux   = "linux"
 	x64     = "x64"
+
+	// The maximum number of tests that a multiplier can match. testsharder will
+	// fail if this is exceeded.
+	defaultMaxMatchesPerMultiplier = 50
 )
 
 // matchModifiersToTests will return an error that unwraps to this if a multiplier's
 // "name" field does not compile to a valid regex.
 var errInvalidMultiplierRegex = fmt.Errorf("invalid multiplier regex")
-
-// matchModifiersToTests will return an error that unwraps to this if a multiplier
-// matches too many tests.
-var errTooManyMultiplierMatches = fmt.Errorf("a multiplier cannot match more than %d tests", maxMatchesPerMultiplier)
 
 // TestModifier is the specification for a single test and the number of
 // times it should be run.
@@ -54,6 +55,10 @@ type TestModifier struct {
 	// MaxAttempts is the max number of times to run this test if it fails.
 	// This is the max attempts per run as specified by the `TotalRuns` field.
 	MaxAttempts int `json:"max_attempts,omitempty"`
+
+	// MaxMatches is the max number of tests which can be matched by this modifier.
+	// Defaults to defaultMaxMatchesPerMultiplier.
+	MaxMatches int `json:"max_matches,omitempty"`
 }
 
 // ModifierMatch is the calculated match of a single test in a single environment
@@ -90,9 +95,17 @@ func LoadTestModifiers(ctx context.Context, testSpecs []build.TestSpec, manifest
 // maxAttempts will be applied to any test that is not multiplied.
 // Tests will be considered for multiplication only if num affected tests <= multiplyThreshold.
 func AffectedModifiers(testSpecs []build.TestSpec, affectedTestNames []string, maxAttempts, multiplyThreshold int) ([]ModifierMatch, error) {
+	nameToSpec := make(map[string]build.TestSpec)
+	for _, ts := range testSpecs {
+		nameToSpec[ts.Name] = ts
+	}
 	var ret []ModifierMatch
 	if len(affectedTestNames) > multiplyThreshold {
 		for _, name := range affectedTestNames {
+			_, found := nameToSpec[name]
+			if !found {
+				continue
+			}
 			// Since we're not multiplying the tests, apply maxAttempts to them instead.
 			ret = append(ret, ModifierMatch{
 				Test: name,
@@ -105,10 +118,6 @@ func AffectedModifiers(testSpecs []build.TestSpec, affectedTestNames []string, m
 			})
 		}
 	} else {
-		nameToSpec := make(map[string]build.TestSpec)
-		for _, ts := range testSpecs {
-			nameToSpec[ts.Name] = ts
-		}
 		for _, name := range affectedTestNames {
 			spec, found := nameToSpec[name]
 			if !found {
@@ -210,19 +219,26 @@ func matchModifiersToTests(ctx context.Context, testSpecs []build.TestSpec, modi
 			matches = regexMatches
 			numMatches = numRegexMatches
 		}
-		if numMatches > maxMatchesPerMultiplier {
-			tooManyMatchesMultipliers = append(tooManyMatchesMultipliers, modifier.Name)
-			logger.Errorf(ctx, "Multiplier %q matches too many tests (%d), maximum is %d",
-				modifier.Name, len(matches), maxMatchesPerMultiplier)
+
+		maxMatches := modifier.MaxMatches
+		if maxMatches == 0 {
+			maxMatches = defaultMaxMatchesPerMultiplier
+		}
+		if numMatches > maxMatches {
+			tooManyMatchesMessage := fmt.Sprintf(
+				"%s multiplier cannot match more than %d tests, matched %d",
+				modifier.Name,
+				maxMatches,
+				numMatches,
+			)
+			tooManyMatchesMultipliers = append(tooManyMatchesMultipliers, tooManyMatchesMessage)
+			logger.Errorf(ctx, "%s", tooManyMatchesMessage)
 			continue
 		}
 		ret = append(ret, matches...)
 	}
 	if len(tooManyMatchesMultipliers) > 0 {
-		return nil, fmt.Errorf(
-			"%d multiplier(s) match too many tests: %w",
-			len(tooManyMatchesMultipliers), errTooManyMultiplierMatches,
-		)
+		return nil, errors.New(strings.Join(tooManyMatchesMultipliers, "\n"))
 	}
 	return ret, nil
 }

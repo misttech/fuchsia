@@ -534,7 +534,8 @@ async fn inner_main() -> Result<()> {
 
     // Required call to serve the inspect tree
     let inspector = inspect::component::inspector();
-    inspect_runtime::serve(inspector, &mut fs)?;
+    let _inspect_server_task =
+        inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default());
 
     // Construct the server, and begin serving.
     let config: Option<json::Value> = std::fs::File::open(CONFIG_PATH)
@@ -559,11 +560,11 @@ mod tests {
         crate::gpu_usage_logger::tests::create_gpu_drivers,
         crate::sensor_logger::tests::{create_power_drivers, create_temperature_drivers},
         assert_matches::assert_matches,
+        diagnostics_assertions::assert_data_tree,
         fmetrics::{
             CpuLoad, GpuUsage, Metric, NetworkActivity, Power, StatisticsArgs, Temperature,
         },
         futures::{task::Poll, FutureExt},
-        inspect::assert_data_tree,
     };
 
     // A helper struct to create Fuchsia Executor and optionally add drivers for different logging
@@ -704,7 +705,7 @@ mod tests {
         // If the server has an active logging task, run until the next log and return true.
         // Otherwise, return false.
         fn iterate_logging_task(&mut self) -> bool {
-            let Some(next_time) = self.executor.next_timer() else { return false };
+            let Some(next_time) = fasync::TestExecutor::next_timer() else { return false };
             self.executor.set_fake_time(next_time);
             assert_eq!(
                 futures::task::Poll::Pending,

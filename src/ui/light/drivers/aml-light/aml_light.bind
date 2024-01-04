@@ -5,9 +5,9 @@
 composite aml_light;
 
 using fuchsia.amlogic.platform;
-using fuchsia.hardware.gpio;
+using fuchsia.gpio;
 using fuchsia.platform;
-using fuchsia.hardware.pwm;
+using fuchsia.pwm;
 
 primary node "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
@@ -17,21 +17,25 @@ primary node "pdev" {
 }
 
 node "gpio-amber-led" {
-  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.hardware.gpio.BIND_FIDL_PROTOCOL.SERVICE;
-  fuchsia.hardware.gpio.FUNCTION == fuchsia.hardware.gpio.FUNCTION.GPIO_AMBER_LED;
+  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.gpio.BIND_FIDL_PROTOCOL.SERVICE;
+  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.GPIO_AMBER_LED;
 }
 
 node "pwm-amber-led" {
-  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.hardware.pwm.BIND_FIDL_PROTOCOL.DEVICE;
-  fuchsia.hardware.pwm.PWM_ID_FUNCTION == fuchsia.hardware.pwm.PWM_ID_FUNCTION.AMBER_LED;
+  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.pwm.BIND_FIDL_PROTOCOL.DEVICE;
+  fuchsia.pwm.PWM_ID_FUNCTION == fuchsia.pwm.PWM_ID_FUNCTION.AMBER_LED;
 }
 
 optional node "gpio-green-led" {
-  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.hardware.gpio.BIND_FIDL_PROTOCOL.SERVICE;
-  fuchsia.hardware.gpio.FUNCTION == fuchsia.hardware.gpio.FUNCTION.GPIO_GREEN_LED;
+  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.gpio.BIND_FIDL_PROTOCOL.SERVICE;
+  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.GPIO_GREEN_LED;
 }
 
 optional node "pwm-green-led" {
-  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.hardware.pwm.BIND_FIDL_PROTOCOL.DEVICE;
-  fuchsia.hardware.pwm.PWM_ID_FUNCTION == fuchsia.hardware.pwm.PWM_ID_FUNCTION.GREEN_LED;
+  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.pwm.BIND_FIDL_PROTOCOL.DEVICE;
+  fuchsia.pwm.PWM_ID_FUNCTION == fuchsia.pwm.PWM_ID_FUNCTION.GREEN_LED;
+}
+
+node "gpio-init" {
+  fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }

@@ -1,38 +1,32 @@
+# shellcheck shell=bash
+# shellcheck disable=SC2034  # unused variables used outside this file.
 # Copyright 2019 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-
-case "$(uname -s)" in
-  Linux)
+# Use the OSTYPE and MACHTYPE Bash builtin variables to determine host
+# machine type.
+case "$OSTYPE" in
+  linux*)
     readonly HOST_OS="linux"
     ;;
-  Darwin)
+  darwin*)
     readonly HOST_OS="mac"
     ;;
   *)
-    echo >&2 "Unknown operating system: $(uname -s)."
+    echo >&2 "Unknown operating system: $OSTYPE."
     exit 1
     ;;
 esac
 
-case "$(uname -m)" in
-  x86_64)
+case "$MACHTYPE" in
+  x86_64*)
     readonly HOST_CPU="x64"
     ;;
-  aarch64)
+  aarch64*|arm64*)
     readonly HOST_CPU="arm64"
     ;;
-  arm64)
-    # TODO(fxbug.dev/97767): Stop redirecting mac-arm64 to mac-x64 binaries once prebuilt
-    # arm64 binaries are available and included in mac-arm64 checkouts.
-    if [[ "$HOST_OS" == "mac" ]]; then
-      readonly HOST_CPU="x64"
-    else
-      readonly HOST_CPU="arm64"
-    fi
-    ;;
   *)
-    echo >&2 "Unknown architecture: $(uname -m)."
+    echo >&2 "Unknown architecture: $MACHTYPE."
     exit 1
     ;;
 esac
@@ -44,6 +38,7 @@ readonly PREBUILT_TOOLS_DIR="${FUCHSIA_DIR}/prebuilt/tools"
 
 readonly PREBUILT_AEMU_DIR="${PREBUILT_3P_DIR}/android/aemu/release/${HOST_PLATFORM}"
 readonly PREBUILT_BINUTILS_DIR="${PREBUILT_3P_DIR}/binutils-gdb/${HOST_PLATFORM}"
+readonly PREBUILT_BLACK_DIR="${PREBUILT_3P_DIR}/black/${HOST_PLATFORM}"
 readonly PREBUILT_BUILDIFIER="${PREBUILT_3P_DIR}/buildifier/${HOST_PLATFORM}/buildifier"
 readonly PREBUILT_BUILDOZER="${PREBUILT_3P_DIR}/buildozer/${HOST_PLATFORM}/buildozer"
 readonly PREBUILT_CGPT_DIR="${PREBUILT_TOOLS_DIR}/cgpt/${HOST_PLATFORM}"
@@ -58,6 +53,7 @@ readonly PREBUILT_GO_DIR="${PREBUILT_3P_DIR}/go/${HOST_PLATFORM}"
 readonly PREBUILT_GOMA_DIR="${PREBUILT_3P_DIR}/goma/${HOST_PLATFORM}"
 readonly PREBUILT_GRPCWEBPROXY_DIR="${PREBUILT_3P_DIR}/grpcwebproxy/${HOST_PLATFORM}"
 readonly PREBUILT_NINJA="${PREBUILT_3P_DIR}/ninja/${HOST_PLATFORM}/ninja"
+readonly PREBUILT_NINJATRACE="${PREBUILT_TOOLS_DIR}/ninjatrace/${HOST_PLATFORM}/ninjatrace"
 readonly PREBUILT_PYTHON3_DIR="${PREBUILT_3P_DIR}/python3/${HOST_PLATFORM}"
 readonly PREBUILT_PYTHON3="${PREBUILT_PYTHON3_DIR}/bin/python3"
 readonly PREBUILT_QEMU_DIR="${PREBUILT_3P_DIR}/qemu/${HOST_PLATFORM}"
@@ -65,6 +61,7 @@ readonly PREBUILT_RECLIENT_DIR="${FUCHSIA_DIR}/prebuilt/proprietary/third_party/
 readonly PREBUILT_RUST_BINDGEN_DIR="${PREBUILT_3P_DIR}/rust_bindgen/${HOST_PLATFORM}"
 readonly PREBUILT_RUST_CARGO_OUTDATED_DIR="${PREBUILT_3P_DIR}/rust_cargo_outdated/${HOST_PLATFORM}"
 readonly PREBUILT_RUST_DIR="${PREBUILT_3P_DIR}/rust/${HOST_PLATFORM}"
+readonly PREBUILT_SHAC="${FUCHSIA_DIR}/prebuilt/tools/shac/shac"
 readonly PREBUILT_VDL_DIR="${FUCHSIA_DIR}/prebuilt/vdl"
 
 # Used by //scripts/hermetic-env for portable shebang lines.

@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use {
-    crate::core::collection::{Components, Manifests, Packages, Routes, Zbi},
+    crate::core::collection::{Components, Manifests, Packages},
+    crate::zbi::Zbi,
     anyhow::Result,
     scrutiny::{model::controller::DataController, model::model::DataModel},
     scrutiny_utils::usage::UsageBuilder,
@@ -21,7 +22,6 @@ pub struct ModelStats {
     pub components: usize,
     pub packages: usize,
     pub manifests: usize,
-    pub routes: usize,
     #[serde(rename = "zbi sections")]
     pub zbi_sections: usize,
     #[serde(rename = "bootfs files")]
@@ -35,11 +35,10 @@ impl DataController for ModelStatsController {
         let mut components_len = 0;
         let mut packages_len = 0;
         let mut manifests_len = 0;
-        let mut routes_len = 0;
 
         if let Ok(zbi) = model.get::<Zbi>() {
             zbi_sections = zbi.sections.len();
-            bootfs_files = zbi.bootfs.len();
+            bootfs_files = zbi.bootfs_files.bootfs_files.len();
         }
         if let Ok(components) = model.get::<Components>() {
             components_len = components.len();
@@ -50,15 +49,11 @@ impl DataController for ModelStatsController {
         if let Ok(manifests) = model.get::<Manifests>() {
             manifests_len = manifests.len();
         }
-        if let Ok(routes) = model.get::<Routes>() {
-            routes_len = routes.len();
-        }
 
         let stats = ModelStats {
             components: components_len,
             packages: packages_len,
             manifests: manifests_len,
-            routes: routes_len,
             zbi_sections,
             bootfs_files,
         };

@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use diagnostics_reader::{assert_data_tree, AnyProperty, ArchiveReader, Inspect};
+use diagnostics_assertions::{assert_data_tree, AnyProperty};
+use diagnostics_reader::{ArchiveReader, Inspect};
 use fidl_fuchsia_component::BinderMarker;
+use fidl_fuchsia_diagnostics as fdiagnostics;
 use fidl_fuchsia_metrics_test::MetricEventLoggerQuerierMarker;
 use fidl_fuchsia_mockrebootcontroller::MockRebootControllerMarker;
 use fidl_fuchsia_samplertestcontroller::SamplerTestControllerMarker;
 use fuchsia_async as fasync;
+use fuchsia_component::client::{connect_to_protocol_at, connect_to_protocol_at_path};
 use fuchsia_zircon as zx;
 
 mod test_topology;
@@ -19,17 +22,18 @@ mod utils;
 /// cobalt as expected.
 #[fuchsia::test]
 async fn event_count_sampler_test() {
-    let realm = test_topology::create_realm().await.expect("initialized topology");
+    let ns = test_topology::create_realm().await.expect("initialized topology");
     let test_app_controller =
-        realm.connect_to_protocol::<SamplerTestControllerMarker>().await.unwrap();
+        connect_to_protocol_at::<SamplerTestControllerMarker>(ns.prefix()).unwrap();
     let reboot_controller =
-        realm.connect_to_protocol::<MockRebootControllerMarker>().await.unwrap();
+        connect_to_protocol_at::<MockRebootControllerMarker>(ns.prefix()).unwrap();
     let logger_querier =
-        realm.connect_to_protocol::<MetricEventLoggerQuerierMarker>().await.unwrap();
-    let _sampler_binder = realm
-        .connect_to_named_protocol::<BinderMarker>("fuchsia.component.SamplerBinder")
-        .await
-        .unwrap();
+        connect_to_protocol_at::<MetricEventLoggerQuerierMarker>(ns.prefix()).unwrap();
+    let _sampler_binder = connect_to_protocol_at_path::<BinderMarker>(format!(
+        "{}/fuchsia.component.SamplerBinder",
+        ns.prefix()
+    ))
+    .unwrap();
 
     test_app_controller.increment_int(1).await.unwrap();
     let events = utils::gather_sample_group(
@@ -115,17 +119,18 @@ async fn event_count_sampler_test() {
 /// the reboot server goes down, sampler continues to run as expected.
 #[fuchsia::test]
 async fn reboot_server_crashed_test() {
-    let realm = test_topology::create_realm().await.expect("initialized topology");
+    let ns = test_topology::create_realm().await.expect("initialized topology");
     let test_app_controller =
-        realm.connect_to_protocol::<SamplerTestControllerMarker>().await.unwrap();
+        connect_to_protocol_at::<SamplerTestControllerMarker>(ns.prefix()).unwrap();
     let reboot_controller =
-        realm.connect_to_protocol::<MockRebootControllerMarker>().await.unwrap();
+        connect_to_protocol_at::<MockRebootControllerMarker>(ns.prefix()).unwrap();
     let logger_querier =
-        realm.connect_to_protocol::<MetricEventLoggerQuerierMarker>().await.unwrap();
-    let _sampler_binder = realm
-        .connect_to_named_protocol::<BinderMarker>("fuchsia.component.SamplerBinder")
-        .await
-        .unwrap();
+        connect_to_protocol_at::<MetricEventLoggerQuerierMarker>(ns.prefix()).unwrap();
+    let _sampler_binder = connect_to_protocol_at_path::<BinderMarker>(format!(
+        "{}/fuchsia.component.SamplerBinder",
+        ns.prefix()
+    ))
+    .unwrap();
 
     // Crash the reboot server to verify that sampler continues to sample.
     reboot_controller.crash_reboot_channel().await.unwrap().unwrap();
@@ -173,21 +178,23 @@ async fn reboot_server_crashed_test() {
 /// the reboot server goes down, sampler continues to run as expected.
 #[fuchsia::test]
 async fn sampler_inspect_test() {
-    let realm_name = "sampler_inspect_test_case";
-    let realm =
-        test_topology::create_realm_with_name(realm_name).await.expect("initialized topology");
-    let _sampler_binder = realm
-        .connect_to_named_protocol::<BinderMarker>("fuchsia.component.SamplerBinder")
+    let sampler_component = "sampler";
+    let ns = test_topology::create_realm_with_name(sampler_component)
         .await
-        .unwrap();
+        .expect("initialized topology");
+    let _sampler_binder = connect_to_protocol_at_path::<BinderMarker>(format!(
+        "{}/fuchsia.component.SamplerBinder",
+        ns.prefix()
+    ))
+    .unwrap();
 
     let hierarchy = loop {
+        let accessor =
+            connect_to_protocol_at::<fdiagnostics::ArchiveAccessorMarker>(ns.prefix()).unwrap();
         // Observe verification shows up in inspect.
         let mut data = ArchiveReader::new()
-            .add_selector(format!(
-                "test_realm_factory/realm_builder\\:{}/wrapper/sampler:root",
-                realm_name
-            ))
+            .with_archive(accessor)
+            .add_selector(format!("{sampler_component}:root"))
             .snapshot::<Inspect>()
             .await
             .expect("got inspect data");

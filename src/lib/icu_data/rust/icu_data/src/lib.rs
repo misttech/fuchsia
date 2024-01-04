@@ -22,14 +22,15 @@
 //! }
 //! ```
 
+use std::path::PathBuf;
+
 use {
-    anyhow::format_err,
+    anyhow::{format_err, Context},
     fuchsia_zircon as zx,
     lazy_static::lazy_static,
     rust_icu_common as icu, rust_icu_ucal as ucal, rust_icu_udata as udata,
     std::{
         borrow::Cow,
-        convert::TryFrom,
         env, fs, io,
         sync::{Arc, Mutex, Weak},
     },
@@ -38,11 +39,14 @@ use {
 
 lazy_static! {
     // The storage for the loaded ICU data.  At most one may be loaded at any given time.
-    static ref REFCOUNT: Mutex<Weak<udata::UDataMemory>> = Mutex::new(Weak::new());
+    static ref REFCOUNT: Mutex<Weak<PathBuf>> = Mutex::new(Weak::new());
 }
 
 // The default location at which to find the ICU data.
-const ICU_DATA_PATH_DEFAULT: &str = "/pkg/data/icudtl.dat";
+// The icudtl.dat is deliberately omitted to conform to the loading
+// rules described at:
+// https://unicode-org.github.io/icu/userguide/icu_data/#how-data-loading-works
+const ICU_DATA_PATH_DEFAULT: &str = "/pkg/data";
 
 /// Minimum expected length of a time zone revision ID (e.g. "2019c").
 const MIN_TZ_REVISION_ID_LENGTH: usize = 5;
@@ -92,21 +96,9 @@ impl From<icu::Error> for Error {
 /// remains in scope, the ICU data will not be unloaded.
 #[derive(Debug, Clone)]
 pub struct Loader {
-    // TODO(fxbug.dev/84729)
-    #[allow(unused)]
-    refs: Arc<udata::UDataMemory>,
-    // TODO(fxbug.dev/84729)
-    #[allow(unused)]
-    vmo_size_bytes: usize,
-    // TODO(fxbug.dev/84729)
-    #[allow(unused)]
-    file_size_bytes: usize,
-    // TODO(fxbug.dev/84729)
-    #[allow(unused)]
-    icu_tzdata_dir_path: Option<String>,
-    // TODO(fxbug.dev/84729)
-    #[allow(unused)]
-    icu_data_path: String,
+    // The reference here holds the ICU data in memory. It should be held live
+    // until the end of the program.
+    _refs: Arc<PathBuf>,
 }
 // Loader is OK to be sent to threads.
 unsafe impl Sync for Loader {}
@@ -148,18 +140,16 @@ impl Loader {
         // function are expected.  So we take a write lock immmediately.
         let mut l = REFCOUNT.lock().expect("refcount lock acquired");
         match l.upgrade() {
-            Some(refs) => Ok(Loader {
-                refs,
-                vmo_size_bytes: 0,
-                file_size_bytes: 0,
-                icu_tzdata_dir_path: None,
-                icu_data_path: "".to_string(),
-            }),
+            Some(_refs) => Ok(Loader { _refs }),
             None => {
                 // Load up the TZ files directory.
                 if let Some(p) = tzdata_dir_path {
-                    let for_path = fs::File::open(p)?;
-                    let meta = for_path.metadata()?;
+                    let for_path = fs::File::open(p)
+                        .map_err(|e| Error::Fail(format_err!("io error: {}", e)))
+                        .with_context(|| format!("error while opening: {:?}", &tzdata_dir_path))?;
+                    let meta = for_path
+                        .metadata()
+                        .with_context(|| format!("while getting metadata for: {:?}", &p))?;
                     if !meta.is_dir() {
                         return Err(Error::Fail(format_err!("not a directory: {}", p)));
                     }
@@ -170,23 +160,16 @@ impl Loader {
                     // file.
                     env::set_var("ICU_TIMEZONE_FILES_DIR", p);
                 }
-                // Read ICU data file from the filesystem.
-                let file = fs::File::open(ICU_DATA_PATH_DEFAULT)?;
-                let file_size_bytes = file.metadata()?.len() as usize;
-                let vmo = fdio::get_vmo_copy_from_file(&file)?;
-                let vmo_size_bytes = vmo.get_size()? as usize;
-                let mut buf: Vec<u8> = vec![0; file_size_bytes];
-                vmo.read(&mut buf, 0)?;
-                let refs = Arc::new(udata::UDataMemory::try_from(buf)?);
+
+                // Read ICU data file from the filesystem. The ICU library should
+                // take care to load only the needed parts, since the entire common
+                // data file is fairly large.
+                let path = PathBuf::from(ICU_DATA_PATH_DEFAULT);
+                udata::set_data_directory(&path);
+                let _refs = Arc::new(path);
                 Self::validate_revision(tz_revision_file_path)?;
-                (*l) = Arc::downgrade(&refs);
-                Ok(Loader {
-                    refs,
-                    vmo_size_bytes,
-                    file_size_bytes,
-                    icu_tzdata_dir_path: tzdata_dir_path.map(|p| p.to_string()),
-                    icu_data_path: ICU_DATA_PATH_DEFAULT.to_string(),
-                })
+                (*l) = Arc::downgrade(&_refs);
+                Ok(Loader { _refs })
             }
         }
     }
@@ -195,7 +178,10 @@ impl Loader {
         match tz_revision_file_path {
             None => Ok(()),
             Some(tz_revision_file_path) => {
-                let expected_revision_id = std::fs::read_to_string(tz_revision_file_path)?;
+                let expected_revision_id = std::fs::read_to_string(tz_revision_file_path)
+                    .with_context(|| {
+                        format!("could not read file: {:?}", &tz_revision_file_path)
+                    })?;
                 if !(MIN_TZ_REVISION_ID_LENGTH..=MAX_TZ_REVISION_ID_LENGTH)
                     .contains(&expected_revision_id.len())
                 {
@@ -211,7 +197,9 @@ impl Loader {
                     ));
                 }
 
-                let actual_revision_id = ucal::get_tz_data_version()?;
+                let actual_revision_id = ucal::get_tz_data_version().with_context(|| {
+                    format!("while getting data version from: {:?}", &tz_revision_file_path)
+                })?;
                 if expected_revision_id != actual_revision_id {
                     return Err(Error::Status(
                         zx::Status::IO_DATA_INTEGRITY,

@@ -87,7 +87,7 @@ class Tcs3400Device : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_I
  private:
   static constexpr size_t kFeatureAndDescriptorBufferSize = 512;
 
-  void HandlePoll(async_dispatcher_t* dispatcher, async::TaskBase* task, zx_status_t status);
+  void HandlePoll();
   void HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_status_t status,
                  const zx_packet_interrupt_t* interrupt);
   void RearmIrq();
@@ -95,7 +95,8 @@ class Tcs3400Device : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_I
 
   async_dispatcher_t* dispatcher_;
   async::IrqMethod<Tcs3400Device, &Tcs3400Device::HandleIrq> irq_handler_{this};
-  async::TaskMethod<Tcs3400Device, &Tcs3400Device::HandlePoll> polling_handler_{this};
+  async::TaskClosureMethod<Tcs3400Device, &Tcs3400Device::HandlePoll> polling_handler_{this};
+  async::TaskClosureMethod<Tcs3400Device, &Tcs3400Device::RearmIrq> rearm_irq_handler_{this};
 
   ddk::I2cChannel i2c_;  // Accessed by the main thread only before thread_ has been started.
   fidl::WireSyncClient<fuchsia_hardware_gpio::Gpio> gpio_;
@@ -109,7 +110,9 @@ class Tcs3400Device : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_I
   bool isSaturated_ = false;
   zx::time lastSaturatedLog_ = zx::time::infinite_past();
   sync_completion_t next_reader_wait_;
-  input_report_reader::InputReportReaderManager<Tcs3400InputReport> readers_;
+  input_report_reader::InputReportReaderManager<Tcs3400InputReport,
+                                                fuchsia_input_report::wire::kMaxDeviceReportCount>
+      readers_;
 
   zx::result<Tcs3400InputReport> ReadInputRpt();
   zx_status_t InitGain(uint8_t gain);

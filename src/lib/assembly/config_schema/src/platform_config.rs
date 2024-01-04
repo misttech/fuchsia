@@ -5,6 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod battery_config;
+pub mod bluetooth_config;
 pub mod connectivity_config;
 pub mod development_support_config;
 pub mod diagnostics_config;
@@ -15,10 +16,13 @@ pub mod forensics_config;
 pub mod graphics_config;
 pub mod icu_config;
 pub mod identity_config;
-pub mod input_config;
+pub mod input_groups_config;
 pub mod intl_config;
+pub mod kernel_config;
 pub mod media_config;
-pub mod session_manager_config;
+pub mod paravirtualization_config;
+pub mod recovery_config;
+pub mod session_config;
 pub mod setui_config;
 pub mod starnix_config;
 pub mod storage_config;
@@ -59,6 +63,10 @@ pub struct PlatformConfig {
     #[serde(default)]
     pub battery: battery_config::BatteryConfig,
 
+    /// Platform configuration options for the bluetooth area.
+    #[serde(default)]
+    pub bluetooth: bluetooth_config::BluetoothConfig,
+
     /// Platform configuration options for the connectivity area.
     #[serde(default)]
     pub connectivity: connectivity_config::PlatformConnectivityConfig,
@@ -87,20 +95,30 @@ pub struct PlatformConfig {
     #[serde(default)]
     pub identity: identity_config::PlatformIdentityConfig,
 
-    /// Platform configuration options for the input area.
+    /// Opaque groups of inputs that many products tend to include, but have
+    /// not been organized into more specific features.
     #[serde(default)]
-    pub input: input_config::PlatformInputConfig,
+    pub input_groups: input_groups_config::InputGroupsConfig,
 
     /// Platform configuration options for the media area.
     #[serde(default)]
     pub media: media_config::PlatformMediaConfig,
 
-    /// Platform configuration options for the session manager.
+    /// Platform configuration options for paravirtualization.
     #[serde(default)]
-    pub session: session_manager_config::PlatformSessionManagerConfig,
+    pub paravirtualization: paravirtualization_config::PlatformParavirtualizationConfig,
+
+    /// Platform configuration options for recovery.
+    #[serde(default)]
+    pub recovery: recovery_config::RecoveryConfig,
+
+    /// Platform configuration options for the session.
+    #[serde(default)]
+    pub session: session_config::PlatformSessionConfig,
 
     /// Platform configuration options for the SWD subsystem.
-    pub software_delivery: Option<swd_config::SwdConfig>,
+    #[serde(default)]
+    pub software_delivery: swd_config::SwdConfig,
 
     /// Platform configuration options for the starnix area.
     #[serde(default)]
@@ -118,19 +136,10 @@ pub struct PlatformConfig {
     #[serde(default)]
     pub virtualization: virtualization_config::PlatformVirtualizationConfig,
 
-    /// Platform configuration options for ICU library choice. If not specified,
-    /// then assembly should use the unflavored components.
-    ///
-    /// Platform components can be 'flavored' by the ICU version they're
-    /// compiled to use, or be 'unflavored' and using the tree's implicit
-    /// ICU version.
-    ///
-    /// If not specified, the 'unflavored' components are used. If the default
-    /// ICU version is specified, then the 'default' flavor is used (which is
-    /// a distinct set of components from the 'unflavored' components).
-    /// Assemblies are being transitioned from the 'unflavored'
-    /// components to 'flavored' components`.
-    pub icu: Option<icu_config::ICUConfig>,
+    /// Platform configuration options for ICU library choice. Platform components are 'flavored'
+    /// by the ICU version they're compiled to use.
+    #[serde(default)]
+    pub icu: icu_config::ICUConfig,
 
     /// Platform configuration options for fonts.
     #[serde(default)]
@@ -142,18 +151,17 @@ pub struct PlatformConfig {
 
     /// SetUi configuration.
     ///
-    /// If not specified, then the legacy configuration is used. If specified,
-    /// and `enabled` is set, then ICU-aware components are used. If specified,
-    /// and `enabled` is `false`, then the default (non-ICU-aware) components
-    /// are used.
-    #[serde(default)]
-    pub setui: setui_config::SetUiConfig,
+    /// If not specified, SetUI is not added to the platform config.
+    pub setui: Option<setui_config::SetUiConfig>,
 
     /// Assembly option triggering the inclusion of test AIBs
     ///
     /// NOTE: This is not for use by products! It's for testing assembly itself.
     #[serde(default)]
     pub example_config: example_config::ExampleConfig,
+
+    #[serde(default)]
+    pub kernel: kernel_config::PlatformKernelConfig,
 }
 
 // LINT.IfChange
@@ -216,7 +224,7 @@ pub enum FeatureSupportLevel {
 /// These control security and behavioral settings within the platform, and can
 /// change the platform packages placed into the assembled product image.
 ///
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub enum BuildType {
     #[serde(rename = "eng")]
     Eng,

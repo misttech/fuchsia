@@ -60,15 +60,15 @@ class VmObjectDispatcher final : public SoloDispatcher<VmObjectDispatcher, ZX_DE
   ContentSizeManager* content_size_manager() const { return content_size_mgr_.get(); }
 
   // VmObjectDispatcher own methods.
-  zx_status_t Read(VmAspace* current_aspace, user_out_ptr<char> user_data, size_t length,
-                   uint64_t offset, size_t* out_actual);
-  zx_status_t ReadVector(VmAspace* current_aspace, user_out_iovec_t user_data, size_t length,
-                         uint64_t offset, size_t* out_actual);
-  zx_status_t Write(VmAspace* current_aspace, user_in_ptr<const char> user_data, size_t length,
-                    uint64_t offset, size_t* out_actual,
+  zx_status_t Read(user_out_ptr<char> user_data, size_t length, uint64_t offset,
+                   size_t* out_actual);
+  zx_status_t ReadVector(user_out_iovec_t user_data, size_t length, uint64_t offset,
+                         size_t* out_actual);
+  zx_status_t Write(user_in_ptr<const char> user_data, size_t length, uint64_t offset,
+                    size_t* out_actual,
                     VmObject::OnWriteBytesTransferredCallback on_bytes_transferred = nullptr);
-  zx_status_t WriteVector(VmAspace* current_aspace, user_in_iovec_t user_data, size_t length,
-                          uint64_t offset, size_t* out_actual,
+  zx_status_t WriteVector(user_in_iovec_t user_data, size_t length, uint64_t offset,
+                          size_t* out_actual,
                           VmObject::OnWriteBytesTransferredCallback on_bytes_transferred = nullptr);
   zx_status_t SetSize(uint64_t);
   zx_status_t GetSize(uint64_t* size);
@@ -116,12 +116,10 @@ class VmObjectDispatcher final : public SoloDispatcher<VmObjectDispatcher, ZX_DE
 
   // Indicates whether the VMO was immutable at creation time.
   const InitialMutability initial_mutability_;
-
-  // See the comment above near the shrink_lock() method. Note that this lock might be held whilst
-  // waiting for page requests to be fulfilled.
-  mutable DECLARE_MUTEX(VmObjectDispatcher, lockdep::LockFlagsActiveListDisabled) shrink_lock_;
 };
 
-zx_info_vmo_t VmoToInfoEntry(const VmObject* vmo, bool is_handle, zx_rights_t handle_rights);
+enum class VmoOwnership { kHandle, kMapping, kIoBuffer };
+zx_info_vmo_t VmoToInfoEntry(const VmObject* vmo, VmoOwnership ownership,
+                             zx_rights_t handle_rights);
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_VM_OBJECT_DISPATCHER_H_

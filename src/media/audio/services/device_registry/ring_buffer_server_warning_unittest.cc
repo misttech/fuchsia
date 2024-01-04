@@ -116,18 +116,23 @@ TEST_F(RingBufferServerWarningTest, SetActiveChannelsMissingChannelBitmask) {
         received_callback = true;
       });
   RunLoopUntilIdle();
-  EXPECT_TRUE(received_callback);
+  ASSERT_TRUE(received_callback);
+  ASSERT_EQ(fake_driver->active_channels_bitmask(), 0x3u);
 
   EXPECT_TRUE(ring_buffer_client.is_valid());
   received_callback = false;
-  // No `channel_bitmask` value is included in this call.
-  ring_buffer_client->SetActiveChannels({}).Then(
-      [&received_callback](fidl::Result<RingBuffer::SetActiveChannels>& result) {
-        received_callback = true;
-        ASSERT_TRUE(result.is_error()) << result.error_value().FormatDescription();
-        ASSERT_TRUE(result.error_value().is_domain_error());
+  ring_buffer_client
+      ->SetActiveChannels({
+          // No `channel_bitmask` value is included in this call.
+      })
+      .Then([&received_callback](fidl::Result<RingBuffer::SetActiveChannels>& result) {
+        ASSERT_TRUE(result.is_error());
+        ASSERT_TRUE(result.error_value().is_domain_error())
+            << result.error_value().FormatDescription();
         EXPECT_EQ(result.error_value().domain_error(),
-                  fuchsia_audio_device::RingBufferSetActiveChannelsError::kInvalidChannelBitmask);
+                  fuchsia_audio_device::RingBufferSetActiveChannelsError::kInvalidChannelBitmask)
+            << result.error_value().FormatDescription();
+        received_callback = true;
       });
 
   RunLoopUntilIdle();
@@ -161,7 +166,8 @@ TEST_F(RingBufferServerWarningTest, SetActiveChannelsBadChannelBitmask) {
         received_callback = true;
       });
   RunLoopUntilIdle();
-  EXPECT_TRUE(received_callback);
+  ASSERT_TRUE(received_callback);
+  ASSERT_EQ(fake_driver->active_channels_bitmask(), 0x3u);
 
   EXPECT_TRUE(ring_buffer_client.is_valid());
   received_callback = false;
@@ -170,11 +176,13 @@ TEST_F(RingBufferServerWarningTest, SetActiveChannelsBadChannelBitmask) {
           0xFFFF,  // This channel bitmask includes values outside the total number of channels.
       }})
       .Then([&received_callback](fidl::Result<RingBuffer::SetActiveChannels>& result) {
-        received_callback = true;
-        ASSERT_TRUE(result.is_error()) << result.error_value().FormatDescription();
-        ASSERT_TRUE(result.error_value().is_domain_error());
+        ASSERT_TRUE(result.is_error());
+        ASSERT_TRUE(result.error_value().is_domain_error())
+            << result.error_value().FormatDescription();
         EXPECT_EQ(result.error_value().domain_error(),
-                  fuchsia_audio_device::RingBufferSetActiveChannelsError::kChannelOutOfRange);
+                  fuchsia_audio_device::RingBufferSetActiveChannelsError::kChannelOutOfRange)
+            << result.error_value().FormatDescription();
+        received_callback = true;
       });
 
   RunLoopUntilIdle();
@@ -183,7 +191,116 @@ TEST_F(RingBufferServerWarningTest, SetActiveChannelsBadChannelBitmask) {
   ring_buffer_client = fidl::Client<fuchsia_audio_device::RingBuffer>();
 }
 
-// Test Start when already Started
+// Test calling SetActiveChannels, before the previous SetActiveChannels has completed.
+TEST_F(RingBufferServerWarningTest, SetActiveChannelsWhilePending) {
+  auto fake_driver = CreateFakeDriverWithDefaults();
+  fake_driver->AllocateRingBuffer(8192);
+  EnableDriverAndAddDevice(fake_driver);
+
+  auto registry = CreateTestRegistryServer();
+  auto token_id = WaitForAddedDeviceTokenId(registry->client());
+  ASSERT_TRUE(token_id);
+  auto [status, added_device] = adr_service_->FindDeviceByTokenId(*token_id);
+  ASSERT_EQ(status, AudioDeviceRegistry::DevicePresence::Active);
+  auto control = CreateTestControlServer(added_device);
+
+  auto [ring_buffer_client, ring_buffer_server_end] = CreateRingBufferClient();
+  bool received_callback = false;
+  control->client()
+      ->CreateRingBuffer({{
+          .options = kDefaultRingBufferOptions,
+          .ring_buffer_server =
+              fidl::ServerEnd<fuchsia_audio_device::RingBuffer>(std::move(ring_buffer_server_end)),
+      }})
+      .Then([&received_callback](fidl::Result<Control::CreateRingBuffer>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+        received_callback = true;
+      });
+  RunLoopUntilIdle();
+  ASSERT_TRUE(received_callback);
+  ASSERT_EQ(fake_driver->active_channels_bitmask(), 0x3u);
+  ASSERT_EQ(RingBufferServer::count(), 1u);
+
+  EXPECT_TRUE(ring_buffer_client.is_valid());
+  bool received_callback_1 = false, received_callback_2 = false;
+  ring_buffer_client->SetActiveChannels({{1}}).Then(
+      [&received_callback_1](fidl::Result<RingBuffer::SetActiveChannels>& result) {
+        EXPECT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+        received_callback_1 = true;
+      });
+  ring_buffer_client->SetActiveChannels({{0}}).Then(
+      [&received_callback_2](fidl::Result<RingBuffer::SetActiveChannels>& result) {
+        ASSERT_TRUE(result.is_error()) << result.error_value().FormatDescription();
+        ASSERT_TRUE(result.error_value().is_domain_error())
+            << result.error_value().FormatDescription();
+        EXPECT_EQ(result.error_value().domain_error(),
+                  fuchsia_audio_device::RingBufferSetActiveChannelsError::kAlreadyPending)
+            << result.error_value().FormatDescription();
+        received_callback_2 = true;
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(received_callback_1 && received_callback_2);
+  EXPECT_EQ(fake_driver->active_channels_bitmask(), 0x1u);
+  EXPECT_EQ(RingBufferServer::count(), 1u);
+}
+
+// Test Start-Start, when the second Start is called before the first Start completes.
+TEST_F(RingBufferServerWarningTest, StartWhilePending) {
+  auto fake_driver = CreateFakeDriverWithDefaults();
+  fake_driver->set_active_channels_supported(false);
+  fake_driver->AllocateRingBuffer(8192);
+  EnableDriverAndAddDevice(fake_driver);
+
+  auto registry = CreateTestRegistryServer();
+  auto token_id = WaitForAddedDeviceTokenId(registry->client());
+  ASSERT_TRUE(token_id);
+  auto [presence, device_to_control] = adr_service_->FindDeviceByTokenId(*token_id);
+  ASSERT_EQ(presence, AudioDeviceRegistry::DevicePresence::Active);
+  auto control = CreateTestControlServer(device_to_control);
+
+  auto [ring_buffer_client, ring_buffer_server_end] = CreateRingBufferClient();
+  bool received_callback = false;
+  control->client()
+      ->CreateRingBuffer({{
+          .options = kDefaultRingBufferOptions,
+          .ring_buffer_server =
+              fidl::ServerEnd<fuchsia_audio_device::RingBuffer>(std::move(ring_buffer_server_end)),
+      }})
+      .Then([&received_callback](fidl::Result<Control::CreateRingBuffer>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+        received_callback = true;
+      });
+  RunLoopUntilIdle();
+  ASSERT_TRUE(received_callback);
+  ASSERT_FALSE(fake_driver->is_running());
+  ASSERT_EQ(RingBufferServer::count(), 1u);
+
+  bool received_callback_1 = false, received_callback_2 = false;
+  ring_buffer_client->Start({}).Then(
+      [&received_callback_1, &fake_driver](fidl::Result<RingBuffer::Start>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+        EXPECT_TRUE(fake_driver->is_running());
+        received_callback_1 = true;
+      });
+
+  ring_buffer_client->Start({}).Then([&received_callback_2,
+                                      &fake_driver](fidl::Result<RingBuffer::Start>& result) {
+    ASSERT_TRUE(result.is_error());
+    ASSERT_TRUE(result.error_value().is_domain_error()) << result.error_value().FormatDescription();
+    EXPECT_EQ(result.error_value().domain_error(),
+              fuchsia_audio_device::RingBufferStartError::kAlreadyPending)
+        << result.error_value().FormatDescription();
+    EXPECT_TRUE(fake_driver->is_running());
+    received_callback_2 = true;
+  });
+  RunLoopUntilIdle();
+  EXPECT_TRUE(received_callback_1 && received_callback_2);
+  EXPECT_TRUE(fake_driver->is_running());
+  EXPECT_EQ(RingBufferServer::count(), 1u);
+}
+
+// Test Start-Start, when the second Start occurs after the first has successfully completed.
 TEST_F(RingBufferServerWarningTest, StartWhileStarted) {
   auto fake_driver = CreateFakeDriverWithDefaults();
   fake_driver->set_active_channels_supported(false);
@@ -206,36 +323,39 @@ TEST_F(RingBufferServerWarningTest, StartWhileStarted) {
               fidl::ServerEnd<fuchsia_audio_device::RingBuffer>(std::move(ring_buffer_server_end)),
       }})
       .Then([&received_callback](fidl::Result<Control::CreateRingBuffer>& result) {
-        EXPECT_TRUE(result.is_ok());
+        EXPECT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
         received_callback = true;
       });
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
   EXPECT_FALSE(fake_driver->is_running());
+  EXPECT_EQ(RingBufferServer::count(), 1u);
 
   received_callback = false;
   auto before_start = zx::clock::get_monotonic();
   ring_buffer_client->Start({}).Then(
       [&received_callback, before_start, &fake_driver](fidl::Result<RingBuffer::Start>& result) {
-        received_callback = true;
         ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
         EXPECT_THAT(result->start_time(), Optional(fake_driver->mono_start_time().get()));
         EXPECT_GT(*result->start_time(), before_start.get());
         EXPECT_TRUE(fake_driver->is_running());
+        received_callback = true;
       });
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
 
   received_callback = false;
   ring_buffer_client->Start({}).Then([&received_callback](fidl::Result<RingBuffer::Start>& result) {
-    received_callback = true;
-    EXPECT_TRUE(result.is_error());
-    EXPECT_TRUE(result.error_value().is_domain_error());
+    ASSERT_TRUE(result.is_error());
+    ASSERT_TRUE(result.error_value().is_domain_error()) << result.error_value().FormatDescription();
     EXPECT_EQ(result.error_value().domain_error(),
-              fuchsia_audio_device::RingBufferStartError::kAlreadyStarted);
+              fuchsia_audio_device::RingBufferStartError::kAlreadyStarted)
+        << result.error_value().FormatDescription();
+    received_callback = true;
   });
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
+  EXPECT_EQ(RingBufferServer::count(), 1u);
 
   ring_buffer_client = fidl::Client<fuchsia_audio_device::RingBuffer>();
 }
@@ -263,7 +383,7 @@ TEST_F(RingBufferServerWarningTest, StopBeforeStarted) {
               fidl::ServerEnd<fuchsia_audio_device::RingBuffer>(std::move(ring_buffer_server_end)),
       }})
       .Then([&received_callback](fidl::Result<Control::CreateRingBuffer>& result) {
-        EXPECT_TRUE(result.is_ok());
+        EXPECT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
         received_callback = true;
       });
   RunLoopUntilIdle();
@@ -272,11 +392,12 @@ TEST_F(RingBufferServerWarningTest, StopBeforeStarted) {
 
   received_callback = false;
   ring_buffer_client->Stop({}).Then([&received_callback](fidl::Result<RingBuffer::Stop>& result) {
-    received_callback = true;
-    EXPECT_TRUE(result.is_error());
-    EXPECT_TRUE(result.error_value().is_domain_error());
+    ASSERT_TRUE(result.is_error());
+    ASSERT_TRUE(result.error_value().is_domain_error()) << result.error_value().FormatDescription();
     EXPECT_EQ(result.error_value().domain_error(),
-              fuchsia_audio_device::RingBufferStopError::kAlreadyStopped);
+              fuchsia_audio_device::RingBufferStopError::kAlreadyStopped)
+        << result.error_value().FormatDescription();
+    received_callback = true;
   });
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
@@ -284,7 +405,69 @@ TEST_F(RingBufferServerWarningTest, StopBeforeStarted) {
   ring_buffer_client = fidl::Client<fuchsia_audio_device::RingBuffer>();
 }
 
-// Test Stop after Start-then-Stop.
+// Test Start-Stop-Stop, when the second Stop is called before the first one completes.
+TEST_F(RingBufferServerWarningTest, StopWhilePending) {
+  auto fake_driver = CreateFakeDriverWithDefaults();
+  fake_driver->set_active_channels_supported(false);
+  fake_driver->AllocateRingBuffer(8192);
+  EnableDriverAndAddDevice(fake_driver);
+
+  auto registry = CreateTestRegistryServer();
+  auto token_id = WaitForAddedDeviceTokenId(registry->client());
+  ASSERT_TRUE(token_id);
+  auto [presence, device_to_control] = adr_service_->FindDeviceByTokenId(*token_id);
+  ASSERT_EQ(presence, AudioDeviceRegistry::DevicePresence::Active);
+  auto control = CreateTestControlServer(device_to_control);
+
+  auto [ring_buffer_client, ring_buffer_server_end] = CreateRingBufferClient();
+  bool received_callback = false;
+  control->client()
+      ->CreateRingBuffer({{
+          .options = kDefaultRingBufferOptions,
+          .ring_buffer_server =
+              fidl::ServerEnd<fuchsia_audio_device::RingBuffer>(std::move(ring_buffer_server_end)),
+      }})
+      .Then([&received_callback](fidl::Result<Control::CreateRingBuffer>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+        received_callback = true;
+      });
+  RunLoopUntilIdle();
+  ASSERT_TRUE(received_callback);
+  ASSERT_FALSE(fake_driver->is_running());
+
+  received_callback = false;
+  ring_buffer_client->Start({}).Then(
+      [&received_callback, &fake_driver](fidl::Result<RingBuffer::Start>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+        ASSERT_TRUE(fake_driver->is_running());
+        received_callback = true;
+      });
+  RunLoopUntilIdle();
+  ASSERT_TRUE(received_callback);
+  ASSERT_EQ(RingBufferServer::count(), 1u);
+
+  bool received_callback_1 = false, received_callback_2 = false;
+  ring_buffer_client->Stop({}).Then(
+      [&received_callback_1, &fake_driver](fidl::Result<RingBuffer::Stop>& result) {
+        EXPECT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+        EXPECT_FALSE(fake_driver->is_running());
+        received_callback_1 = true;
+      });
+
+  ring_buffer_client->Stop({}).Then([&received_callback_2](fidl::Result<RingBuffer::Stop>& result) {
+    ASSERT_TRUE(result.is_error());
+    ASSERT_TRUE(result.error_value().is_domain_error()) << result.error_value().FormatDescription();
+    EXPECT_EQ(result.error_value().domain_error(),
+              fuchsia_audio_device::RingBufferStopError::kAlreadyPending)
+        << result.error_value().FormatDescription();
+    received_callback_2 = true;
+  });
+  RunLoopUntilIdle();
+  EXPECT_TRUE(received_callback_1 && received_callback_2);
+  EXPECT_EQ(RingBufferServer::count(), 1u);
+}
+
+// Test Start-Stop-Stop, when the first Stop successfully completed before the second is called.
 TEST_F(RingBufferServerWarningTest, StopAfterStopped) {
   auto fake_driver = CreateFakeDriverWithDefaults();
   fake_driver->set_active_channels_supported(false);
@@ -307,7 +490,7 @@ TEST_F(RingBufferServerWarningTest, StopAfterStopped) {
               fidl::ServerEnd<fuchsia_audio_device::RingBuffer>(std::move(ring_buffer_server_end)),
       }})
       .Then([&received_callback](fidl::Result<Control::CreateRingBuffer>& result) {
-        EXPECT_TRUE(result.is_ok());
+        EXPECT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
         received_callback = true;
       });
   RunLoopUntilIdle();
@@ -318,11 +501,11 @@ TEST_F(RingBufferServerWarningTest, StopAfterStopped) {
   auto before_start = zx::clock::get_monotonic();
   ring_buffer_client->Start({}).Then(
       [&received_callback, before_start, &fake_driver](fidl::Result<RingBuffer::Start>& result) {
-        received_callback = true;
         ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
         EXPECT_THAT(result->start_time(), Optional(fake_driver->mono_start_time().get()));
         EXPECT_GT(*result->start_time(), before_start.get());
         EXPECT_TRUE(fake_driver->is_running());
+        received_callback = true;
       });
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
@@ -330,20 +513,21 @@ TEST_F(RingBufferServerWarningTest, StopAfterStopped) {
   received_callback = false;
   ring_buffer_client->Stop({}).Then(
       [&received_callback, &fake_driver](fidl::Result<RingBuffer::Stop>& result) {
-        received_callback = true;
         EXPECT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
         EXPECT_FALSE(fake_driver->is_running());
+        received_callback = true;
       });
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
 
   received_callback = false;
   ring_buffer_client->Stop({}).Then([&received_callback](fidl::Result<RingBuffer::Stop>& result) {
-    received_callback = true;
-    EXPECT_TRUE(result.is_error());
-    EXPECT_TRUE(result.error_value().is_domain_error());
+    ASSERT_TRUE(result.is_error());
+    ASSERT_TRUE(result.error_value().is_domain_error()) << result.error_value().FormatDescription();
     EXPECT_EQ(result.error_value().domain_error(),
-              fuchsia_audio_device::RingBufferStopError::kAlreadyStopped);
+              fuchsia_audio_device::RingBufferStopError::kAlreadyStopped)
+        << result.error_value().FormatDescription();
+    received_callback = true;
   });
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
@@ -351,8 +535,8 @@ TEST_F(RingBufferServerWarningTest, StopAfterStopped) {
   ring_buffer_client = fidl::Client<fuchsia_audio_device::RingBuffer>();
 }
 
-// Test WatchDelayInfo when already watching - should fail with kWatchAlreadyPending.
-TEST_F(RingBufferServerWarningTest, WatchDelayInfoWhileAlreadyWatching) {
+// Test WatchDelayInfo when already watching - should fail with kAlreadyPending.
+TEST_F(RingBufferServerWarningTest, WatchDelayInfoWhilePending) {
   auto fake_driver = CreateFakeDriverWithDefaults();
   fake_driver->AllocateRingBuffer(8192);
   EnableDriverAndAddDevice(fake_driver);
@@ -383,12 +567,12 @@ TEST_F(RingBufferServerWarningTest, WatchDelayInfoWhileAlreadyWatching) {
   received_callback = false;
   ring_buffer_client->WatchDelayInfo().Then(
       [&received_callback](fidl::Result<RingBuffer::WatchDelayInfo>& result) {
-        received_callback = true;
         ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
         ASSERT_TRUE(result->delay_info());
         ASSERT_TRUE(result->delay_info()->internal_delay());
-        ASSERT_FALSE(result->delay_info()->external_delay());
+        EXPECT_FALSE(result->delay_info()->external_delay());
         EXPECT_THAT(result->delay_info()->internal_delay(), Optional(0u));
+        received_callback = true;
       });
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
@@ -404,14 +588,15 @@ TEST_F(RingBufferServerWarningTest, WatchDelayInfoWhileAlreadyWatching) {
   EXPECT_FALSE(received_callback);
 
   received_callback = false;
-  ring_buffer_client->WatchDelayInfo().Then(
-      [&received_callback](fidl::Result<RingBuffer::WatchDelayInfo>& result) {
-        received_callback = true;
-        ASSERT_TRUE(result.is_error());
-        ASSERT_TRUE(result.error_value().is_domain_error());
-        ASSERT_EQ(result.error_value().domain_error(),
-                  fuchsia_audio_device::RingBufferWatchDelayInfoError::kWatchAlreadyPending);
-      });
+  ring_buffer_client->WatchDelayInfo().Then([&received_callback](
+                                                fidl::Result<RingBuffer::WatchDelayInfo>& result) {
+    ASSERT_TRUE(result.is_error());
+    ASSERT_TRUE(result.error_value().is_domain_error()) << result.error_value().FormatDescription();
+    EXPECT_EQ(result.error_value().domain_error(),
+              fuchsia_audio_device::RingBufferWatchDelayInfoError::kAlreadyPending)
+        << result.error_value().FormatDescription();
+    received_callback = true;
+  });
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
 

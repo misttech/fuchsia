@@ -24,15 +24,24 @@ template("_preprocessed_dts") {
                              "deps",
                            ])
 
+    assert([ sources[0] ] == sources, "Only one source file can be passed.")
+
     utils = [ "cc" ]
 
-    raw_dts_dir = target_name + "_raw_dts"
-    source_root_relative = rebase_path(sources[0], "//")
+    source_root_relative = get_path_info(rebase_path(sources[0], "//"), "dir")
     source_name = get_path_info(sources[0], "name")
-    outputs = [ "$target_gen_dir/$raw_dts_dir/$source_root_relative" ]
+
+    # This is done to remove the '.S' extension added to the files and also
+    # place it in a relatively equivalent path to that of the source. This is
+    # required to allow includes that contain the full source path.
+    outputs =
+        [ "$target_gen_dir/$target_name/$source_root_relative/$source_name" ]
     depfile = "$target_gen_dir/$source_name.d"
 
-    include_dir = rebase_path("//", root_build_dir)
+    configs = [
+      "//build/config:relative_paths",
+      "//build/config:default_include_dirs",
+    ]
 
     args = [
       "-undef",
@@ -40,18 +49,15 @@ template("_preprocessed_dts") {
       "-MF",
       rebase_path(depfile, root_build_dir),
       "-E",
-      "-iquote$include_dir",
+      "-P",
+      "{{include_dirs}}",
+      "{{defines}}",
       "-x",
       "assembler-with-cpp",
       rebase_path(sources[0], root_build_dir),
       "-o",
       rebase_path(outputs[0], root_build_dir),
     ]
-
-    metadata = {
-      devicetree_barrier = []
-      devicetree_includes = [ "$target_gen_dir/$raw_dts_dir" ]
-    }
   }
 }
 
@@ -60,7 +66,9 @@ template("_preprocessed_dts") {
 # Parameters
 #
 #   * sources
-#     - Required: Device tree source include file (.dtsi)
+#     - Required: Device tree source include file (.dtsi/.dtsi.S). Source files
+#       that include C header files should end with the extension `.dtsi.S` and
+#       it will be preprocessed by C compiler.
 #     - Type: list(path). Must only have one entry.
 #
 #   * deps
@@ -69,16 +77,52 @@ template("_preprocessed_dts") {
 #     - Default: []
 #
 template("devicetree_fragment") {
-  _preprocessed_dts(target_name) {
-    forward_variables_from(invoker,
-                           [
-                             "sources",
-                             "deps",
-                           ])
-    assert([ sources[0] ] == invoker.sources,
-           "Devicetree fragment can only have one source file")
-    assert(get_path_info(sources[0], "extension") == "dtsi",
-           "Devicetree fragment can only have .dtsi source file.")
+  dtsi_file = invoker.sources
+  assert([ dtsi_file[0] ] == invoker.sources,
+         "Devicetree fragment can only have one source file")
+  extension = get_path_info(dtsi_file[0], "extension")
+  dtsi_extension =
+      get_path_info(get_path_info(dtsi_file[0], "name"), "extension")
+  assert(extension == "dtsi" || (extension == "S" && dtsi_extension == "dtsi"),
+         "Devicetree fragment can only have .dtsi or .dtsi.S source file.")
+  not_needed([ "dtsi_extension" ])
+
+  if (extension == "S") {
+    processed_dts_target = "_devicetree_fragment.$target_name.preprocessed"
+    _preprocessed_dts(processed_dts_target) {
+      forward_variables_from(invoker,
+                             [
+                               "sources",
+                               "deps",
+                             ])
+    }
+    processed_dts_outputs = get_target_outputs(":$processed_dts_target")
+    processed_dts_output_dir = get_path_info(processed_dts_outputs[0], "dir")
+    includes = [
+      # For dtsi includes referring to paths relative to `//`.
+      "$target_gen_dir/$processed_dts_target",
+
+      # For dtsi includes referring to current directory.
+      "$processed_dts_output_dir",
+    ]
+  } else {
+    includes = [ get_path_info(dtsi_file[0], "dir") ]
+  }
+
+  group(target_name) {
+    forward_variables_from(invoker, [ "deps" ])
+    if (!defined(deps)) {
+      deps = []
+    }
+
+    if (extension == "S") {
+      deps += [ ":$processed_dts_target" ]
+    }
+
+    metadata = {
+      devicetree_barrier = []
+      devicetree_includes = includes
+    }
   }
 }
 
@@ -87,7 +131,9 @@ template("devicetree_fragment") {
 # Parameters
 #
 #   * sources
-#     - Required: Device tree source file (.dts)
+#     - Required: Device tree source file (.dts/.dts.S). Source file that
+#       include C header files should end with the extension `.dts.S` and it
+#       will be preprocessed by C compiler before invoking the devicetree compiler.
 #     - Type: List(path). Must only have one entry.
 #
 #   * deps
@@ -103,11 +149,15 @@ template("dtb") {
   dts_file = invoker.sources
   assert([ dts_file[0] ] == invoker.sources,
          "devicetree can only have a single input file")
-  assert(get_path_info(dts_file[0], "extension") == "dts",
-         "Only .dts source files accepted.")
 
-  processed_dts_target = target_name + "_dts"
-  dts_include_dirs_target = target_name + "_all_dts"
+  extension = get_path_info(dts_file[0], "extension")
+  dts_extension = get_path_info(get_path_info(dts_file[0], "name"), "extension")
+  assert(extension == "dts" || (extension == "S" && dts_extension == "dts"),
+         "Only .dts or .dts.S source files accepted.")
+  not_needed([ "dts_extension" ])
+
+  processed_dts_target = "_dtb.$target_name.preprocessed"
+  dts_include_dirs_target = "_dtb.$target_name.includes"
   dts_include_dirs_filename = dts_include_dirs_target + ".txt"
 
   # Each devicetree_fragment() call puts a devicetree in a directory tree that
@@ -133,13 +183,20 @@ template("dtb") {
 
   # This actually compiles the DTB.
   action(target_name) {
-    deps = [
-      ":$dts_include_dirs_target",
-      ":$processed_dts_target",
-    ]
-    sources = get_target_outputs(":$processed_dts_target")
+    deps = [ ":$dts_include_dirs_target" ]
 
-    source_name = get_path_info(sources[0], "name")
+    if (extension == "S") {
+      deps += [ ":$processed_dts_target" ]
+      sources = get_target_outputs(":$processed_dts_target")
+
+      # Extract name from <name>.dts.S.
+      source_name = get_path_info(sources[0], "name")
+      source_name = get_path_info(source_name, "name")
+    } else {
+      sources = invoker.sources
+      source_name = get_path_info(sources[0], "name")
+    }
+
     depfile = "$target_gen_dir/$source_name.d"
     script = "//build/devicetree/dtc.sh"
     inputs = [ "//prebuilt/third_party/dtc/${host_platform}/dtc" ]
@@ -155,6 +212,8 @@ template("dtb") {
     args = [
       rebase_path(inputs[0], root_build_dir),
       rebase_path(include_dirs[0], root_build_dir),
+      "-i",
+      rebase_path("//", root_build_dir),
       rebase_path(sources[0], root_build_dir),
       "-o",
       rebase_path(outputs[0], root_build_dir),
@@ -217,7 +276,77 @@ template("dts") {
   }
 }
 
+# Defines a devicetree visitor target.
+#
+# Parameters
+#
+#   * sources
+#     - Required: Device tree visitor source files (.cc and .h) that will be
+#       used to parse the devicetree related to the schema.
+#       TODO(fxbug.dev/133362) Generate the visitor from schema file.
+#     - Type: List(path).
+#
+#   * deps
+#     - Optional: Usual GN meaning.
+#
+template("devicetree_visitor") {
+  loadable_module(target_name) {
+    # Save the target name as forward_variables_from below might override it.
+    _target_name = target_name
+
+    forward_variables_from(invoker, "*")
+
+    if (!defined(output_dir)) {
+      output_dir = root_out_dir
+    }
+    if (!defined(output_name)) {
+      output_name = _target_name
+    }
+    if (!defined(output_extension)) {
+      output_extension = "so"
+    }
+
+    _output_file_name = output_name
+    if (output_extension != "") {
+      _output_file_name += ".$output_extension"
+    }
+    _output_file = "$output_dir/$_output_file_name"
+    _rebased_output_file = rebase_path(_output_file, root_build_dir)
+
+    if (!defined(ldflags)) {
+      ldflags = []
+    }
+
+    _version_script = "//build/devicetree/visitor.ld"
+    ldflags += [ "-Wl,--version-script=" +
+                 rebase_path(_version_script, root_build_dir) ]
+
+    metadata = {
+      devicetree_barrier = []
+
+      # Used by the distribution_manifest template.
+      distribution_entries = [
+        {
+          source = _rebased_output_file
+          destination = "lib/visitors/$_output_file_name"
+          label = get_label_info(":$target_name", "label_with_toolchain")
+          elf_runtime_dir = "lib/${toolchain_variant.libprefix}"
+        },
+      ]
+    }
+  }
+}
+
 # Defines a devicetree to be built into a devicetree blob.
+#
+# There are three public targets -
+# 1. The main target compiles the devicetree source and runs all the necessary
+# verification checks.
+# 2. The target "$target_name.dtb" can be used to get the output devicetree
+# blob using `get_target_output("$target_name.dtb")`.
+# 3. The target "$target_name.visitors" can be used to compile and add all the
+# visitor libraries into the board driver package. The visitors can be loaded
+# at runtime using the load-visitors library by the board driver.
 #
 # Parameters
 #
@@ -233,7 +362,13 @@ template("dts") {
 #       indirectly by the includes and headers.
 #
 #   * deps
-#     - Optional: Other devicetree fragment targets referenced by the source.
+#     - Optional: Other devicetree fragments and header file targets referenced
+#       by the source.
+#     - Type: list(label)
+#     - Default: []
+#
+#   * visitors
+#     - Optional: Devicetree visitor targets related to the source.
 #     - Type: list(label)
 #     - Default: []
 #
@@ -244,11 +379,13 @@ template("dts") {
 #     - Default: target_out_dir + "/" + get_path_info(sources[0], "name) + ".dtb"
 #
 template("devicetree") {
-  compiled_dtb_target = target_name + "_dtb"
+  compiled_dtb_target = "$target_name.dtb"
 
-  decompiled_dtb_target = target_name + "_decompiled_dtb"
+  visitors_target = "$target_name.visitors"
 
-  golden_dts_target = target_name + "_golden_dts"
+  decompiled_dts_target = "_devicetree.$target_name.decompiled"
+
+  golden_dts_target = "_devicetree.$target_name.golden"
 
   # Compile the dts
   dtb(compiled_dtb_target) {
@@ -264,23 +401,27 @@ template("devicetree") {
   # Decompile the compiled DTS so we can use it for the golden comparison.
   # We use the decompiled DTS instead of the original DTS as all includes and
   # C headers are resolved in the final dtb.
-  dts(decompiled_dtb_target) {
+  dts(decompiled_dts_target) {
     deps = [ ":$compiled_dtb_target" ]
-    dts_source = invoker.sources
-    dtb_name = get_path_info(dts_source[0], "name")
-    sources = [ "$target_out_dir/$dtb_name.dtb" ]
+    sources = get_target_outputs(":$compiled_dtb_target")
   }
 
   # Compare golden dts and decompiled dts file.
   golden_files(golden_dts_target) {
-    deps = [ ":$decompiled_dtb_target" ]
-    dts_outputs = get_target_outputs(":$decompiled_dtb_target")
+    deps = [ ":$decompiled_dts_target" ]
+    dts_outputs = get_target_outputs(":$decompiled_dts_target")
     comparisons = [
       {
         forward_variables_from(invoker, [ "golden" ])
         candidate = dts_outputs[0]
       },
     ]
+  }
+
+  group(visitors_target) {
+    if (defined(invoker.visitors)) {
+      deps = invoker.visitors
+    }
   }
 
   group(target_name) {

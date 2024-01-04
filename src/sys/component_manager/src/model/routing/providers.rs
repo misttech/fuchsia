@@ -13,9 +13,9 @@ use {
     ::routing::path::PathBufExt,
     async_trait::async_trait,
     clonable_error::ClonableError,
-    cm_task_scope::TaskScope,
     cm_types::{Name, Path},
     cm_util::channel,
+    cm_util::TaskGroup,
     fidl::endpoints::ServerEnd,
     fidl_fuchsia_io as fio, fuchsia_zircon as zx,
     futures::lock::Mutex,
@@ -37,7 +37,7 @@ pub struct DefaultComponentCapabilityProvider {
 impl CapabilityProvider for DefaultComponentCapabilityProvider {
     async fn open(
         self: Box<Self>,
-        _task_scope: TaskScope,
+        _task_group: TaskGroup,
         flags: fio::OpenFlags,
         relative_path: PathBuf,
         server_end: &mut zx::Channel,
@@ -69,6 +69,8 @@ impl CapabilityProvider for DefaultComponentCapabilityProvider {
                 EventPayload::CapabilityRequested {
                     source_moniker: source.moniker.clone(),
                     name: self.name.to_string(),
+                    flags: flags,
+                    relative_path: relative_path.clone(),
                     capability: capability.clone(),
                 },
             );
@@ -106,7 +108,7 @@ pub struct NamespaceCapabilityProvider {
 impl CapabilityProvider for NamespaceCapabilityProvider {
     async fn open(
         self: Box<Self>,
-        _task_scope: TaskScope,
+        _task_group: TaskGroup,
         flags: fio::OpenFlags,
         relative_path: PathBuf,
         server_end: &mut zx::Channel,
@@ -139,7 +141,7 @@ pub struct DirectoryEntryCapabilityProvider {
 impl CapabilityProvider for DirectoryEntryCapabilityProvider {
     async fn open(
         self: Box<Self>,
-        _task_scope: TaskScope,
+        _task_group: TaskGroup,
         flags: fio::OpenFlags,
         relative_path: PathBuf,
         server_end: &mut zx::Channel,

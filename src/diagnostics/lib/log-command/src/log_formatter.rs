@@ -5,14 +5,14 @@
 use crate::{
     filter::LogFilterCriteria,
     log_socket_stream::{JsonDeserializeError, LogsDataStream},
-    DetailedDateTime,
+    DetailedDateTime, LogCommand, TimeFormat,
 };
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{Local, TimeZone};
 use diagnostics_data::{
     LogTextColor, LogTextDisplayOptions, LogTextPresenter, LogTimeDisplayFormat, LogsData,
-    Timestamp,
+    Timestamp, Timezone,
 };
 use ffx_writer::ToolIO;
 use futures_util::StreamExt;
@@ -161,11 +161,13 @@ pub struct DeviceOrLocalTimestamp {
 impl DeviceOrLocalTimestamp {
     /// Creates a DeviceOrLocalTimestamp from a real-time date/time or
     /// a monotonic date/time. Returns None if both rtc and monotonic are None.
+    /// Returns None if the timestamp is "now".
     pub fn new(
         rtc: Option<&DetailedDateTime>,
         monotonic: Option<&Duration>,
     ) -> Option<DeviceOrLocalTimestamp> {
         rtc.as_ref()
+            .filter(|value| !value.is_now)
             .map(|value| DeviceOrLocalTimestamp {
                 timestamp: Timestamp::from(value.naive_utc().timestamp_nanos()),
                 is_monotonic: false,
@@ -184,8 +186,6 @@ impl DeviceOrLocalTimestamp {
 pub struct LogFormatterOptions {
     /// Text display options
     pub display: Option<LogTextDisplayOptions>,
-    /// If true, highlights spam, if false, filters it out.
-    pub highlight_spam: bool,
     /// Only display logs since the specified time.
     pub since: Option<DeviceOrLocalTimestamp>,
     /// Only display logs until the specified time.
@@ -198,21 +198,11 @@ impl Default for LogFormatterOptions {
     fn default() -> Self {
         LogFormatterOptions {
             display: Some(Default::default()),
-            highlight_spam: false,
             raw: false,
             since: None,
             until: None,
         }
     }
-}
-
-/// Trait used to filter spam from log messages. An implementation
-/// will check the file, line number, and message against a set of
-/// detection rules to determine if it is spam.
-pub trait LogSpamFilter {
-    /// Returns true if the message containing the given msg content
-    /// in the given file and line is considered to be spam.
-    fn is_spam(&self, file: Option<&str>, line: Option<u64>, msg: &str) -> bool;
 }
 
 /// Log formatter error
@@ -256,16 +246,11 @@ where
             return Ok(());
         }
 
-        let is_spam = self.filters.is_spam(&log_entry);
-
-        if (!self.options.highlight_spam && is_spam) || !self.filters.matches(&log_entry) {
+        if !self.filters.matches(&log_entry) {
             return Ok(());
         }
         match self.options.display {
-            Some(mut text_options) => {
-                if self.options.highlight_spam && is_spam {
-                    text_options.color = LogTextColor::Highlight;
-                }
+            Some(text_options) => {
                 let mut options_for_this_line_only = self.options.clone();
                 options_for_this_line_only.display = Some(text_options);
                 self.format_text_log(options_for_this_line_only, log_entry)?;
@@ -307,10 +292,6 @@ where
         debug_assert!(self.boot_ts_nanos.is_some());
         self.boot_ts_nanos.unwrap_or(0)
     }
-}
-
-pub enum ColorOverride {
-    SpamHighlight,
 }
 
 // TODO(https://fxbug.dev/129280): Add unit tests once this is possible
@@ -359,6 +340,58 @@ where
         Self { filters, writer, options, boot_ts_nanos: None }
     }
 
+    /// Creates a new DefaultLogFormatter from command-line arguments.
+    pub fn new_from_args(cmd: &LogCommand, writer: W) -> Self {
+        let is_json = writer.is_machine();
+        let formatter = DefaultLogFormatter::new(
+            LogFilterCriteria::try_from(cmd).unwrap(),
+            writer,
+            LogFormatterOptions {
+                display: if is_json {
+                    None
+                } else {
+                    Some(LogTextDisplayOptions {
+                        show_tags: !cmd.hide_tags,
+                        color: if cmd.no_color {
+                            LogTextColor::None
+                        } else {
+                            LogTextColor::BySeverity
+                        },
+                        show_metadata: cmd.show_metadata,
+                        time_format: match cmd.clock {
+                            TimeFormat::Monotonic => LogTimeDisplayFormat::Original,
+                            TimeFormat::Local => LogTimeDisplayFormat::WallTime {
+                                tz: Timezone::Local,
+                                // This will receive a correct value when logging actually starts,
+                                // see `set_boot_timestamp()` method on the log formatter.
+                                offset: 0,
+                            },
+                            TimeFormat::Utc => LogTimeDisplayFormat::WallTime {
+                                tz: Timezone::Utc,
+                                // This will receive a correct value when logging actually starts,
+                                // see `set_boot_timestamp()` method on the log formatter.
+                                offset: 0,
+                            },
+                        },
+                        show_file: !cmd.hide_file,
+                        show_full_moniker: cmd.show_full_moniker,
+                        ..Default::default()
+                    })
+                },
+                raw: cmd.raw,
+                since: DeviceOrLocalTimestamp::new(
+                    cmd.since.as_ref(),
+                    cmd.since_monotonic.as_ref(),
+                ),
+                until: DeviceOrLocalTimestamp::new(
+                    cmd.until.as_ref(),
+                    cmd.until_monotonic.as_ref(),
+                ),
+            },
+        );
+        formatter
+    }
+
     fn filter_by_timestamp(
         &self,
         log_entry: &LogEntry,
@@ -398,6 +431,9 @@ where
                 writeln!(self.writer, "{}", LogTextPresenter::new(&data, text_options))?;
             }
             LogEntry { data: LogData::SymbolizedTargetLog(mut data, symbolized), .. } => {
+                if !options.raw && symbolized.is_empty() {
+                    return Ok(());
+                }
                 if !options.raw {
                     *data.msg_mut().expect(
                         "if a symbolized message is provided then the payload has a message",
@@ -445,10 +481,11 @@ pub trait LogFormatter {
 
 #[cfg(test)]
 mod test {
+    use crate::parse_time;
     use assert_matches::assert_matches;
     use diagnostics_data::{LogsDataBuilder, Severity, Timezone};
     use ffx_writer::{Format, MachineWriter, TestBuffers};
-    use std::{cell::Cell, time::Duration};
+    use std::time::Duration;
 
     use super::*;
 
@@ -519,17 +556,6 @@ mod test {
         let mut formatter = DefaultLogFormatter::new(LogFilterCriteria::default(), output, options);
         formatter.set_boot_timestamp(1234);
         assert_eq!(formatter.get_boot_timestamp(), 1234);
-    }
-
-    struct AlternatingSpamFilter {
-        last_message_was_spam: Cell<bool>,
-    }
-    impl LogSpamFilter for AlternatingSpamFilter {
-        fn is_spam(&self, _file: Option<&str>, _line: Option<u64>, _msg: &str) -> bool {
-            let prev = self.last_message_was_spam.get();
-            self.last_message_was_spam.set(!prev);
-            prev
-        }
     }
 
     #[fuchsia::test]
@@ -784,7 +810,7 @@ mod test {
         formatter.push_log(log_entry()).await.unwrap();
         drop(formatter);
         assert_eq!(
-            buffers.stdout.clone().into_string(),
+            buffers.into_stdout_str(),
             "[1615535969.000000][1][2][some/moniker][tag1,tag2] WARN: message\n"
         );
     }
@@ -801,7 +827,7 @@ mod test {
         formatter.push_log(log_entry()).await.unwrap();
         drop(formatter);
         assert_eq!(
-            buffers.stdout.clone().into_string(),
+            buffers.into_stdout_str(),
             "[1615535969.000000][some/moniker][tag1,tag2] WARN: message\n"
         );
     }
@@ -817,7 +843,7 @@ mod test {
             formatter.push_log(log_entry()).await.unwrap();
         }
         assert_eq!(
-            serde_json::from_str::<LogEntry>(&buffers.stdout.clone().into_string()).unwrap(),
+            serde_json::from_str::<LogEntry>(&buffers.into_stdout_str()).unwrap(),
             log_entry()
         );
     }
@@ -833,9 +859,25 @@ mod test {
         formatter.push_log(entry).await.unwrap();
         drop(formatter);
         assert_eq!(
-            buffers.stdout.clone().into_string(),
+            buffers.into_stdout_str(),
             "[1615535969.000000][1][2][some/moniker][tag1,tag2] WARN: symbolized\n"
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_default_formatter_symbolized_log_message_with_empty_discarded() {
+        let buffers = TestBuffers::default();
+        let stdout = MachineWriter::<LogEntry>::new_test(None, &buffers);
+        let options = LogFormatterOptions::default();
+        let mut formatter = DefaultLogFormatter::new(LogFilterCriteria::default(), stdout, options);
+        let mut entry = log_entry();
+        entry.data = match entry.data.clone() {
+            LogData::TargetLog(data) => LogData::SymbolizedTargetLog(data, "".into()),
+            _ => unreachable!(),
+        };
+        formatter.push_log(entry).await.unwrap();
+        drop(formatter);
+        assert_eq!(buffers.into_stdout_str().is_empty(), true);
     }
 
     #[fuchsia::test]
@@ -848,10 +890,7 @@ mod test {
         entry.data = assert_matches!(entry.data.clone(), LogData::TargetLog(d)=>LogData::SymbolizedTargetLog(d, "symbolized".to_string()));
         formatter.push_log(entry.clone()).await.unwrap();
         drop(formatter);
-        assert_eq!(
-            serde_json::from_str::<LogEntry>(&buffers.stdout.clone().into_string()).unwrap(),
-            entry
-        );
+        assert_eq!(serde_json::from_str::<LogEntry>(&buffers.into_stdout_str()).unwrap(), entry);
     }
 
     #[fuchsia::test]
@@ -864,7 +903,7 @@ mod test {
         entry.data = assert_matches!(entry.data.clone(), LogData::TargetLog(d)=>LogData::SymbolizedTargetLog(d, "".to_string()));
         formatter.push_log(entry.clone()).await.unwrap();
         drop(formatter);
-        assert_eq!(buffers.stdout.clone().into_string().is_empty(), true);
+        assert_eq!(buffers.into_stdout_str().is_empty(), true);
     }
 
     #[fuchsia::test]
@@ -879,7 +918,7 @@ mod test {
         formatter.push_log(entry).await.unwrap();
         drop(formatter);
         assert_eq!(
-            buffers.stdout.clone().into_string(),
+            buffers.into_stdout_str(),
             format!("[1970-01-01 00:00:00.000][<ffx>]: {LOGGER_DISCONNECTED}\n")
         );
     }
@@ -956,54 +995,9 @@ mod test {
         assert_eq!(buffers.stdout.into_string(), "[00000.000000][1][2][ffx] INFO: Fuchsia\n");
     }
 
-    #[fuchsia::test]
-    async fn test_spam_list_applies_highlighting_only_to_spam_line() {
-        let options = LogFormatterOptions {
-            display: Some(Default::default()),
-            highlight_spam: true,
-            raw: false,
-            ..Default::default()
-        };
-
-        let mut filter = LogFilterCriteria::default();
-        filter.with_spam_filter(AlternatingSpamFilter { last_message_was_spam: Cell::new(false) });
-        let buffers = TestBuffers::default();
-        let output = MachineWriter::<LogEntry>::new_test(None, &buffers);
-        {
-            let mut formatter = DefaultLogFormatter::new(filter, output, options.clone());
-            formatter.push_log(log_entry()).await.unwrap();
-            formatter.push_log(log_entry()).await.unwrap();
-            formatter.push_log(log_entry()).await.unwrap();
-        }
-        assert_eq!(
-            buffers.stdout.into_string(),
-            "[1615535969.000000][1][2][some/moniker][tag1,tag2] WARN: message
-\u{1b}[38;5;11m[1615535969.000000][1][2][some/moniker][tag1,tag2] WARN: message\u{1b}[m
-[1615535969.000000][1][2][some/moniker][tag1,tag2] WARN: message\n",
-            "first message should be uncolored, second should be yellow, third should be uncolored"
-        );
-    }
-
-    #[fuchsia::test]
-    async fn test_spam_filter_filters_spam_if_highlighting_is_disabled() {
-        let options = LogFormatterOptions::default();
-
-        let mut filter = LogFilterCriteria::default();
-        filter.with_spam_filter(AlternatingSpamFilter { last_message_was_spam: Cell::new(false) });
-        let buffers = TestBuffers::default();
-        let output = MachineWriter::<LogEntry>::new_test(None, &buffers);
-        {
-            let mut formatter = DefaultLogFormatter::new(filter, output, options.clone());
-            formatter.push_log(log_entry()).await.unwrap();
-            formatter.push_log(log_entry()).await.unwrap();
-            formatter.push_log(log_entry()).await.unwrap();
-        }
-        assert_eq!(
-            buffers.stdout.into_string(),
-            "[1615535969.000000][1][2][some/moniker][tag1,tag2] WARN: message
-[1615535969.000000][1][2][some/moniker][tag1,tag2] WARN: message\n",
-            "should only get two messages"
-        );
+    #[test]
+    fn test_device_or_local_timestamp_returns_none_if_now_is_passed() {
+        assert_matches!(DeviceOrLocalTimestamp::new(Some(&parse_time("now").unwrap()), None), None);
     }
 
     #[fuchsia::test]
@@ -1018,7 +1012,7 @@ mod test {
         formatter.push_log(entry).await.unwrap();
         drop(formatter);
         assert_eq!(
-            buffers.stdout.clone().into_string(),
+            buffers.into_stdout_str(),
             "[1970-01-01 00:00:00.000][<ffx>]: logger started.\n"
         );
     }
@@ -1035,7 +1029,7 @@ mod test {
         formatter.push_log(entry).await.unwrap();
         drop(formatter);
         assert_eq!(
-            buffers.stdout.clone().into_string(),
+            buffers.into_stdout_str(),
             format!("[1970-01-01 00:00:00.000][<ffx>]: {MALFORMED_TARGET_LOG}Invalid log\n")
         );
     }

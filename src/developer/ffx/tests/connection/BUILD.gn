@@ -19,7 +19,8 @@ if (is_host) {
     deps = [
       "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust",
       "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
-      "//src/connectivity/overnet/lib/hoist",
+      "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
+      "//src/connectivity/overnet/lib/core",
       "//src/developer/ffx/config:lib",
       "//src/developer/ffx/daemon:lib",
       "//src/developer/ffx/lib/isolate:lib",
@@ -56,9 +57,11 @@ fuchsia_package("ffx_connection_test_components") {
 }
 
 group("tests") {
-  deps = [
-    ":ffx_connection_test($host_toolchain)",
-    ":ffx_connection_test_components($target_toolchain)",
-  ]
+  deps = [ ":ffx_connection_test_components($target_toolchain)" ]
+  testonly = true
+}
+
+group("e2e_tests") {
+  deps = [ ":ffx_connection_test($host_toolchain)" ]
   testonly = true
 }

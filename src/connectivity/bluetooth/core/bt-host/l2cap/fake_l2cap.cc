@@ -39,7 +39,7 @@ void FakeL2cap::TriggerLEConnectionParameterUpdate(
   link_data.le_conn_param_cb(params);
 }
 
-void FakeL2cap::ExpectOutboundL2capChannel(hci_spec::ConnectionHandle handle, l2cap::PSM psm,
+void FakeL2cap::ExpectOutboundL2capChannel(hci_spec::ConnectionHandle handle, l2cap::Psm psm,
                                            l2cap::ChannelId id, l2cap::ChannelId remote_id,
                                            l2cap::ChannelParameters params) {
   LinkData& link_data = GetLinkData(handle);
@@ -50,7 +50,7 @@ void FakeL2cap::ExpectOutboundL2capChannel(hci_spec::ConnectionHandle handle, l2
   link_data.expected_outbound_conns[psm].push(chan_data);
 }
 
-bool FakeL2cap::TriggerInboundL2capChannel(hci_spec::ConnectionHandle handle, l2cap::PSM psm,
+bool FakeL2cap::TriggerInboundL2capChannel(hci_spec::ConnectionHandle handle, l2cap::Psm psm,
                                            l2cap::ChannelId id, l2cap::ChannelId remote_id,
                                            uint16_t max_tx_sdu_size) {
   LinkData& link_data = ConnectedLinkData(handle);
@@ -63,10 +63,10 @@ bool FakeL2cap::TriggerInboundL2capChannel(hci_spec::ConnectionHandle handle, l2
 
   l2cap::ChannelCallback& cb = cb_iter->second.channel_cb;
   auto chan_params = cb_iter->second.channel_params;
-  auto mode = chan_params.mode.value_or(l2cap::ChannelMode::kBasic);
+  auto mode = chan_params.mode.value_or(l2cap::RetransmissionAndFlowControlMode::kBasic);
   auto max_rx_sdu_size = chan_params.max_rx_sdu_size.value_or(l2cap::kDefaultMTU);
   auto channel_info = l2cap::ChannelInfo::MakeBasicMode(max_rx_sdu_size, max_tx_sdu_size);
-  if (mode == l2cap::ChannelMode::kEnhancedRetransmission) {
+  if (mode == l2cap::RetransmissionAndFlowControlMode::kEnhancedRetransmission) {
     channel_info = l2cap::ChannelInfo::MakeEnhancedRetransmissionMode(
         max_rx_sdu_size, max_tx_sdu_size, /*n_frames_in_tx_window=*/kErtmNFramesInTxWindow,
         /*max_transmissions=*/kErtmMaxTransmissions,
@@ -96,11 +96,12 @@ void FakeL2cap::TriggerLinkError(hci_spec::ConnectionHandle handle) {
   link_data.link_error_cb();
 }
 
-void FakeL2cap::AddACLConnection(hci_spec::ConnectionHandle handle,
-                                 pw::bluetooth::emboss::ConnectionRole role,
-                                 l2cap::LinkErrorCallback link_error_cb,
-                                 l2cap::SecurityUpgradeCallback security_cb) {
-  RegisterInternal(handle, role, bt::LinkType::kACL, std::move(link_error_cb));
+ChannelManager::BrEdrFixedChannels FakeL2cap::AddACLConnection(
+    hci_spec::ConnectionHandle handle, pw::bluetooth::emboss::ConnectionRole role,
+    l2cap::LinkErrorCallback link_error_cb, l2cap::SecurityUpgradeCallback security_cb) {
+  LinkData* link = RegisterInternal(handle, role, bt::LinkType::kACL, std::move(link_error_cb));
+  auto smp = OpenFakeFixedChannel(link, l2cap::kSMPChannelId);
+  return BrEdrFixedChannels{.smp = std::move(smp)};
 }
 
 ChannelManager::LEFixedChannels FakeL2cap::AddLEConnection(
@@ -131,10 +132,15 @@ void FakeL2cap::RequestConnectionParameterUpdate(
                       ? connection_parameter_update_request_responder_(handle, params)
                       : true;
   // Simulate async response.
-  async::PostTask(async_get_default_dispatcher(), std::bind(std::move(request_cb), response));
+  heap_dispatcher_.Post([request_cb = std::move(request_cb), response](pw::async::Context /*ctx*/,
+                                                                       pw::Status status) {
+    if (status.ok()) {
+      request_cb(response);
+    }
+  });
 }
 
-void FakeL2cap::OpenL2capChannel(hci_spec::ConnectionHandle handle, l2cap::PSM psm,
+void FakeL2cap::OpenL2capChannel(hci_spec::ConnectionHandle handle, l2cap::Psm psm,
                                  l2cap::ChannelParameters params, l2cap::ChannelCallback cb) {
   LinkData& link_data = ConnectedLinkData(handle);
   auto psm_it = link_data.expected_outbound_conns.find(psm);
@@ -145,7 +151,7 @@ void FakeL2cap::OpenL2capChannel(hci_spec::ConnectionHandle handle, l2cap::PSM p
   auto chan_data = psm_it->second.front();
   psm_it->second.pop();
 
-  auto mode = params.mode.value_or(l2cap::ChannelMode::kBasic);
+  auto mode = params.mode.value_or(l2cap::RetransmissionAndFlowControlMode::kBasic);
   auto max_rx_sdu_size = params.max_rx_sdu_size.value_or(l2cap::kMaxMTU);
 
   BT_ASSERT_MSG(chan_data.params == params,
@@ -153,7 +159,7 @@ void FakeL2cap::OpenL2capChannel(hci_spec::ConnectionHandle handle, l2cap::PSM p
                 bt_str(chan_data.params), bt_str(params));
 
   auto channel_info = l2cap::ChannelInfo::MakeBasicMode(max_rx_sdu_size, l2cap::kDefaultMTU);
-  if (mode == l2cap::ChannelMode::kEnhancedRetransmission) {
+  if (mode == l2cap::RetransmissionAndFlowControlMode::kEnhancedRetransmission) {
     channel_info = l2cap::ChannelInfo::MakeEnhancedRetransmissionMode(
         max_rx_sdu_size, l2cap::kDefaultMTU, /*n_frames_in_tx_window=*/kErtmNFramesInTxWindow,
         /*max_transmissions=*/kErtmMaxTransmissions,
@@ -168,18 +174,22 @@ void FakeL2cap::OpenL2capChannel(hci_spec::ConnectionHandle handle, l2cap::PSM p
   }
 
   // Simulate async channel creation process.
-  async::PostTask(async_get_default_dispatcher(),
-                  [cb = std::move(cb), chan = std::move(chan)]() { cb(chan); });
+  heap_dispatcher_.Post(
+      [cb = std::move(cb), chan = std::move(chan)](pw::async::Context /*ctx*/, pw::Status status) {
+        if (status.ok()) {
+          cb(chan);
+        }
+      });
 }
 
-bool FakeL2cap::RegisterService(l2cap::PSM psm, l2cap::ChannelParameters params,
+bool FakeL2cap::RegisterService(l2cap::Psm psm, l2cap::ChannelParameters params,
                                 l2cap::ChannelCallback channel_callback) {
   BT_DEBUG_ASSERT(registered_services_.count(psm) == 0);
   registered_services_.emplace(psm, ServiceInfo(params, std::move(channel_callback)));
   return true;
 }
 
-void FakeL2cap::UnregisterService(l2cap::PSM psm) { registered_services_.erase(psm); }
+void FakeL2cap::UnregisterService(l2cap::Psm psm) { registered_services_.erase(psm); }
 
 FakeL2cap::~FakeL2cap() {
   for (auto& link_it : links_) {

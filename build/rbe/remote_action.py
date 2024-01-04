@@ -13,6 +13,7 @@ Usage:
 
 import argparse
 import difflib
+import errno
 import filecmp
 import hashlib
 import multiprocessing
@@ -29,7 +30,16 @@ import remotetool
 import textpb
 
 from pathlib import Path
-from typing import AbstractSet, Any, Callable, Dict, Iterable, Optional, Sequence, Tuple
+from typing import (
+    AbstractSet,
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    Optional,
+    Sequence,
+    Tuple,
+)
 
 _SCRIPT_BASENAME = Path(__file__).name
 
@@ -41,19 +51,19 @@ PROJECT_ROOT_REL = cl_utils.relpath(PROJECT_ROOT, start=os.curdir)
 
 # This is a known path where remote execution occurs.
 # This should only be used for workarounds as a last resort.
-_REMOTE_PROJECT_ROOT = Path('/b/f/w')
+_REMOTE_PROJECT_ROOT = Path("/b/f/w")
 
 # Extended attributes can be used to tell reproxy (filemetadata cache)
 # that an artifact already exists in the CAS.
 # TODO(http://fxbug.dev/123178): use 'xattr' for greater portability.
-_HAVE_XATTR = hasattr(os, 'setxattr')
+_HAVE_XATTR = hasattr(os, "setxattr")
 
 # Wrapper script to capture remote stdout/stderr, co-located with this script.
-_REMOTE_LOG_SCRIPT = Path('build', 'rbe', 'log-it.sh')
+_REMOTE_LOG_SCRIPT = Path("build", "rbe", "log-it.sh")
 
-_DETAIL_DIFF_SCRIPT = Path('build', 'rbe', 'detail-diff.sh')
+_DETAIL_DIFF_SCRIPT = Path("build", "rbe", "detail-diff.sh")
 
-_REPROXY_CFG = Path('build', 'rbe', 'fuchsia-reproxy.cfg')
+_REPROXY_CFG = Path("build", "rbe", "fuchsia-reproxy.cfg")
 
 _RECLIENT_ERROR_STATUS = 35
 _RBE_SERVER_ERROR_STATUS = 45
@@ -67,7 +77,7 @@ _RETRIABLE_REWRAPPER_STATUSES = {
 
 
 def msg(text: str):
-    print(f'[{_SCRIPT_BASENAME}] {text}')
+    print(f"[{_SCRIPT_BASENAME}] {text}")
 
 
 def _path_or_default(path_or_none, default: Path) -> Path:
@@ -82,7 +92,7 @@ def _path_or_default(path_or_none, default: Path) -> Path:
 
 def _write_lines_to_file(path: Path, lines: Iterable[str]):
     path.parent.mkdir(parents=True, exist_ok=True)
-    contents = '\n'.join(lines) + '\n'
+    contents = "\n".join(lines) + "\n"
     path.write_text(contents)
 
 
@@ -93,12 +103,11 @@ def _files_match(file1: Path, file2: Path) -> bool:
 
 
 def _detail_diff(
-        file1: Path,
-        file2: Path,
-        project_root_rel: Path = None) -> cl_utils.SubprocessResult:
+    file1: Path, file2: Path, project_root_rel: Path = None
+) -> cl_utils.SubprocessResult:
     command = [
-        _path_or_default(project_root_rel, PROJECT_ROOT_REL) /
-        _DETAIL_DIFF_SCRIPT,
+        _path_or_default(project_root_rel, PROJECT_ROOT_REL)
+        / _DETAIL_DIFF_SCRIPT,
         file1,
         file2,
     ]
@@ -125,10 +134,11 @@ def _detail_diff_filtered(
         original1 file name.
       project_root_rel: path to project root
     """
-    filtered1 = Path(str(file1) + '.filtered')
-    filtered2 = Path(str(file2) + '.filtered')
+    filtered1 = Path(str(file1) + ".filtered")
+    filtered2 = Path(str(file2) + ".filtered")
     if maybe_transform_pair is not None and maybe_transform_pair(
-            file1, filtered1, file2, filtered2):
+        file1, filtered1, file2, filtered2
+    ):
         # Compare the filtered views of the files.
         return _detail_diff(filtered1, filtered2, project_root_rel)
 
@@ -138,7 +148,8 @@ def _detail_diff_filtered(
 def _text_diff(file1: Path, file2: Path) -> cl_utils.SubprocessResult:
     """Capture textual differences to the result."""
     return cl_utils.subprocess_call(
-        ['diff', '-u', str(file1), str(file2)], quiet=True)
+        ["diff", "-u", str(file1), str(file2)], quiet=True
+    )
 
 
 def _files_under_dir(path: Path) -> Iterable[Path]:
@@ -146,7 +157,8 @@ def _files_under_dir(path: Path) -> Iterable[Path]:
     yield from (
         Path(root, file).relative_to(path)
         for root, unused_dirs, files in os.walk(str(path))
-        for file in files)
+        for file in files
+    )
 
 
 def _common_files_under_dirs(path1: Path, path2: Path) -> AbstractSet[Path]:
@@ -156,7 +168,8 @@ def _common_files_under_dirs(path1: Path, path2: Path) -> AbstractSet[Path]:
 
 
 def _expand_common_files_between_dirs(
-        path_pairs: Iterable[Tuple[Path, Path]]) -> Iterable[Tuple[Path, Path]]:
+    path_pairs: Iterable[Tuple[Path, Path]]
+) -> Iterable[Tuple[Path, Path]]:
     """Expands two directories into paths to their common files.
 
     Args:
@@ -184,9 +197,9 @@ def resolved_shlibs_from_ldd(lines: Iterable[str]) -> Iterable[Path]:
       /home/my_project/tools/rust/bin/../lib/librustc_driver.so
     """
     for line in lines:
-        lib, sep, resolved = line.strip().partition('=>')
-        if sep == '=>':
-            yield Path(resolved.strip().split(' ')[0])
+        lib, sep, resolved = line.strip().partition("=>")
+        if sep == "=>":
+            yield Path(resolved.strip().split(" ")[0])
 
 
 def host_tool_shlibs(executable: Path) -> Iterable[Path]:
@@ -200,10 +213,12 @@ def host_tool_shlibs(executable: Path) -> Iterable[Path]:
     # TODO: do this once in the entire build, as early as GN time
     # TODO: support Mac OS using `otool -L`
     ldd_output = subprocess.run(
-        ['ldd', str(executable)], capture_output=True, text=True)
+        ["ldd", str(executable)], capture_output=True, text=True
+    )
     if ldd_output.returncode != 0:
         raise Exception(
-            f"Failed to determine shared libraries of '{executable}'.")
+            f"Failed to determine shared libraries of '{executable}'."
+        )
 
     yield from resolved_shlibs_from_ldd(ldd_output.stdout.splitlines())
 
@@ -222,7 +237,7 @@ def host_tool_nonsystem_shlibs(executable: Path) -> Iterable[Path]:
       paths to non-system shared libraries
     """
     for lib in host_tool_shlibs(executable):
-        if any(str(lib).startswith(prefix) for prefix in ('/usr/lib', '/lib')):
+        if any(str(lib).startswith(prefix) for prefix in ("/usr/lib", "/lib")):
             continue  # filter out system libs
         yield lib
 
@@ -232,7 +247,8 @@ def relativize_to_exec_root(path: Path, start: Path = None) -> Path:
 
 
 def _reclient_canonical_working_dir_components(
-        subdir_components: Iterable[str]) -> Iterable[str]:
+    subdir_components: Iterable[str],
+) -> Iterable[str]:
     """Computes the path used by rewrapper --canonicalize_working_dir=true.
 
     The exact values returned are an implementation detail of reclient
@@ -248,17 +264,18 @@ def _reclient_canonical_working_dir_components(
       Replacement path components like ('set_by_reclient', 'a', ...)
     """
     first = next(subdir_components, None)
-    if first is None or first == '':
+    if first is None or first == "":
         return  # no components
-    yield 'set_by_reclient'
+    yield "set_by_reclient"
     for _ in subdir_components:
-        yield 'a'
+        yield "a"
 
 
 def reclient_canonical_working_dir(build_subdir: Path) -> Path:
     new_components = list(
-        _reclient_canonical_working_dir_components(iter(build_subdir.parts)))
-    return Path(*new_components) if new_components else Path('')
+        _reclient_canonical_working_dir_components(iter(build_subdir.parts))
+    )
+    return Path(*new_components) if new_components else Path("")
 
 
 def _file_lines_matching(path: Path, substr: str) -> Iterable[str]:
@@ -269,21 +286,26 @@ def _file_lines_matching(path: Path, substr: str) -> Iterable[str]:
 
 
 def _transform_file_by_lines(
-        src: Path, dest: Path, line_transform: Callable[[str], str]):
+    src: Path, dest: Path, line_transform: Callable[[str], str]
+):
     with open(src) as f:
-        new_lines = [line_transform(line.rstrip('\n')) for line in f]
+        new_lines = [line_transform(line.rstrip("\n")) for line in f]
 
     _write_lines_to_file(dest, new_lines)
 
 
 def rewrite_file_by_lines_in_place(
-        path: Path, line_transform: Callable[[str], str]):
+    path: Path, line_transform: Callable[[str], str]
+):
     _transform_file_by_lines(path, path, line_transform)
 
 
 def rewrite_depfile(
-        dep_file: Path, transform: Callable[[str], str], output: Path = None):
-    """Relativize absolute paths in a depfile.
+    dep_file: Path, transform: Callable[[str], str], output: Path = None
+):
+    """Apply generic path transformations to a depfile.
+
+    e.g. Relativize absolute paths.
 
     Args:
       dep_file: depfile to transform
@@ -344,16 +366,15 @@ def _rewrapper_log_dir() -> Optional[str]:
 
 def _remove_prefix(text: str, prefix: str) -> str:
     # Like string.removeprefix() in Python 3.9+
-    return text[len(prefix):] if text.startswith(prefix) else text
+    return text[len(prefix) :] if text.startswith(prefix) else text
 
 
 def _remove_suffix(text: str, suffix: str) -> str:
     # Like string.removesuffix() in Python 3.9+
-    return text[:-len(suffix)] if text.endswith(suffix) else text
+    return text[: -len(suffix)] if text.endswith(suffix) else text
 
 
 class ReproxyLogEntry(object):
-
     def __init__(self, parsed_form: Dict[str, Any]):
         self._raw = parsed_form
 
@@ -392,7 +413,8 @@ class ReproxyLogEntry(object):
         return self._raw["completion_status"][0].text
 
     def make_download_stub_info(
-            self, path: Path, build_id: str) -> 'DownloadStubInfo':
+        self, path: Path, build_id: str
+    ) -> Optional["DownloadStubInfo"]:
         type = "file"
         if path in self.output_file_digests:
             digest = self.output_file_digests[path]
@@ -400,7 +422,11 @@ class ReproxyLogEntry(object):
             digest = self.output_directory_digests[path]
             type = "dir"
         else:
-            raise KeyError(f'{path} not found as an output file or directory')
+            # Named outputs are not required to exist remotely,
+            # for example, crash-report dirs are only created under certain
+            # conditions.  re-client treats all outputs as optional,
+            # and does not consider missing outputs an error.
+            return None
         return DownloadStubInfo(
             path=path,
             type=type,
@@ -414,7 +440,7 @@ class ReproxyLogEntry(object):
         files: Iterable[Path],
         dirs: Iterable[Path],
         build_id: str,
-    ) -> Dict[Path, 'DownloadStubInfo']:
+    ) -> Dict[Path, "DownloadStubInfo"]:
         """Construct a map of paths to DownloadStubInfo.
 
         Args:
@@ -426,29 +452,30 @@ class ReproxyLogEntry(object):
           Dictionary of paths to their stubs objects.
         """
         stubs = dict()
-        stubs.update(
-            {
-                f: self.make_download_stub_info(
-                    path=f,
-                    build_id=build_id,
-                ) for f in files
-            })
-        stubs.update(
-            {
-                d: self.make_download_stub_info(
-                    path=d,
-                    build_id=build_id,
-                ) for d in dirs
-            })
+        for f in files:
+            stub_info = self.make_download_stub_info(
+                path=f,
+                build_id=build_id,
+            )
+            if stub_info is not None:
+                stubs[f] = stub_info
+
+        for d in dirs:
+            stub_info = self.make_download_stub_info(
+                path=d,
+                build_id=build_id,
+            )
+            if stub_info is not None:
+                stubs[d] = stub_info
         return stubs
 
     @staticmethod
-    def parse_action_log(log: Path) -> 'ReproxyLogEntry':
+    def parse_action_log(log: Path) -> "ReproxyLogEntry":
         with open(log) as f:
             return ReproxyLogEntry._parse_lines(f.readlines())
 
     @staticmethod
-    def _parse_lines(lines: Iterable[str]) -> 'ReproxyLogEntry':
+    def _parse_lines(lines: Iterable[str]) -> "ReproxyLogEntry":
         """Parse data from a .rrpl (reproxy log) file.
 
         Args:
@@ -465,7 +492,7 @@ def _diagnose_fail_to_dial(line: str):
     if "Fail to dial" in line:
         print(line)
         msg(
-            f'''"Fail to dial" could indicate that reproxy is not running.
+            f""""Fail to dial" could indicate that reproxy is not running.
 `reproxy` is launched automatically by `fx build`.
 If you are manually running a remote-wrapped build step,
 you may need to wrap your build command with:
@@ -473,17 +500,22 @@ you may need to wrap your build command with:
   {fuchsia.REPROXY_WRAP} -- command...
 
 'Proxy started successfully.' indicates that reproxy is running.
-''')
+"""
+        )
 
 
 def _diagnose_rbe_permissions(line: str):
     # Check for permissions issues.
-    if "Error connecting to remote execution client: rpc error: code = PermissionDenied" in line:
+    if (
+        "Error connecting to remote execution client: rpc error: code = PermissionDenied"
+        in line
+    ):
         print(line)
         msg(
-            f'''You might not have permssion to access the RBE instance.
+            f"""You might not have permssion to access the RBE instance.
 Contact fuchsia-build-team@google.com for support.
-''')
+"""
+        )
 
 
 _REPROXY_ERROR_MISSING_FILE_RE = re.compile(
@@ -509,9 +541,9 @@ def _diagnose_missing_input_file(line: str):
 
 def _diagnose_reproxy_error_line(line: str):
     for check in (
-            _diagnose_fail_to_dial,
-            _diagnose_rbe_permissions,
-            _diagnose_missing_input_file,
+        _diagnose_fail_to_dial,
+        _diagnose_rbe_permissions,
+        _diagnose_missing_input_file,
     ):
         check(line)
 
@@ -576,13 +608,13 @@ def analyze_rbe_logs(rewrapper_pid: int, action_log: Path = None):
     # TODO: further analyze remote failures in --action_log (.rrpl)
 
 
-_RBE_DOWNLOAD_STUB_IDENTIFIER = '# RBE download stub'
-_RBE_DOWNLOAD_STUB_HELP = '# run //build/rbe/dlwrap.py on this file to download'
-_RBE_DOWNLOAD_STUB_SUFFIX = '.dl-stub'
+_RBE_DOWNLOAD_STUB_IDENTIFIER = "# RBE download stub"
+_RBE_DOWNLOAD_STUB_HELP = "# run //build/rbe/dlwrap.py on this file to download"
+_RBE_DOWNLOAD_STUB_SUFFIX = ".dl-stub"
 
 # Filesystem extended attribute for digests.
 # This should match the 'xattr_digest' value in build/rbe/fuchsia-reproxy.cfg.
-_RBE_XATTR_NAME = 'user.fuchsia.rbe.digest.sha256'
+_RBE_XATTR_NAME = "user.fuchsia.rbe.digest.sha256"
 
 
 def download_stub_backup_location(path: Path) -> Path:
@@ -593,25 +625,29 @@ def get_blob_digest(path: Path) -> str:
     contents = path.read_bytes()  # could be large
     readable_hash = hashlib.sha256(contents).hexdigest()
     length = len(contents)
-    return f'{readable_hash}/{length}'
+    return f"{readable_hash}/{length}"
 
 
 class DownloadStubFormatError(Exception):
-
     def __init__(self, message: str):
         super().__init__(message)
 
 
 def download_temp_location(dest: Path) -> Path:
-    return Path(str(dest) + '.download-tmp')
+    return Path(str(dest) + ".download-tmp")
 
 
 class DownloadStubInfo(object):
     """Contains infomation about a remotely stored artifact."""
 
     def __init__(
-            self, path: Path, type: str, blob_digest: str, action_digest: str,
-            build_id: str):
+        self,
+        path: Path,
+        type: str,
+        blob_digest: str,
+        action_digest: str,
+        build_id: str,
+    ):
         """Private raw constructor.
 
         Use public methods like read_from_file().
@@ -620,7 +656,7 @@ class DownloadStubInfo(object):
         assert type in {"file", "dir"}
         self._type = type
         self._blob_digest = blob_digest
-        assert '/' in blob_digest, 'Expecting SHA256SUM/SIZE'
+        assert "/" in blob_digest, "Expecting SHA256SUM/SIZE"
         self._action_digest = action_digest
         self._build_id = build_id
 
@@ -637,25 +673,27 @@ class DownloadStubInfo(object):
         return self._blob_digest
 
     def __eq__(self, other) -> bool:
-        return self.path == other.path and \
-            self.type == other.type and \
-            self.blob_digest == other.blob_digest and \
-            self._build_id == other._build_id
+        return (
+            self.path == other.path
+            and self.type == other.type
+            and self.blob_digest == other.blob_digest
+            and self._build_id == other._build_id
+        )
 
     def _write(self, output_abspath: Path):
         """Writes download stub contents to file.
 
         This unconditionally overwrites any existing stub file.
         """
-        assert output_abspath.is_absolute(), f'got: {output_abspath}'
+        assert output_abspath.is_absolute(), f"got: {output_abspath}"
         lines = [
             _RBE_DOWNLOAD_STUB_IDENTIFIER,
             _RBE_DOWNLOAD_STUB_HELP,
-            f'path={self.path}',
-            f'type={self.type}',
-            f'blob_digest={self.blob_digest}',  # hash/size
-            f'action_digest={self._action_digest}',
-            f'build_id={self._build_id}',
+            f"path={self.path}",
+            f"type={self.type}",
+            f"blob_digest={self.blob_digest}",  # hash/size
+            f"action_digest={self._action_digest}",
+            f"build_id={self._build_id}",
         ]
         _write_lines_to_file(output_abspath, lines)
 
@@ -685,19 +723,19 @@ class DownloadStubInfo(object):
             )
 
     @staticmethod
-    def read_from_file(stub: Path) -> 'DownloadStubInfo':
-
+    def read_from_file(stub: Path) -> "DownloadStubInfo":
         with open(stub) as f:
             first = f.readline()
             if first.rstrip() != _RBE_DOWNLOAD_STUB_IDENTIFIER:
                 raise DownloadStubFormatError(
-                    f'File {stub} is not a download stub.')
+                    f"File {stub} is not a download stub."
+                )
             lines = f.readlines()  # read the remainder
 
         variables = {}
         for line in lines:
-            key, sep, value = line.partition('=')
-            if sep != '=':
+            key, sep, value = line.partition("=")
+            if sep != "=":
                 continue
             variables[key] = value.rstrip()  # without trailing '\n'
 
@@ -710,10 +748,11 @@ class DownloadStubInfo(object):
         )
 
     def download(
-            self,
-            downloader: remotetool.RemoteTool,
-            working_dir_abs: Path,
-            dest: Path = None) -> cl_utils.SubprocessResult:
+        self,
+        downloader: remotetool.RemoteTool,
+        working_dir_abs: Path,
+        dest: Path = None,
+    ) -> cl_utils.SubprocessResult:
         """Retrieves the file or dir referenced by the stub.
 
         Reads the stub info from file.
@@ -759,7 +798,7 @@ class DownloadStubInfo(object):
 
 
 def _file_starts_with(path: Path, text: str) -> bool:
-    with open(path, 'rb') as f:
+    with open(path, "rb") as f:
         # read only a small number of bytes to compare
         return os.pread(f.fileno(), len(text), 0) == text.encode()
 
@@ -770,6 +809,16 @@ def is_download_stub_file(path: Path) -> bool:
         return _RBE_XATTR_NAME in os.listxattr(path)
     else:
         return _file_starts_with(path, _RBE_DOWNLOAD_STUB_IDENTIFIER)
+
+
+def paths_to_download_stubs(
+    paths: Iterable[Path],
+) -> Sequence[DownloadStubInfo]:
+    return [
+        DownloadStubInfo.read_from_file(path)
+        for path in paths
+        if is_download_stub_file(path)
+    ]
 
 
 def undownload(path: Path) -> bool:
@@ -790,8 +839,8 @@ def undownload(path: Path) -> bool:
 
 
 def download_from_stub(
-        stub: Path, downloader: remotetool.RemoteTool,
-        working_dir_abs: Path) -> cl_utils.SubprocessResult:
+    stub: Path, downloader: remotetool.RemoteTool, working_dir_abs: Path
+) -> cl_utils.SubprocessResult:
     """Possibly downloads a file over a stub link.
 
     This interface is suitable for external programs to
@@ -808,11 +857,11 @@ def download_from_stub(
     """
     # Use lock file to safely handle potentially concurrent
     # download requests to the same artifact.
-    lock_file = Path(str(stub) + '.dl-lock')
+    lock_file = Path(str(stub) + ".dl-lock")
     with cl_utils.BlockingFileLock(lock_file) as lock:
         ok_result = cl_utils.SubprocessResult(0)
         if not stub.exists():
-            msg(f'Ignoring request to download nonexistent stub: {stub}')
+            msg(f"Ignoring request to download nonexistent stub: {stub}")
             return ok_result
 
         # If there are concurrent requests to download the same stub,
@@ -932,7 +981,7 @@ class RemoteAction(object):
         self._check_determinism = check_determinism
         self._determinism_attempts = determinism_attempts
         self._miscomparison_export_dir = miscomparison_export_dir
-        self._options = (options or [])
+        self._options = options or []
         self._post_remote_run_success_action = post_remote_run_success_action
         self._remote_debug_command = remote_debug_command or []
         self._always_download = always_download or []
@@ -947,11 +996,15 @@ class RemoteAction(object):
         # circumstances that require them to be different.  It is the caller's
         # responsibility to ensure that they produce consistent results
         # (which can be verified with --compare [compare_with_local]).
-        self._local_only_command = local_only_command or self._remote_only_command
+        self._local_only_command = (
+            local_only_command or self._remote_only_command
+        )
 
         # Detect some known rewrapper options
-        self._rewrapper_known_options, _ = _REWRAPPER_ARG_PARSER.parse_known_args(
-            self._options)
+        (
+            self._rewrapper_known_options,
+            _,
+        ) = _REWRAPPER_ARG_PARSER.parse_known_args(self._options)
 
         # Inputs and outputs parameters are relative to current working dir,
         # but they will be relativized to exec_root for rewrapper.
@@ -1014,14 +1067,14 @@ class RemoteAction(object):
         if self._output_files:
             return str(self._output_files[0])
         else:  # pick something arbitrary, but deterministic
-            return 'rbe-action-output'
+            return "rbe-action-output"
 
     def _name_remote_log(self, remote_log: str) -> Path:
-        if remote_log == '<AUTO>':
-            return Path(self._default_auxiliary_file_basename + '.remote-log')
+        if remote_log == "<AUTO>":
+            return Path(self._default_auxiliary_file_basename + ".remote-log")
 
         if remote_log:
-            return Path(remote_log + '.remote-log')
+            return Path(remote_log + ".remote-log")
 
         return None
 
@@ -1031,16 +1084,16 @@ class RemoteAction(object):
 
     @property
     def _fsatrace_local_trace(self) -> Path:
-        return Path(self._default_auxiliary_file_basename + '.local-fsatrace')
+        return Path(self._default_auxiliary_file_basename + ".local-fsatrace")
 
     @property
     def _fsatrace_remote_trace(self) -> Path:
-        return Path(self._default_auxiliary_file_basename + '.remote-fsatrace')
+        return Path(self._default_auxiliary_file_basename + ".remote-fsatrace")
 
     @property
     def _fsatrace_so(self) -> Path:
         # fsatrace needs the corresponding .so to work
-        return self._fsatrace_path.with_suffix('.so')
+        return self._fsatrace_path.with_suffix(".so")
 
     @property
     def _action_log(self) -> Path:
@@ -1049,7 +1102,7 @@ class RemoteAction(object):
         # The information contained in this log is the same,
         # but is much easier to find than in the cumulative log.
         # The non-reduced .rpl format is also acceptable.
-        return Path(self._default_auxiliary_file_basename + '.rrpl')
+        return Path(self._default_auxiliary_file_basename + ".rrpl")
 
     @property
     def compare_with_local(self) -> bool:
@@ -1070,12 +1123,12 @@ class RemoteAction(object):
         if self._local_only_command == self._remote_only_command:
             return  # no differences to show
 
-        print('local vs. remote command differences:')
+        print("local vs. remote command differences:")
         diffs = difflib.unified_diff(
-            [tok + '\n' for tok in self.local_only_command],
-            [tok + '\n' for tok in self.remote_only_command],
-            fromfile='local.command',
-            tofile='remote.command',
+            [tok + "\n" for tok in self.local_only_command],
+            [tok + "\n" for tok in self.remote_only_command],
+            fromfile="local.command",
+            tofile="remote.command",
         )
         sys.stdout.writelines(diffs)
 
@@ -1085,11 +1138,11 @@ class RemoteAction(object):
 
     def _generate_options(self) -> Iterable[str]:
         if self.config:
-            yield '--cfg'
+            yield "--cfg"
             yield str(self.config)
 
         if self.exec_strategy:
-            yield f'--exec_strategy={self.exec_strategy}'
+            yield f"--exec_strategy={self.exec_strategy}"
 
         yield from self._options
 
@@ -1100,7 +1153,7 @@ class RemoteAction(object):
     @property
     def preserve_unchanged_output_mtime(self) -> bool:
         """If true, local outputs that already match remote results will be untouched."""
-        return '--preserve_unchanged_output_mtime' in self._options
+        return "--preserve_unchanged_output_mtime" in self._options
 
     @property
     def canonicalize_working_dir(self) -> Optional[bool]:
@@ -1117,6 +1170,10 @@ class RemoteAction(object):
     @property
     def working_dir(self) -> Path:  # absolute
         return self._working_dir
+
+    @property
+    def remote_exec_root(self) -> Path:  # absolute
+        return _REMOTE_PROJECT_ROOT
 
     @property
     def remote_working_dir(self) -> Path:  # absolute
@@ -1146,10 +1203,12 @@ class RemoteAction(object):
 
     def _relativize_path_to_exec_root(self, path: Path) -> Path:
         return relativize_to_exec_root(
-            self.working_dir / path, start=self.exec_root)
+            self.working_dir / path, start=self.exec_root
+        )
 
-    def _relativize_paths_to_exec_root(self,
-                                       paths: Sequence[Path]) -> Sequence[Path]:
+    def _relativize_paths_to_exec_root(
+        self, paths: Sequence[Path]
+    ) -> Sequence[Path]:
         return [self._relativize_path_to_exec_root(path) for path in paths]
 
     @property
@@ -1182,7 +1241,8 @@ class RemoteAction(object):
     def inputs_relative_to_working_dir(self) -> Sequence[Path]:
         """Combines files from --inputs and --input_list_paths."""
         return self._inputs + list(
-            cl_utils.expand_paths_from_files(self.input_list_paths))
+            cl_utils.expand_paths_from_files(self.input_list_paths)
+        )
 
     @property
     def output_files_relative_to_working_dir(self) -> Sequence[Path]:
@@ -1195,22 +1255,26 @@ class RemoteAction(object):
     @property
     def inputs_relative_to_project_root(self) -> Sequence[Path]:
         return self._relativize_paths_to_exec_root(
-            self.inputs_relative_to_working_dir)
+            self.inputs_relative_to_working_dir
+        )
 
     @property
     def output_files_relative_to_project_root(self) -> Sequence[Path]:
         return self._relativize_paths_to_exec_root(
-            self.output_files_relative_to_working_dir)
+            self.output_files_relative_to_working_dir
+        )
 
     @property
     def output_dirs_relative_to_project_root(self) -> Sequence[Path]:
         return self._relativize_paths_to_exec_root(
-            self.output_dirs_relative_to_working_dir)
+            self.output_dirs_relative_to_working_dir
+        )
 
     def _generated_inputs_list_file(self) -> Path:
         """This file is generated with a complete list of inputs."""
         inputs_list_file = Path(
-            self._default_auxiliary_file_basename + '.inputs')
+            self._default_auxiliary_file_basename + ".inputs"
+        )
         _write_lines_to_file(
             inputs_list_file,
             (str(x) for x in self.inputs_relative_to_project_root),
@@ -1240,39 +1304,42 @@ class RemoteAction(object):
         # outputs (files and dirs) need to be relative to the exec_root,
         # even as we run from inside the build_dir under exec_root.
         if self._output_files:
-            output_files = ','.join(
-                str(x) for x in self.output_files_relative_to_project_root)
+            output_files = ",".join(
+                str(x) for x in self.output_files_relative_to_project_root
+            )
             yield f"--output_files={output_files}"
 
         if self._output_dirs:
-            output_dirs = ','.join(
-                str(x) for x in self.output_dirs_relative_to_project_root)
+            output_dirs = ",".join(
+                str(x) for x in self.output_dirs_relative_to_project_root
+            )
             yield f"--output_directories={output_dirs}"
 
     @property
     def _remote_log_command_prefix(self) -> Sequence[str]:
         return [
             str(self._remote_log_script_path),
-            '--log',
+            "--log",
             str(self._remote_log_name),
-            '--',
+            "--",
         ]
 
     def _fsatrace_command_prefix(self, log: Path) -> Sequence[str]:
         return cl_utils.auto_env_prefix_command(
             [
-                'FSAT_BUF_SIZE=5000000',
+                "FSAT_BUF_SIZE=5000000",
                 str(self._fsatrace_path),
-                'erwdtmq',
+                "erwdtmq",
                 str(log),
-                '--',
-            ])
+                "--",
+            ]
+        )
 
     def _generate_remote_command_prefix(self) -> Iterable[str]:
         # No need to prepend with fuchsia.REPROXY_WRAP here,
         # because auto_relaunch_with_reproxy() does that.
         yield from self._generate_rewrapper_command_prefix()
-        yield '--'
+        yield "--"
 
     def _generate_remote_debug_command(self) -> Iterable[str]:
         """List files in the remote execution environment."""
@@ -1291,7 +1358,8 @@ class RemoteAction(object):
         # to the logging wrapper.
         if self._fsatrace_path:
             yield from self._fsatrace_command_prefix(
-                self._fsatrace_remote_trace)
+                self._fsatrace_remote_trace
+            )
 
         yield from self.remote_only_command
 
@@ -1324,12 +1392,14 @@ class RemoteAction(object):
 
     @property
     def local_launch_command(self) -> Sequence[str]:
-        return list(self._generate_local_launch_command())
+        with cl_utils.timer_cm("local_launch_command"):
+            return list(self._generate_local_launch_command())
 
     @property
     def remote_launch_command(self) -> Sequence[str]:
         """Generates the rewrapper command, one token at a time."""
-        return list(self._generate_remote_launch_command())
+        with cl_utils.timer_cm("remote_launch_command"):
+            return list(self._generate_remote_launch_command())
 
     @property
     def launch_command(self) -> Sequence[str]:
@@ -1343,20 +1413,23 @@ class RemoteAction(object):
             return self.local_launch_command
         return self.remote_launch_command
 
-    def _process_download_stubs(self):
+    def _process_download_stubs(self) -> Dict[Path, cl_utils.SubprocessResult]:
         """Create download stubs so artifacts can be retrieved later."""
         self.vmsg(f"Reading remote action log from {self._action_log}.")
         log_record = ReproxyLogEntry.parse_action_log(self._action_log)
 
         # local execution and local race wins don't need download stubs.
-        if log_record.completion_status in {'STATUS_LOCAL_EXECUTION',
-                                            'STATUS_LOCAL_FALLBACK',
-                                            'STATUS_RACING_LOCAL'}:
-            return
+        if log_record.completion_status in {
+            "STATUS_LOCAL_EXECUTION",
+            "STATUS_LOCAL_FALLBACK",
+            "STATUS_RACING_LOCAL",
+        }:
+            return {}
 
         self.vmsg("Creating download stubs for remote outputs.")
         # Create stubs, even for artifacts that are always_download-ed.
-        build_id = _reproxy_log_dir()  # unique per build
+        unique_log_dir = _reproxy_log_dir()  # unique per build
+        build_id = Path(unique_log_dir).name if unique_log_dir else "unknown"
         stub_infos = log_record.make_download_stubs(
             files=self.output_files_relative_to_working_dir,
             dirs=self.output_dirs_relative_to_working_dir,
@@ -1369,26 +1442,49 @@ class RemoteAction(object):
             self._update_stub(stub_info)
 
         if not self.always_download:
-            return
+            return {}
 
+        always_download = set(self.always_download)
         # Download outputs that were explicitly requested.
         # Download actions here do not need to be locked because
         # this remote action (as a step of a full build)
         # is the sole producer of its outputs.
-        downloader = self.downloader()
-        download_args = [
-            (self, stub_infos[path], downloader)  # for _download_for_mp
-            for path in self.always_download
-        ]
-        try:
-            with multiprocessing.Pool() as pool:
-                statuses = pool.map(_download_for_mp, download_args)
-        except OSError:  # in case /dev/shm is not writeable (required)
-            if len(self.always_download) > 1:
-                msg("Warning: downloading sequentially instead of in parallel.")
-            statuses = map(_download_for_mp, download_args)
 
-        return {path: status for path, status in statuses}
+        # Declared outputs are not required to exist remotely.
+        available_downloads = {
+            path: stub_info
+            for path, stub_info in stub_infos.items()
+            if path in always_download
+        }
+        return self._download_batch(available_downloads.values())
+
+    def _download_batch(
+        self, stub_infos: Sequence[DownloadStubInfo]
+    ) -> Dict[Path, cl_utils.SubprocessResult]:
+        downloader = self.downloader()
+        return download_stub_infos_batch(
+            downloader=downloader,
+            stub_infos=stub_infos,
+            working_dir_abs=self.working_dir,
+            verbose=self.verbose,
+        )
+
+    def download_inputs(
+        self, keep_filter: Callable[[Path], bool]
+    ) -> Dict[Path, cl_utils.SubprocessResult]:
+        """Downloading inputs is useful for running local actions whose inputs
+        may have come from the outputs of remote actions that opted to
+        not download their outputs.
+        """
+        filtered_inputs = [
+            path
+            for path in self.inputs_relative_to_working_dir
+            if keep_filter(path)
+        ]
+        download_args = paths_to_download_stubs(filtered_inputs)
+        paths = [stub.path for stub in download_args]
+        self.vmsg(f"Downloading inputs: {paths}")
+        return self._download_batch(download_args)
 
     def _update_stub(self, stub_info: DownloadStubInfo):
         """Write a download stub (or not, depending on conditions)."""
@@ -1446,7 +1542,8 @@ class RemoteAction(object):
                 stub_backup_path = download_stub_backup_location(path)
                 if stub_backup_path.exists():  # assume it is a stub
                     old_stub_info = DownloadStubInfo.read_from_file(
-                        stub_backup_path)
+                        stub_backup_path
+                    )
                     old_blob_digest = old_stub_info.blob_digest
                 else:
                     old_blob_digest = get_blob_digest(path)  # slow
@@ -1465,15 +1562,15 @@ class RemoteAction(object):
         stub_info.create(self.working_dir)
 
     def downloader(self) -> remotetool.RemoteTool:
-        with open(self.exec_root / _REPROXY_CFG) as cfg:
-            return remotetool.RemoteTool(
-                reproxy_cfg=remotetool.read_config_file_lines(cfg))
+        cfg = self.exec_root / _REPROXY_CFG
+        return remotetool.configure_remotetool(cfg)
 
     def _cleanup(self):
         self.vmsg("Cleaning up temporary files.")
-        for f in self._cleanup_files:
-            if f.exists():
-                f.unlink()  # does os.remove for files, rmdir for dirs
+        with cl_utils.timer_cm("RemoteAction._cleanup()"):
+            for f in self._cleanup_files:
+                if f.exists():
+                    f.unlink()  # does os.remove for files, rmdir for dirs
 
     def remote_debug(self) -> cl_utils.SubprocessResult:
         """Perform all remote setup, but run a different diagnostic command.
@@ -1482,13 +1579,16 @@ class RemoteAction(object):
         This is a dignostic tool for verifying the remote environment.
         """
         return cl_utils.subprocess_call(
-            list(self._generate_remote_debug_command()), cwd=self.working_dir)
+            list(self._generate_remote_debug_command()), cwd=self.working_dir
+        )
 
     def _run_maybe_remotely(self) -> cl_utils.SubprocessResult:
-        command = self.launch_command
+        with cl_utils.timer_cm("launch_command"):
+            command = self.launch_command
         quoted = cl_utils.command_quoted_str(command)
         self.vmsg(f"Launching: {quoted}")
-        return cl_utils.subprocess_call(command, cwd=self.working_dir)
+        with cl_utils.timer_cm("subprocess (remote, rewrapper)"):
+            return cl_utils.subprocess_call(command, cwd=self.working_dir)
 
     def _on_success(self) -> int:
         """Work to do after success (local or remote)."""
@@ -1585,12 +1685,13 @@ class RemoteAction(object):
         # When using a remote canonical_working_dir, make sure the command
         # being launched does not reference the non-canonical local working
         # dir explicitly.
-        if self.canonicalize_working_dir and str(self.build_subdir) != '.':
-            leak_status = output_leak_scanner.preflight_checks(
-                paths=self.output_files_relative_to_working_dir,
-                command=self.local_only_command,
-                pattern=output_leak_scanner.PathPattern(self.build_subdir),
-            )
+        if self.canonicalize_working_dir and str(self.build_subdir) != ".":
+            with cl_utils.timer_cm("output_leak_scanner.preflight_checks()"):
+                leak_status = output_leak_scanner.preflight_checks(
+                    paths=self.output_files_relative_to_working_dir,
+                    command=self.local_only_command,
+                    pattern=output_leak_scanner.PathPattern(self.build_subdir),
+                )
             if leak_status != 0:
                 msg(
                     f"Error: Detected local output dir leaks '{self.build_subdir}' in the command.  Aborting remote execution."
@@ -1604,16 +1705,42 @@ class RemoteAction(object):
             return 1
 
         try:
+            # If any local execution is involved, we need to make sure
+            # any inputs that came from remote execution without downloading
+            # are fetched locally first.
+            # Unfortunately, for remote_local_fallback and racing modes,
+            # this means always paying the cost of downloading inputs up front.
+            exec_strategy = self.exec_strategy or "remote"  # rewrapper default
+            if exec_strategy in {
+                "local",
+                "remote_local_fallback",
+                "racing",
+            }:
+                # Paths based at exec_root_rel are sources or prebuilts
+                # that cannot come from the outputs of any remote action.
+                download_statuses = self.download_inputs(
+                    lambda path: not str(path).startswith(
+                        str(self.exec_root_rel)
+                    )
+                )
+                for path, result in download_statuses.items():
+                    if result.returncode != 0:
+                        msg(
+                            f"Downloading local action input {path} failed:\n{result.stderr_text}"
+                        )
+                        return result.returncode
+
             result = self._run_maybe_remotely()
 
             # Under certain error conditions, do a one-time retry
             # for flake/fault-tolerance.
             if not self.remote_disable and _should_retry_remote_action(result):
-                msg('One-time retry for a possible remote-execution flake.')
+                msg("One-time retry for a possible remote-execution flake.")
                 result = self._run_maybe_remotely()
 
             if result.returncode == 0:  # success, nothing to see
-                return self._on_success()
+                with cl_utils.timer_cm("RemoteAction._on_success()"):
+                    return self._on_success()
 
             # From here onward, remote return code was != 0
             return self._on_failure(result)
@@ -1644,13 +1771,14 @@ class RemoteAction(object):
             msg(f"[dry-run only]{label_str}{command_str}")
             return 0
 
-        return self.run()
+        with cl_utils.timer_cm("RemoteAction.run()"):
+            return self.run()
 
     def _relativize_local_deps(self, path: str) -> str:
         p = Path(path)
         if p.is_absolute():
             new_path = str(cl_utils.relpath(p, start=self.working_dir))
-            self.vmsg(f'transformed dep path: {path} -> {new_path}')
+            self.vmsg(f"transformed dep path: {path} -> {new_path}")
             return new_path
 
         return path
@@ -1659,7 +1787,7 @@ class RemoteAction(object):
         p = Path(path)
         if p.is_absolute():
             new_path = str(cl_utils.relpath(p, start=self.remote_working_dir))
-            self.vmsg(f'transformed dep path: {path} -> {new_path}')
+            self.vmsg(f"transformed dep path: {path} -> {new_path}")
             return new_path
 
         return path
@@ -1672,16 +1800,17 @@ class RemoteAction(object):
         """
         p = Path(path)
         if p.is_absolute():
-            if self.working_dir in p.parents:
+            if self.exec_root in p.parents:
                 new_path = str(cl_utils.relpath(p, start=self.working_dir))
-            elif self.remote_working_dir in p.parents:
+            elif self.remote_exec_root in p.parents:
                 new_path = str(
-                    cl_utils.relpath(p, start=self.remote_working_dir))
+                    cl_utils.relpath(p, start=self.remote_working_dir)
+                )
             else:
-                msg(f'Unable to relativize path: {path}')
+                msg(f"Unable to relativize path: {path}")
                 return path
 
-            self.vmsg(f'transformed dep path: {path} -> {new_path}')
+            self.vmsg(f"transformed dep path: {path} -> {new_path}")
             return new_path
 
         return path
@@ -1710,7 +1839,7 @@ class RemoteAction(object):
           True if transformed filtered views were written.
         """
         # TODO: support passing in filters from application-specific code.
-        if local_file.suffix == '.map':  # intended for linker map files
+        if local_file.suffix == ".map":  # intended for linker map files
             # Workaround https://fxbug.dev/89245: relative-ize absolute path of
             # current working directory in linker map files.
             # These files are only used for local debugging.
@@ -1718,17 +1847,19 @@ class RemoteAction(object):
                 local_file,
                 local_file_filtered,
                 lambda line: line.replace(
-                    str(self.exec_root), str(self.exec_root_rel)),
+                    str(self.exec_root), str(self.exec_root_rel)
+                ),
             )
             _transform_file_by_lines(
                 remote_file,
                 remote_file_filtered,
                 lambda line: line.replace(
-                    str(_REMOTE_PROJECT_ROOT), str(self.exec_root_rel)),
+                    str(_REMOTE_PROJECT_ROOT), str(self.exec_root_rel)
+                ),
             )
             return True
 
-        if local_file.suffix == '.d':  # intended for depfiles
+        if local_file.suffix == ".d":  # intended for depfiles
             # TEMPORARY WORKAROUND until upstream fix lands:
             #   https://github.com/pest-parser/pest/pull/522
             # Remove redundant occurrences of the current working dir absolute path.
@@ -1749,14 +1880,14 @@ class RemoteAction(object):
         return False
 
     def local_fsatrace_transform(self, line: str) -> str:
-        return line.replace(str(self.exec_root) + os.path.sep, '').replace(
-            str(self.build_subdir), '${build_subdir}')
+        return line.replace(str(self.exec_root) + os.path.sep, "").replace(
+            str(self.build_subdir), "${build_subdir}"
+        )
 
     def remote_fsatrace_transform(self, line: str) -> str:
-        return line.replace(str(_REMOTE_PROJECT_ROOT) + os.path.sep,
-                            '').replace(
-                                str(self.remote_build_subdir),
-                                '${build_subdir}')
+        return line.replace(
+            str(_REMOTE_PROJECT_ROOT) + os.path.sep, ""
+        ).replace(str(self.remote_build_subdir), "${build_subdir}")
 
     def _compare_fsatraces_select_logs(
         self,
@@ -1765,8 +1896,8 @@ class RemoteAction(object):
     ) -> cl_utils.SubprocessResult:
         msg("Comparing local (-) vs. remote (+) file access traces.")
         # Normalize absolute paths.
-        local_norm = Path(str(local_trace) + '.norm')
-        remote_norm = Path(str(remote_trace) + '.norm')
+        local_norm = Path(str(local_trace) + ".norm")
+        remote_norm = Path(str(remote_trace) + ".norm")
         _transform_file_by_lines(
             local_trace,
             local_norm,
@@ -1811,9 +1942,9 @@ class RemoteAction(object):
         # The fsatrace files will be handled separately because they are
         # already named differently between their local/remote counterparts.
         direct_compare_output_files = [
-            (f, Path(str(f) + '.remote'))
+            (f, Path(str(f) + ".remote"))
             for f in self.output_files_relative_to_working_dir
-            if f.is_file() and f.suffix != '.remote-fsatrace'
+            if f.is_file() and f.suffix != ".remote-fsatrace"
         ]
 
         # We have the option to keep the remote or local outputs in-place.
@@ -1823,7 +1954,7 @@ class RemoteAction(object):
             f.rename(bkp)
 
         compare_output_dirs = [
-            (d, Path(str(d) + '.remote'))
+            (d, Path(str(d) + ".remote"))
             for d in self.output_dirs_relative_to_working_dir
             if d.is_dir()
         ]
@@ -1840,7 +1971,8 @@ class RemoteAction(object):
 
         # Translate output directories into list of files.
         all_compare_files = direct_compare_output_files + list(
-            _expand_common_files_between_dirs(compare_output_dirs))
+            _expand_common_files_between_dirs(compare_output_dirs)
+        )
 
         output_diff_candidates = []
         # Quick file comparison first.
@@ -1855,13 +1987,17 @@ class RemoteAction(object):
         # of them, to remove unimportant or acceptable differences.
         comparisons = (
             (
-                local_out, remote_out,
+                local_out,
+                remote_out,
                 _detail_diff_filtered(
                     local_out,
                     remote_out,
                     maybe_transform_pair=self._filtered_outputs_for_comparison,
                     project_root_rel=self.exec_root_rel,
-                )) for local_out, remote_out in output_diff_candidates)
+                ),
+            )
+            for local_out, remote_out in output_diff_candidates
+        )
 
         differences = [
             (local_out, remote_out, result)
@@ -1897,9 +2033,11 @@ class RemoteAction(object):
                     with cl_utils.chdir_cm(self.exec_root):
                         # Copy outputs.
                         cl_utils.copy_preserve_subpath(
-                            self.build_subdir / local_out, export_dir)
+                            self.build_subdir / local_out, export_dir
+                        )
                         cl_utils.copy_preserve_subpath(
-                            self.build_subdir / remote_out, export_dir)
+                            self.build_subdir / remote_out, export_dir
+                        )
                         # Copy inputs.
                         for f in self.inputs_relative_to_project_root:
                             cl_utils.copy_preserve_subpath(f, export_dir)
@@ -1918,17 +2056,51 @@ class RemoteAction(object):
         return 0
 
 
+# For multiprocessing, mapped function must be serializable.
+# Module-scope functions are serializable.
 def _download_for_mp(
-    packed_args: Tuple[RemoteAction, DownloadStubInfo, remotetool.RemoteTool]
+    packed_args: Tuple[DownloadStubInfo, remotetool.RemoteTool, Path, bool]
 ) -> Tuple[Path, cl_utils.SubprocessResult]:
-    action, stub_info, downloader = packed_args
+    stub_info, downloader, working_dir_abs, verbose = packed_args
     path = stub_info.path
-    action.vmsg(f"Downloading {path}")
+    if verbose:
+        msg(f"Downloading {path}")
     status = stub_info.download(
-        downloader=downloader, working_dir_abs=action.working_dir)
+        downloader=downloader, working_dir_abs=working_dir_abs
+    )
     if status.returncode != 0:  # alert, but do not fail
         msg(f"Unable to download {path}.")
     return path, status
+
+
+def download_stub_infos_batch(
+    downloader: remotetool.RemoteTool,
+    stub_infos: Sequence[DownloadStubInfo],
+    working_dir_abs: Path,
+    verbose: bool = False,
+) -> Dict[Path, cl_utils.SubprocessResult]:
+    """Downloads artifacts from a collection of stubs in parallel."""
+    download_args = [
+        # args for _download_for_mp
+        (stub_info, downloader, working_dir_abs, verbose)
+        for stub_info in stub_infos
+    ]
+    if not download_args:
+        return {}
+    try:
+        with multiprocessing.Pool() as pool:
+            statuses = pool.map(_download_for_mp, download_args)
+    except OSError as e:  # in case /dev/shm is not writeable (required)
+        if (e.errno == errno.EPERM and e.filename == "/dev/shm") or (
+            e.errno == errno.EROFS
+        ):
+            if len(download_args) > 1:
+                msg("Warning: downloading sequentially instead of in parallel.")
+            statuses = map(_download_for_mp, download_args)
+        else:
+            raise e  # Some other error
+
+    return {path: status for path, status in statuses}
 
 
 def _rewrapper_arg_parser() -> argparse.ArgumentParser:
@@ -1946,15 +2118,13 @@ def _rewrapper_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--canonicalize_working_dir",
         type=cl_utils.bool_golang_flag,
-        help=
-        "If true, remotely execute the command in a working dir location, that has the same depth as the actual build output dir relative to the exec_root.  This makes remote actions cacheable across different output dirs.",
+        help="If true, remotely execute the command in a working dir location, that has the same depth as the actual build output dir relative to the exec_root.  This makes remote actions cacheable across different output dirs.",
     )
     parser.add_argument(
         "--download_outputs",
         type=cl_utils.bool_golang_flag,
         default=True,
-        help=
-        "Set to false to avoid downloading outputs after remote execution succeeds."
+        help="Set to false to avoid downloading outputs after remote execution succeeds.  Each toolchain (Rust, C++) may decide how to apply this to its set of outputs yb default.  For example, for Rust, this affects only the main -o output."
         "",
     )
     return parser
@@ -1977,9 +2147,11 @@ def inherit_main_arg_parser_flags(
     These flags are available for tool-specific remote command wrappers to use.
     """
     default_cfg = default_cfg or Path(
-        PROJECT_ROOT_REL, 'build', 'rbe', 'fuchsia-rewrapper.cfg')
+        PROJECT_ROOT_REL, "build", "rbe", "fuchsia-rewrapper.cfg"
+    )
     default_bindir = default_bindir or Path(
-        PROJECT_ROOT_REL, fuchsia.RECLIENT_BINDIR)
+        PROJECT_ROOT_REL, fuchsia.RECLIENT_BINDIR
+    )
 
     rewrapper_group = parser.add_argument_group(
         title="rewrapper",
@@ -1994,44 +2166,40 @@ def inherit_main_arg_parser_flags(
     rewrapper_group.add_argument(
         "--exec_strategy",
         type=str,
-        choices=['local', 'remote', 'remote_local_fallback', 'racing'],
+        choices=["local", "remote", "remote_local_fallback", "racing"],
         help="rewrapper execution strategy.",
     )
     rewrapper_group.add_argument(
         "--inputs",
-        action='append',
+        action="append",
         # leave the type as [str], so commas can be processed downstream
         default=[],
         metavar="PATHS",
-        help=
-        "Specify additional remote inputs, comma-separated, relative to the current working dir (repeatable, cumulative).  Note: This is different than `rewrapper --inputs`, which expects exec_root-relative paths.",
+        help="Specify additional remote inputs, comma-separated, relative to the current working dir (repeatable, cumulative).  Note: This is different than `rewrapper --inputs`, which expects exec_root-relative paths.",
     )
     rewrapper_group.add_argument(
         "--input_list_paths",
-        action='append',
+        action="append",
         # leave the type as [str], so commas can be processed downstream
         default=[],
         metavar="PATHS",
-        help=
-        "Specify additional remote inputs file lists, whose elements are relative to the current working dir (repeatable, cumulative).  Note: This is different than `rewrapper --input_list_paths`, which expects elements to be relative to the exec_root.",
+        help="Specify additional remote inputs file lists, whose elements are relative to the current working dir (repeatable, cumulative).  Note: This is different than `rewrapper --input_list_paths`, which expects elements to be relative to the exec_root.",
     )
     rewrapper_group.add_argument(
         "--output_files",
-        action='append',
+        action="append",
         # leave the type as [str], so commas can be processed downstream
         default=[],
         metavar="FILES",
-        help=
-        "Specify additional remote output files, comma-separated, relative to the current working dir (repeatable, cumulative).  Note: This is different than `rewrapper --output_files`, which expects exec_root-relative paths.",
+        help="Specify additional remote output files, comma-separated, relative to the current working dir (repeatable, cumulative).  Note: This is different than `rewrapper --output_files`, which expects exec_root-relative paths.",
     )
     rewrapper_group.add_argument(
         "--output_directories",
-        action='append',
+        action="append",
         # leave the type as [str], so commas can be processed downstream
         default=[],
         metavar="DIRS",
-        help=
-        "Specify additional remote output directories, comma-separated, relative to the current working dir (repeatable, cumulative).  Note: This is different than `rewrapper --output_directories`, which expects exec_root-relative paths.",
+        help="Specify additional remote output directories, comma-separated, relative to the current working dir (repeatable, cumulative).  Note: This is different than `rewrapper --output_directories`, which expects exec_root-relative paths.",
     )
 
     main_group = parser.add_argument_group(
@@ -2079,8 +2247,7 @@ def inherit_main_arg_parser_flags(
         "--determinism-attempts",
         type=int,
         default=1,
-        help=
-        "For --check-determinism, re-run and compare this many times (max).",
+        help="For --check-determinism, re-run and compare this many times (max).",
     )
     main_group.add_argument(
         "--log",
@@ -2089,7 +2256,7 @@ def inherit_main_arg_parser_flags(
         const="<AUTO>",  # pick name based on ${output_files[0]}
         default="",  # blank means to not log
         metavar="BASE",
-        nargs='?',
+        nargs="?",
         help="""Capture remote execution's stdout/stderr to a log file.
 If a name argument BASE is given, the output will be 'BASE.remote-log'.
 Otherwise, BASE will default to the first output file named.""",
@@ -2117,41 +2284,37 @@ Otherwise, BASE will default to the first output file named.""",
         "--compare",
         action="store_true",
         default=False,
-        help=
-        "In 'compare' mode, run both locally and remotely (sequentially) and compare outputs.  Exit non-zero (failure) if any of the outputs differs between the local and remote execution, even if those executions succeeded.  When used with --fsatrace-path, also compare file access traces.  No comparison is done with --local mode.",
+        help="In 'compare' mode, run both locally and remotely (sequentially) and compare outputs.  Exit non-zero (failure) if any of the outputs differs between the local and remote execution, even if those executions succeeded.  When used with --fsatrace-path, also compare file access traces.  No comparison is done with --local mode.",
     )
     main_group.add_argument(
         "--miscomparison-export-dir",
         type=Path,
         default=None,
         metavar="DIR",
-        help=
-        "When using --compare or --check-determinism, save unexpectedly different artifacts to this directory, preserving relative path under the working directory.",
+        help="When using --compare or --check-determinism, save unexpectedly different artifacts to this directory, preserving relative path under the working directory.",
     ),
     main_group.add_argument(
         "--diagnose-nonzero",
         action="store_true",
         default=False,
-        help=
-        """On nonzero exit statuses, attempt to diagnose potential RBE issues.  This scans various reproxy logs for information, and can be noisy."""
+        help="""On nonzero exit statuses, attempt to diagnose potential RBE issues.  This scans various reproxy logs for information, and can be noisy.""",
     )
     main_group.add_argument(
         "--remote-debug-command",
         type=_string_split,
         default=None,
-        help=
-        f"""Alternate command to execute remotely, while doing the setup for the original command.  e.g. --remote-debug-command="ls -l -R {PROJECT_ROOT_REL}" ."""
+        help=f"""Alternate command to execute remotely, while doing the setup for the original command.  e.g. --remote-debug-command="ls -l -R {PROJECT_ROOT_REL}" .""",
     )
     main_group.add_argument(
         "--download",
         action="append",
         default=[],
-        help=
-        "Always download these outputs, even when --download_outputs=false.  Arguments are files or directories relative to the working dir, comma-separated, repeatable and cumulative.",
+        help="Always download these outputs, even when --download_outputs=false.  Arguments are files or directories relative to the working dir, comma-separated, repeatable and cumulative.",
     )
     # Positional args are the command and arguments to run.
     parser.add_argument(
-        "command", nargs="*", help="The command to run remotely")
+        "command", nargs="*", help="The command to run remotely"
+    )
 
 
 def _main_arg_parser() -> argparse.ArgumentParser:
@@ -2168,24 +2331,23 @@ _MAIN_ARG_PARSER = _main_arg_parser()
 
 
 def remote_action_from_args(
-        main_args: argparse.Namespace,
-        remote_options: Sequence[str] = None,
-        command: Sequence[str] = None,
-        # These inputs and outputs can come from application-specific logic.
-        inputs: Sequence[Path] = None,
-        input_list_paths: Sequence[Path] = None,
-        output_files: Sequence[Path] = None,
-        output_dirs: Sequence[Path] = None,
-        downloads: Sequence[Path] = None,
-        **kwargs,  # other RemoteAction __init__ params
+    main_args: argparse.Namespace,
+    remote_options: Sequence[str] = None,
+    command: Sequence[str] = None,
+    # These inputs and outputs can come from application-specific logic.
+    inputs: Sequence[Path] = None,
+    input_list_paths: Sequence[Path] = None,
+    output_files: Sequence[Path] = None,
+    output_dirs: Sequence[Path] = None,
+    downloads: Sequence[Path] = None,
+    **kwargs,  # other RemoteAction __init__ params
 ) -> RemoteAction:
     """Construct a remote action based on argparse parameters."""
     inputs = (inputs or []) + [
         Path(p) for p in cl_utils.flatten_comma_list(main_args.inputs)
     ]
     input_list_paths = (input_list_paths or []) + [
-        Path(p)
-        for p in cl_utils.flatten_comma_list(main_args.input_list_paths)
+        Path(p) for p in cl_utils.flatten_comma_list(main_args.input_list_paths)
     ]
     output_files = (output_files or []) + [
         Path(p) for p in cl_utils.flatten_comma_list(main_args.output_files)
@@ -2253,11 +2415,13 @@ _FORWARDED_REMOTE_FLAGS = cl_utils.FlagForwarder(
             has_optarg=True,
             mapped_name="",
         ),
-    ])
+    ]
+)
 
 
 def forward_remote_flags(
-        argv: Sequence[str]) -> Tuple[Sequence[str], Sequence[str]]:
+    argv: Sequence[str],
+) -> Tuple[Sequence[str], Sequence[str]]:
     """Propagate --remote-* flags from the wrapped command to main args.
 
     This allows late-appended flags to influence wrapper scripts' behavior.
@@ -2278,17 +2442,20 @@ def forward_remote_flags(
     """
     # Split the whole command around the first '--'.
     script_args, sep, unfiltered_command = cl_utils.partition_sequence(
-        argv, '--')
+        argv, "--"
+    )
     if sep == None:
-        return (['--help'], [])  # Tell the caller to trigger help and exit
+        return (["--help"], [])  # Tell the caller to trigger help and exit
 
     forwarded_flags, filtered_command = _FORWARDED_REMOTE_FLAGS.sift(
-        unfiltered_command)
+        unfiltered_command
+    )
     return script_args + forwarded_flags, filtered_command
 
 
 def auto_relaunch_with_reproxy(
-        script: Path, argv: Sequence[str], args: argparse.Namespace):
+    script: Path, argv: Sequence[str], args: argparse.Namespace
+):
     """If reproxy is not already running, re-launch with reproxy running.
 
     Args:
@@ -2304,7 +2471,7 @@ def auto_relaunch_with_reproxy(
     """
     if args.auto_reproxy:
         msg(
-            'You no longer need to pass --auto-reproxy, reproxy is launched automatically when needed.'
+            "You no longer need to pass --auto-reproxy, reproxy is launched automatically when needed."
         )
 
     if args.dry_run or args.local:
@@ -2314,20 +2481,23 @@ def auto_relaunch_with_reproxy(
     proxy_log_dir = _reproxy_log_dir()
     rewrapper_log_dir = _rewrapper_log_dir()
     if args.verbose:
-        msg(f'Detected RBE_proxy_log_dir={proxy_log_dir}')
-        msg(f'Detected RBE_log_dir={rewrapper_log_dir}')
+        msg(f"Detected RBE_proxy_log_dir={proxy_log_dir}")
+        msg(f"Detected RBE_log_dir={rewrapper_log_dir}")
 
     if proxy_log_dir and rewrapper_log_dir:
         # Ok for caller to proceed and eventually invoke rewrapper
         return
 
     python = cl_utils.relpath(Path(sys.executable), start=Path(os.curdir))
-    relaunch_args = ['--', str(python), '-S', str(script)] + argv
-    reproxy_wrap = cl_utils.qualify_tool_path(fuchsia.REPROXY_WRAP)
-    if args.verbose:
-        cmd_str = cl_utils.command_quoted_str([reproxy_wrap] + relaunch_args)
-        msg(f'Automatically re-launching: {cmd_str}')
-    cl_utils.exec_relaunch([reproxy_wrap] + relaunch_args)
+    relaunch_args = ["--", str(python), "-S", str(script)] + argv
+    # Wrap verbosely when auto-re-launching with reproxy wrapper, because
+    # this is typically used for one-off commands during debug.
+    # Normal builds should already be wrapped, and should not require auto-re-launching.
+    reproxy_wrap = [cl_utils.qualify_tool_path(fuchsia.REPROXY_WRAP), "-v"]
+
+    cmd_str = cl_utils.command_quoted_str(reproxy_wrap + relaunch_args)
+    msg(f"Automatically re-launching: {cmd_str}")
+    cl_utils.exec_relaunch(reproxy_wrap + relaunch_args)
     assert False, "exec_relaunch() should never return"
 
 
@@ -2340,7 +2510,8 @@ def main(argv: Sequence[str]) -> int:
     # not '--flag value' because argparse doesn't know what unhandled flags
     # expect values.
     main_args, other_remote_options = _MAIN_ARG_PARSER.parse_known_args(
-        main_argv)
+        main_argv
+    )
 
     # Re-launch self with reproxy if needed.
     auto_relaunch_with_reproxy(
@@ -2355,7 +2526,8 @@ def main(argv: Sequence[str]) -> int:
         remote_options=other_remote_options,
         command=filtered_command,
     )
-    return remote_action.run_with_main_args(main_args)
+    with cl_utils.timer_cm("RemoteAction.run_with_main_args()"):
+        return remote_action.run_with_main_args(main_args)
 
 
 if __name__ == "__main__":

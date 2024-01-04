@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/zxio/cpp/vector.h>
+#include <lib/zxio/fault_catcher.h>
 #include <lib/zxio/null.h>
 #include <lib/zxio/ops.h>
 #include <sys/stat.h>
+#include <zircon/compiler.h>
 
-#include "private.h"
+#include "sdk/lib/zxio/private.h"
+#include "sdk/lib/zxio/vector.h"
 
 static zxio_pipe_t& zxio_get_pipe(zxio_t* io) { return *reinterpret_cast<zxio_pipe_t*>(io); }
 
@@ -33,12 +35,12 @@ static constexpr zxio_ops_t zxio_pipe_ops = []() {
     return ZX_OK;
   };
 
-  ops.attr_get = [](zxio_t* io, zxio_node_attributes_t* out_attr) {
-    zxio_node_attributes_t attr = {};
-    ZXIO_NODE_ATTR_SET(
-        attr, abilities,
-        ZXIO_OPERATION_READ_BYTES | ZXIO_OPERATION_WRITE_BYTES | ZXIO_OPERATION_GET_ATTRIBUTES);
-    *out_attr = attr;
+  ops.attr_get = [](zxio_t* io, zxio_node_attributes_t* inout_attr) {
+    if (inout_attr->has.abilities) {
+      ZXIO_NODE_ATTR_SET(
+          *inout_attr, abilities,
+          ZXIO_OPERATION_READ_BYTES | ZXIO_OPERATION_WRITE_BYTES | ZXIO_OPERATION_GET_ATTRIBUTES);
+    }
     return ZX_OK;
   };
 
@@ -158,15 +160,19 @@ static constexpr zxio_ops_t zxio_datagram_pipe_ops = []() {
 
     uint8_t* data = buf.get();
     size_t remaining = actual;
-    return zxio_do_vector(vector, vector_count, out_actual,
-                          [&](void* buffer, size_t capacity, size_t* out_actual) {
-                            size_t actual = std::min(capacity, remaining);
-                            memcpy(buffer, data, actual);
-                            data += actual;
-                            remaining -= actual;
-                            *out_actual = actual;
-                            return ZX_OK;
-                          });
+    return zxio_do_vector(
+        vector, vector_count, out_actual,
+        [&](void* buffer, size_t capacity, size_t total_so_far, size_t* out_actual) {
+          size_t actual = std::min(capacity, remaining);
+          if (unlikely(!zxio_maybe_faultable_copy(reinterpret_cast<uint8_t*>(buffer), data, actual,
+                                                  true))) {
+            return ZX_ERR_INVALID_ARGS;
+          }
+          data += actual;
+          remaining -= actual;
+          *out_actual = actual;
+          return ZX_OK;
+        });
   };
 
   ops.writev = [](zxio_t* io, const zx_iovec_t* vector, size_t vector_count, zxio_flags_t flags,
@@ -183,7 +189,11 @@ static constexpr zxio_ops_t zxio_datagram_pipe_ops = []() {
 
     uint8_t* data = buf.get();
     for (size_t i = 0; i < vector_count; ++i) {
-      memcpy(data, vector[i].buffer, vector[i].capacity);
+      if (unlikely(!zxio_maybe_faultable_copy(data,
+                                              reinterpret_cast<const uint8_t*>(vector[i].buffer),
+                                              vector[i].capacity, false))) {
+        return ZX_ERR_INVALID_ARGS;
+      }
       data += vector[i].capacity;
     }
 
@@ -206,10 +216,10 @@ static constexpr zxio_ops_t zxio_stream_pipe_ops = []() {
 
     zx::socket& socket = zxio_get_pipe(io).socket;
 
-    return zxio_do_vector(vector, vector_count, out_actual,
-                          [&](void* buffer, size_t capacity, size_t* out_actual) {
-                            return socket.read(0, buffer, capacity, out_actual);
-                          });
+    return zxio_stream_do_vector(vector, vector_count, out_actual,
+                                 [&](void* buffer, size_t capacity, size_t* out_actual) {
+                                   return socket.read(0, buffer, capacity, out_actual);
+                                 });
   };
 
   ops.writev = [](zxio_t* io, const zx_iovec_t* vector, size_t vector_count, zxio_flags_t flags,
@@ -218,10 +228,10 @@ static constexpr zxio_ops_t zxio_stream_pipe_ops = []() {
       return ZX_ERR_NOT_SUPPORTED;
     }
 
-    return zxio_do_vector(vector, vector_count, out_actual,
-                          [&](void* buffer, size_t capacity, size_t* out_actual) {
-                            return zxio_get_pipe(io).socket.write(0, buffer, capacity, out_actual);
-                          });
+    return zxio_stream_do_vector(
+        vector, vector_count, out_actual, [&](void* buffer, size_t capacity, size_t* out_actual) {
+          return zxio_get_pipe(io).socket.write(0, buffer, capacity, out_actual);
+        });
   };
 
   return ops;

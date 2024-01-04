@@ -17,7 +17,7 @@ icu_rustc_library("input_pipeline") {
   with_unit_tests = true
   edition = "2021"
 
-  icu_deps = [ "//src/lib/icu_data/rust/icu_data" ]
+  icu_deps = [ "//src/lib/icu_data/rust/icu_data:icu_data" ]
   deps = [
     ":input_pipeline_includes",
     ":metrics_registry_rustlib",
@@ -52,7 +52,6 @@ icu_rustc_library("input_pipeline") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
-    "//src/lib/icu_data/rust/icu_data",
     "//src/lib/trace/rust:trace",
     "//src/lib/ui/fuchsia-scenic",
     "//src/lib/ui/keymaps",
@@ -76,11 +75,12 @@ icu_rustc_library("input_pipeline") {
 
   test_deps = [
     "//src/intl:icudtl",
+    "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fuchsia",
-    "//src/lib/storage/vfs/rust:vfs",
     "//src/lib/test_util",
     "//src/lib/ui/fidl_fuchsia_ui_focus_ext:lib",
     "//src/lib/ui/fidl_fuchsia_ui_views_ext:lib",
+    "//src/storage/lib/vfs/rust:vfs",
     "//third_party/chromiumos-xorg-conf:mouse_database",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:nom",

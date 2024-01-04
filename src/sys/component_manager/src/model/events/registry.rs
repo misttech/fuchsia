@@ -20,11 +20,14 @@ use {
         },
     },
     ::routing::{
-        capability_source::InternalCapability, component_instance::ComponentInstanceInterface,
-        event::EventFilter, mapper::NoopRouteMapper, route_event_stream,
+        capability_source::InternalCapability,
+        component_instance::ComponentInstanceInterface,
+        event::EventFilter,
+        mapper::{RouteMapper, RouteSegment},
+        route_event_stream,
     },
     async_trait::async_trait,
-    cm_rust::{ChildRef, EventScope, UseDecl, UseEventStreamDecl},
+    cm_rust::{ChildRef, EventScope, OfferDecl, UseDecl, UseEventStreamDecl},
     cm_types::Name,
     flyweights::FlyStr,
     futures::lock::Mutex,
@@ -121,6 +124,19 @@ pub struct ComponentEventRoute {
     pub scope: Option<Vec<EventScope>>,
 }
 
+impl ComponentEventRoute {
+    fn from_moniker(moniker: &Moniker, scope: Option<Vec<EventScope>>) -> ComponentEventRoute {
+        let component = match moniker.leaf() {
+            Some(leaf) => ChildRef {
+                name: FlyStr::new(leaf.name.to_string()),
+                collection: leaf.collection.clone(),
+            },
+            None => ChildRef { name: FlyStr::new("<root>"), collection: None },
+        };
+        ComponentEventRoute { component, scope }
+    }
+}
+
 impl EventRegistry {
     pub fn new(model: Weak<Model>) -> Self {
         let event_synthesizer = EventSynthesizer::new(model.clone());
@@ -128,17 +144,12 @@ impl EventRegistry {
     }
 
     pub fn hooks(self: &Arc<Self>) -> Vec<HooksRegistration> {
-        let mut event_types = EventType::values();
-
-        // Do not subscribe to CapabilityRouted. That is a component-framework-internal event.
-        event_types.retain(|t| t != &EventType::CapabilityRouted);
-
         vec![
             // This hook must be registered with all events.
             // However, a task will only receive events to which it subscribed.
             HooksRegistration::new(
                 "EventRegistry",
-                event_types,
+                EventType::values(),
                 Arc::downgrade(self) as Weak<dyn Hook>,
             ),
         ]
@@ -226,12 +237,12 @@ impl EventRegistry {
             event_stream.route = events[0].route.clone();
         }
 
-        let task_scope = match subscriber.upgrade()? {
-            ExtendedInstance::Component(subscriber) => subscriber.nonblocking_task_scope(),
-            ExtendedInstance::AboveRoot(subscriber) => subscriber.task_scope(),
+        let task_group = match subscriber.upgrade()? {
+            ExtendedInstance::Component(subscriber) => subscriber.nonblocking_task_group(),
+            ExtendedInstance::AboveRoot(subscriber) => subscriber.task_group(),
         };
         let events = events.into_iter().map(|event| (event.source_name, event.scopes)).collect();
-        self.event_synthesizer.spawn_synthesis(event_stream.sender(), events, &task_scope).await;
+        self.event_synthesizer.spawn_synthesis(event_stream.sender(), events, &task_group).await;
 
         Ok(event_stream)
     }
@@ -283,11 +294,11 @@ impl EventRegistry {
         events: &HashSet<UseEventStreamDecl>,
     ) -> Result<RouteEventsResult, ModelError> {
         let model = self.model.upgrade().ok_or(EventsError::ModelNotAvailable)?;
-        let component = model.look_up(&target_moniker).await?;
+        let component = model.find_and_maybe_resolve(&target_moniker).await?;
         let decl = {
             let state = component.lock_state().await;
             match *state {
-                InstanceState::New | InstanceState::Unresolved => {
+                InstanceState::New | InstanceState::Unresolved(_) => {
                     // This should never happen. By this point,
                     // we've validated that the instance state should
                     // be resolved because we're routing events to it.
@@ -328,18 +339,12 @@ impl EventRegistry {
         event_decl: UseEventStreamDecl,
         component: &Arc<ComponentInstance>,
     ) -> Result<(Name, ExtendedMoniker, Vec<ComponentEventRoute>), ModelError> {
-        let mut components = vec![];
         let mut route = vec![];
-        let route_source = route_event_stream(
-            event_decl.clone(),
-            component,
-            &mut NoopRouteMapper,
-            &mut components,
-        )
-        .await?;
+        let mut mapper = RouteMapper::new();
+        let route_source = route_event_stream(event_decl.clone(), component, &mut mapper).await?;
         // Handle scope in "use" clause
 
-        let mut search_name: Name = event_decl.source_name;
+        let _search_name: Name = event_decl.source_name;
         if let Some(moniker) = component.child_moniker() {
             route.push(ComponentEventRoute {
                 component: ChildRef {
@@ -349,25 +354,17 @@ impl EventRegistry {
                 scope: event_decl.scope,
             });
         }
-        for component in components {
-            let mut component_route = ComponentEventRoute {
-                component: if let Some(moniker) = component.component.child_moniker() {
-                    ChildRef {
-                        name: FlyStr::new(moniker.name.to_string()),
-                        collection: moniker.collection.clone(),
-                    }
-                } else {
-                    ChildRef { name: FlyStr::new("<root>"), collection: None }
-                },
-                scope: None,
+        // Add the OfferEventStreamDecls that we found during the route.
+        for segment in mapper.get_route() {
+            let (moniker, offer) = match segment {
+                RouteSegment::OfferBy { moniker, capability } => (moniker, capability),
+                _ => continue,
             };
-            if let Some(stream) = component.offer {
-                if stream.target_name == search_name {
-                    search_name = stream.source_name;
-                    component_route.scope = stream.scope;
-                }
-            }
-            route.push(component_route);
+            let offer = match offer {
+                OfferDecl::EventStream(o) => o,
+                _ => continue,
+            };
+            route.push(ComponentEventRoute::from_moniker(&moniker, offer.scope));
         }
         match route_source {
             RouteSource {
@@ -418,7 +415,7 @@ mod tests {
         },
         assert_matches::assert_matches,
         cm_rust::{Availability, UseSource},
-        fuchsia_zircon as zx,
+        fidl_fuchsia_io as fio, fuchsia_zircon as zx,
         futures::StreamExt,
         moniker::Moniker,
         std::str::FromStr,
@@ -434,6 +431,8 @@ mod tests {
                 source_moniker: Moniker::root(),
                 name: "foo".to_string(),
                 capability: capability_server_end,
+                flags: fio::OpenFlags::empty(),
+                relative_path: "".into(),
             },
         );
         registry.dispatch(&event).await;

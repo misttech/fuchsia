@@ -66,8 +66,8 @@ pub(crate) struct CompositeBlobSet {
 }
 
 impl CompositeBlobSet {
-    pub fn new(delegates: impl Iterator<Item = Box<dyn BlobSet>>) -> Self {
-        Self { delegates: delegates.collect() }
+    pub fn new(delegates: impl IntoIterator<Item = Box<dyn BlobSet>>) -> Self {
+        Self { delegates: delegates.into_iter().collect() }
     }
 }
 
@@ -219,28 +219,28 @@ impl api::Blob for CompositeBlob {
     }
 }
 
-/// An in-memory representation of a blob. Note that this type does not internally verify that the
-/// hash of `bytes` is, indeed, the value `hash`.
+/// An in-memory representation of a blob. Note that this type internally verifies that the hash of
+/// `bytes` is, indeed, the value `hash`.
 #[derive(Clone)]
-pub(crate) struct UnverifiedMemoryBlob(Rc<UnverifiedMemoryBlobData>);
+pub(crate) struct VerifiedMemoryBlob(Rc<MemoryBlobData>);
 
-impl UnverifiedMemoryBlob {
-    /// Constructs a [`UnverifiedMemoryBlob`] associated with the given `data_source`, `hash`, and
-    /// `bytes`.
+impl VerifiedMemoryBlob {
+    /// Constructs a [`VerifiedMemoryBlob`] associated with the given `data_source`, and `bytes`,
+    /// internally computing `hash`.
     pub fn new(
-        data_sources: impl Iterator<Item = Box<dyn api::DataSource>>,
-        hash: Box<dyn api::Hash>,
+        data_sources: impl IntoIterator<Item = Box<dyn api::DataSource>>,
         bytes: Vec<u8>,
-    ) -> Self {
-        Self(Rc::new(UnverifiedMemoryBlobData {
-            data_sources: data_sources.collect::<Vec<_>>(),
-            hash,
+    ) -> Result<Self, io::Error> {
+        let hash: Hash = FuchsiaMerkleTree::from_reader(bytes.as_slice())?.root().into();
+        Ok(Self(Rc::new(MemoryBlobData {
+            data_sources: data_sources.into_iter().collect::<Vec<_>>(),
+            hash: Box::new(hash),
             bytes,
-        }))
+        })))
     }
 }
 
-impl api::Blob for UnverifiedMemoryBlob {
+impl api::Blob for VerifiedMemoryBlob {
     fn hash(&self) -> Box<dyn api::Hash> {
         self.0.hash.clone()
     }
@@ -254,7 +254,7 @@ impl api::Blob for UnverifiedMemoryBlob {
     }
 }
 
-struct UnverifiedMemoryBlobData {
+struct MemoryBlobData {
     data_sources: Vec<Box<dyn api::DataSource>>,
     hash: Box<dyn api::Hash>,
     bytes: Vec<u8>,
@@ -381,8 +381,22 @@ impl BlobDirectory {
     ) -> Result<Box<dyn BlobSet>, BlobDirectoryError> {
         let paths =
             fs::read_dir(directory.as_ref().as_ref()).map_err(BlobDirectoryError::ListError)?;
-        let dir_entries: Vec<_> =
-            paths.collect::<Result<Vec<_>, _>>().map_err(BlobDirectoryError::DirEntryError)?;
+
+        // TODO(b/312722138): Support verification of delivery blobs once the delivery-blob library
+        // supports it. For now, we filter out subdirectories containing delivery blobs.
+        let paths = paths.filter_map(|entry| {
+            let entry = entry.map_err(BlobDirectoryError::DirEntryError);
+            if let Ok(entry) = entry {
+                match entry.file_type().map_err(BlobDirectoryError::ListError) {
+                    Ok(entry_type) => {
+                        return if entry_type.is_dir() { None } else { Some(Ok(entry)) };
+                    }
+                    Err(e) => return Some(Err(e)),
+                }
+            }
+            Some(entry)
+        });
+        let dir_entries: Vec<_> = paths.collect::<Result<Vec<_>, _>>()?;
 
         let mut blob_ids = dir_entries
             .into_par_iter()
@@ -467,10 +481,10 @@ struct BlobDirectoryData {
 #[cfg(test)]
 pub(crate) mod test {
     use super::super::api;
-    use super::super::hash::Hash;
+    use super::super::api::Blob as _;
     use super::BlobOpenError;
     use super::BlobSet;
-    use super::UnverifiedMemoryBlob;
+    use super::VerifiedMemoryBlob;
     use std::collections::HashMap;
     use std::io;
     use std::rc::Rc;
@@ -481,28 +495,25 @@ pub(crate) mod test {
 
     struct VerifiedMemoryBlobSetData {
         data_sources: Vec<Box<dyn api::DataSource>>,
-        blobs: HashMap<Box<dyn api::Hash>, UnverifiedMemoryBlob>,
+        blobs: HashMap<Box<dyn api::Hash>, VerifiedMemoryBlob>,
     }
 
     impl VerifiedMemoryBlobSet {
         /// Constructs a new [`VerifiedMemoryBlobSet`] that owns its own copy of the blobs
         /// enumerated by `blobs`.
         pub fn new<R: io::Read>(
-            data_sources: impl Iterator<Item = Box<dyn api::DataSource>>,
-            blobs: impl Iterator<Item = R>,
+            data_sources: impl IntoIterator<Item = Box<dyn api::DataSource>>,
+            blobs: impl IntoIterator<Item = R>,
         ) -> Self {
-            let data_sources = data_sources.collect::<Vec<_>>();
+            let data_sources = data_sources.into_iter().collect::<Vec<_>>();
             let blobs = blobs
+                .into_iter()
                 .map(|mut blob| {
                     let mut bytes = vec![];
                     blob.read_to_end(&mut bytes).expect("read blob for memory blob set");
-                    let hash: Box<dyn api::Hash> = Box::new(Hash::from_contents(bytes.as_slice()));
-                    let blob = UnverifiedMemoryBlob::new(
-                        data_sources.clone().into_iter(),
-                        hash.clone(),
-                        bytes,
-                    );
-                    (hash, blob)
+                    let blob = VerifiedMemoryBlob::new(data_sources.clone(), bytes)
+                        .expect("hash blob for memory blob set");
+                    (blob.hash(), blob)
                 })
                 .collect::<HashMap<_, _>>();
             Self(Rc::new(VerifiedMemoryBlobSetData { data_sources, blobs }))

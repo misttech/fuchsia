@@ -3,15 +3,14 @@
 # found in the LICENSE file.
 
 import("//build/zircon/zx_library.gni")
-import("//src/storage/fshost/generated_fshost_config.gni")
 
 group("tests") {
   testonly = true
   deps = [ "test:paver-fuzzers" ]
 
-  # TODO(fxbug.dev/84624): Flaky test disabled on coverage.
-  # Please fix the flake and remove the condition below.
-  if (!is_coverage) {
+  # TODO(fxbug.dev/84624): Paver tests are disabled on coverage builds due to flakiness.
+  # TODO(b/301283466): Paver tests cannot run on RISCV64 builds due to Sv39 address space limits.
+  if (!is_coverage && current_cpu != "riscv64") {
     deps += [ "test:paver-test" ]
   }
 }
@@ -19,10 +18,10 @@ group("tests") {
 # Core paver implementation shared between all implementations.
 source_set("paver-core") {
   sources = [
-    "abr-client-vboot.cc",
     "abr-client.cc",
     "device-partitioner.cc",
     "fvm.cc",
+    "lifecycle.cc",
     "partition-client.cc",
     "paver.cc",
     "sparse.cc",
@@ -32,49 +31,49 @@ source_set("paver-core") {
     "validation.cc",
   ]
   deps = [
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp_wire",
+    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.block.encrypted:fuchsia.hardware.block.encrypted_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.skipblock:fuchsia.hardware.skipblock_cpp_wire",
-    "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
+    "//sdk/fidl/fuchsia.hardware.block.encrypted:fuchsia.hardware.block.encrypted_cpp",
+    "//sdk/fidl/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_cpp",
+    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
+    "//sdk/fidl/fuchsia.hardware.skipblock:fuchsia.hardware.skipblock_cpp",
+    "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/fdio",
     "//sdk/lib/fidl",
-    "//src/lib/storage/fs_management",
-    "//src/lib/storage/ramdevice_client/cpp:ramdevice-client-static",
+    "//sdk/lib/syslog/cpp:cpp",
     "//src/security/lib/zxcrypt:zxcrypt-client",
     "//src/storage/gpt",
+    "//src/storage/lib/fs_management",
+    "//src/storage/lib/ramdevice_client/cpp:ramdevice-client-static",
     "//src/storage/lib/sparse/c:sparse",
     "//zircon/system/ulib/fdio-caller",
     "//zircon/third_party/ulib/cksum",
     "//zircon/third_party/ulib/safemath",
   ]
   public_deps = [
-    "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.skipblock:fuchsia.hardware.skipblock_cpp_wire",
-    "//sdk/fidl/fuchsia.paver:fuchsia.paver_cpp_wire",
+    "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_cpp",
+    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
+    "//sdk/fidl/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_cpp",
+    "//sdk/fidl/fuchsia.hardware.skipblock:fuchsia.hardware.skipblock_cpp",
+    "//sdk/fidl/fuchsia.paver:fuchsia.paver_cpp",
+    "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_cpp",
     "//sdk/lib/zbi-format",
     "//src/firmware/lib/abr",
-    "//src/lib/storage/block_client/cpp",
     "//src/lib/uuid",
     "//src/storage/fvm",
+    "//src/storage/lib/block_client/cpp",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
   ]
-
-  defines = [ "PRODUCT_FVM_SLICE_SIZE=${fvm_slice_size}" ]
 }
 
 # Helper libraries to aid board specific implementations.
 source_set("gpt") {
   sources = [ "gpt.cc" ]
-  deps = [ "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire" ]
+  deps = [ "//sdk/fidl/fuchsia.device:fuchsia.device_cpp" ]
   public_deps = [
     ":paver-core",
     "//sdk/lib/component/incoming/cpp",
@@ -90,38 +89,19 @@ source_set("skip-block") {
   deps = [ "//src/lib/uuid" ]
   public_deps = [
     ":paver-core",
-    "//sdk/fidl/fuchsia.hardware.skipblock:fuchsia.hardware.skipblock_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.skipblock:fuchsia.hardware.skipblock_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//src/storage/gpt",
     "//zircon/system/ulib/fdio-caller",
   ]
 }
 
-source_set("sysconfig") {
-  sources = [ "sysconfig.cc" ]
-  public_deps = [
-    ":paver-core",
-    "//zircon/system/ulib/sysconfig-client:sysconfig-sync-client",
-  ]
-}
-
 # Board specific paver implementations.
-source_set("as370") {
-  sources = [ "as370.cc" ]
-  deps = [
-    ":paver-core",
-    ":skip-block",
-    "//src/lib/uuid",
-    "//src/storage/gpt",
-  ]
-}
-
 source_set("astro") {
   sources = [ "astro.cc" ]
   deps = [
     ":paver-core",
-    ":sysconfig",
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp_wire",
+    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//src/devices/lib/amlogic",
     "//src/lib/uuid",
@@ -133,28 +113,11 @@ source_set("astro") {
   ]
 }
 
-source_set("chromebook-x64") {
-  sources = [
-    "chromebook-x64.cc",
-    "flashmap-client.cc",
-  ]
-  deps = [
-    ":gpt",
-    ":paver-core",
-    "//sdk/fidl/fuchsia.acpi.chromeos:fuchsia.acpi.chromeos_cpp_wire",
-    "//sdk/fidl/fuchsia.nand.flashmap:fuchsia.nand.flashmap_cpp_wire",
-    "//sdk/fidl/fuchsia.tpm.cr50:fuchsia.tpm.cr50_cpp_wire",
-    "//sdk/fidl/fuchsia.vboot:fuchsia.vboot_cpp_wire",
-    "//src/lib/uuid",
-  ]
-}
-
 source_set("sherlock") {
   sources = [ "sherlock.cc" ]
   deps = [
     ":gpt",
     ":paver-core",
-    ":sysconfig",
     "//src/devices/lib/amlogic",
     "//src/lib/uuid",
     "//src/storage/gpt",
@@ -166,7 +129,6 @@ source_set("nelson") {
   deps = [
     ":gpt",
     ":paver-core",
-    ":sysconfig",
     "//src/devices/lib/amlogic",
     "//src/lib/uuid",
     "//src/storage/gpt",
@@ -178,29 +140,10 @@ source_set("luis") {
   deps = [
     ":gpt",
     ":paver-core",
-    ":sysconfig",
     "//src/devices/lib/amlogic",
     "//src/lib/uuid",
     "//src/storage/gpt",
   ]
-}
-
-source_set("pinecrest-abr") {
-  sources = [ "pinecrest_abr_avbab_conversion.c" ]
-  deps = [ "//src/firmware/lib/abr" ]
-}
-
-source_set("pinecrest") {
-  sources = [ "pinecrest.cc" ]
-  deps = [
-    ":gpt",
-    ":paver-core",
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp_wire",
-    "//src/devices/lib/amlogic",
-    "//src/lib/uuid",
-    "//src/storage/gpt",
-  ]
-  public_deps = [ ":pinecrest-abr" ]
 }
 
 source_set("vim3") {
@@ -208,18 +151,31 @@ source_set("vim3") {
   deps = [
     ":gpt",
     ":paver-core",
-    ":sysconfig",
     "//src/devices/lib/amlogic",
     "//src/lib/uuid",
     "//src/storage/gpt",
   ]
 }
 
-source_set("x64") {
-  sources = [ "x64.cc" ]
+source_set("violet") {
+  sources = [ "violet.cc" ]
   deps = [
     ":gpt",
     ":paver-core",
+    "//src/lib/uuid",
+    "//src/storage/gpt",
+  ]
+}
+
+source_set("x64") {
+  sources = [
+    "system_shutdown_state.cc",
+    "x64.cc",
+  ]
+  deps = [
+    ":gpt",
+    ":paver-core",
+    "//sdk/fidl/fuchsia.device.manager:fuchsia.device.manager_cpp",
     "//src/lib/uuid",
   ]
 }
@@ -231,17 +187,15 @@ zx_library("paver") {
   sdk_headers = [ "lib/paver/provider.h" ]
   sources = [ "provider.cc" ]
   deps = [
-    ":as370",
     ":astro",
-    ":chromebook-x64",
     ":luis",
     ":nelson",
     ":paver-core",
-    ":pinecrest",
     ":sherlock",
     ":vim3",
+    ":violet",
     ":x64",
-    "//sdk/fidl/fuchsia.paver:fuchsia.paver_cpp_wire",
+    "//sdk/fidl/fuchsia.paver:fuchsia.paver_cpp",
   ]
   public_deps = [ "//zircon/system/ulib/svc" ]
 }

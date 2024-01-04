@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/assembly/assembled_system.gni")
+import("//build/assembly/board_configuration.gni")
 import("//build/assembly/generated_partitions_config.gni")
 import("//build/assembly/product_assembly_configuration.gni")
 import("//build/assembly/update_package.gni")
@@ -12,6 +13,7 @@ import("//build/product.gni")
 import("//build/python/python_binary.gni")
 import("//build/sdk/product_bundle.gni")
 import("//build/testing/host_test.gni")
+import("//build/testing/host_test_data.gni")
 import("//src/developer/ffx/config.gni")
 import("//src/storage/fshost/generated_fshost_config.gni")
 import("//src/sys/core/build/core.gni")
@@ -27,10 +29,21 @@ if (is_fuchsia) {
     check_references = false
   }
 
+  fuchsia_component("component_with_collection") {
+    testonly = true
+    manifest = "meta/component_with_collection.cml"
+
+    # We don't intend to run this component, just make its manifest visible to scrutiny.
+    check_references = false
+  }
+
   fuchsia_package("package") {
     testonly = true
     package_name = "package_for_scrutiny_testing"
-    deps = [ ":component_with_broken_use" ]
+    deps = [
+      ":component_with_broken_use",
+      ":component_with_collection",
+    ]
   }
 
   core_shard("core_shard") {
@@ -42,7 +55,6 @@ if (is_fuchsia) {
   }
 
   files = {
-    board_config = "$target_out_dir/fuchsia.board_config.json"
     partitions_config = "$target_out_dir/partitions_config.json"
 
     outdir = target_out_dir + "/assembly"
@@ -59,15 +71,11 @@ if (is_fuchsia) {
     product_bundle = target_out_dir + "/product_bundle"
   }
 
-  generated_file("board_config") {
-    outputs = [ files.board_config ]
-    output_conversion = "json"
-    contents = {
-      name = "test"
-      filesystems = {
-        fvm = {
-          sparse_output = {
-          }
+  board_configuration("board_config") {
+    name = "test"
+    filesystems = {
+      fvm = {
+        sparse_output = {
         }
       }
     }
@@ -99,15 +107,8 @@ if (is_fuchsia) {
     generate_fvm = true
     generate_fvm_fastboot = false
     generate_vbmeta = false
-    use_assembly_fshost = true
-
-    # This test uses an explicit board, therefore the arguments should not be
-    # compared with the arguments from the global GN args.
-    skip_fshost_validator = true
-
     product_assembly_config_label = ":product_assembly_config"
-    board_config = files.board_config
-    deps = [ ":board_config" ]
+    board_config_label = ":board_config"
 
     # Needed for scrutiny to find root.cm and other component config.
     bootfs_labels = [ "//build/input:bootfs" ]
@@ -116,7 +117,6 @@ if (is_fuchsia) {
     generate_image_metadata = false
 
     # Needed for scrutiny to find things for the component model.
-    include_component_id_index = true
     core_realm_definition = ":core_realm"
   }
 
@@ -131,7 +131,7 @@ if (is_fuchsia) {
     deps = [
       ":assembly",
       ":partitions_config",
-      "//build/info:latest-commit-date",
+      "//build/info:build_info_files",
     ]
     partitions = files.partitions_config
     system_a = files.images_json
@@ -142,12 +142,11 @@ if (is_fuchsia) {
 
   product_bundle("product_bundle") {
     testonly = true
-    skip_scrutiny = true
-    skip_scrutiny_recovery = true
+    name = "scrutiny-failed-route-verify-test"
     deps = [
       ":assembly",
       ":partitions_config",
-      "//build/info:latest-commit-date",
+      "//build/info:build_info_files",
     ]
 
     update = {
@@ -190,6 +189,8 @@ if (is_host) {
   files = {
     ffx = "$ffx_test_host_tools_out_dir/ffx-scrutiny"
 
+    component_tree_config = "//src/security/lib/scrutiny/tests/route_verification/component_tree_config.json5"
+
     product_bundle_target_out_dir =
         get_label_info(labels.product_bundle, "target_out_dir")
     product_bundle_target_name = get_label_info(labels.product_bundle, "name")
@@ -204,7 +205,10 @@ if (is_host) {
 
   host_test_data("failed_route_verify_test_data") {
     sources = get_target_outputs(":test_route_verification_bin")
-    sources += [ files.product_bundle_dir ]
+    sources += [
+      files.product_bundle_dir,
+      files.component_tree_config,
+    ]
     deps = [
       ":test_route_verification_bin",
       labels.product_bundle,
@@ -226,13 +230,17 @@ if (is_host) {
       "--fail-protocol",
       "fuchsia.foo.bar",
       "--fail-moniker",
-      "/core/component_with_broken_use",
+      "core/component_with_broken_use",
+      "--fail-dynamic-moniker",
+      "core/component_with_collection/coll:component_with_broken_use",
       "--success-protocol",
       "fuchsia.logger.LogSink",
       "--depfile",
       rebase_path(depfile, root_build_dir),
       "--product-bundle",
       rebase_path(files.product_bundle_dir, root_build_dir),
+      "--component-tree-config",
+      rebase_path(files.component_tree_config, root_build_dir),
     ]
     depfile = [ depfile ]
 

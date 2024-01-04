@@ -103,9 +103,6 @@ fi-0074.test.fidl
 fi-0075.test.fidl
 fi-0077-a.test.fidl
 fi-0077-b.test.fidl
-fi-0078-a.test.fidl
-fi-0078-b.test.fidl
-fi-0079.test.fidl
 fi-0081.test.fidl
 fi-0082.test.fidl
 fi-0083.test.fidl
@@ -195,7 +192,6 @@ fi-0166.test.fidl
 fi-0167.test.fidl
 fi-0168.test.fidl
 fi-0169.test.fidl
-fi-0170.test.fidl
 fi-0171.test.fidl
 fi-0172.test.fidl
 fi-0173.test.fidl
@@ -220,3 +216,11 @@ fi-0191.test.fidl
 fi-0192.test.fidl
 fi-0193.test.fidl
 fi-0201.test.fidl
+fi-0202.test.fidl
+fi-0203-a.test.fidl
+fi-0203-b.test.fidl
+fi-0204.test.fidl
+fi-0205-a.test.fidl
+fi-0205-b.test.fidl
+fi-0206-a.test.fidl
+fi-0206-b.test.fidl

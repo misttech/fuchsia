@@ -11,6 +11,7 @@
 #include <lib/trace/event.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/job.h>
+#include <zircon/errors.h>
 #include <zircon/process.h>
 #include <zircon/rights.h>
 #include <zircon/status.h>
@@ -83,7 +84,7 @@ class OSImpl : public OS, public TaskEnumerator {
   }
 
   zx_status_t GetKernelMemoryStats(const fidl::WireSyncClient<fuchsia_kernel::Stats>& stats_client,
-                                   zx_info_kmem_stats_t* kmem) override {
+                                   zx_info_kmem_stats_t& kmem) override {
     TRACE_DURATION("memory_metrics", "Capture::GetKernelMemoryStats");
     if (!stats_client.is_valid()) {
       return ZX_ERR_BAD_STATE;
@@ -93,21 +94,21 @@ class OSImpl : public OS, public TaskEnumerator {
       return result.status();
     }
     const auto& stats = result->stats;
-    kmem->total_bytes = stats.total_bytes();
-    kmem->free_bytes = stats.free_bytes();
-    kmem->wired_bytes = stats.wired_bytes();
-    kmem->total_heap_bytes = stats.total_heap_bytes();
-    kmem->free_heap_bytes = stats.free_heap_bytes();
-    kmem->vmo_bytes = stats.vmo_bytes();
-    kmem->mmu_overhead_bytes = stats.mmu_overhead_bytes();
-    kmem->ipc_bytes = stats.ipc_bytes();
-    kmem->other_bytes = stats.other_bytes();
+    kmem.total_bytes = stats.total_bytes();
+    kmem.free_bytes = stats.free_bytes();
+    kmem.wired_bytes = stats.wired_bytes();
+    kmem.total_heap_bytes = stats.total_heap_bytes();
+    kmem.free_heap_bytes = stats.free_heap_bytes();
+    kmem.vmo_bytes = stats.vmo_bytes();
+    kmem.mmu_overhead_bytes = stats.mmu_overhead_bytes();
+    kmem.ipc_bytes = stats.ipc_bytes();
+    kmem.other_bytes = stats.other_bytes();
     return ZX_OK;
   }
 
   zx_status_t GetKernelMemoryStatsExtended(
       const fidl::WireSyncClient<fuchsia_kernel::Stats>& stats_client,
-      zx_info_kmem_stats_extended_t* kmem_ext, zx_info_kmem_stats_t* kmem) override {
+      zx_info_kmem_stats_extended_t& kmem_ext, zx_info_kmem_stats_t* kmem) override {
     TRACE_DURATION("memory_metrics", "Capture::GetKernelMemoryStatsExtended");
     if (!stats_client.is_valid()) {
       return ZX_ERR_BAD_STATE;
@@ -117,33 +118,65 @@ class OSImpl : public OS, public TaskEnumerator {
       return result.status();
     }
     const auto& stats = result->stats;
-    kmem_ext->total_bytes = stats.total_bytes();
-    kmem_ext->free_bytes = stats.free_bytes();
-    kmem_ext->wired_bytes = stats.wired_bytes();
-    kmem_ext->total_heap_bytes = stats.total_heap_bytes();
-    kmem_ext->free_heap_bytes = stats.free_heap_bytes();
-    kmem_ext->vmo_bytes = stats.vmo_bytes();
-    kmem_ext->vmo_pager_total_bytes = stats.vmo_pager_total_bytes();
-    kmem_ext->vmo_pager_newest_bytes = stats.vmo_pager_newest_bytes();
-    kmem_ext->vmo_pager_oldest_bytes = stats.vmo_pager_oldest_bytes();
-    kmem_ext->vmo_discardable_locked_bytes = stats.vmo_discardable_locked_bytes();
-    kmem_ext->vmo_discardable_unlocked_bytes = stats.vmo_discardable_unlocked_bytes();
-    kmem_ext->mmu_overhead_bytes = stats.mmu_overhead_bytes();
-    kmem_ext->ipc_bytes = stats.ipc_bytes();
-    kmem_ext->other_bytes = stats.other_bytes();
+    kmem_ext.total_bytes = stats.total_bytes();
+    kmem_ext.free_bytes = stats.free_bytes();
+    kmem_ext.wired_bytes = stats.wired_bytes();
+    kmem_ext.total_heap_bytes = stats.total_heap_bytes();
+    kmem_ext.free_heap_bytes = stats.free_heap_bytes();
+    kmem_ext.vmo_bytes = stats.vmo_bytes();
+    kmem_ext.vmo_pager_total_bytes = stats.vmo_pager_total_bytes();
+    kmem_ext.vmo_pager_newest_bytes = stats.vmo_pager_newest_bytes();
+    kmem_ext.vmo_pager_oldest_bytes = stats.vmo_pager_oldest_bytes();
+    kmem_ext.vmo_discardable_locked_bytes = stats.vmo_discardable_locked_bytes();
+    kmem_ext.vmo_discardable_unlocked_bytes = stats.vmo_discardable_unlocked_bytes();
+    kmem_ext.mmu_overhead_bytes = stats.mmu_overhead_bytes();
+    kmem_ext.ipc_bytes = stats.ipc_bytes();
+    kmem_ext.other_bytes = stats.other_bytes();
 
     // Copy over shared fields from kmem_ext to kmem, if provided.
     if (kmem) {
-      kmem->total_bytes = kmem_ext->total_bytes;
-      kmem->free_bytes = kmem_ext->free_bytes;
-      kmem->wired_bytes = kmem_ext->wired_bytes;
-      kmem->total_heap_bytes = kmem_ext->total_heap_bytes;
-      kmem->free_heap_bytes = kmem_ext->free_heap_bytes;
-      kmem->vmo_bytes = kmem_ext->vmo_bytes;
-      kmem->mmu_overhead_bytes = kmem_ext->mmu_overhead_bytes;
-      kmem->ipc_bytes = kmem_ext->ipc_bytes;
-      kmem->other_bytes = kmem_ext->other_bytes;
+      kmem->total_bytes = kmem_ext.total_bytes;
+      kmem->free_bytes = kmem_ext.free_bytes;
+      kmem->wired_bytes = kmem_ext.wired_bytes;
+      kmem->total_heap_bytes = kmem_ext.total_heap_bytes;
+      kmem->free_heap_bytes = kmem_ext.free_heap_bytes;
+      kmem->vmo_bytes = kmem_ext.vmo_bytes;
+      kmem->mmu_overhead_bytes = kmem_ext.mmu_overhead_bytes;
+      kmem->ipc_bytes = kmem_ext.ipc_bytes;
+      kmem->other_bytes = kmem_ext.other_bytes;
     }
+    return ZX_OK;
+  }
+
+  zx_status_t GetKernelMemoryStatsCompression(
+      const fidl::WireSyncClient<fuchsia_kernel::Stats>& stats_client,
+      zx_info_kmem_stats_compression_t& kmem_compression) override {
+    TRACE_DURATION("memory_metrics", "Capture::GetKernelMemoryStatsCompression");
+    if (!stats_client.is_valid()) {
+      return ZX_ERR_BAD_STATE;
+    }
+    auto result = stats_client->GetMemoryStatsCompression();
+    if (result.status() != ZX_OK) {
+      return result.status();
+    }
+    kmem_compression.uncompressed_storage_bytes = result->uncompressed_storage_bytes();
+    kmem_compression.compressed_storage_bytes = result->compressed_storage_bytes();
+    kmem_compression.compressed_fragmentation_bytes = result->compressed_fragmentation_bytes();
+    kmem_compression.compression_time = result->compression_time();
+    kmem_compression.decompression_time = result->decompression_time();
+    kmem_compression.total_page_compression_attempts = result->total_page_compression_attempts();
+    kmem_compression.failed_page_compression_attempts = result->failed_page_compression_attempts();
+    kmem_compression.total_page_decompressions = result->total_page_decompressions();
+    kmem_compression.compressed_page_evictions = result->compressed_page_evictions();
+    kmem_compression.eager_page_compressions = result->eager_page_compressions();
+    kmem_compression.memory_pressure_page_compressions =
+        result->memory_pressure_page_compressions();
+    kmem_compression.critical_memory_page_compressions =
+        result->critical_memory_page_compressions();
+    kmem_compression.pages_decompressed_unit_ns = result->pages_decompressed_unit_ns();
+    std::copy(result->pages_decompressed_within_log_time().begin(),
+              result->pages_decompressed_within_log_time().end(),
+              std::begin(kmem_compression.pages_decompressed_within_log_time));
     return ZX_OK;
   }
 
@@ -159,18 +192,18 @@ const std::vector<std::string> Capture::kDefaultRootedVmoNames = {
 // static.
 zx_status_t Capture::GetCaptureState(CaptureState* state) {
   OSImpl osImpl;
-  return GetCaptureState(state, &osImpl);
+  return GetCaptureState(state, osImpl);
 }
 
-zx_status_t Capture::GetCaptureState(CaptureState* state, OS* os) {
+zx_status_t Capture::GetCaptureState(CaptureState* state, OS& os) {
   TRACE_DURATION("memory_metrics", "Capture::GetCaptureState");
-  zx_status_t err = os->GetKernelStats(&state->stats_client);
+  zx_status_t err = os.GetKernelStats(&state->stats_client);
   if (err != ZX_OK) {
     return err;
   }
 
   zx_info_handle_basic_t info;
-  err = os->GetInfo(os->ProcessSelf(), ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
+  err = os.GetInfo(os.ProcessSelf(), ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
   if (err != ZX_OK) {
     return err;
   }
@@ -181,118 +214,72 @@ zx_status_t Capture::GetCaptureState(CaptureState* state, OS* os) {
 
 // static.
 zx_status_t Capture::GetCapture(Capture* capture, const CaptureState& state, CaptureLevel level,
-                                CaptureFilter* filter,
+                                std::unique_ptr<CaptureStrategy> strategy,
                                 const std::vector<std::string>& rooted_vmo_names) {
   OSImpl osImpl;
-  return GetCapture(capture, state, level, filter, &osImpl, rooted_vmo_names);
+  return GetCapture(capture, state, level, std::move(strategy), osImpl, rooted_vmo_names);
 }
 
 zx_status_t Capture::GetCapture(Capture* capture, const CaptureState& state, CaptureLevel level,
-                                CaptureFilter* filter, OS* os,
+                                std::unique_ptr<CaptureStrategy> strategy, OS& os,
                                 const std::vector<std::string>& rooted_vmo_names) {
   TRACE_DURATION("memory_metrics", "Capture::GetCapture");
-  capture->time_ = os->GetMonotonic();
+  FX_CHECK(strategy);
+  capture->time_ = os.GetMonotonic();
 
   // Capture level KMEM only queries ZX_INFO_KMEM_STATS, as opposed to ZX_INFO_KMEM_STATS_EXTENDED
   // which queries a more detailed set of kernel metrics. KMEM capture level is used to poll the
   // free memory level every 10s in order to keep the highwater digest updated, so a lightweight
   // syscall is preferable.
   if (level == CaptureLevel::KMEM) {
-    return os->GetKernelMemoryStats(state.stats_client, &capture->kmem_);
+    return os.GetKernelMemoryStats(state.stats_client, capture->kmem_);
   }
 
   // ZX_INFO_KMEM_STATS_EXTENDED is more expensive to collect than ZX_INFO_KMEM_STATS, so only query
   // it for the more detailed capture levels. Use kmem_extended_ to populate the shared fields in
   // kmem_ (kmem_extended_ is a superset of kmem_), avoiding the need for a redundant syscall.
-  zx_status_t err = os->GetKernelMemoryStatsExtended(state.stats_client, &capture->kmem_extended_,
-                                                     &capture->kmem_);
+  zx_status_t err =
+      os.GetKernelMemoryStatsExtended(state.stats_client, capture->kmem_extended_, &capture->kmem_);
   if (err != ZX_OK) {
     return err;
   }
 
-  std::vector<memory::Process> processes;
-  std::unordered_map<zx_koid_t, zx::handle> process_handles;
+  // Some Fuchsia systems use ZRAM, ie. compressed RAM. ZX_INFO_KMEM_STATS_COMPRESSION retrieves
+  // information about this compression, so we can get an accurate view of the actual physical
+  // memory used.
+  err = os.GetKernelMemoryStatsCompression(state.stats_client, capture->kmem_compression_);
+  if (err != ZX_OK) {
+    return err;
+  }
 
   // We don't have a guarantee on the iteration order of GetProcesses. To be able to filter jobs
   // correctly based on the name of their processes, we need to go through all processes first. We
   // extract the process handle and keep it to avoid walking the process tree a second time.
-  err = os->GetProcesses([&os, filter, &processes, &process_handles](
-                             int depth, zx::handle handle, zx_koid_t koid, zx_koid_t parent_koid) {
-    TRACE_DURATION("memory_metrics", "Capture::GetProcesses::Callback");
-    auto& process = processes.emplace_back();
-    process.koid = koid;
-    process.job = parent_koid;
+  err = os.GetProcesses(
+      [&os, &strategy](int depth, zx::handle handle, zx_koid_t koid, zx_koid_t parent_koid) {
+        TRACE_DURATION("memory_metrics", "Capture::GetProcesses::Callback");
+        Process process{.koid = koid, .job = parent_koid};
 
-    zx_status_t s = os->GetProperty(handle.get(), ZX_PROP_NAME, process.name, ZX_MAX_NAME_LEN);
-    if (s != ZX_OK) {
-      processes.pop_back();
-      return s == ZX_ERR_BAD_STATE ? ZX_OK : s;
-    }
+        zx_status_t s = os.GetProperty(handle.get(), ZX_PROP_NAME, process.name, ZX_MAX_NAME_LEN);
+        if (s != ZX_OK) {
+          return s == ZX_ERR_BAD_STATE ? ZX_OK : s;
+        }
 
-    process_handles[koid] = std::move(handle);
+        s = strategy->OnNewProcess(os, std::move(process), std::move(handle));
+        return s == ZX_ERR_BAD_STATE ? ZX_OK : s;
+      });
 
-    if (filter != nullptr) {
-      filter->OnNewProcess(parent_koid, koid, process.name);
-    }
-
-    return ZX_OK;
-  });
-
-  // To speed up collection of VMO information, we reuse the same vector between GetInfo calls.
-  auto vmos = std::vector<zx_info_vmo_t>();
-  for (auto& process : processes) {
-    if (filter != nullptr && !filter->ShouldCapture(process.job, process.koid)) {
-      continue;
-    }
-
-    TRACE_DURATION_BEGIN("memory_metrics", "Capture::GetProcesses::GetVMOs");
-    size_t num_vmos = 0, available_vmos = 0, iter = 0;
-    bool bad_state_error = false;
-    do {
-      if (vmos.size() < available_vmos) {
-        vmos = std::vector<zx_info_vmo_t>(available_vmos);
-      }
-      zx_status_t s =
-          os->GetInfo(process_handles[process.koid].get(), ZX_INFO_PROCESS_VMOS, vmos.data(),
-                      vmos.size() * sizeof(zx_info_vmo_t), &num_vmos, &available_vmos);
-      // We don't want to show processes for which we don't have data (e.g. because they exited).
-      if (s == ZX_ERR_BAD_STATE) {
-        bad_state_error = true;
-        break;
-      }
-      if (s != ZX_OK) {
-        return s;
-      }
-      // We limit at 2 iterations maximum, to avoid running this loop forever when a process is
-      // allocating lots of VMOs.
-      iter++;
-    } while (num_vmos != available_vmos && iter < 2);
-    TRACE_DURATION_END("memory_metrics", "Capture::GetProcesses::GetVMOs");
-
-    if (bad_state_error) {
-      continue;
-    }
-
-    TRACE_DURATION_BEGIN("memory_metrics", "Capture::GetProcesses::UniqueProcessVMOs");
-    std::unordered_map<zx_koid_t, const zx_info_vmo_t*> unique_vmos;
-    unique_vmos.reserve(num_vmos);
-    for (size_t i = 0; i < num_vmos; i++) {
-      const auto* vmo_info = vmos.data() + i;
-      unique_vmos.try_emplace(vmo_info->koid, vmo_info);
-    }
-    TRACE_DURATION_END("memory_metrics", "Capture::GetProcesses::UniqueProcessVMOs");
-
-    TRACE_DURATION_BEGIN("memory_metrics", "Capture::GetProcesses::UniqueVMOs");
-    process.vmos.reserve(unique_vmos.size());
-    for (const auto& [koid, vmo] : unique_vmos) {
-      capture->koid_to_vmo_.try_emplace(koid, *vmo);
-      process.vmos.push_back(koid);
-    }
-    TRACE_DURATION_END("memory_metrics", "Capture::GetProcesses::UniqueVMOs");
-
-    capture->koid_to_process_[process.koid] = std::move(process);
+  auto result = strategy->Finalize(os);
+  if (result.is_error()) {
+    return result.error_value();
   }
+  auto& [koid_to_process, koid_to_vmo] = result.value();
+  capture->koid_to_process_ = std::move(koid_to_process);
+  capture->koid_to_vmo_ = std::move(koid_to_vmo);
+
+  TRACE_DURATION_BEGIN("memory_metrics", "Capture::GetProcesses::ReallocateDescendents");
   capture->ReallocateDescendents(rooted_vmo_names);
+  TRACE_DURATION_END("memory_metrics", "Capture::GetProcesses::ReallocateDescendents");
   return err;
 }
 

@@ -10,7 +10,6 @@
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/ddk/binding_priv.h>
 #include <lib/driver/compat/cpp/connect.h>
-#include <lib/driver/component/cpp/internal/lifecycle.h>
 #include <lib/driver/component/cpp/internal/start_args.h>
 #include <lib/driver/component/cpp/internal/symbols.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
@@ -24,13 +23,16 @@
 #include <zircon/dlfcn.h>
 
 #include "src/devices/lib/log/log.h"
+#include "src/devices/misc/drivers/compat/compat_driver_server.h"
 #include "src/devices/misc/drivers/compat/loader.h"
+#include "src/lib/driver_symbols/symbols.h"
 
 namespace fboot = fuchsia_boot;
 namespace fdf {
 using namespace fuchsia_driver_framework;
 }
 namespace fio = fuchsia_io;
+namespace fkernel = fuchsia_kernel;
 namespace fldsvc = fuchsia_ldsvc;
 namespace fdm = fuchsia_device_manager;
 
@@ -51,8 +53,14 @@ namespace {
 constexpr auto kOpenFlags = fio::wire::OpenFlags::kRightReadable |
                             fio::wire::OpenFlags::kRightExecutable |
                             fio::wire::OpenFlags::kNotDirectory;
-constexpr auto kVmoFlags = fio::wire::VmoFlags::kRead | fio::wire::VmoFlags::kExecute;
+constexpr auto kVmoFlags =
+    fio::wire::VmoFlags::kRead | fio::wire::VmoFlags::kExecute | fio::wire::VmoFlags::kPrivateClone;
 constexpr auto kLibDriverPath = "/pkg/driver/compat.so";
+
+std::string_view GetFilename(std::string_view path) {
+  size_t index = path.rfind('/');
+  return index == std::string_view::npos ? path : path.substr(index + 1);
+}
 
 zx::result<zx::vmo> LoadVmo(fdf::Namespace& ns, const char* path,
                             fuchsia_io::wire::OpenFlags flags) {
@@ -72,6 +80,102 @@ zx::result<zx::vmo> LoadVmo(fdf::Namespace& ns, const char* path,
 
 zx::result<zx::resource> GetRootResource(fdf::Namespace& ns) {
   zx::result resource = ns.Connect<fboot::RootResource>();
+  if (resource.is_error()) {
+    return resource.take_error();
+  }
+  fidl::WireResult result = fidl::WireCall(resource.value())->Get();
+  if (!result.ok()) {
+    return zx::error(result.status());
+  }
+  return zx::ok(std::move(result.value().resource));
+}
+
+zx::result<zx::resource> GetMmioResource(fdf::Namespace& ns) {
+  zx::result resource = ns.Connect<fkernel::MmioResource>();
+  if (resource.is_error()) {
+    return resource.take_error();
+  }
+  fidl::WireResult result = fidl::WireCall(resource.value())->Get();
+  if (!result.ok()) {
+    return zx::error(result.status());
+  }
+  return zx::ok(std::move(result.value().resource));
+}
+
+zx::result<zx::resource> GetPowerResource(fdf::Namespace& ns) {
+  zx::result resource = ns.Connect<fkernel::PowerResource>();
+  if (resource.is_error()) {
+    return resource.take_error();
+  }
+  fidl::WireResult result = fidl::WireCall(resource.value())->Get();
+  if (!result.ok()) {
+    return zx::error(result.status());
+  }
+  return zx::ok(std::move(result.value().resource));
+}
+
+zx::result<zx::resource> GetIommuResource(fdf::Namespace& ns) {
+  zx::result resource = ns.Connect<fkernel::IommuResource>();
+  if (resource.is_error()) {
+    return resource.take_error();
+  }
+  fidl::WireResult result = fidl::WireCall(resource.value())->Get();
+  if (!result.ok()) {
+    return zx::error(result.status());
+  }
+  return zx::ok(std::move(result.value().resource));
+}
+
+zx::result<zx::resource> GetFramebufferResource(fdf::Namespace& ns) {
+  zx::result resource = ns.Connect<fkernel::FramebufferResource>();
+  if (resource.is_error()) {
+    return resource.take_error();
+  }
+  fidl::WireResult result = fidl::WireCall(resource.value())->Get();
+  if (!result.ok()) {
+    return zx::error(result.status());
+  }
+  return zx::ok(std::move(result.value().resource));
+}
+
+zx::result<zx::resource> GetIoportResource(fdf::Namespace& ns) {
+  zx::result resource = ns.Connect<fkernel::IoportResource>();
+  if (resource.is_error()) {
+    return resource.take_error();
+  }
+  fidl::WireResult result = fidl::WireCall(resource.value())->Get();
+  if (!result.ok()) {
+    return zx::error(result.status());
+  }
+  return zx::ok(std::move(result.value().resource));
+}
+
+zx::result<zx::resource> GetIrqResource(fdf::Namespace& ns) {
+  zx::result resource = ns.Connect<fkernel::IrqResource>();
+  if (resource.is_error()) {
+    return resource.take_error();
+  }
+  fidl::WireResult result = fidl::WireCall(resource.value())->Get();
+  if (!result.ok()) {
+    return zx::error(result.status());
+  }
+  return zx::ok(std::move(result.value().resource));
+}
+
+zx::result<zx::resource> GetSmcResource(fdf::Namespace& ns) {
+  zx::result resource = ns.Connect<fkernel::SmcResource>();
+  if (resource.is_error()) {
+    return resource.take_error();
+  }
+  fidl::WireResult result = fidl::WireCall(resource.value())->Get();
+  if (!result.ok()) {
+    return zx::error(result.status());
+  }
+  return zx::ok(std::move(result.value().resource));
+}
+
+zx::result<zx::resource> GetInfoResource(fdf::Namespace& ns) {
+  zx::result resource = ns.Connect<fkernel::InfoResource>();
   if (resource.is_error()) {
     return resource.take_error();
   }
@@ -263,8 +367,17 @@ void Driver::Start(fdf::StartCompleter completer) {
   zx::result driver_vmo = LoadVmo(*incoming(), driver_path_.c_str(), kOpenFlags);
   if (driver_vmo.is_error()) {
     FDF_LOGL(ERROR, *logger_, "Failed to open driver vmo: %s", driver_vmo.status_string());
-    completer(loader_vmo.take_error());
+    completer(driver_vmo.take_error());
     return;
+  }
+
+  // Give the driver's VMO a name.
+  std::string_view vmo_name = GetFilename(driver_path_);
+  if (zx_status_t status = driver_vmo->set_property(ZX_PROP_NAME, vmo_name.data(), vmo_name.size());
+      status != ZX_OK) {
+    LOGF(ERROR, "Failed to name driver's DFv1 vmo '%s': %s", std::string(vmo_name).c_str(),
+         zx_status_get_string(status));
+    // We don't need to exit on this error, there will just be less debugging information.
   }
 
   if (zx::result result = LoadDriver(std::move(loader_vmo.value()), std::move(driver_vmo.value()));
@@ -314,6 +427,103 @@ zx_handle_t Driver::GetRootResource() {
   return root_resource_.get();
 }
 
+zx_handle_t Driver::GetMmioResource() {
+  if (!mmio_resource_.is_valid()) {
+    zx::result resource = ::GetMmioResource(*incoming());
+    if (resource.is_ok()) {
+      mmio_resource_ = std::move(resource.value());
+    } else {
+      FDF_LOGL(WARNING, *logger_, "Failed to get mmio_resource '%s'", resource.status_string());
+    }
+  }
+  return mmio_resource_.get();
+}
+
+zx_handle_t Driver::GetPowerResource() {
+  if (!power_resource_.is_valid()) {
+    zx::result resource = ::GetPowerResource(*incoming());
+    if (resource.is_ok()) {
+      power_resource_ = std::move(resource.value());
+    } else {
+      FDF_LOGL(WARNING, *logger_, "Failed to get power_resource '%s'", resource.status_string());
+    }
+  }
+  return power_resource_.get();
+}
+
+zx_handle_t Driver::GetIommuResource() {
+  if (!iommu_resource_.is_valid()) {
+    zx::result resource = ::GetIommuResource(*incoming());
+    if (resource.is_ok()) {
+      iommu_resource_ = std::move(resource.value());
+    } else {
+      FDF_LOGL(WARNING, *logger_, "Failed to get iommu_resource '%s'", resource.status_string());
+    }
+  }
+  return iommu_resource_.get();
+}
+
+zx_handle_t Driver::GetFramebufferResource() {
+  if (!framebuffer_resource_.is_valid()) {
+    zx::result resource = ::GetFramebufferResource(*incoming());
+    if (resource.is_ok()) {
+      framebuffer_resource_ = std::move(resource.value());
+    } else {
+      FDF_LOGL(WARNING, *logger_, "Failed to get framebuffer_resource '%s'",
+               resource.status_string());
+    }
+  }
+  return framebuffer_resource_.get();
+}
+
+zx_handle_t Driver::GetIoportResource() {
+  if (!ioport_resource_.is_valid()) {
+    zx::result resource = ::GetIoportResource(*incoming());
+    if (resource.is_ok()) {
+      ioport_resource_ = std::move(resource.value());
+    } else {
+      FDF_LOGL(WARNING, *logger_, "Failed to get ioport_resource '%s'", resource.status_string());
+    }
+  }
+  return ioport_resource_.get();
+}
+
+zx_handle_t Driver::GetIrqResource() {
+  if (!irq_resource_.is_valid()) {
+    zx::result resource = ::GetIrqResource(*incoming());
+    if (resource.is_ok()) {
+      irq_resource_ = std::move(resource.value());
+    } else {
+      FDF_LOGL(WARNING, *logger_, "Failed to get irq_resource '%s'", resource.status_string());
+    }
+  }
+  return irq_resource_.get();
+}
+
+zx_handle_t Driver::GetSmcResource() {
+  if (!smc_resource_.is_valid()) {
+    zx::result resource = ::GetSmcResource(*incoming());
+    if (resource.is_ok()) {
+      smc_resource_ = std::move(resource.value());
+    } else {
+      FDF_LOGL(WARNING, *logger_, "Failed to get smc_resource '%s'", resource.status_string());
+    }
+  }
+  return smc_resource_.get();
+}
+
+zx_handle_t Driver::GetInfoResource() {
+  if (!info_resource_.is_valid()) {
+    zx::result resource = ::GetInfoResource(*incoming());
+    if (resource.is_ok()) {
+      info_resource_ = std::move(resource.value());
+    } else {
+      FDF_LOGL(WARNING, *logger_, "Failed to get info_resource '%s'", resource.status_string());
+    }
+  }
+  return info_resource_.get();
+}
+
 bool Driver::IsRunningOnDispatcher() const {
   fdf::Unowned<fdf::Dispatcher> current_dispatcher = fdf::Dispatcher::GetCurrent();
   if (current_dispatcher == fdf::Unowned<fdf::Dispatcher>{}) {
@@ -344,20 +554,21 @@ zx_status_t Driver::RunOnDispatcher(fit::callback<zx_status_t()> task) {
     return status;
   }
   completion.Wait();
-  return status;
+  return task_status;
 }
 
 void Driver::PrepareStop(fdf::PrepareStopCompleter completer) {
   zx::result client = this->incoming()->Connect<fuchsia_device_manager::SystemStateTransition>();
   if (client.is_error()) {
-    FDF_SLOG(ERROR, "failed to connect to fuchsia.device.manager/SystemStateTransition",
-             KV("status", client.status_value()));
+    FDF_LOGL(ERROR, *logger_,
+             "failed to connect to fuchsia.device.manager/SystemStateTransition: %s",
+             client.status_string());
     completer(client.take_error());
     return;
   }
   fidl::WireResult result = fidl::WireCall(client.value())->GetTerminationSystemState();
   if (!result.ok()) {
-    FDF_SLOG(ERROR, "failed to get termination state", KV("status", client.status_value()));
+    FDF_LOGL(ERROR, *logger_, "failed to get termination state: %s", client.status_string());
     completer(zx::error(result.error().status()));
     return;
   }
@@ -400,6 +611,19 @@ zx::result<> Driver::LoadDriver(zx::vmo loader_vmo, zx::vmo driver_vmo) {
     }
     Loader loader(loader_loop.dispatcher(), original_loader.borrow(), std::move(loader_vmo));
     fidl::BindServer(loader_loop.dispatcher(), std::move(new_loader_endpoints->server), &loader);
+
+    auto result = driver_symbols::FindRestrictedSymbols(driver_vmo, url_str);
+    if (result.is_error()) {
+      LOGF(WARNING, "Driver '%s' failed to validate as ELF: %s", url_str.c_str(),
+           result.status_value());
+    } else if (result->size() > 0) {
+      LOGF(ERROR, "Driver '%s' referenced %lu restricted libc symbols: ", url_str.c_str(),
+           result->size());
+      for (auto& str : *result) {
+        LOGF(ERROR, str.c_str());
+      }
+      return zx::error(ZX_ERR_NOT_SUPPORTED);
+    }
 
     // Open driver.
     library_ = dlopen_vmo(driver_vmo.get(), RTLD_NOW);
@@ -542,7 +766,7 @@ zx::result<> Driver::StartDriver() {
 
 fpromise::promise<void, zx_status_t> Driver::ConnectToParentDevices() {
   bridge<void, zx_status_t> bridge;
-  compat::ConnectToParentDevices(
+  auto task = compat::ConnectToParentDevices(
       dispatcher(), incoming().get(),
       [this, completer = std::move(bridge.completer)](
           zx::result<std::vector<compat::ParentDevice>> devices) mutable {
@@ -571,6 +795,7 @@ fpromise::promise<void, zx_status_t> Driver::ConnectToParentDevices() {
         device_.set_fragments(std::move(parents_names));
         completer.complete_ok();
       });
+  async_tasks_.AddTask(std::move(task));
   return bridge.consumer.promise_or(error(ZX_ERR_INTERNAL)).wrap_with(scope_);
 }
 
@@ -716,28 +941,6 @@ zx::result<std::string> Driver::GetVariable(const char* name) {
   return zx::ok(std::string(result->value.data(), result->value.size()));
 }
 
-void DriverFactory::CreateDriver(fdf::DriverStartArgs start_args,
-                                 fdf::UnownedSynchronizedDispatcher driver_dispatcher,
-                                 fdf::StartCompleter completer) {
-  auto compat_device = fdf_internal::GetSymbol<const device_t*>(start_args.symbols(), kDeviceSymbol,
-                                                                &kDefaultDevice);
-  const zx_protocol_device_t* ops =
-      fdf_internal::GetSymbol<const zx_protocol_device_t*>(start_args.symbols(), kOps);
-
-  // Open the compat driver's binary within the package.
-  auto compat = fdf_internal::ProgramValue(start_args.program(), "compat");
-  if (compat.is_error()) {
-    completer(compat.take_error());
-    return;
-  }
-
-  auto driver = std::make_unique<Driver>(std::move(start_args), std::move(driver_dispatcher),
-                                         *compat_device, ops, "/pkg/" + *compat);
-  fdf::DriverBase* driver_ptr = driver.get();
-  completer.set_driver(std::move(driver));
-  driver_ptr->Start(std::move(completer));
-}
-
 zx_status_t Driver::ServeDiagnosticsDir() {
   diagnostics_vfs_ = std::make_unique<fs::SynchronousVfs>(dispatcher());
 
@@ -757,6 +960,39 @@ zx_status_t Driver::ServeDiagnosticsDir() {
     return result.status_value();
   }
   return ZX_OK;
+}
+
+zx_status_t Driver::GetProtocol(uint32_t proto_id, void* out) {
+  return RunOnDispatcher([proto_id, out, &client = parent_client_, &logger = logger_]() {
+    static uint64_t process_koid = []() {
+      zx_info_handle_basic_t basic;
+      ZX_ASSERT(zx::process::self()->get_info(ZX_INFO_HANDLE_BASIC, &basic, sizeof(basic), nullptr,
+                                              nullptr) == ZX_OK);
+      return basic.koid;
+    }();
+
+    fidl::WireResult result = client.sync()->GetBanjoProtocol(proto_id, process_koid);
+    if (!result.ok()) {
+      FDF_LOGL(ERROR, *logger, "Failed to send request to get banjo protocol: %s",
+               result.status_string());
+      return result.status();
+    }
+    if (result->is_error()) {
+      FDF_LOGL(ERROR, *logger, "Failed to get banjo protocol: %s",
+               zx_status_get_string(result->error_value()));
+      return result->error_value();
+    }
+
+    struct GenericProtocol {
+      const void* ops;
+      void* ctx;
+    };
+
+    auto proto = static_cast<GenericProtocol*>(out);
+    proto->ops = reinterpret_cast<const void*>(result->value()->ops);
+    proto->ctx = reinterpret_cast<void*>(result->value()->context);
+    return ZX_OK;
+  });
 }
 
 zx_status_t Driver::GetFragmentProtocol(const char* fragment, uint32_t proto_id, void* out) {
@@ -799,5 +1035,5 @@ zx_status_t Driver::GetFragmentProtocol(const char* fragment, uint32_t proto_id,
 
 }  // namespace compat
 
-using record = fdf_internal::Lifecycle<compat::Driver, compat::DriverFactory>;
-FUCHSIA_DRIVER_LIFECYCLE_CPP_V3(record);
+EXPORT_FUCHSIA_DRIVER_REGISTRATION_V1(compat::CompatDriverServer::initialize,
+                                      compat::CompatDriverServer::destroy);

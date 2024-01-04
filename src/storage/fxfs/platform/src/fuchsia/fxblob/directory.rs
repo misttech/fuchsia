@@ -18,7 +18,6 @@ use {
     },
     anyhow::{bail, ensure, Error},
     async_trait::async_trait,
-    delivery_blob::DELIVERY_PATH_PREFIX,
     fidl::endpoints::{create_proxy, ClientEnd, Proxy as _, ServerEnd},
     fidl_fuchsia_fxfs::{
         BlobCreatorRequest, BlobCreatorRequestStream, BlobReaderRequest, BlobReaderRequestStream,
@@ -28,6 +27,7 @@ use {
         self as fio, FilesystemInfo, MutableNodeAttributes, NodeAttributeFlags, NodeAttributes,
         NodeMarker, WatchMask,
     },
+    fuchsia_async as fasync,
     fuchsia_hash::Hash,
     fuchsia_merkle::{MerkleTree, MerkleTreeBuilder},
     fuchsia_zircon::Status,
@@ -35,10 +35,10 @@ use {
     fxfs::{
         errors::FxfsError,
         log::*,
-        object_handle::{ObjectProperties, ReadObjectHandle},
+        object_handle::ReadObjectHandle,
         object_store::{
             self,
-            transaction::{LockKey, Options},
+            transaction::{lock_keys, LockKey, Options},
             HandleOptions, ObjectDescriptor, ObjectStore, BLOB_MERKLE_ATTRIBUTE_ID,
         },
         serialized_types::BlobMetadata,
@@ -66,6 +66,26 @@ pub struct BlobDirectory {
     directory: Arc<FxDirectory>,
 }
 
+/// Instead of constantly switching back and forth between strings and hashes. Do it once and then
+/// just pass around a reference to that.
+pub(crate) struct Identifier {
+    pub string: String,
+    pub hash: Hash,
+}
+
+impl Identifier {
+    pub fn from_str(string: &str) -> Result<Self, Error> {
+        Ok(Self {
+            string: string.to_owned(),
+            hash: Hash::from_str(string).map_err(|_| FxfsError::InvalidArgs)?,
+        })
+    }
+
+    pub fn from_hash(hash: Hash) -> Self {
+        Self { string: hash.to_string(), hash }
+    }
+}
+
 #[async_trait]
 impl RootDir for BlobDirectory {
     fn as_directory_entry(self: Arc<Self>) -> Arc<dyn DirectoryEntry> {
@@ -76,20 +96,24 @@ impl RootDir for BlobDirectory {
         self as Arc<dyn FxNode>
     }
 
+    fn on_open(self: Arc<Self>) {
+        fasync::Task::spawn(async move {
+            if let Err(e) = self.prefetch_blobs().await {
+                warn!("Failed to prefetch blobs: {:?}", e);
+            }
+        })
+        .detach();
+    }
+
     async fn handle_blob_creator_requests(self: Arc<Self>, mut requests: BlobCreatorRequestStream) {
         while let Ok(Some(request)) = requests.try_next().await {
             match request {
                 BlobCreatorRequest::Create { responder, hash, .. } => {
-                    // TODO(fxbug.dev/129357): Figure out how we handle concurrent writes to the
-                    // same blob.
-                    responder
-                        .send(self.create_blob(Hash::from(hash)).await.map_err(|error| {
-                            tracing::error!(?error, "blob service: create failed");
-                            error
-                        }))
-                        .unwrap_or_else(|error| {
+                    responder.send(self.create_blob(Hash::from(hash)).await).unwrap_or_else(
+                        |error| {
                             tracing::error!(?error, "failed to send Create response");
-                        });
+                        },
+                    );
                 }
             }
         }
@@ -117,6 +141,7 @@ impl RootDir for BlobDirectory {
 
 impl BlobDirectory {
     fn new(directory: FxDirectory) -> Self {
+        fuchsia_merkle::crypto_library_init();
         Self { directory: Arc::new(directory) }
     }
 
@@ -132,64 +157,118 @@ impl BlobDirectory {
         self.directory.store()
     }
 
-    pub async fn lookup(
-        self: &Arc<Self>,
-        flags: fio::OpenFlags,
-        mut path: Path,
-    ) -> Result<OpenedNode<dyn FxNode>, Error> {
-        if path.is_empty() {
-            return Ok(OpenedNode::new(self.clone()));
-        }
-        if !path.is_single_component() {
-            bail!(FxfsError::NotFound);
-        }
+    async fn prefetch_blobs(self: &Arc<Self>) -> Result<(), Error> {
         let store = self.store();
         let fs = store.filesystem();
-        let name = path.next().unwrap();
-        let name = name.strip_prefix(DELIVERY_PATH_PREFIX).unwrap_or(name);
-        let hash = Hash::from_str(name).map_err(|_| FxfsError::InvalidArgs)?;
+
+        let dirents = {
+            let _guard = fs
+                .lock_manager()
+                .read_lock(lock_keys![LockKey::object(
+                    store.store_object_id(),
+                    self.directory.object_id()
+                )])
+                .await;
+            let mut dirents = vec![];
+            let layer_set = store.tree().layer_set();
+            let mut merger = layer_set.merger();
+            let mut iter = self.directory.directory().iter(&mut merger).await?;
+            let mut num = 0;
+            let limit = self.directory.directory().owner().dirent_cache().limit();
+            while let Some((name, object_id, _)) = iter.get() {
+                dirents.push((Identifier::from_str(name)?, object_id));
+                iter.advance().await?;
+                num += 1;
+                if num >= limit {
+                    break;
+                }
+            }
+            dirents
+        };
+
+        for (identifier, object_id) in dirents {
+            if let Ok(node) = self.get_or_load_node(object_id, &identifier).await {
+                self.directory.directory().owner().dirent_cache().insert(
+                    self.directory.object_id(),
+                    identifier.string,
+                    node,
+                );
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn lookup(
+        self: &Arc<Self>,
+        flags: fio::OpenFlags,
+        id: Identifier,
+    ) -> Result<OpenedNode<dyn FxNode>, Error> {
+        let store = self.store();
+        let fs = store.filesystem();
 
         // TODO(fxbug.dev/122125): Create the transaction here if we might need to create the object
         // so that we have a lock in place.
-        let keys = [LockKey::object(store.store_object_id(), self.directory.object_id())];
+        let keys = lock_keys![LockKey::object(store.store_object_id(), self.directory.object_id())];
 
         // A lock needs to be held over searching the directory and incrementing the open count.
-        let guard = fs.read_lock(&keys).await;
+        let guard = fs.lock_manager().read_lock(keys.clone()).await;
 
-        match self.directory.directory().lookup(name).await? {
-            Some((object_id, object_descriptor)) => {
+        let child_node = match self
+            .directory
+            .directory()
+            .owner()
+            .dirent_cache()
+            .lookup(&(self.directory.object_id(), &id.string))
+        {
+            Some(node) => Some(node),
+            None => {
+                if let Some((object_id, _)) = self.directory.directory().lookup(&id.string).await? {
+                    let node = self.get_or_load_node(object_id, &id).await?;
+                    self.directory.directory().owner().dirent_cache().insert(
+                        self.directory.object_id(),
+                        id.string.clone(),
+                        node.clone(),
+                    );
+                    Some(node)
+                } else {
+                    None
+                }
+            }
+        };
+        match child_node {
+            Some(node) => {
                 ensure!(
                     !flags.contains(fio::OpenFlags::CREATE | fio::OpenFlags::CREATE_IF_ABSENT),
                     FxfsError::AlreadyExists
                 );
                 ensure!(!flags.contains(fio::OpenFlags::RIGHT_WRITABLE), FxfsError::AccessDenied);
-                match object_descriptor {
+                match node.object_descriptor() {
                     ObjectDescriptor::File => {
                         ensure!(!flags.contains(fio::OpenFlags::DIRECTORY), FxfsError::NotDir)
                     }
                     _ => bail!(FxfsError::Inconsistent),
                 }
                 // TODO(fxbug.dev/122125): Test that we can't open a blob while still writing it.
-                Ok(OpenedNode::new(self.get_or_load_node(object_id, name).await?))
+                Ok(OpenedNode::new(node))
             }
             None => {
                 std::mem::drop(guard);
 
                 ensure!(flags.contains(fio::OpenFlags::CREATE), FxfsError::NotFound);
                 ensure!(flags.contains(fio::OpenFlags::RIGHT_WRITABLE), FxfsError::AccessDenied);
-                let mut transaction = fs.clone().new_transaction(&keys, Options::default()).await?;
+                let mut transaction = fs.clone().new_transaction(keys, Options::default()).await?;
 
                 let handle = ObjectStore::create_object(
                     self.volume(),
                     &mut transaction,
                     HandleOptions::default(),
-                    store.crypt().as_deref(),
+                    None,
                     None,
                 )
                 .await?;
 
                 let node = OpenedNode::new(
-                    FxDeliveryBlob::new(self.clone(), hash, handle) as Arc<dyn FxNode>
+                    FxDeliveryBlob::new(self.clone(), id.hash, handle) as Arc<dyn FxNode>
                 );
 
                 // Add the object to the graveyard so that it's cleaned up if we crash.
@@ -210,26 +289,21 @@ impl BlobDirectory {
     async fn get_or_load_node(
         self: &Arc<Self>,
         object_id: u64,
-        name: &str,
+        id: &Identifier,
     ) -> Result<Arc<dyn FxNode>, Error> {
         let volume = self.volume();
         match volume.cache().get_or_reserve(object_id).await {
             GetResult::Node(node) => Ok(node),
             GetResult::Placeholder(placeholder) => {
-                let hash = Hash::from_str(name).map_err(|_| FxfsError::Inconsistent)?;
-                let object = ObjectStore::open_object(
-                    volume,
-                    object_id,
-                    HandleOptions::default(),
-                    volume.store().crypt(),
-                )
-                .await?;
+                let object =
+                    ObjectStore::open_object(volume, object_id, HandleOptions::default(), None)
+                        .await?;
                 let (tree, metadata) = match object.read_attr(BLOB_MERKLE_ATTRIBUTE_ID).await? {
                     None => {
                         // If the file is uncompressed and is small enough, it may not have any
                         // metadata stored on disk.
                         (
-                            MerkleTree::from_levels(vec![vec![hash]]),
+                            MerkleTree::from_levels(vec![vec![id.hash]]),
                             BlobMetadata {
                                 hashes: vec![],
                                 chunk_size: 0,
@@ -241,14 +315,14 @@ impl BlobDirectory {
                     Some(data) => {
                         let mut metadata: BlobMetadata = bincode::deserialize_from(&*data)?;
                         let tree = if metadata.hashes.is_empty() {
-                            MerkleTree::from_levels(vec![vec![hash]])
+                            MerkleTree::from_levels(vec![vec![id.hash]])
                         } else {
                             let mut builder = MerkleTreeBuilder::new();
                             for hash in std::mem::take(&mut metadata.hashes) {
                                 builder.push_data_hash(hash.into());
                             }
                             let tree = builder.finish();
-                            ensure!(tree.root() == hash, FxfsError::Inconsistent);
+                            ensure!(tree.root() == id.hash, FxfsError::Inconsistent);
                             tree
                         };
                         (tree, metadata)
@@ -276,11 +350,7 @@ impl BlobDirectory {
             | fio::OpenFlags::CREATE_IF_ABSENT
             | fio::OpenFlags::RIGHT_WRITABLE
             | fio::OpenFlags::RIGHT_READABLE;
-        let path = Path::validate_and_split(hash.to_string()).map_err(|e| {
-            tracing::error!("failed to validate path: {:?}", e);
-            CreateBlobError::Internal
-        })?;
-        let node = match self.lookup(flags, path).await {
+        let node = match self.lookup(flags, Identifier::from_hash(hash)).await {
             Ok(node) => node,
             Err(e) => {
                 if FxfsError::AlreadyExists.matches(&e) {
@@ -349,7 +419,6 @@ impl BlobDirectory {
     }
 }
 
-#[async_trait]
 impl FxNode for BlobDirectory {
     fn object_id(&self) -> u64 {
         self.directory.object_id()
@@ -364,12 +433,12 @@ impl FxNode for BlobDirectory {
         unreachable!();
     }
 
-    async fn get_properties(&self) -> Result<ObjectProperties, Error> {
-        self.directory.get_properties().await
-    }
-
     fn open_count_add_one(&self) {}
     fn open_count_sub_one(self: Arc<Self>) {}
+
+    fn object_descriptor(&self) -> ObjectDescriptor {
+        ObjectDescriptor::Directory
+    }
 }
 
 #[async_trait]
@@ -419,27 +488,22 @@ impl DirectoryEntry for BlobDirectory {
     ) {
         flags.to_object_request(server_end).spawn(&scope.clone(), move |object_request| {
             async move {
-                let node = self.lookup(flags, path.clone()).await.map_err(|e| {
-                    debug!(?e, "lookup failed");
-                    map_to_status(e)
-                })?;
-                if node.is::<BlobDirectory>() {
+                if path.is_empty() {
                     object_request.create_connection(
                         scope,
-                        node.downcast::<BlobDirectory>().unwrap_or_else(|_| unreachable!()).take(),
+                        OpenedNode::new(self.clone())
+                            .downcast::<BlobDirectory>()
+                            .unwrap_or_else(|_| unreachable!())
+                            .take(),
                         flags,
                         MutableConnection::create,
                     )
-                } else if node.is::<FxBlob>() {
-                    let node = node.downcast::<FxBlob>().unwrap_or_else(|_| unreachable!());
-                    FxBlob::create_connection_async(node, scope, flags, object_request)
-                } else if node.is::<FxDeliveryBlob>() {
-                    tracing::error!(
-                        "Tried to create a delivery blob via open(). Blob creation is only supported via the BlobCreator."
-                    );
-                    return Err(Status::NOT_SUPPORTED);
                 } else {
-                    unreachable!();
+                    tracing::error!(
+                        "Tried to open a blob via open(). Use the BlobCreator or BlobReader
+                            instead."
+                    );
+                    Err(Status::NOT_SUPPORTED)
                 }
             }
             .boxed()
@@ -462,6 +526,10 @@ impl vfs::node::Node for BlobDirectory {
         requested_attributes: fio::NodeAttributesQuery,
     ) -> Result<fio::NodeAttributes2, Status> {
         self.directory.get_attributes(requested_attributes).await
+    }
+
+    fn query_filesystem(&self) -> Result<FilesystemInfo, Status> {
+        self.directory.query_filesystem()
     }
 }
 
@@ -487,10 +555,6 @@ impl vfs::directory::entry_container::Directory for BlobDirectory {
 
     fn unregister_watcher(self: Arc<Self>, key: usize) {
         self.directory.clone().unregister_watcher(key)
-    }
-
-    fn query_filesystem(&self) -> Result<FilesystemInfo, Status> {
-        self.directory.query_filesystem()
     }
 }
 
@@ -524,9 +588,9 @@ mod tests {
 
         let data = [1; 1000];
 
-        let hash = fixture.write_blob(&data).await;
+        let hash = fixture.write_blob(&data, CompressionMode::Never).await;
 
-        assert_eq!(fixture.read_blob(&format!("{}", hash)).await, data);
+        assert_eq!(fixture.read_blob(hash).await, data);
 
         fixture
             .root()
@@ -684,7 +748,7 @@ mod tests {
         let fixture = new_blob_fixture().await;
 
         let data = vec![];
-        let hash = fixture.write_blob(&data).await;
+        let hash = fixture.write_blob(&data, CompressionMode::Never).await;
 
         let (status, token) = fixture.root().get_token().await.expect("FIDL failed");
         Status::ok(status).unwrap();
@@ -703,7 +767,7 @@ mod tests {
         let fixture = new_blob_fixture().await;
 
         let data = vec![];
-        let hash = fixture.write_blob(&data).await;
+        let hash = fixture.write_blob(&data, CompressionMode::Never).await;
 
         let (status, token) = fixture.root().get_token().await.expect("FIDL failed");
         Status::ok(status).unwrap();

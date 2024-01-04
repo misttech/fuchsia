@@ -4,25 +4,25 @@
 
 #include <lib/magma/magma.h>
 #include <lib/magma/magma_common_defs.h>
+#include <lib/magma/magma_logging.h>
+#include <lib/magma/platform/platform_connection_client.h>
+#include <lib/magma/platform/platform_device_client.h>
+#include <lib/magma/platform/platform_handle.h>
+#include <lib/magma/platform/platform_logger.h>
+#include <lib/magma/platform/platform_logger_provider.h>
+#include <lib/magma/platform/platform_object.h>
+#include <lib/magma/platform/platform_port.h>
+#include <lib/magma/platform/platform_semaphore.h>
+#include <lib/magma/platform/platform_thread.h>
+#include <lib/magma/platform/platform_trace.h>
+#include <lib/magma/platform/platform_trace_provider.h>
+#include <lib/magma/util/macros.h>
+#include <lib/magma/util/short_macros.h>
+#include <lib/magma/util/utils.h>
 
 #include <atomic>
 #include <chrono>
 #include <map>
-
-#include "magma_util/macros.h"
-#include "magma_util/short_macros.h"
-#include "magma_util/utils.h"
-#include "platform_connection_client.h"
-#include "platform_device_client.h"
-#include "platform_handle.h"
-#include "platform_logger.h"
-#include "platform_logger_provider.h"
-#include "platform_object.h"
-#include "platform_port.h"
-#include "platform_semaphore.h"
-#include "platform_thread.h"
-#include "platform_trace.h"
-#include "platform_trace_provider.h"
 
 namespace {
 
@@ -202,6 +202,25 @@ magma_status_t magma_buffer_export(magma_buffer_t buffer, uint32_t* buffer_handl
   return MAGMA_STATUS_OK;
 }
 
+void magma_fuchsia_log(int8_t severity, const char* tag, const char* file, int line,
+                       const char* format, va_list va) {
+  magma::PlatformLogger::LogLevel level;
+  switch (severity) {
+    case 0x30:
+      level = magma::PlatformLogger::LOG_INFO;
+      break;
+    case 0x40:
+      level = magma::PlatformLogger::LOG_WARNING;
+      break;
+    case 0x50:
+      level = magma::PlatformLogger::LOG_ERROR;
+      break;
+    default:
+      level = magma::PlatformLogger::LOG_INFO;
+  }
+  magma::PlatformLogger::LogVa(level, file, line, format, va);
+}
+
 magma_status_t magma_connection_map_buffer(magma_connection_t connection, uint64_t hw_va,
                                            magma_buffer_t buffer, uint64_t offset, uint64_t length,
                                            uint64_t map_flags) {
@@ -289,7 +308,7 @@ magma_status_t magma_connection_execute_immediate_commands(
     magma_inline_command_buffer* command_buffers) {
   uint64_t messages_sent;
   return magma::PlatformConnectionClient::cast(connection)
-      ->ExecuteImmediateCommands(context_id, command_count, command_buffers, &messages_sent);
+      ->ExecuteInlineCommands(context_id, command_count, command_buffers, &messages_sent);
 }
 
 magma_status_t magma_connection_create_semaphore(magma_connection_t connection,
@@ -434,14 +453,6 @@ magma_status_t magma_semaphore_export(magma_semaphore_t semaphore, uint32_t* sem
     return DRET_MSG(MAGMA_STATUS_INVALID_ARGS, "duplicate_handle failed");
 
   return MAGMA_STATUS_OK;
-}
-
-magma_status_t magma_connection_import_semaphore(magma_connection_t connection,
-                                                 uint32_t semaphore_handle,
-                                                 magma_semaphore_t* semaphore_out,
-                                                 magma_semaphore_id_t* id_out) {
-  return magma_connection_import_semaphore2(connection, semaphore_handle, /*flags=*/0,
-                                            semaphore_out, id_out);
 }
 
 magma_status_t magma_connection_import_semaphore2(magma_connection_t connection,

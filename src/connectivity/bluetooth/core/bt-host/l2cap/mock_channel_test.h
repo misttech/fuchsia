@@ -5,8 +5,9 @@
 #ifndef SRC_CONNECTIVITY_BLUETOOTH_CORE_BT_HOST_L2CAP_MOCK_CHANNEL_TEST_H_
 #define SRC_CONNECTIVITY_BLUETOOTH_CORE_BT_HOST_L2CAP_MOCK_CHANNEL_TEST_H_
 
+#include <pw_async/fake_dispatcher_fixture.h>
+
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/fake_channel.h"
-#include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 
 namespace bt::l2cap::testing {
 
@@ -22,7 +23,7 @@ namespace bt::l2cap::testing {
 // foo.Start();
 // EXPECT_TRUE(AllExpectedPacketsSent());
 // fake_chan()->Receive(kRequest_2); // Simulate inbound packet
-class MockChannelTest : public ::gtest::TestLoopFixture {
+class MockChannelTest : public pw::async::test::FakeDispatcherFixture {
  public:
   struct ExpectationMetadata {
     const char* file;
@@ -79,6 +80,8 @@ class MockChannelTest : public ::gtest::TestLoopFixture {
 
   void TearDown() override;
 
+  pw::async::HeapDispatcher& heap_dispatcher() { return heap_dispatcher_; }
+
   // Queues a transaction into the MockChannelTest's expected packet queue. Each packet received
   // through the channel will be verified against the next expected transaction in the queue. A
   // mismatch will cause a fatal assertion. On a match, MockChannelTest will send back the replies
@@ -104,6 +107,7 @@ class MockChannelTest : public ::gtest::TestLoopFixture {
   std::queue<Transaction> transactions_;
   std::unique_ptr<FakeChannel> fake_chan_;
   PacketCallback packet_callback_;
+  pw::async::HeapDispatcher heap_dispatcher_{dispatcher()};
 };
 
 // Helper macro for expecting a packet and receiving a variable number of responses.

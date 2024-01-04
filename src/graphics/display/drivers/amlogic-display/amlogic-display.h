@@ -6,7 +6,6 @@
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_AMLOGIC_DISPLAY_AMLOGIC_DISPLAY_H_
 
 #include <fidl/fuchsia.hardware.amlogiccanvas/cpp/wire.h>
-#include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
 #include <fidl/fuchsia.hardware.sysmem/cpp/wire.h>
 #include <fidl/fuchsia.images2/cpp/wire.h>
 #include <fidl/fuchsia.sysmem/cpp/wire.h>
@@ -34,10 +33,13 @@
 #include <fbl/intrusive_double_list.h>
 #include <fbl/mutex.h>
 
+#include "src/graphics/display/drivers/amlogic-display/capture.h"
 #include "src/graphics/display/drivers/amlogic-display/common.h"
-#include "src/graphics/display/drivers/amlogic-display/osd.h"
+#include "src/graphics/display/drivers/amlogic-display/hot-plug-detection.h"
+#include "src/graphics/display/drivers/amlogic-display/video-input-unit.h"
 #include "src/graphics/display/drivers/amlogic-display/vout.h"
 #include "src/graphics/display/drivers/amlogic-display/vpu.h"
+#include "src/graphics/display/lib/api-types-cpp/display-timing.h"
 #include "src/graphics/display/lib/api-types-cpp/driver-buffer-collection-id.h"
 
 namespace amlogic_display {
@@ -92,7 +94,11 @@ class AmlogicDisplay
 
   ~AmlogicDisplay();
 
-  // This function is called from the c-bind function upon driver matching
+  // Acquires parent resources, sets up display submodules, and binds itself to
+  // the device node.
+  //
+  // Must be called once and only once by the device manager (via the Create()
+  // factory method) during the driver lifetime.
   zx_status_t Bind();
 
   // Required functions needed to implement Display Controller Protocol
@@ -102,10 +108,10 @@ class AmlogicDisplay
       uint64_t banjo_driver_buffer_collection_id, zx::channel collection_token);
   zx_status_t DisplayControllerImplReleaseBufferCollection(
       uint64_t banjo_driver_buffer_collection_id);
-  zx_status_t DisplayControllerImplImportImage(image_t* image,
+  zx_status_t DisplayControllerImplImportImage(const image_t* image,
                                                uint64_t banjo_driver_buffer_collection_id,
-                                               uint32_t index);
-  void DisplayControllerImplReleaseImage(image_t* image);
+                                               uint32_t index, uint64_t* out_image_handle);
+  void DisplayControllerImplReleaseImage(uint64_t image_handle);
   config_check_result_t DisplayControllerImplCheckConfiguration(
       const display_config_t** display_configs, size_t display_count,
       client_composition_opcode_t* out_client_composition_opcodes_list,
@@ -155,47 +161,111 @@ class AmlogicDisplay
 
   void SetSysmemAllocatorForTesting(
       fidl::WireSyncClient<fuchsia_sysmem::Allocator> sysmem_allocator_client) {
-    sysmem_allocator_client_ = std::move(sysmem_allocator_client);
+    sysmem_ = std::move(sysmem_allocator_client);
   }
 
  private:
-  int VSyncThread();
-  int CaptureThread();
-  int HpdThread();
+  void VSyncThreadEntryPoint();
+  void CaptureThreadEntryPoint();
   void PopulatePanelType() TA_REQ(display_mutex_);
 
-  // Sets up the hotlpug display detection hardware interrupts and starts the
-  // interrupt handler thread.
+  void OnHotPlugStateChange(HotPlugDetectionState current_state);
+  void OnCaptureComplete();
+
+  // TODO(fxbug.dev/132267): Currently, AmlogicDisplay has a multi-step
+  // initialization procedure when the device manager binds the driver to the
+  // device node. This makes the initialization stateful and hard to maintain
+  // (submodules may have dependencies on initialization). Instead, it's
+  // preferred to turn the initialization procedure into a builder pattern,
+  // where resources are acquired before the device is created, and the device
+  // is guaranteed to be ready at creation time.
+
+  // Acquires the common protocols (pdev, sysmem and amlogic-canvas) and
+  // resources (Vsync interrupts, capture interrupts and BTIs) from the parent
+  // nodes.
+  //
+  // Must be called once and only once per driver binding procedure, before
+  // the protocols / resources mentioned above being used.
+  zx_status_t GetCommonProtocolsAndResources();
+
+  // Must be called once and only once per driver binding procedure.
+  //
+  // `GetCommonProtocolsAndResources()` must be called to acquire sysmem
+  // protocol before this is called.
+  zx_status_t InitializeSysmemAllocator();
+
+  // Allocates and initializes the video output (Vout) hardware submodule of
+  // the Video Processing Unit. The type of display (MIPI-DSI or HDMI) is based
+  // on the panel metadata provided by the board driver.
+  //
+  // Must be called once and only once per driver binding procedure.
+  // `vout_` must not be allocated nor initialized.
+  zx_status_t InitializeVout();
+
+  // A helper allocating and initializing the video output (Vout) hardware
+  // submodule for MIPI-DSI displays.
+  //
+  // `vout_` must not be allocated nor initialized.
+  zx_status_t InitializeMipiDsiVout(display_panel_t panel_info);
+
+  // A helper allocating and initializing the video output (Vout) hardware
+  // submodule for HDMI displays.
+  //
+  // `vout_` must not be allocated nor initialized.
+  zx_status_t InitializeHdmiVout();
+
+  // Starts the Vsync interrupt handler thread.
+  //
+  // Must be called once and only once per driver binding procedure.
+  //  `GetCommonProtocolsAndResources()` must be called to acquire the Vsync
+  // interrupt before this is called.
+  zx_status_t StartVsyncInterruptHandlerThread();
+
+  // Acquires the hotplug display detection hardware resources (GPIO protocol
+  // and interrupt for the hotplug detection GPIO pin) from parent nodes, and
+  // starts the interrupt handler thread.
+  //
+  // Must be called once and only once per driver binding procedure, if display
+  // hotplug is supported.
   zx_status_t SetupHotplugDisplayDetection();
 
-  // This function enables the display hardware. This function is disruptive and causes
-  // unexpected pixels to be visible on the screen.
-  zx_status_t DisplayInit() TA_REQ(display_mutex_);
-
-  // Power cycle the device and bring up clocks. Only needed when resuming the
-  // driver, as the bootloader will initialize the display when the machine is
-  // powered on.
-  zx_status_t RestartDisplay() TA_REQ(display_mutex_);
+  // Power cycles the display engine, resets all configurations and re-brings up
+  // the video output module. This will cause all the previous display hardware
+  // state to be lost.
+  //
+  // Must only be called during `AmlogicDisplay` initialization, after `vpu_`
+  // and `vout_` are initialized, but before any IRQ handler thread starts
+  // running, as access to display resources (registers, IRQs) after powering
+  // off the display engine will cause the system to crash.
+  zx::result<> ResetDisplayEngine() TA_REQ(display_mutex_);
 
   bool fully_initialized() const { return full_init_done_.load(std::memory_order_relaxed); }
   void set_fully_initialized() { full_init_done_.store(true, std::memory_order_release); }
 
+  // If true, the driver ignores the `mode` field in the
+  // `fuchsia.hardware.display.controller/DisplayConfig` struct.
+  //
+  // `vout_` must be initialized.
+  bool IgnoreDisplayMode() const;
+
+  // Whether `timing` is a new display timing different from the timing
+  // currently applied to the display.
+  bool IsNewDisplayTiming(const display::DisplayTiming& timing) TA_REQ(display_mutex_);
+
   // Zircon handles
   zx::bti bti_;
-  zx::interrupt inth_;
 
   // Thread handles
-  thrd_t vsync_thread_;
-  thrd_t capture_thread_;
+  std::optional<thrd_t> vsync_thread_;
 
   // Protocol handles used in by this driver
   ddk::PDevFidl pdev_;
   fidl::WireSyncClient<fuchsia_hardware_amlogiccanvas::Device> canvas_;
-  fidl::WireSyncClient<fuchsia_hardware_sysmem::Sysmem> sysmem_;
+  // The sysmem allocator client used to bind incoming buffer collection tokens.
+  fidl::WireSyncClient<fuchsia_sysmem::Allocator> sysmem_;
 
   // Interrupts
   zx::interrupt vsync_irq_;
-  zx::interrupt vd1_wr_irq_;
 
   // Locks used by the display driver
   fbl::Mutex display_mutex_;  // general display state (i.e. display_id)
@@ -215,9 +285,6 @@ class AmlogicDisplay
   // Stores nullptr if capture is not going to be performed.
   ImageInfo* current_capture_target_image_ TA_GUARDED(capture_mutex_);
 
-  // The sysmem allocator client used to bind incoming buffer collection tokens.
-  fidl::WireSyncClient<fuchsia_sysmem::Allocator> sysmem_allocator_client_;
-
   // Imported sysmem buffer collections.
   std::unordered_map<display::DriverBufferCollectionId,
                      fidl::WireSyncClient<fuchsia_sysmem::BufferCollection>>
@@ -229,22 +296,26 @@ class AmlogicDisplay
 
   // Objects: only valid if fully_initialized()
   std::unique_ptr<Vpu> vpu_;
-  std::unique_ptr<Osd> osd_;
+  std::unique_ptr<VideoInputUnit> video_input_unit_;
   std::unique_ptr<Vout> vout_;
 
   // Monitoring. We create a named "amlogic-display" node to allow for easier filtering
   // of inspect tree when defining selectors and metrics.
   inspect::Inspector inspector_;
   inspect::Node root_node_;
-  inspect::Node osd_node_;
+  inspect::Node video_input_unit_node_;
 
-  display::DisplayId display_id_ = kPanelDisplayId;
+  display::DisplayId display_id_ TA_GUARDED(display_mutex_) = kPanelDisplayId;
   bool display_attached_ TA_GUARDED(display_mutex_) = false;
 
-  // Hot Plug Detection
-  fidl::WireSyncClient<fuchsia_hardware_gpio::Gpio> hpd_gpio_;
-  zx::interrupt hpd_irq_;
-  thrd_t hpd_thread_;
+  // The DisplayMode applied most recently to the display.
+  //
+  // Default-constructed if no configuration is applied to the display yet or
+  // DisplayMode is ignored.
+  display::DisplayTiming current_display_timing_ TA_GUARDED(display_mutex_) = {};
+
+  std::unique_ptr<HotPlugDetection> hot_plug_detection_;
+  std::unique_ptr<Capture> capture_;
 
   fit::function<bool(fuchsia_images2::wire::PixelFormat format)> format_support_check_ = nullptr;
 };

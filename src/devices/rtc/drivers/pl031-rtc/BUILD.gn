@@ -20,7 +20,7 @@ fuchsia_driver("pl031-rtc-driver") {
   sources = [ "pl031-rtc.cc" ]
   deps = [
     ":pl031_rtc_bind",
-    "//sdk/fidl/fuchsia.hardware.rtc:fuchsia.hardware.rtc_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.rtc:fuchsia.hardware.rtc_cpp",
     "//src/devices/bus/lib/device-protocol-pdev",
     "//src/devices/lib/driver",
     "//src/devices/lib/mmio",
@@ -35,6 +35,11 @@ fuchsia_driver_component("pl031-rtc") {
   component_name = "pl031-rtc"
   deps = [ ":pl031-rtc-driver" ]
   manifest = "meta/pl031-rtc.cml"
+}
+
+fuchsia_driver_package("package") {
+  package_name = "pl031-rtc"
+  driver_components = [ ":pl031-rtc" ]
 }
 
 group("tests") {

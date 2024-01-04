@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
-#include "tools/fidl/fidlc/tests/error_test.h"
 #include "tools/fidl/fidlc/tests/test_library.h"
 
 namespace {
@@ -131,7 +130,9 @@ protocol P {
 };
 )FIDL");
   library.UseLibraryFdf();
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrHandleUsedInIncompatibleTransport);
+  library.ExpectFail(fidl::ErrHandleUsedInIncompatibleTransport, "fdf.handle", "Channel",
+                     "protocol 'P'");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TransportTests, BadChannelTransportWithDriverClientEndRequest) {
@@ -147,7 +148,9 @@ protocol P {
   });
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrTransportEndUsedInIncompatibleTransport);
+  library.ExpectFail(fidl::ErrTransportEndUsedInIncompatibleTransport, "Driver", "Channel",
+                     "protocol 'P'");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TransportTests, BadChannelTransportWithDriverServerEndResponse) {
@@ -165,7 +168,9 @@ protocol P {
   });
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrTransportEndUsedInIncompatibleTransport);
+  library.ExpectFail(fidl::ErrTransportEndUsedInIncompatibleTransport, "Driver", "Channel",
+                     "protocol 'P'");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TransportTests, BadBanjoTransportWithDriverClientEndRequest) {
@@ -182,7 +187,9 @@ protocol P {
   });
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrTransportEndUsedInIncompatibleTransport);
+  library.ExpectFail(fidl::ErrTransportEndUsedInIncompatibleTransport, "Driver", "Banjo",
+                     "protocol 'P'");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TransportTests, BadDriverTransportWithBanjoClientEndRequest) {
@@ -199,13 +206,17 @@ protocol P {
   });
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrTransportEndUsedInIncompatibleTransport);
+  library.ExpectFail(fidl::ErrTransportEndUsedInIncompatibleTransport, "Banjo", "Driver",
+                     "protocol 'P'");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TransportTests, BadSyscallTransportWithDriverClientEndRequest) {
   TestLibrary library;
   library.AddFile("bad/fi-0118.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrTransportEndUsedInIncompatibleTransport);
+  library.ExpectFail(fidl::ErrTransportEndUsedInIncompatibleTransport, "Driver", "Syscall",
+                     "protocol 'P'");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TransportTests, BadSyscallTransportWithSyscallClientEndRequest) {
@@ -222,7 +233,9 @@ protocol P {
   });
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrTransportEndUsedInIncompatibleTransport);
+  library.ExpectFail(fidl::ErrTransportEndUsedInIncompatibleTransport, "Syscall", "Syscall",
+                     "protocol 'P'");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TransportTests, BadCustomHandleInZirconChannel) {
@@ -249,22 +262,27 @@ protocol P {
   });
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrHandleUsedInIncompatibleTransport);
+  library.ExpectFail(fidl::ErrHandleUsedInIncompatibleTransport, "example.handle", "Channel",
+                     "protocol 'P'");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TransportTests, BadDriverHandleInZirconChannel) {
   TestLibrary library;
   library.AddFile("bad/fi-0117.test.fidl");
   library.UseLibraryFdf();
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrHandleUsedInIncompatibleTransport);
+  library.ExpectFail(fidl::ErrHandleUsedInIncompatibleTransport, "fdf.handle", "Channel",
+                     "protocol 'Protocol'");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(TransportTests, BadCannotReassignTransport) {
   TestLibrary library;
   library.AddFile("bad/fi-0167.test.fidl");
 
-  ASSERT_ERRORED_TWICE_DURING_COMPILE(library, fidl::ErrCannotConstrainTwice,
-                                      fidl::ErrCannotConstrainTwice);
+  library.ExpectFail(fidl::ErrCannotConstrainTwice, "ClientEnd");
+  library.ExpectFail(fidl::ErrCannotConstrainTwice, "ServerEnd");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 }  // namespace

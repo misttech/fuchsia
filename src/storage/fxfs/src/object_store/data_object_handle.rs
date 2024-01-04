@@ -8,40 +8,42 @@ use {
         log::*,
         lsm_tree::types::{ItemRef, LayerIterator},
         object_handle::{
-            GetProperties, ObjectHandle, ObjectProperties, ReadObjectHandle, WriteBytes,
-            WriteObjectHandle,
+            ObjectHandle, ObjectProperties, ReadObjectHandle, WriteBytes, WriteObjectHandle,
         },
         object_store::{
-            allocator::Allocator,
             extent_record::{Checksums, ExtentKey, ExtentValue},
             object_manager::ObjectManager,
             object_record::{
                 AttributeKey, ObjectAttributes, ObjectItem, ObjectKey, ObjectKeyData, ObjectKind,
                 ObjectValue, Timestamp,
             },
+            store_object_handle::NeedsTrim,
             transaction::{
-                self, AssocObj, AssociatedObject, LockKey, Mutation, ObjectStoreMutation, Options,
-                Transaction,
+                self, lock_keys, AssocObj, AssociatedObject, LockKey, Mutation,
+                ObjectStoreMutation, Options, Transaction,
             },
-            HandleOptions, HandleOwner, KeyUnwrapper, ObjectStore, StoreObjectHandle, TrimMode,
-            TrimResult,
+            FsverityMetadata, HandleOptions, HandleOwner, ObjectStore, RootDigest,
+            StoreObjectHandle, TrimMode, TrimResult, DEFAULT_DATA_ATTRIBUTE_ID,
+            FSVERITY_MERKLE_ATTRIBUTE_ID, TRANSACTION_MUTATION_THRESHOLD,
         },
         range::RangeExt,
         round::{round_down, round_up},
     },
-    anyhow::{bail, ensure, Context, Error},
+    anyhow::{anyhow, bail, ensure, Context, Error},
     async_trait::async_trait,
     fidl_fuchsia_io as fio,
+    fsverity_merkle::{MerkleTreeBuilder, Sha256Struct, Sha512Struct},
     futures::{stream::FuturesUnordered, TryStreamExt},
+    mundane::hash::Digest,
     std::{
         cmp::min,
         ops::{Bound, Range},
         sync::{
-            atomic::{self, AtomicU64},
-            Arc,
+            atomic::{self, AtomicU64, Ordering},
+            Arc, Mutex,
         },
     },
-    storage_device::buffer::{Buffer, BufferRef, MutableBufferRef},
+    storage_device::buffer::{Buffer, BufferFuture, BufferRef, MutableBufferRef},
 };
 
 /// DataObjectHandle is a typed handle for file-like objects that store data in the default data
@@ -55,22 +57,29 @@ pub struct DataObjectHandle<S: HandleOwner> {
     handle: StoreObjectHandle<S>,
     attribute_id: u64,
     content_size: AtomicU64,
+    fsverity_descriptor: Mutex<Option<FsverityMetadata>>,
+    // TODO(b/309656632): This should store the entire merkle tree and not just the leaf nodes.
+    // Potentially store a pager-backed vmo instead of passing around a boxed array.
+    merkle_tree: Mutex<Option<Box<[u8]>>>,
 }
 
 impl<S: HandleOwner> DataObjectHandle<S> {
     pub fn new(
         owner: Arc<S>,
         object_id: u64,
-        keys: Option<KeyUnwrapper>,
+        permanent_keys: bool,
         attribute_id: u64,
         size: u64,
+        fsverity_descriptor: Option<FsverityMetadata>,
         options: HandleOptions,
         trace: bool,
     ) -> Self {
         Self {
-            handle: StoreObjectHandle::new(owner, object_id, keys, options, trace),
+            handle: StoreObjectHandle::new(owner, object_id, permanent_keys, options, trace),
             attribute_id,
             content_size: AtomicU64::new(size),
+            fsverity_descriptor: Mutex::new(fsverity_descriptor),
+            merkle_tree: Mutex::new(None),
         }
     }
 
@@ -80,6 +89,10 @@ impl<S: HandleOwner> DataObjectHandle<S> {
 
     pub fn attribute_id(&self) -> u64 {
         self.attribute_id
+    }
+
+    pub fn verified_file(&self) -> bool {
+        self.fsverity_descriptor.lock().unwrap().is_some()
     }
 
     pub fn store(&self) -> &ObjectStore {
@@ -92,6 +105,17 @@ impl<S: HandleOwner> DataObjectHandle<S> {
 
     pub fn handle(&self) -> &StoreObjectHandle<S> {
         &self.handle
+    }
+
+    // TODO(b/309656632): This should take a pager-backed vmo instead of a boxed array.
+    pub fn set_merkle_tree(&self, merkle_tree: Box<[u8]>) {
+        let mut merkle_tree_guard = self.merkle_tree.lock().unwrap();
+        *merkle_tree_guard = Some(merkle_tree);
+    }
+
+    pub fn set_descriptor(&self, descriptor: FsverityMetadata) {
+        let mut fsverity_descriptor_guard = self.fsverity_descriptor.lock().unwrap();
+        *fsverity_descriptor_guard = Some(descriptor);
     }
 
     /// Extend the file with the given extent.  The only use case for this right now is for files
@@ -163,6 +187,124 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         range: Range<u64>,
     ) -> Result<(), Error> {
         self.handle.zero(transaction, self.attribute_id(), range).await
+    }
+
+    /// The cached value for `self.fsverity_descriptor` is set either in `open_object` or on
+    /// `enable_verity`. If set, translates `self.fsverity_descriptor` into an
+    /// fio::VerificationOptions instance and a root hash. Otherwise, returns None.
+    pub async fn get_descriptor(
+        &self,
+    ) -> Result<Option<(fio::VerificationOptions, Vec<u8>)>, Error> {
+        let fsverity_descriptor = self.fsverity_descriptor.lock().unwrap();
+        if let Some(metadata) = fsverity_descriptor.clone() {
+            let (options, root_hash) = match metadata.root_digest {
+                RootDigest::Sha256(root_hash) => {
+                    let mut root_vec = root_hash.to_vec();
+                    // Need to zero out the rest of the vector so that there's no garbage.
+                    root_vec.extend_from_slice(&[0; 32]);
+                    (
+                        fio::VerificationOptions {
+                            hash_algorithm: Some(fio::HashAlgorithm::Sha256),
+                            salt: Some(metadata.salt),
+                            ..Default::default()
+                        },
+                        root_vec,
+                    )
+                }
+                RootDigest::Sha512(root_hash) => (
+                    fio::VerificationOptions {
+                        hash_algorithm: Some(fio::HashAlgorithm::Sha512),
+                        salt: Some(metadata.salt),
+                        ..Default::default()
+                    },
+                    root_hash,
+                ),
+            };
+            Ok(Some((options, root_hash)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Reads the data attribute and computes a merkle tree from the data. The values of the
+    /// parameters required to build the merkle tree are supplied by `descriptor` (i.e. salt,
+    /// hash_algorithm, etc.) Writes the leaf nodes of the merkle tree to an attribute with id
+    /// `FSVERITY_MERKLE_ATTRIBUTE_ID`. Updates the root_hash of the `descriptor` according to the
+    /// computed merkle tree and then replaces the ObjectValue of the data attribute with
+    /// ObjectValue::VerifiedAttribute, which stores the `descriptor` inline.
+    /// TODO(b/314195208): Add locking to ensure file is modified while we are computing hashes.
+    /// TODO(b/315016599): Combine all mutations under a single transaction.
+    pub async fn enable_verity(&self, options: fio::VerificationOptions) -> Result<(), Error> {
+        let hash_alg =
+            options.hash_algorithm.ok_or_else(|| anyhow!("No hash algorithm provided"))?;
+        let salt = options.salt.ok_or_else(|| anyhow!("No salt provided"))?;
+        let root_digest = match hash_alg {
+            fio::HashAlgorithm::Sha256 => {
+                let hasher = Sha256Struct::new(salt.clone(), self.block_size() as usize);
+                let mut builder = MerkleTreeBuilder::new(hasher);
+                let mut offset = 0;
+                let size = self.get_size();
+                // TODO(b/314836822): Consider reading more than 4k bytes into memory at a time
+                // for a potential performance boost.
+                let mut buf = self.allocate_buffer(self.block_size() as usize).await;
+                while offset < size {
+                    // TODO(b/314842875): Consider optimizations for sparse files.
+                    let read = self.read(offset, buf.as_mut()).await? as u64;
+                    assert!(offset + read <= size);
+                    builder.write(&buf.as_slice()[0..read as usize]);
+                    offset += read;
+                }
+                let tree = builder.finish();
+                let merkle_leaf_nodes: Vec<u8> =
+                    tree.as_ref()[0].iter().flat_map(|x| x.bytes()).collect();
+                // TODO(b/314194485): Eventually want streaming writes.
+                self.write_attr(FSVERITY_MERKLE_ATTRIBUTE_ID, &merkle_leaf_nodes).await?;
+                RootDigest::Sha256(tree.root().bytes())
+            }
+            fio::HashAlgorithm::Sha512 => {
+                let hasher = Sha512Struct::new(salt.clone(), self.block_size() as usize);
+                let mut builder = MerkleTreeBuilder::new(hasher);
+                let mut offset = 0;
+                let size = self.get_size();
+                // TODO(b/314836822): Consider reading more than 4k bytes into memory at a time
+                // for a potential performance boost.
+                let mut buf = self.allocate_buffer(self.block_size() as usize).await;
+                while offset < size {
+                    // TODO(b/314842875): Consider optimizations for sparse files.
+                    let read = self.read(offset, buf.as_mut()).await? as u64;
+                    assert!(offset + read <= size);
+                    builder.write(&buf.as_slice()[0..read as usize]);
+                    offset += read;
+                }
+                let tree = builder.finish();
+                let merkle_leaf_nodes: Vec<u8> =
+                    tree.as_ref()[0].iter().flat_map(|x| x.bytes()).collect();
+                // TODO(b/314194485): Eventually want streaming writes.
+                self.write_attr(FSVERITY_MERKLE_ATTRIBUTE_ID, &merkle_leaf_nodes).await?;
+                RootDigest::Sha512(tree.root().bytes().to_vec())
+            }
+            _ => {
+                bail!(anyhow!(FxfsError::NotSupported)
+                    .context(format!("hash algorithm not supported")));
+            }
+        };
+        let mut transaction = self.new_transaction().await?;
+        let descriptor = FsverityMetadata { root_digest, salt };
+        self.set_descriptor(descriptor.clone());
+        transaction.add(
+            self.store().store_object_id(),
+            Mutation::replace_or_insert_object(
+                ObjectKey::attribute(
+                    self.object_id(),
+                    DEFAULT_DATA_ATTRIBUTE_ID,
+                    AttributeKey::Attribute,
+                ),
+                ObjectValue::verified_attribute(self.get_size(), descriptor),
+            ),
+        );
+        transaction.commit().await?;
+
+        Ok(())
     }
 
     /// Return information on a contiguous set of extents that has the same allocation status,
@@ -503,6 +645,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             }
         }
 
+        self.store().logical_write_ops.fetch_add(1, Ordering::Relaxed);
         // The checksums are being ignored here, but we don't need to know them
         writes.try_collect::<Vec<Checksums>>().await?;
 
@@ -555,44 +698,9 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         transaction: &mut Transaction<'a>,
         size: u64,
     ) -> Result<NeedsTrim, Error> {
-        let store = self.store();
-        let needs_trim = matches!(
-            store
-                .trim_some(
-                    transaction,
-                    self.object_id(),
-                    self.attribute_id(),
-                    TrimMode::FromOffset(size),
-                )
-                .await?,
-            TrimResult::Incomplete
-        );
-        if needs_trim {
-            // Add the object to the graveyard in case the following transactions don't get
-            // replayed.
-            let graveyard_id = store.graveyard_directory_object_id();
-            match store
-                .tree
-                .find(&ObjectKey::graveyard_entry(graveyard_id, self.object_id()))
-                .await?
-            {
-                Some(ObjectItem { value: ObjectValue::Some, .. })
-                | Some(ObjectItem { value: ObjectValue::Trim, .. }) => {
-                    // This object is already in the graveyard so we don't need to do anything.
-                }
-                _ => {
-                    transaction.add(
-                        store.store_object_id,
-                        Mutation::replace_or_insert_object(
-                            ObjectKey::graveyard_entry(graveyard_id, self.object_id()),
-                            ObjectValue::Trim,
-                        ),
-                    );
-                }
-            }
-        }
+        let needs_trim = self.handle.shrink(transaction, self.attribute_id(), size).await?;
         transaction.add_with_object(
-            store.store_object_id,
+            self.store().store_object_id(),
             Mutation::replace_or_insert_object(
                 ObjectKey::attribute(
                     self.object_id(),
@@ -603,7 +711,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             ),
             AssocObj::Borrowed(self),
         );
-        Ok(NeedsTrim(needs_trim))
+        Ok(needs_trim)
     }
 
     pub async fn grow<'a>(
@@ -656,7 +764,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                         .checked_add(aligned_old_size - extent_key.range.start)
                         .ok_or(FxfsError::Inconsistent)?;
                     ensure!(device_offset % block_size == 0, FxfsError::Inconsistent);
-                    let mut buf = self.allocate_buffer(block_size as usize);
+                    let mut buf = self.allocate_buffer(block_size as usize).await;
                     self.read_and_decrypt(device_offset, aligned_old_size, buf.as_mut(), *key_id)
                         .await?;
                     buf.as_mut_slice()[(old_size % block_size) as usize..].fill(0);
@@ -685,11 +793,22 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         Ok(())
     }
 
-    // Must be multiple of block size.
+    /// Attempts to pre-allocate a `file_range` of bytes for this object.
+    /// Returns a set of device ranges (i.e. potentially multiple extents).
+    ///
+    /// It may not be possible to preallocate the entire requested range in one request
+    /// due to limitations on transaction size. In such cases, we will preallocate as much as
+    /// we can up to some (arbitrary, internal) limit on transaction size.
+    ///
+    /// `file_range.start` is modified to point at the end of the logical range
+    /// that was preallocated such that repeated calls to `preallocate_range` with new
+    /// transactions can be used to preallocate ranges of any size.
+    ///
+    /// Requested range must be a multiple of block size.
     pub async fn preallocate_range<'a>(
         &'a self,
         transaction: &mut Transaction<'a>,
-        mut file_range: Range<u64>,
+        file_range: &mut Range<u64>,
     ) -> Result<Vec<Range<u64>>, Error> {
         let block_size = self.block_size();
         assert!(file_range.is_aligned(block_size));
@@ -802,9 +921,13 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             );
             ranges.push(device_range);
             // If we didn't allocate all that we requested, we'll loop around and try again.
+            // ... unless we have filled the transaction. The caller should check file_range.
+            if transaction.mutations().len() > TRANSACTION_MUTATION_THRESHOLD {
+                break;
+            }
         }
         // Update the file size if it changed.
-        if file_range.end > self.txn_get_size(transaction) {
+        if file_range.start > round_up(self.txn_get_size(transaction), block_size).unwrap() {
             transaction.add_with_object(
                 self.store().store_object_id,
                 Mutation::replace_or_insert_object(
@@ -813,7 +936,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                         self.attribute_id(),
                         AttributeKey::Attribute,
                     ),
-                    ObjectValue::attribute(file_range.end),
+                    ObjectValue::attribute(file_range.start),
                 ),
                 AssocObj::Borrowed(self),
             );
@@ -822,21 +945,13 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         Ok(ranges)
     }
 
-    pub async fn write_timestamps<'a>(
-        &'a self,
-        transaction: &mut Transaction<'a>,
-        crtime: Option<Timestamp>,
-        mtime: Option<Timestamp>,
-    ) -> Result<(), Error> {
-        self.handle.write_timestamps(transaction, crtime, mtime).await
-    }
-
     pub async fn update_attributes<'a>(
-        &'a self,
+        &self,
         transaction: &mut Transaction<'a>,
-        node_attributes: &fio::MutableNodeAttributes,
+        node_attributes: Option<&fio::MutableNodeAttributes>,
+        change_time: Option<Timestamp>,
     ) -> Result<(), Error> {
-        self.handle.update_attributes(transaction, node_attributes).await
+        self.handle.update_attributes(transaction, node_attributes, change_time).await
     }
 
     /// Get the default set of transaction options for this object. This is mostly the overall
@@ -870,7 +985,25 @@ impl<S: HandleOwner> DataObjectHandle<S> {
     pub async fn write_attr(&self, attribute_id: u64, data: &[u8]) -> Result<(), Error> {
         // Must be different attribute otherwise cached size gets out of date.
         assert_ne!(attribute_id, self.attribute_id());
-        self.handle.write_attr(attribute_id, data).await?;
+        let store = self.store();
+        let mut transaction = self.new_transaction().await?;
+        if self.handle.write_attr(&mut transaction, attribute_id, data).await?.0 {
+            transaction.commit_and_continue().await?;
+            while matches!(
+                store
+                    .trim_some(
+                        &mut transaction,
+                        self.object_id(),
+                        attribute_id,
+                        TrimMode::FromOffset(data.len() as u64),
+                    )
+                    .await?,
+                TrimResult::Incomplete
+            ) {
+                transaction.commit_and_continue().await?;
+            }
+        }
+        transaction.commit().await?;
         Ok(())
     }
 
@@ -930,11 +1063,61 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         transaction.commit().await?;
         Ok(())
     }
+
+    pub async fn get_properties(&self) -> Result<ObjectProperties, Error> {
+        // We don't take a read guard here since the object properties are contained in a single
+        // object, which cannot be inconsistent with itself. The LSM tree does not return
+        // intermediate states for a single object.
+        let item = self
+            .store()
+            .tree
+            .find(&ObjectKey::object(self.object_id()))
+            .await?
+            .expect("Unable to find object record");
+        match item.value {
+            ObjectValue::Object {
+                kind: ObjectKind::File { refs, .. },
+                attributes:
+                    ObjectAttributes {
+                        creation_time,
+                        modification_time,
+                        posix_attributes,
+                        allocated_size,
+                        access_time,
+                        change_time,
+                        ..
+                    },
+            } => Ok(ObjectProperties {
+                refs,
+                allocated_size,
+                data_attribute_size: self.get_size(),
+                creation_time,
+                modification_time,
+                access_time,
+                change_time,
+                sub_dirs: 0,
+                posix_attributes,
+            }),
+            _ => bail!(FxfsError::NotFile),
+        }
+    }
+
+    // Returns the contents of this object. This object must be < |limit| bytes in size.
+    pub async fn contents(&self, limit: usize) -> Result<Box<[u8]>, Error> {
+        let size = self.get_size();
+        if size > limit as u64 {
+            bail!("Object too big ({} > {})", size, limit);
+        }
+        let mut buf = self.allocate_buffer(size as usize).await;
+        self.read(0u64, buf.as_mut()).await?;
+        Ok(buf.as_slice().into())
+    }
 }
 
 impl<S: HandleOwner> AssociatedObject for DataObjectHandle<S> {
     fn will_apply_mutation(&self, mutation: &Mutation, _object_id: u64, _manager: &ObjectManager) {
         match mutation {
+            // TODO(b/308898343): Add match arms for merkle tree and fsverity descriptor.
             Mutation::ObjectStore(ObjectStoreMutation {
                 item: ObjectItem { value: ObjectValue::Attribute { size }, .. },
                 ..
@@ -953,7 +1136,7 @@ impl<S: HandleOwner> ObjectHandle for DataObjectHandle<S> {
         self.handle.object_id()
     }
 
-    fn allocate_buffer(&self, size: usize) -> Buffer<'_> {
+    fn allocate_buffer(&self, size: usize) -> BufferFuture<'_> {
         self.handle.allocate_buffer(size)
     }
 
@@ -963,49 +1146,12 @@ impl<S: HandleOwner> ObjectHandle for DataObjectHandle<S> {
 }
 
 #[async_trait]
-impl<S: HandleOwner> GetProperties for DataObjectHandle<S> {
-    async fn get_properties(&self) -> Result<ObjectProperties, Error> {
-        // Take a read guard since we need to return a consistent view of all object properties.
-        let fs = self.store().filesystem();
-        let _guard =
-            fs.read_lock(&[LockKey::object(self.store().store_object_id, self.object_id())]).await;
-        let item = self
-            .store()
-            .tree
-            .find(&ObjectKey::object(self.object_id()))
-            .await?
-            .expect("Unable to find object record");
-        match item.value {
-            ObjectValue::Object {
-                kind: ObjectKind::File { refs, .. },
-                attributes:
-                    ObjectAttributes {
-                        creation_time,
-                        modification_time,
-                        posix_attributes,
-                        allocated_size,
-                        ..
-                    },
-            } => Ok(ObjectProperties {
-                refs,
-                allocated_size,
-                data_attribute_size: self.get_size(),
-                creation_time,
-                modification_time,
-                sub_dirs: 0,
-                posix_attributes,
-            }),
-            _ => bail!(FxfsError::NotFile),
-        }
-    }
-}
-
-#[async_trait]
 impl<S: HandleOwner> ReadObjectHandle for DataObjectHandle<S> {
     async fn read(&self, offset: u64, mut buf: MutableBufferRef<'_>) -> Result<usize, Error> {
         let fs = self.store().filesystem();
         let guard = fs
-            .read_lock(&[LockKey::object_attribute(
+            .lock_manager()
+            .read_lock(lock_keys![LockKey::object_attribute(
                 self.store().store_object_id,
                 self.object_id(),
                 self.attribute_id(),
@@ -1042,20 +1188,6 @@ impl<S: HandleOwner> WriteObjectHandle for DataObjectHandle<S> {
         self.truncate_with_options(self.default_transaction_options(), size).await
     }
 
-    async fn write_timestamps(
-        &self,
-        crtime: Option<Timestamp>,
-        mtime: Option<Timestamp>,
-    ) -> Result<(), Error> {
-        if let (None, None) = (crtime.as_ref(), mtime.as_ref()) {
-            return Ok(());
-        }
-        let mut transaction = self.new_transaction().await?;
-        DataObjectHandle::write_timestamps(self, &mut transaction, crtime, mtime).await?;
-        transaction.commit().await?;
-        Ok(())
-    }
-
     async fn flush(&self) -> Result<(), Error> {
         Ok(())
     }
@@ -1082,11 +1214,14 @@ impl<S: HandleOwner> Drop for DirectWriter<'_, S> {
 }
 
 impl<'a, S: HandleOwner> DirectWriter<'a, S> {
-    pub fn new(handle: &'a DataObjectHandle<S>, options: transaction::Options<'a>) -> Self {
+    pub async fn new(
+        handle: &'a DataObjectHandle<S>,
+        options: transaction::Options<'a>,
+    ) -> DirectWriter<'a, S> {
         Self {
             handle,
             options,
-            buffer: handle.allocate_buffer(BUFFER_SIZE),
+            buffer: handle.allocate_buffer(BUFFER_SIZE).await,
             offset: 0,
             buf_offset: 0,
         }
@@ -1146,30 +1281,20 @@ impl<'a, S: HandleOwner> WriteBytes for DirectWriter<'a, S> {
     }
 }
 
-/// When truncating an object, sometimes it might not be possible to complete the transaction in a
-/// single transaction, in which case the caller needs to finish trimming the object in subsequent
-/// transactions (by calling ObjectStore::trim).
-#[must_use]
-pub struct NeedsTrim(pub bool);
-
 #[cfg(test)]
 mod tests {
     use {
         crate::{
             errors::FxfsError,
             filesystem::{
-                Filesystem, FxFilesystem, FxFilesystemBuilder, JournalingObject, OpenFxFilesystem,
-                SyncOptions,
+                FxFilesystem, FxFilesystemBuilder, JournalingObject, OpenFxFilesystem, SyncOptions,
             },
             fsck::{fsck_volume_with_options, fsck_with_options, FsckOptions},
-            object_handle::{
-                GetProperties, ObjectHandle, ObjectProperties, ReadObjectHandle, WriteObjectHandle,
-            },
+            object_handle::{ObjectHandle, ObjectProperties, ReadObjectHandle, WriteObjectHandle},
             object_store::{
-                allocator::Allocator,
                 directory::replace_child,
                 object_record::{ObjectKey, ObjectValue, Timestamp},
-                transaction::{Mutation, Options, TransactionHandler},
+                transaction::{lock_keys, Mutation, Options},
                 volume::root_volume,
                 DataObjectHandle, Directory, HandleOptions, LockKey, ObjectStore, PosixAttributes,
                 TRANSACTION_MUTATION_THRESHOLD,
@@ -1178,7 +1303,11 @@ mod tests {
         },
         assert_matches::assert_matches,
         fidl_fuchsia_io as fio, fuchsia_async as fasync,
-        futures::{channel::oneshot::channel, join, FutureExt},
+        futures::{
+            channel::oneshot::channel,
+            stream::{FuturesUnordered, StreamExt},
+            FutureExt,
+        },
         fxfs_crypto::Crypt,
         fxfs_insecure_crypto::InsecureCrypt,
         rand::Rng,
@@ -1216,7 +1345,10 @@ mod tests {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), store.root_directory_object_id())],
+                lock_keys![LockKey::object(
+                    store.store_object_id(),
+                    store.root_directory_object_id()
+                )],
                 Options::default(),
             )
             .await
@@ -1241,7 +1373,7 @@ mod tests {
 
         if write_object_test_data {
             let align = TEST_DATA_OFFSET as usize % TEST_DEVICE_BLOCK_SIZE as usize;
-            let mut buf = object.allocate_buffer(align + TEST_DATA.len());
+            let mut buf = object.allocate_buffer(align + TEST_DATA.len()).await;
             buf.as_mut_slice()[align..].copy_from_slice(TEST_DATA);
             object
                 .txn_write(&mut transaction, TEST_DATA_OFFSET, buf.subslice(align..))
@@ -1265,7 +1397,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_zero_buf_len_read() {
         let (fs, object) = test_filesystem_and_object().await;
-        let mut buf = object.allocate_buffer(0);
+        let mut buf = object.allocate_buffer(0).await;
         assert_eq!(object.read(0u64, buf.as_mut()).await.expect("read failed"), 0);
         fs.close().await.expect("Close failed");
     }
@@ -1276,7 +1408,7 @@ mod tests {
         let offset = TEST_OBJECT_SIZE as usize - 2;
         let align = offset % fs.block_size() as usize;
         let len: usize = 2;
-        let mut buf = object.allocate_buffer(align + len + 1);
+        let mut buf = object.allocate_buffer(align + len + 1).await;
         buf.as_mut_slice().fill(123u8);
         assert_eq!(
             object.read((offset - align) as u64, buf.as_mut()).await.expect("read failed"),
@@ -1293,7 +1425,7 @@ mod tests {
         let offset = TEST_OBJECT_SIZE as usize - 2;
         let align = offset % fs.block_size() as usize;
         let len: usize = 2;
-        let mut buf = object.allocate_buffer(align + len + 1);
+        let mut buf = object.allocate_buffer(align + len + 1).await;
         buf.as_mut_slice().fill(123u8);
         assert_eq!(
             object
@@ -1314,10 +1446,11 @@ mod tests {
         let offset = TEST_OBJECT_SIZE as usize - 2;
         let align = offset % fs.block_size() as usize;
         let len: usize = 2;
-        let mut buf = object.allocate_buffer(align + len + 1);
+        let mut buf = object.allocate_buffer(align + len + 1).await;
         buf.as_mut_slice().fill(123u8);
         let guard = fs
-            .read_lock(&[LockKey::object_attribute(
+            .lock_manager()
+            .read_lock(lock_keys![LockKey::object_attribute(
                 object.store().store_object_id,
                 object.object_id(),
                 0,
@@ -1337,7 +1470,7 @@ mod tests {
         let (fs, object) = test_filesystem_and_object().await;
         // Deliberately read not right to eof.
         let len = TEST_OBJECT_SIZE as usize - 1;
-        let mut buf = object.allocate_buffer(len);
+        let mut buf = object.allocate_buffer(len).await;
         buf.as_mut_slice().fill(123u8);
         assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed"), len);
         let mut expected = vec![0; len];
@@ -1354,12 +1487,12 @@ mod tests {
         object.owner().flush().await.expect("flush failed");
 
         // Write more test data to the first block fo the file.
-        let mut buf = object.allocate_buffer(TEST_DATA.len());
+        let mut buf = object.allocate_buffer(TEST_DATA.len()).await;
         buf.as_mut_slice().copy_from_slice(TEST_DATA);
         object.write_or_append(Some(0u64), buf.as_ref()).await.expect("write failed");
 
         let len = TEST_OBJECT_SIZE as usize - 1;
-        let mut buf = object.allocate_buffer(len);
+        let mut buf = object.allocate_buffer(len).await;
         buf.as_mut_slice().fill(123u8);
         assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed"), len);
 
@@ -1376,7 +1509,7 @@ mod tests {
         let (fs, object) = test_filesystem_and_object().await;
 
         // Arrange for there to be <extent><deleted-extent><extent>.
-        let mut buf = object.allocate_buffer(TEST_DATA.len());
+        let mut buf = object.allocate_buffer(TEST_DATA.len()).await;
         buf.as_mut_slice().copy_from_slice(TEST_DATA);
         // This adds an extent at 0..512.
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
@@ -1385,13 +1518,13 @@ mod tests {
         let data = b"foo";
         let offset = 1500u64;
         let align = (offset % fs.block_size() as u64) as usize;
-        let mut buf = object.allocate_buffer(align + data.len());
+        let mut buf = object.allocate_buffer(align + data.len()).await;
         buf.as_mut_slice()[align..].copy_from_slice(data);
         // This adds 1024..1536.
         object.write_or_append(Some(1500), buf.subslice(align..)).await.expect("write failed");
 
         const LEN1: usize = 1503;
-        let mut buf = object.allocate_buffer(LEN1);
+        let mut buf = object.allocate_buffer(LEN1).await;
         buf.as_mut_slice().fill(123u8);
         assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed"), LEN1);
         let mut expected = [0; LEN1];
@@ -1401,7 +1534,7 @@ mod tests {
 
         // Also test a read that ends midway through the deleted extent.
         const LEN2: usize = 601;
-        let mut buf = object.allocate_buffer(LEN2);
+        let mut buf = object.allocate_buffer(LEN2).await;
         buf.as_mut_slice().fill(123u8);
         assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed"), LEN2);
         assert_eq!(buf.as_slice(), &expected[..LEN2]);
@@ -1412,14 +1545,14 @@ mod tests {
     async fn test_read_whole_blocks_with_multiple_objects() {
         let (fs, object) = test_filesystem_and_object().await;
         let block_size = object.block_size() as usize;
-        let mut buffer = object.allocate_buffer(block_size);
+        let mut buffer = object.allocate_buffer(block_size).await;
         buffer.as_mut_slice().fill(0xaf);
         object.write_or_append(Some(0), buffer.as_ref()).await.expect("write failed");
 
         let store = object.owner();
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         let object2 = ObjectStore::create_object(
@@ -1432,11 +1565,11 @@ mod tests {
         .await
         .expect("create_object failed");
         transaction.commit().await.expect("commit failed");
-        let mut ef_buffer = object.allocate_buffer(block_size);
+        let mut ef_buffer = object.allocate_buffer(block_size).await;
         ef_buffer.as_mut_slice().fill(0xef);
         object2.write_or_append(Some(0), ef_buffer.as_ref()).await.expect("write failed");
 
-        let mut buffer = object.allocate_buffer(block_size);
+        let mut buffer = object.allocate_buffer(block_size).await;
         buffer.as_mut_slice().fill(0xaf);
         object
             .write_or_append(Some(block_size as u64), buffer.as_ref())
@@ -1448,7 +1581,7 @@ mod tests {
             .await
             .expect("write failed");
 
-        let mut buffer = object.allocate_buffer(4 * block_size);
+        let mut buffer = object.allocate_buffer(4 * block_size).await;
         buffer.as_mut_slice().fill(123);
         assert_eq!(object.read(0, buffer.as_mut()).await.expect("read failed"), 3 * block_size);
         assert_eq!(&buffer.as_slice()[..2 * block_size], &vec![0xaf; 2 * block_size]);
@@ -1471,7 +1604,7 @@ mod tests {
         impl AlignTest {
             async fn new(object: DataObjectHandle<ObjectStore>) -> Self {
                 let mirror = {
-                    let mut buf = object.allocate_buffer(object.get_size() as usize);
+                    let mut buf = object.allocate_buffer(object.get_size() as usize).await;
                     assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed"), buf.len());
                     buf.as_slice().to_vec()
                 };
@@ -1483,7 +1616,7 @@ mod tests {
             // Each subsequent call bumps the value of fill.
             // It is expected that the object and its mirror maintain identical content.
             async fn test(&mut self, range: Range<u64>) {
-                let mut buf = self.object.allocate_buffer((range.end - range.start) as usize);
+                let mut buf = self.object.allocate_buffer((range.end - range.start) as usize).await;
                 self.fill += 1;
                 buf.as_mut_slice().fill(self.fill);
                 self.object
@@ -1494,7 +1627,7 @@ mod tests {
                     self.mirror.resize(range.end as usize, 0);
                 }
                 self.mirror[range.start as usize..range.end as usize].fill(self.fill);
-                let mut buf = self.object.allocate_buffer(self.mirror.len() + 1);
+                let mut buf = self.object.allocate_buffer(self.mirror.len() + 1).await;
                 assert_eq!(
                     self.object.read(0, buf.as_mut()).await.expect("read failed"),
                     self.mirror.len()
@@ -1529,14 +1662,14 @@ mod tests {
         let allocated_before = allocator.get_allocated_bytes();
         let mut transaction = object.new_transaction().await.expect("new_transaction failed");
         object
-            .preallocate_range(&mut transaction, 0..fs.block_size() as u64)
+            .preallocate_range(&mut transaction, &mut (0..fs.block_size() as u64))
             .await
             .expect("preallocate_range failed");
         transaction.commit().await.expect("commit failed");
         assert!(object.get_size() < 1048576);
         let mut transaction = object.new_transaction().await.expect("new_transaction failed");
         object
-            .preallocate_range(&mut transaction, 0..1048576)
+            .preallocate_range(&mut transaction, &mut (0..1048576))
             .await
             .expect("preallocate_range failed");
         transaction.commit().await.expect("commit failed");
@@ -1545,8 +1678,9 @@ mod tests {
         let allocated_after = allocator.get_allocated_bytes();
         assert_eq!(allocated_after - allocated_before, 1048576 - fs.block_size() as u64);
 
-        let mut buf =
-            object.allocate_buffer(round_up(TEST_DATA_OFFSET, fs.block_size()).unwrap() as usize);
+        let mut buf = object
+            .allocate_buffer(round_up(TEST_DATA_OFFSET, fs.block_size()).unwrap() as usize)
+            .await;
         buf.as_mut_slice().fill(47);
         object
             .write_or_append(Some(0), buf.subslice(..TEST_DATA_OFFSET as usize))
@@ -1560,7 +1694,7 @@ mod tests {
         assert_eq!(allocator.get_allocated_bytes(), allocated_after);
 
         // Read back the data and make sure it is what we expect.
-        let mut buf = object.allocate_buffer(104876);
+        let mut buf = object.allocate_buffer(104876).await;
         assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed"), buf.len());
         assert_eq!(&buf.as_slice()[..TEST_DATA_OFFSET as usize], &[47; TEST_DATA_OFFSET as usize]);
         assert_eq!(
@@ -1580,7 +1714,7 @@ mod tests {
     // This is identical to the previous test except that we flush so that extents end up in
     // different layers.
     #[fuchsia::test]
-    async fn test_preallocate_suceeds_when_extents_are_in_different_layers() {
+    async fn test_preallocate_succeeds_when_extents_are_in_different_layers() {
         let (fs, object) = test_filesystem_and_object_with_key(None, true).await;
         object.owner().flush().await.expect("flush failed");
         test_preallocate_common(&fs, object).await;
@@ -1595,7 +1729,7 @@ mod tests {
         let mut transaction = object.new_transaction().await.expect("new_transaction failed");
         let offset = TEST_DATA_OFFSET - TEST_DATA_OFFSET % fs.block_size() as u64;
         object
-            .preallocate_range(&mut transaction, offset..offset + fs.block_size() as u64)
+            .preallocate_range(&mut transaction, &mut (offset..offset + fs.block_size() as u64))
             .await
             .expect("preallocate_range failed");
         transaction.commit().await.expect("commit failed");
@@ -1621,7 +1755,7 @@ mod tests {
 
         assert_eq!(fs.block_size(), 4096);
 
-        let mut write_buf = object.allocate_buffer(4096);
+        let mut write_buf = object.allocate_buffer(4096).await;
         write_buf.as_mut_slice().fill(95);
 
         // First try to overwrite without allowing allocations
@@ -1631,7 +1765,7 @@ mod tests {
         // Now preallocate some space (exactly one block)
         let mut transaction = object.new_transaction().await.expect("new_transaction failed");
         object
-            .preallocate_range(&mut transaction, 0..4096 as u64)
+            .preallocate_range(&mut transaction, &mut (0..4096 as u64))
             .await
             .expect("preallocate_range failed");
         transaction.commit().await.expect("commit failed");
@@ -1639,13 +1773,13 @@ mod tests {
         // Now try the same overwrite command as before, it should work this time,
         // even with allocations disabled...
         {
-            let mut read_buf = object.allocate_buffer(4096);
+            let mut read_buf = object.allocate_buffer(4096).await;
             object.read(0, read_buf.as_mut()).await.expect("read failed");
             assert_eq!(&read_buf.as_slice(), &[0; 4096]);
         }
         object.overwrite(0, write_buf.as_mut(), false).await.expect("overwrite failed");
         {
-            let mut read_buf = object.allocate_buffer(4096);
+            let mut read_buf = object.allocate_buffer(4096).await;
             object.read(0, read_buf.as_mut()).await.expect("read failed");
             assert_eq!(&read_buf.as_slice(), &[95; 4096]);
         }
@@ -1658,7 +1792,7 @@ mod tests {
         // yet and they could contain any values
         object.overwrite(4096, write_buf.as_mut(), true).await.expect("overwrite failed");
         {
-            let mut read_buf = object.allocate_buffer(4096);
+            let mut read_buf = object.allocate_buffer(4096).await;
             object.read(4096, read_buf.as_mut()).await.expect("read failed");
             assert_eq!(&read_buf.as_slice(), &[95; 4096]);
         }
@@ -1696,26 +1830,26 @@ mod tests {
         // Let's create some non-holes
         let mut transaction = object.new_transaction().await.expect("new_transaction failed");
         object
-            .preallocate_range(&mut transaction, 4096..8192 as u64)
+            .preallocate_range(&mut transaction, &mut (4096..8192 as u64))
             .await
             .expect("preallocate_range failed");
         object
-            .preallocate_range(&mut transaction, 16384..32768 as u64)
+            .preallocate_range(&mut transaction, &mut (16384..32768 as u64))
             .await
             .expect("preallocate_range failed");
         object
-            .preallocate_range(&mut transaction, 65536..131072 as u64)
+            .preallocate_range(&mut transaction, &mut (65536..131072 as u64))
             .await
             .expect("preallocate_range failed");
         object
-            .preallocate_range(&mut transaction, 262144..524288 as u64)
+            .preallocate_range(&mut transaction, &mut (262144..524288 as u64))
             .await
             .expect("preallocate_range failed");
         transaction.commit().await.expect("commit failed");
 
         assert_eq!(object.get_size(), 524288);
 
-        let mut write_buf = object.allocate_buffer(4096);
+        let mut write_buf = object.allocate_buffer(4096).await;
         write_buf.as_mut_slice().fill(95);
 
         // We shouldn't be able to overwrite in the holes if new allocations aren't enabled
@@ -1726,52 +1860,52 @@ mod tests {
 
         // But we should be able to overwrite in the prealloc'd areas without needing allocations
         {
-            let mut read_buf = object.allocate_buffer(4096);
+            let mut read_buf = object.allocate_buffer(4096).await;
             object.read(4096, read_buf.as_mut()).await.expect("read failed");
             assert_eq!(&read_buf.as_slice(), &[0; 4096]);
         }
         object.overwrite(4096, write_buf.as_mut(), false).await.expect("overwrite failed");
         {
-            let mut read_buf = object.allocate_buffer(4096);
+            let mut read_buf = object.allocate_buffer(4096).await;
             object.read(4096, read_buf.as_mut()).await.expect("read failed");
             assert_eq!(&read_buf.as_slice(), &[95; 4096]);
         }
         {
-            let mut read_buf = object.allocate_buffer(4096);
+            let mut read_buf = object.allocate_buffer(4096).await;
             object.read(16384, read_buf.as_mut()).await.expect("read failed");
             assert_eq!(&read_buf.as_slice(), &[0; 4096]);
         }
         object.overwrite(16384, write_buf.as_mut(), false).await.expect("overwrite failed");
         {
-            let mut read_buf = object.allocate_buffer(4096);
+            let mut read_buf = object.allocate_buffer(4096).await;
             object.read(16384, read_buf.as_mut()).await.expect("read failed");
             assert_eq!(&read_buf.as_slice(), &[95; 4096]);
         }
         {
-            let mut read_buf = object.allocate_buffer(4096);
+            let mut read_buf = object.allocate_buffer(4096).await;
             object.read(65536, read_buf.as_mut()).await.expect("read failed");
             assert_eq!(&read_buf.as_slice(), &[0; 4096]);
         }
         object.overwrite(65536, write_buf.as_mut(), false).await.expect("overwrite failed");
         {
-            let mut read_buf = object.allocate_buffer(4096);
+            let mut read_buf = object.allocate_buffer(4096).await;
             object.read(65536, read_buf.as_mut()).await.expect("read failed");
             assert_eq!(&read_buf.as_slice(), &[95; 4096]);
         }
         {
-            let mut read_buf = object.allocate_buffer(4096);
+            let mut read_buf = object.allocate_buffer(4096).await;
             object.read(262144, read_buf.as_mut()).await.expect("read failed");
             assert_eq!(&read_buf.as_slice(), &[0; 4096]);
         }
         object.overwrite(262144, write_buf.as_mut(), false).await.expect("overwrite failed");
         {
-            let mut read_buf = object.allocate_buffer(4096);
+            let mut read_buf = object.allocate_buffer(4096).await;
             object.read(262144, read_buf.as_mut()).await.expect("read failed");
             assert_eq!(&read_buf.as_slice(), &[95; 4096]);
         }
 
         // Now let's try to do a huge overwrite, that spans over many holes and non-holes
-        let mut huge_write_buf = object.allocate_buffer(524288);
+        let mut huge_write_buf = object.allocate_buffer(524288).await;
         huge_write_buf.as_mut_slice().fill(96);
 
         // With allocations disabled, the big overwrite should fail...
@@ -1779,7 +1913,7 @@ mod tests {
         // ... but it should work when allocations are enabled
         object.overwrite(0, huge_write_buf.as_mut(), true).await.expect("overwrite failed");
         {
-            let mut read_buf = object.allocate_buffer(524288);
+            let mut read_buf = object.allocate_buffer(524288).await;
             object.read(0, read_buf.as_mut()).await.expect("read failed");
             assert_eq!(&read_buf.as_slice(), &[96; 524288]);
         }
@@ -1813,7 +1947,7 @@ mod tests {
 
         assert_eq!(fs.block_size(), 4096);
 
-        let mut write_buf = object.allocate_buffer(4096);
+        let mut write_buf = object.allocate_buffer(4096).await;
         write_buf.as_mut_slice().fill(95);
 
         // First try to overwrite without allowing allocations
@@ -1823,7 +1957,7 @@ mod tests {
         // Now try the same overwrite command as before, but allow allocations
         object.overwrite(0, write_buf.as_mut(), true).await.expect("overwrite failed");
         {
-            let mut read_buf = object.allocate_buffer(4096);
+            let mut read_buf = object.allocate_buffer(4096).await;
             object.read(0, read_buf.as_mut()).await.expect("read failed");
             assert_eq!(&read_buf.as_slice(), &[95; 4096]);
         }
@@ -1834,7 +1968,7 @@ mod tests {
         // ... but it should work if allocations are enabled
         object.overwrite(4096, write_buf.as_mut(), true).await.expect("overwrite failed");
         {
-            let mut read_buf = object.allocate_buffer(4096);
+            let mut read_buf = object.allocate_buffer(4096).await;
             object.read(4096, read_buf.as_mut()).await.expect("read failed");
             assert_eq!(&read_buf.as_slice(), &[95; 4096]);
         }
@@ -1869,10 +2003,10 @@ mod tests {
         assert_eq!(fs.block_size(), 4096);
         assert_eq!(object.get_size(), TEST_OBJECT_SIZE);
 
-        let mut write_buf = object.allocate_buffer(4096);
+        let mut write_buf = object.allocate_buffer(4096).await;
         write_buf.as_mut_slice().fill(95);
 
-        // Let's try to fill up the last block, and increase the filesize in doing so
+        // Let's try to fill up the last block, and increase the file size in doing so
         let last_block_offset = round_down(TEST_OBJECT_SIZE, 4096 as u32);
 
         // Expected to fail with allocations disabled
@@ -1886,7 +2020,7 @@ mod tests {
             .await
             .expect("overwrite failed");
         {
-            let mut read_buf = object.allocate_buffer(4096);
+            let mut read_buf = object.allocate_buffer(4096).await;
             object.read(last_block_offset, read_buf.as_mut()).await.expect("read failed");
             assert_eq!(&read_buf.as_slice(), &[95; 4096]);
         }
@@ -1907,7 +2041,7 @@ mod tests {
             .await
             .expect("overwrite failed");
         {
-            let mut read_buf = object.allocate_buffer(4096);
+            let mut read_buf = object.allocate_buffer(4096).await;
             object.read(next_block_offset, read_buf.as_mut()).await.expect("read failed");
             assert_eq!(&read_buf.as_slice(), &[95; 4096]);
         }
@@ -1927,12 +2061,54 @@ mod tests {
     }
 
     #[fuchsia::test]
+    async fn test_enable_verity() {
+        let fs: OpenFxFilesystem = test_filesystem().await;
+        let mut transaction = fs
+            .clone()
+            .new_transaction(lock_keys![], Options::default())
+            .await
+            .expect("new_transaction failed");
+        let store = fs.root_store();
+        let object = Arc::new(
+            ObjectStore::create_object(
+                &store,
+                &mut transaction,
+                HandleOptions::default(),
+                None,
+                None,
+            )
+            .await
+            .expect("create_object failed"),
+        );
+
+        transaction.commit().await.unwrap();
+
+        object
+            .enable_verity(fio::VerificationOptions {
+                hash_algorithm: Some(fio::HashAlgorithm::Sha256),
+                salt: Some(vec![]),
+                ..Default::default()
+            })
+            .await
+            .expect("set verified file metadata failed");
+
+        let handle =
+            ObjectStore::open_object(&store, object.object_id(), HandleOptions::default(), None)
+                .await
+                .expect("open_object failed");
+
+        assert!(handle.verified_file());
+
+        fs.close().await.expect("Close failed");
+    }
+
+    #[fuchsia::test]
     async fn test_extend() {
         let fs = test_filesystem().await;
         let handle;
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         let store = fs.root_store();
@@ -1950,7 +2126,7 @@ mod tests {
             .await
             .expect("extend failed");
         transaction.commit().await.expect("commit failed");
-        let mut buf = handle.allocate_buffer(5 * fs.block_size() as usize);
+        let mut buf = handle.allocate_buffer(5 * fs.block_size() as usize).await;
         buf.as_mut_slice().fill(123);
         handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         buf.as_mut_slice().fill(67);
@@ -1962,7 +2138,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_truncate_deallocates_old_extents() {
         let (fs, object) = test_filesystem_and_object().await;
-        let mut buf = object.allocate_buffer(5 * fs.block_size() as usize);
+        let mut buf = object.allocate_buffer(5 * fs.block_size() as usize).await;
         buf.as_mut_slice().fill(0xaa);
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
 
@@ -1988,7 +2164,7 @@ mod tests {
             .await
             .expect("truncate failed");
 
-        let mut buf = object.allocate_buffer(fs.block_size() as usize);
+        let mut buf = object.allocate_buffer(fs.block_size() as usize).await;
         let offset = (TEST_DATA_OFFSET % fs.block_size()) as usize;
         object.read(TEST_DATA_OFFSET - offset as u64, buf.as_mut()).await.expect("read failed");
 
@@ -2104,7 +2280,7 @@ mod tests {
                 } else if let Some(object) = needs_trim(&store).await {
                     // Extend the file and make sure that it is correctly trimmed.
                     object.truncate(object_size).await.expect("truncate failed");
-                    let mut buf = object.allocate_buffer(block_size as usize);
+                    let mut buf = object.allocate_buffer(block_size as usize).await;
                     object
                         .read(object_size - block_size * 2, buf.as_mut())
                         .await
@@ -2162,7 +2338,10 @@ mod tests {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), store.root_directory_object_id())],
+                lock_keys![LockKey::object(
+                    store.store_object_id(),
+                    store.root_directory_object_id()
+                )],
                 Options::default(),
             )
             .await
@@ -2176,7 +2355,7 @@ mod tests {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), object.object_id())],
+                lock_keys![LockKey::object(store.store_object_id(), object.object_id())],
                 Options::default(),
             )
             .await
@@ -2188,7 +2367,7 @@ mod tests {
         loop {
             // Create enough extents in it such that when we truncate the object it will require
             // more than one transaction.
-            let mut buf = object.allocate_buffer(5);
+            let mut buf = object.allocate_buffer(5).await;
             buf.as_mut_slice().fill(1);
             // Write every other block.
             for offset in (0..object_size).into_iter().step_by(2 * block_size as usize) {
@@ -2213,7 +2392,7 @@ mod tests {
             transaction = fs
                 .clone()
                 .new_transaction(
-                    &[
+                    lock_keys![
                         LockKey::object(store.store_object_id(), store.root_directory_object_id()),
                         LockKey::object(store.store_object_id(), object.object_id()),
                     ],
@@ -2241,7 +2420,7 @@ mod tests {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), object.object_id())],
+                lock_keys![LockKey::object(store.store_object_id(), object.object_id())],
                 Options::default(),
             )
             .await
@@ -2260,7 +2439,7 @@ mod tests {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), object.object_id())],
+                lock_keys![LockKey::object(store.store_object_id(), object.object_id())],
                 Options::default(),
             )
             .await
@@ -2291,7 +2470,10 @@ mod tests {
             let mut transaction = fs
                 .clone()
                 .new_transaction(
-                    &[LockKey::object(store.store_object_id(), store.root_directory_object_id())],
+                    lock_keys![LockKey::object(
+                        store.store_object_id(),
+                        store.root_directory_object_id()
+                    )],
                     Options::default(),
                 )
                 .await
@@ -2330,27 +2512,31 @@ mod tests {
         let (send2, recv2) = channel();
         let (send3, recv3) = channel();
         let done = Mutex::new(false);
-        join!(
+        let mut futures = FuturesUnordered::new();
+        futures.push(
             async {
                 let mut t = object.new_transaction().await.expect("new_transaction failed");
                 send1.send(()).unwrap(); // Tell the next future to continue.
                 send3.send(()).unwrap(); // Tell the last future to continue.
                 recv2.await.unwrap();
-                let mut buf = object.allocate_buffer(5);
+                let mut buf = object.allocate_buffer(5).await;
                 buf.as_mut_slice().copy_from_slice(b"hello");
                 object.txn_write(&mut t, 0, buf.as_ref()).await.expect("write failed");
                 // This is a halting problem so all we can do is sleep.
                 fasync::Timer::new(Duration::from_millis(100)).await;
                 assert!(!*done.lock().unwrap());
                 t.commit().await.expect("commit failed");
-            },
+            }
+            .boxed(),
+        );
+        futures.push(
             async {
                 recv1.await.unwrap();
                 // Reads should not block.
                 let offset = TEST_DATA_OFFSET as usize;
                 let align = offset % fs.block_size() as usize;
                 let len = TEST_DATA.len();
-                let mut buf = object.allocate_buffer(align + len);
+                let mut buf = object.allocate_buffer(align + len).await;
                 assert_eq!(
                     object.read((offset - align) as u64, buf.as_mut()).await.expect("read failed"),
                     align + TEST_DATA.len()
@@ -2358,16 +2544,21 @@ mod tests {
                 assert_eq!(&buf.as_slice()[align..], TEST_DATA);
                 // Tell the first future to continue.
                 send2.send(()).unwrap();
-            },
+            }
+            .boxed(),
+        );
+        futures.push(
             async {
                 // This should block until the first future has completed.
                 recv3.await.unwrap();
                 let _t = object.new_transaction().await.expect("new_transaction failed");
-                let mut buf = object.allocate_buffer(5);
+                let mut buf = object.allocate_buffer(5).await;
                 assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed"), 5);
                 assert_eq!(buf.as_slice(), b"hello");
             }
+            .boxed(),
         );
+        while let Some(()) = futures.next().await {}
         fs.close().await.expect("Close failed");
     }
 
@@ -2377,7 +2568,7 @@ mod tests {
         let object;
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         let store = fs.root_store();
@@ -2396,7 +2587,7 @@ mod tests {
         for _ in 0..100 {
             let cloned_object = object.clone();
             let writer = fasync::Task::spawn(async move {
-                let mut buf = cloned_object.allocate_buffer(10);
+                let mut buf = cloned_object.allocate_buffer(10).await;
                 buf.as_mut_slice().fill(123);
                 cloned_object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
             });
@@ -2404,7 +2595,7 @@ mod tests {
             let reader = fasync::Task::spawn(async move {
                 let wait_time = rand::thread_rng().gen_range(0..5);
                 fasync::Timer::new(Duration::from_millis(wait_time)).await;
-                let mut buf = cloned_object.allocate_buffer(10);
+                let mut buf = cloned_object.allocate_buffer(10).await;
                 buf.as_mut_slice().fill(23);
                 let amount = cloned_object.read(0, buf.as_mut()).await.expect("write failed");
                 // If we succeed in reading data, it must include the write; i.e. if we see the size
@@ -2428,7 +2619,7 @@ mod tests {
         let (fs, object) = test_filesystem_and_object_with_key(None, true).await;
 
         let before = object.get_properties().await.expect("get_properties failed").allocated_size;
-        let mut buf = object.allocate_buffer(5);
+        let mut buf = object.allocate_buffer(5).await;
         buf.as_mut_slice().copy_from_slice(b"hello");
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         let after = object.get_properties().await.expect("get_properties failed").allocated_size;
@@ -2463,10 +2654,8 @@ mod tests {
         // preallocate_range...
         let mut transaction = object.new_transaction().await.expect("new_transaction failed");
         let before = after;
-        object
-            .preallocate_range(&mut transaction, offset..offset + fs.block_size() as u64)
-            .await
-            .expect("extend failed");
+        let mut file_range = offset..offset + fs.block_size() as u64;
+        object.preallocate_range(&mut transaction, &mut file_range).await.expect("extend failed");
         transaction.commit().await.expect("commit failed");
         let after = object.get_properties().await.expect("get_properties failed").allocated_size;
         assert_eq!(after, before + fs.block_size() as u64);
@@ -2481,7 +2670,7 @@ mod tests {
         object.zero(&mut transaction, 0..fs.block_size() as u64 * 10).await.expect("zero failed");
         transaction.commit().await.expect("commit failed");
         assert_eq!(object.get_size(), expected_size);
-        let mut buf = object.allocate_buffer(fs.block_size() as usize * 10);
+        let mut buf = object.allocate_buffer(fs.block_size() as usize * 10).await;
         assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed") as u64, expected_size);
         assert_eq!(
             &buf.as_slice()[0..expected_size as usize],
@@ -2495,35 +2684,36 @@ mod tests {
         let (fs, object) = test_filesystem_and_object().await;
         const CRTIME: Timestamp = Timestamp::from_nanos(1234);
         const MTIME: Timestamp = Timestamp::from_nanos(5678);
+        const CTIME: Timestamp = Timestamp::from_nanos(8765);
 
-        // ObjectProperties can be updated through `write_timestamps` and `update_attributes`.
+        // ObjectProperties can be updated through `update_attributes`.
         // `get_properties` should reflect the latest changes.
         let mut transaction = object.new_transaction().await.expect("new_transaction failed");
         object
-            .write_timestamps(&mut transaction, Some(CRTIME), Some(MTIME))
-            .await
-            .expect("update_timestamps failed");
-        object
             .update_attributes(
                 &mut transaction,
-                &fio::MutableNodeAttributes {
+                Some(&fio::MutableNodeAttributes {
+                    creation_time: Some(CRTIME.as_nanos()),
+                    modification_time: Some(MTIME.as_nanos()),
                     mode: Some(111),
                     gid: Some(222),
                     ..Default::default()
-                },
+                }),
+                None,
             )
             .await
-            .expect("update_timestamps failed");
+            .expect("update_attributes failed");
         const MTIME_NEW: Timestamp = Timestamp::from_nanos(12345678);
         object
             .update_attributes(
                 &mut transaction,
-                &fio::MutableNodeAttributes {
+                Some(&fio::MutableNodeAttributes {
                     modification_time: Some(MTIME_NEW.as_nanos()),
                     gid: Some(333),
                     rdev: Some(444),
                     ..Default::default()
-                },
+                }),
+                Some(CTIME),
             )
             .await
             .expect("update_timestamps failed");
@@ -2539,6 +2729,7 @@ mod tests {
                 creation_time: CRTIME,
                 modification_time: MTIME_NEW,
                 posix_attributes: Some(PosixAttributes { mode: 111, gid: 333, rdev: 444, .. }),
+                change_time: CTIME,
                 ..
             }
         );
@@ -2585,7 +2776,7 @@ mod tests {
         // Check for the case where where we have the following extent layout
         //      [ unallocated ][ `buf` ][ `buf` ]
         let buf_length = 5 * fs.block_size();
-        let mut buf = object.allocate_buffer(buf_length as usize);
+        let mut buf = object.allocate_buffer(buf_length as usize).await;
         buf.as_mut_slice().fill(123);
         let new_offset = end + 20 * fs.block_size() as u64;
         object.write_or_append(Some(new_offset), buf.as_ref()).await.expect("write failed");
@@ -2615,7 +2806,7 @@ mod tests {
         // Check for the case when we the following extent layout
         //      [ unallocated ][ `other_buf` ][ (part of) `buf` ][ `buf` ]
         let other_buf_length = 3 * fs.block_size();
-        let mut other_buf = object.allocate_buffer(other_buf_length as usize);
+        let mut other_buf = object.allocate_buffer(other_buf_length as usize).await;
         other_buf.as_mut_slice().fill(231);
         object.write_or_append(Some(new_offset), other_buf.as_ref()).await.expect("write failed");
 
@@ -2658,7 +2849,7 @@ mod tests {
         let store = object.owner();
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         let object2 = ObjectStore::create_object(

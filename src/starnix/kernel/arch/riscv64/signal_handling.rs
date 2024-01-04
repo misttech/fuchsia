@@ -4,11 +4,18 @@
 
 use fuchsia_zircon as zx;
 
-use crate::arch::registers::RegisterState;
-use crate::mm::vmo::round_up_to_increment;
-use crate::signals::*;
-use crate::task::*;
-use crate::types::*;
+use crate::{
+    arch::registers::RegisterState,
+    mm::vmo::round_up_to_increment,
+    signals::{SignalInfo, SignalState},
+    task::{CurrentTask, Task},
+};
+use extended_pstate::ExtendedPstateState;
+use starnix_uapi::{
+    __NR_restart_syscall,
+    errors::{Errno, ErrnoCode, ERESTART_RESTARTBLOCK},
+    sigaction_t, sigaltstack, sigcontext, sigcontext__bindgen_ty_1, siginfo_t, ucontext,
+};
 
 /// The size of the red zone.
 // TODO(fxbug.dev/121659): Determine whether or not this is the correct red zone size for riscv64.
@@ -31,8 +38,9 @@ pub struct SignalStackFrame {
 
 impl SignalStackFrame {
     pub fn new(
-        _task: &Task,
+        task: &Task,
         registers: &mut RegisterState,
+        extended_pstate: &ExtendedPstateState,
         signal_state: &SignalState,
         siginfo: &SignalInfo,
         _action: sigaction_t,
@@ -52,12 +60,16 @@ impl SignalStackFrame {
             uc_sigmask: signal_state.mask().into(),
             uc_mcontext: sigcontext {
                 sc_regs: registers.to_user_regs_struct(),
-
-                // TODO(fxbug.dev/128554): Set FP registers state.
-                sc_fpregs: Default::default(),
+                __bindgen_anon_1: sigcontext__bindgen_ty_1 {
+                    sc_fpregs: extended_pstate_to_riscv_fpregs(extended_pstate),
+                },
             },
             ..Default::default()
         };
+
+        let vdso_sigreturn_offset = task.kernel().vdso.sigreturn_offset;
+        let sigreturn_addr = task.mm().state.read().vdso_base.ptr() as u64 + vdso_sigreturn_offset;
+        registers.ra = sigreturn_addr;
 
         SignalStackFrame { context, siginfo_bytes: siginfo.as_siginfo_bytes() }
     }
@@ -71,22 +83,13 @@ impl SignalStackFrame {
     }
 }
 
-impl From<sigset_t> for SigSet {
-    fn from(value: sigset_t) -> Self {
-        SigSet(value.sig[0])
-    }
-}
-
-impl From<SigSet> for sigset_t {
-    fn from(val: SigSet) -> Self {
-        sigset_t { sig: [val.0] }
-    }
-}
-
-pub fn restore_registers(current_task: &mut CurrentTask, signal_stack_frame: &SignalStackFrame) {
+pub fn restore_registers(
+    current_task: &mut CurrentTask,
+    signal_stack_frame: &SignalStackFrame,
+) -> Result<(), Errno> {
     let regs = &signal_stack_frame.context.uc_mcontext.sc_regs;
     // Restore the register state from before executing the signal handler.
-    current_task.registers = zx::sys::zx_thread_state_general_regs_t {
+    current_task.thread_state.registers = zx::sys::zx_thread_state_general_regs_t {
         pc: regs.pc,
         ra: regs.ra,
         sp: regs.sp,
@@ -121,6 +124,11 @@ pub fn restore_registers(current_task: &mut CurrentTask, signal_stack_frame: &Si
         t6: regs.t6,
     }
     .into();
+
+    let d_state = unsafe { &signal_stack_frame.context.uc_mcontext.__bindgen_anon_1.sc_fpregs.d };
+    current_task.thread_state.extended_pstate.set_riscv64_fp(&d_state.f, d_state.fcsr);
+
+    Ok(())
 }
 
 pub fn align_stack_pointer(pointer: u64) -> u64 {
@@ -135,4 +143,20 @@ pub fn update_register_state_for_restart(registers: &mut RegisterState, err: Err
     // Reset the a0 register value to what it was when the original syscall trap occurred. This
     // needs to be done because a0 may have been overwritten in the syscall dispatch loop.
     registers.a0 = registers.orig_a0;
+}
+
+// Generates `__riscv_fp_state` struct from ExtendedPstateState.
+fn extended_pstate_to_riscv_fpregs(
+    extended_pstate: &ExtendedPstateState,
+) -> starnix_uapi::__riscv_fp_state {
+    let d_state = starnix_uapi::__riscv_d_ext_state {
+        f: *extended_pstate.get_riscv64_fp_registers(),
+        fcsr: extended_pstate.get_riscv64_fcsr(),
+        __bindgen_padding_0: [0u8; 4],
+    };
+    unsafe {
+        let mut r: starnix_uapi::__riscv_fp_state = std::mem::zeroed();
+        r.d = d_state;
+        r
+    }
 }

@@ -14,6 +14,13 @@
           },
           {
             "projects": [
+              "third_party/gfxstream"
+            ],
+            "bug": "fxbug.dev/134252",
+            "notes": []
+          },
+          {
+            "projects": [
               "third_party/golibs/vendor/github.com/spdx/tools-golang"
             ],
             "bug": "",
@@ -28,10 +35,7 @@
           },
           {
             "projects": [
-              "prebuilt/third_party/dart/linux-x64",
-              "prebuilt/third_party/dart/linux-x64",
-              "prebuilt/third_party/dart_paused/linux-x64",
-              "prebuilt/third_party/dart_paused/linux-x64"
+              "prebuilt/third_party/dart/linux-x64"
             ],
             "bug": "",
             "notes": []

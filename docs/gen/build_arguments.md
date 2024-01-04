@@ -14,7 +14,7 @@ From //zircon/system/ulib/acpica/acpica.gni:7
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:118
+From //build/images/args.gni:114
 
 ### add_qemu_to_build_archives
 
@@ -23,7 +23,18 @@ archives.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:124
+From //build/images/args.gni:120
+
+### additional_boards
+
+Additional boards (such as vendor boards) that are to be added to the build
+graph, and built when all boards for a given architecture are built.  These
+boards MUST be valid in the configured default_toolchain, and be for the
+current 'target_cpu'.
+
+**Current value (from the default):** `[]`
+
+From //boards/BUILD.gn:13
 
 ### additional_boot_args
 
@@ -32,7 +43,7 @@ These come after synthesized arguments to configure blobfs and pkgfs.
 
 **Current value (from the default):** `[]`
 
-From //build/images/args.gni:23
+From //build/images/args.gni:24
 
 ### additional_bootserver_arguments
 
@@ -43,7 +54,7 @@ with specific boards, due to driver and hardware challenges.
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:130
+From //build/images/args.gni:126
 
 ### all_cpu_kernel_boot_tests
 
@@ -79,7 +90,7 @@ It will be set below and passed to other toolchains through toolchain_args
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:1907
+From //build/config/BUILDCONFIG.gn:2089
 
 ### allowed_test_device_types
 
@@ -96,13 +107,13 @@ Build boot images that prefer Zedboot over local boot (only for EFI).
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:145
+From //build/images/args.gni:141
 
 ### api_compatibility_testing
 
 **Current value (from the default):** `true`
 
-From //build/config/fuchsia/platform_version.gni:43
+From //build/config/fuchsia/platform_version.gni:54
 
 ### archivist_max_cached_logs_bytes
 
@@ -135,27 +146,6 @@ injected that way can override that option's setting in this list.
 
 From //build/config/sanitizers/sanitizer_default_options.gni:16
 
-### assembly_fshost
-
-Skip configuring fshost in GN and do it via Assembly instead.
-Used as a parameter to assembled_system().
-
-**Current value for `target_cpu = "arm64"`:** `true`
-
-From //products/bringup.gni:9
-
-**Overridden from the default:** `false`
-
-From //build/images/args.gni:182
-
-**Current value for `target_cpu = "x64"`:** `true`
-
-From //products/bringup.gni:9
-
-**Overridden from the default:** `false`
-
-From //build/images/args.gni:182
-
 ### assembly_generate_fvm_fastboot
 
 The size in bytes of the FVM partition on the target eMMC devices.
@@ -164,7 +154,7 @@ suitable for flashing through fastboot for eMMC devices.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:153
+From //build/images/args.gni:149
 
 ### assembly_generate_fvm_nand
 
@@ -176,7 +166,7 @@ room to initialize on boot.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:160
+From //build/images/args.gni:156
 
 ### authorized_ssh_keys_label
 
@@ -197,20 +187,6 @@ syntax, which is going to be fixed up below.
 
 From //build/assembly/sshd_config.gni:18
 
-### auto_update_packages
-
-Controls the behavior of sysmgr's PackageUpdatingLoader (v1) and the
-full-resolver (v2). If true, when resolving a component an attempt to
-update the component's package is first made through the Software Delivery
-system (specifically, through the package resolver,
-fuchsia.pkg.PackageResolver). If false, no attempt to update is made and
-components are loaded only from packages already available locally (for
-example, because the package is in base).
-
-**Current value (from the default):** `true`
-
-From //build/security.gni:227
-
 ### avb_algorithm
 
 **Current value (from the default):** `"DEPRECATED"`
@@ -223,7 +199,7 @@ AVB metadata which will be used to validate public key
 
 **Current value for `target_cpu = "arm64"`:** `"//third_party/android/platform/external/avb/test/data/atx_metadata.bin"`
 
-From //boards/arm64.gni:40
+From //boards/arm64.gni:22
 
 **Overridden from the default:** `""`
 
@@ -231,7 +207,7 @@ From //build/images/vbmeta.gni:20
 
 **Current value for `target_cpu = "x64"`:** `"//third_party/android/platform/external/avb/test/data/atx_metadata.bin"`
 
-From //boards/x64.gni:56
+From //boards/common/x64-common.gni:58
 
 **Overridden from the default:** `""`
 
@@ -243,7 +219,7 @@ a key which will be used to sign VBMETA and images for AVB
 
 **Current value for `target_cpu = "arm64"`:** `"//third_party/android/platform/external/avb/test/data/testkey_atx_psk.pem"`
 
-From //boards/arm64.gni:42
+From //boards/arm64.gni:24
 
 **Overridden from the default:** `""`
 
@@ -251,7 +227,7 @@ From //build/images/vbmeta.gni:17
 
 **Current value for `target_cpu = "x64"`:** `"//third_party/android/platform/external/avb/test/data/testkey_atx_psk.pem"`
 
-From //boards/x64.gni:54
+From //boards/common/x64-common.gni:56
 
 **Overridden from the default:** `""`
 
@@ -265,19 +241,19 @@ be visible to Driver Manager. These package labels are also considered to be in 
 
 **Current value for `target_cpu = "arm64"`:** `[]`
 
-From //products/bringup.gni:16
+From //products/bringup.gni:14
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:38
+From //BUILD.gn:39
 
 **Current value for `target_cpu = "x64"`:** `[]`
 
-From //products/bringup.gni:16
+From //products/bringup.gni:14
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:38
+From //BUILD.gn:39
 
 ### base_package_labels
 
@@ -289,7 +265,7 @@ Base) for a product. These packages are never evicted by the system.
 
 **Current value for `target_cpu = "arm64"`:** `[]`
 
-From //out/not-default/args.gn:15
+From //out/not-default/args.gn:16
 
 **Overridden from the default:** `[]`
 
@@ -297,7 +273,7 @@ From //BUILD.gn:46
 
 **Current value for `target_cpu = "x64"`:** `[]`
 
-From //out/not-default/args.gn:15
+From //out/not-default/args.gn:16
 
 **Overridden from the default:** `[]`
 
@@ -313,7 +289,7 @@ From //build/testing/environments.gni:9
 
 ### bazel_fuchsia_sdk_all_cpus
 
-Set to true to populage the @fuchsia_sdk external repository with prebuilt
+Set to true to populate the @fuchsia_sdk external repository with prebuilt
 binaries for all supported target CPU architectures. By default, only those
 for the current build configuration's `target_cpu` value will be generated
 to save about 3 minutes of build time when they are not needed.
@@ -336,9 +312,21 @@ From //build/bazel/bazel_fuchsia_sdk.gni:11
 
 ### bazel_product_bundle_board
 
-**Current value (from the default):** `false`
+**Current value for `target_cpu = "arm64"`:** `"arm64"`
 
-From //build/images/args.gni:210
+From //boards/arm64.gni:29
+
+**Overridden from the default:** `false`
+
+From //build/images/args.gni:202
+
+**Current value for `target_cpu = "x64"`:** `"x64"`
+
+From //boards/x64.gni:25
+
+**Overridden from the default:** `false`
+
+From //build/images/args.gni:202
 
 ### bazel_product_bundle_prefix
 
@@ -363,7 +351,7 @@ The actual bazel_product_bundle used for Bazel assembly is:
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:209
+From //build/images/args.gni:201
 
 ### bazel_quiet
 
@@ -376,6 +364,17 @@ to stdout/stderr during the Ninja build.
 
 From //build/bazel/bazel_action.gni:15
 
+### bazel_remote
+
+Configure bazel to build remotely where supported.
+This option requires that bazel invocations have direct
+external network access, and that users are authenticated to
+access the configured RBE instance.
+
+**Current value (from the default):** `false`
+
+From //build/bazel/bazel_action.gni:21
+
 ### bless_goldens
 
 TODO(fxbug.dev/100321): delete bless_goldens, to give users time to switch to new gn arg, update_goldens
@@ -383,26 +382,6 @@ TODO(fxbug.dev/100321): delete bless_goldens, to give users time to switch to ne
 **Current value (from the default):** `false`
 
 From //build/testing/config.gni:11
-
-### blob_layout_format
-
-The format blobfs should store blobs in.
-Set by boards.
-
-**Current value (from the default):** `"compact"`
-
-From //src/storage/fshost/generated_fshost_config.gni:23
-
-### blobfs_board_minimum_inodes
-
-minimum_inodes is the number of inodes to reserve for the fs
-A value of false does not reserve any additional space than minimum
-required for the filesystem.
-Set by boards.
-
-**Current value (from the default):** `false`
-
-From //src/storage/fshost/generated_fshost_config.gni:52
 
 ### blobfs_capacity
 
@@ -412,7 +391,7 @@ False means no limit.
 
 **Current value for `target_cpu = "arm64"`:** `10485760000`
 
-From //boards/common/arm64-common.gni:14
+From //boards/common/arm64-common.gni:11
 
 **Overridden from the default:** `false`
 
@@ -420,7 +399,7 @@ From //build/images/filesystem_limits.gni:17
 
 **Current value for `target_cpu = "x64"`:** `10485760000`
 
-From //boards/x64.gni:13
+From //boards/common/x64-common.gni:60
 
 **Overridden from the default:** `false`
 
@@ -435,26 +414,13 @@ tree users don't set this anymore.
 
 From //src/storage/blobfs/BUILD.gn:12
 
-### blobfs_maximum_runtime_bytes
-
-blobfs_maximum_runtime_bytes is an upper bound on the partition size on the device. Partitions
-can grow as needed if there are extra slices available in FVM. This limit prevents the blobfs
-partition from taking too much space away from other uses.
-
-Pass the empty string for no limit.
-Set by boards.
-
-**Current value (from the default):** `""`
-
-From //src/storage/fshost/generated_fshost_config.gni:60
-
 ### blobfs_num_pager_threads
 
 The number of pager threads to spawn for blobfs.
 
 **Current value (from the default):** `2`
 
-From //src/storage/bin/blobfs/BUILD.gn:23
+From //src/storage/blobfs/bin/BUILD.gn:22
 
 ### blobfs_page_in_metrics_recording
 
@@ -478,21 +444,9 @@ From //build/images/size_checker/size_checker_input.gni:91
 
 A list of binary labels to include in the ZBI.
 
-**Current value for `target_cpu = "arm64"`:** `["//src/devices/bus/drivers/pci:bus-pci", "//src/devices/usb/drivers/xhci", "//src/power/power-manager:base_config", "//src/security/policy/zxcrypt:null", "//src/devices/block/drivers/nvme", "//src/connectivity/ethernet/drivers/virtio:virtio_netdevice", "//src/devices/block/drivers/virtio:virtio_block", "//src/devices/block/drivers/virtio:virtio_scsi", "//src/devices/misc/drivers/virtio-rng:virtio_rng", "//src/devices/serial/drivers/virtio-console:virtio_console", "//src/graphics/drivers/misc:goldfish_fuchsia_drivers", "//src/graphics/display/drivers/goldfish-display", "//src/graphics/display/drivers/virtio-guest:virtio_gpu", "//src/ui/input/drivers/virtio:virtio_input", "//src/ui/input/drivers/goldfish_sensor:sensor_driver", "//src/devices/block/drivers/ahci", "//src/devices/board/drivers/acpi-arm64", "//src/devices/board/drivers/qemu-arm64", "//src/devices/rtc/drivers/pl031-rtc"]`
+**Current value (from the default):** `[]`
 
-From //boards/arm64.gni:27
-
-**Overridden from the default:** `[]`
-
-From //build/board.gni:54
-
-**Current value for `target_cpu = "x64"`:** `["//src/devices/block/drivers/ahci", "//src/devices/block/drivers/mbr", "//src/devices/block/drivers/nvme", "//src/devices/block/drivers/pci-sdhci", "//src/devices/block/drivers/sdhci", "//src/devices/block/drivers/ufs", "//src/devices/board/drivers/x86:platform-bus-x86", "//src/devices/bus/drivers/pci:bus-pci", "//src/devices/i2c/drivers/intel-i2c", "//src/devices/rtc/drivers/intel-rtc", "//src/devices/spi/drivers/intel-gspi", "//src/devices/tpm/drivers/tpm", "//src/devices/usb/drivers/xhci", "//src/graphics/display/drivers/intel-i915", "//src/media/audio/drivers/codecs/alc5514", "//src/media/audio/drivers/codecs/alc5663", "//src/media/audio/drivers/codecs/max98373", "//src/media/audio/drivers/codecs/max98927", "//src/media/audio/drivers/intel-hda/codecs/hdmi:hdmi-audio-codec", "//src/media/audio/drivers/intel-hda/codecs/realtek:realtek-audio-codec", "//src/media/audio/drivers/intel-hda/controller:intel-hda", "//src/ui/input/drivers/ctaphid", "//src/ui/input/drivers/i2c-hid", "//src/ui/input/drivers/pc-ps2", "//src/devices/pci/bin:bootfs", "//src/media/audio/bin/ihda", "//src/power/power-manager:base_config", "//src/security/policy/zxcrypt:null", "//src/connectivity/ethernet/drivers/virtio:virtio_netdevice", "//src/devices/block/drivers/virtio:virtio_block", "//src/devices/block/drivers/virtio:virtio_scsi", "//src/devices/misc/drivers/virtio-rng:virtio_rng", "//src/devices/serial/drivers/virtio-console:virtio_console", "//src/graphics/drivers/misc:goldfish_fuchsia_drivers", "//src/graphics/display/drivers/goldfish-display", "//src/graphics/display/drivers/virtio-guest:virtio_gpu", "//src/ui/input/drivers/virtio:virtio_input", "//src/ui/input/drivers/goldfish_sensor:sensor_driver", "//src/connectivity/ethernet/drivers/third_party/igc", "//src/graphics/display/drivers/simple:simple.bochs", "//src/graphics/display/drivers/simple:simple.gga", "//src/graphics/display/drivers/simple:simple.intel", "//src/graphics/display/drivers/simple:simple.vmware", "//src/media/audio/drivers/intel-hda/codecs/qemu:qemu-audio-codec", "//zircon/third_party/dev/ethernet/e1000", "//boards/kernel_cmdline:enable-suspend-from-board", "//src/connectivity/ethernet/drivers/gvnic", "//src/connectivity/ethernet/drivers/realtek-8111", "//src/devices/serial/drivers/uart16550", "//src/graphics/display/drivers/simple:simple.amd-kaveri", "//src/graphics/display/drivers/simple:simple.nv", "//boards/kernel_cmdline:serial-legacy", "//src/devices/block/drivers/abr-shim"]`
-
-From //boards/x64.gni:32
-
-**Overridden from the default:** `[]`
-
-From //build/board.gni:54
+From //build/board.gni:36
 
 ### board_configs
 
@@ -502,6 +456,26 @@ Configs that are added when targeting this board.
 
 From //build/board.gni:21
 
+### board_configuration_label
+
+The label for the board configuration target to use with Product Assembly
+
+**Current value for `target_cpu = "arm64"`:** `"//boards/arm64"`
+
+From //boards/arm64.gni:8
+
+**Overridden from the default:** `false`
+
+From //build/board.gni:83
+
+**Current value for `target_cpu = "x64"`:** `"//boards/x64"`
+
+From //boards/x64.gni:8
+
+**Overridden from the default:** `false`
+
+From //build/board.gni:83
+
 ### board_core_realm_shards
 
 Core realm shards specific to this board. See //src/sys/core for more
@@ -509,7 +483,7 @@ context.
 
 **Current value (from the default):** `[]`
 
-From //build/board.gni:83
+From //build/board.gni:65
 
 ### board_description
 
@@ -517,7 +491,7 @@ Human readable board description corresponding to the board name.
 
 **Current value for `target_cpu = "arm64"`:** `"A generic emulated arm64 device."`
 
-From //boards/arm64.gni:15
+From //boards/arm64.gni:11
 
 **Overridden from the default:** `""`
 
@@ -545,19 +519,7 @@ From //build/board.gni:18
 A list of driver package labels to include in the 'base' package set. Used
 by the board definition rather than the product definition.
 
-**Current value for `target_cpu = "arm64"`:** `["//bundles/packages/prod:drivers-system"]`
-
-From //boards/common/arm64-common.gni:32
-
-**Overridden from the default:** `[]`
-
-From //build/board.gni:25
-
-**Current value for `target_cpu = "x64"`:** `["//bundles/packages/prod:drivers-system", "//src/connectivity/wlan/drivers/wlanphy:wlanphy", "//src/devices/acpi:drivers", "//src/graphics/drivers/msd-intel-gen", "//src/power/fake-battery:fake-battery"]`
-
-From //boards/common/x64-common.gni:74
-
-**Overridden from the default:** `[]`
+**Current value (from the default):** `[]`
 
 From //build/board.gni:25
 
@@ -576,7 +538,7 @@ board's fastboot protocol.
 
 **Current value (from the default):** `[]`
 
-From //build/board.gni:87
+From //build/board.gni:69
 
 ### board_fshost_config
 
@@ -584,15 +546,7 @@ A list of fshost options to add to the fshost config.
 
 **Current value (from the default):** `{ }`
 
-From //build/board.gni:71
-
-### board_has_libvulkan_arm_mali
-
-Board files can set this to true if they have a package with a mali libvulkan VCD.
-
-**Current value (from the default):** `false`
-
-From //src/graphics/lib/magma/gnbuild/magma.gni:43
+From //build/board.gni:53
 
 ### board_host_labels
 
@@ -600,27 +554,7 @@ A list of binary host tool labels to also build.
 
 **Current value (from the default):** `[]`
 
-From //build/board.gni:57
-
-### board_information_for_assembly
-
-BoardInformation file for use with Product Assembly
-
-**Current value for `target_cpu = "arm64"`:** `"//boards/arm64/board_information.json5"`
-
-From //boards/arm64.gni:12
-
-**Overridden from the default:** `false`
-
-From //build/board.gni:101
-
-**Current value for `target_cpu = "x64"`:** `"//boards/x64/board_information.json5"`
-
-From //boards/x64.gni:8
-
-**Overridden from the default:** `false`
-
-From //build/board.gni:101
+From //build/board.gni:39
 
 ### board_is_emu
 
@@ -630,33 +564,33 @@ physical/virtual device spec or both.
 
 **Current value for `target_cpu = "arm64"`:** `true`
 
-From //boards/arm64.gni:32
+From //boards/arm64.gni:14
 
 **Overridden from the default:** `false`
 
-From //build/board.gni:106
+From //build/board.gni:88
 
 **Current value for `target_cpu = "x64"`:** `true`
 
-From //boards/x64.gni:72
+From //boards/x64.gni:23
 
 **Overridden from the default:** `false`
 
-From //build/board.gni:106
+From //build/board.gni:88
 
 ### board_is_phys
 
 **Current value for `target_cpu = "arm64"`:** `false`
 
-From //boards/arm64.gni:33
+From //boards/arm64.gni:15
 
 **Overridden from the default:** `true`
 
-From //build/board.gni:107
+From //build/board.gni:89
 
 **Current value (from the default):** `true`
 
-From //build/board.gni:107
+From //build/board.gni:89
 
 ### board_name
 
@@ -664,7 +598,7 @@ Board name used for paving and amber updates.
 
 **Current value for `target_cpu = "arm64"`:** `"arm64"`
 
-From //boards/arm64.gni:14
+From //boards/arm64.gni:10
 
 **Overridden from the default:** `""`
 
@@ -683,21 +617,9 @@ From //build/board.gni:11
 A list of package labels to include in the 'base' package set. Used by the
 board definition rather than the product definition.
 
-**Current value for `target_cpu = "arm64"`:** `["//src/hwinfo:default_board_config", "//src/graphics/bin/vulkan_loader"]`
+**Current value (from the default):** `[]`
 
-From //boards/common/arm64-common.gni:34
-
-**Overridden from the default:** `[]`
-
-From //build/board.gni:47
-
-**Current value for `target_cpu = "x64"`:** `["//src/graphics/bin/vulkan_loader", "//src/hwinfo:default_board_config", "//src/graphics/drivers/intel-gen/icd:libvulkan_intel_gen", "//src/graphics/lib/goldfish-vulkan/gnbuild:goldfish-vulkan", "//src/graphics/lib/goldfish-vulkan/gnbuild:goldfish-vulkan-config", "//src/media/codec/codecs/vaapi:codec_runner_intel_gen_prebuilt"]`
-
-From //boards/common/x64-common.gni:84
-
-**Overridden from the default:** `[]`
-
-From //build/board.gni:47
+From //build/board.gni:29
 
 ### board_pdm_firmware_name
 
@@ -707,48 +629,13 @@ The name of the HW DSP FW that handles Pdm audio data.
 
 From //src/media/audio/drivers/lib/aml-dsp/BUILD.gn:10
 
-### board_provided_drivers
-
-A list of scopes that describe drivers provided by the board, which are
-added to the product assembly configuration as "product-provided" drivers.
-These will later be migrated to a "board-provided" driver input to assembly,
-but that mechanism is still under development.
-
-Each scope added to this list needs to be in the following form:
-  {
-    # This is the label that creates the package, this can not be a group
-    package_target = "//gn/label/that/to/the/driver:package"
-
-    # These are paths to the driver components within the above package.
-    driver_components = [
-      "meta/driver_1.cm",
-      "meta/driver_2.cm",
-    ]
-  }
-
-**Current value (from the default):** `[]`
-
-From //build/board.gni:43
-
 ### board_recovery_bootfs_labels
 
 A list of binary labels to include in the recovery ZBI.
 
-**Current value for `target_cpu = "arm64"`:** `["//src/devices/bus/drivers/pci:bus-pci", "//src/devices/usb/drivers/xhci", "//src/power/power-manager:base_config", "//src/security/policy/zxcrypt:null", "//src/devices/block/drivers/nvme", "//src/connectivity/ethernet/drivers/virtio:virtio_netdevice", "//src/devices/block/drivers/virtio:virtio_block", "//src/devices/block/drivers/virtio:virtio_scsi", "//src/devices/misc/drivers/virtio-rng:virtio_rng", "//src/devices/serial/drivers/virtio-console:virtio_console", "//src/graphics/drivers/misc:goldfish_fuchsia_drivers", "//src/graphics/display/drivers/goldfish-display", "//src/graphics/display/drivers/virtio-guest:virtio_gpu", "//src/ui/input/drivers/virtio:virtio_input", "//src/ui/input/drivers/goldfish_sensor:sensor_driver", "//src/devices/block/drivers/ahci", "//src/devices/board/drivers/acpi-arm64", "//src/devices/board/drivers/qemu-arm64", "//src/devices/rtc/drivers/pl031-rtc"]`
+**Current value (from the default):** `[]`
 
-From //boards/arm64.gni:28
-
-**Overridden from the default:** `[]`
-
-From //build/board.gni:68
-
-**Current value for `target_cpu = "x64"`:** `["//src/devices/block/drivers/ahci", "//src/devices/block/drivers/mbr", "//src/devices/block/drivers/nvme", "//src/devices/block/drivers/pci-sdhci", "//src/devices/block/drivers/sdhci", "//src/devices/block/drivers/ufs", "//src/devices/board/drivers/x86:platform-bus-x86", "//src/devices/bus/drivers/pci:bus-pci", "//src/devices/i2c/drivers/intel-i2c", "//src/devices/rtc/drivers/intel-rtc", "//src/devices/spi/drivers/intel-gspi", "//src/devices/tpm/drivers/tpm", "//src/devices/usb/drivers/xhci", "//src/graphics/display/drivers/intel-i915", "//src/media/audio/drivers/codecs/alc5514", "//src/media/audio/drivers/codecs/alc5663", "//src/media/audio/drivers/codecs/max98373", "//src/media/audio/drivers/codecs/max98927", "//src/media/audio/drivers/intel-hda/codecs/hdmi:hdmi-audio-codec", "//src/media/audio/drivers/intel-hda/codecs/realtek:realtek-audio-codec", "//src/media/audio/drivers/intel-hda/controller:intel-hda", "//src/ui/input/drivers/ctaphid", "//src/ui/input/drivers/i2c-hid", "//src/ui/input/drivers/pc-ps2", "//src/devices/pci/bin:bootfs", "//src/media/audio/bin/ihda", "//src/power/power-manager:base_config", "//src/security/policy/zxcrypt:null", "//src/connectivity/ethernet/drivers/virtio:virtio_netdevice", "//src/devices/block/drivers/virtio:virtio_block", "//src/devices/block/drivers/virtio:virtio_scsi", "//src/devices/misc/drivers/virtio-rng:virtio_rng", "//src/devices/serial/drivers/virtio-console:virtio_console", "//src/graphics/drivers/misc:goldfish_fuchsia_drivers", "//src/graphics/display/drivers/goldfish-display", "//src/graphics/display/drivers/virtio-guest:virtio_gpu", "//src/ui/input/drivers/virtio:virtio_input", "//src/ui/input/drivers/goldfish_sensor:sensor_driver", "//src/connectivity/ethernet/drivers/third_party/igc", "//src/graphics/display/drivers/simple:simple.bochs", "//src/graphics/display/drivers/simple:simple.gga", "//src/graphics/display/drivers/simple:simple.intel", "//src/graphics/display/drivers/simple:simple.vmware", "//src/media/audio/drivers/intel-hda/codecs/qemu:qemu-audio-codec", "//zircon/third_party/dev/ethernet/e1000", "//src/connectivity/ethernet/drivers/gvnic", "//src/connectivity/ethernet/drivers/realtek-8111", "//src/devices/serial/drivers/uart16550", "//src/graphics/display/drivers/simple:simple.amd-kaveri", "//src/graphics/display/drivers/simple:simple.nv", "//boards/kernel_cmdline:serial-legacy", "//src/devices/block/drivers/abr-shim"]`
-
-From //boards/x64.gni:33
-
-**Overridden from the default:** `[]`
-
-From //build/board.gni:68
+From //build/board.gni:50
 
 ### board_recovery_package_labels
 
@@ -757,7 +644,7 @@ board definition rather than the product definition.
 
 **Current value (from the default):** `[]`
 
-From //build/board.gni:51
+From //build/board.gni:33
 
 ### board_system_image_deps
 
@@ -765,7 +652,7 @@ A list of binary labels to include in the system_image package.
 
 **Current value (from the default):** `[]`
 
-From //build/board.gni:79
+From //build/board.gni:61
 
 ### board_tdm_firmware_name
 
@@ -789,27 +676,15 @@ any kind of stable contract for users of the archive.
 
 **Current value (from the default):** `[]`
 
-From //build/board.gni:98
+From //build/board.gni:80
 
 ### board_zedboot_bootfs_labels
 
 A list of binary labels to include in the zedboot ZBI.
 
-**Current value for `target_cpu = "arm64"`:** `["//src/devices/bus/drivers/pci:bus-pci", "//src/devices/usb/drivers/xhci", "//src/power/power-manager:base_config", "//src/security/policy/zxcrypt:null", "//src/devices/block/drivers/nvme", "//src/connectivity/ethernet/drivers/virtio:virtio_netdevice", "//src/devices/block/drivers/virtio:virtio_block", "//src/devices/block/drivers/virtio:virtio_scsi", "//src/devices/misc/drivers/virtio-rng:virtio_rng", "//src/devices/serial/drivers/virtio-console:virtio_console", "//src/graphics/drivers/misc:goldfish_fuchsia_drivers", "//src/graphics/display/drivers/goldfish-display", "//src/graphics/display/drivers/virtio-guest:virtio_gpu", "//src/ui/input/drivers/virtio:virtio_input", "//src/ui/input/drivers/goldfish_sensor:sensor_driver", "//src/devices/block/drivers/ahci", "//src/devices/board/drivers/acpi-arm64", "//src/devices/board/drivers/qemu-arm64", "//src/devices/rtc/drivers/pl031-rtc"]`
+**Current value (from the default):** `[]`
 
-From //boards/arm64.gni:29
-
-**Overridden from the default:** `[]`
-
-From //build/board.gni:65
-
-**Current value for `target_cpu = "x64"`:** `["//src/devices/block/drivers/ahci", "//src/devices/block/drivers/mbr", "//src/devices/block/drivers/nvme", "//src/devices/block/drivers/pci-sdhci", "//src/devices/block/drivers/sdhci", "//src/devices/block/drivers/ufs", "//src/devices/board/drivers/x86:platform-bus-x86", "//src/devices/bus/drivers/pci:bus-pci", "//src/devices/i2c/drivers/intel-i2c", "//src/devices/rtc/drivers/intel-rtc", "//src/devices/spi/drivers/intel-gspi", "//src/devices/tpm/drivers/tpm", "//src/devices/usb/drivers/xhci", "//src/graphics/display/drivers/intel-i915", "//src/media/audio/drivers/codecs/alc5514", "//src/media/audio/drivers/codecs/alc5663", "//src/media/audio/drivers/codecs/max98373", "//src/media/audio/drivers/codecs/max98927", "//src/media/audio/drivers/intel-hda/codecs/hdmi:hdmi-audio-codec", "//src/media/audio/drivers/intel-hda/codecs/realtek:realtek-audio-codec", "//src/media/audio/drivers/intel-hda/controller:intel-hda", "//src/ui/input/drivers/ctaphid", "//src/ui/input/drivers/i2c-hid", "//src/ui/input/drivers/pc-ps2", "//src/devices/pci/bin:bootfs", "//src/media/audio/bin/ihda", "//src/power/power-manager:base_config", "//src/security/policy/zxcrypt:null", "//src/connectivity/ethernet/drivers/virtio:virtio_netdevice", "//src/devices/block/drivers/virtio:virtio_block", "//src/devices/block/drivers/virtio:virtio_scsi", "//src/devices/misc/drivers/virtio-rng:virtio_rng", "//src/devices/serial/drivers/virtio-console:virtio_console", "//src/graphics/drivers/misc:goldfish_fuchsia_drivers", "//src/graphics/display/drivers/goldfish-display", "//src/graphics/display/drivers/virtio-guest:virtio_gpu", "//src/ui/input/drivers/virtio:virtio_input", "//src/ui/input/drivers/goldfish_sensor:sensor_driver", "//src/connectivity/ethernet/drivers/third_party/igc", "//src/graphics/display/drivers/simple:simple.bochs", "//src/graphics/display/drivers/simple:simple.gga", "//src/graphics/display/drivers/simple:simple.intel", "//src/graphics/display/drivers/simple:simple.vmware", "//src/media/audio/drivers/intel-hda/codecs/qemu:qemu-audio-codec", "//zircon/third_party/dev/ethernet/e1000", "//src/connectivity/ethernet/drivers/gvnic", "//src/connectivity/ethernet/drivers/realtek-8111", "//src/devices/serial/drivers/uart16550", "//src/graphics/display/drivers/simple:simple.amd-kaveri", "//src/graphics/display/drivers/simple:simple.nv", "//boards/kernel_cmdline:serial-legacy", "//src/devices/block/drivers/abr-shim"]`
-
-From //boards/x64.gni:34
-
-**Overridden from the default:** `[]`
-
-From //build/board.gni:65
+From //build/board.gni:47
 
 ### board_zedboot_cmdline_args
 
@@ -819,7 +694,7 @@ required by this board. See also zedboot_cmdline_args in
 
 **Current value (from the default):** `[]`
 
-From //build/board.gni:62
+From //build/board.gni:44
 
 ### board_zedboot_fshost_config
 
@@ -827,7 +702,7 @@ A list of fshost options to add to the fshost config in the zedboot image.
 
 **Current value (from the default):** `{ }`
 
-From //build/board.gni:75
+From //build/board.gni:57
 
 ### bootfs_only
 
@@ -840,7 +715,7 @@ From //products/bringup.gni:7
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:14
+From //build/images/args.gni:15
 
 **Current value for `target_cpu = "x64"`:** `true`
 
@@ -848,7 +723,7 @@ From //products/bringup.gni:7
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:14
+From //build/images/args.gni:15
 
 ### bootstrap_files
 
@@ -866,7 +741,7 @@ Each entry in the list is a scope containing:
 
 **Current value (from the default):** `[]`
 
-From //build/images/args.gni:78
+From //build/images/args.gni:79
 
 ### build_all_vp9_file_decoder_conformance_tests
 
@@ -940,7 +815,7 @@ Targets that will be built as IMG vulkan ICDS.
 
 **Current value (from the default):** `[]`
 
-From //src/graphics/lib/magma/gnbuild/magma.gni:40
+From //src/graphics/lib/magma/gnbuild/magma.gni:36
 
 ### build_libvulkan_vsi_vip
 
@@ -948,26 +823,28 @@ Targets that will be built as verisilicon vulkan ICDS.
 
 **Current value (from the default):** `[]`
 
-From //src/graphics/lib/magma/gnbuild/magma.gni:37
+From //src/graphics/lib/magma/gnbuild/magma.gni:33
 
-### build_pb_v1
+### build_only_labels
 
-Whether to build product bundle version 1 related tools and artifacts.
+These labels are added as dependencies of '//:default', but not as a
+dependency of anything else, and so are "build only".
 
-**Current value (from the default):** `true`
+**Current value for `target_cpu = "arm64"`:** `[]`
 
-From //build/product.gni:7
+From //out/not-default/args.gn:19
 
-### build_sdk_archives
+**Overridden from the default:** `[]`
 
-Whether to build archives for sdk() targets by default.
-This is deprecated, archives should instead be created through
-generate_final_idk(). Moreover, the sdk() template is deprecated
-and its use replaced with sdk_collection() instead.
+From //build/input/BUILD.gn:9
 
-**Current value (from the default):** `false`
+**Current value for `target_cpu = "x64"`:** `[]`
 
-From //build/sdk/config.gni:10
+From //out/not-default/args.gn:19
+
+**Overridden from the default:** `[]`
+
+From //build/input/BUILD.gn:9
 
 ### build_should_trace_actions
 
@@ -985,19 +862,19 @@ Generate a UEFI disk image
 
 **Current value for `target_cpu = "arm64"`:** `true`
 
-From //boards/arm64.gni:36
+From //boards/arm64.gni:18
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:29
+From //build/images/args.gni:30
 
 **Current value for `target_cpu = "x64"`:** `true`
 
-From //boards/x64.gni:51
+From //boards/common/x64-common.gni:64
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:29
+From //build/images/args.gni:30
 
 ### build_usb_installer
 
@@ -1007,7 +884,7 @@ See https://fuchsia.dev/fuchsia-src/development/hardware/installer
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:34
+From //build/images/args.gni:35
 
 ### bump_api_level
 
@@ -1015,7 +892,7 @@ If true, build for N+1 api level, where N is platform_version.in_development_api
 
 **Current value (from the default):** `false`
 
-From //build/config/fuchsia/platform_version.gni:8
+From //build/config/fuchsia/platform_version.gni:19
 
 ### cache_package_labels
 
@@ -1028,7 +905,7 @@ pressure arises or other policies indicate.
 
 **Current value for `target_cpu = "arm64"`:** `[]`
 
-From //out/not-default/args.gn:16
+From //out/not-default/args.gn:17
 
 **Overridden from the default:** `[]`
 
@@ -1036,7 +913,7 @@ From //BUILD.gn:55
 
 **Current value for `target_cpu = "x64"`:** `[]`
 
-From //out/not-default/args.gn:16
+From //out/not-default/args.gn:17
 
 **Overridden from the default:** `[]`
 
@@ -1105,7 +982,7 @@ non-production GN labels. Build will fail if such dependency is found.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:136
+From //build/images/args.gni:132
 
 ### check_repeatability
 
@@ -1125,19 +1002,32 @@ This is primarily meant to be used by the clang canary builders.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:94
+From //build/images/args.gni:95
 
 ### chromium_build_dir
 
 This variable specifies a fully qualified Chromium build output directory,
-such as `/home/$USER/chrome/src/out/fuchsia`, from which `chrome`,
-`cast_runner`, and `web_engine` will be obtained.
+such as `/home/$USER/chrome/src/out/fuchsia`, from which `web_engine` will
+be obtained.
 All of those targets must exist in the output directory.
 If unset, the prebuilt packages from CIPD will be used.
 
 **Current value (from the default):** `""`
 
 From //src/chromium/build_args.gni:11
+
+### cipd_assembly_artifact_targets
+
+Targets to be traversed by //:cipd_assembly_artifacts for GN metadata only.
+These targets are expected to set "assembly_inputs" in metadata, which can
+include a JSON file describing artifacts to be uploaded to CPID.
+
+NOTE: These targets are for GN metadata walk only. If the artifacts need to
+be built, they should be included in the build graph through other means.
+
+**Current value (from the default):** `["//build/images:main_assembly"]`
+
+From //build/product.gni:59
 
 ### clang_embed_bitcode
 
@@ -1221,8 +1111,9 @@ Selects the Cobalt environment to send data to. Choices:
   "LOCAL" - record log data locally to a file
   "DEVEL" - the non-prod environment for use in testing
   "PROD" - the production environment
+  false - use the default environment supplied by assembly
 
-**Current value (from the default):** `"PROD"`
+**Current value (from the default):** `false`
 
 From //src/cobalt/bin/app/BUILD.gn:15
 
@@ -1234,7 +1125,15 @@ from infra builds, and later inspection.
 
 **Current value (from the default):** `"//out/not-default/comparison-reports"`
 
-From //build/toolchain/rbe.gni:180
+From //build/toolchain/rbe.gni:181
+
+### compress_debuginfo
+
+Enable compression of debug sections.
+
+**Current value (from the default):** `"zstd"`
+
+From //build/config/compiler.gni:90
 
 ### config_example_cpp_greeting
 
@@ -1269,7 +1168,7 @@ TODO: redo comments
 
 **Current value (from the default):** `[]`
 
-From //build/product.gni:33
+From //build/product.gni:27
 
 ### crash_diagnostics_dir
 
@@ -1306,15 +1205,7 @@ that we want the legacy AIB packaged and archived for a given product:
 
 **Current value (from the default):** `false`
 
-From //build/images/fuchsia/BUILD.gn:28
-
-### cts_version
-
-The replacement of "99991231.0.1" changed the string, so this is in-tree.
-
-**Current value (from the default):** `""`
-
-From //sdk/ctf/build/internal/ctf_version.gni:18
+From //build/images/fuchsia/BUILD.gn:26
 
 ### current_cpu
 
@@ -1370,7 +1261,7 @@ From //build/images/custom_signing.gni:26
 
 **Current value (from the default):** `""`
 
-From //third_party/Vulkan-Loader/BUILD.gn:22
+From //third_party/Vulkan-Loader/BUILD.gn:20
 
 ### cxx_rbe_check
 
@@ -1399,7 +1290,19 @@ One of:
 
 **Current value (from the default):** `"none"`
 
-From //build/toolchain/rbe.gni:175
+From //build/toolchain/rbe.gni:176
+
+### cxx_rbe_download_obj_files
+
+Controls whether or not to download intermediate .o files.
+When downloading is disabled, the build produces stubs
+that be used to retrieve remote artifacts later using build/rbe/dlwrap.py.
+TODO(b/284994230): This option is only available to developers,
+and not restricted environments that lack direct network access.
+
+**Current value (from the default):** `true`
+
+From //build/toolchain/rbe.gni:188
 
 ### cxx_rbe_enable
 
@@ -1412,7 +1315,7 @@ From //out/not-default/args.gn:7
 
 **Overridden from the default:** `false`
 
-From //build/toolchain/rbe.gni:133
+From //build/toolchain/rbe.gni:129
 
 **Current value for `target_cpu = "x64"`:** `false`
 
@@ -1420,7 +1323,7 @@ From //out/not-default/args.gn:7
 
 **Overridden from the default:** `false`
 
-From //build/toolchain/rbe.gni:133
+From //build/toolchain/rbe.gni:129
 
 ### cxx_rbe_exec_strategy
 
@@ -1435,7 +1338,7 @@ One of:
 
   * "remote_local_fallback": Execute action remotely first.
         If that fails, run locally instead.  The locally produced
-        result are not uploaded to the remote cache.
+        results are not uploaded to the remote cache.
 
   * "racing": Race local vs. remote execution, take the first to finish.
 
@@ -1443,141 +1346,27 @@ One of:
 
 **Current value (from the default):** `"remote_local_fallback"`
 
-From //build/toolchain/rbe.gni:151
+From //build/toolchain/rbe.gni:152
 
-### dart_aot_debug_build_cfg
+### cxx_rbe_minimalist_wrapper
 
-Builds the component in a non-product AOT build. This will
-launch the vm service in the runner.
-This configuration is not compatible with a --release build since the
-profile aot runner is built without asserts.
+Set to true to use a fast, minimalist wrapper, that lacks features
+of the python-based wrapper.  Use with caution.
+This flag is only meaningful when `cxx_rbe_enable` is true.
 
-**Current value (from the default):**
+**Current value (from the default):** `true`
 
-```none
-{
-  enable_asserts = true
-  is_aot = true
-  is_debug = true
-  is_product = false
-  platform_name = "dart_runner"
-  runner_dep = "//src/dart:dart_aot"
-  runtime_meta = "//build/dart/meta/aot_runtime.cml"
-}
-```
-
-From //build/dart/dart_build_config.gni:22
-
-### dart_debug_build_cfg
-
-Builds the component in a non-product JIT build. This will
-launch the vm service in the runner.
-
-**Current value (from the default):**
-
-```none
-{
-  enable_asserts = true
-  is_aot = false
-  is_debug = true
-  is_product = false
-  platform_name = "dart_runner"
-  runner_dep = "//src/dart:dart_jit"
-  runtime_meta = "//build/dart/meta/jit_runtime.cml"
-}
-```
-
-From //build/dart/dart_build_config.gni:8
-
-### dart_default_build_cfg
-
-Non-product AOT
-
-**Current value (from the default):**
-
-```none
-{
-  enable_asserts = false
-  is_aot = true
-  is_debug = false
-  is_product = false
-  platform_name = "dart_runner"
-  runner_dep = "//src/dart:dart_aot"
-  runtime_meta = "//build/dart/meta/aot_runtime.cml"
-}
-```
-
-From //build/dart/config.gni:20
-
-### dart_force_aot
-
-Forces all Dart apps to use an AOT runner regardless of whether the build is debug or release.
-
-**Current value (from the default):** `false`
-
-From //build/dart/args.gni:11
-
-### dart_force_product
-
-Forces all Dart apps to build in product mode which is a
-stripped down version of the VM running in AOT mode.
-
-**Current value (from the default):** `false`
-
-From //build/dart/args.gni:8
-
-### dart_profile_build_cfg
-
-Builds the component in a non-product AOT build. This will
-launch the vm service in the runner.
-
-**Current value (from the default):**
-
-```none
-{
-  enable_asserts = false
-  is_aot = true
-  is_debug = false
-  is_product = false
-  platform_name = "dart_runner"
-  runner_dep = "//src/dart:dart_aot"
-  runtime_meta = "//build/dart/meta/aot_runtime.cml"
-}
-```
-
-From //build/dart/dart_build_config.gni:34
-
-### dart_release_build_cfg
-
-Builds the component in a product AOT build. This will
-not launch the vm service in the runner.
-
-**Current value (from the default):**
-
-```none
-{
-  enable_asserts = false
-  is_aot = true
-  is_debug = false
-  is_product = true
-  platform_name = "dart_runner"
-  runner_dep = "//src/dart:dart_aot_product"
-  runtime_meta = "//build/dart/meta/aot_product_runtime.cml"
-}
-```
-
-From //build/dart/dart_build_config.gni:46
+From //build/toolchain/rbe.gni:134
 
 ### data_filesystem_format
 
 Set to one of "minfs", "fxfs", "f2fs" (unstable).
 If set to anything other than "minfs", any existing minfs partition will be
 migrated in-place to the specified format when fshost mounts it.
-Set by products
 
 **Current value (from the default):** `"fxfs"`
 
-From //src/storage/fshost/generated_fshost_config.gni:19
+From //src/storage/fshost/generated_fshost_config.gni:12
 
 ### debian_guest_earlycon
 
@@ -1605,23 +1394,25 @@ From //build/config/compiler.gni:52
 
 ### default_configs
 
-Default configs and dependencies targets provided by the toolchain. These
-are applied to all of the pw_* target types. They are set from a toolchain's
-toolchain_args for cross-toolchain deps, e.g. for
-
-  `deps = [ //pw_some_module(//pw_toolchain:not_default) ]`
-
-The default toolchain is never used.
-
 **Current value (from the default):** `[]`
 
-From //third_party/pigweed/src/pw_build/defaults.gni:25
+From //third_party/pigweed/src/pw_build/gn_internal/defaults.gni:34
 
 ### default_public_deps
 
 **Current value (from the default):** `[]`
 
-From //third_party/pigweed/src/pw_build/defaults.gni:26
+From //third_party/pigweed/src/pw_build/gn_internal/defaults.gni:35
+
+### delegated_network_provisioning
+
+DO NOT SET THIS IN A PRODUCT DEFINITION!!  FOR DEVELOPER USE ONLY
+TODO(https://fxbug.dev/132635): Remove this when we have a solution for
+changing the netcfg configuration at runtime.
+
+**Current value (from the default):** `false`
+
+From //src/connectivity/network/netcfg/delegated_network_provisioning.gni:9
 
 ### delivery_blob_type
 
@@ -1632,7 +1423,7 @@ This arg is for local developer only, products should not set this arg.
 
 **Current value (from the default):** `1`
 
-From //build/images/args.gni:142
+From //build/images/args.gni:138
 
 ### deny_warnings
 
@@ -1640,7 +1431,7 @@ Controls whether to promote warnings to errors.
 
 **Current value (from the default):** `true`
 
-From //build/config/BUILD.gn:35
+From //build/config/BUILD.gn:36
 
 ### dev_bootfs_labels
 
@@ -1648,7 +1439,7 @@ List of labels for objects to include in the ZBI.
 
 **Current value (from the default):** `[]`
 
-From //build/dev.gni:17
+From //build/dev.gni:14
 
 ### dev_build_only_deps
 
@@ -1657,7 +1448,7 @@ build outputs that are part of the build API (e.g. zbi's, package servers).
 
 **Current value (from the default):** `[]`
 
-From //build/dev.gni:14
+From //build/dev.gni:11
 
 ### dev_kernel_cmdline
 
@@ -1665,7 +1456,7 @@ List of strings to append to the kernel command line.
 
 **Current value (from the default):** `[]`
 
-From //build/dev.gni:26
+From //build/dev.gni:23
 
 ### dev_recovery_bootfs_labels
 
@@ -1673,7 +1464,7 @@ List of binary labels to include in the recovery ZBI.
 
 **Current value (from the default):** `[]`
 
-From //build/dev.gni:23
+From //build/dev.gni:20
 
 ### dev_recovery_kernel_cmdline
 
@@ -1681,15 +1472,7 @@ List of strings to append to the recovery kernel command line.
 
 **Current value (from the default):** `[]`
 
-From //build/dev.gni:32
-
-### dev_system_image_deps
-
-List of labels for binaries to include in the system image.
-
-**Current value (from the default):** `[]`
-
-From //build/dev.gni:10
+From //build/dev.gni:29
 
 ### dev_zedboot_bootfs_labels
 
@@ -1697,7 +1480,7 @@ List of binary labels to include in the zedboot ZBI.
 
 **Current value (from the default):** `[]`
 
-From //build/dev.gni:20
+From //build/dev.gni:17
 
 ### dev_zedboot_kernel_cmdline
 
@@ -1705,7 +1488,29 @@ List of strings to append to the zedboot kernel command line.
 
 **Current value (from the default):** `[]`
 
-From //build/dev.gni:29
+From //build/dev.gni:26
+
+### developer_test_labels
+
+A developer-only argument that is used to add tests to the build without
+going through the test-type validate that the above sets of tests are.
+These are always a dependency of the main product assembly.
+
+**Current value for `target_cpu = "arm64"`:** `[]`
+
+From //out/not-default/args.gn:28
+
+**Overridden from the default:** `[]`
+
+From //BUILD.gn:102
+
+**Current value for `target_cpu = "x64"`:** `[]`
+
+From //out/not-default/args.gn:28
+
+**Overridden from the default:** `[]`
+
+From //BUILD.gn:102
 
 ### devicetree_board_driver
 
@@ -1795,675 +1600,737 @@ From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:40
 
 From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:41
 
+### dir_pw_async2
+
+**Current value (from the default):** `"//third_party/pigweed/src/pw_async2"`
+
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:42
+
+### dir_pw_async2_basic
+
+**Current value (from the default):** `"//third_party/pigweed/src/pw_async2_basic"`
+
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:43
+
 ### dir_pw_async_basic
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_async_basic"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:42
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:44
 
 ### dir_pw_base64
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_base64"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:43
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:45
 
 ### dir_pw_bloat
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_bloat"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:44
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:46
 
 ### dir_pw_blob_store
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_blob_store"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:45
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:47
 
 ### dir_pw_bluetooth
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_bluetooth"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:46
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:48
 
 ### dir_pw_bluetooth_hci
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_bluetooth_hci"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:47
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:49
 
 ### dir_pw_bluetooth_profiles
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_bluetooth_profiles"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:49
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:51
+
+### dir_pw_bluetooth_sapphire
+
+**Current value (from the default):** `"//third_party/pigweed/src/pw_bluetooth_sapphire"`
+
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:53
 
 ### dir_pw_boot
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_boot"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:50
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:54
 
 ### dir_pw_boot_cortex_m
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_boot_cortex_m"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:51
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:55
 
 ### dir_pw_build
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_build"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:52
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:56
 
 ### dir_pw_build_info
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_build_info"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:53
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:57
 
 ### dir_pw_build_mcuxpresso
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_build_mcuxpresso"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:54
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:58
 
 ### dir_pw_bytes
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_bytes"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:55
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:59
 
 ### dir_pw_checksum
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_checksum"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:56
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:60
+
+### dir_pw_chre
+
+**Current value (from the default):** `"//third_party/pigweed/src/pw_chre"`
+
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:61
 
 ### dir_pw_chrono
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_chrono"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:57
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:62
 
 ### dir_pw_chrono_embos
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_chrono_embos"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:58
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:63
 
 ### dir_pw_chrono_freertos
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_chrono_freertos"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:59
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:64
+
+### dir_pw_chrono_rp2040
+
+**Current value (from the default):** `"//third_party/pigweed/src/pw_chrono_rp2040"`
+
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:65
 
 ### dir_pw_chrono_stl
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_chrono_stl"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:60
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:66
 
 ### dir_pw_chrono_threadx
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_chrono_threadx"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:61
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:67
 
 ### dir_pw_chrono_zephyr
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_chrono_zephyr"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:62
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:68
 
 ### dir_pw_cli
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_cli"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:63
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:69
 
 ### dir_pw_compilation_testing
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_compilation_testing"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:65
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:71
 
 ### dir_pw_console
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_console"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:66
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:72
 
 ### dir_pw_containers
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_containers"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:67
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:73
 
 ### dir_pw_cpu_exception
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_cpu_exception"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:68
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:74
 
 ### dir_pw_cpu_exception_cortex_m
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_cpu_exception_cortex_m"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:70
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:76
 
 ### dir_pw_crypto
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_crypto"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:71
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:77
 
 ### dir_pw_digital_io
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_digital_io"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:72
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:78
 
 ### dir_pw_digital_io_mcuxpresso
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_digital_io_mcuxpresso"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:74
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:80
+
+### dir_pw_digital_io_rp2040
+
+**Current value (from the default):** `"//third_party/pigweed/src/pw_digital_io_rp2040"`
+
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:81
 
 ### dir_pw_docgen
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_docgen"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:75
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:82
 
 ### dir_pw_doctor
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_doctor"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:76
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:83
+
+### dir_pw_emu
+
+**Current value (from the default):** `"//third_party/pigweed/src/pw_emu"`
+
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:84
 
 ### dir_pw_env_setup
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_env_setup"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:77
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:85
 
 ### dir_pw_file
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_file"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:78
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:86
+
+### dir_pw_format
+
+**Current value (from the default):** `"//third_party/pigweed/src/pw_format"`
+
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:87
 
 ### dir_pw_function
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_function"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:79
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:88
 
 ### dir_pw_fuzzer
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_fuzzer"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:80
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:89
 
 ### dir_pw_hdlc
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_hdlc"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:81
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:90
 
 ### dir_pw_hex_dump
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_hex_dump"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:82
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:91
 
 ### dir_pw_i2c
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_i2c"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:83
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:92
 
 ### dir_pw_i2c_linux
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_i2c_linux"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:84
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:93
 
 ### dir_pw_i2c_mcuxpresso
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_i2c_mcuxpresso"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:85
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:94
 
 ### dir_pw_ide
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_ide"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:86
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:95
 
 ### dir_pw_interrupt
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_interrupt"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:87
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:96
 
 ### dir_pw_interrupt_cortex_m
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_interrupt_cortex_m"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:89
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:98
 
 ### dir_pw_interrupt_xtensa
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_interrupt_xtensa"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:90
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:99
 
 ### dir_pw_interrupt_zephyr
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_interrupt_zephyr"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:91
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:100
 
 ### dir_pw_intrusive_ptr
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_intrusive_ptr"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:92
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:101
 
 ### dir_pw_kvs
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_kvs"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:93
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:102
 
 ### dir_pw_libc
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_libc"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:94
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:103
+
+### dir_pw_libcxx
+
+**Current value (from the default):** `"//third_party/pigweed/src/pw_libcxx"`
+
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:104
 
 ### dir_pw_log
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_log"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:95
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:105
 
 ### dir_pw_log_android
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_log_android"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:96
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:106
 
 ### dir_pw_log_basic
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_log_basic"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:97
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:107
 
 ### dir_pw_log_null
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_log_null"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:98
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:108
 
 ### dir_pw_log_rpc
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_log_rpc"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:99
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:109
 
 ### dir_pw_log_string
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_log_string"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:100
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:110
 
 ### dir_pw_log_tokenized
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_log_tokenized"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:101
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:111
 
 ### dir_pw_log_zephyr
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_log_zephyr"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:102
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:112
 
 ### dir_pw_malloc
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_malloc"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:103
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:113
 
 ### dir_pw_malloc_freelist
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_malloc_freelist"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:104
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:114
+
+### dir_pw_malloc_freertos
+
+**Current value (from the default):** `"//third_party/pigweed/src/pw_malloc_freertos"`
+
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:115
 
 ### dir_pw_metric
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_metric"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:105
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:116
 
 ### dir_pw_minimal_cpp_stdlib
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_minimal_cpp_stdlib"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:107
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:118
 
 ### dir_pw_module
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_module"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:108
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:119
+
+### dir_pw_multibuf
+
+**Current value (from the default):** `"//third_party/pigweed/src/pw_multibuf"`
+
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:120
 
 ### dir_pw_multisink
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_multisink"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:109
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:121
 
 ### dir_pw_package
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_package"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:110
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:122
 
 ### dir_pw_perf_test
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_perf_test"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:111
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:123
 
 ### dir_pw_persistent_ram
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_persistent_ram"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:112
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:124
 
 ### dir_pw_polyfill
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_polyfill"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:113
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:125
 
 ### dir_pw_preprocessor
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_preprocessor"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:114
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:126
 
 ### dir_pw_presubmit
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_presubmit"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:115
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:127
 
 ### dir_pw_protobuf
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_protobuf"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:116
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:128
 
 ### dir_pw_protobuf_compiler
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_protobuf_compiler"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:117
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:129
 
 ### dir_pw_random
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_random"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:118
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:130
 
 ### dir_pw_result
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_result"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:119
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:131
 
 ### dir_pw_ring_buffer
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_ring_buffer"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:120
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:132
 
 ### dir_pw_router
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_router"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:121
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:133
 
 ### dir_pw_rpc
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_rpc"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:122
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:134
 
 ### dir_pw_rpc_transport
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_rpc_transport"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:123
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:135
 
 ### dir_pw_rust
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_rust"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:124
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:136
 
 ### dir_pw_snapshot
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_snapshot"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:125
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:137
 
 ### dir_pw_software_update
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_software_update"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:126
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:138
 
 ### dir_pw_span
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_span"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:127
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:139
 
 ### dir_pw_spi
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_spi"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:128
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:140
 
 ### dir_pw_spi_mcuxpresso
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_spi_mcuxpresso"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:129
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:141
 
 ### dir_pw_status
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_status"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:130
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:142
 
 ### dir_pw_stm32cube_build
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_stm32cube_build"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:131
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:143
 
 ### dir_pw_stream
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_stream"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:132
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:144
 
 ### dir_pw_stream_shmem_mcuxpresso
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_stream_shmem_mcuxpresso"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:134
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:146
 
 ### dir_pw_stream_uart_linux
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_stream_uart_linux"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:135
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:147
 
 ### dir_pw_stream_uart_mcuxpresso
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_stream_uart_mcuxpresso"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:137
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:149
 
 ### dir_pw_string
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_string"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:138
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:150
 
 ### dir_pw_symbolizer
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_symbolizer"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:139
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:151
 
 ### dir_pw_sync
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_sync"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:140
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:152
 
 ### dir_pw_sync_baremetal
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_sync_baremetal"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:141
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:153
 
 ### dir_pw_sync_embos
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_sync_embos"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:142
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:154
 
 ### dir_pw_sync_freertos
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_sync_freertos"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:143
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:155
 
 ### dir_pw_sync_stl
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_sync_stl"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:144
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:156
 
 ### dir_pw_sync_threadx
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_sync_threadx"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:145
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:157
 
 ### dir_pw_sync_zephyr
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_sync_zephyr"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:146
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:158
 
 ### dir_pw_sys_io
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_sys_io"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:147
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:159
+
+### dir_pw_sys_io_ambiq_sdk
+
+**Current value (from the default):** `"//third_party/pigweed/src/pw_sys_io_ambiq_sdk"`
+
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:160
 
 ### dir_pw_sys_io_arduino
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_sys_io_arduino"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:148
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:161
 
 ### dir_pw_sys_io_baremetal_lm3s6965evb
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_sys_io_baremetal_lm3s6965evb"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:150
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:163
 
 ### dir_pw_sys_io_baremetal_stm32f429
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_sys_io_baremetal_stm32f429"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:152
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:165
 
 ### dir_pw_sys_io_emcraft_sf2
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_sys_io_emcraft_sf2"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:154
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:167
 
 ### dir_pw_sys_io_mcuxpresso
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_sys_io_mcuxpresso"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:155
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:168
 
-### dir_pw_sys_io_pico
+### dir_pw_sys_io_rp2040
 
-**Current value (from the default):** `"//third_party/pigweed/src/pw_sys_io_pico"`
+**Current value (from the default):** `"//third_party/pigweed/src/pw_sys_io_rp2040"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:156
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:169
 
 ### dir_pw_sys_io_stdio
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_sys_io_stdio"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:157
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:170
 
 ### dir_pw_sys_io_stm32cube
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_sys_io_stm32cube"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:158
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:171
 
 ### dir_pw_sys_io_zephyr
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_sys_io_zephyr"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:159
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:172
 
 ### dir_pw_system
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_system"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:160
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:173
 
 ### dir_pw_target_runner
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_target_runner"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:161
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:174
 
 ### dir_pw_third_party
 
 **Current value (from the default):** `"//third_party/pigweed/src/third_party"`
 
 From //third_party/pigweed/src/modules.gni:25
-
-### dir_pw_third_party_abseil_cpp
-
-If compiling tests with Abseil C++, this variable is set to the path to the
-Abseil C++ installation. When set, a pw_source_set for the Abseil C++ library
-is created at "$dir_pw_third_party/abseil-cpp".
-
-**Current value (from the default):** `""`
-
-From //third_party/pigweed/src/third_party/abseil-cpp/abseil-cpp.gni:22
 
 ### dir_pw_third_party_boringssl
 
@@ -2475,6 +2342,28 @@ created at "$dir_pw_third_party/boringssl".
 
 From //third_party/pigweed/src/third_party/boringssl/boringssl.gni:19
 
+### dir_pw_third_party_chre
+
+If compiling backends with chre, this variable is set to the path to the
+chre installation. When set, a pw_source_set for the chre library is
+created at "$dir_pw_third_party/chre".
+
+**Current value for `target_cpu = "arm64"`:** `"//third_party/chre/src"`
+
+From //.gn:111
+
+**Overridden from the default:** `""`
+
+From //third_party/pigweed/src/third_party/chre/chre.gni:19
+
+**Current value for `target_cpu = "x64"`:** `"//third_party/chre/src"`
+
+From //.gn:111
+
+**Overridden from the default:** `""`
+
+From //third_party/pigweed/src/third_party/chre/chre.gni:19
+
 ### dir_pw_third_party_emboss
 
 If compiling with Emboss, this variable is set to the path to the Emboss
@@ -2482,7 +2371,7 @@ source code.
 
 **Current value for `target_cpu = "arm64"`:** `"//third_party/github.com/google/emboss/src"`
 
-From //.gn:86
+From //.gn:93
 
 **Overridden from the default:** `""`
 
@@ -2490,11 +2379,32 @@ From //third_party/pigweed/src/third_party/emboss/emboss.gni:20
 
 **Current value for `target_cpu = "x64"`:** `"//third_party/github.com/google/emboss/src"`
 
-From //.gn:86
+From //.gn:93
 
 **Overridden from the default:** `""`
 
 From //third_party/pigweed/src/third_party/emboss/emboss.gni:20
+
+### dir_pw_third_party_fuchsia
+
+Path to the Fuchsia sources to use in Pigweed's build. Defaults to Pigweed's
+mirror of the few Fuchsia source files it uses.
+
+**Current value for `target_cpu = "arm64"`:** `"//"`
+
+From //.gn:87
+
+**Overridden from the default:** `"//third_party/pigweed/src/third_party/fuchsia/repo"`
+
+From //third_party/pigweed/src/third_party/fuchsia/fuchsia.gni:20
+
+**Current value for `target_cpu = "x64"`:** `"//"`
+
+From //.gn:87
+
+**Overridden from the default:** `"//third_party/pigweed/src/third_party/fuchsia/repo"`
+
+From //third_party/pigweed/src/third_party/fuchsia/fuchsia.gni:20
 
 ### dir_pw_third_party_fuzztest
 
@@ -2515,6 +2425,14 @@ library is created at "$dir_pw_third_party/googletest".
 **Current value (from the default):** `""`
 
 From //third_party/pigweed/src/third_party/googletest/googletest.gni:19
+
+### dir_pw_third_party_llvm_builtins
+
+This should be set to the path of the llvm compiler-rt/builtins directory.
+
+**Current value (from the default):** `""`
+
+From //third_party/pigweed/src/third_party/llvm_builtins/BUILD.gn:22
 
 ### dir_pw_third_party_mbedtls
 
@@ -2546,155 +2464,145 @@ protobuf library is created at "$dir_pw_third_party/protobuf".
 
 From //third_party/pigweed/src/third_party/protobuf/protobuf.gni:19
 
-### dir_pw_third_party_re2
-
-If compiling tests with RE2, this variable is set to the path to the RE2
-installation. When set, a pw_source_set for the RE2 library is created at
-"$dir_pw_third_party/re2".
-
-**Current value (from the default):** `""`
-
-From //third_party/pigweed/src/third_party/re2/re2.gni:22
-
 ### dir_pw_thread
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_thread"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:162
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:175
 
 ### dir_pw_thread_embos
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_thread_embos"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:163
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:176
 
 ### dir_pw_thread_freertos
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_thread_freertos"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:164
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:177
 
 ### dir_pw_thread_stl
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_thread_stl"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:165
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:178
 
 ### dir_pw_thread_threadx
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_thread_threadx"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:166
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:179
 
 ### dir_pw_thread_zephyr
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_thread_zephyr"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:167
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:180
 
 ### dir_pw_tls_client
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_tls_client"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:168
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:181
 
 ### dir_pw_tls_client_boringssl
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_tls_client_boringssl"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:170
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:183
 
 ### dir_pw_tls_client_mbedtls
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_tls_client_mbedtls"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:172
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:185
 
 ### dir_pw_tokenizer
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_tokenizer"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:173
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:186
 
 ### dir_pw_tool
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_tool"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:174
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:187
 
 ### dir_pw_toolchain
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_toolchain"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:175
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:188
 
 ### dir_pw_toolchain_bazel
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_toolchain_bazel"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:176
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:189
 
 ### dir_pw_trace
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_trace"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:177
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:190
 
 ### dir_pw_trace_tokenized
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_trace_tokenized"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:178
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:191
 
 ### dir_pw_transfer
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_transfer"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:179
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:192
 
 ### dir_pw_unit_test
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_unit_test"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:180
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:193
 
 ### dir_pw_unit_test_zephyr
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_unit_test_zephyr"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:181
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:194
 
 ### dir_pw_varint
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_varint"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:182
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:195
 
 ### dir_pw_watch
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_watch"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:183
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:196
 
 ### dir_pw_web
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_web"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:184
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:197
 
 ### dir_pw_work_queue
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_work_queue"`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:185
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:198
 
-### disable_dart_strict_deps
+### disable_elf_checks
 
-Enable all strict deps.
+Disables ELF checks for packages.
 
 **Current value (from the default):** `false`
 
-From //build/dart/dart_library.gni:18
+From //build/dist/verify_manifest_elf_binaries.gni:10
 
 ### disable_kernel_pci
 
@@ -2703,7 +2611,7 @@ flag platform_enable_user_pci in //src/devices/bus/drivers/pci/pci.gni.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:78
+From //zircon/kernel/params.gni:94
 
 ### discoverable_package_labels
 
@@ -2720,7 +2628,7 @@ As these cannot be part of the legacy AIB for a product, there is no
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:77
+From //BUILD.gn:76
 
 ### dont_profile_source_files
 
@@ -2739,11 +2647,32 @@ Explicitly specify DWARF version used.
 
 From //build/config/compiler.gni:66
 
+### e2e_test_labels
+
+Host-driven, "end-to-end" tests that run on a Fuchsia image (either real
+hardware or emulated).
+
+**Current value for `target_cpu = "arm64"`:** `[]`
+
+From //out/not-default/args.gn:24
+
+**Overridden from the default:** `[]`
+
+From //BUILD.gn:91
+
+**Current value for `target_cpu = "x64"`:** `[]`
+
+From //out/not-default/args.gn:24
+
+**Overridden from the default:** `[]`
+
+From //BUILD.gn:91
+
 ### emu_window_size_height
 
 **Current value (from the default):** `false`
 
-From //build/product.gni:54
+From //build/product.gni:51
 
 ### emu_window_size_width
 
@@ -2751,24 +2680,7 @@ Configuration to override the default window size for the virtual device in pixe
 
 **Current value (from the default):** `false`
 
-From //build/product.gni:53
-
-### enable_api_diff
-
-Detect dart API changes
-
-**Current value (from the default):** `true`
-
-From //build/dart/dart_library.gni:21
-
-### enable_dart_analysis
-
-Enable all dart analysis
-TODO(fxbug.dev/98703) reenable analysis when hangs are fixed.
-
-**Current value (from the default):** `false`
-
-From //build/dart/dart_library.gni:15
+From //build/product.gni:50
 
 ### enable_frame_pointers
 
@@ -2782,7 +2694,7 @@ remove this option when the issues are addressed.
 
 **Current value (from the default):** `false`
 
-From //build/config/BUILD.gn:31
+From //build/config/BUILD.gn:32
 
 ### enable_grpc_ares
 
@@ -2800,6 +2712,14 @@ Enable kernel lock dependency tracking.
 
 From //zircon/kernel/params.gni:37
 
+### enable_lock_dep_metadata_only
+
+Enable kernel lock dependency metadata only (ignored if enable_lock_dep is true).
+
+**Current value (from the default):** `false`
+
+From //zircon/kernel/params.gni:40
+
 ### enable_lock_dep_tests
 
 Enable kernel lock dependency tracking tests.  By default this is
@@ -2809,7 +2729,7 @@ disabled.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:150
+From //zircon/kernel/params.gni:156
 
 ### enable_mdns_trace
 
@@ -2834,13 +2754,13 @@ You can still build //build/images:netboot explicitly even if enable_netboot is 
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:88
+From //build/images/args.gni:89
 
 ### enable_netstack2_tracing
 
 **Current value (from the default):** `false`
 
-From //src/connectivity/network/BUILD.gn:9
+From //src/connectivity/network/BUILD.gn:10
 
 ### enable_perfetto_benchmarks
 
@@ -2858,12 +2778,12 @@ From //third_party/perfetto/gn/perfetto.gni:198
 
 Enables gRPC in the Perfetto codebase. gRPC significantly increases build
 times and the general footprint of Perfetto. As it only required for
-cloud trace processor and even then only to build the final ready-to-ship
-binary, don't enable this by default.
+BigTrace and even then only to build the final ready-to-ship binary, don't
+enable this by default.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:316
+From //third_party/perfetto/gn/perfetto.gni:322
 
 ### enable_perfetto_heapprofd
 
@@ -2887,7 +2807,7 @@ From //third_party/perfetto/gn/perfetto.gni:150
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:310
+From //third_party/perfetto/gn/perfetto.gni:316
 
 ### enable_perfetto_platform_services
 
@@ -2904,7 +2824,7 @@ rerunning gn.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:333
+From //third_party/perfetto/gn/perfetto.gni:339
 
 ### enable_perfetto_stderr_crash_dump
 
@@ -2934,37 +2854,37 @@ From //third_party/perfetto/gn/perfetto.gni:173
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:296
+From //third_party/perfetto/gn/perfetto.gni:302
 
 ### enable_perfetto_trace_processor_json
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:291
+From //third_party/perfetto/gn/perfetto.gni:295
 
 ### enable_perfetto_trace_processor_linenoise
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:285
+From //third_party/perfetto/gn/perfetto.gni:289
 
 ### enable_perfetto_trace_processor_percentile
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:280
+From //third_party/perfetto/gn/perfetto.gni:284
 
 ### enable_perfetto_trace_processor_sqlite
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:275
+From //third_party/perfetto/gn/perfetto.gni:279
 
 ### enable_perfetto_traceconv
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:322
+From //third_party/perfetto/gn/perfetto.gni:328
 
 ### enable_perfetto_traced_perf
 
@@ -2986,11 +2906,20 @@ extremely low.
 
 From //third_party/perfetto/gn/perfetto.gni:267
 
+### enable_perfetto_traced_relay
+
+The relay service is enabled when platform services are enabled.
+TODO(chinglinyu) check if we can enable on Windows.
+
+**Current value (from the default):** `false`
+
+From //third_party/perfetto/gn/perfetto.gni:271
+
 ### enable_perfetto_ui
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:326
+From //third_party/perfetto/gn/perfetto.gni:332
 
 ### enable_perfetto_unittests
 
@@ -3020,7 +2949,7 @@ From //third_party/perfetto/gn/perfetto.gni:243
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:303
+From //third_party/perfetto/gn/perfetto.gni:310
 
 ### enable_power_manager_debug
 
@@ -3062,7 +2991,7 @@ memory usage overheads, but will not exhaust due to fragmentation.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:102
+From //zircon/kernel/params.gni:118
 
 ### escher_test_for_glsl_spirv_mismatch
 
@@ -3113,17 +3042,6 @@ instead use the `fuchsia_cxx_version` variable.
 
 From //build/config/fuchsia_cxx_version.gni:10
 
-### experimental_wlan_client_mlme
-
-Selects the SoftMAC client implementation to use. Choices:
-  false (default) - C++ Client MLME implementation
-  true - Rust Client MLME implementation
-This argument is temporary until Rust MLME is ready to be used.
-
-**Current value (from the default):** `false`
-
-From //src/connectivity/wlan/lib/mlme/cpp/BUILD.gn:10
-
 ### extra_bazel_assembly_targets
 
 Extra GN targets to include when Bazel assembly is enabled. This list is
@@ -3131,7 +3049,7 @@ useful for including verification and other Bazel assembly specific targets.
 
 **Current value (from the default):** `[]`
 
-From //build/images/args.gni:214
+From //build/images/args.gni:211
 
 ### extra_gn_labels_for_bazel_inputs
 
@@ -3184,7 +3102,7 @@ vendor/acme/proprietary:build_installer with Ninja:
 
 **Current value (from the default):** `[]`
 
-From //build/bazel/legacy_ninja_build_outputs.gni:109
+From //build/bazel/legacy_ninja_build_outputs.gni:121
 
 ### extra_package_labels
 
@@ -3199,7 +3117,7 @@ This is just added to [`known_variants`](#known_variants).
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:1642
+From //build/config/BUILDCONFIG.gn:1824
 
 ### extra_vbmeta_descriptors
 
@@ -3224,7 +3142,7 @@ From //build/images/vbmeta.gni:37
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:119
+From //build/images/args.gni:115
 
 ### ffmpeg_profile
 
@@ -3261,7 +3179,7 @@ Each entry in the list is a scope containing:
 
 **Current value (from the default):** `[]`
 
-From //build/images/args.gni:59
+From //build/images/args.gni:60
 
 ### firmware_prebuilts_path_suffix
 
@@ -3272,16 +3190,7 @@ that users can easily switch revisions using a single arg.
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:65
-
-### flatland_enable_display_composition
-
-If true, this enables the compositor to attempt to use the display controller rendering
-path instead of always using the GPU/Vulkan rendering path.
-
-**Current value (from the default):** `false`
-
-From //src/ui/scenic/lib/flatland/engine/build_args.gni:14
+From //build/images/args.gni:66
 
 ### flatland_verbose_logging
 
@@ -3332,31 +3241,11 @@ Directory into which all fonts are checked out from CIPD
 
 From //src/fonts/build/font_args.gni:12
 
-### format_minfs_on_corruption
-
-If format_minfs_on_corruption is true (the default), fshost formats minfs partition on finding
-it corrupted.  Set to false to keep the devices in a corrupted state which might be of help to
-debug issues.
-Set by products
-
-**Current value (from the default):** `true`
-
-From //src/storage/fshost/generated_fshost_config.gni:13
-
 ### freeze_api_level
 
 **Current value (from the default):** `false`
 
-From //build/config/fuchsia/platform_version.gni:13
-
-### fshost_watch_for_nand
-
-Make fshost watch for NAND devices.
-Set by boards.
-
-**Current value (from the default):** `false`
-
-From //src/storage/fshost/generated_fshost_config.gni:72
+From //build/config/fuchsia/platform_version.gni:24
 
 ### fuchsia_async_trace_level_logging
 
@@ -3366,24 +3255,18 @@ TODO(fxbug.dev/80742) move this to a toolchain to allow multiple products to bui
 
 **Current value (from the default):** `true`
 
-From //build/product.gni:38
+From //build/product.gni:32
 
 ### fuchsia_product_assembly_config_label
 
 The product assembly config used to configure the main Fuchsia image.
+For GN products, this is required.
+For Bazel products, this is optional.
+For Bazel products, netboot will only be available when this is supplied.
 
 **Current value (from the default):** `false`
 
-From //build/product.gni:41
-
-### fuchsia_route_sources_config
-
-An optional file path to the route_sources verifier configuration to be used
-on the assembled fuchsia system.
-
-**Current value (from the default):** `""`
-
-From //build/security.gni:143
+From //build/product.gni:38
 
 ### fuchsia_sdk_root
 
@@ -3399,128 +3282,13 @@ non-SDK buildroots.
 
 From //build/fuchsia/sdk.gni:17
 
-### fuchsia_static_pkgs_goldens
+### futex_block_tracing_enabled
 
-An optional list of golden files for fuchsia.zbi static pkgs list. If
-specified, they would be compared against fuchsia.zbi static pkgs list
-during build time. At least one of the golden files must match.
-In normal case, there should only be one golden file in this list.
-During a soft transition where changes are made in a different repo than
-the golden file repo, user need to
-1. copy the old golden file before the change to '*.orig'
-2. create a new golden file reflecting the changes
-3. add both the old golden file and new golden file to this list. e.g. there
-would be 'product.txt' and 'product.txt.orig' in this list and check in the
-above changes.
-4. check in the changes that is made in a different repo.
-5. delete 'product.txt.orig' and remove it from this list.
+TODO(johngro): document
 
-**Current value (from the default):** `[]`
+**Current value (from the default):** `false`
 
-From //build/security.gni:114
-
-### fuchsia_structured_config_policy
-
-An optional file path to the structured configuration policy to be used on the
-assembled fuchsia system. Defaults to no enforcement. Policy must be provided
-for any product which is not an `eng` build type.
-
-**Current value (from the default):** `""`
-
-From //build/security.gni:134
-
-### fuchsia_verify_component_resolvers_allowlist
-
-**Current value (from the default):** `"//src/security/policy/component_resolvers_policy.json5"`
-
-From //build/security.gni:197
-
-### fuchsia_verify_routes_component_tree_config
-
-An optional component tree configuration file used to finalize dynamic
-elements of the component tree constructed for route verification on the
-fuchsia assembled system. When non-empty, this value is passed as the
-`--component-tree-config` option to `ffx scrutiny verify routes` to verify
-routes in the fuchsia component tree.
-
-**Current value (from the default):** `""`
-
-From //build/security.gni:182
-
-### fuchsia_verify_routes_exceptions_allowlist
-
-**Current value (from the default):** `"//src/security/policy/build/verify_routes_exceptions_allowlist.json5"`
-
-From //build/security.gni:155
-
-### fuchsia_verify_routes_exceptions_allowlist_product
-
-Same as fuchsia_verify_routes_exceptions_allowlist, except these allowlists
-get added according to product-specific configuration.
-
-**Current value (from the default):** `[]`
-
-From //build/security.gni:171
-
-### fuchsia_zbi_bootfs_filelist_goldens
-
-An optional list of golden files for fuchsia.zbi bootFS file list. If
-specified, they would be compared against fuchsia.zbi bootFS file list
-during build time. At least one of the golden files must match.
-In normal case, there should only be one golden file in this list.
-During a soft transition where changes are made in a different repo than
-the golden file repo, user need to
-1. copy the old golden file before the change to '*.orig'
-2. create a new golden file reflecting the changes
-3. add both the old golden file and new golden file to this list. e.g. there
-would be 'product.txt' and 'product.txt.orig' in this list and check in the
-above changes.
-4. check in the changes that is made in a different repo.
-5. delete 'product.txt.orig' and remove it from this list.
-
-**Current value (from the default):** `[]`
-
-From //build/security.gni:54
-
-### fuchsia_zbi_bootfs_packages_goldens
-
-An optional list of golden files for fuchsia.zbi bootFS package index. If
-specified, they would be compared against fuchsia.zbi bootFS package index
-during build time. At least one of the golden files must match.
-In normal case, there should only be one golden file in this list.
-During a soft transition where changes are made in a different repo than
-the golden file repo, user need to
-1. copy the old golden file before the change to '*.orig'
-2. create a new golden file reflecting the changes
-3. add both the old golden file and new golden file to this list. e.g. there
-would be 'product.txt' and 'product.txt.orig' in this list and check in the
-above changes.
-4. check in the changes that is made in a different repo.
-5. delete 'product.txt.orig' and remove it from this list.
-
-**Current value (from the default):** `[]`
-
-From //build/security.gni:84
-
-### fuchsia_zbi_kernel_cmdline_goldens
-
-An optional list of golden files for fuchsia.zbi kernel cmdline args. If
-specified, they would be compared against fuchsia.zbi kernel cmdline during
-build time.
-In normal case, there should only be golden file in this list.
-During a soft transition where changes are made in a different repo than
-the golden file repo, user need to
-1. copy the old golden file before the change to '*.orig'
-2. create a new golden file reflecting the changes
-3. add both the old golden file and new golden file to this list. e.g. there
-would be 'product.txt' and 'product.txt.orig' in this list and check in the
-above changes.
-4. check in the changes that is made in a different repo.
-5. delete 'product.txt.orig' and remove it from this list.
-
-**Current value (from the default):** `[]`
-
-From //build/security.gni:24
+From //zircon/kernel/params.gni:73
 
 ### futex_tracing_enabled
 
@@ -3528,44 +3296,29 @@ Enables kernel tracing of futex interactions
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:60
+From //zircon/kernel/params.gni:76
 
 ### fvm_partition
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:116
-
-### fvm_slice_size
-
-The size of the FVM partition images "slice size". The FVM slice size is a
-minimum size of a particular chunk of a partition that is stored within
-FVM. A very small slice size may lead to decreased throughput. A very large
-slice size may lead to wasted space. The selected default size of 8mb is
-selected for conservation of space, rather than performance.
-LINT.IfChange
-Set by boards.
-
-**Current value (from the default):** `8388608`
-
-From //src/storage/fshost/generated_fshost_config.gni:32
+From //build/images/args.gni:112
 
 ### fxfs_blob
 
 Use Fxfs's blob implementation
 Changes the flashing logic because the outputs changed.
 Toggles a bunch of tests to use fxfs.
-Set by boards.
 
-**Current value (from the default):** `false`
+**Current value (from the default):** `true`
 
-From //src/storage/fshost/generated_fshost_config.gni:78
+From //src/storage/fshost/generated_fshost_config.gni:17
 
 ### fxfs_partition
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:117
+From //build/images/args.gni:113
 
 ### gcc_tool_dir
 
@@ -3580,14 +3333,34 @@ From //build/toolchain/zircon/gcc.gni:10
 
 ### generate_legacy_ninja_build_outputs_licenses_spdx
 
-Whether to generate real licenses for
-`//build/bazel/licenses:legacy_ninja_build_outputs_licenses_spdx`.
-License collection + generation for ninja targets is slow and expensive,
-so it is turned off by default, and a placeholder is produced instead.
+Deprecated. No-op.
+TODO(fxb/132725): Remove once unused downstream.
 
 **Current value (from the default):** `false`
 
-From //build/bazel/licenses/BUILD.gn:20
+From //build/bazel/licenses/BUILD.gn:19
+
+### generate_legacy_ninja_build_outputs_licenses_spdx_from_metadata
+
+Deprecated. No-op.
+TODO(fxb/132725): Remove once unused downstream.
+
+**Current value (from the default):** `true`
+
+From //build/bazel/licenses/BUILD.gn:23
+
+### generate_licenses_spdx_stubs
+
+When true, generated_licenses_spdx template will generate stub SPDX files
+with placeholder license. License gathering will be skipped.
+Since license gathering is resource intensive, this is useful for non-production
+builds that would run faster.
+The global configuration can be overwritten in specific `generated_licenses_spdx`
+template invocation via the `generate_stub` parameter.
+
+**Current value (from the default):** `true`
+
+From //build/licenses/generated_licenses_spdx.gni:14
 
 ### generate_plasa_artifacts
 
@@ -3670,7 +3443,7 @@ Typically useful for initially flashing a device from zero-state.
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:83
+From //build/images/args.gni:84
 
 ### graphics_compute_generate_debug_shaders
 
@@ -3762,20 +3535,31 @@ From //build/board.gni:8
 
 **Current value for `target_cpu = "x64"`:** `true`
 
-From //boards/common/x64-common.gni:14
+From //boards/common/x64-common.gni:10
 
 **Overridden from the default:** `false`
 
 From //build/board.gni:8
 
-### have_libvulkan_arm_mali
+### hermetic_test_package_labels
 
-Driver developers can set this to true if they are manually including a Mali package. This will
-change test environments so Vulkan tests run on boards with Mali GPUs.
+Fully hermetic tests (both by packaging and at runtime)
 
-**Current value (from the default):** `false`
+**Current value for `target_cpu = "arm64"`:** `[]`
 
-From //src/graphics/lib/magma/gnbuild/magma.gni:32
+From //out/not-default/args.gn:22
+
+**Overridden from the default:** `[]`
+
+From //BUILD.gn:83
+
+**Current value for `target_cpu = "x64"`:** `[]`
+
+From //out/not-default/args.gn:22
+
+**Overridden from the default:** `[]`
+
+From //BUILD.gn:83
 
 ### host_byteorder
 
@@ -3793,13 +3577,15 @@ If you add labels to this variable, these will be included in the 'host'
 artifact set, which represents an additional set of host-only software that
 is produced by the build.
 
+These will be added to the build using the host toolchain.
+
 **Current value for `target_cpu = "arm64"`:** `[]`
 
 From //out/not-default/args.gn:8
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:90
+From //BUILD.gn:109
 
 **Current value for `target_cpu = "x64"`:** `[]`
 
@@ -3807,11 +3593,47 @@ From //out/not-default/args.gn:8
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:90
+From //BUILD.gn:109
 
 ### host_os
 
 **Current value (from the default):** `"linux"`
+
+### host_test_labels
+
+Host-only tests.  These cannot have any dependency on an assembled platform
+image, or the compiled OS itself, not even for their host_test_data().
+
+These will be added to the build using the host toolchain.
+
+**Current value for `target_cpu = "arm64"`:** `[]`
+
+From //out/not-default/args.gn:25
+
+**Overridden from the default:** `[]`
+
+From //BUILD.gn:97
+
+**Current value for `target_cpu = "x64"`:** `[]`
+
+From //out/not-default/args.gn:25
+
+**Overridden from the default:** `[]`
+
+From //BUILD.gn:97
+
+### host_tools_base_path_override
+
+Set this to the path of a directory containing prebuilt binaries for
+the host tools generated by compiled_action(). This is useful when
+performing sub-builds (e.g. when generating the IDK which requires
+rebuilding SDK collections for different API levels and CPU architectures)
+to avoid rebuilding the host tools every time.
+
+
+**Current value (from the default):** `""`
+
+From //build/host.gni:21
 
 ### host_tools_dir
 
@@ -3840,7 +3662,7 @@ their own `__hwasan_default_options` C function.  Instead, they can use a
 sanitizer_extra_options() target in their `deps` and then any options
 injected that way can override that option's setting in this list.
 
-**Current value (from the default):** `["allocator_may_return_null=1", "detect_leaks=1"]`
+**Current value (from the default):** `["allocator_may_return_null=1"]`
 
 From //build/config/sanitizers/sanitizer_default_options.gni:94
 
@@ -3974,16 +3796,17 @@ Include an account partition in the FVM image if set to true.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:148
+From //build/images/args.gni:144
 
 ### include_clippy
 
 Turns rust targets into a group with both the normal target and clippy target. This
-causes clippy targets to get included in the build by default.
+causes clippy targets to get included in the build. This gets enabled by default with
+`fx set`, but is defaulted off in GN so it won't be on in infra.
 
-**Current value (from the default):** `true`
+**Current value (from the default):** `false`
 
-From //build/rust/config.gni:71
+From //build/rust/config.gni:72
 
 ### include_internal_fonts
 
@@ -4000,7 +3823,7 @@ platform-version-roller when the API level is incremented.
 
 **Current value (from the default):** `false`
 
-From //build/config/fuchsia/platform_version.gni:42
+From //build/config/fuchsia/platform_version.gni:53
 
 ### include_shell_commands_package
 
@@ -4009,7 +3832,7 @@ assembled_system().  See documentation there.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:178
+From //build/images/args.gni:174
 
 ### include_zxdb_large_tests
 
@@ -4084,7 +3907,7 @@ and the analysis overhead turned off by default.
 
 **Current value (from the default):** `false`
 
-From //build/config/BUILDCONFIG.gn:21
+From //build/config/BUILDCONFIG.gn:22
 
 ### is_debug
 
@@ -4096,7 +3919,7 @@ From //out/not-default/args.gn:9
 
 **Overridden from the default:** `true`
 
-From //build/config/BUILDCONFIG.gn:24
+From //build/config/BUILDCONFIG.gn:25
 
 **Current value for `target_cpu = "x64"`:** `false`
 
@@ -4104,7 +3927,7 @@ From //out/not-default/args.gn:9
 
 **Overridden from the default:** `true`
 
-From //build/config/BUILDCONFIG.gn:24
+From //build/config/BUILDCONFIG.gn:25
 
 ### is_perfetto_build_generator
 
@@ -4138,25 +3961,25 @@ value regardless of whether persistent tracing is enabled or not.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:119
+From //zircon/kernel/params.gni:135
 
 ### jtrace_last_entry_storage
 
 **Current value (from the default):** `0`
 
-From //zircon/kernel/params.gni:120
+From //zircon/kernel/params.gni:136
 
 ### jtrace_target_buffer_size
 
 **Current value (from the default):** `"auto"`
 
-From //zircon/kernel/params.gni:121
+From //zircon/kernel/params.gni:137
 
 ### jtrace_use_large_entries
 
 **Current value (from the default):** `"auto"`
 
-From //zircon/kernel/params.gni:122
+From //zircon/kernel/params.gni:138
 
 ### kernel_base
 
@@ -4171,7 +3994,7 @@ on ProcessDispatcher creation.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:126
+From //zircon/kernel/params.gni:142
 
 ### kernel_debug_level
 
@@ -4184,7 +4007,7 @@ the two and set kernel_debug_level independently.
 
 **Current value (from the default):** `2`
 
-From //zircon/kernel/params.gni:90
+From //zircon/kernel/params.gni:106
 
 ### kernel_debug_print_level
 
@@ -4196,7 +4019,7 @@ the more dprintf messages emitted. Valid values are 0-2 (inclusive):
 
 **Current value (from the default):** `2`
 
-From //zircon/kernel/params.gni:97
+From //zircon/kernel/params.gni:113
 
 ### kernel_extra_defines
 
@@ -4205,7 +4028,18 @@ Extra macro definitions for kernel code, e.g. "DISABLE_KASLR",
 
 **Current value (from the default):** `[]`
 
-From //zircon/kernel/params.gni:82
+From //zircon/kernel/params.gni:98
+
+### kernel_extra_deps
+
+A list of GN labels comprising additional dependencies of the kernel
+proper. This can be useful - in a prototyping or 'vendor' capacity - for
+injecting new instances of subsystems that the kernel has defined modularly
+(e.g., pdev drivers or k commands).
+
+**Current value (from the default):** `[]`
+
+From //zircon/kernel/BUILD.gn:40
 
 ### kernel_no_userabi
 
@@ -4213,7 +4047,7 @@ Build a kernel with no user-space support, for development only.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:129
+From //zircon/kernel/params.gni:145
 
 ### kernel_version_string
 
@@ -4414,13 +4248,7 @@ Each element of the list is one variant, which is a scope defining:
 }]
 ```
 
-From //build/config/BUILDCONFIG.gn:1447
-
-### legacy_base_driver_package_labels
-
-**Current value (from the default):** `[]`
-
-From //BUILD.gn:39
+From //build/config/BUILDCONFIG.gn:1629
 
 ### legacy_base_package_labels
 
@@ -4434,35 +4262,75 @@ From //BUILD.gn:47
 
 From //BUILD.gn:56
 
-### legacy_host_labels
+### link_rbe_check
 
-**Current value (from the default):** `[]`
+Run one of the more expensive checks, intended for CI.
+All of these require link_rbe_enable=true.
 
-From //BUILD.gn:91
+One of:
 
-### legacy_product_bootfs_labels
+  * "none": No additional check.
 
-A list of binary labels to include in ZBIs built for this product.
-product_bootfs_labels = []  (defined in product.gni)
+  * "determinism":
+      Check of determinism of linking by running locally twice
+      and comparing outputs, failing if any differences are found.
+      Even though this check doesn't involve RBE, it uses the same
+      wrapper script, which knows what output files to expect and
+      compare.
 
-**Current value (from the default):** `[]`
+  * "consistency":
+      Check consistency between local and remote link actions,
+      by running both and comparing results.
 
-From //BUILD.gn:81
 
-### legacy_product_system_image_deps
+**Current value (from the default):** `"none"`
 
-A list of binary labels to include in the system_image package.
-product_system_image_deps = []  (defined in product.gni)
+From //build/toolchain/rbe.gni:235
 
-**Current value (from the default):** `[]`
+### link_rbe_enable
 
-From //BUILD.gn:85
+Set to true to enable remote linking using RBE.
+This covers actions that use `ar`, or use `clang` to drive
+linkers like `lld`.
 
-### legacy_universe_package_labels
+**Current value for `target_cpu = "arm64"`:** `false`
 
-**Current value (from the default):** `[]`
+From //out/not-default/args.gn:10
 
-From //BUILD.gn:65
+**Overridden from the default:** `false`
+
+From //build/toolchain/rbe.gni:197
+
+**Current value for `target_cpu = "x64"`:** `false`
+
+From //out/not-default/args.gn:10
+
+**Overridden from the default:** `false`
+
+From //build/toolchain/rbe.gni:197
+
+### link_rbe_exec_strategy
+
+One of:
+
+  * "remote": Execute action remotely on cache miss.
+        The remote cache is always updated with this result.
+
+  * "local": Lookup action in the remote cache, but execute action
+        locally on cache miss.  The locally produced result is
+        not uploaded to the remote cache.
+
+  * "remote_local_fallback": Execute action remotely first.
+        If that fails, run locally instead.  The locally produced
+        results are not uploaded to the remote cache.
+
+  * "racing": Race local vs. remote execution, take the first to finish.
+
+  (There are other rewrapper options that are not exposed.)
+
+**Current value (from the default):** `"remote"`
+
+From //build/toolchain/rbe.gni:215
 
 ### llvm_prefix
 
@@ -4491,7 +4359,7 @@ Enable lock contention tracing.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:40
+From //zircon/kernel/params.gni:43
 
 ### log_startup_sleep
 
@@ -4526,7 +4394,7 @@ From //src/graphics/lib/magma/gnbuild/magma.gni:11
 
 **Current value (from the default):** `false`
 
-From //src/graphics/lib/magma/src/magma_util/BUILD.gn:14
+From //src/graphics/magma/lib/magma/util/BUILD.gn:15
 
 ### magma_enable_tracing
 
@@ -4567,7 +4435,7 @@ of how they are stored).
 
 **Current value for `target_cpu = "arm64"`:** `5216665600`
 
-From //boards/common/arm64-common.gni:16
+From //boards/common/arm64-common.gni:13
 
 **Overridden from the default:** `false`
 
@@ -4575,29 +4443,11 @@ From //build/images/filesystem_limits.gni:12
 
 **Current value for `target_cpu = "x64"`:** `5216665600`
 
-From //boards/x64.gni:15
+From //boards/common/x64-common.gni:62
 
 **Overridden from the default:** `false`
 
 From //build/images/filesystem_limits.gni:12
-
-### max_fuchsia_zbi_size
-
-Maximum allowable size for fuchsia.zbi and zedboot.zbi.
-A number greater than zero informs the rust toolchain to optimize for space.
-TODO(b/291953514): Enforce this by implementing an image size checker.
-
-**Current value for `target_cpu = "arm64"`:** `16777216`
-
-From //boards/common/arm64-common.gni:39
-
-**Overridden from the default:** `0`
-
-From //build/images/filesystem_limits.gni:22
-
-**Current value (from the default):** `0`
-
-From //build/images/filesystem_limits.gni:22
 
 ### max_log_disk_usage
 
@@ -4608,20 +4458,6 @@ Should be a string value that only contains digits.
 
 From //src/diagnostics/log_listener/BUILD.gn:11
 
-### max_zedboot_zbi_size
-
-**Current value for `target_cpu = "arm64"`:** `16777216`
-
-From //boards/common/arm64-common.gni:40
-
-**Overridden from the default:** `0`
-
-From //build/images/filesystem_limits.gni:23
-
-**Current value (from the default):** `0`
-
-From //build/images/filesystem_limits.gni:23
-
 ### mbedtls_config_file
 
 Configuration file for MbedTLS.
@@ -4629,16 +4465,6 @@ Configuration file for MbedTLS.
 **Current value (from the default):** `"mbedtls-config.h"`
 
 From //third_party/openthread/third_party/mbedtls/BUILD.gn:30
-
-### meta_package_labels
-
-A list of labels for packages that are appended to the set of base packages,
-but depend on all the other base, cache, and universe packages, therefore
-they must be separated into their own list.
-
-**Current value (from the default):** `[]`
-
-From //build/images/args.gni:99
 
 ### min_crashlog_size
 
@@ -4652,19 +4478,6 @@ users of persistent RAM.  Must be a multiple of 128 bytes.
 **Current value (from the default):** `2048`
 
 From //zircon/kernel/lib/crashlog/params.gni:14
-
-### minfs_maximum_runtime_bytes
-
-minfs_maximum_runtime_bytes is an upper bound on the partition size on the device. Partitions
-can grow as needed if there are extra slices available in FVM. This limit prevents the minfs
-partition from taking too much space away from other uses.
-
-Pass the empty string for no limit.
-Set by boards.
-
-**Current value (from the default):** `""`
-
-From //src/storage/fshost/generated_fshost_config.gni:68
 
 ### mini_chromium_is_chromeos_ash
 
@@ -5321,7 +5134,7 @@ Sets if we should output breakpad symbols for Fuchsia binaries.
 
 **Current value (from the default):** `false`
 
-From //build/config/BUILDCONFIG.gn:27
+From //build/config/BUILDCONFIG.gn:28
 
 ### output_gsym
 
@@ -5329,7 +5142,7 @@ Controls whether we should output GSYM files for Fuchsia binaries.
 
 **Current value (from the default):** `false`
 
-From //build/config/BUILDCONFIG.gn:30
+From //build/config/BUILDCONFIG.gn:31
 
 ### override_target_api_level
 
@@ -5337,7 +5150,7 @@ Allows building the platform source code for a specific API level.
 
 **Current value (from the default):** `-1`
 
-From //build/config/fuchsia/platform_version.gni:11
+From //build/config/fuchsia/platform_version.gni:22
 
 ### package_flavor_selections
 
@@ -5364,7 +5177,7 @@ package flavors.
 
 **Current value for `target_cpu = "arm64"`:** `[]`
 
-From //products/bringup.gni:17
+From //products/bringup.gni:15
 
 **Overridden from the default:** `[]`
 
@@ -5372,42 +5185,29 @@ From //build/packages/prebuilt_package_with_flavors.gni:29
 
 **Current value for `target_cpu = "x64"`:** `[]`
 
-From //products/bringup.gni:17
+From //products/bringup.gni:15
 
 **Overridden from the default:** `[]`
 
 From //build/packages/prebuilt_package_with_flavors.gni:29
 
-### page_compression_enabled
-
-TODO(fxbug.dev/60238): For use while the related RFC is in iterate and can
-be removed once the RFC is finalized.
-Controls kernel page compression and the linking and instantiation of its
-dependencies.
-Defaults to true only when the kernel_debug_level is high enough to enable
-in testing but disable for production.
-
-**Current value (from the default):** `true`
-
-From //zircon/kernel/params.gni:142
-
 ### partitions_config_contents
 
 **Current value for `target_cpu = "arm64"`:** `["//out/not-default/fuchsia.esp.blk"]`
 
-From //boards/arm64.gni:45
+From //boards/arm64.gni:27
 
 **Overridden from the default:** `[]`
 
-From //build/board.gni:112
+From //build/board.gni:94
 
 **Current value for `target_cpu = "x64"`:** `["//out/not-default/fuchsia.esp.blk"]`
 
-From //boards/x64.gni:75
+From //boards/common/x64-common.gni:52
 
 **Overridden from the default:** `[]`
 
-From //build/board.gni:112
+From //build/board.gni:94
 
 ### partitions_config_label
 
@@ -5416,19 +5216,19 @@ product bundle.
 
 **Current value for `target_cpu = "arm64"`:** `"//boards/partitions:arm64"`
 
-From //boards/arm64.gni:44
+From //boards/arm64.gni:26
 
 **Overridden from the default:** `false`
 
-From //build/board.gni:111
+From //build/board.gni:93
 
 **Current value for `target_cpu = "x64"`:** `"//boards/partitions:x64"`
 
-From //boards/x64.gni:74
+From //boards/common/x64-common.gni:51
 
 **Overridden from the default:** `false`
 
-From //build/board.gni:111
+From //build/board.gni:93
 
 ### perfetto_build_with_android
 
@@ -5472,6 +5272,18 @@ console.
 
 From //third_party/perfetto/gn/perfetto.gni:219
 
+### perfetto_use_pkgconfig
+
+Used by CrOS builds. Uses pkg-config to determine the appropriate flags
+for including and linking system libraries.
+  set `host_pkg_config` to the `BUILD_PKG_CONFIG` and
+  set `pkg_config` to the target `PKG_CONFIG`.
+Note: that if this is enabled `perfetto_use_system_protobuf` should be also.
+
+**Current value (from the default):** `false`
+
+From //third_party/perfetto/gn/perfetto.gni:349
+
 ### perfetto_use_system_protobuf
 
 Used by CrOS system builds. Uses the system version of protobuf
@@ -5479,7 +5291,7 @@ from /usr/include instead of the hermetic one.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:340
+From //third_party/perfetto/gn/perfetto.gni:353
 
 ### perfetto_use_system_sqlite
 
@@ -5488,19 +5300,19 @@ from /usr/include instead of the hermetic one.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:344
+From //third_party/perfetto/gn/perfetto.gni:357
 
 ### perfetto_use_system_zlib
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:346
+From //third_party/perfetto/gn/perfetto.gni:359
 
 ### perfetto_verbose_logs_enabled
 
 **Current value (from the default):** `true`
 
-From //third_party/perfetto/gn/perfetto.gni:271
+From //third_party/perfetto/gn/perfetto.gni:275
 
 ### persistent_ram_allocation_granularity
 
@@ -5512,7 +5324,7 @@ cacheline size of the target architecture.
 
 **Current value (from the default):** `128`
 
-From //zircon/kernel/params.gni:109
+From //zircon/kernel/params.gni:125
 
 ### platform_enable_user_pci
 
@@ -5520,39 +5332,11 @@ From //zircon/kernel/params.gni:109
 
 From //src/devices/bus/drivers/pci/pci.gni:10
 
-### pmm_checker_from_board
-
-Used to control whether board definitions include PMM checker options.
-
-**Current value (from the default):** `true`
-
-From //boards/kernel_cmdline/BUILD.gn:60
-
-### policy_labels
-
-Default policy_labels definition to ease with the transition away from
-manually defining SWD policies across different product gni files.
-The transition process will be as follows:
-1. Define all SWD policies.
-2. Add dependency on SWD policies in base_package_deps and
-   system_image_deps, but do not apply a SWD policy to retain existing
-   product behavior.
-3. Apply SWD policies in product definitions alongside the existing
-   SWD targets configuration. Assert that product configuration has not
-   changed.
-4. Remove manually defined SWD targets in product definitions, rely solely
-   on defined SWD policies.
-This is initially empty as part of the first step of the transition.
-
-**Current value (from the default):** `{ }`
-
-From //build/security/policies.gni:21
-
 ### pre_erase_flash
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:120
+From //build/images/args.gni:116
 
 ### prebuilt_dart_sdk
 
@@ -5591,21 +5375,21 @@ From //src/graphics/lib/magma/gnbuild/magma.gni:22
 
 A list of binary labels to include in ZBIs built for this product.
 
-**Current value for `target_cpu = "arm64"`:** `["//products/kernel_cmdline:kernel.oom.behavior--jobkill", "//products/kernel_cmdline:oom.reboot-timeout--low", "//src/sys/component_manager:component_manager_bootfs_config", "//src/diagnostics/iquery"]`
+**Current value for `target_cpu = "arm64"`:** `["//products/kernel_cmdline:kernel.oom.behavior--jobkill", "//products/kernel_cmdline:oom.reboot-timeout--low"]`
 
-From //products/bringup.gni:26
-
-**Overridden from the default:** `[]`
-
-From //build/product.gni:14
-
-**Current value for `target_cpu = "x64"`:** `["//products/kernel_cmdline:kernel.oom.behavior--jobkill", "//products/kernel_cmdline:oom.reboot-timeout--low", "//src/sys/component_manager:component_manager_bootfs_config", "//src/diagnostics/iquery"]`
-
-From //products/bringup.gni:26
+From //products/bringup.gni:18
 
 **Overridden from the default:** `[]`
 
-From //build/product.gni:14
+From //build/product.gni:11
+
+**Current value for `target_cpu = "x64"`:** `["//products/kernel_cmdline:kernel.oom.behavior--jobkill", "//products/kernel_cmdline:oom.reboot-timeout--low"]`
+
+From //products/bringup.gni:18
+
+**Overridden from the default:** `[]`
+
+From //build/product.gni:11
 
 ### product_bootfs_packages
 
@@ -5614,7 +5398,7 @@ meta.fars and content-id'd blobs.
 
 **Current value (from the default):** `[]`
 
-From //build/product.gni:24
+From //build/product.gni:18
 
 ### product_description
 
@@ -5622,7 +5406,7 @@ A human readable product description.
 
 **Current value (from the default):** `""`
 
-From //build/product.gni:27
+From //build/product.gni:21
 
 ### product_host_labels
 
@@ -5630,15 +5414,7 @@ A list of binary host tool labels to also build.
 
 **Current value (from the default):** `[]`
 
-From //build/product.gni:20
-
-### product_system_image_deps
-
-A list of binary labels to include in the system_image package.
-
-**Current value (from the default):** `[]`
-
-From //build/product.gni:17
+From //build/product.gni:14
 
 ### profile_source_files
 
@@ -5679,7 +5455,7 @@ Example JNI include paths for a Linux system:
 
 **Current value (from the default):** `[]`
 
-From //third_party/pigweed/src/pw_tokenizer/BUILD.gn:301
+From //third_party/pigweed/src/pw_tokenizer/BUILD.gn:318
 
 ### pw_arduino_build_BOARD
 
@@ -5728,7 +5504,7 @@ Backend for the pw_assert module's CHECK facade.
 
 **Current value for `target_cpu = "arm64"`:** `"//third_party/pigweed/backends/pw_assert"`
 
-From //.gn:64
+From //.gn:61
 
 **Overridden from the default:** `""`
 
@@ -5736,7 +5512,7 @@ From //third_party/pigweed/src/pw_assert/backend.gni:19
 
 **Current value for `target_cpu = "x64"`:** `"//third_party/pigweed/backends/pw_assert"`
 
-From //.gn:64
+From //.gn:61
 
 **Overridden from the default:** `""`
 
@@ -5762,6 +5538,68 @@ Warning: This naming is transitional. Modifying this build argument WILL
 **Current value (from the default):** `"//third_party/pigweed/src/pw_assert:assert_compatibility_backend"`
 
 From //third_party/pigweed/src/pw_assert/backend.gni:25
+
+### pw_async_EXPERIMENTAL_MODULE_VISIBILITY
+
+To depend on pw_async, add targets to this list.
+
+WARNING: This is experimental and *not* guaranteed to work.
+
+**Current value for `target_cpu = "arm64"`:** `["//third_party/pigweed/backends/pw_async_fuchsia:*", "//third_party/pigweed:*"]`
+
+From //.gn:96
+
+**Overridden from the default:** `[]`
+
+From //third_party/pigweed/src/pw_async/async.gni:21
+
+**Current value for `target_cpu = "x64"`:** `["//third_party/pigweed/backends/pw_async_fuchsia:*", "//third_party/pigweed:*"]`
+
+From //.gn:96
+
+**Overridden from the default:** `[]`
+
+From //third_party/pigweed/src/pw_async/async.gni:21
+
+### pw_async_FAKE_DISPATCHER_BACKEND
+
+Configures the backend to use for the //pw_async:fake_dispatcher facade.
+
+**Current value for `target_cpu = "arm64"`:** `"//third_party/pigweed/backends/pw_async_fuchsia:fake_dispatcher"`
+
+From //.gn:104
+
+**Overridden from the default:** `""`
+
+From //third_party/pigweed/src/pw_async/backend.gni:22
+
+**Current value for `target_cpu = "x64"`:** `"//third_party/pigweed/backends/pw_async_fuchsia:fake_dispatcher"`
+
+From //.gn:104
+
+**Overridden from the default:** `""`
+
+From //third_party/pigweed/src/pw_async/backend.gni:22
+
+### pw_async_TASK_BACKEND
+
+Configures the backend to use for the //pw_async:task facade.
+
+**Current value for `target_cpu = "arm64"`:** `"//third_party/pigweed/backends/pw_async_fuchsia:task"`
+
+From //.gn:101
+
+**Overridden from the default:** `""`
+
+From //third_party/pigweed/src/pw_async/backend.gni:19
+
+**Current value for `target_cpu = "x64"`:** `"//third_party/pigweed/backends/pw_async_fuchsia:task"`
+
+From //.gn:101
+
+**Overridden from the default:** `""`
+
+From //third_party/pigweed/src/pw_async/backend.gni:19
 
 ### pw_bloat_BLOATY_CONFIG
 
@@ -5828,21 +5666,9 @@ at least include the Pigweed repository ("$dir_pigweed/*").
 
 Explicitly setting a target's visibility overrides this default.
 
-**Current value for `target_cpu = "arm64"`:** `["//third_party/pigweed/*"]`
+**Current value (from the default):** `["*"]`
 
-From //.gn:61
-
-**Overridden from the default:** `"*"`
-
-From //third_party/pigweed/src/pw_build/defaults.gni:38
-
-**Current value for `target_cpu = "x64"`:** `["//third_party/pigweed/*"]`
-
-From //.gn:61
-
-**Overridden from the default:** `"*"`
-
-From //third_party/pigweed/src/pw_build/defaults.gni:38
+From //third_party/pigweed/src/pw_build/defaults.gni:58
 
 ### pw_build_EXECUTABLE_TARGET_TYPE
 
@@ -5854,7 +5680,7 @@ available.
 
 **Current value (from the default):** `"executable"`
 
-From //third_party/pigweed/src/pw_build/gn_internal/build_target.gni:31
+From //third_party/pigweed/src/pw_build/gn_internal/build_target.gni:33
 
 ### pw_build_EXECUTABLE_TARGET_TYPE_FILE
 
@@ -5865,7 +5691,7 @@ If pw_build_EXECUTABLE_TARGET_TYPE is not the default of `executable`, this
 
 **Current value (from the default):** `""`
 
-From //third_party/pigweed/src/pw_build/gn_internal/build_target.gni:37
+From //third_party/pigweed/src/pw_build/gn_internal/build_target.gni:39
 
 ### pw_build_LINK_DEPS
 
@@ -5878,19 +5704,19 @@ libraries such as pw_assert.
 
 **Current value for `target_cpu = "arm64"`:** `["//third_party/pigweed/src/pw_assert:impl", "//third_party/pigweed/src/pw_log:impl"]`
 
-From //.gn:77
+From //.gn:81
 
 **Overridden from the default:** `[]`
 
-From //third_party/pigweed/src/pw_build/gn_internal/build_target.gni:24
+From //third_party/pigweed/src/pw_build/gn_internal/build_target.gni:26
 
 **Current value for `target_cpu = "x64"`:** `["//third_party/pigweed/src/pw_assert:impl", "//third_party/pigweed/src/pw_log:impl"]`
 
-From //.gn:77
+From //.gn:81
 
 **Overridden from the default:** `[]`
 
-From //third_party/pigweed/src/pw_build/gn_internal/build_target.gni:24
+From //third_party/pigweed/src/pw_build/gn_internal/build_target.gni:26
 
 ### pw_build_PIP_CONSTRAINTS
 
@@ -6009,13 +5835,73 @@ public config (which may -include a file or add defines directly).
 
 From //third_party/pigweed/src/pw_checksum/BUILD.gn:28
 
+### pw_chre_CONFIG
+
+The configuration for building CHRE.
+
+**Current value for `target_cpu = "arm64"`:** `"//third_party/chre:chre_config"`
+
+From //.gn:112
+
+**Overridden from the default:** `"//third_party/chre:default_chre_config"`
+
+From //third_party/pigweed/src/third_party/chre/chre.gni:22
+
+**Current value for `target_cpu = "x64"`:** `"//third_party/chre:chre_config"`
+
+From //.gn:112
+
+**Overridden from the default:** `"//third_party/chre:default_chre_config"`
+
+From //third_party/pigweed/src/third_party/chre/chre.gni:22
+
+### pw_chre_PLATFORM_BACKEND
+
+CHRE's platform backend implementation. The default is the Pigweed backend.
+
+**Current value for `target_cpu = "arm64"`:** `"//third_party/pigweed/src/pw_chre:chre_backend"`
+
+From //.gn:113
+
+**Overridden from the default:** `"//pw_chre:chre_backend"`
+
+From //third_party/pigweed/src/third_party/chre/chre.gni:28
+
+**Current value for `target_cpu = "x64"`:** `"//third_party/pigweed/src/pw_chre:chre_backend"`
+
+From //.gn:113
+
+**Overridden from the default:** `"//pw_chre:chre_backend"`
+
+From //third_party/pigweed/src/third_party/chre/chre.gni:28
+
+### pw_chre_PLATFORM_BACKEND_HEADERS
+
+CHRE's platform backend headers. The default is the Pigweed backend.
+
+**Current value for `target_cpu = "arm64"`:** `"//third_party/pigweed/src/pw_chre:chre_backend_headers"`
+
+From //.gn:115
+
+**Overridden from the default:** `"//pw_chre:chre_backend_headers"`
+
+From //third_party/pigweed/src/third_party/chre/chre.gni:25
+
+**Current value for `target_cpu = "x64"`:** `"//third_party/pigweed/src/pw_chre:chre_backend_headers"`
+
+From //.gn:115
+
+**Overridden from the default:** `"//pw_chre:chre_backend_headers"`
+
+From //third_party/pigweed/src/third_party/chre/chre.gni:25
+
 ### pw_chrono_SYSTEM_CLOCK_BACKEND
 
 Backend for the pw_chrono module's system_clock.
 
 **Current value for `target_cpu = "arm64"`:** `"//third_party/pigweed/src/pw_chrono_stl:system_clock"`
 
-From //.gn:67
+From //.gn:64
 
 **Overridden from the default:** `""`
 
@@ -6023,7 +5909,7 @@ From //third_party/pigweed/src/pw_chrono/backend.gni:17
 
 **Current value for `target_cpu = "x64"`:** `"//third_party/pigweed/src/pw_chrono_stl:system_clock"`
 
-From //.gn:67
+From //.gn:64
 
 **Overridden from the default:** `""`
 
@@ -6033,7 +5919,19 @@ From //third_party/pigweed/src/pw_chrono/backend.gni:17
 
 Backend for the pw_chrono module's system_timer.
 
-**Current value (from the default):** `""`
+**Current value for `target_cpu = "arm64"`:** `"//third_party/pigweed/src/pw_chrono_stl:system_timer"`
+
+From //.gn:72
+
+**Overridden from the default:** `""`
+
+From //third_party/pigweed/src/pw_chrono/backend.gni:20
+
+**Current value for `target_cpu = "x64"`:** `"//third_party/pigweed/src/pw_chrono_stl:system_timer"`
+
+From //.gn:72
+
+**Overridden from the default:** `""`
 
 From //third_party/pigweed/src/pw_chrono/backend.gni:20
 
@@ -6115,6 +6013,14 @@ Set to enable Google Analytics tracking of generated docs.
 
 From //third_party/pigweed/src/pw_docgen/docs.gni:25
 
+### pw_docgen_THREADS
+
+Set to define the number of parallel threads to use during the Sphinx build.
+
+**Current value (from the default):** `""`
+
+From //third_party/pigweed/src/pw_docgen/docs.gni:28
+
 ### pw_env_setup_CIPD_BAZEL
 
 **Current value (from the default):** `"../../prebuilt/third_party/bazel/linux-x64/bin"`
@@ -6145,21 +6051,21 @@ The build target that overrides the default configuration options for this
 module. This should point to a source set that provides defines through a
 public config (which may -include a file or add defines directly).
 
-**Current value for `target_cpu = "arm64"`:** `"//third_party/pigweed/backends/pw_function:define_overrides"`
+**Current value for `target_cpu = "arm64"`:** `"//third_party/pigweed/src/pw_function:enable_dynamic_allocation"`
 
-From //.gn:74
-
-**Overridden from the default:** `"//third_party/pigweed/src/pw_build:empty"`
-
-From //third_party/pigweed/src/pw_function/BUILD.gn:27
-
-**Current value for `target_cpu = "x64"`:** `"//third_party/pigweed/backends/pw_function:define_overrides"`
-
-From //.gn:74
+From //.gn:78
 
 **Overridden from the default:** `"//third_party/pigweed/src/pw_build:empty"`
 
-From //third_party/pigweed/src/pw_function/BUILD.gn:27
+From //third_party/pigweed/src/pw_function/function.gni:22
+
+**Current value for `target_cpu = "x64"`:** `"//third_party/pigweed/src/pw_function:enable_dynamic_allocation"`
+
+From //.gn:78
+
+**Overridden from the default:** `"//third_party/pigweed/src/pw_build:empty"`
+
+From //third_party/pigweed/src/pw_function/function.gni:22
 
 ### pw_log_BACKEND
 
@@ -6167,7 +6073,7 @@ Backend for the pw_log module.
 
 **Current value for `target_cpu = "arm64"`:** `"//third_party/pigweed/backends/pw_log"`
 
-From //.gn:65
+From //.gn:62
 
 **Overridden from the default:** `""`
 
@@ -6175,7 +6081,7 @@ From //third_party/pigweed/src/pw_log/backend.gni:17
 
 **Current value for `target_cpu = "x64"`:** `"//third_party/pigweed/backends/pw_log"`
 
-From //.gn:65
+From //.gn:62
 
 **Overridden from the default:** `""`
 
@@ -6238,25 +6144,25 @@ From //third_party/pigweed/src/pw_log_tokenized/backend.gni:17
 
 A list with all Pigweed modules docs groups. DO NOT SET THIS BUILD ARGUMENT!
 
-**Current value (from the default):** `["//third_party/pigweed/src/docker:docs", "//third_party/pigweed/src/pw_alignment:docs", "//third_party/pigweed/src/pw_allocator:docs", "//third_party/pigweed/src/pw_analog:docs", "//third_party/pigweed/src/pw_android_toolchain:docs", "//third_party/pigweed/src/pw_arduino_build:docs", "//third_party/pigweed/src/pw_assert:docs", "//third_party/pigweed/src/pw_assert_basic:docs", "//third_party/pigweed/src/pw_assert_log:docs", "//third_party/pigweed/src/pw_assert_tokenized:docs", "//third_party/pigweed/src/pw_assert_zephyr:docs", "//third_party/pigweed/src/pw_async:docs", "//third_party/pigweed/src/pw_async_basic:docs", "//third_party/pigweed/src/pw_base64:docs", "//third_party/pigweed/src/pw_bloat:docs", "//third_party/pigweed/src/pw_blob_store:docs", "//third_party/pigweed/src/pw_bluetooth:docs", "//third_party/pigweed/src/pw_bluetooth_hci:docs", "//third_party/pigweed/src/pw_bluetooth_profiles:docs", "//third_party/pigweed/src/pw_boot:docs", "//third_party/pigweed/src/pw_boot_cortex_m:docs", "//third_party/pigweed/src/pw_build:docs", "//third_party/pigweed/src/pw_build_info:docs", "//third_party/pigweed/src/pw_build_mcuxpresso:docs", "//third_party/pigweed/src/pw_bytes:docs", "//third_party/pigweed/src/pw_checksum:docs", "//third_party/pigweed/src/pw_chrono:docs", "//third_party/pigweed/src/pw_chrono_embos:docs", "//third_party/pigweed/src/pw_chrono_freertos:docs", "//third_party/pigweed/src/pw_chrono_stl:docs", "//third_party/pigweed/src/pw_chrono_threadx:docs", "//third_party/pigweed/src/pw_chrono_zephyr:docs", "//third_party/pigweed/src/pw_cli:docs", "//third_party/pigweed/src/pw_compilation_testing:docs", "//third_party/pigweed/src/pw_console:docs", "//third_party/pigweed/src/pw_containers:docs", "//third_party/pigweed/src/pw_cpu_exception:docs", "//third_party/pigweed/src/pw_cpu_exception_cortex_m:docs", "//third_party/pigweed/src/pw_crypto:docs", "//third_party/pigweed/src/pw_digital_io:docs", "//third_party/pigweed/src/pw_digital_io_mcuxpresso:docs", "//third_party/pigweed/src/pw_docgen:docs", "//third_party/pigweed/src/pw_doctor:docs", "//third_party/pigweed/src/pw_env_setup:docs", "//third_party/pigweed/src/pw_file:docs", "//third_party/pigweed/src/pw_function:docs", "//third_party/pigweed/src/pw_fuzzer:docs", "//third_party/pigweed/src/pw_hdlc:docs", "//third_party/pigweed/src/pw_hex_dump:docs", "//third_party/pigweed/src/pw_i2c:docs", "//third_party/pigweed/src/pw_i2c_linux:docs", "//third_party/pigweed/src/pw_i2c_mcuxpresso:docs", "//third_party/pigweed/src/pw_ide:docs", "//third_party/pigweed/src/pw_interrupt:docs", "//third_party/pigweed/src/pw_interrupt_cortex_m:docs", "//third_party/pigweed/src/pw_interrupt_xtensa:docs", "//third_party/pigweed/src/pw_interrupt_zephyr:docs", "//third_party/pigweed/src/pw_intrusive_ptr:docs", "//third_party/pigweed/src/pw_kvs:docs", "//third_party/pigweed/src/pw_libc:docs", "//third_party/pigweed/src/pw_log:docs", "//third_party/pigweed/src/pw_log_android:docs", "//third_party/pigweed/src/pw_log_basic:docs", "//third_party/pigweed/src/pw_log_null:docs", "//third_party/pigweed/src/pw_log_rpc:docs", "//third_party/pigweed/src/pw_log_string:docs", "//third_party/pigweed/src/pw_log_tokenized:docs", "//third_party/pigweed/src/pw_log_zephyr:docs", "//third_party/pigweed/src/pw_malloc:docs", "//third_party/pigweed/src/pw_malloc_freelist:docs", "//third_party/pigweed/src/pw_metric:docs", "//third_party/pigweed/src/pw_minimal_cpp_stdlib:docs", "//third_party/pigweed/src/pw_module:docs", "//third_party/pigweed/src/pw_multisink:docs", "//third_party/pigweed/src/pw_package:docs", "//third_party/pigweed/src/pw_perf_test:docs", "//third_party/pigweed/src/pw_persistent_ram:docs", "//third_party/pigweed/src/pw_polyfill:docs", "//third_party/pigweed/src/pw_preprocessor:docs", "//third_party/pigweed/src/pw_presubmit:docs", "//third_party/pigweed/src/pw_protobuf:docs", "//third_party/pigweed/src/pw_protobuf_compiler:docs", "//third_party/pigweed/src/pw_random:docs", "//third_party/pigweed/src/pw_result:docs", "//third_party/pigweed/src/pw_ring_buffer:docs", "//third_party/pigweed/src/pw_router:docs", "//third_party/pigweed/src/pw_rpc:docs", "//third_party/pigweed/src/pw_rpc_transport:docs", "//third_party/pigweed/src/pw_rust:docs", "//third_party/pigweed/src/pw_snapshot:docs", "//third_party/pigweed/src/pw_software_update:docs", "//third_party/pigweed/src/pw_span:docs", "//third_party/pigweed/src/pw_spi:docs", "//third_party/pigweed/src/pw_spi_mcuxpresso:docs", "//third_party/pigweed/src/pw_status:docs", "//third_party/pigweed/src/pw_stm32cube_build:docs", "//third_party/pigweed/src/pw_stream:docs", "//third_party/pigweed/src/pw_stream_shmem_mcuxpresso:docs", "//third_party/pigweed/src/pw_stream_uart_linux:docs", "//third_party/pigweed/src/pw_stream_uart_mcuxpresso:docs", "//third_party/pigweed/src/pw_string:docs", "//third_party/pigweed/src/pw_symbolizer:docs", "//third_party/pigweed/src/pw_sync:docs", "//third_party/pigweed/src/pw_sync_baremetal:docs", "//third_party/pigweed/src/pw_sync_embos:docs", "//third_party/pigweed/src/pw_sync_freertos:docs", "//third_party/pigweed/src/pw_sync_stl:docs", "//third_party/pigweed/src/pw_sync_threadx:docs", "//third_party/pigweed/src/pw_sync_zephyr:docs", "//third_party/pigweed/src/pw_sys_io:docs", "//third_party/pigweed/src/pw_sys_io_arduino:docs", "//third_party/pigweed/src/pw_sys_io_baremetal_lm3s6965evb:docs", "//third_party/pigweed/src/pw_sys_io_baremetal_stm32f429:docs", "//third_party/pigweed/src/pw_sys_io_emcraft_sf2:docs", "//third_party/pigweed/src/pw_sys_io_mcuxpresso:docs", "//third_party/pigweed/src/pw_sys_io_pico:docs", "//third_party/pigweed/src/pw_sys_io_stdio:docs", "//third_party/pigweed/src/pw_sys_io_stm32cube:docs", "//third_party/pigweed/src/pw_sys_io_zephyr:docs", "//third_party/pigweed/src/pw_system:docs", "//third_party/pigweed/src/pw_target_runner:docs", "//third_party/pigweed/src/pw_thread:docs", "//third_party/pigweed/src/pw_thread_embos:docs", "//third_party/pigweed/src/pw_thread_freertos:docs", "//third_party/pigweed/src/pw_thread_stl:docs", "//third_party/pigweed/src/pw_thread_threadx:docs", "//third_party/pigweed/src/pw_thread_zephyr:docs", "//third_party/pigweed/src/pw_tls_client:docs", "//third_party/pigweed/src/pw_tls_client_boringssl:docs", "//third_party/pigweed/src/pw_tls_client_mbedtls:docs", "//third_party/pigweed/src/pw_tokenizer:docs", "//third_party/pigweed/src/pw_tool:docs", "//third_party/pigweed/src/pw_toolchain:docs", "//third_party/pigweed/src/pw_toolchain_bazel:docs", "//third_party/pigweed/src/pw_trace:docs", "//third_party/pigweed/src/pw_trace_tokenized:docs", "//third_party/pigweed/src/pw_transfer:docs", "//third_party/pigweed/src/pw_unit_test:docs", "//third_party/pigweed/src/pw_unit_test_zephyr:docs", "//third_party/pigweed/src/pw_varint:docs", "//third_party/pigweed/src/pw_watch:docs", "//third_party/pigweed/src/pw_web:docs", "//third_party/pigweed/src/pw_work_queue:docs"]`
+**Current value (from the default):** `["//third_party/pigweed/src/docker:docs", "//third_party/pigweed/src/pw_alignment:docs", "//third_party/pigweed/src/pw_allocator:docs", "//third_party/pigweed/src/pw_analog:docs", "//third_party/pigweed/src/pw_android_toolchain:docs", "//third_party/pigweed/src/pw_arduino_build:docs", "//third_party/pigweed/src/pw_assert:docs", "//third_party/pigweed/src/pw_assert_basic:docs", "//third_party/pigweed/src/pw_assert_log:docs", "//third_party/pigweed/src/pw_assert_tokenized:docs", "//third_party/pigweed/src/pw_assert_zephyr:docs", "//third_party/pigweed/src/pw_async:docs", "//third_party/pigweed/src/pw_async2:docs", "//third_party/pigweed/src/pw_async2_basic:docs", "//third_party/pigweed/src/pw_async_basic:docs", "//third_party/pigweed/src/pw_base64:docs", "//third_party/pigweed/src/pw_bloat:docs", "//third_party/pigweed/src/pw_blob_store:docs", "//third_party/pigweed/src/pw_bluetooth:docs", "//third_party/pigweed/src/pw_bluetooth_hci:docs", "//third_party/pigweed/src/pw_bluetooth_profiles:docs", "//third_party/pigweed/src/pw_bluetooth_sapphire:docs", "//third_party/pigweed/src/pw_boot:docs", "//third_party/pigweed/src/pw_boot_cortex_m:docs", "//third_party/pigweed/src/pw_build:docs", "//third_party/pigweed/src/pw_build_info:docs", "//third_party/pigweed/src/pw_build_mcuxpresso:docs", "//third_party/pigweed/src/pw_bytes:docs", "//third_party/pigweed/src/pw_checksum:docs", "//third_party/pigweed/src/pw_chre:docs", "//third_party/pigweed/src/pw_chrono:docs", "//third_party/pigweed/src/pw_chrono_embos:docs", "//third_party/pigweed/src/pw_chrono_freertos:docs", "//third_party/pigweed/src/pw_chrono_rp2040:docs", "//third_party/pigweed/src/pw_chrono_stl:docs", "//third_party/pigweed/src/pw_chrono_threadx:docs", "//third_party/pigweed/src/pw_chrono_zephyr:docs", "//third_party/pigweed/src/pw_cli:docs", "//third_party/pigweed/src/pw_compilation_testing:docs", "//third_party/pigweed/src/pw_console:docs", "//third_party/pigweed/src/pw_containers:docs", "//third_party/pigweed/src/pw_cpu_exception:docs", "//third_party/pigweed/src/pw_cpu_exception_cortex_m:docs", "//third_party/pigweed/src/pw_crypto:docs", "//third_party/pigweed/src/pw_digital_io:docs", "//third_party/pigweed/src/pw_digital_io_mcuxpresso:docs", "//third_party/pigweed/src/pw_digital_io_rp2040:docs", "//third_party/pigweed/src/pw_docgen:docs", "//third_party/pigweed/src/pw_doctor:docs", "//third_party/pigweed/src/pw_emu:docs", "//third_party/pigweed/src/pw_env_setup:docs", "//third_party/pigweed/src/pw_file:docs", "//third_party/pigweed/src/pw_format:docs", "//third_party/pigweed/src/pw_function:docs", "//third_party/pigweed/src/pw_fuzzer:docs", "//third_party/pigweed/src/pw_hdlc:docs", "//third_party/pigweed/src/pw_hex_dump:docs", "//third_party/pigweed/src/pw_i2c:docs", "//third_party/pigweed/src/pw_i2c_linux:docs", "//third_party/pigweed/src/pw_i2c_mcuxpresso:docs", "//third_party/pigweed/src/pw_ide:docs", "//third_party/pigweed/src/pw_interrupt:docs", "//third_party/pigweed/src/pw_interrupt_cortex_m:docs", "//third_party/pigweed/src/pw_interrupt_xtensa:docs", "//third_party/pigweed/src/pw_interrupt_zephyr:docs", "//third_party/pigweed/src/pw_intrusive_ptr:docs", "//third_party/pigweed/src/pw_kvs:docs", "//third_party/pigweed/src/pw_libc:docs", "//third_party/pigweed/src/pw_libcxx:docs", "//third_party/pigweed/src/pw_log:docs", "//third_party/pigweed/src/pw_log_android:docs", "//third_party/pigweed/src/pw_log_basic:docs", "//third_party/pigweed/src/pw_log_null:docs", "//third_party/pigweed/src/pw_log_rpc:docs", "//third_party/pigweed/src/pw_log_string:docs", "//third_party/pigweed/src/pw_log_tokenized:docs", "//third_party/pigweed/src/pw_log_zephyr:docs", "//third_party/pigweed/src/pw_malloc:docs", "//third_party/pigweed/src/pw_malloc_freelist:docs", "//third_party/pigweed/src/pw_malloc_freertos:docs", "//third_party/pigweed/src/pw_metric:docs", "//third_party/pigweed/src/pw_minimal_cpp_stdlib:docs", "//third_party/pigweed/src/pw_module:docs", "//third_party/pigweed/src/pw_multibuf:docs", "//third_party/pigweed/src/pw_multisink:docs", "//third_party/pigweed/src/pw_package:docs", "//third_party/pigweed/src/pw_perf_test:docs", "//third_party/pigweed/src/pw_persistent_ram:docs", "//third_party/pigweed/src/pw_polyfill:docs", "//third_party/pigweed/src/pw_preprocessor:docs", "//third_party/pigweed/src/pw_presubmit:docs", "//third_party/pigweed/src/pw_protobuf:docs", "//third_party/pigweed/src/pw_protobuf_compiler:docs", "//third_party/pigweed/src/pw_random:docs", "//third_party/pigweed/src/pw_result:docs", "//third_party/pigweed/src/pw_ring_buffer:docs", "//third_party/pigweed/src/pw_router:docs", "//third_party/pigweed/src/pw_rpc:docs", "//third_party/pigweed/src/pw_rpc_transport:docs", "//third_party/pigweed/src/pw_rust:docs", "//third_party/pigweed/src/pw_snapshot:docs", "//third_party/pigweed/src/pw_software_update:docs", "//third_party/pigweed/src/pw_span:docs", "//third_party/pigweed/src/pw_spi:docs", "//third_party/pigweed/src/pw_spi_mcuxpresso:docs", "//third_party/pigweed/src/pw_status:docs", "//third_party/pigweed/src/pw_stm32cube_build:docs", "//third_party/pigweed/src/pw_stream:docs", "//third_party/pigweed/src/pw_stream_shmem_mcuxpresso:docs", "//third_party/pigweed/src/pw_stream_uart_linux:docs", "//third_party/pigweed/src/pw_stream_uart_mcuxpresso:docs", "//third_party/pigweed/src/pw_string:docs", "//third_party/pigweed/src/pw_symbolizer:docs", "//third_party/pigweed/src/pw_sync:docs", "//third_party/pigweed/src/pw_sync_baremetal:docs", "//third_party/pigweed/src/pw_sync_embos:docs", "//third_party/pigweed/src/pw_sync_freertos:docs", "//third_party/pigweed/src/pw_sync_stl:docs", "//third_party/pigweed/src/pw_sync_threadx:docs", "//third_party/pigweed/src/pw_sync_zephyr:docs", "//third_party/pigweed/src/pw_sys_io:docs", "//third_party/pigweed/src/pw_sys_io_ambiq_sdk:docs", "//third_party/pigweed/src/pw_sys_io_arduino:docs", "//third_party/pigweed/src/pw_sys_io_baremetal_lm3s6965evb:docs", "//third_party/pigweed/src/pw_sys_io_baremetal_stm32f429:docs", "//third_party/pigweed/src/pw_sys_io_emcraft_sf2:docs", "//third_party/pigweed/src/pw_sys_io_mcuxpresso:docs", "//third_party/pigweed/src/pw_sys_io_rp2040:docs", "//third_party/pigweed/src/pw_sys_io_stdio:docs", "//third_party/pigweed/src/pw_sys_io_stm32cube:docs", "//third_party/pigweed/src/pw_sys_io_zephyr:docs", "//third_party/pigweed/src/pw_system:docs", "//third_party/pigweed/src/pw_target_runner:docs", "//third_party/pigweed/src/pw_thread:docs", "//third_party/pigweed/src/pw_thread_embos:docs", "//third_party/pigweed/src/pw_thread_freertos:docs", "//third_party/pigweed/src/pw_thread_stl:docs", "//third_party/pigweed/src/pw_thread_threadx:docs", "//third_party/pigweed/src/pw_thread_zephyr:docs", "//third_party/pigweed/src/pw_tls_client:docs", "//third_party/pigweed/src/pw_tls_client_boringssl:docs", "//third_party/pigweed/src/pw_tls_client_mbedtls:docs", "//third_party/pigweed/src/pw_tokenizer:docs", "//third_party/pigweed/src/pw_tool:docs", "//third_party/pigweed/src/pw_toolchain:docs", "//third_party/pigweed/src/pw_toolchain_bazel:docs", "//third_party/pigweed/src/pw_trace:docs", "//third_party/pigweed/src/pw_trace_tokenized:docs", "//third_party/pigweed/src/pw_transfer:docs", "//third_party/pigweed/src/pw_unit_test:docs", "//third_party/pigweed/src/pw_unit_test_zephyr:docs", "//third_party/pigweed/src/pw_varint:docs", "//third_party/pigweed/src/pw_watch:docs", "//third_party/pigweed/src/pw_web:docs", "//third_party/pigweed/src/pw_work_queue:docs"]`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:486
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:523
 
 ### pw_module_tests
 
 A list with all Pigweed module test groups. DO NOT SET THIS BUILD ARGUMENT!
 
-**Current value (from the default):** `["//third_party/pigweed/src/docker:tests", "//third_party/pigweed/src/pw_alignment:tests", "//third_party/pigweed/src/pw_allocator:tests", "//third_party/pigweed/src/pw_analog:tests", "//third_party/pigweed/src/pw_android_toolchain:tests", "//third_party/pigweed/src/pw_arduino_build:tests", "//third_party/pigweed/src/pw_assert:tests", "//third_party/pigweed/src/pw_assert_basic:tests", "//third_party/pigweed/src/pw_assert_log:tests", "//third_party/pigweed/src/pw_assert_tokenized:tests", "//third_party/pigweed/src/pw_assert_zephyr:tests", "//third_party/pigweed/src/pw_async:tests", "//third_party/pigweed/src/pw_async_basic:tests", "//third_party/pigweed/src/pw_base64:tests", "//third_party/pigweed/src/pw_bloat:tests", "//third_party/pigweed/src/pw_blob_store:tests", "//third_party/pigweed/src/pw_bluetooth:tests", "//third_party/pigweed/src/pw_bluetooth_hci:tests", "//third_party/pigweed/src/pw_bluetooth_profiles:tests", "//third_party/pigweed/src/pw_boot:tests", "//third_party/pigweed/src/pw_boot_cortex_m:tests", "//third_party/pigweed/src/pw_build:tests", "//third_party/pigweed/src/pw_build_info:tests", "//third_party/pigweed/src/pw_build_mcuxpresso:tests", "//third_party/pigweed/src/pw_bytes:tests", "//third_party/pigweed/src/pw_checksum:tests", "//third_party/pigweed/src/pw_chrono:tests", "//third_party/pigweed/src/pw_chrono_embos:tests", "//third_party/pigweed/src/pw_chrono_freertos:tests", "//third_party/pigweed/src/pw_chrono_stl:tests", "//third_party/pigweed/src/pw_chrono_threadx:tests", "//third_party/pigweed/src/pw_chrono_zephyr:tests", "//third_party/pigweed/src/pw_cli:tests", "//third_party/pigweed/src/pw_compilation_testing:tests", "//third_party/pigweed/src/pw_console:tests", "//third_party/pigweed/src/pw_containers:tests", "//third_party/pigweed/src/pw_cpu_exception:tests", "//third_party/pigweed/src/pw_cpu_exception_cortex_m:tests", "//third_party/pigweed/src/pw_crypto:tests", "//third_party/pigweed/src/pw_digital_io:tests", "//third_party/pigweed/src/pw_digital_io_mcuxpresso:tests", "//third_party/pigweed/src/pw_docgen:tests", "//third_party/pigweed/src/pw_doctor:tests", "//third_party/pigweed/src/pw_env_setup:tests", "//third_party/pigweed/src/pw_file:tests", "//third_party/pigweed/src/pw_function:tests", "//third_party/pigweed/src/pw_fuzzer:tests", "//third_party/pigweed/src/pw_hdlc:tests", "//third_party/pigweed/src/pw_hex_dump:tests", "//third_party/pigweed/src/pw_i2c:tests", "//third_party/pigweed/src/pw_i2c_linux:tests", "//third_party/pigweed/src/pw_i2c_mcuxpresso:tests", "//third_party/pigweed/src/pw_ide:tests", "//third_party/pigweed/src/pw_interrupt:tests", "//third_party/pigweed/src/pw_interrupt_cortex_m:tests", "//third_party/pigweed/src/pw_interrupt_xtensa:tests", "//third_party/pigweed/src/pw_interrupt_zephyr:tests", "//third_party/pigweed/src/pw_intrusive_ptr:tests", "//third_party/pigweed/src/pw_kvs:tests", "//third_party/pigweed/src/pw_libc:tests", "//third_party/pigweed/src/pw_log:tests", "//third_party/pigweed/src/pw_log_android:tests", "//third_party/pigweed/src/pw_log_basic:tests", "//third_party/pigweed/src/pw_log_null:tests", "//third_party/pigweed/src/pw_log_rpc:tests", "//third_party/pigweed/src/pw_log_string:tests", "//third_party/pigweed/src/pw_log_tokenized:tests", "//third_party/pigweed/src/pw_log_zephyr:tests", "//third_party/pigweed/src/pw_malloc:tests", "//third_party/pigweed/src/pw_malloc_freelist:tests", "//third_party/pigweed/src/pw_metric:tests", "//third_party/pigweed/src/pw_minimal_cpp_stdlib:tests", "//third_party/pigweed/src/pw_module:tests", "//third_party/pigweed/src/pw_multisink:tests", "//third_party/pigweed/src/pw_package:tests", "//third_party/pigweed/src/pw_perf_test:tests", "//third_party/pigweed/src/pw_persistent_ram:tests", "//third_party/pigweed/src/pw_polyfill:tests", "//third_party/pigweed/src/pw_preprocessor:tests", "//third_party/pigweed/src/pw_presubmit:tests", "//third_party/pigweed/src/pw_protobuf:tests", "//third_party/pigweed/src/pw_protobuf_compiler:tests", "//third_party/pigweed/src/pw_random:tests", "//third_party/pigweed/src/pw_result:tests", "//third_party/pigweed/src/pw_ring_buffer:tests", "//third_party/pigweed/src/pw_router:tests", "//third_party/pigweed/src/pw_rpc:tests", "//third_party/pigweed/src/pw_rpc_transport:tests", "//third_party/pigweed/src/pw_rust:tests", "//third_party/pigweed/src/pw_snapshot:tests", "//third_party/pigweed/src/pw_software_update:tests", "//third_party/pigweed/src/pw_span:tests", "//third_party/pigweed/src/pw_spi:tests", "//third_party/pigweed/src/pw_spi_mcuxpresso:tests", "//third_party/pigweed/src/pw_status:tests", "//third_party/pigweed/src/pw_stm32cube_build:tests", "//third_party/pigweed/src/pw_stream:tests", "//third_party/pigweed/src/pw_stream_shmem_mcuxpresso:tests", "//third_party/pigweed/src/pw_stream_uart_linux:tests", "//third_party/pigweed/src/pw_stream_uart_mcuxpresso:tests", "//third_party/pigweed/src/pw_string:tests", "//third_party/pigweed/src/pw_symbolizer:tests", "//third_party/pigweed/src/pw_sync:tests", "//third_party/pigweed/src/pw_sync_baremetal:tests", "//third_party/pigweed/src/pw_sync_embos:tests", "//third_party/pigweed/src/pw_sync_freertos:tests", "//third_party/pigweed/src/pw_sync_stl:tests", "//third_party/pigweed/src/pw_sync_threadx:tests", "//third_party/pigweed/src/pw_sync_zephyr:tests", "//third_party/pigweed/src/pw_sys_io:tests", "//third_party/pigweed/src/pw_sys_io_arduino:tests", "//third_party/pigweed/src/pw_sys_io_baremetal_lm3s6965evb:tests", "//third_party/pigweed/src/pw_sys_io_baremetal_stm32f429:tests", "//third_party/pigweed/src/pw_sys_io_emcraft_sf2:tests", "//third_party/pigweed/src/pw_sys_io_mcuxpresso:tests", "//third_party/pigweed/src/pw_sys_io_pico:tests", "//third_party/pigweed/src/pw_sys_io_stdio:tests", "//third_party/pigweed/src/pw_sys_io_stm32cube:tests", "//third_party/pigweed/src/pw_sys_io_zephyr:tests", "//third_party/pigweed/src/pw_system:tests", "//third_party/pigweed/src/pw_target_runner:tests", "//third_party/pigweed/src/pw_thread:tests", "//third_party/pigweed/src/pw_thread_embos:tests", "//third_party/pigweed/src/pw_thread_freertos:tests", "//third_party/pigweed/src/pw_thread_stl:tests", "//third_party/pigweed/src/pw_thread_threadx:tests", "//third_party/pigweed/src/pw_thread_zephyr:tests", "//third_party/pigweed/src/pw_tls_client:tests", "//third_party/pigweed/src/pw_tls_client_boringssl:tests", "//third_party/pigweed/src/pw_tls_client_mbedtls:tests", "//third_party/pigweed/src/pw_tokenizer:tests", "//third_party/pigweed/src/pw_tool:tests", "//third_party/pigweed/src/pw_toolchain:tests", "//third_party/pigweed/src/pw_toolchain_bazel:tests", "//third_party/pigweed/src/pw_trace:tests", "//third_party/pigweed/src/pw_trace_tokenized:tests", "//third_party/pigweed/src/pw_transfer:tests", "//third_party/pigweed/src/pw_unit_test:tests", "//third_party/pigweed/src/pw_unit_test_zephyr:tests", "//third_party/pigweed/src/pw_varint:tests", "//third_party/pigweed/src/pw_watch:tests", "//third_party/pigweed/src/pw_web:tests", "//third_party/pigweed/src/pw_work_queue:tests"]`
+**Current value (from the default):** `["//third_party/pigweed/src/docker:tests", "//third_party/pigweed/src/pw_alignment:tests", "//third_party/pigweed/src/pw_allocator:tests", "//third_party/pigweed/src/pw_analog:tests", "//third_party/pigweed/src/pw_android_toolchain:tests", "//third_party/pigweed/src/pw_arduino_build:tests", "//third_party/pigweed/src/pw_assert:tests", "//third_party/pigweed/src/pw_assert_basic:tests", "//third_party/pigweed/src/pw_assert_log:tests", "//third_party/pigweed/src/pw_assert_tokenized:tests", "//third_party/pigweed/src/pw_assert_zephyr:tests", "//third_party/pigweed/src/pw_async:tests", "//third_party/pigweed/src/pw_async2:tests", "//third_party/pigweed/src/pw_async2_basic:tests", "//third_party/pigweed/src/pw_async_basic:tests", "//third_party/pigweed/src/pw_base64:tests", "//third_party/pigweed/src/pw_bloat:tests", "//third_party/pigweed/src/pw_blob_store:tests", "//third_party/pigweed/src/pw_bluetooth:tests", "//third_party/pigweed/src/pw_bluetooth_hci:tests", "//third_party/pigweed/src/pw_bluetooth_profiles:tests", "//third_party/pigweed/src/pw_bluetooth_sapphire:tests", "//third_party/pigweed/src/pw_boot:tests", "//third_party/pigweed/src/pw_boot_cortex_m:tests", "//third_party/pigweed/src/pw_build:tests", "//third_party/pigweed/src/pw_build_info:tests", "//third_party/pigweed/src/pw_build_mcuxpresso:tests", "//third_party/pigweed/src/pw_bytes:tests", "//third_party/pigweed/src/pw_checksum:tests", "//third_party/pigweed/src/pw_chre:tests", "//third_party/pigweed/src/pw_chrono:tests", "//third_party/pigweed/src/pw_chrono_embos:tests", "//third_party/pigweed/src/pw_chrono_freertos:tests", "//third_party/pigweed/src/pw_chrono_rp2040:tests", "//third_party/pigweed/src/pw_chrono_stl:tests", "//third_party/pigweed/src/pw_chrono_threadx:tests", "//third_party/pigweed/src/pw_chrono_zephyr:tests", "//third_party/pigweed/src/pw_cli:tests", "//third_party/pigweed/src/pw_compilation_testing:tests", "//third_party/pigweed/src/pw_console:tests", "//third_party/pigweed/src/pw_containers:tests", "//third_party/pigweed/src/pw_cpu_exception:tests", "//third_party/pigweed/src/pw_cpu_exception_cortex_m:tests", "//third_party/pigweed/src/pw_crypto:tests", "//third_party/pigweed/src/pw_digital_io:tests", "//third_party/pigweed/src/pw_digital_io_mcuxpresso:tests", "//third_party/pigweed/src/pw_digital_io_rp2040:tests", "//third_party/pigweed/src/pw_docgen:tests", "//third_party/pigweed/src/pw_doctor:tests", "//third_party/pigweed/src/pw_emu:tests", "//third_party/pigweed/src/pw_env_setup:tests", "//third_party/pigweed/src/pw_file:tests", "//third_party/pigweed/src/pw_format:tests", "//third_party/pigweed/src/pw_function:tests", "//third_party/pigweed/src/pw_fuzzer:tests", "//third_party/pigweed/src/pw_hdlc:tests", "//third_party/pigweed/src/pw_hex_dump:tests", "//third_party/pigweed/src/pw_i2c:tests", "//third_party/pigweed/src/pw_i2c_linux:tests", "//third_party/pigweed/src/pw_i2c_mcuxpresso:tests", "//third_party/pigweed/src/pw_ide:tests", "//third_party/pigweed/src/pw_interrupt:tests", "//third_party/pigweed/src/pw_interrupt_cortex_m:tests", "//third_party/pigweed/src/pw_interrupt_xtensa:tests", "//third_party/pigweed/src/pw_interrupt_zephyr:tests", "//third_party/pigweed/src/pw_intrusive_ptr:tests", "//third_party/pigweed/src/pw_kvs:tests", "//third_party/pigweed/src/pw_libc:tests", "//third_party/pigweed/src/pw_libcxx:tests", "//third_party/pigweed/src/pw_log:tests", "//third_party/pigweed/src/pw_log_android:tests", "//third_party/pigweed/src/pw_log_basic:tests", "//third_party/pigweed/src/pw_log_null:tests", "//third_party/pigweed/src/pw_log_rpc:tests", "//third_party/pigweed/src/pw_log_string:tests", "//third_party/pigweed/src/pw_log_tokenized:tests", "//third_party/pigweed/src/pw_log_zephyr:tests", "//third_party/pigweed/src/pw_malloc:tests", "//third_party/pigweed/src/pw_malloc_freelist:tests", "//third_party/pigweed/src/pw_malloc_freertos:tests", "//third_party/pigweed/src/pw_metric:tests", "//third_party/pigweed/src/pw_minimal_cpp_stdlib:tests", "//third_party/pigweed/src/pw_module:tests", "//third_party/pigweed/src/pw_multibuf:tests", "//third_party/pigweed/src/pw_multisink:tests", "//third_party/pigweed/src/pw_package:tests", "//third_party/pigweed/src/pw_perf_test:tests", "//third_party/pigweed/src/pw_persistent_ram:tests", "//third_party/pigweed/src/pw_polyfill:tests", "//third_party/pigweed/src/pw_preprocessor:tests", "//third_party/pigweed/src/pw_presubmit:tests", "//third_party/pigweed/src/pw_protobuf:tests", "//third_party/pigweed/src/pw_protobuf_compiler:tests", "//third_party/pigweed/src/pw_random:tests", "//third_party/pigweed/src/pw_result:tests", "//third_party/pigweed/src/pw_ring_buffer:tests", "//third_party/pigweed/src/pw_router:tests", "//third_party/pigweed/src/pw_rpc:tests", "//third_party/pigweed/src/pw_rpc_transport:tests", "//third_party/pigweed/src/pw_rust:tests", "//third_party/pigweed/src/pw_snapshot:tests", "//third_party/pigweed/src/pw_software_update:tests", "//third_party/pigweed/src/pw_span:tests", "//third_party/pigweed/src/pw_spi:tests", "//third_party/pigweed/src/pw_spi_mcuxpresso:tests", "//third_party/pigweed/src/pw_status:tests", "//third_party/pigweed/src/pw_stm32cube_build:tests", "//third_party/pigweed/src/pw_stream:tests", "//third_party/pigweed/src/pw_stream_shmem_mcuxpresso:tests", "//third_party/pigweed/src/pw_stream_uart_linux:tests", "//third_party/pigweed/src/pw_stream_uart_mcuxpresso:tests", "//third_party/pigweed/src/pw_string:tests", "//third_party/pigweed/src/pw_symbolizer:tests", "//third_party/pigweed/src/pw_sync:tests", "//third_party/pigweed/src/pw_sync_baremetal:tests", "//third_party/pigweed/src/pw_sync_embos:tests", "//third_party/pigweed/src/pw_sync_freertos:tests", "//third_party/pigweed/src/pw_sync_stl:tests", "//third_party/pigweed/src/pw_sync_threadx:tests", "//third_party/pigweed/src/pw_sync_zephyr:tests", "//third_party/pigweed/src/pw_sys_io:tests", "//third_party/pigweed/src/pw_sys_io_ambiq_sdk:tests", "//third_party/pigweed/src/pw_sys_io_arduino:tests", "//third_party/pigweed/src/pw_sys_io_baremetal_lm3s6965evb:tests", "//third_party/pigweed/src/pw_sys_io_baremetal_stm32f429:tests", "//third_party/pigweed/src/pw_sys_io_emcraft_sf2:tests", "//third_party/pigweed/src/pw_sys_io_mcuxpresso:tests", "//third_party/pigweed/src/pw_sys_io_rp2040:tests", "//third_party/pigweed/src/pw_sys_io_stdio:tests", "//third_party/pigweed/src/pw_sys_io_stm32cube:tests", "//third_party/pigweed/src/pw_sys_io_zephyr:tests", "//third_party/pigweed/src/pw_system:tests", "//third_party/pigweed/src/pw_target_runner:tests", "//third_party/pigweed/src/pw_thread:tests", "//third_party/pigweed/src/pw_thread_embos:tests", "//third_party/pigweed/src/pw_thread_freertos:tests", "//third_party/pigweed/src/pw_thread_stl:tests", "//third_party/pigweed/src/pw_thread_threadx:tests", "//third_party/pigweed/src/pw_thread_zephyr:tests", "//third_party/pigweed/src/pw_tls_client:tests", "//third_party/pigweed/src/pw_tls_client_boringssl:tests", "//third_party/pigweed/src/pw_tls_client_mbedtls:tests", "//third_party/pigweed/src/pw_tokenizer:tests", "//third_party/pigweed/src/pw_tool:tests", "//third_party/pigweed/src/pw_toolchain:tests", "//third_party/pigweed/src/pw_toolchain_bazel:tests", "//third_party/pigweed/src/pw_trace:tests", "//third_party/pigweed/src/pw_trace_tokenized:tests", "//third_party/pigweed/src/pw_transfer:tests", "//third_party/pigweed/src/pw_unit_test:tests", "//third_party/pigweed/src/pw_unit_test_zephyr:tests", "//third_party/pigweed/src/pw_varint:tests", "//third_party/pigweed/src/pw_watch:tests", "//third_party/pigweed/src/pw_web:tests", "//third_party/pigweed/src/pw_work_queue:tests"]`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:339
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:364
 
 ### pw_modules
 
 A list with paths to all Pigweed module. DO NOT SET THIS BUILD ARGUMENT!
 
-**Current value (from the default):** `["//third_party/pigweed/src/docker", "//third_party/pigweed/src/pw_alignment", "//third_party/pigweed/src/pw_allocator", "//third_party/pigweed/src/pw_analog", "//third_party/pigweed/src/pw_android_toolchain", "//third_party/pigweed/src/pw_arduino_build", "//third_party/pigweed/src/pw_assert", "//third_party/pigweed/src/pw_assert_basic", "//third_party/pigweed/src/pw_assert_log", "//third_party/pigweed/src/pw_assert_tokenized", "//third_party/pigweed/src/pw_assert_zephyr", "//third_party/pigweed/src/pw_async", "//third_party/pigweed/src/pw_async_basic", "//third_party/pigweed/src/pw_base64", "//third_party/pigweed/src/pw_bloat", "//third_party/pigweed/src/pw_blob_store", "//third_party/pigweed/src/pw_bluetooth", "//third_party/pigweed/src/pw_bluetooth_hci", "//third_party/pigweed/src/pw_bluetooth_profiles", "//third_party/pigweed/src/pw_boot", "//third_party/pigweed/src/pw_boot_cortex_m", "//third_party/pigweed/src/pw_build", "//third_party/pigweed/src/pw_build_info", "//third_party/pigweed/src/pw_build_mcuxpresso", "//third_party/pigweed/src/pw_bytes", "//third_party/pigweed/src/pw_checksum", "//third_party/pigweed/src/pw_chrono", "//third_party/pigweed/src/pw_chrono_embos", "//third_party/pigweed/src/pw_chrono_freertos", "//third_party/pigweed/src/pw_chrono_stl", "//third_party/pigweed/src/pw_chrono_threadx", "//third_party/pigweed/src/pw_chrono_zephyr", "//third_party/pigweed/src/pw_cli", "//third_party/pigweed/src/pw_compilation_testing", "//third_party/pigweed/src/pw_console", "//third_party/pigweed/src/pw_containers", "//third_party/pigweed/src/pw_cpu_exception", "//third_party/pigweed/src/pw_cpu_exception_cortex_m", "//third_party/pigweed/src/pw_crypto", "//third_party/pigweed/src/pw_digital_io", "//third_party/pigweed/src/pw_digital_io_mcuxpresso", "//third_party/pigweed/src/pw_docgen", "//third_party/pigweed/src/pw_doctor", "//third_party/pigweed/src/pw_env_setup", "//third_party/pigweed/src/pw_file", "//third_party/pigweed/src/pw_function", "//third_party/pigweed/src/pw_fuzzer", "//third_party/pigweed/src/pw_hdlc", "//third_party/pigweed/src/pw_hex_dump", "//third_party/pigweed/src/pw_i2c", "//third_party/pigweed/src/pw_i2c_linux", "//third_party/pigweed/src/pw_i2c_mcuxpresso", "//third_party/pigweed/src/pw_ide", "//third_party/pigweed/src/pw_interrupt", "//third_party/pigweed/src/pw_interrupt_cortex_m", "//third_party/pigweed/src/pw_interrupt_xtensa", "//third_party/pigweed/src/pw_interrupt_zephyr", "//third_party/pigweed/src/pw_intrusive_ptr", "//third_party/pigweed/src/pw_kvs", "//third_party/pigweed/src/pw_libc", "//third_party/pigweed/src/pw_log", "//third_party/pigweed/src/pw_log_android", "//third_party/pigweed/src/pw_log_basic", "//third_party/pigweed/src/pw_log_null", "//third_party/pigweed/src/pw_log_rpc", "//third_party/pigweed/src/pw_log_string", "//third_party/pigweed/src/pw_log_tokenized", "//third_party/pigweed/src/pw_log_zephyr", "//third_party/pigweed/src/pw_malloc", "//third_party/pigweed/src/pw_malloc_freelist", "//third_party/pigweed/src/pw_metric", "//third_party/pigweed/src/pw_minimal_cpp_stdlib", "//third_party/pigweed/src/pw_module", "//third_party/pigweed/src/pw_multisink", "//third_party/pigweed/src/pw_package", "//third_party/pigweed/src/pw_perf_test", "//third_party/pigweed/src/pw_persistent_ram", "//third_party/pigweed/src/pw_polyfill", "//third_party/pigweed/src/pw_preprocessor", "//third_party/pigweed/src/pw_presubmit", "//third_party/pigweed/src/pw_protobuf", "//third_party/pigweed/src/pw_protobuf_compiler", "//third_party/pigweed/src/pw_random", "//third_party/pigweed/src/pw_result", "//third_party/pigweed/src/pw_ring_buffer", "//third_party/pigweed/src/pw_router", "//third_party/pigweed/src/pw_rpc", "//third_party/pigweed/src/pw_rpc_transport", "//third_party/pigweed/src/pw_rust", "//third_party/pigweed/src/pw_snapshot", "//third_party/pigweed/src/pw_software_update", "//third_party/pigweed/src/pw_span", "//third_party/pigweed/src/pw_spi", "//third_party/pigweed/src/pw_spi_mcuxpresso", "//third_party/pigweed/src/pw_status", "//third_party/pigweed/src/pw_stm32cube_build", "//third_party/pigweed/src/pw_stream", "//third_party/pigweed/src/pw_stream_shmem_mcuxpresso", "//third_party/pigweed/src/pw_stream_uart_linux", "//third_party/pigweed/src/pw_stream_uart_mcuxpresso", "//third_party/pigweed/src/pw_string", "//third_party/pigweed/src/pw_symbolizer", "//third_party/pigweed/src/pw_sync", "//third_party/pigweed/src/pw_sync_baremetal", "//third_party/pigweed/src/pw_sync_embos", "//third_party/pigweed/src/pw_sync_freertos", "//third_party/pigweed/src/pw_sync_stl", "//third_party/pigweed/src/pw_sync_threadx", "//third_party/pigweed/src/pw_sync_zephyr", "//third_party/pigweed/src/pw_sys_io", "//third_party/pigweed/src/pw_sys_io_arduino", "//third_party/pigweed/src/pw_sys_io_baremetal_lm3s6965evb", "//third_party/pigweed/src/pw_sys_io_baremetal_stm32f429", "//third_party/pigweed/src/pw_sys_io_emcraft_sf2", "//third_party/pigweed/src/pw_sys_io_mcuxpresso", "//third_party/pigweed/src/pw_sys_io_pico", "//third_party/pigweed/src/pw_sys_io_stdio", "//third_party/pigweed/src/pw_sys_io_stm32cube", "//third_party/pigweed/src/pw_sys_io_zephyr", "//third_party/pigweed/src/pw_system", "//third_party/pigweed/src/pw_target_runner", "//third_party/pigweed/src/pw_thread", "//third_party/pigweed/src/pw_thread_embos", "//third_party/pigweed/src/pw_thread_freertos", "//third_party/pigweed/src/pw_thread_stl", "//third_party/pigweed/src/pw_thread_threadx", "//third_party/pigweed/src/pw_thread_zephyr", "//third_party/pigweed/src/pw_tls_client", "//third_party/pigweed/src/pw_tls_client_boringssl", "//third_party/pigweed/src/pw_tls_client_mbedtls", "//third_party/pigweed/src/pw_tokenizer", "//third_party/pigweed/src/pw_tool", "//third_party/pigweed/src/pw_toolchain", "//third_party/pigweed/src/pw_toolchain_bazel", "//third_party/pigweed/src/pw_trace", "//third_party/pigweed/src/pw_trace_tokenized", "//third_party/pigweed/src/pw_transfer", "//third_party/pigweed/src/pw_unit_test", "//third_party/pigweed/src/pw_unit_test_zephyr", "//third_party/pigweed/src/pw_varint", "//third_party/pigweed/src/pw_watch", "//third_party/pigweed/src/pw_web", "//third_party/pigweed/src/pw_work_queue"]`
+**Current value (from the default):** `["//third_party/pigweed/src/docker", "//third_party/pigweed/src/pw_alignment", "//third_party/pigweed/src/pw_allocator", "//third_party/pigweed/src/pw_analog", "//third_party/pigweed/src/pw_android_toolchain", "//third_party/pigweed/src/pw_arduino_build", "//third_party/pigweed/src/pw_assert", "//third_party/pigweed/src/pw_assert_basic", "//third_party/pigweed/src/pw_assert_log", "//third_party/pigweed/src/pw_assert_tokenized", "//third_party/pigweed/src/pw_assert_zephyr", "//third_party/pigweed/src/pw_async", "//third_party/pigweed/src/pw_async2", "//third_party/pigweed/src/pw_async2_basic", "//third_party/pigweed/src/pw_async_basic", "//third_party/pigweed/src/pw_base64", "//third_party/pigweed/src/pw_bloat", "//third_party/pigweed/src/pw_blob_store", "//third_party/pigweed/src/pw_bluetooth", "//third_party/pigweed/src/pw_bluetooth_hci", "//third_party/pigweed/src/pw_bluetooth_profiles", "//third_party/pigweed/src/pw_bluetooth_sapphire", "//third_party/pigweed/src/pw_boot", "//third_party/pigweed/src/pw_boot_cortex_m", "//third_party/pigweed/src/pw_build", "//third_party/pigweed/src/pw_build_info", "//third_party/pigweed/src/pw_build_mcuxpresso", "//third_party/pigweed/src/pw_bytes", "//third_party/pigweed/src/pw_checksum", "//third_party/pigweed/src/pw_chre", "//third_party/pigweed/src/pw_chrono", "//third_party/pigweed/src/pw_chrono_embos", "//third_party/pigweed/src/pw_chrono_freertos", "//third_party/pigweed/src/pw_chrono_rp2040", "//third_party/pigweed/src/pw_chrono_stl", "//third_party/pigweed/src/pw_chrono_threadx", "//third_party/pigweed/src/pw_chrono_zephyr", "//third_party/pigweed/src/pw_cli", "//third_party/pigweed/src/pw_compilation_testing", "//third_party/pigweed/src/pw_console", "//third_party/pigweed/src/pw_containers", "//third_party/pigweed/src/pw_cpu_exception", "//third_party/pigweed/src/pw_cpu_exception_cortex_m", "//third_party/pigweed/src/pw_crypto", "//third_party/pigweed/src/pw_digital_io", "//third_party/pigweed/src/pw_digital_io_mcuxpresso", "//third_party/pigweed/src/pw_digital_io_rp2040", "//third_party/pigweed/src/pw_docgen", "//third_party/pigweed/src/pw_doctor", "//third_party/pigweed/src/pw_emu", "//third_party/pigweed/src/pw_env_setup", "//third_party/pigweed/src/pw_file", "//third_party/pigweed/src/pw_format", "//third_party/pigweed/src/pw_function", "//third_party/pigweed/src/pw_fuzzer", "//third_party/pigweed/src/pw_hdlc", "//third_party/pigweed/src/pw_hex_dump", "//third_party/pigweed/src/pw_i2c", "//third_party/pigweed/src/pw_i2c_linux", "//third_party/pigweed/src/pw_i2c_mcuxpresso", "//third_party/pigweed/src/pw_ide", "//third_party/pigweed/src/pw_interrupt", "//third_party/pigweed/src/pw_interrupt_cortex_m", "//third_party/pigweed/src/pw_interrupt_xtensa", "//third_party/pigweed/src/pw_interrupt_zephyr", "//third_party/pigweed/src/pw_intrusive_ptr", "//third_party/pigweed/src/pw_kvs", "//third_party/pigweed/src/pw_libc", "//third_party/pigweed/src/pw_libcxx", "//third_party/pigweed/src/pw_log", "//third_party/pigweed/src/pw_log_android", "//third_party/pigweed/src/pw_log_basic", "//third_party/pigweed/src/pw_log_null", "//third_party/pigweed/src/pw_log_rpc", "//third_party/pigweed/src/pw_log_string", "//third_party/pigweed/src/pw_log_tokenized", "//third_party/pigweed/src/pw_log_zephyr", "//third_party/pigweed/src/pw_malloc", "//third_party/pigweed/src/pw_malloc_freelist", "//third_party/pigweed/src/pw_malloc_freertos", "//third_party/pigweed/src/pw_metric", "//third_party/pigweed/src/pw_minimal_cpp_stdlib", "//third_party/pigweed/src/pw_module", "//third_party/pigweed/src/pw_multibuf", "//third_party/pigweed/src/pw_multisink", "//third_party/pigweed/src/pw_package", "//third_party/pigweed/src/pw_perf_test", "//third_party/pigweed/src/pw_persistent_ram", "//third_party/pigweed/src/pw_polyfill", "//third_party/pigweed/src/pw_preprocessor", "//third_party/pigweed/src/pw_presubmit", "//third_party/pigweed/src/pw_protobuf", "//third_party/pigweed/src/pw_protobuf_compiler", "//third_party/pigweed/src/pw_random", "//third_party/pigweed/src/pw_result", "//third_party/pigweed/src/pw_ring_buffer", "//third_party/pigweed/src/pw_router", "//third_party/pigweed/src/pw_rpc", "//third_party/pigweed/src/pw_rpc_transport", "//third_party/pigweed/src/pw_rust", "//third_party/pigweed/src/pw_snapshot", "//third_party/pigweed/src/pw_software_update", "//third_party/pigweed/src/pw_span", "//third_party/pigweed/src/pw_spi", "//third_party/pigweed/src/pw_spi_mcuxpresso", "//third_party/pigweed/src/pw_status", "//third_party/pigweed/src/pw_stm32cube_build", "//third_party/pigweed/src/pw_stream", "//third_party/pigweed/src/pw_stream_shmem_mcuxpresso", "//third_party/pigweed/src/pw_stream_uart_linux", "//third_party/pigweed/src/pw_stream_uart_mcuxpresso", "//third_party/pigweed/src/pw_string", "//third_party/pigweed/src/pw_symbolizer", "//third_party/pigweed/src/pw_sync", "//third_party/pigweed/src/pw_sync_baremetal", "//third_party/pigweed/src/pw_sync_embos", "//third_party/pigweed/src/pw_sync_freertos", "//third_party/pigweed/src/pw_sync_stl", "//third_party/pigweed/src/pw_sync_threadx", "//third_party/pigweed/src/pw_sync_zephyr", "//third_party/pigweed/src/pw_sys_io", "//third_party/pigweed/src/pw_sys_io_ambiq_sdk", "//third_party/pigweed/src/pw_sys_io_arduino", "//third_party/pigweed/src/pw_sys_io_baremetal_lm3s6965evb", "//third_party/pigweed/src/pw_sys_io_baremetal_stm32f429", "//third_party/pigweed/src/pw_sys_io_emcraft_sf2", "//third_party/pigweed/src/pw_sys_io_mcuxpresso", "//third_party/pigweed/src/pw_sys_io_rp2040", "//third_party/pigweed/src/pw_sys_io_stdio", "//third_party/pigweed/src/pw_sys_io_stm32cube", "//third_party/pigweed/src/pw_sys_io_zephyr", "//third_party/pigweed/src/pw_system", "//third_party/pigweed/src/pw_target_runner", "//third_party/pigweed/src/pw_thread", "//third_party/pigweed/src/pw_thread_embos", "//third_party/pigweed/src/pw_thread_freertos", "//third_party/pigweed/src/pw_thread_stl", "//third_party/pigweed/src/pw_thread_threadx", "//third_party/pigweed/src/pw_thread_zephyr", "//third_party/pigweed/src/pw_tls_client", "//third_party/pigweed/src/pw_tls_client_boringssl", "//third_party/pigweed/src/pw_tls_client_mbedtls", "//third_party/pigweed/src/pw_tokenizer", "//third_party/pigweed/src/pw_tool", "//third_party/pigweed/src/pw_toolchain", "//third_party/pigweed/src/pw_toolchain_bazel", "//third_party/pigweed/src/pw_trace", "//third_party/pigweed/src/pw_trace_tokenized", "//third_party/pigweed/src/pw_transfer", "//third_party/pigweed/src/pw_unit_test", "//third_party/pigweed/src/pw_unit_test_zephyr", "//third_party/pigweed/src/pw_varint", "//third_party/pigweed/src/pw_watch", "//third_party/pigweed/src/pw_web", "//third_party/pigweed/src/pw_work_queue"]`
 
-From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:192
+From //third_party/pigweed/src/pw_build/generated_pigweed_modules_lists.gni:205
 
 ### pw_perf_test_EXECUTABLE_TARGET_TYPE
 
@@ -6270,7 +6176,7 @@ From //third_party/pigweed/src/pw_perf_test/perf_test.gni:31
 
 Chooses the EventHandler for running the perf tests
 
-**Current value (from the default):** `"//third_party/pigweed/src/pw_perf_test:log_perf_handler_main"`
+**Current value (from the default):** `"//third_party/pigweed/src/pw_perf_test:logging_main"`
 
 From //third_party/pigweed/src/pw_perf_test/perf_test.gni:28
 
@@ -6309,49 +6215,51 @@ kConstantCase. Set this variable to temporarily enable legacy SNAKE_CASE
 support while you migrate your codebase to kConstantCase.
 b/266298474
 
-**Current value (from the default):** `true`
+**Current value (from the default):** `false`
 
 From //third_party/pigweed/src/pw_protobuf_compiler/toolchain.gni:28
 
 ### pw_protobuf_compiler_PROTOC_BINARY
 
-To override the protobuf compiler used set this to the path, relative to the root_build_dir, to the protoc binary.
+To override the protobuf compiler used set this to the path, relative to the
+root_build_dir, to the protoc binary.
 
 **Current value for `target_cpu = "arm64"`:** `"host_x64/protoc"`
 
-From //.gn:99
+From //.gn:108
 
 **Overridden from the default:** `""`
 
-From //third_party/pigweed/src/pw_protobuf_compiler/proto.gni:39
+From //third_party/pigweed/src/pw_protobuf_compiler/proto.gni:55
 
 **Current value for `target_cpu = "x64"`:** `"host_x64/protoc"`
 
-From //.gn:99
+From //.gn:108
 
 **Overridden from the default:** `""`
 
-From //third_party/pigweed/src/pw_protobuf_compiler/proto.gni:39
+From //third_party/pigweed/src/pw_protobuf_compiler/proto.gni:55
 
 ### pw_protobuf_compiler_PROTOC_TARGET
 
-To override the protobuf compiler used set this to the GN target that builds the protobuf compiler.
+To override the protobuf compiler used set this to the GN target that builds
+the protobuf compiler.
 
 **Current value for `target_cpu = "arm64"`:** `"//third_party/protobuf:protoc"`
 
-From //.gn:98
+From //.gn:107
 
 **Overridden from the default:** `""`
 
-From //third_party/pigweed/src/pw_protobuf_compiler/proto.gni:36
+From //third_party/pigweed/src/pw_protobuf_compiler/proto.gni:38
 
 **Current value for `target_cpu = "x64"`:** `"//third_party/protobuf:protoc"`
 
-From //.gn:98
+From //.gn:107
 
 **Overridden from the default:** `""`
 
-From //third_party/pigweed/src/pw_protobuf_compiler/proto.gni:36
+From //third_party/pigweed/src/pw_protobuf_compiler/proto.gni:38
 
 ### pw_protobuf_compiler_TOOLCHAIN
 
@@ -6449,7 +6357,19 @@ From //third_party/pigweed/src/pw_string/BUILD.gn:27
 
 Backend for the pw_sync module's binary semaphore.
 
-**Current value (from the default):** `""`
+**Current value for `target_cpu = "arm64"`:** `"//third_party/pigweed/src/pw_sync_stl:binary_semaphore_backend"`
+
+From //.gn:74
+
+**Overridden from the default:** `""`
+
+From //third_party/pigweed/src/pw_sync/backend.gni:17
+
+**Current value for `target_cpu = "x64"`:** `"//third_party/pigweed/src/pw_sync_stl:binary_semaphore_backend"`
+
+From //.gn:74
+
+**Overridden from the default:** `""`
 
 From //third_party/pigweed/src/pw_sync/backend.gni:17
 
@@ -6481,17 +6401,17 @@ From //third_party/pigweed/src/pw_sync/backend.gni:35
 
 Backend for the pw_sync module's mutex.
 
-**Current value for `target_cpu = "arm64"`:** `"//third_party/pigweed/src/pw_sync_baremetal:mutex"`
+**Current value for `target_cpu = "arm64"`:** `"//third_party/pigweed/src/pw_sync_stl:mutex_backend"`
 
-From //.gn:68
+From //.gn:65
 
 **Overridden from the default:** `""`
 
 From //third_party/pigweed/src/pw_sync/backend.gni:26
 
-**Current value for `target_cpu = "x64"`:** `"//third_party/pigweed/src/pw_sync_baremetal:mutex"`
+**Current value for `target_cpu = "x64"`:** `"//third_party/pigweed/src/pw_sync_stl:mutex_backend"`
 
-From //.gn:68
+From //.gn:65
 
 **Overridden from the default:** `""`
 
@@ -6519,7 +6439,19 @@ From //third_party/pigweed/src/pw_sync/backend.gni:32
 
 Backend for the pw_sync module's thread notification.
 
-**Current value (from the default):** `""`
+**Current value for `target_cpu = "arm64"`:** `"//third_party/pigweed/src/pw_sync:binary_semaphore_thread_notification_backend"`
+
+From //.gn:69
+
+**Overridden from the default:** `""`
+
+From //third_party/pigweed/src/pw_sync/backend.gni:38
+
+**Current value for `target_cpu = "x64"`:** `"//third_party/pigweed/src/pw_sync:binary_semaphore_thread_notification_backend"`
+
+From //.gn:69
+
+**Overridden from the default:** `""`
 
 From //third_party/pigweed/src/pw_sync/backend.gni:38
 
@@ -6535,7 +6467,19 @@ From //third_party/pigweed/src/pw_sync/backend.gni:29
 
 Backend for the pw_sync module's timed thread notification.
 
-**Current value (from the default):** `""`
+**Current value for `target_cpu = "arm64"`:** `"//third_party/pigweed/src/pw_sync:binary_semaphore_timed_thread_notification_backend"`
+
+From //.gn:70
+
+**Overridden from the default:** `""`
+
+From //third_party/pigweed/src/pw_sync/backend.gni:41
+
+**Current value for `target_cpu = "x64"`:** `"//third_party/pigweed/src/pw_sync:binary_semaphore_timed_thread_notification_backend"`
+
+From //.gn:70
+
+**Overridden from the default:** `""`
 
 From //third_party/pigweed/src/pw_sync/backend.gni:41
 
@@ -6545,7 +6489,7 @@ Backend for the pw_sys_io facade.
 
 **Current value for `target_cpu = "arm64"`:** `"//third_party/pigweed/src/pw_sys_io_stdio"`
 
-From //.gn:69
+From //.gn:66
 
 **Overridden from the default:** `""`
 
@@ -6553,7 +6497,7 @@ From //third_party/pigweed/src/pw_sys_io/backend.gni:17
 
 **Current value for `target_cpu = "x64"`:** `"//third_party/pigweed/src/pw_sys_io_stdio"`
 
-From //.gn:69
+From //.gn:66
 
 **Overridden from the default:** `""`
 
@@ -6568,7 +6512,7 @@ use Pigweed's boringssl exclusively.
 
 **Current value for `target_cpu = "arm64"`:** `"//third_party/boringssl"`
 
-From //.gn:83
+From //.gn:90
 
 **Overridden from the default:** `""`
 
@@ -6576,7 +6520,7 @@ From //third_party/pigweed/src/third_party/boringssl/boringssl.gni:25
 
 **Current value for `target_cpu = "x64"`:** `"//third_party/boringssl"`
 
-From //.gn:83
+From //.gn:90
 
 **Overridden from the default:** `""`
 
@@ -6584,15 +6528,38 @@ From //third_party/pigweed/src/third_party/boringssl/boringssl.gni:25
 
 ### pw_third_party_emboss_CONFIG
 
-**Current value (from the default):** `"//third_party/pigweed/src/third_party/emboss:default_config"`
+**Current value (from the default):** `"//third_party/pigweed/src/third_party/emboss:default_overrides"`
 
 From //third_party/pigweed/src/third_party/emboss/emboss.gni:24
+
+### pw_third_party_llvm_builtins_TARGET_BUILTINS
+
+Points to a pw_source_set that enumerates builtins specific to
+the current toolchain.
+
+**Current value (from the default):** `""`
+
+From //third_party/pigweed/src/third_party/llvm_builtins/BUILD.gn:26
 
 ### pw_third_party_mbedtls_CONFIG_HEADER
 
 **Current value (from the default):** `"//third_party/pigweed/src/third_party/mbedtls/configs/config_default.h"`
 
 From //third_party/pigweed/src/third_party/mbedtls/mbedtls.gni:25
+
+### pw_third_party_nanopb_AGGRESSIVE_NANOPB_PB2_REGEN
+
+Regenerates `$dir_pw_third_party_nanopb/generator/proto/nanopb_pb2.py`
+whenever the `generate_nanopb_proto` action is run. If this is set to false,
+the file will only be regenerated if `protoc` is newer than the generated
+`nanopb_pb2.py`.
+
+Aggressive regeneration is NOT safe if this build will run in parallel with
+other build systems that try to read `nanopb_pb2.py`.
+
+**Current value (from the default):** `true`
+
+From //third_party/pigweed/src/third_party/nanopb/nanopb.gni:36
 
 ### pw_third_party_nanopb_CONFIG
 
@@ -6638,7 +6605,7 @@ Backend for the pw_thread module's pw::thread::sleep_{for,until}.
 
 **Current value for `target_cpu = "arm64"`:** `"//third_party/pigweed/src/pw_thread_stl:sleep"`
 
-From //.gn:70
+From //.gn:67
 
 **Overridden from the default:** `""`
 
@@ -6646,7 +6613,7 @@ From //third_party/pigweed/src/pw_thread/backend.gni:20
 
 **Current value for `target_cpu = "x64"`:** `"//third_party/pigweed/src/pw_thread_stl:sleep"`
 
-From //.gn:70
+From //.gn:67
 
 **Overridden from the default:** `""`
 
@@ -6696,31 +6663,72 @@ From //third_party/pigweed/src/pw_tokenizer/BUILD.gn:30
 
 ### pw_toolchain_ARM_NONE_EABI_PREFIX
 
-This flag allows you to specify the root directory of the ARM GCC tools to
-to use when compiling with an arm-none-eabi toolchain. This is useful for
-debugging toolchain-related issues, or for building with an
-externally-provided toolchain.
+This flag allows you to specify a prefix for ARM GCC tools use when
+compiling with an arm-none-eabi toolchain. This is useful for debugging
+toolchain-related issues, or for building with an externally-provided
+toolchain.
+
+Pigweed toolchains should NOT override this variable so projects or users
+can control it via `.gn` or by setting it as a regular gn argument (e.g.
+`gn gen --args='pw_toolchain_ARM_NONE_EABI_PREFIX=/path/to/my-'`).
+
+Examples:
+  pw_toolchain_ARM_NONE_EABI_PREFIX = ""
+  command: "arm-none-eabi-gcc" (from PATH)
+
+  pw_toolchain_ARM_NONE_EABI_PREFIX = "my-"
+  command: "my-arm-none-eabi-gcc" (from PATH)
+
+  pw_toolchain_ARM_NONE_EABI_PREFIX = "/bin/my-"
+  command: "/bin/my-arm-none-eabi-gcc" (absolute path)
+
+  pw_toolchain_ARM_NONE_EABI_PREFIX = "//environment/gcc_next/"
+  command: "../environment/gcc_next/arm-none-eabi-gcc" (relative path)
+
+GN templates should use `arm_gcc_toolchain_tools.*` to get the intended
+command string rather than relying directly on
+pw_toolchain_ARM_NONE_EABI_PREFIX.
 
 If the prefix begins with "//", it will be rebased to be relative to the
 root build directory.
 
 **Current value (from the default):** `""`
 
-From //third_party/pigweed/src/pw_toolchain/arm_gcc/toolchains.gni:32
+From //third_party/pigweed/src/pw_toolchain/arm_gcc/toolchains.gni:55
 
 ### pw_toolchain_CLANG_PREFIX
 
-This flag allows you to specify the root directory of the clang, clang++,
+This flag allows you to specify a prefix to use for clang, clang++,
 and llvm-ar binaries to use when compiling with a clang-based toolchain.
 This is useful for debugging toolchain-related issues by building with an
 externally-provided toolchain.
+
+Pigweed toolchains should NOT override this variable so projects or users
+can control it via `.gn` or by setting it as a regular gn argument (e.g.
+`gn gen --args='pw_toolchain_CLANG_PREFIX=/path/to/my-llvm-'`).
+
+Examples:
+  pw_toolchain_CLANG_PREFIX = ""
+  command: "clang" (from PATH)
+
+  pw_toolchain_CLANG_PREFIX = "my-"
+  command: "my-clang" (from PATH)
+
+  pw_toolchain_CLANG_PREFIX = "/bin/my-"
+  command: "/bin/my-clang" (absolute path)
+
+  pw_toolchain_CLANG_PREFIX = "//environment/clang_next/"
+  command: "../environment/clang_next/clang" (relative path)
+
+GN templates should use `pw_toolchain_clang_tools.*` to get the intended
+command string rather than relying directly on pw_toolchain_CLANG_PREFIX.
 
 If the prefix begins with "//", it will be rebased to be relative to the
 root build directory.
 
 **Current value (from the default):** `"//prebuilt/third_party/bin/"`
 
-From //third_party/pigweed/src/pw_toolchain/clang_tools.gni:36
+From //third_party/pigweed/src/pw_toolchain/clang_tools.gni:56
 
 ### pw_toolchain_COVERAGE_ENABLED
 
@@ -6734,7 +6742,7 @@ This is typically set by individual toolchains and not by GN args.
 
 **Current value (from the default):** `false`
 
-From //third_party/pigweed/src/pw_toolchain/host_clang/toolchains.gni:31
+From //third_party/pigweed/src/pw_toolchain/host_clang/toolchains.gni:32
 
 ### pw_toolchain_FUZZING_ENABLED
 
@@ -6743,7 +6751,7 @@ set by individual toolchains and not by GN args.
 
 **Current value (from the default):** `false`
 
-From //third_party/pigweed/src/pw_toolchain/host_clang/toolchains.gni:38
+From //third_party/pigweed/src/pw_toolchain/host_clang/toolchains.gni:39
 
 ### pw_toolchain_OSS_FUZZ_ENABLED
 
@@ -6753,7 +6761,7 @@ should only be used for OSS-Fuzz.
 
 **Current value (from the default):** `false`
 
-From //third_party/pigweed/src/pw_toolchain/host_clang/toolchains.gni:43
+From //third_party/pigweed/src/pw_toolchain/host_clang/toolchains.gni:44
 
 ### pw_toolchain_PROFILE_SOURCE_FILES
 
@@ -6761,7 +6769,7 @@ List of source files to selectively collect coverage.
 
 **Current value (from the default):** `[]`
 
-From //third_party/pigweed/src/pw_toolchain/host_clang/toolchains.gni:34
+From //third_party/pigweed/src/pw_toolchain/host_clang/toolchains.gni:35
 
 ### pw_toolchain_RBE_DEBUG
 
@@ -6771,14 +6779,17 @@ From //third_party/pigweed/src/pw_toolchain/rbe.gni:26
 
 ### pw_toolchain_RUST_PREFIX
 
-This flag allows you to specify the root directory of the rustc binary.
+This flag allows you to specify a prefix for rustc.
+
+This follows the same rules as pw_toolchain_CLANG_PREFIX, see above for
+more information.
 
 If the prefix begins with "//", it will be rebased to be relative to the
 root build directory.
 
 **Current value (from the default):** `"//prebuilt/third_party/bin/"`
 
-From //third_party/pigweed/src/pw_toolchain/clang_tools.gni:42
+From //third_party/pigweed/src/pw_toolchain/clang_tools.gni:65
 
 ### pw_toolchain_SANITIZERS
 
@@ -6787,7 +6798,7 @@ Sets the sanitizer to pass to clang. Valid values are "address", "memory",
 
 **Current value (from the default):** `[]`
 
-From //third_party/pigweed/src/pw_toolchain/host_clang/toolchains.gni:22
+From //third_party/pigweed/src/pw_toolchain/host_clang/toolchains.gni:23
 
 ### pw_toolchain_SCOPE
 
@@ -6816,7 +6827,7 @@ While the following ignores all third-party header files:
 
 **Current value (from the default):** `[]`
 
-From //third_party/pigweed/src/pw_toolchain/static_analysis_toolchain.gni:47
+From //third_party/pigweed/src/pw_toolchain/static_analysis_toolchain.gni:48
 
 ### pw_toolchain_STATIC_ANALYSIS_SKIP_SOURCES_RES
 
@@ -6831,13 +6842,47 @@ third_party directory:
 
 **Current value (from the default):** `[]`
 
-From //third_party/pigweed/src/pw_toolchain/static_analysis_toolchain.gni:32
+From //third_party/pigweed/src/pw_toolchain/static_analysis_toolchain.gni:33
 
 ### pw_toolchain_USE_RBE
 
 **Current value (from the default):** `false`
 
 From //third_party/pigweed/src/pw_toolchain/rbe.gni:20
+
+### pw_trace_BACKEND
+
+Default backend for the pw_trace module is pw_trace:null.
+
+**Current value (from the default):** `"//third_party/pigweed/src/pw_trace:null"`
+
+From //third_party/pigweed/src/pw_trace/backend.gni:19
+
+### pw_trace_CONFIG
+
+The build target that overrides the default configuration options for this
+module. This should point to a source set that provides defines through a
+public config (which may -include a file or add defines directly).
+
+**Current value (from the default):** `"//third_party/pigweed/src/pw_build:empty"`
+
+From //third_party/pigweed/src/pw_trace_tokenized/config.gni:23
+
+### pw_trace_tokenized_BUFFER_SIZE
+
+Trace buffer size in bytes. Set to 0 to disable.
+
+**Current value (from the default):** `256`
+
+From //third_party/pigweed/src/pw_trace_tokenized/config.gni:29
+
+### pw_trace_tokenizer_time
+
+Tokenizer trace time, gets included if provided
+
+**Current value (from the default):** `""`
+
+From //third_party/pigweed/src/pw_trace_tokenized/config.gni:26
 
 ### pw_transfer_CONFIG
 
@@ -6867,7 +6912,7 @@ Usage: toolchain-controlled only
 
 **Current value (from the default):** `""`
 
-From //third_party/pigweed/src/pw_unit_test/test.gni:53
+From //third_party/pigweed/src/pw_unit_test/test.gni:63
 
 ### pw_unit_test_AUTOMATIC_RUNNER_ARGS
 
@@ -6878,7 +6923,7 @@ Usage: toolchain-controlled only
 
 **Current value (from the default):** `[]`
 
-From //third_party/pigweed/src/pw_unit_test/test.gni:59
+From //third_party/pigweed/src/pw_unit_test/test.gni:69
 
 ### pw_unit_test_AUTOMATIC_RUNNER_TIMEOUT
 
@@ -6887,7 +6932,32 @@ Timeout is in seconds. Defaults to empty which means no timeout.
 
 **Current value (from the default):** `""`
 
-From //third_party/pigweed/src/pw_unit_test/test.gni:63
+From //third_party/pigweed/src/pw_unit_test/test.gni:73
+
+### pw_unit_test_BACKEND
+
+The unit test framework implementation. Defaults to
+pw_unit_test:light, which implements a subset of GoogleTest safe to run on
+device. Set to //pw_unit_test:googletest when using GoogleTest.
+
+Type: string (GN path to a source set)
+Usage: toolchain-controlled only
+
+**Current value for `target_cpu = "arm64"`:** `"//third_party/pigweed/src/pw_unit_test:googletest"`
+
+From //.gn:119
+
+**Overridden from the default:** `"//third_party/pigweed/src/pw_unit_test:light"`
+
+From //third_party/pigweed/src/pw_unit_test/test.gni:31
+
+**Current value for `target_cpu = "x64"`:** `"//third_party/pigweed/src/pw_unit_test:googletest"`
+
+From //.gn:119
+
+**Overridden from the default:** `"//third_party/pigweed/src/pw_unit_test:light"`
+
+From //third_party/pigweed/src/pw_unit_test/test.gni:31
 
 ### pw_unit_test_CONFIG
 
@@ -6908,7 +6978,7 @@ Usage: toolchain-controlled only
 
 **Current value (from the default):** `"pw_executable"`
 
-From //third_party/pigweed/src/pw_unit_test/test.gni:92
+From //third_party/pigweed/src/pw_unit_test/test.gni:102
 
 ### pw_unit_test_EXECUTABLE_TARGET_TYPE_FILE
 
@@ -6923,7 +6993,7 @@ Usage: toolchain-controlled only
 
 **Current value (from the default):** `""`
 
-From //third_party/pigweed/src/pw_unit_test/test.gni:102
+From //third_party/pigweed/src/pw_unit_test/test.gni:112
 
 ### pw_unit_test_FACADE_TESTS_ENABLED
 
@@ -6945,16 +7015,30 @@ From //third_party/pigweed/src/pw_unit_test/facade_test.gni:28
 
 ### pw_unit_test_GOOGLETEST_BACKEND
 
-The GoogleTest implementation to use for Pigweed unit tests. This library
-provides "gtest/gtest.h" and related headers. Defaults to
-pw_unit_test:light, which implements a subset of GoogleTest.
+The GoogleTest library target. This is not a pw_unit_test backend (anymore).
+Use this to depend on the GoogleTest library directly *WITHOUT* using the
+pw_unit_test facade. The //pw_unit_test:googletest backend depends on this
+library target.
+Defaults to //third_party/googletest.
 
 Type: string (GN path to a source set)
 Usage: toolchain-controlled only
 
-**Current value (from the default):** `"//third_party/pigweed/src/pw_unit_test:light"`
+**Current value for `target_cpu = "arm64"`:** `"//third_party/googletest:gmock_no_testonly"`
 
-From //third_party/pigweed/src/pw_unit_test/test.gni:31
+From //.gn:118
+
+**Overridden from the default:** `"//third_party/pigweed/src/third_party/googletest"`
+
+From //third_party/pigweed/src/pw_unit_test/test.gni:41
+
+**Current value for `target_cpu = "x64"`:** `"//third_party/googletest:gmock_no_testonly"`
+
+From //.gn:118
+
+**Overridden from the default:** `"//third_party/pigweed/src/third_party/googletest"`
+
+From //third_party/pigweed/src/pw_unit_test/test.gni:41
 
 ### pw_unit_test_MAIN
 
@@ -6964,9 +7048,21 @@ be set to an appropriate target for the pw_unit_test backend.
 Type: string (GN path to a source set)
 Usage: toolchain-controlled only
 
-**Current value (from the default):** `"//third_party/pigweed/src/pw_unit_test:simple_printing_main"`
+**Current value for `target_cpu = "arm64"`:** `"//src/lib/fxl/test:gtest_main"`
 
-From //third_party/pigweed/src/pw_unit_test/test.gni:38
+From //.gn:117
+
+**Overridden from the default:** `"//third_party/pigweed/src/pw_unit_test:simple_printing_main"`
+
+From //third_party/pigweed/src/pw_unit_test/test.gni:48
+
+**Current value for `target_cpu = "x64"`:** `"//src/lib/fxl/test:gtest_main"`
+
+From //.gn:117
+
+**Overridden from the default:** `"//third_party/pigweed/src/pw_unit_test:simple_printing_main"`
+
+From //third_party/pigweed/src/pw_unit_test/test.gni:48
 
 ### pw_unit_test_POOL_DEPTH
 
@@ -6984,7 +7080,7 @@ Usage: toolchain-controlled only
 
 **Current value (from the default):** `0`
 
-From //third_party/pigweed/src/pw_unit_test/test.gni:76
+From //third_party/pigweed/src/pw_unit_test/test.gni:86
 
 ### pw_unit_test_POOL_TOOLCHAIN
 
@@ -6999,7 +7095,29 @@ Usage: toolchain-controlled only
 
 **Current value (from the default):** `""`
 
-From //third_party/pigweed/src/pw_unit_test/test.gni:86
+From //third_party/pigweed/src/pw_unit_test/test.gni:96
+
+### pw_unit_test_TESTONLY
+
+If true, the pw_unit_test target, pw_test targets, and pw_test_group targets
+will define `testonly = true`.  This is false by default for backwards
+compatibility.
+
+**Current value for `target_cpu = "arm64"`:** `true`
+
+From //.gn:120
+
+**Overridden from the default:** `false`
+
+From //third_party/pigweed/src/pw_unit_test/test.gni:117
+
+**Current value for `target_cpu = "x64"`:** `true`
+
+From //.gn:120
+
+**Overridden from the default:** `false`
+
+From //third_party/pigweed/src/pw_unit_test/test.gni:117
 
 ### qemu_boot_format
 
@@ -7009,7 +7127,7 @@ Valid alternatives vary by machine, but include "linuxboot".
 
 **Current value (from the default):** `"linuxboot"`
 
-From //zircon/kernel/phys/qemu.gni:103
+From //zircon/kernel/phys/qemu.gni:94
 
 ### qr_codes_path
 
@@ -7029,7 +7147,7 @@ Example value: "//build/images/recovery"
 
 **Current value (from the default):** `"//build/images/zedboot"`
 
-From //build/images/args.gni:169
+From //build/images/args.gni:165
 
 ### recovery_logo_path
 
@@ -7045,156 +7163,31 @@ assembly work until that's been addressed.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:19
-
-### recovery_route_sources_config
-
-An optional file path to the route_sources verifier configuration to be used
-on the assembled recovery system.
-
-**Current value (from the default):** `""`
-
-From //build/security.gni:147
-
-### recovery_static_pkgs_goldens
-
-An optional list of golden files for recovery.zbi static pkgs list. If
-specified, they would be compared against recovery.zbi static pkgs list
-during build time.  At least one of the golden files must match.
-In normal case, there should only be golden file in this list.
-During a soft transition where changes are made in a different repo than
-the golden file repo, user need to
-1. copy the old golden file before the change to '*.orig'
-2. create a new golden file reflecting the changes
-3. add both the old golden file and new golden file to this list. e.g. there
-would be 'product.txt' and 'product.txt.orig' in this list and check in the
-above changes.
-4. check in the changes that is made in a different repo.
-5. delete 'product.txt.orig' and remove it from this list.
-
-**Current value (from the default):** `[]`
-
-From //build/security.gni:129
-
-### recovery_structured_config_policy
-
-An optional file path to the structured configuration policy to be used on the
-assembled recovery system. Defaults to no enforcement. Policy must be provided
-for any product which is not an `eng` build type.
-
-**Current value (from the default):** `""`
-
-From //build/security.gni:139
-
-### recovery_verify_component_resolvers_allowlist
-
-**Current value (from the default):** `"//src/security/policy/component_resolvers_policy.json5"`
-
-From //build/security.gni:205
-
-### recovery_verify_routes_component_tree_config
-
-An optional component tree configuration file used to finalize dynamic
-elements of the component tree constructed for route verification on the
-recovery assembled system. When non-empty, this value is passed as the
-`--component-tree-config` option to `ffx scrutiny verify routes` to verify
-routes in the fuchsia component tree.
-
-**Current value (from the default):** `""`
-
-From //build/security.gni:189
-
-### recovery_verify_routes_exceptions_allowlist
-
-An optional list of (capability, moniker) pairs that determine exceptions
-to the verify_route.gni build rule that prevents v2 components from
-attempting to use capabilities they were not offered in the recovery
-system. Generally new entries should not be added to this allowlist and acts
-as a marker for future technical debt to clean up.
-
-The path to this list defaults to "" because most build configurations do
-perform recovery build verification. The canonical allowlist for build
-configurations that do perform recovery build verification is
-"//src/security/policy/build/verify_routes_exceptions_allowlist.json5".
-
-**Current value (from the default):** `""`
-
-From //build/security.gni:167
-
-### recovery_verify_routes_exceptions_allowlist_product
-
-Same as recovery_verify_routes_exceptions_allowlist, except these allowlists
-get added according to product-specific configuration.
-
-**Current value (from the default):** `[]`
-
-From //build/security.gni:175
-
-### recovery_zbi_bootfs_filelist_goldens
-
-An optional list of golden files for recovery.zbi bootFS file list. If
-specified, they would be compared against recovery.zbi bootFS file list
-during build time.  At least one of the golden files must match.
-In normal case, there should only be golden file in this list.
-During a soft transition where changes are made in a different repo than
-the golden file repo, user need to
-1. copy the old golden file before the change to '*.orig'
-2. create a new golden file reflecting the changes
-3. add both the old golden file and new golden file to this list. e.g. there
-would be 'product.txt' and 'product.txt.orig' in this list and check in the
-above changes.
-4. check in the changes that is made in a different repo.
-5. delete 'product.txt.orig' and remove it from this list.
-
-**Current value (from the default):** `[]`
-
-From //build/security.gni:69
-
-### recovery_zbi_bootfs_packages_goldens
-
-An optional list of golden files for recovery.zbi bootfs package index. If
-specified, they would be compared against recovery.zbi bootfs package index
-during build time.  At least one of the golden files must match.
-In normal case, there should only be golden file in this list.
-During a soft transition where changes are made in a different repo than
-the golden file repo, user need to
-1. copy the old golden file before the change to '*.orig'
-2. create a new golden file reflecting the changes
-3. add both the old golden file and new golden file to this list. e.g. there
-would be 'product.txt' and 'product.txt.orig' in this list and check in the
-above changes.
-4. check in the changes that is made in a different repo.
-5. delete 'product.txt.orig' and remove it from this list.
-
-**Current value (from the default):** `[]`
-
-From //build/security.gni:99
-
-### recovery_zbi_kernel_cmdline_goldens
-
-An optional list of golden files for recovery.zbi kernel cmdline args. If
-specified, they would be compared against recovery.zbi kernel cmdline
-during build time. At least one of the golden files must match.
-In normal case, there should only be one golden file in this list.
-During a soft transition where changes are made in a different repo than
-the golden file repo, user need to
-1. copy the old golden file before the change to '*.orig'
-2. create a new golden file reflecting the changes
-3. add both the old golden file and new golden file to this list. e.g. there
-would be 'product.txt' and 'product.txt.orig' in this list and check in the
-above changes.
-4. check in the changes that is made in a different repo.
-5. delete 'product.txt.orig' and remove it from this list.
-
-**Current value (from the default):** `[]`
-
-From //build/security.gni:39
+From //build/images/args.gni:20
 
 ### remove_default_configs
 
+**Current value for `target_cpu = "arm64"`:** `["//third_party/pigweed/src/pw_build:reduced_size"]`
+
+From //.gn:126
+
+**Overridden from the default:** `[]`
+
+From //third_party/pigweed/src/pw_build/gn_internal/defaults.gni:36
+
+**Current value for `target_cpu = "x64"`:** `["//third_party/pigweed/src/pw_build:reduced_size"]`
+
+From //.gn:126
+
+**Overridden from the default:** `[]`
+
+From //third_party/pigweed/src/pw_build/gn_internal/defaults.gni:36
+
+### remove_default_public_deps
+
 **Current value (from the default):** `[]`
 
-From //third_party/pigweed/src/pw_build/defaults.gni:27
+From //third_party/pigweed/src/pw_build/gn_internal/defaults.gni:37
 
 ### repository_publish_blob_copy_mode
 
@@ -7214,17 +7207,22 @@ Supported modes are:
   is possible to modify the blob through the hard link, which would result
   in the blob not matching the blob's merkle.
 
-**Current value (from the default):** `"copy"`
+**Current value (from the default):** `"hard-link"`
 
-From //src/sys/pkg/bin/package-tool/package-tool.gni:285
+From //src/sys/pkg/bin/package-tool/package-tool.gni:287
 
 ### restat_cc
 
 Set to true to make C++ compiles preserve timestamps of unchanged outputs.
+re-client provides this feature out-of-the-box with
+--preserve_unchanged_output_mtime, so it makes sense to default to true
+when using `cxx_rbe_enable`.  When not using re-client, you can still
+get write-if-change behavior through the `restat_wrapper` script,
+but at the cost of the wrapper overhead (tradeoff vs. action pruning).
 
 **Current value (from the default):** `false`
 
-From //build/toolchain/restat.gni:22
+From //build/toolchain/restat.gni:27
 
 ### restat_rust
 
@@ -7240,14 +7238,6 @@ From //build/toolchain/restat.gni:19
 
 From //src/recovery/system/system_recovery_args.gni:10
 
-### run_scrutiny_verifiers
-
-Whether the scrutiny verifiers should be ran.
-
-**Current value (from the default):** `false`
-
-From //build/security.gni:9
-
 ### rust_cap_lints
 
 Sets the maximum lint level.
@@ -7257,6 +7247,14 @@ ignore warnings.
 **Current value (from the default):** `"deny"`
 
 From //build/rust/config.gni:55
+
+### rust_debug_assertions
+
+Enable debug assertions, e.g. for overflow checking.
+
+**Current value (from the default):** `false`
+
+From //build/config/rust/BUILD.gn:32
 
 ### rust_incremental
 
@@ -7304,7 +7302,7 @@ One of:
 
 **Current value (from the default):** `"none"`
 
-From //build/toolchain/rbe.gni:118
+From //build/toolchain/rbe.gni:114
 
 ### rust_rbe_download_unstripped_binaries
 
@@ -7316,7 +7314,7 @@ and not restricted environments that lack direct network access.
 
 **Current value (from the default):** `true`
 
-From //build/toolchain/rbe.gni:125
+From //build/toolchain/rbe.gni:121
 
 ### rust_rbe_enable
 
@@ -7324,19 +7322,19 @@ Set to true to enable distributed compilation of Rust using RBE.
 
 **Current value for `target_cpu = "arm64"`:** `false`
 
-From //out/not-default/args.gn:10
+From //out/not-default/args.gn:11
 
 **Overridden from the default:** `false`
 
-From //build/toolchain/rbe.gni:74
+From //build/toolchain/rbe.gni:70
 
 **Current value for `target_cpu = "x64"`:** `false`
 
-From //out/not-default/args.gn:10
+From //out/not-default/args.gn:11
 
 **Overridden from the default:** `false`
 
-From //build/toolchain/rbe.gni:74
+From //build/toolchain/rbe.gni:70
 
 ### rust_rbe_exec_strategy
 
@@ -7359,7 +7357,7 @@ One of:
 
 **Current value (from the default):** `"remote"`
 
-From //build/toolchain/rbe.gni:92
+From //build/toolchain/rbe.gni:88
 
 ### rust_toolchain_triple_suffix
 
@@ -7415,17 +7413,9 @@ toolchain, so that recompilations with the new compiler can be triggered.
 When using the prebuilt, this is ignored and the CIPD instance ID of the
 prebuilt is used.
 
-**Current value (from the default):** `"dblnU3tEhEv7oy3yIm63PMqD3dsqu8htntNrnj3hkd0C"`
+**Current value (from the default):** `"fr8Od7Y5Lzqz3nYnL8rbFpxAb76GpQYEgahgbTDrnskC"`
 
 From //build/rust/config.gni:38
-
-### scenic_display_frame_number
-
-Draws the current frame number in the top-left corner.
-
-**Current value (from the default):** `false`
-
-From //src/ui/scenic/lib/gfx/BUILD.gn:9
 
 ### scenic_enable_vulkan_validation
 
@@ -7433,7 +7423,7 @@ Include the vulkan validation layers in scenic.
 
 **Current value (from the default):** `false`
 
-From //src/ui/scenic/lib/gfx/build_args.gni:7
+From //src/ui/scenic/lib/utils/build_args.gni:10
 
 ### scheduler_extra_invariant_validation
 
@@ -7442,7 +7432,27 @@ debugging changes to the scheduler's behavior.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:57
+From //zircon/kernel/params.gni:60
+
+### scheduler_lock_spin_tracing_compressed
+
+Enables compressed records when tracing lock-spin events.  The events will
+be more difficult to interpret in a trace visualizer, but will take less
+space and provide the same information to scripts which parse lock trace
+data.
+
+**Current value (from the default):** `false`
+
+From //zircon/kernel/params.gni:70
+
+### scheduler_lock_spin_tracing_enabled
+
+Enables scheduler lock-spinning trace events for trace-based scheduler
+performance analysis.
+
+**Current value (from the default):** `false`
+
+From //zircon/kernel/params.gni:64
 
 ### scheduler_queue_tracing_enabled
 
@@ -7451,7 +7461,7 @@ analysis.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:53
+From //zircon/kernel/params.gni:56
 
 ### scheduler_tracing_level
 
@@ -7465,7 +7475,7 @@ zero add increasing details at the cost of increased trace buffer use.
 
 **Current value (from the default):** `0`
 
-From //zircon/kernel/params.gni:49
+From //zircon/kernel/params.gni:52
 
 ### scudo_default_options
 
@@ -7491,25 +7501,24 @@ From //build/config/sanitizers/sanitizer_default_options.gni:82
 
 ### sdk_archive_labels
 
-Extra generate_final_idk() or sdk_collection() archive labels to be
-uploaded to the artifacts store. This is an extension mechanism for SDK
-bits outside of the main repository.
+Extra idk_archive() labels to be uploaded to the artifacts store. This is an
+extension mechanism for IDK bits outside of the main repository.
 
 **Current value for `target_cpu = "arm64"`:** `[]`
 
-From //products/bringup.gni:18
+From //products/bringup.gni:16
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:102
+From //BUILD.gn:119
 
 **Current value for `target_cpu = "x64"`:** `[]`
 
-From //products/bringup.gni:18
+From //products/bringup.gni:16
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:102
+From //BUILD.gn:119
 
 ### sdk_cross_compile_host_tools
 
@@ -7526,28 +7535,89 @@ From //sdk/config.gni:13
 
 Identifier for the Core SDK.
 
-**Current value (from the default):** `"14.99991231.0.1"`
+**Current value (from the default):** `"17.99991231.0.1"`
 
 From //sdk/config.gni:7
 
-### sdk_inside_idk_sub_build
+### sdk_inside_sub_build
 
-True when building an IDK cpu-specific sub-build. See //build/sdk/build_final_idk.py.
-Certain targets must not appear in the GN build graph to avoid circular dependency
-issues. Should only be set in the args.gn files created by generate_final_idl()
-actions.
+Whether currently building a sub-build (vs. the main build).
+Can be true for any API level, including the default level.
 
 **Current value (from the default):** `false`
 
-From //build/sdk/config.gni:23
+From //build/sdk/config.gni:12
 
-### sdk_no_host_tools
+### sdk_inside_supported_api_sub_build
 
-Whether to omit host tools from the generated IDKs.
+Whether currently building a sub-build for a specific supported API level
+rather than a build or sub-build at the default API level.
+Note that this can be false in sub-builds - specifically, when building the
+default API level for target CPUs other than the host.
+`sdk_inside_sub_build` must be true and `override_target_api_level` must be
+set to a valid level.
 
 **Current value (from the default):** `false`
 
-From //build/sdk/config.gni:17
+From //build/sdk/config.gni:20
+
+### sdk_max_simultaneous_sub_builds
+
+An upper bound on the maximum number of subbuilds that may be running at the
+same time. A larger number means these good things:
+- Better parallelization of the inherently single-threaded parts of GN and
+  ninja.
+- Better parallelization in the face of "stragglers" in the build -
+  situations where each subbuild is executing a small number of actions.
+
+But also these bad things:
+- More memory usage, potentially leading to swapping and slowdowns.
+- More CPU contention when the build process is actually CPU-bound.
+- Potentially forcing a lower value of `sdk_sub_build_parallelism`, since
+  the total load is proportional to `sdk_max_simultaneous_sub_builds *
+  sdk_sub_build_parallelism`.
+
+5 was chosen mostly because it's the number of fingers on each of my hands.
+
+**Current value (from the default):** `5`
+
+From //build/sdk/config.gni:37
+
+### sdk_sub_build_max_load_average
+
+Value of `-l` to pass to ninja during a subbuild. If the system load average
+on the system goes beyond this value, ninja will throttle itself. If left
+blank, the subbuild script will make a guess.
+
+**Current value (from the default):** `""`
+
+From //build/sdk/config.gni:49
+
+### sdk_sub_build_parallelism
+
+Value of `-j` to pass to ninja during a subbuild. Note that up to
+`sdk_max_simultaneous_sub_builds` subbuilds may be happening in parallel, so
+the number of concurrent actions may go as high as this number times the
+number of concurrent subbuilds. If left blank, the subbuild script will make
+a guess.
+
+**Current value (from the default):** `""`
+
+From //build/sdk/config.gni:44
+
+### sdk_with_all_supported_api_levels
+
+Set to true to build IDK atoms for all supported API levels that are listed
+in fuchsia_platform.supported_fuchsia_api_levels. This impacts the behavior
+of the idk() template.
+
+TODO(fxbug.dev/306723826): Deal with the fact that the mac builders are too
+slow to enable this setting, and therefore the mac IDK won't have
+per-api-level prebuilts.
+
+**Current value (from the default):** `true`
+
+From //sdk/config.gni:22
 
 ### select_variant
 
@@ -7619,7 +7689,7 @@ is satisfied if any of the strings matches against the candidate string.
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:1897
+From //build/config/BUILDCONFIG.gn:2079
 
 ### select_variant_canonical
 
@@ -7629,7 +7699,7 @@ See //build/toolchain/clang_toolchain.gni for details.
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:1902
+From //build/config/BUILDCONFIG.gn:2084
 
 ### select_variant_shortcuts
 
@@ -7687,7 +7757,7 @@ a list that can be spliced into [`select_variant`](#select_variant).
 }]
 ```
 
-From //build/config/BUILDCONFIG.gn:1688
+From //build/config/BUILDCONFIG.gn:1870
 
 ### size_checker_input
 
@@ -7780,7 +7850,7 @@ Skip buildtools dependency checks (needed for ChromeOS).
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:336
+From //third_party/perfetto/gn/perfetto.gni:342
 
 ### smp_max_cpus
 
@@ -7802,7 +7872,7 @@ Used in the structured configuration below.
 
 **Current value (from the default):** `false`
 
-From //src/fonts/BUILD.gn:15
+From //src/fonts/BUILD.gn:14
 
 ### stack_size_section
 
@@ -7819,44 +7889,71 @@ Whether or not logging is disabled globally.
 
 **Current value (from the default):** `false`
 
-From //src/starnix/kernel/BUILD.gn:13
+From //src/starnix/kernel/BUILD.gn:15
 
-### starnix_disable_tracing
+### starnix_enable_alternate_anon_allocs
 
-Whether or not tracing is disabled globally.
-NOTE(https://fxbug.dev/124980) this slows down some microbenchmarks.
-
-**Current value (from the default):** `false`
-
-From //src/starnix/kernel/BUILD.gn:17
-
-### starnix_use_fuchsia_mutex
-
-Wheher to use fuchsia_sync::Mutex instead of parking_lot::Mutex.
+Whether to use an alternate strategy for anonymous memory allocations.
 
 **Current value (from the default):** `false`
 
-From //src/starnix/kernel/BUILD.gn:20
+From //src/starnix/kernel/BUILD.gn:37
 
-### starnix_use_fuchsia_rwlock
+### starnix_enable_trace_and_debug_logs_in_release
 
-Wheher to use fuchsia_sync::RwLock instead of parking_lot::RwLock.
+Compiles-in trace and debug logging in release builds. By default, these
+logs are compiled-out for performance reasons. For more information, see
+https://fuchsia-review.googlesource.com/c/fuchsia/+/929995.
 
 **Current value (from the default):** `false`
 
-From //src/starnix/kernel/BUILD.gn:23
+From //src/starnix/kernel/BUILD.gn:26
+
+### starnix_enable_tracing
+
+Whether or not tracing is enabled globally.
+
+**Current value (from the default):** `true`
+
+From //src/starnix/kernel/BUILD.gn:18
+
+### starnix_enable_tracing_firehose
+
+Whether or not high-throughput tracing (e.g. per-syscall) is enabled globally.
+
+**Current value (from the default):** `false`
+
+From //src/starnix/kernel/BUILD.gn:21
+
+### starnix_syscall_stats
+
+Whether or not syscall status inspect is enabled globally.
+
+**Current value (from the default):** `false`
+
+From //src/starnix/kernel/BUILD.gn:29
+
+### starnix_unified_aspace
+
+Whether or not unified address spaces are leveraged.
+TODO(https://fxbug.dev/132980): Enable on other platforms once Zircon
+support is available.
+
+**Current value (from the default):** `true`
+
+From //src/starnix/kernel/BUILD.gn:34
 
 ### target_cpu
 
 **Current value for `target_cpu = "arm64"`:** `"arm64"`
 
-From //out/not-default/args.gn:11
+From //out/not-default/args.gn:12
 
 **Overridden from the default:** `""`
 
 **Current value for `target_cpu = "x64"`:** `"x64"`
 
-From //out/not-default/args.gn:11
+From //out/not-default/args.gn:12
 
 **Overridden from the default:** `""`
 
@@ -8029,7 +8126,28 @@ afterwards.
 
 **Current value (from the default):** `""`
 
-From //BUILD.gn:97
+From //BUILD.gn:115
+
+### test_package_labels
+
+Non-hermetic tests (at runtime).  Non-test packages found in this group will
+be flagged as an error by the build.
+
+**Current value for `target_cpu = "arm64"`:** `[]`
+
+From //out/not-default/args.gn:23
+
+**Overridden from the default:** `[]`
+
+From //BUILD.gn:87
+
+**Current value for `target_cpu = "x64"`:** `[]`
+
+From //out/not-default/args.gn:23
+
+**Overridden from the default:** `[]`
+
+From //BUILD.gn:87
 
 ### testonly_in_containers
 
@@ -8047,7 +8165,7 @@ Default value is 'all', it is preferable to set to 'none' for production
 
 **Current value (from the default):** `"all"`
 
-From //build/security.gni:218
+From //build/security.gni:19
 
 ### thinlto_cache_dir
 
@@ -8089,7 +8207,16 @@ for details and documentation for each field.
 }
 ```
 
-From //build/config/BUILDCONFIG.gn:115
+From //build/config/BUILDCONFIG.gn:105
+
+### truncate_build_info_commit_date
+
+Truncate the date in the build_info to midnight UTC, and replace the commit
+hash with one that's synthesized from that date.
+
+**Current value (from the default):** `false`
+
+From //build/info/BUILD.gn:15
 
 ### tsan_default_options
 
@@ -8142,7 +8269,7 @@ From //build/config/sanitizers/sanitizer_default_options.gni:47
 }]
 ```
 
-From //build/config/BUILDCONFIG.gn:1672
+From //build/config/BUILDCONFIG.gn:1854
 
 ### universe_package_labels
 
@@ -8155,7 +8282,7 @@ include those labels in this variable.
 
 **Current value for `target_cpu = "arm64"`:** `["//bundles/kitchen_sink"]`
 
-From //out/not-default/args.gn:17
+From //out/not-default/args.gn:18
 
 **Overridden from the default:** `[]`
 
@@ -8163,7 +8290,7 @@ From //BUILD.gn:64
 
 **Current value for `target_cpu = "x64"`:** `["//bundles/kitchen_sink"]`
 
-From //out/not-default/args.gn:17
+From //out/not-default/args.gn:18
 
 **Overridden from the default:** `[]`
 
@@ -8187,7 +8314,7 @@ package.
 
 **Current value (from the default):** `[]`
 
-From //build/images/args.gni:40
+From //build/images/args.gni:41
 
 ### update_package_size_creep_limit
 
@@ -8211,7 +8338,7 @@ epoch increased.
 
 **Current value (from the default):** `0`
 
-From //build/images/args.gni:51
+From //build/images/args.gni:52
 
 ### use_bazel_images_only
 
@@ -8223,7 +8350,7 @@ exactly what you are doing.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:189
+From //build/images/args.gni:181
 
 ### use_blink
 
@@ -8242,7 +8369,7 @@ From //products/bringup.gni:6
 
 **Overridden from the default:** `false`
 
-From //build/product.gni:11
+From //build/product.gni:8
 
 **Current value for `target_cpu = "x64"`:** `true`
 
@@ -8250,7 +8377,7 @@ From //products/bringup.gni:6
 
 **Overridden from the default:** `false`
 
-From //build/product.gni:11
+From //build/product.gni:8
 
 ### use_ccache
 
@@ -8262,12 +8389,12 @@ From //build/toolchain/ccache.gni:9
 
 ### use_chromium_canary
 
-TODO(crbug.com/1065707): Revert to declaring this in the BUILD.gn file once
-the use in here is removed.
+Whether to use the most recent (canary) version of prebuilt Chromium
+components. Otherwise, the qualified "release" version is used.
 
 **Current value (from the default):** `false`
 
-From //src/chromium/generate_chromium_targets.gni:15
+From //src/chromium/BUILD.gn:30
 
 ### use_dbus
 
@@ -8284,18 +8411,6 @@ direct.
 
 From //src/lib/ui/carnelian/BUILD.gn:30
 
-### use_disk_migration
-
-If true, will enable content-detection for partition format, supporting both
-minfs and fxfs filesystems. A special "fs_switch" file can be written to the root directory
-containing the string "minfs", "fxfs" or "toggle" to trigger a migration from the current
-format to the specified format. (The "toggle" option will migrate back and forth at each boot.)
-Set by developers in fx set.
-
-**Current value (from the default):** `false`
-
-From //src/storage/fshost/generated_fshost_config.gni:85
-
 ### use_driver_framework_v2_default
 
 If this is true, then DriverManager will load DFv2 drivers when unspecified by
@@ -8311,15 +8426,7 @@ Build an ELF kernel rather than a ZBI image kernel.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:132
-
-### use_flatland_by_default
-
-If true, Flatland is the default graphics protocol in Scenic.
-
-**Current value (from the default):** `true`
-
-From //src/ui/scenic/build_args.gni:7
+From //zircon/kernel/params.gni:148
 
 ### use_gigaboot
 
@@ -8327,19 +8434,19 @@ Build the gigaboot bootloader.
 
 **Current value for `target_cpu = "arm64"`:** `true`
 
-From //boards/arm64.gni:37
+From //boards/arm64.gni:19
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:26
+From //build/images/args.gni:27
 
 **Current value for `target_cpu = "x64"`:** `true`
 
-From //boards/x64.gni:52
+From //boards/common/x64-common.gni:65
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:26
+From //build/images/args.gni:27
 
 ### use_gio
 
@@ -8355,7 +8462,7 @@ This has lower precedence than `use_reclient_cxx` in
 
 **Current value for `target_cpu = "arm64"`:** `false`
 
-From //out/not-default/args.gn:12
+From //out/not-default/args.gn:13
 
 **Overridden from the default:** `false`
 
@@ -8363,7 +8470,7 @@ From //build/toolchain/goma.gni:13
 
 **Current value for `target_cpu = "x64"`:** `false`
 
-From //out/not-default/args.gn:12
+From //out/not-default/args.gn:13
 
 **Overridden from the default:** `false`
 
@@ -8493,7 +8600,7 @@ and the paving script will pave vbmeta images to the target device.
 
 **Current value for `target_cpu = "arm64"`:** `true`
 
-From //boards/arm64.gni:38
+From //boards/arm64.gni:20
 
 **Overridden from the default:** `false`
 
@@ -8501,7 +8608,7 @@ From //build/images/vbmeta.gni:14
 
 **Current value for `target_cpu = "x64"`:** `true`
 
-From //boards/x64.gni:50
+From //boards/common/x64-common.gni:54
 
 **Overridden from the default:** `false`
 
@@ -8513,7 +8620,7 @@ Use vboot images
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:10
+From //build/images/args.gni:11
 
 ### use_virtio_gpu_v2
 
@@ -8534,19 +8641,19 @@ From //build/fuchsia/sdk.gni:8
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:113
+From //build/images/args.gni:109
 
 ### vbmeta_b_partition
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:114
+From //build/images/args.gni:110
 
 ### vbmeta_r_partition
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:115
+From //build/images/args.gni:111
 
 ### vboot_keys
 
@@ -8565,6 +8672,21 @@ If true, vboot() image builds print out the exact "futility" command line.
 
 From //build/images/vboot/vboot.gni:12
 
+### vendor_board_dir
+
+**Current value (from the default):** `false`
+
+From //build/images/args.gni:207
+
+### vendor_product_dir
+
+If these are defined, bazel_product_bundle path will be overwritten
+accordingly.
+
+**Current value (from the default):** `false`
+
+From //build/images/args.gni:206
+
 ### verbose_image_assembly
 
 Enable verbose output from `ffx assembly image`, this creates non-silent
@@ -8573,7 +8695,7 @@ is meant solely for developer debugging.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:174
+From //build/images/args.gni:170
 
 ### vim3_mcu_fan_default_level
 
@@ -8622,7 +8744,7 @@ between similar virtual device's using different configuration's such as
 
 **Current value (from the default):** `""`
 
-From //build/product.gni:50
+From //build/product.gni:47
 
 ### vm_tracing_level
 
@@ -8636,7 +8758,7 @@ zero add increasing details at the cost of increased trace buffer use.
 
 **Current value (from the default):** `0`
 
-From //zircon/kernel/params.gni:74
+From //zircon/kernel/params.gni:90
 
 ### vulkan_host_runtime_dir
 
@@ -8675,7 +8797,7 @@ frequently the change depth.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:65
+From //zircon/kernel/params.gni:81
 
 ### warn_on_sdk_changes
 
@@ -8684,7 +8806,7 @@ If false, any unacknowledged SDK change will cause a build failure.
 
 **Current value (from the default):** `false`
 
-From //build/sdk/config.gni:14
+From //build/sdk/config.gni:8
 
 ### wayland_bridge_protocol_logging
 
@@ -8753,16 +8875,6 @@ Selects the wlan configuration type to use. Choices:
 
 From //src/connectivity/wlan/wlancfg/BUILD.gn:19
 
-### zbi_compression
-
-Compression setting for ZBI "storage" items.
-This can be "zstd", optionally followed by ".LEVEL"
-where `LEVEL` can be an integer or "max".
-
-**Current value (from the default):** `"zstd"`
-
-From //build/zbi/zbi.gni:12
-
 ### zedboot_additional_boot_args
 
 List of arguments to populate /boot/config/additional_boot_args in the Zedboot image.
@@ -8777,19 +8889,19 @@ The product assembly config used to configure the Zedboot image.
 
 **Current value for `target_cpu = "arm64"`:** `"//products/zedboot"`
 
-From //products/bringup.gni:28
+From //products/bringup.gni:23
 
 **Overridden from the default:** `false`
 
-From //build/product.gni:44
+From //build/product.gni:41
 
 **Current value for `target_cpu = "x64"`:** `"//products/zedboot"`
 
-From //products/bringup.gni:28
+From //products/bringup.gni:23
 
 **Overridden from the default:** `false`
 
-From //build/product.gni:44
+From //build/product.gni:41
 
 ### zircon_a_partition
 
@@ -8805,19 +8917,19 @@ doesn't require the FVM or SSH keys.
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:110
+From //build/images/args.gni:106
 
 ### zircon_asserts
 
 **Current value (from the default):** `false`
 
-From //build/config/fuchsia/BUILD.gn:150
+From //build/config/fuchsia/BUILD.gn:181
 
 ### zircon_b_partition
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:111
+From //build/images/args.gni:107
 
 ### zircon_kernel_disable_asserts
 
@@ -8847,7 +8959,7 @@ From //build/config/zircon/levels.gni:22
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:112
+From //build/images/args.gni:108
 
 ### zircon_toolchain
 
@@ -8867,7 +8979,7 @@ This allows testing for a Zircon-specific toolchain with:
 
 **Current value (from the default):** `false`
 
-From //build/config/BUILDCONFIG.gn:132
+From //build/config/BUILDCONFIG.gn:122
 
 ### zircon_tracelog
 
@@ -8919,6 +9031,15 @@ TODO(fxbug.dev/87237): move this to boards.
 
 From //build/config/arm.gni:9
 
+### disable_prebuilt_arm_mali_vulkan
+
+Disable packaging a prebuilt ARM Mali Vulkan ICD. This can save space if a
+test ICD is being used instead.
+
+**Current value (from the default):** `false`
+
+From //src/graphics/drivers/arm-mali/icd/prebuilt_arm_mali.gni:8
+
 ## `target_cpu = "x64"`
 
 ### anv_enable_external_sync_fd
@@ -8929,17 +9050,23 @@ TODO(fxbug.dev/67565) - remove once external sync FD extensions fully supported
 
 From //third_party/mesa/src/intel/vulkan/BUILD.gn:27
 
+### anv_enable_raytracing
+
+**Current value (from the default):** `false`
+
+From //third_party/mesa/src/intel/vulkan/BUILD.gn:28
+
 ### anv_use_max_ram
 
 Give maximum possible memory to Vulkan heap
 
 **Current value (from the default):** `false`
 
-From //third_party/mesa/src/intel/vulkan/BUILD.gn:30
+From //third_party/mesa/src/intel/vulkan/BUILD.gn:31
 
 ### build_libvulkan_goldfish
 
 **Current value (from the default):** `"//third_party/android/device/generic/goldfish-opengl:libvulkan_goldfish"`
 
-From //src/graphics/lib/goldfish-vulkan/gnbuild/BUILD.gn:11
+From //src/graphics/lib/goldfish-vulkan/gnbuild/BUILD.gn:13
 

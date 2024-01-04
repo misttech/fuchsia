@@ -14,7 +14,6 @@ use {
         log::*,
         object_handle::{ReadObjectHandle, WriteBytes},
         serialized_types::{Version, LATEST_VERSION},
-        trace_duration,
     },
     anyhow::Error,
     cache::{ObjectCache, ObjectCacheResult},
@@ -22,12 +21,13 @@ use {
     std::{
         fmt,
         future::Future,
+        iter::IntoIterator,
         ops::Bound,
         sync::{Arc, RwLock},
     },
     types::{
-        IntoLayerRefs, Item, ItemRef, Key, Layer, LayerIterator, LayerKey, LayerWriter,
-        MergeableKey, MutableLayer, OrdLowerBound, Value,
+        Item, ItemRef, Key, Layer, LayerIterator, LayerKey, LayerWriter, MergeableKey,
+        MutableLayer, OrdLowerBound, Value,
     },
 };
 
@@ -37,10 +37,10 @@ const SKIP_LIST_LAYER_ITEMS: usize = 512;
 pub use simple_persistent_layer::LayerInfo;
 
 pub async fn layers_from_handles<K: Key, V: Value>(
-    handles: Box<[impl ReadObjectHandle + 'static]>,
+    handles: impl IntoIterator<Item = impl ReadObjectHandle + 'static>,
 ) -> Result<Vec<Arc<dyn Layer<K, V>>>, Error> {
     let mut layers = Vec::new();
-    for handle in Vec::from(handles) {
+    for handle in handles {
         layers.push(
             simple_persistent_layer::SimplePersistentLayer::open(handle).await?
                 as Arc<dyn Layer<K, V>>,
@@ -75,6 +75,7 @@ pub struct LSMTree<K, V> {
     cache: Box<dyn ObjectCache<K, V>>,
 }
 
+#[fxfs_trace::trace]
 impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
     /// Creates a new empty tree.
     pub fn new(merge_fn: merge::MergeFn<K, V>, cache: Box<dyn ObjectCache<K, V>>) -> Self {
@@ -92,7 +93,7 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
     /// Opens an existing tree from the provided handles to the layer objects.
     pub async fn open(
         merge_fn: merge::MergeFn<K, V>,
-        handles: Box<[impl ReadObjectHandle + 'static]>,
+        handles: impl IntoIterator<Item = impl ReadObjectHandle + 'static>,
         cache: Box<dyn ObjectCache<K, V>>,
     ) -> Result<Self, Error> {
         Ok(LSMTree {
@@ -115,7 +116,7 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
     /// to be used after replay when we are opening a tree and we have discovered the base layers.
     pub async fn append_layers(
         &self,
-        handles: Box<[impl ReadObjectHandle + 'static]>,
+        handles: impl IntoIterator<Item = impl ReadObjectHandle + 'static>,
     ) -> Result<(), Error> {
         let mut layers = layers_from_handles(handles).await?;
         self.data.write().unwrap().layers.append(&mut layers);
@@ -150,13 +151,13 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
     }
 
     /// Writes the items yielded by the iterator into the supplied object.
+    #[trace]
     pub async fn compact_with_iterator<W: WriteBytes + Send>(
         &self,
         mut iterator: impl LayerIterator<K, V>,
         writer: W,
         block_size: u64,
     ) -> Result<(), Error> {
-        trace_duration!("LSMTree::compact_with_iterator");
         let mut writer = SimplePersistentLayerWriter::<W, K, V>::new(writer, block_size).await?;
         while let Some(item_ref) = iterator.get() {
             debug!(?item_ref, "compact: writing");
@@ -174,6 +175,7 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
     /// Adds all the layers (including the mutable layer) to `layer_set`.
     pub fn add_all_layers_to_layer_set(&self, layer_set: &mut LayerSet<K, V>) {
         let data = self.data.read().unwrap();
+        layer_set.layers.reserve_exact(data.layers.len() + 1);
         layer_set.layers.push(data.mutable_layer.1.clone().as_layer().into());
         for layer in &data.layers {
             layer_set.layers.push(layer.clone().into());
@@ -192,12 +194,10 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
     /// compacting).  Since these layers are immutable, getting an iterator should not block
     /// anything else.
     pub fn immutable_layer_set(&self) -> LayerSet<K, V> {
-        let mut layers = Vec::new();
-        {
-            let data = self.data.read().unwrap();
-            for layer in &data.layers {
-                layers.push(layer.clone().into());
-            }
+        let data = self.data.read().unwrap();
+        let mut layers = Vec::with_capacity(data.layers.len());
+        for layer in &data.layers {
+            layers.push(layer.clone().into());
         }
         LayerSet { layers, merge_fn: self.merge_fn }
     }
@@ -213,8 +213,9 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
             data.mutable_layer.clone()
         };
         let key = item.key.clone();
+        let val = item.value.clone();
         mutable_layer.insert(item).await?;
-        self.cache.invalidate(&key);
+        self.cache.invalidate(key, Some(val));
         Ok(())
     }
 
@@ -228,8 +229,9 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
             data.mutable_layer.clone()
         };
         let key = item.key.clone();
+        let val = item.value.clone();
         mutable_layer.replace_or_insert(item).await;
-        self.cache.invalidate(&key);
+        self.cache.invalidate(key, Some(val));
     }
 
     /// Merges the given item into the mutable layer.
@@ -241,7 +243,9 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
             }
             data.mutable_layer.clone()
         };
-        mutable_layer.merge_into(item, lower_bound, self.merge_fn).await
+        let key = item.key.clone();
+        mutable_layer.merge_into(item, lower_bound, self.merge_fn).await;
+        self.cache.invalidate(key, None);
     }
 
     /// Searches for an exact match for the given key.
@@ -252,7 +256,7 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
         // It is important that the cache lookup is done prior to fetching the layer set as the
         // placeholder returned acts as a sort of lock for the validity of the item that may be
         // inserted later via that placeholder.
-        let token = match self.cache.lookup_or_reserve(search_key).await {
+        let token = match self.cache.lookup_or_reserve(search_key) {
             ObjectCacheResult::Value(value) => {
                 return Ok(Some(Item::new(search_key.clone(), value)))
             }
@@ -349,7 +353,7 @@ pub struct LayerSet<K, V> {
 
 impl<K: Key + LayerKey + OrdLowerBound, V: Value> LayerSet<K, V> {
     pub fn merger(&self) -> merge::Merger<'_, K, V> {
-        merge::Merger::new(&self.layers.as_slice().into_layer_refs(), self.merge_fn)
+        merge::Merger::new(self.layers.iter().map(|x| x.as_ref()), self.merge_fn)
     }
 }
 
@@ -378,8 +382,8 @@ mod tests {
                 layers_from_handles,
                 merge::{MergeLayerIterator, MergeResult},
                 types::{
-                    BoxedLayerIterator, Item, ItemRef, Key, Layer, LayerIterator,
-                    LayerIteratorFilter, LayerKey, OrdLowerBound, OrdUpperBound, SortByU64, Value,
+                    BoxedLayerIterator, Item, ItemRef, Key, Layer, LayerIterator, LayerKey,
+                    OrdLowerBound, OrdUpperBound, SortByU64, Value,
                 },
             },
             object_handle::ObjectHandle,
@@ -483,15 +487,13 @@ mod tests {
             let layer_set = tree.immutable_layer_set();
             let mut merger = layer_set.merger();
             let iter = merger.seek(Bound::Unbounded).await.expect("create merger");
-            tree.compact_with_iterator(iter, Writer::new(&handle), handle.block_size())
+            tree.compact_with_iterator(iter, Writer::new(&handle).await, handle.block_size())
                 .await
                 .expect("compact failed");
         }
-        tree.set_layers(
-            layers_from_handles(Box::new([handle])).await.expect("layers_from_handles failed"),
-        );
+        tree.set_layers(layers_from_handles([handle]).await.expect("layers_from_handles failed"));
         let handle = FakeObjectHandle::new(object.clone());
-        let tree = LSMTree::open(emit_left_merge_fn, [handle].into(), Box::new(NullCache {}))
+        let tree = LSMTree::open(emit_left_merge_fn, [handle], Box::new(NullCache {}))
             .await
             .expect("open failed");
 
@@ -538,13 +540,11 @@ mod tests {
             let layer_set = tree.immutable_layer_set();
             let mut merger = layer_set.merger();
             let iter = merger.seek(Bound::Unbounded).await.expect("create merger");
-            tree.compact_with_iterator(iter, Writer::new(&handle), handle.block_size())
+            tree.compact_with_iterator(iter, Writer::new(&handle).await, handle.block_size())
                 .await
                 .expect("compact failed");
         }
-        tree.set_layers(
-            layers_from_handles(Box::new([handle])).await.expect("layers_from_handles failed"),
-        );
+        tree.set_layers(layers_from_handles([handle]).await.expect("layers_from_handles failed"));
         let found_item = tree.find(&item.key).await.expect("find failed").expect("not found");
         assert_eq!(found_item, item);
         assert!(tree.find(&TestKey(2..2)).await.expect("find failed").is_none());
@@ -568,8 +568,10 @@ mod tests {
         let mut merger = layers.merger();
 
         // Filter out odd keys (which also guarantees we skip the first key which is an edge case).
-        let mut iter = (Box::new(merger.seek(Bound::Unbounded).await.expect("seek failed"))
-            as Box<dyn LayerIterator<_, _>>)
+        let mut iter = merger
+            .seek(Bound::Unbounded)
+            .await
+            .expect("seek failed")
             .filter(|item: ItemRef<'_, TestKey, u64>| item.key.0.start % 2 == 0)
             .await
             .expect("filter failed");
@@ -670,9 +672,8 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl<K: Key + std::cmp::PartialEq, V: Value> ObjectCache<K, V> for AuditCache<'_, V> {
-        async fn lookup_or_reserve(&self, _key: &K) -> ObjectCacheResult<'_, V> {
+        fn lookup_or_reserve(&self, _key: &K) -> ObjectCacheResult<'_, V> {
             {
                 let mut inner = self.inner.lock().unwrap();
                 inner.lookups += 1;
@@ -686,7 +687,7 @@ mod tests {
             }))
         }
 
-        fn invalidate(&self, _key: &K) {
+        fn invalidate(&self, _key: K, _value: Option<V>) {
             self.inner.lock().unwrap().invalidations += 1;
         }
     }

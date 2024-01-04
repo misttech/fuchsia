@@ -43,7 +43,7 @@ import("//build/testing/golden_files.gni")
 #    goldens_dir, non_fidl_deps, sdk_category
 #    - Optional: See //build/fidl/fidl.gni for a description.
 #
-#  * testonly, visibility, public_deps
+#  * testonly, visibility, public_deps, applicable_licenses
 #    - Optional: Usual GN meanings.
 #
 template("fidl_library") {
@@ -101,6 +101,7 @@ template("fidl_library") {
   fidl_ir(compilation_target_name) {
     forward_variables_from(invoker,
                            [
+                             "applicable_licenses",
                              "available",
                              "experimental_flags",
                              "non_fidl_deps",
@@ -120,7 +121,11 @@ template("fidl_library") {
   plasa_fragment_file = summary_file_json
   plasa_fragment_target_name = "${target_name}_plasa"
   plasa_fragment_fidl(plasa_fragment_target_name) {
-    forward_variables_from(invoker, [ "testonly" ])
+    forward_variables_from(invoker,
+                           [
+                             "applicable_licenses",
+                             "testonly",
+                           ])
     visibility = [
       ":*",
       "//sdk/fidl:plasa",
@@ -136,6 +141,7 @@ template("fidl_library") {
   action(lint_target_name) {
     forward_variables_from(invoker,
                            [
+                             "applicable_licenses",
                              "sources",
                              "testonly",
                            ])
@@ -148,22 +154,16 @@ template("fidl_library") {
     _tool_with_no_output = "//tools/fidl/fidlc:fidl-lint"
 
     # Construct the host toolchain version of the tool.
-    host_tool = "${_tool_with_no_output}($host_toolchain)"
+    host_tool_label = "//tools/fidl/fidlc:fidl-lint.host"
+    host_tool_path = "$root_build_dir/host-tools/fidl-lint"
 
-    # Get the path to the executable.
-    if (!defined(tool_output_name)) {
-      tool_output_name = get_label_info(host_tool, "name")
-    }
-    tool_out_dir = get_label_info(host_tool, "root_out_dir")
-    host_executable = "$tool_out_dir/$tool_output_name"
-
-    deps = [ host_tool ]
+    deps = [ host_tool_label ]
     if (defined(invoker.non_fidl_deps)) {
       deps += invoker.non_fidl_deps
     }
 
     # Add the executable itself as an input.
-    inputs = [ host_executable ]
+    inputs = [ host_tool_path ]
 
     outputs = [ lint_stamp_file ]
 
@@ -181,7 +181,7 @@ template("fidl_library") {
                        ]) != []) {
       args += [ ":" ]  # NOOP - Nothing to lint, but touch the stamp file
     } else {
-      args += [ rebase_path(host_executable, root_build_dir) ]
+      args += [ rebase_path(host_tool_path, root_build_dir) ]
 
       excluded_checks = []
       if (defined(invoker.excluded_checks)) {
@@ -254,6 +254,7 @@ template("fidl_library") {
       fidl_ir(fidl_ir_target_name) {
         forward_variables_from(invoker,
                                [
+                                 "applicable_licenses",
                                  "available",
                                  "experimental_flags",
                                  "non_fidl_deps",
@@ -305,18 +306,21 @@ template("fidl_library") {
   }
 
   validate_json(verification_target_name) {
-    forward_variables_from(invoker, [ "testonly" ])
+    forward_variables_from(invoker,
+                           [
+                             "applicable_licenses",
+                             "testonly",
+                           ])
     visibility = [ ":*" ]
     data = fidl_ir_json
     schema = "//tools/fidl/fidlc/schema.json"
     deps = [ ":$compilation_target_name" ]
   }
 
-  sdk_id = "sdk://fidl/$library_name"
-
   group(main_target_name) {
     forward_variables_from(invoker,
                            [
+                             "applicable_licenses",
                              "testonly",
                              "visibility",
                            ])
@@ -329,15 +333,6 @@ template("fidl_library") {
       # Metadata to allow us to query all FIDL IR files.
       fidl_json = [ rebase_path(fidl_ir_json, root_build_dir) ]
       generated_sources = fidl_json
-
-      if (is_fuchsia) {
-        component_catalog = [
-          {
-            sdk_id = sdk_id
-            label = get_label_info(":$target_name", "label_with_toolchain")
-          },
-        ]
-      }
     }
 
     public_deps = [
@@ -439,7 +434,7 @@ template("fidl_library") {
     }
 
     sdk_atom("${target_name}_sdk") {
-      id = sdk_id
+      id = "sdk://fidl/$library_name"
 
       category = sdk_category
       if (defined(api_reference)) {

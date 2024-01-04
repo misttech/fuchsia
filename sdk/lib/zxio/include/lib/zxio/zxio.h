@@ -197,7 +197,9 @@ ZXIO_EXPORT void zxio_wait_end(zxio_t* io, zx_signals_t zx_signals,
 ZXIO_EXPORT zx_status_t zxio_sync(zxio_t* io);
 
 // Returns information about the file.
-ZXIO_EXPORT zx_status_t zxio_attr_get(zxio_t* io, zxio_node_attributes_t* out_attr);
+//
+// |inout_attr->has| must be initialized to indicate which attributes are to be returned.
+ZXIO_EXPORT zx_status_t zxio_attr_get(zxio_t* io, zxio_node_attributes_t* inout_attr);
 
 // Update information about the file.
 //
@@ -582,6 +584,17 @@ ZXIO_EXPORT zx_status_t zxio_xattr_set(zxio_t* io, const uint8_t* name, size_t n
 //
 // Returns ZX_ERR_NOT_SUPPORTED if |io| doesn't support extended attributes.
 ZXIO_EXPORT zx_status_t zxio_xattr_remove(zxio_t* io, const uint8_t* name, size_t name_len);
+
+// Allocates disk space for the given range for this file.
+//
+// Returns ZX_ERR_NOT_SUPPORTED if |io| doesn't support this feature, or if it doesn't support the
+// provided set of mode types. Returns ZX_ERR_INVALID_ARGS if the combination of mode types is not
+// allowed, or if the offset or length are invalid, either in general or with the provided mode
+// types.
+ZXIO_EXPORT zx_status_t zxio_allocate(zxio_t* io, uint64_t offset, uint64_t len,
+                                      zxio_allocate_mode_t mode);
+ZXIO_EXPORT zx_status_t zxio_enable_verity(zxio_t* io,
+                                           const zxio_fsverity_descriptor_t* descriptor);
 
 __END_CDECLS
 

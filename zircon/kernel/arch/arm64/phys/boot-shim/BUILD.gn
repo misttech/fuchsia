@@ -4,16 +4,20 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//zircon/kernel/phys/phys_executable.gni")
 import("//zircon/kernel/phys/qemu.gni")
+import("//zircon/kernel/phys/shim_executable.gni")
 
-phys_executable("linux-arm64-boot-shim") {
+group("boot-shim") {
+  deps = [ ":linux-arm64-boot-shim" ]
+}
+
+shim_executable("linux-arm64-boot-shim") {
   sources = [ "linux-arm64-boot-shim.cc" ]
 
   deps = [
-    "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/libc",
+    "//zircon/kernel/phys:address-space",
     "//zircon/kernel/phys:allocation",
     "//zircon/kernel/phys:boot-zbi",
     "//zircon/kernel/phys:exception",
@@ -24,4 +28,14 @@ phys_executable("linux-arm64-boot-shim") {
     "//zircon/kernel/phys/boot-shim:devicetree",
     "//zircon/kernel/phys/lib/boot-shim",
   ]
+}
+
+group("tests") {
+  testonly = true
+  deps = []
+}
+
+group("boot_tests") {
+  testonly = true
+  deps = []
 }

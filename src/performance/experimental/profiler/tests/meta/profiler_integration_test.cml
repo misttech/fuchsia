@@ -15,6 +15,17 @@
             name: "profiler",
             url: "#meta/profiler.cm",
         },
+        {
+            name: "demo_target",
+            url: "#meta/demo_target.cm",
+            startup: "eager",
+        },
+    ],
+    collections: [
+        {
+            name: "launchpad",
+            durability: "transient",
+        },
     ],
     use: [
         {
@@ -24,15 +35,37 @@
         {
             protocol: [ "fuchsia.process.Launcher" ],
         },
+        {
+            protocol: "fuchsia.sys2.LifecycleController",
+            from: "framework",
+        },
     ],
     offer: [
         {
             protocol: [
                 "fuchsia.kernel.RootJob",
                 "fuchsia.logger.Log",
+                "fuchsia.logger.LogSink",
             ],
             from: "parent",
             to: [ "#profiler" ],
+        },
+        {
+            protocol: "fuchsia.sys2.RealmQuery",
+            from: "framework",
+            as: "fuchsia.sys2.RealmQuery.root",
+            to: [ "#profiler" ],
+        },
+        {
+            protocol: "fuchsia.sys2.LifecycleController",
+            from: "framework",
+            as: "fuchsia.sys2.LifecycleController.root",
+            to: "#profiler",
+        },
+        {
+            event_stream: [ "debug_started" ],
+            from: "parent",
+            to: "#profiler",
         },
     ],
 }

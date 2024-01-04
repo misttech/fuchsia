@@ -7,10 +7,13 @@
 def _fuchsia_licenses_classification_impl(ctx):
     out_json = ctx.actions.declare_file(ctx.label.name)
 
+    identify_license_output_json = ctx.actions.declare_file(ctx.label.name + ".identify_license_output.json")
+
     inputs = [ctx.file.spdx_input, ctx.executable.identify_license]
     arguments = [
         "--spdx_input=%s" % ctx.file.spdx_input.path,
         "--identify_license_bin=%s" % ctx.executable.identify_license.path,
+        "--identify_license_output=%s" % identify_license_output_json.path,
         "--output_file=%s" % out_json.path,
     ]
 
@@ -25,6 +28,9 @@ def _fuchsia_licenses_classification_impl(ctx):
     if ctx.attr.allowed_conditions:
         arguments.append("--allowed_conditions")
         arguments.extend(ctx.attr.allowed_conditions)
+    if ctx.attr.conditions_requiring_shipped_notice:
+        arguments.append("--conditions_requiring_shipped_notice")
+        arguments.extend(ctx.attr.conditions_requiring_shipped_notice)
     if ctx.attr.fail_on_disallowed_conditions:
         arguments.append("--fail_on_disallowed_conditions=True")
     if ctx.file.failure_message_preamble:
@@ -38,7 +44,7 @@ def _fuchsia_licenses_classification_impl(ctx):
     ctx.actions.run(
         progress_message = "Generating license classifications into %s" % out_json.path,
         inputs = inputs,
-        outputs = [out_json],
+        outputs = [out_json, identify_license_output_json],
         executable = ctx.executable._generate_licenses_classification_tool,
         arguments = arguments,
     )
@@ -116,6 +122,11 @@ and build identify_license to match their organization OSS compliance policies.
         ),
         "allowed_conditions": attr.string_list(
             doc = """List of allowed conditions.""",
+            mandatory = False,
+            default = [],
+        ),
+        "conditions_requiring_shipped_notice": attr.string_list(
+            doc = """Only licenses with the any of the given condition will be shipped as notices.""",
             mandatory = False,
             default = [],
         ),

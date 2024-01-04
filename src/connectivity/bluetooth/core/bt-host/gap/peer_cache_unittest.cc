@@ -8,6 +8,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <pw_async/fake_dispatcher_fixture.h>
 
 #include "src/connectivity/bluetooth/core/bt-host/common/device_class.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/random.h"
@@ -21,7 +22,6 @@
 #include "src/connectivity/bluetooth/core/bt-host/sm/util.h"
 #include "src/connectivity/bluetooth/core/bt-host/testing/inspect.h"
 #include "src/connectivity/bluetooth/core/bt-host/testing/test_helpers.h"
-#include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 
 namespace bt::gap {
 namespace {
@@ -77,17 +77,13 @@ const std::vector<bt::UUID> kBrEdrServices = {UUID(uint16_t{0x110a}), UUID(uint1
 // Phone (Networking)
 const DeviceClass kTestDeviceClass({0x06, 0x02, 0x02});
 
-class PeerCacheTest : public ::gtest::TestLoopFixture {
+class PeerCacheTest : public pw::async::test::FakeDispatcherFixture {
  public:
-  void SetUp() override {
-    TestLoopFixture::SetUp();
-    cache_ = std::make_unique<PeerCache>();
-  }
+  void SetUp() override { cache_ = std::make_unique<PeerCache>(dispatcher()); }
 
   void TearDown() override {
-    RunLoopUntilIdle();
+    RunUntilIdle();
     cache_.reset();
-    TestLoopFixture::TearDown();
   }
 
  protected:
@@ -185,7 +181,7 @@ TEST_F(PeerCacheTest, LookUp) {
   EXPECT_TRUE(peer->connectable());
   EXPECT_TRUE(peer->temporary());
   EXPECT_EQ(kAddrLePublic, peer->address());
-  EXPECT_EQ(0u, peer->le()->advertising_data().size());
+  EXPECT_FALSE(peer->le()->parsed_advertising_data().has_value());
   EXPECT_EQ(hci_spec::kRSSIInvalid, peer->rssi());
 
   // A look up should return the same instance.
@@ -195,13 +191,17 @@ TEST_F(PeerCacheTest, LookUp) {
   // Adding a peer with the same address should return nullptr.
   EXPECT_FALSE(cache()->NewPeer(kAddrLePublic, true));
 
-  peer->MutLe().SetAdvertisingData(kTestRSSI, kAdvData1, zx::time());
-  EXPECT_TRUE(ContainersEqual(kAdvData1, peer->le()->advertising_data()));
+  peer->MutLe().SetAdvertisingData(kTestRSSI, kAdvData1, pw::chrono::SystemClock::time_point());
+  EXPECT_TRUE(peer->le()->parsed_advertising_data().has_value());
   EXPECT_EQ(kTestRSSI, peer->rssi());
+  ASSERT_TRUE(peer->name().has_value());
+  EXPECT_EQ(peer->name().value(), "Test Device");
 
-  peer->MutLe().SetAdvertisingData(kTestRSSI, kAdvData0, zx::time());
-  EXPECT_TRUE(ContainersEqual(kAdvData0, peer->le()->advertising_data()));
+  peer->MutLe().SetAdvertisingData(kTestRSSI, kAdvData0, pw::chrono::SystemClock::time_point());
+  EXPECT_TRUE(peer->le()->parsed_advertising_data().has_value());
   EXPECT_EQ(kTestRSSI, peer->rssi());
+  ASSERT_TRUE(peer->name().has_value());
+  EXPECT_EQ(peer->name().value(), "Test");
 }
 
 TEST_F(PeerCacheTest, LookUpBrEdrPeerByLePublicAlias) {
@@ -358,7 +358,7 @@ TEST_F(PeerCacheTest, BrEdrPeerBecomesDualModeWithAdvertisingData) {
   ASSERT_TRUE(peer()->bredr());
   ASSERT_FALSE(peer()->le());
 
-  peer()->MutLe().SetAdvertisingData(kTestRSSI, kAdvData, zx::time());
+  peer()->MutLe().SetAdvertisingData(kTestRSSI, kAdvData, pw::chrono::SystemClock::time_point());
   EXPECT_TRUE(peer()->le());
   EXPECT_EQ(TechnologyType::kDualMode, peer()->technology());
 
@@ -532,8 +532,12 @@ TEST_F(PeerCacheTestBondingTest, AddBondedPeerFailsWithExistingId) {
   sm::PairingData data;
   data.peer_ltk = kLTK;
   data.local_ltk = kLTK;
-  EXPECT_FALSE(cache()->AddBondedPeer(BondingData{
-      .identifier = peer()->identifier(), .address = kAddrLeRandom, .le_pairing_data = data}));
+  EXPECT_FALSE(cache()->AddBondedPeer(BondingData{.identifier = peer()->identifier(),
+                                                  .address = kAddrLeRandom,
+                                                  .name = {},
+                                                  .le_pairing_data = data,
+                                                  .bredr_link_key = {},
+                                                  .bredr_services = {}}));
   EXPECT_FALSE(bonded_callback_called());
 }
 
@@ -541,8 +545,12 @@ TEST_F(PeerCacheTestBondingTest, AddBondedPeerFailsWithExistingAddress) {
   sm::PairingData data;
   data.peer_ltk = kLTK;
   data.local_ltk = kLTK;
-  EXPECT_FALSE(cache()->AddBondedPeer(
-      BondingData{.identifier = kId, .address = peer()->address(), .le_pairing_data = data}));
+  EXPECT_FALSE(cache()->AddBondedPeer(BondingData{.identifier = kId,
+                                                  .address = peer()->address(),
+                                                  .name = {},
+                                                  .le_pairing_data = data,
+                                                  .bredr_link_key = {},
+                                                  .bredr_services = {}}));
   EXPECT_FALSE(bonded_callback_called());
 }
 
@@ -551,15 +559,23 @@ TEST_F(PeerCacheTestBondingTest, AddBondedLowEnergyPeerFailsWithExistingBrEdrAli
   sm::PairingData data;
   data.peer_ltk = kLTK;
   data.local_ltk = kLTK;
-  EXPECT_FALSE(cache()->AddBondedPeer(
-      BondingData{.identifier = kId, .address = kAddrLeAlias, .le_pairing_data = data}));
+  EXPECT_FALSE(cache()->AddBondedPeer(BondingData{.identifier = kId,
+                                                  .address = kAddrLeAlias,
+                                                  .name = {},
+                                                  .le_pairing_data = data,
+                                                  .bredr_link_key = {},
+                                                  .bredr_services = {}}));
   EXPECT_FALSE(bonded_callback_called());
 }
 
 TEST_F(PeerCacheTestBondingTest, AddBondedBrEdrPeerFailsWithExistingLowEnergyAliasAddress) {
   EXPECT_TRUE(NewPeer(kAddrLeAlias, true));
-  EXPECT_FALSE(cache()->AddBondedPeer(
-      BondingData{.identifier = kId, .address = kAddrBrEdr, .bredr_link_key = kBrEdrKey}));
+  EXPECT_FALSE(cache()->AddBondedPeer(BondingData{.identifier = kId,
+                                                  .address = kAddrBrEdr,
+                                                  .name = {},
+                                                  .le_pairing_data = {},
+                                                  .bredr_link_key = kBrEdrKey,
+                                                  .bredr_services = {}}));
   EXPECT_FALSE(bonded_callback_called());
 }
 
@@ -567,12 +583,18 @@ TEST_F(PeerCacheTestBondingTest, AddBondedPeerFailsWithoutMandatoryKeys) {
   sm::PairingData data;
   EXPECT_FALSE(cache()->AddBondedPeer(BondingData{.identifier = kId,
                                                   .address = kAddrLeAlias,
+                                                  .name = {},
                                                   .le_pairing_data = data,
-                                                  .bredr_link_key = kBrEdrKey}));
+                                                  .bredr_link_key = kBrEdrKey,
+                                                  .bredr_services = {}}));
   data.peer_ltk = kLTK;
   data.local_ltk = kLTK;
-  EXPECT_FALSE(cache()->AddBondedPeer(
-      BondingData{.identifier = kId, .address = kAddrBrEdr, .le_pairing_data = data}));
+  EXPECT_FALSE(cache()->AddBondedPeer(BondingData{.identifier = kId,
+                                                  .address = kAddrBrEdr,
+                                                  .name = {},
+                                                  .le_pairing_data = data,
+                                                  .bredr_link_key = {},
+                                                  .bredr_services = {}}));
   EXPECT_FALSE(bonded_callback_called());
 }
 
@@ -581,8 +603,12 @@ TEST_F(PeerCacheTestBondingTest, AddLowEnergyBondedPeerSuccess) {
   data.peer_ltk = kLTK;
   data.local_ltk = kLTK;
 
-  EXPECT_TRUE(cache()->AddBondedPeer(BondingData{
-      .identifier = kId, .address = kAddrLeRandom, .name = kName, .le_pairing_data = data}));
+  EXPECT_TRUE(cache()->AddBondedPeer(BondingData{.identifier = kId,
+                                                 .address = kAddrLeRandom,
+                                                 .name = kName,
+                                                 .le_pairing_data = data,
+                                                 .bredr_link_key = {},
+                                                 .bredr_services = {}}));
   auto* peer = cache()->FindById(kId);
   ASSERT_TRUE(peer);
   EXPECT_EQ(peer, cache()->FindByAddress(kAddrLeRandom));
@@ -609,6 +635,7 @@ TEST_F(PeerCacheTestBondingTest, AddBrEdrBondedPeerSuccess) {
 
   EXPECT_TRUE(cache()->AddBondedPeer(BondingData{.identifier = kId,
                                                  .address = kAddrBrEdr,
+                                                 .name = {},
                                                  .le_pairing_data = data,
                                                  .bredr_link_key = kBrEdrKey,
                                                  .bredr_services = kBrEdrServices}));
@@ -639,8 +666,12 @@ TEST_F(PeerCacheTest, AddBondedPeerWithIrkIsAddedToResolvingList) {
   data.irk = sm::Key(sm::SecurityProperties(), Random<UInt128>());
   data.identity_address = kAddrLeRandom;
 
-  EXPECT_TRUE(cache()->AddBondedPeer(
-      BondingData{.identifier = kId, .address = kAddrLeRandom, .le_pairing_data = data}));
+  EXPECT_TRUE(cache()->AddBondedPeer(BondingData{.identifier = kId,
+                                                 .address = kAddrLeRandom,
+                                                 .name = {},
+                                                 .le_pairing_data = data,
+                                                 .bredr_link_key = {},
+                                                 .bredr_services = {}}));
   auto* peer = cache()->FindByAddress(kAddrLeRandom);
   ASSERT_TRUE(peer);
   EXPECT_EQ(kAddrLeRandom, peer->address());
@@ -657,10 +688,13 @@ TEST_F(PeerCacheTest, AddBondedPeerWithIrkButWithoutIdentityAddressPanics) {
   data.local_ltk = kLTK;
   data.irk = sm::Key(sm::SecurityProperties(), Random<UInt128>());
 
-  EXPECT_DEATH_IF_SUPPORTED(
-      cache()->AddBondedPeer(
-          BondingData{.identifier = kId, .address = kAddrLeRandom, .le_pairing_data = data}),
-      ".*identity_address.*");
+  EXPECT_DEATH_IF_SUPPORTED(cache()->AddBondedPeer(BondingData{.identifier = kId,
+                                                               .address = kAddrLeRandom,
+                                                               .name = {},
+                                                               .le_pairing_data = data,
+                                                               .bredr_link_key = {},
+                                                               .bredr_services = {}}),
+                            ".*identity_address.*");
 }
 
 TEST_F(PeerCacheTest, StoreLowEnergyBondWithIrkButWithoutIdentityAddressPanics) {
@@ -927,7 +961,7 @@ TEST_F(PeerCacheTestBondingTest, StoreBondsForBothTech) {
   ASSERT_TRUE(peer()->temporary());
   ASSERT_FALSE(peer()->bonded());
 
-  peer()->MutLe().SetAdvertisingData(kTestRSSI, kAdvData, zx::time());
+  peer()->MutLe().SetAdvertisingData(kTestRSSI, kAdvData, pw::chrono::SystemClock::time_point());
   ASSERT_EQ(TechnologyType::kDualMode, peer()->technology());
 
   // Without Secure Connections cross-transport key generation, bonding on one
@@ -1043,8 +1077,8 @@ class PeerCacheTest_UpdateCallbackTest : public PeerCacheTest {
     ASSERT_TRUE(NewPeer(*DevAddr, true));
     cache()->add_peer_updated_callback([this](const auto&) { was_called_ = true; });
     ir_.view().bd_addr().CopyFrom(peer()->address().value().view());
-    irr_.bd_addr = peer()->address().value();
-    eirep_.bd_addr = peer()->address().value();
+    irr_.view().bd_addr().CopyFrom(peer()->address().value().view());
+    extended_inquiry_result_event_.view().bd_addr().CopyFrom(peer()->address().value().view());
     eir_data().SetToZeros();
     EXPECT_FALSE(was_called_);
   }
@@ -1053,12 +1087,15 @@ class PeerCacheTest_UpdateCallbackTest : public PeerCacheTest {
 
  protected:
   pw::bluetooth::emboss::InquiryResultWriter ir() { return ir_.view(); }
-  hci_spec::InquiryResultRSSI& irr() { return irr_; }
-  hci_spec::ExtendedInquiryResultEventParams& eirep() { return eirep_; }
+  pw::bluetooth::emboss::InquiryResultWithRssiWriter irr() { return irr_.view(); }
+  pw::bluetooth::emboss::ExtendedInquiryResultEventWriter extended_inquiry_result_event() {
+    return extended_inquiry_result_event_.view();
+  }
 
   MutableBufferView eir_data() {
-    return MutableBufferView(&eirep_.extended_inquiry_response,
-                             sizeof(eirep_.extended_inquiry_response));
+    return MutableBufferView(
+        extended_inquiry_result_event_.view().extended_inquiry_response().BackingStorage().data(),
+        extended_inquiry_result_event_.view().extended_inquiry_response().SizeInBytes());
   }
   bool was_called() const { return was_called_; }
   void ClearWasCalled() { was_called_ = false; }
@@ -1066,8 +1103,9 @@ class PeerCacheTest_UpdateCallbackTest : public PeerCacheTest {
  private:
   bool was_called_;
   StaticPacket<pw::bluetooth::emboss::InquiryResultWriter> ir_;
-  hci_spec::InquiryResultRSSI irr_;
-  hci_spec::ExtendedInquiryResultEventParams eirep_;
+  StaticPacket<pw::bluetooth::emboss::InquiryResultWithRssiWriter> irr_;
+  StaticPacket<pw::bluetooth::emboss::ExtendedInquiryResultEventWriter>
+      extended_inquiry_result_event_;
 };
 
 using PeerCacheBrEdrUpdateCallbackTest = PeerCacheTest_UpdateCallbackTest<&kAddrBrEdr>;
@@ -1079,7 +1117,7 @@ TEST_F(PeerCacheLowEnergyUpdateCallbackTest, ChangingLEConnectionStateTriggersUp
 }
 
 TEST_F(PeerCacheLowEnergyUpdateCallbackTest, SetAdvertisingDataTriggersUpdateCallbackOnNameSet) {
-  peer()->MutLe().SetAdvertisingData(kTestRSSI, kAdvData, zx::time());
+  peer()->MutLe().SetAdvertisingData(kTestRSSI, kAdvData, pw::chrono::SystemClock::time_point());
   EXPECT_TRUE(was_called());
   ASSERT_TRUE(peer()->name());
   EXPECT_EQ("Test", *peer()->name());
@@ -1091,19 +1129,20 @@ TEST_F(PeerCacheLowEnergyUpdateCallbackTest,
   ASSERT_NE(peer()->rssi(), kTestRSSI);
   cache()->add_peer_updated_callback([&](const auto& updated_peer) {
     ASSERT_TRUE(updated_peer.le());
-    EXPECT_TRUE(ContainersEqual(kAdvData, updated_peer.le()->advertising_data()));
+    ASSERT_TRUE(updated_peer.name().has_value());
+    EXPECT_EQ(updated_peer.name().value(), "Test");
     EXPECT_EQ(updated_peer.rssi(), kTestRSSI);
   });
-  peer()->MutLe().SetAdvertisingData(kTestRSSI, kAdvData, zx::time());
+  peer()->MutLe().SetAdvertisingData(kTestRSSI, kAdvData, pw::chrono::SystemClock::time_point());
 }
 
 TEST_F(PeerCacheLowEnergyUpdateCallbackTest,
        SetAdvertisingDataTriggersUpdateCallbackOnSameNameAndRssi) {
-  peer()->MutLe().SetAdvertisingData(kTestRSSI, kAdvData, zx::time());
+  peer()->MutLe().SetAdvertisingData(kTestRSSI, kAdvData, pw::chrono::SystemClock::time_point());
   ASSERT_TRUE(was_called());
 
   ClearWasCalled();
-  peer()->MutLe().SetAdvertisingData(kTestRSSI, kAdvData, zx::time());
+  peer()->MutLe().SetAdvertisingData(kTestRSSI, kAdvData, pw::chrono::SystemClock::time_point());
   EXPECT_TRUE(was_called());
 }
 
@@ -1131,7 +1170,7 @@ TEST_F(PeerCacheLowEnergyUpdateCallbackTest, BecomingDualModeTriggersUpdateCallB
   // Calling MutBrEdr again on doesn't trigger additional callbacks.
   peer()->MutBrEdr();
   EXPECT_EQ(call_count, 1U);
-  peer()->MutBrEdr().SetInquiryData(eirep());
+  peer()->MutBrEdr().SetInquiryData(extended_inquiry_result_event());
   EXPECT_EQ(call_count, 2U);
 }
 
@@ -1171,24 +1210,27 @@ TEST_F(PeerCacheBrEdrUpdateCallbackTest,
 
 TEST_F(PeerCacheBrEdrUpdateCallbackTest,
        SetBrEdrInquiryDataFromInquiryResultRSSITriggersUpdateCallbackOnDeviceClassSet) {
-  irr().class_of_device = kTestDeviceClass;
+  irr().class_of_device().major_device_class().Write(
+      pw::bluetooth::emboss::MajorDeviceClass::PHONE);
   peer()->MutBrEdr().SetInquiryData(irr());
   EXPECT_TRUE(was_called());
 }
 
 TEST_F(PeerCacheBrEdrUpdateCallbackTest,
        SetBrEdrInquiryDataFromInquiryResultRSSIUpdateCallbackProvidesUpdatedPeer) {
-  irr().class_of_device = kTestDeviceClass;
+  irr().class_of_device().major_device_class().Write(
+      pw::bluetooth::emboss::MajorDeviceClass::PHONE);
   cache()->add_peer_updated_callback([](const auto& updated_peer) {
     ASSERT_TRUE(updated_peer.bredr()->device_class());
-    EXPECT_EQ(DeviceClass::MajorClass(0x02), updated_peer.bredr()->device_class()->major_class());
+    EXPECT_EQ(DeviceClass::MajorClass::kPhone, updated_peer.bredr()->device_class()->major_class());
   });
   peer()->MutBrEdr().SetInquiryData(irr());
 }
 
 TEST_F(PeerCacheBrEdrUpdateCallbackTest,
        SetBrEdrInquiryDataFromInquiryResultRSSIDoesNotTriggerUpdateCallbackOnSameDeviceClass) {
-  irr().class_of_device = kTestDeviceClass;
+  irr().class_of_device().major_device_class().Write(
+      pw::bluetooth::emboss::MajorDeviceClass::PHONE);
   peer()->MutBrEdr().SetInquiryData(irr());
   ASSERT_TRUE(was_called());
 
@@ -1199,12 +1241,12 @@ TEST_F(PeerCacheBrEdrUpdateCallbackTest,
 
 TEST_F(PeerCacheBrEdrUpdateCallbackTest,
        SetBrEdrInquiryDataFromInquiryResultRSSIDoesNotTriggerUpdateCallbackOnRSSI) {
-  irr().rssi = 1;
+  irr().rssi().Write(1);
   peer()->MutBrEdr().SetInquiryData(irr());
   ASSERT_TRUE(was_called());  // Callback due to |class_of_device|.
 
   ClearWasCalled();
-  irr().rssi = 20;
+  irr().rssi().Write(20);
   peer()->MutBrEdr().SetInquiryData(irr());
   EXPECT_FALSE(was_called());
 }
@@ -1212,28 +1254,32 @@ TEST_F(PeerCacheBrEdrUpdateCallbackTest,
 TEST_F(
     PeerCacheBrEdrUpdateCallbackTest,
     SetBrEdrInquiryDataFromExtendedInquiryResultEventParamsTriggersUpdateCallbackOnDeviceClassSet) {
-  eirep().class_of_device = kTestDeviceClass;
-  peer()->MutBrEdr().SetInquiryData(eirep());
+  extended_inquiry_result_event().class_of_device().major_device_class().Write(
+      pw::bluetooth::emboss::MajorDeviceClass::PHONE);
+  peer()->MutBrEdr().SetInquiryData(extended_inquiry_result_event());
   EXPECT_TRUE(was_called());
 }
 
 TEST_F(PeerCacheBrEdrUpdateCallbackTest,
        SetBrEdrInquiryDataFromExtendedInquiryResultEventParamsTriggersUpdateCallbackOnNameSet) {
-  peer()->MutBrEdr().SetInquiryData(eirep());
+  peer()->MutBrEdr().SetInquiryData(extended_inquiry_result_event());
   ASSERT_TRUE(was_called());  // Callback due to |class_of_device|.
 
   ClearWasCalled();
   eir_data().Write(kEirData);
-  peer()->MutBrEdr().SetInquiryData(eirep());
+  peer()->MutBrEdr().SetInquiryData(extended_inquiry_result_event());
   EXPECT_TRUE(was_called());
 }
 
 TEST_F(PeerCacheBrEdrUpdateCallbackTest,
        SetBrEdrInquiryDataFromExtendedInquiryResultEventParamsUpdateCallbackProvidesUpdatedPeer) {
-  eirep().clock_offset = htole16(1);
-  eirep().page_scan_repetition_mode = pw::bluetooth::emboss::PageScanRepetitionMode::R1_;
-  eirep().rssi = kTestRSSI;
-  eirep().class_of_device = kTestDeviceClass;
+  extended_inquiry_result_event().clock_offset().valid().Write(true);
+  extended_inquiry_result_event().clock_offset().clock_offset().Write(1);
+  extended_inquiry_result_event().page_scan_repetition_mode().Write(
+      pw::bluetooth::emboss::PageScanRepetitionMode::R1_);
+  extended_inquiry_result_event().rssi().Write(kTestRSSI);
+  extended_inquiry_result_event().class_of_device().major_device_class().Write(
+      pw::bluetooth::emboss::MajorDeviceClass::PHONE);
   eir_data().Write(kEirData);
   ASSERT_FALSE(peer()->name().has_value());
   ASSERT_EQ(peer()->rssi(), hci_spec::kRSSIInvalid);
@@ -1253,33 +1299,36 @@ TEST_F(PeerCacheBrEdrUpdateCallbackTest,
     EXPECT_EQ(*updated_peer.name(), "Test");
     EXPECT_EQ(*updated_peer.name_source(), Peer::NameSource::kInquiryResultComplete);
   });
-  peer()->MutBrEdr().SetInquiryData(eirep());
+  peer()->MutBrEdr().SetInquiryData(extended_inquiry_result_event());
 }
 
 TEST_F(
     PeerCacheBrEdrUpdateCallbackTest,
     SetBrEdrInquiryDataFromExtendedInquiryResultEventParamsGeneratesExactlyOneUpdateCallbackRegardlessOfNumberOfFieldsChanged) {
-  eirep().clock_offset = htole16(1);
-  eirep().page_scan_repetition_mode = pw::bluetooth::emboss::PageScanRepetitionMode::R1_;
-  eirep().rssi = kTestRSSI;
-  eirep().class_of_device = kTestDeviceClass;
-  eir_data().Write(kEirData);
+  extended_inquiry_result_event().clock_offset().valid().Write(true);
+  extended_inquiry_result_event().clock_offset().clock_offset().Write(1);
+  extended_inquiry_result_event().page_scan_repetition_mode().Write(
+      pw::bluetooth::emboss::PageScanRepetitionMode::R1_);
+  extended_inquiry_result_event().rssi().Write(kTestRSSI);
+  extended_inquiry_result_event().class_of_device().major_device_class().Write(
+      pw::bluetooth::emboss::MajorDeviceClass::PHONE);
 
   size_t call_count = 0;
   cache()->add_peer_updated_callback([&](const auto&) { ++call_count; });
-  peer()->MutBrEdr().SetInquiryData(eirep());
+  peer()->MutBrEdr().SetInquiryData(extended_inquiry_result_event());
   EXPECT_EQ(call_count, 1U);
 }
 
 TEST_F(
     PeerCacheBrEdrUpdateCallbackTest,
     SetBrEdrInquiryDataFromExtendedInquiryResultEventParamsDoesNotTriggerUpdateCallbackOnSamePeerClass) {
-  eirep().class_of_device = kTestDeviceClass;
-  peer()->MutBrEdr().SetInquiryData(eirep());
+  extended_inquiry_result_event().class_of_device().major_device_class().Write(
+      pw::bluetooth::emboss::MajorDeviceClass::PHONE);
+  peer()->MutBrEdr().SetInquiryData(extended_inquiry_result_event());
   ASSERT_TRUE(was_called());
 
   ClearWasCalled();
-  peer()->MutBrEdr().SetInquiryData(eirep());
+  peer()->MutBrEdr().SetInquiryData(extended_inquiry_result_event());
   EXPECT_FALSE(was_called());
 }
 
@@ -1287,23 +1336,23 @@ TEST_F(
     PeerCacheBrEdrUpdateCallbackTest,
     SetBrEdrInquiryDataFromExtendedInquiryResultEventParamsDoesNotTriggerUpdateCallbackOnSameName) {
   eir_data().Write(kEirData);
-  peer()->MutBrEdr().SetInquiryData(eirep());
+  peer()->MutBrEdr().SetInquiryData(extended_inquiry_result_event());
   ASSERT_TRUE(was_called());
 
   ClearWasCalled();
-  peer()->MutBrEdr().SetInquiryData(eirep());
+  peer()->MutBrEdr().SetInquiryData(extended_inquiry_result_event());
   EXPECT_FALSE(was_called());
 }
 
 TEST_F(PeerCacheBrEdrUpdateCallbackTest,
        SetBrEdrInquiryDataFromExtendedInquiryResultEventParamsDoesNotTriggerUpdateCallbackOnRSSI) {
-  eirep().rssi = 1;
-  peer()->MutBrEdr().SetInquiryData(eirep());
+  extended_inquiry_result_event().rssi().Write(1);
+  peer()->MutBrEdr().SetInquiryData(extended_inquiry_result_event());
   ASSERT_TRUE(was_called());  // Callback due to |class_of_device|.
 
   ClearWasCalled();
-  eirep().rssi = 20;
-  peer()->MutBrEdr().SetInquiryData(eirep());
+  extended_inquiry_result_event().rssi().Write(20);
+  peer()->MutBrEdr().SetInquiryData(extended_inquiry_result_event());
   EXPECT_FALSE(was_called());
 }
 
@@ -1334,15 +1383,14 @@ TEST_F(PeerCacheBrEdrUpdateCallbackTest, BecomingDualModeTriggersUpdateCallBack)
   // Calling MutLe again doesn't trigger additional callbacks.
   peer()->MutLe();
   EXPECT_EQ(call_count, 1U);
-  peer()->MutLe().SetAdvertisingData(kTestRSSI, kAdvData, zx::time());
+  peer()->MutLe().SetAdvertisingData(kTestRSSI, kAdvData, pw::chrono::SystemClock::time_point());
   EXPECT_EQ(call_count, 2U);
 }
 
-class PeerCacheExpirationTest : public ::gtest::TestLoopFixture {
+class PeerCacheExpirationTest : public pw::async::test::FakeDispatcherFixture {
  public:
   PeerCacheExpirationTest() = default;
   void SetUp() {
-    TestLoopFixture::SetUp();
     cache_.set_peer_removed_callback([this](PeerId) { peers_removed_++; });
     auto* peer = cache_.NewPeer(kAddrLeAlias, /*connectable=*/true);
     ASSERT_TRUE(peer);
@@ -1355,8 +1403,7 @@ class PeerCacheExpirationTest : public ::gtest::TestLoopFixture {
 
   void TearDown() {
     cache_.set_peer_removed_callback(nullptr);
-    RunLoopUntilIdle();
-    TestLoopFixture::TearDown();
+    RunUntilIdle();
   }
 
   Peer* GetDefaultPeer() { return cache_.FindById(peer_id_); }
@@ -1370,7 +1417,7 @@ class PeerCacheExpirationTest : public ::gtest::TestLoopFixture {
   int peers_removed() const { return peers_removed_; }
 
  private:
-  PeerCache cache_;
+  PeerCache cache_{dispatcher()};
   DeviceAddress peer_addr_;
   DeviceAddress peer_addr_alias_;
   PeerId peer_id_;
@@ -1378,53 +1425,53 @@ class PeerCacheExpirationTest : public ::gtest::TestLoopFixture {
 };
 
 TEST_F(PeerCacheExpirationTest, TemporaryDiesSixtySecondsAfterBirth) {
-  RunLoopFor(kCacheTimeout);
+  RunFor(kCacheTimeout);
   EXPECT_FALSE(IsDefaultPeerPresent());
   EXPECT_EQ(1, peers_removed());
 }
 
 TEST_F(PeerCacheExpirationTest, TemporaryLivesForSixtySecondsAfterBirth) {
-  RunLoopFor(kCacheTimeout - zx::msec(1));
+  RunFor(kCacheTimeout - std::chrono::milliseconds(1));
   EXPECT_TRUE(IsDefaultPeerPresent());
   EXPECT_EQ(0, peers_removed());
 }
 
 TEST_F(PeerCacheExpirationTest, TemporaryLivesForSixtySecondsSinceLastSeen) {
-  RunLoopFor(kCacheTimeout - zx::msec(1));
+  RunFor(kCacheTimeout - std::chrono::milliseconds(1));
   ASSERT_TRUE(IsDefaultPeerPresent());
 
   // Tickle peer, and verify it sticks around for another cache timeout.
   GetDefaultPeer()->RegisterName("nombre");
-  RunLoopFor(kCacheTimeout - zx::msec(1));
+  RunFor(kCacheTimeout - std::chrono::milliseconds(1));
   EXPECT_TRUE(IsDefaultPeerPresent());
 }
 
 TEST_F(PeerCacheExpirationTest, TemporaryDiesSixtySecondsAfterLastSeen) {
-  RunLoopFor(kCacheTimeout - zx::msec(1));
+  RunFor(kCacheTimeout - std::chrono::milliseconds(1));
   ASSERT_TRUE(IsDefaultPeerPresent());
 
   // Tickle peer, and verify it expires after cache timeout.
   GetDefaultPeer()->RegisterName("nombre");
-  RunLoopFor(kCacheTimeout);
+  RunFor(kCacheTimeout);
   EXPECT_FALSE(IsDefaultPeerPresent());
 }
 
 TEST_F(PeerCacheExpirationTest, CanMakeNonTemporaryJustBeforeSixtySeconds) {
   // At last possible moment, make peer non-temporary,
-  RunLoopFor(kCacheTimeout - zx::msec(1));
+  RunFor(kCacheTimeout - std::chrono::milliseconds(1));
   ASSERT_TRUE(IsDefaultPeerPresent());
   Peer::ConnectionToken conn_token = GetDefaultPeer()->MutLe().RegisterConnection();
   ASSERT_FALSE(GetDefaultPeer()->temporary());
 
   // Verify that the peer survives.
-  RunLoopFor(kCacheTimeout * 10);
+  RunFor(kCacheTimeout * 10);
   EXPECT_TRUE(IsDefaultPeerPresent());
 }
 
 TEST_F(PeerCacheExpirationTest, LEConnectedPeerLivesMuchMoreThanSixtySeconds) {
   ASSERT_TRUE(IsDefaultPeerPresent());
   Peer::ConnectionToken conn_token = GetDefaultPeer()->MutLe().RegisterConnection();
-  RunLoopFor(kCacheTimeout * 10);
+  RunFor(kCacheTimeout * 10);
   ASSERT_TRUE(IsDefaultPeerPresent());
   EXPECT_FALSE(GetDefaultPeer()->temporary());
 }
@@ -1432,7 +1479,7 @@ TEST_F(PeerCacheExpirationTest, LEConnectedPeerLivesMuchMoreThanSixtySeconds) {
 TEST_F(PeerCacheExpirationTest, BREDRConnectedPeerLivesMuchMoreThanSixtySeconds) {
   ASSERT_TRUE(IsDefaultPeerPresent());
   Peer::ConnectionToken token = GetDefaultPeer()->MutBrEdr().RegisterConnection();
-  RunLoopFor(kCacheTimeout * 10);
+  RunFor(kCacheTimeout * 10);
   ASSERT_TRUE(IsDefaultPeerPresent());
   EXPECT_FALSE(GetDefaultPeer()->temporary());
 }
@@ -1446,7 +1493,7 @@ TEST_F(PeerCacheExpirationTest, LePeerBecomesNonTemporaryWhenConnecting) {
       GetDefaultPeer()->MutLe().RegisterInitializingConnection();
   EXPECT_FALSE(GetDefaultPeer()->temporary());
 
-  RunLoopFor(kCacheTimeout);
+  RunFor(kCacheTimeout);
   ASSERT_TRUE(IsDefaultPeerPresent());
 }
 
@@ -1457,14 +1504,14 @@ TEST_F(PeerCacheExpirationTest, LEPublicPeerRemainsNonTemporaryOnDisconnect) {
     Peer::ConnectionToken conn_token = GetDefaultPeer()->MutLe().RegisterConnection();
     ASSERT_FALSE(GetDefaultPeer()->temporary());
 
-    RunLoopFor(kCacheTimeout + zx::sec(1));
+    RunFor(kCacheTimeout + std::chrono::seconds(1));
     ASSERT_TRUE(IsDefaultPeerPresent());
     ASSERT_TRUE(GetDefaultPeer()->identity_known());
     // Destroy conn_token at end of scope
   }
   EXPECT_FALSE(GetDefaultPeer()->temporary());
 
-  RunLoopFor(kCacheTimeout);
+  RunFor(kCacheTimeout);
   EXPECT_TRUE(IsDefaultPeerPresent());
 }
 
@@ -1488,7 +1535,7 @@ TEST_F(PeerCacheExpirationTest, LERandomPeerBecomesTemporaryOnDisconnect) {
   // Then disconnect the peer, in preparation for the next stage of our test.
   {
     EXPECT_EQ(0, peers_removed());
-    RunLoopFor(zx::sec(61));
+    RunFor(std::chrono::seconds(61));
     EXPECT_EQ(1, peers_removed());  // Default peer timed out.
     auto* custom_peer = GetPeerById(custom_peer_id);
     ASSERT_TRUE(custom_peer);
@@ -1500,7 +1547,7 @@ TEST_F(PeerCacheExpirationTest, LERandomPeerBecomesTemporaryOnDisconnect) {
   }
 
   // Verify that the disconnected peer expires out of the cache.
-  RunLoopFor(zx::sec(61));
+  RunFor(std::chrono::seconds(61));
   EXPECT_FALSE(GetPeerById(custom_peer_id));
   EXPECT_EQ(2, peers_removed());
 }
@@ -1520,7 +1567,7 @@ TEST_F(PeerCacheExpirationTest, BrEdrPeerRemainsNonTemporaryOnDisconnect) {
   // Then disconnect the peer, in preparation for the next stage of our test.
   {
     EXPECT_EQ(0, peers_removed());
-    RunLoopFor(kCacheTimeout * 10);
+    RunFor(kCacheTimeout * 10);
     EXPECT_EQ(1, peers_removed());  // Default peer timed out.
     auto* custom_peer = GetPeerById(custom_peer_id);
     ASSERT_TRUE(custom_peer);
@@ -1535,7 +1582,7 @@ TEST_F(PeerCacheExpirationTest, BrEdrPeerRemainsNonTemporaryOnDisconnect) {
   // Verify that the disconnected peer does _not_ expire out of the cache.
   // We expect the peer to remain, because BrEdr peers are non-temporary
   // even when disconnected.
-  RunLoopFor(kCacheTimeout);
+  RunFor(kCacheTimeout);
   EXPECT_TRUE(GetPeerById(custom_peer_id));
   EXPECT_EQ(1, peers_removed());
 }
@@ -1543,20 +1590,22 @@ TEST_F(PeerCacheExpirationTest, BrEdrPeerRemainsNonTemporaryOnDisconnect) {
 TEST_F(PeerCacheExpirationTest, ExpirationUpdatesAddressMap) {
   ASSERT_TRUE(IsDefaultPeerAddressInCache());
   ASSERT_TRUE(IsOtherTransportAddressInCache());
-  RunLoopFor(kCacheTimeout);
+  RunFor(kCacheTimeout);
   EXPECT_FALSE(IsDefaultPeerAddressInCache());
   EXPECT_FALSE(IsOtherTransportAddressInCache());
 }
 
 TEST_F(PeerCacheExpirationTest, SetAdvertisingDataUpdatesExpiration) {
-  RunLoopFor(kCacheTimeout - zx::msec(1));
+  RunFor(kCacheTimeout - std::chrono::milliseconds(1));
   ASSERT_TRUE(IsDefaultPeerPresent());
-  GetDefaultPeer()->MutLe().SetAdvertisingData(kTestRSSI, StaticByteBuffer<1>{}, zx::time());
-  RunLoopFor(kCacheTimeout - zx::msec(1));
+  GetDefaultPeer()->MutLe().SetAdvertisingData(kTestRSSI, StaticByteBuffer<1>{},
+                                               pw::chrono::SystemClock::time_point());
+  RunFor(kCacheTimeout - std::chrono::milliseconds(1));
   EXPECT_TRUE(IsDefaultPeerPresent());
   // Setting advertising data with the same rssi & name should also update the expiry.
-  GetDefaultPeer()->MutLe().SetAdvertisingData(kTestRSSI, StaticByteBuffer<1>{}, zx::time());
-  RunLoopFor(zx::msec(1));
+  GetDefaultPeer()->MutLe().SetAdvertisingData(kTestRSSI, StaticByteBuffer<1>{},
+                                               pw::chrono::SystemClock::time_point());
+  RunFor(std::chrono::milliseconds(1));
   EXPECT_TRUE(IsDefaultPeerPresent());
 }
 
@@ -1565,46 +1614,46 @@ TEST_F(PeerCacheExpirationTest, SetBrEdrInquiryDataFromInquiryResultUpdatesExpir
   ASSERT_TRUE(IsDefaultPeerPresent());
   ir.view().bd_addr().CopyFrom(GetDefaultPeer()->address().value().view());
 
-  RunLoopFor(kCacheTimeout - zx::msec(1));
+  RunFor(kCacheTimeout - std::chrono::milliseconds(1));
   ASSERT_TRUE(IsDefaultPeerPresent());
   GetDefaultPeer()->MutBrEdr().SetInquiryData(ir.view());
 
-  RunLoopFor(zx::msec(1));
+  RunFor(std::chrono::milliseconds(1));
   EXPECT_TRUE(IsDefaultPeerPresent());
 }
 
 TEST_F(PeerCacheExpirationTest, SetBrEdrInquiryDataFromInquiryResultRSSIUpdatesExpiration) {
-  hci_spec::InquiryResultRSSI irr;
+  StaticPacket<pw::bluetooth::emboss::InquiryResultWithRssiWriter> irr;
   ASSERT_TRUE(IsDefaultPeerPresent());
-  irr.bd_addr = GetDefaultPeer()->address().value();
+  irr.view().bd_addr().CopyFrom(GetDefaultPeer()->address().value().view());
 
-  RunLoopFor(kCacheTimeout - zx::msec(1));
+  RunFor(kCacheTimeout - std::chrono::milliseconds(1));
   ASSERT_TRUE(IsDefaultPeerPresent());
-  GetDefaultPeer()->MutBrEdr().SetInquiryData(irr);
+  GetDefaultPeer()->MutBrEdr().SetInquiryData(irr.view());
 
-  RunLoopFor(zx::msec(1));
+  RunFor(std::chrono::milliseconds(1));
   EXPECT_TRUE(IsDefaultPeerPresent());
 }
 
 TEST_F(PeerCacheExpirationTest,
        SetBrEdrInquiryDataFromExtendedInquiryResultEventParamsUpdatesExpiration) {
-  hci_spec::ExtendedInquiryResultEventParams eirep;
+  StaticPacket<pw::bluetooth::emboss::ExtendedInquiryResultEventWriter> event;
   ASSERT_TRUE(IsDefaultPeerPresent());
-  eirep.bd_addr = GetDefaultPeer()->address().value();
+  event.view().bd_addr().CopyFrom(GetDefaultPeer()->address().value().view());
 
-  RunLoopFor(kCacheTimeout - zx::msec(1));
+  RunFor(kCacheTimeout - std::chrono::milliseconds(1));
   ASSERT_TRUE(IsDefaultPeerPresent());
-  GetDefaultPeer()->MutBrEdr().SetInquiryData(eirep);
+  GetDefaultPeer()->MutBrEdr().SetInquiryData(event.view());
 
-  RunLoopFor(zx::msec(1));
+  RunFor(std::chrono::milliseconds(1));
   EXPECT_TRUE(IsDefaultPeerPresent());
 }
 
 TEST_F(PeerCacheExpirationTest, RegisterNameUpdatesExpiration) {
-  RunLoopFor(kCacheTimeout - zx::msec(1));
+  RunFor(kCacheTimeout - std::chrono::milliseconds(1));
   ASSERT_TRUE(IsDefaultPeerPresent());
   GetDefaultPeer()->RegisterName({});
-  RunLoopFor(zx::msec(1));
+  RunFor(std::chrono::milliseconds(1));
   EXPECT_TRUE(IsDefaultPeerPresent());
 }
 

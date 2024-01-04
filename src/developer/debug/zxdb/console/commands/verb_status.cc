@@ -6,6 +6,8 @@
 
 #include "lib/fit/defer.h"
 #include "src/developer/debug/ipc/protocol.h"
+#include "src/developer/debug/shared/arch.h"
+#include "src/developer/debug/shared/platform.h"
 #include "src/developer/debug/zxdb/client/remote_api.h"
 #include "src/developer/debug/zxdb/client/session.h"
 #include "src/developer/debug/zxdb/console/command.h"
@@ -72,8 +74,9 @@ OutputBuffer FormatProcessRecords(std::vector<debug_ipc::ProcessRecord> records,
 
     row.push_back(std::to_string(record.process_koid));
     row.push_back(record.process_name);
-    if (record.component) {
-      row.push_back(record.component->url.substr(record.component->url.find_last_of('/') + 1));
+    if (record.components.size() == 1) {
+      row.push_back(
+          record.components[0].url.substr(record.components[0].url.find_last_of('/') + 1));
     }
   }
 
@@ -82,6 +85,16 @@ OutputBuffer FormatProcessRecords(std::vector<debug_ipc::ProcessRecord> records,
                ColSpec(Align::kLeft, 0, "Component")},
               rows, &out);
 
+  return out;
+}
+
+OutputBuffer GetPlatformArchLine(const Session* session) {
+  OutputBuffer out;
+  out.Append(Syntax::kHeading, "  System architecture: ");
+  out.Append(debug::ArchToString(session->arch()));
+  out.Append(" ");
+  out.Append(debug::PlatformToString(session->platform()));
+  out.Append("\n");
   return out;
 }
 
@@ -98,12 +111,14 @@ OutputBuffer GetConnectionStatus(const Session* session) {
   if (session->is_minidump()) {
     result.Append(Syntax::kHeading, "  Opened minidump: ");
     result.Append(session->minidump_path() + "\n");
+    result.Append(GetPlatformArchLine(session));
   } else if (session->IsConnected()) {
     result.Append(fxl::StringPrintf("  Connected to \"%s\"", session->connected_host().c_str()));
     if (session->connected_port())
       result.Append(fxl::StringPrintf(" on port %u", session->connected_port()));
-    result.Append(fxl::StringPrintf(", IPC version %u (%u).", session->ipc_version(),
+    result.Append(fxl::StringPrintf(", IPC version %u (%u).\n", session->ipc_version(),
                                     debug_ipc::kCurrentProtocolVersion));
+    result.Append(GetPlatformArchLine(session));
   } else {
     result.Append(
         "  Not connected. You can type these commands (see also \"help "

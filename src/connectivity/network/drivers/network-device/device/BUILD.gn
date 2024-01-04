@@ -4,6 +4,7 @@
 
 import("//build/components.gni")
 import("//build/test.gni")
+import("//build/testing/perf/test.gni")
 import("//src/connectivity/network/drivers/network-device/ddk_source_split.gni")
 
 # TODO(https://fxbug.dev/75544): Get rid of this target once std::shared_mutex
@@ -37,9 +38,9 @@ ddk_source_split("device") {
 
   public_deps = [
     ":shared_lock",
-    "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp",
     "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_cpp",
     "//sdk/lib/fidl",
     "//src/connectivity/lib/network-device/buffer_descriptor",
     "//src/lib/debug:backtrace-request",
@@ -48,7 +49,7 @@ ddk_source_split("device") {
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
-    "//zircon/system/ulib/sync",
+    "//zircon/system/ulib/sync:sync-cpp",
     "//zircon/system/ulib/zx",
   ]
 
@@ -76,6 +77,7 @@ test("test_bin") {
     ":device",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
+    "//third_party/googletest:gmock",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/sync:sync-cpp",
   ]
@@ -125,4 +127,20 @@ group("tests") {
     ":network-device-lib-test",
     ":network-device-microbenchmarks",
   ]
+}
+
+fuchsia_component_perf_test("network_device_microbenchmarks") {
+  package = ":network-device-microbenchmarks"
+  component_name = "network-device-microbenchmarks"
+  expected_metric_names_filepath = "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.network.device.txt"
+  test_component_args = [
+    "-p",
+    "--quiet",
+  ]
+  results_path_test_arg = "--out"
+}
+
+group("benchmarks") {
+  testonly = true
+  deps = [ ":network_device_microbenchmarks" ]
 }

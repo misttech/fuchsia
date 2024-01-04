@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.images2/cpp/fidl.h>
 #include <fuchsia/hardware/display/cpp/fidl.h>
+#include <fuchsia/hardware/display/types/cpp/fidl.h>
 #include <lib/fit/function.h>
 #include <lib/zx/event.h>
 #include <zircon/types.h>
@@ -28,14 +29,15 @@ namespace display {
 // resolution, vsync interval, last vsync time, etc.
 class Display {
  public:
-  Display(fuchsia::hardware::display::DisplayId id, uint32_t width_in_px, uint32_t height_in_px,
-          uint32_t width_in_mm, uint32_t height_in_mm,
-          std::vector<fuchsia_images2::PixelFormat> pixel_formats);
-  Display(fuchsia::hardware::display::DisplayId id, uint32_t width_in_px, uint32_t height_in_px);
+  Display(fuchsia::hardware::display::types::DisplayId id, uint32_t width_in_px,
+          uint32_t height_in_px, uint32_t width_in_mm, uint32_t height_in_mm,
+          std::vector<fuchsia_images2::PixelFormat> pixel_formats, uint32_t refresh_rate);
+  Display(fuchsia::hardware::display::types::DisplayId id, uint32_t width_in_px,
+          uint32_t height_in_px);
   virtual ~Display() = default;
 
   using VsyncCallback = fit::function<void(
-      zx::time timestamp, fuchsia::hardware::display::ConfigStamp applied_config_stamp)>;
+      zx::time timestamp, fuchsia::hardware::display::types::ConfigStamp applied_config_stamp)>;
   void SetVsyncCallback(VsyncCallback callback) { vsync_callback_ = std::move(callback); }
 
   using DPRCallback = fit::function<void(const glm::vec2& dpr)>;
@@ -57,7 +59,7 @@ class Display {
   }
 
   // The display's ID in the context of the DisplayManager's DisplayController.
-  fuchsia::hardware::display::DisplayId display_id() const { return display_id_; }
+  fuchsia::hardware::display::types::DisplayId display_id() const { return display_id_; }
   uint32_t width_in_px() const { return width_in_px_; }
   uint32_t height_in_px() const { return height_in_px_; }
   uint32_t width_in_mm() const { return width_in_mm_; }
@@ -67,12 +69,17 @@ class Display {
 
   const std::vector<fuchsia_images2::PixelFormat>& pixel_formats() const { return pixel_formats_; }
 
+  uint32_t maximum_refresh_rate_in_millihertz() const {
+    return maximum_refresh_rate_in_millihertz_;
+  }
+
   // Event signaled by DisplayManager when ownership of the display
   // changes. This event backs Scenic's GetDisplayOwnershipEvent API.
   const zx::event& ownership_event() const { return ownership_event_; }
 
   // Called by DisplayManager, other users of Display should probably not call this.  Except tests.
-  void OnVsync(zx::time timestamp, fuchsia::hardware::display::ConfigStamp applied_config_stamp);
+  void OnVsync(zx::time timestamp,
+               fuchsia::hardware::display::types::ConfigStamp applied_config_stamp);
 
  protected:
   std::shared_ptr<scheduling::VsyncTiming> vsync_timing_;
@@ -84,7 +91,7 @@ class Display {
   // The maximum vsync interval we would ever expect.
   static constexpr zx::duration kMaximumVsyncInterval = zx::msec(100);
 
-  const fuchsia::hardware::display::DisplayId display_id_;
+  const fuchsia::hardware::display::types::DisplayId display_id_;
   const uint32_t width_in_px_;
   const uint32_t height_in_px_;
   const uint32_t width_in_mm_;
@@ -94,6 +101,7 @@ class Display {
   std::atomic<glm::vec2> device_pixel_ratio_;
   zx::event ownership_event_;
   std::vector<fuchsia_images2::PixelFormat> pixel_formats_;
+  const uint32_t maximum_refresh_rate_in_millihertz_;
 
   bool claimed_ = false;
 

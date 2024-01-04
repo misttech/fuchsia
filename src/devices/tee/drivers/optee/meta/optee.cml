@@ -10,7 +10,7 @@
     program: {
         runner: "driver",
         bind: "meta/bind/optee.bindbc",
-        colocate: "true",
+        colocate: "false",
         compat: "driver/optee.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },
@@ -20,6 +20,7 @@
     use: [
         { protocol: "fuchsia.scheduler.ProfileProvider" },
         { service: "fuchsia.hardware.rpmb.Service" },
+        { service: "fuchsia.hardware.platform.device.Service" },
     ],
     expose: [
         {

@@ -4,7 +4,7 @@
 
 import("//build/components.gni")
 
-fuchsia_shell_package("tcpdump") {
+fuchsia_package("tcpdump") {
   deps = [ ":bin" ]
 }
 
@@ -132,6 +132,7 @@ executable("bin") {
     "src/print-ospf.c",
     "src/print-ospf6.c",
     "src/print-otv.c",
+    "src/print-pflog.c",
     "src/print-pgm.c",
     "src/print-pim.c",
     "src/print-pktap.c",
@@ -142,11 +143,11 @@ executable("bin") {
     "src/print-ptp.c",
     "src/print-radius.c",
     "src/print-raw.c",
+    "src/print-realtek.c",
     "src/print-resp.c",
     "src/print-rip.c",
     "src/print-ripng.c",
     "src/print-rpki-rtr.c",
-    "src/print-rrcp.c",
     "src/print-rsvp.c",
     "src/print-rt6.c",
     "src/print-rtsp.c",
@@ -184,6 +185,7 @@ executable("bin") {
     "src/print-vxlan-gpe.c",
     "src/print-vxlan.c",
     "src/print-wb.c",
+    "src/print-whois.c",
     "src/print-zep.c",
     "src/print-zephyr.c",
     "src/print-zeromq.c",
@@ -207,8 +209,8 @@ executable("bin") {
   configs += [ ":suppress_warnings" ]
 
   deps = [
-    "//sdk/fidl/fuchsia.posix.socket.packet:fuchsia.posix.socket.packet_cpp_wire",
-    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_cpp_wire",
+    "//sdk/fidl/fuchsia.posix.socket.packet:fuchsia.posix.socket.packet_cpp",
+    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/vfs/cpp",
     "//third_party/libpcap",

@@ -48,6 +48,7 @@ test("fbl") {
     "string_traits_tests.cc",
     "strong_int_tests.cc",
     "type_info_tests.cc",
+    "unaligned_tests.cc",
     "unique_fd_tests.cc",
     "vector_tests.cc",
     "wavl_tree_best_node_observer_tests.cc",
@@ -87,6 +88,13 @@ test("fbl") {
       "//sdk/lib/fdio",
       "//zircon/system/ulib/zx",
     ]
+  }
+
+  _is_lto = select_variant + [ "lto" ] - [ "lto" ] != select_variant
+  if (_is_lto || is_coverage) {
+    # LTO OOMs on RBE workers
+    # coverage mode timeout on RBE
+    configs += [ "//build/config:no_remote_link" ]
   }
 }
 

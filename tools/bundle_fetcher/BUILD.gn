@@ -19,8 +19,6 @@ go_library("main") {
   source_dir = "cmd"
 
   sources = [
-    "download.go",
-    "download_test.go",
     "main.go",
     "product_list.go",
     "product_list_test.go",
@@ -28,7 +26,6 @@ go_library("main") {
 
   deps = [
     ":bundler",
-    "//build/sdk/meta:go_meta",
     "//third_party/golibs:cloud.google.com/go/storage",
     "//third_party/golibs:github.com/google/subcommands",
     "//third_party/golibs:google.golang.org/api/iterator",

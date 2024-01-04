@@ -15,6 +15,9 @@ source_set("network_service") {
     "interceptors/latency.h",
     "interceptors/packet_loss.h",
     "interceptors/reorder.h",
+    "netdump.cc",
+    "netdump.h",
+    "netdump_types.h",
     "network.cc",
     "network.h",
     "network_context.cc",
@@ -23,7 +26,7 @@ source_set("network_service") {
   ]
 
   deps = [
-    "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_cpp_wire",
+    "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/fdio",
@@ -38,20 +41,10 @@ source_set("network_service") {
   public_deps = [
     "//sdk/fidl/fuchsia.net.tun:fuchsia.net.tun_hlcpp",
     "//sdk/lib/stdcompat",
+    "//sdk/lib/syslog/cpp",
     "//src/connectivity/lib/network-device/cpp",
     "//src/connectivity/network/testing/netemul/network-context/fidl:network_hlcpp",
   ]
-}
-
-source_set("netdump") {
-  testonly = true
-  sources = [
-    "netdump.cc",
-    "netdump.h",
-    "netdump_types.h",
-  ]
-  deps = [ "//src/lib/fxl" ]
-  public_deps = [ "//src/connectivity/network/testing/netemul/network-context/fidl:network_hlcpp" ]
 }
 
 executable("network_test_bin") {
@@ -68,7 +61,6 @@ executable("network_test_bin") {
   ]
 
   deps = [
-    ":netdump",
     ":network_service",
     "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp_hlcpp_conversion",
     "//sdk/lib/sys/cpp",

@@ -27,7 +27,9 @@ class CompositeDeviceFragment {
   // matches and the fragment is currently unbound.
   bool BindNode(std::shared_ptr<Node> node);
 
-  fuchsia_driver_development::LegacyCompositeFragmentInfo GetCompositeFragmentInfo() const;
+  fuchsia_driver_legacy::CompositeFragmentInfo GetCompositeFragmentInfo() const;
+
+  std::optional<std::string> GetTopologicalPath() const;
 
   std::shared_ptr<Node> bound_node() { return bound_node_.lock(); }
   std::string_view name() const { return name_; }
@@ -57,9 +59,10 @@ class CompositeDeviceAssembler {
   // true if it matches a fragment that is currently unbound.
   // If this node is the last node needed for the composite device, this function
   // will also create the composite node.
-  bool BindNode(std::shared_ptr<Node> node);
+  std::optional<uint32_t> BindNode(std::shared_ptr<Node> node);
 
-  fuchsia_driver_development::CompositeInfo GetCompositeInfo() const;
+  fuchsia_driver_development::CompositeNodeInfo GetCompositeInfo() const;
+  fuchsia_driver_legacy::CompositeInfo GetLegacyCompositeInfo() const;
 
   void Inspect(inspect::Node& root) const;
 
@@ -109,7 +112,7 @@ class CompositeDeviceManager
   // Returns a vector of all composites that the node binded to. If the node was bound to
   // any composite devices, then there is no need to bind it to a driver.
   // An empty vector means the node did not bind to any composite devices.
-  std::vector<fuchsia_driver_development::CompositeInfo> BindNode(std::shared_ptr<Node> node);
+  std::vector<fuchsia_driver_legacy::CompositeParent> BindNode(std::shared_ptr<Node> node);
 
   // Publish capabilities to the outgoing directory.
   // CompositeDeviceManager must outlive |outgoing| because it will be used
@@ -118,7 +121,7 @@ class CompositeDeviceManager
 
   void Inspect(inspect::Node& root) const;
 
-  std::vector<fuchsia_driver_development::wire::CompositeInfo> GetCompositeListInfo(
+  std::vector<fuchsia_driver_development::wire::CompositeNodeInfo> GetCompositeListInfo(
       fidl::AnyArena& arena) const;
 
   // Exposed for testing.

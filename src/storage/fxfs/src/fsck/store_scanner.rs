@@ -6,7 +6,7 @@ use {
     crate::{
         fsck::{
             errors::{FsckError, FsckFatal, FsckWarning},
-            Fsck,
+            FragmentationStats, Fsck, FsckResult,
         },
         lsm_tree::types::{Item, ItemRef, LayerIterator, MutableLayer},
         object_handle::INVALID_OBJECT_ID,
@@ -16,37 +16,51 @@ use {
             AttributeKey, ChildValue, EncryptionKeys, ExtendedAttributeValue, ExtentKey,
             ExtentValue, ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind,
             ObjectStore, ObjectValue, ProjectProperty, DEFAULT_DATA_ATTRIBUTE_ID,
+            EXTENDED_ATTRIBUTE_RANGE_END, EXTENDED_ATTRIBUTE_RANGE_START,
+            FSVERITY_MERKLE_ATTRIBUTE_ID,
         },
         range::RangeExt,
         round::round_up,
     },
     anyhow::Error,
     fxfs_crypto::WrappedKeys,
+    rustc_hash::FxHashSet as HashSet,
     std::{
         cell::UnsafeCell,
-        collections::{btree_map::BTreeMap, hash_set::HashSet},
+        collections::btree_map::BTreeMap,
         convert::TryInto,
         iter::Iterator,
         ops::{Bound, Range},
     },
 };
 
+// Information for scanned objects about their allocated attributes.
+#[derive(Debug)]
+struct ScannedAttributes {
+    // A list of attribute IDs found for the object, along with their logical size.
+    attributes: Vec<(u64, u64)>,
+    // The object's allocated size, according to its metadata.
+    stored_allocated_size: u64,
+    // The allocated size of the object (computed by summing up the extents for the file).
+    observed_allocated_size: u64,
+    // The object is in the graveyard which means extents beyond the end of the file are allowed.
+    in_graveyard: bool,
+    // Any extended attributes which point at an fxfs attribute for this object.
+    extended_attributes: Vec<u64>,
+}
+
 #[derive(Debug)]
 struct ScannedFile {
-    // A list of attribute IDs found for the file, along with their logical size.
-    attributes: Vec<(u64, u64)>,
     // A list of parent object IDs for the file.  INVALID_OBJECT_ID indicates a reference from
     // outside the object store (either the graveyard, or because the object is a root object of the
     // store and probably has a reference to it in e.g. the StoreInfo or superblock).
     parents: Vec<u64>,
-    // The file's allocated size, according to its metadata.
-    stored_allocated_size: u64,
-    // The allocated size of the file (computed by summing up the extents for the file).
-    observed_allocated_size: u64,
-    // The object is in the graveyard which means extents beyond the end of the file are allowed.
-    in_graveyard: bool,
     // The number of references to the file, according to its metadata.
     stored_refs: u64,
+    // Attributes for this file.
+    attributes: ScannedAttributes,
+    // True if fsverity-enabled.
+    is_verified: bool,
 }
 
 #[derive(Debug)]
@@ -60,16 +74,24 @@ struct ScannedDir {
     parent: Option<u64>,
     // Used to detect directory cycles.
     visited: UnsafeCell<bool>,
+    // Attributes for this directory.
+    attributes: ScannedAttributes,
 }
 
 unsafe impl Sync for ScannedDir {}
+
+#[derive(Debug)]
+struct ScannedSymlink {
+    // Attributes for this symlink
+    attributes: ScannedAttributes,
+}
 
 #[derive(Debug)]
 enum ScannedObject {
     Directory(ScannedDir),
     File(ScannedFile),
     Graveyard,
-    Symlink,
+    Symlink(ScannedSymlink),
     // A tombstoned object, which should have no other records associated with it.
     Tombstone,
 }
@@ -81,7 +103,7 @@ struct ScannedStore<'a> {
     store_id: u64,
     is_root_store: bool,
     is_encrypted: bool,
-    current_file: Option<CurrentFile>,
+    current_object: Option<CurrentObject>,
     root_dir_id: u64,
     stored_project_usages: BTreeMap<u64, (i64, i64)>,
     total_project_usages: BTreeMap<u64, (i64, i64)>,
@@ -89,9 +111,10 @@ struct ScannedStore<'a> {
     used_project_ids: BTreeMap<u64, u64>,
 }
 
-struct CurrentFile {
+struct CurrentObject {
     object_id: u64,
     key_ids: HashSet<u64>,
+    lazy_keys: bool,
 }
 
 impl<'a> ScannedStore<'a> {
@@ -110,7 +133,7 @@ impl<'a> ScannedStore<'a> {
             store_id,
             is_root_store,
             is_encrypted,
-            current_file: None,
+            current_object: None,
             root_dir_id,
             stored_project_usages: BTreeMap::new(),
             total_project_usages: BTreeMap::new(),
@@ -148,8 +171,11 @@ impl<'a> ScannedStore<'a> {
                             entry.0 += i64::try_from(*allocated_size).unwrap();
                             entry.1 += 1;
                         }
-                        self.current_file =
-                            Some(CurrentFile { object_id: key.object_id, key_ids: HashSet::new() });
+                        self.current_object = Some(CurrentObject {
+                            object_id: key.object_id,
+                            key_ids: HashSet::default(),
+                            lazy_keys: false,
+                        });
                         let parents = if self.root_objects.contains(&key.object_id) {
                             vec![INVALID_OBJECT_ID]
                         } else {
@@ -158,18 +184,22 @@ impl<'a> ScannedStore<'a> {
                         self.objects.insert(
                             key.object_id,
                             ScannedObject::File(ScannedFile {
-                                attributes: vec![],
                                 parents,
-                                stored_allocated_size: *allocated_size,
-                                observed_allocated_size: 0,
-                                in_graveyard: false,
                                 stored_refs: *refs,
+                                attributes: ScannedAttributes {
+                                    attributes: Vec::new(),
+                                    stored_allocated_size: *allocated_size,
+                                    observed_allocated_size: 0,
+                                    in_graveyard: false,
+                                    extended_attributes: Vec::new(),
+                                },
+                                is_verified: false,
                             }),
                         );
                     }
                     ObjectValue::Object {
                         kind: ObjectKind::Directory { sub_dirs },
-                        attributes: ObjectAttributes { project_id, .. },
+                        attributes: ObjectAttributes { project_id, allocated_size, .. },
                     } => {
                         if *project_id > 0 {
                             self.used_project_ids.insert(*project_id, key.object_id);
@@ -182,6 +212,11 @@ impl<'a> ScannedStore<'a> {
                         } else {
                             None
                         };
+                        self.current_object = Some(CurrentObject {
+                            object_id: key.object_id,
+                            key_ids: HashSet::default(),
+                            lazy_keys: true,
+                        });
                         // We've verified no duplicate keys, and Object records come first,
                         // so this should always be the first time we encounter this object.
                         self.objects.insert(
@@ -191,6 +226,13 @@ impl<'a> ScannedStore<'a> {
                                 observed_sub_dirs: 0,
                                 parent,
                                 visited: UnsafeCell::new(false),
+                                attributes: ScannedAttributes {
+                                    attributes: Vec::new(),
+                                    stored_allocated_size: *allocated_size,
+                                    observed_allocated_size: 0,
+                                    in_graveyard: false,
+                                    extended_attributes: Vec::new(),
+                                },
                             }),
                         );
                     }
@@ -206,7 +248,7 @@ impl<'a> ScannedStore<'a> {
                     }
                     ObjectValue::Object {
                         kind: ObjectKind::Symlink { .. },
-                        attributes: ObjectAttributes { project_id, .. },
+                        attributes: ObjectAttributes { project_id, allocated_size, .. },
                     } => {
                         if *project_id > 0 {
                             self.used_project_ids.insert(*project_id, key.object_id);
@@ -214,7 +256,23 @@ impl<'a> ScannedStore<'a> {
                             // Increment only nodes.
                             entry.1 += 1;
                         }
-                        self.objects.insert(key.object_id, ScannedObject::Symlink);
+                        self.current_object = Some(CurrentObject {
+                            object_id: key.object_id,
+                            key_ids: HashSet::default(),
+                            lazy_keys: true,
+                        });
+                        self.objects.insert(
+                            key.object_id,
+                            ScannedObject::Symlink(ScannedSymlink {
+                                attributes: ScannedAttributes {
+                                    attributes: Vec::new(),
+                                    stored_allocated_size: *allocated_size,
+                                    observed_allocated_size: 0,
+                                    in_graveyard: false,
+                                    extended_attributes: Vec::new(),
+                                },
+                            }),
+                        );
                     }
                     _ => {
                         self.fsck.error(FsckError::MalformedObjectRecord(
@@ -229,7 +287,7 @@ impl<'a> ScannedStore<'a> {
                 if let ObjectValue::Keys(keys) = value {
                     match keys {
                         EncryptionKeys::AES256XTS(WrappedKeys(keys)) => {
-                            if let Some(current_file) = &mut self.current_file {
+                            if let Some(current_file) = &mut self.current_object {
                                 // Duplicates items should have already been checked, but not
                                 // duplicate key IDs.
                                 assert!(current_file.key_ids.is_empty());
@@ -262,14 +320,12 @@ impl<'a> ScannedStore<'a> {
                 match value {
                     ObjectValue::Attribute { size } => {
                         match self.objects.get_mut(&key.object_id) {
-                            Some(ScannedObject::File(ScannedFile { attributes, .. })) => {
-                                attributes.push((attribute_id, *size));
-                            }
-                            Some(ScannedObject::Directory(..) | ScannedObject::Symlink) => {
-                                self.fsck.error(FsckError::AttributeNotOnFile(
-                                    self.store_id,
-                                    key.object_id,
-                                ))?;
+                            Some(
+                                ScannedObject::File(ScannedFile { attributes, .. })
+                                | ScannedObject::Directory(ScannedDir { attributes, .. })
+                                | ScannedObject::Symlink(ScannedSymlink { attributes, .. }),
+                            ) => {
+                                attributes.attributes.push((attribute_id, *size));
                             }
                             Some(ScannedObject::Graveyard) => { /* NOP */ }
                             Some(ScannedObject::Tombstone) => {
@@ -291,6 +347,40 @@ impl<'a> ScannedStore<'a> {
                             }
                         }
                     }
+                    ObjectValue::VerifiedAttribute { size, .. } => {
+                        match self.objects.get_mut(&key.object_id) {
+                            Some(ScannedObject::File(ScannedFile {
+                                attributes,
+                                is_verified,
+                                ..
+                            })) => {
+                                attributes.attributes.push((attribute_id, *size));
+                                *is_verified = true;
+                            }
+                            Some(ScannedObject::Directory(..) | ScannedObject::Symlink(..)) => {
+                                self.fsck.error(FsckError::NonFileMarkedAsVerified(
+                                    self.store_id,
+                                    key.object_id,
+                                ))?;
+                            }
+                            Some(ScannedObject::Graveyard) => { /* NOP */ }
+                            Some(ScannedObject::Tombstone) => {
+                                self.fsck.error(FsckError::TombstonedObjectHasRecords(
+                                    self.store_id,
+                                    key.object_id,
+                                ))?;
+                            }
+                            None => {
+                                self.fsck.warning(FsckWarning::OrphanedAttribute(
+                                    self.store_id,
+                                    key.object_id,
+                                    attribute_id,
+                                ))?;
+                            }
+                        }
+                    }
+                    // Deleted attribute.
+                    ObjectValue::None => (),
                     _ => {
                         self.fsck.error(FsckError::MalformedObjectRecord(
                             self.store_id,
@@ -305,7 +395,7 @@ impl<'a> ScannedStore<'a> {
                 match value {
                     // Regular extent record.
                     ObjectValue::Extent(ExtentValue::Some { key_id, .. }) => {
-                        if let Some(current_file) = &self.current_file {
+                        if let Some(current_file) = &self.current_object {
                             if !self.is_encrypted && *key_id == 0 && current_file.key_ids.is_empty()
                             {
                                 // Unencrypted files in unencrypted stores should use key ID 0.
@@ -407,10 +497,38 @@ impl<'a> ScannedStore<'a> {
             }
             ObjectKeyData::ExtendedAttribute { .. } => match value {
                 ObjectValue::None => {}
-                ObjectValue::ExtendedAttribute(ExtendedAttributeValue::Inline(_)) => {}
-                // TODO(fxbug.dev/122123): do more validation on the non-inline values once we
-                // support them.
-                ObjectValue::ExtendedAttribute(ExtendedAttributeValue::AttributeId(_)) => {}
+                ObjectValue::ExtendedAttribute(ExtendedAttributeValue::Inline(_)) => {
+                    if self.objects.get(&key.object_id).is_none() {
+                        self.fsck.warning(FsckWarning::OrphanedExtendedAttributeRecord(
+                            self.store_id,
+                            key.object_id,
+                        ))?;
+                    }
+                }
+                ObjectValue::ExtendedAttribute(ExtendedAttributeValue::AttributeId(id)) => {
+                    match self.objects.get_mut(&key.object_id) {
+                        Some(
+                            ScannedObject::File(ScannedFile { attributes, .. })
+                            | ScannedObject::Directory(ScannedDir { attributes, .. })
+                            | ScannedObject::Symlink(ScannedSymlink { attributes, .. }),
+                        ) => {
+                            attributes.extended_attributes.push(*id);
+                        }
+                        Some(ScannedObject::Graveyard) => { /* NOP */ }
+                        Some(ScannedObject::Tombstone) => {
+                            self.fsck.error(FsckError::TombstonedObjectHasRecords(
+                                self.store_id,
+                                key.object_id,
+                            ))?;
+                        }
+                        None => {
+                            self.fsck.warning(FsckWarning::OrphanedExtendedAttributeRecord(
+                                self.store_id,
+                                key.object_id,
+                            ))?;
+                        }
+                    }
+                }
                 _ => {
                     self.fsck.error(FsckError::MalformedObjectRecord(
                         self.store_id,
@@ -463,7 +581,7 @@ impl<'a> ScannedStore<'a> {
                 let expected = match s {
                     ScannedObject::Directory(_) => ObjectDescriptor::Directory,
                     ScannedObject::File(_) | ScannedObject::Graveyard => ObjectDescriptor::File,
-                    ScannedObject::Symlink => ObjectDescriptor::Symlink,
+                    ScannedObject::Symlink(_) => ObjectDescriptor::Symlink,
                     ScannedObject::Tombstone => unreachable!(),
                 };
                 if &expected != object_descriptor {
@@ -477,7 +595,9 @@ impl<'a> ScannedStore<'a> {
             }
         }
         match self.objects.get_mut(&parent_id) {
-            Some(ScannedObject::File(..) | ScannedObject::Graveyard | ScannedObject::Symlink) => {
+            Some(
+                ScannedObject::File(..) | ScannedObject::Graveyard | ScannedObject::Symlink(_),
+            ) => {
                 self.fsck.error(FsckError::ObjectHasChildren(self.store_id, parent_id))?;
             }
             Some(ScannedObject::Directory(ScannedDir { observed_sub_dirs, .. })) => {
@@ -521,12 +641,17 @@ impl<'a> ScannedStore<'a> {
         }
         let len = range.end - range.start;
         match self.objects.get_mut(&object_id) {
-            Some(ScannedObject::File(ScannedFile {
-                attributes,
-                observed_allocated_size: allocated_size,
-                in_graveyard,
-                ..
-            })) => {
+            Some(
+                ScannedObject::File(ScannedFile { attributes, .. })
+                | ScannedObject::Directory(ScannedDir { attributes, .. })
+                | ScannedObject::Symlink(ScannedSymlink { attributes, .. }),
+            ) => {
+                let ScannedAttributes {
+                    attributes,
+                    observed_allocated_size: allocated_size,
+                    in_graveyard,
+                    ..
+                } = attributes;
                 match attributes.iter().find(|(attr_id, _)| *attr_id == attribute_id) {
                     Some((_, size)) => {
                         if device_offset.is_some()
@@ -554,10 +679,7 @@ impl<'a> ScannedStore<'a> {
                     *allocated_size += len;
                 }
             }
-            Some(ScannedObject::Directory(..)) => {
-                self.fsck.warning(FsckWarning::ExtentForDirectory(self.store_id, object_id))?;
-            }
-            Some(_) => { /* NOP */ }
+            Some(ScannedObject::Graveyard | ScannedObject::Tombstone) => { /* NOP */ }
             None => {
                 self.fsck
                     .warning(FsckWarning::ExtentForNonexistentObject(self.store_id, object_id))?;
@@ -586,13 +708,23 @@ impl<'a> ScannedStore<'a> {
     // trimming a file.
     fn handle_graveyard_entry(&mut self, object_id: u64, tombstone: bool) -> Result<(), Error> {
         match self.objects.get_mut(&object_id) {
-            Some(ScannedObject::File(ScannedFile { parents, in_graveyard, .. })) => {
+            Some(ScannedObject::File(ScannedFile {
+                parents,
+                attributes: ScannedAttributes { in_graveyard, .. },
+                ..
+            })) => {
                 *in_graveyard = true;
                 if tombstone {
                     parents.push(INVALID_OBJECT_ID)
                 }
             }
-            Some(_) => {
+            Some(
+                ScannedObject::Directory(ScannedDir { attributes, .. })
+                | ScannedObject::Symlink(ScannedSymlink { attributes, .. }),
+            ) => {
+                attributes.in_graveyard = true;
+            }
+            Some(ScannedObject::Graveyard | ScannedObject::Tombstone) => {
                 self.fsck.error(FsckError::UnexpectedObjectInGraveyard(object_id))?;
             }
             None => {
@@ -607,10 +739,12 @@ impl<'a> ScannedStore<'a> {
 
     // Called when all items for the current file have been processed.
     fn finish_file(&mut self) -> Result<(), Error> {
-        if let Some(current_file) = self.current_file.take() {
+        if let Some(current_file) = self.current_object.take() {
             // If the store is unencrypted, then the file might or might not have encryption keys
-            // (e.g. the root store has encrypted layer files).
-            if self.is_encrypted && current_file.key_ids.is_empty() {
+            // (e.g. the root store has encrypted layer files). Also, if the object has lazily
+            // generated keys, like directories and symlinks, it will only have keys if an
+            // attribute has been written, in which case we check the existence of the key then.
+            if self.is_encrypted && !current_file.lazy_keys && current_file.key_ids.is_empty() {
                 self.fsck.error(FsckError::MissingEncryptionKeys(
                     self.store_id,
                     current_file.object_id,
@@ -628,12 +762,15 @@ impl<'a> ScannedStore<'a> {
 async fn scan_extents_and_directory_children<'a>(
     store: &ObjectStore,
     scanned: &mut ScannedStore<'a>,
+    result: &mut FsckResult,
 ) -> Result<(), Error> {
     let bs = store.block_size();
     let layer_set = store.tree().layer_set();
     let mut merger = layer_set.merger();
     let mut iter = merger.seek(Bound::Unbounded).await?;
     let mut allocated_bytes = 0;
+    let mut extent_count = 0;
+    let mut previous_object_id = INVALID_OBJECT_ID;
     while let Some(itemref) = iter.get() {
         match itemref {
             ItemRef {
@@ -650,11 +787,28 @@ async fn scan_extents_and_directory_children<'a>(
                 ..
             } => {
                 let device_offset = if let ExtentValue::Some { device_offset, .. } = extent {
-                    allocated_bytes += range.length().unwrap_or(0);
+                    let size = range.length().unwrap_or(0);
+                    allocated_bytes += size;
+
+                    if previous_object_id != *object_id {
+                        if previous_object_id != INVALID_OBJECT_ID {
+                            result.fragmentation.extent_count
+                                [FragmentationStats::get_histogram_bucket_for_count(
+                                    extent_count,
+                                )] += 1;
+                        }
+                        extent_count = 0;
+                        previous_object_id = *object_id;
+                    }
+                    result.fragmentation.extent_size
+                        [FragmentationStats::get_histogram_bucket_for_size(size)] += 1;
+                    extent_count += 1;
+
                     Some(*device_offset)
                 } else {
                     None
                 };
+
                 scanned.process_extent(*object_id, *attribute_id, range, device_offset, bs).await?
             }
             ItemRef {
@@ -666,11 +820,79 @@ async fn scan_extents_and_directory_children<'a>(
         }
         iter.advance().await?;
     }
+    if extent_count != 0 && previous_object_id != INVALID_OBJECT_ID {
+        result.fragmentation.extent_count
+            [FragmentationStats::get_histogram_bucket_for_count(extent_count)] += 1;
+    }
     scanned.fsck.verbose(format!(
         "Store {} has {} bytes allocated",
         store.store_object_id(),
         allocated_bytes
     ));
+    Ok(())
+}
+
+fn validate_attributes(
+    fsck: &Fsck<'_>,
+    store_id: u64,
+    object_id: u64,
+    attributes: &ScannedAttributes,
+    is_file: bool,
+    is_verified: bool,
+) -> Result<(), Error> {
+    let ScannedAttributes {
+        attributes,
+        observed_allocated_size,
+        stored_allocated_size,
+        extended_attributes,
+        ..
+    } = attributes;
+    if observed_allocated_size != stored_allocated_size {
+        fsck.error(FsckError::AllocatedSizeMismatch(
+            store_id,
+            object_id,
+            *observed_allocated_size,
+            *stored_allocated_size,
+        ))?;
+    }
+
+    if is_file {
+        if attributes.iter().find(|(attr_id, _)| *attr_id == DEFAULT_DATA_ATTRIBUTE_ID).is_none() {
+            fsck.error(FsckError::MissingDataAttribute(store_id, object_id))?;
+        }
+        // TODO(b/315016213): Add a check for the expected size of the merkle tree.
+        let merkle_attribute =
+            attributes.iter().find(|(attr_id, _)| *attr_id == FSVERITY_MERKLE_ATTRIBUTE_ID);
+
+        if (is_verified && merkle_attribute.is_none())
+            || (!is_verified && merkle_attribute.is_some())
+        {
+            fsck.error(FsckError::InconsistentVerifiedFile(store_id, object_id, is_verified))?;
+        }
+    }
+
+    for expected_attribute_id in extended_attributes {
+        if attributes.iter().find(|(attr_id, _)| attr_id == expected_attribute_id).is_none() {
+            fsck.error(FsckError::MissingAttributeForExtendedAttribute(
+                store_id,
+                object_id,
+                *expected_attribute_id,
+            ))?;
+        }
+    }
+
+    for (attr_id, _) in attributes {
+        if *attr_id >= EXTENDED_ATTRIBUTE_RANGE_START && *attr_id < EXTENDED_ATTRIBUTE_RANGE_END {
+            // For all the attributes in the extended attribute range, make sure there is an
+            // extended attribute record for them.
+            if extended_attributes.iter().find(|xattr_id| attr_id == *xattr_id).is_none() {
+                fsck.warning(FsckWarning::OrphanedExtendedAttribute(
+                    store_id, object_id, *attr_id,
+                ))?;
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -680,6 +902,7 @@ pub(super) async fn scan_store(
     fsck: &Fsck<'_>,
     store: &ObjectStore,
     root_objects: impl AsRef<[u64]>,
+    result: &mut FsckResult,
 ) -> Result<(), Error> {
     let store_id = store.store_object_id();
 
@@ -710,7 +933,7 @@ pub(super) async fn scan_store(
                 item.value.into(),
             ))?;
         }
-        if let Some(current_file) = &scanned.current_file {
+        if let Some(current_file) = &scanned.current_object {
             if item.key.object_id != current_file.object_id {
                 scanned.finish_file()?;
             }
@@ -766,7 +989,7 @@ pub(super) async fn scan_store(
         fsck.assert(iter.advance().await, FsckFatal::MalformedGraveyard)?;
     }
 
-    scan_extents_and_directory_children(store, &mut scanned).await?;
+    scan_extents_and_directory_children(store, &mut scanned, result).await?;
 
     // At this point, we've provided all of the inputs to |scanned|.
 
@@ -791,11 +1014,10 @@ pub(super) async fn scan_store(
         num_objects += 1;
         match object {
             ScannedObject::File(ScannedFile {
-                attributes,
                 parents,
-                stored_allocated_size,
-                observed_allocated_size,
                 stored_refs,
+                attributes,
+                is_verified,
                 ..
             }) => {
                 files += 1;
@@ -808,21 +1030,7 @@ pub(super) async fn scan_store(
                         *stored_refs,
                     ))?;
                 }
-                if observed_allocated_size != stored_allocated_size {
-                    fsck.error(FsckError::AllocatedSizeMismatch(
-                        store_id,
-                        *object_id,
-                        *observed_allocated_size,
-                        *stored_allocated_size,
-                    ))?;
-                }
-                if attributes
-                    .iter()
-                    .find(|(attr_id, _)| *attr_id == DEFAULT_DATA_ATTRIBUTE_ID)
-                    .is_none()
-                {
-                    fsck.error(FsckError::MissingDataAttribute(store_id, *object_id))?;
-                }
+                validate_attributes(fsck, store_id, *object_id, attributes, true, *is_verified)?;
                 if parents.is_empty() {
                     fsck.warning(FsckWarning::OrphanedObject(store_id, *object_id))?;
                 }
@@ -840,6 +1048,7 @@ pub(super) async fn scan_store(
                 observed_sub_dirs,
                 parent,
                 visited,
+                attributes,
                 ..
             }) => {
                 directories += 1;
@@ -851,6 +1060,7 @@ pub(super) async fn scan_store(
                         *stored_sub_dirs,
                     ))?;
                 }
+                validate_attributes(fsck, store_id, *object_id, attributes, false, false)?;
                 if let Some(mut oid) = parent {
                     // Check this directory is attached to a root object.
                     // SAFETY: This is safe because here and below are the only places that we
@@ -890,7 +1100,10 @@ pub(super) async fn scan_store(
                 }
             }
             ScannedObject::Graveyard => other += 1,
-            ScannedObject::Symlink => symlinks += 1,
+            ScannedObject::Symlink(ScannedSymlink { attributes }) => {
+                symlinks += 1;
+                validate_attributes(fsck, store_id, *object_id, attributes, false, false)?;
+            }
             ScannedObject::Tombstone => {
                 tombstones += 1;
                 num_objects -= 1;

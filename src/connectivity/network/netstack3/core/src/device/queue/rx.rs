@@ -4,6 +4,9 @@
 
 //! RX device queues.
 
+use core::convert::Infallible as Never;
+use core::marker::PhantomData;
+
 #[cfg(test)]
 use assert_matches::assert_matches;
 use derivative::Derivative;
@@ -11,12 +14,11 @@ use packet::ParseBuffer;
 
 use crate::{
     device::{
-        queue::{
-            fifo, DequeueResult, DequeueState, EnqueueResult, ReceiveQueueFullError, MAX_BATCH_SIZE,
-        },
+        queue::{fifo, DequeueState, EnqueueResult, ReceiveQueueFullError, MAX_BATCH_SIZE},
         Device, DeviceIdContext,
     },
     sync::Mutex,
+    work_queue::WorkQueueReport,
 };
 
 /// The state used to hold a queue of received frames to be handled at a later
@@ -33,13 +35,16 @@ impl<Meta, Buffer> ReceiveQueueState<Meta, Buffer> {
     pub(crate) fn take_frames(&mut self) -> impl Iterator<Item = (Meta, Buffer)> + '_ {
         let Self { queue } = self;
         let mut vec = Default::default();
-        assert_matches!(queue.dequeue_into(&mut vec, usize::MAX), DequeueResult::NoMoreLeft);
+        assert_matches!(
+            queue.dequeue_into(&mut vec, usize::MAX),
+            crate::device::queue::DequeueResult::NoMoreLeft
+        );
         vec.into_iter()
     }
 }
 
-/// The non-synchonized context for the receive queue.
-pub(crate) trait ReceiveQueueNonSyncContext<D: Device, DeviceId> {
+/// The bindings context for the receive queue.
+pub(crate) trait ReceiveQueueBindingsContext<D: Device, DeviceId> {
     /// Wakes up RX task.
     fn wake_rx_task(&mut self, device_id: &DeviceId);
 }
@@ -58,7 +63,7 @@ pub(crate) struct ReceiveQueue<Meta, Buffer> {
     pub(crate) queue: Mutex<ReceiveQueueState<Meta, Buffer>>,
 }
 
-pub(crate) trait ReceiveQueueTypes<D: Device, C>: DeviceIdContext<D> {
+pub(crate) trait ReceiveQueueTypes<D: Device, BC>: DeviceIdContext<D> {
     /// Metadata associated with an RX frame.
     type Meta;
 
@@ -67,7 +72,7 @@ pub(crate) trait ReceiveQueueTypes<D: Device, C>: DeviceIdContext<D> {
 }
 
 /// The execution context for a receive queue.
-pub(crate) trait ReceiveQueueContext<D: Device, C>: ReceiveQueueTypes<D, C> {
+pub(crate) trait ReceiveQueueContext<D: Device, BC>: ReceiveQueueTypes<D, BC> {
     /// Calls the function with the RX queue state.
     fn with_receive_queue_mut<O, F: FnOnce(&mut ReceiveQueueState<Self::Meta, Self::Buffer>) -> O>(
         &mut self,
@@ -76,27 +81,27 @@ pub(crate) trait ReceiveQueueContext<D: Device, C>: ReceiveQueueTypes<D, C> {
     ) -> O;
 }
 
-pub(crate) trait ReceiveDequeFrameContext<D: Device, C>: ReceiveQueueTypes<D, C> {
+pub(crate) trait ReceiveDequeFrameContext<D: Device, BC>: ReceiveQueueTypes<D, BC> {
     /// Handle a received frame.
     fn handle_frame(
         &mut self,
-        ctx: &mut C,
+        bindings_ctx: &mut BC,
         device_id: &Self::DeviceId,
         meta: Self::Meta,
         buf: Self::Buffer,
     );
 }
 
-pub(crate) trait ReceiveDequeContext<D: Device, C>: ReceiveQueueTypes<D, C> {
+pub(crate) trait ReceiveDequeContext<D: Device, BC>: ReceiveQueueTypes<D, BC> {
     type ReceiveQueueCtx<'a>: ReceiveQueueContext<
             D,
-            C,
+            BC,
             Meta = Self::Meta,
             Buffer = Self::Buffer,
             DeviceId = Self::DeviceId,
         > + ReceiveDequeFrameContext<
             D,
-            C,
+            BC,
             Meta = Self::Meta,
             Buffer = Self::Buffer,
             DeviceId = Self::DeviceId,
@@ -113,16 +118,8 @@ pub(crate) trait ReceiveDequeContext<D: Device, C>: ReceiveQueueTypes<D, C> {
     ) -> O;
 }
 
-/// An implementation of a receive queue.
-pub(crate) trait ReceiveQueueHandler<D: Device, C>: ReceiveQueueTypes<D, C> {
-    /// Handle any queued RX frames.
-    fn handle_queued_rx_frames(&mut self, ctx: &mut C, device_id: &Self::DeviceId);
-}
-
 /// An implementation of a receive queue, with a buffer.
-pub(crate) trait BufferReceiveQueueHandler<D: Device, B: ParseBuffer, C>:
-    ReceiveQueueTypes<D, C>
-{
+pub(crate) trait ReceiveQueueHandler<D: Device, BC>: ReceiveQueueTypes<D, BC> {
     /// Queues a frame for reception.
     ///
     /// # Errors
@@ -130,18 +127,29 @@ pub(crate) trait BufferReceiveQueueHandler<D: Device, B: ParseBuffer, C>:
     /// Returns an error with the metadata and body if the queue is full.
     fn queue_rx_frame(
         &mut self,
-        ctx: &mut C,
+        bindings_ctx: &mut BC,
         device_id: &Self::DeviceId,
         meta: Self::Meta,
-        body: B,
-    ) -> Result<(), ReceiveQueueFullError<(Self::Meta, B)>>;
+        body: Self::Buffer,
+    ) -> Result<(), ReceiveQueueFullError<(Self::Meta, Self::Buffer)>>;
 }
 
-impl<D: Device, C: ReceiveQueueNonSyncContext<D, SC::DeviceId>, SC: ReceiveDequeContext<D, C>>
-    ReceiveQueueHandler<D, C> for SC
+/// Crate-internal receive queue API interaction.
+pub(crate) struct ReceiveQueueApi<CC, BT, D>(Never, PhantomData<(CC, BT, D)>);
+
+impl<CC, BC, D> ReceiveQueueApi<CC, BC, D>
+where
+    D: Device,
+    BC: ReceiveQueueBindingsContext<D, CC::DeviceId>,
+    CC: ReceiveDequeContext<D, BC>,
 {
-    fn handle_queued_rx_frames(&mut self, ctx: &mut C, device_id: &SC::DeviceId) {
-        self.with_dequed_frames_and_rx_queue_ctx(
+    /// Handle any queued RX frames.
+    pub(crate) fn handle_queued_rx_frames(
+        core_ctx: &mut CC,
+        bindings_ctx: &mut BC,
+        device_id: &CC::DeviceId,
+    ) -> WorkQueueReport {
+        core_ctx.with_dequed_frames_and_rx_queue_ctx(
             device_id,
             |DequeueState { dequeued_frames }, rx_queue_ctx| {
                 assert_eq!(
@@ -158,35 +166,31 @@ impl<D: Device, C: ReceiveQueueNonSyncContext<D, SC::DeviceId>, SC: ReceiveDeque
                 );
 
                 while let Some((meta, p)) = dequeued_frames.pop_front() {
-                    rx_queue_ctx.handle_frame(ctx, device_id, meta, p);
+                    rx_queue_ctx.handle_frame(bindings_ctx, device_id, meta, p);
                 }
 
-                match ret {
-                    DequeueResult::MoreStillQueued => ctx.wake_rx_task(device_id),
-                    DequeueResult::NoMoreLeft => {
-                        // There are no more frames left after the batch we
-                        // just handled. When the next RX frame gets enqueued,
-                        // the RX task will be woken up again.
-                    }
-                }
+                ret.into()
             },
         )
     }
 }
 
-impl<D: Device, C: ReceiveQueueNonSyncContext<D, SC::DeviceId>, SC: ReceiveQueueContext<D, C>>
-    BufferReceiveQueueHandler<D, SC::Buffer, C> for SC
+impl<
+        D: Device,
+        BC: ReceiveQueueBindingsContext<D, CC::DeviceId>,
+        CC: ReceiveQueueContext<D, BC>,
+    > ReceiveQueueHandler<D, BC> for CC
 {
     fn queue_rx_frame(
         &mut self,
-        ctx: &mut C,
-        device_id: &SC::DeviceId,
-        meta: SC::Meta,
-        body: SC::Buffer,
-    ) -> Result<(), ReceiveQueueFullError<(Self::Meta, SC::Buffer)>> {
+        bindings_ctx: &mut BC,
+        device_id: &CC::DeviceId,
+        meta: CC::Meta,
+        body: CC::Buffer,
+    ) -> Result<(), ReceiveQueueFullError<(Self::Meta, CC::Buffer)>> {
         self.with_receive_queue_mut(device_id, |ReceiveQueueState { queue }| {
             queue.queue_rx_frame(meta, body).map(|res| match res {
-                EnqueueResult::QueueWasPreviouslyEmpty => ctx.wake_rx_task(device_id),
+                EnqueueResult::QueueWasPreviouslyEmpty => bindings_ctx.wake_rx_task(device_id),
                 EnqueueResult::QueuePreviouslyWasOccupied => {
                     // We have already woken up the RX task when the queue was
                     // previously empty so there is no need to do it again.
@@ -205,7 +209,7 @@ mod tests {
     use packet::Buf;
 
     use crate::{
-        context::testutil::{FakeCtx, FakeNonSyncCtx, FakeSyncCtx},
+        context::testutil::{FakeBindingsCtx, FakeCoreCtx, FakeCtx},
         device::{
             link::testutil::{FakeLinkDevice, FakeLinkDeviceId},
             queue::MAX_RX_QUEUED_LEN,
@@ -219,25 +223,25 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct FakeRxQueueNonSyncCtxState {
+    struct FakeRxQueueBindingsCtxState {
         woken_rx_tasks: Vec<FakeLinkDeviceId>,
     }
 
-    type FakeSyncCtxImpl = FakeSyncCtx<FakeRxQueueState, (), FakeLinkDeviceId>;
-    type FakeNonSyncCtxImpl = FakeNonSyncCtx<(), (), FakeRxQueueNonSyncCtxState>;
+    type FakeCoreCtxImpl = FakeCoreCtx<FakeRxQueueState, (), FakeLinkDeviceId>;
+    type FakeBindingsCtxImpl = FakeBindingsCtx<(), (), FakeRxQueueBindingsCtxState>;
 
-    impl ReceiveQueueNonSyncContext<FakeLinkDevice, FakeLinkDeviceId> for FakeNonSyncCtxImpl {
+    impl ReceiveQueueBindingsContext<FakeLinkDevice, FakeLinkDeviceId> for FakeBindingsCtxImpl {
         fn wake_rx_task(&mut self, device_id: &FakeLinkDeviceId) {
             self.state_mut().woken_rx_tasks.push(device_id.clone())
         }
     }
 
-    impl ReceiveQueueTypes<FakeLinkDevice, FakeNonSyncCtxImpl> for FakeSyncCtxImpl {
+    impl ReceiveQueueTypes<FakeLinkDevice, FakeBindingsCtxImpl> for FakeCoreCtxImpl {
         type Meta = ();
         type Buffer = Buf<Vec<u8>>;
     }
 
-    impl ReceiveQueueContext<FakeLinkDevice, FakeNonSyncCtxImpl> for FakeSyncCtxImpl {
+    impl ReceiveQueueContext<FakeLinkDevice, FakeBindingsCtxImpl> for FakeCoreCtxImpl {
         fn with_receive_queue_mut<O, F: FnOnce(&mut ReceiveQueueState<(), Buf<Vec<u8>>>) -> O>(
             &mut self,
             &FakeLinkDeviceId: &FakeLinkDeviceId,
@@ -247,10 +251,10 @@ mod tests {
         }
     }
 
-    impl ReceiveDequeFrameContext<FakeLinkDevice, FakeNonSyncCtxImpl> for FakeSyncCtxImpl {
+    impl ReceiveDequeFrameContext<FakeLinkDevice, FakeBindingsCtxImpl> for FakeCoreCtxImpl {
         fn handle_frame(
             &mut self,
-            _ctx: &mut FakeNonSyncCtxImpl,
+            _bindings_ctx: &mut FakeBindingsCtxImpl,
             &FakeLinkDeviceId: &FakeLinkDeviceId,
             (): (),
             buf: Buf<Vec<u8>>,
@@ -259,7 +263,7 @@ mod tests {
         }
     }
 
-    impl ReceiveDequeContext<FakeLinkDevice, FakeNonSyncCtxImpl> for FakeSyncCtxImpl {
+    impl ReceiveDequeContext<FakeLinkDevice, FakeBindingsCtxImpl> for FakeCoreCtxImpl {
         type ReceiveQueueCtx<'a> = Self;
 
         fn with_dequed_frames_and_rx_queue_ctx<
@@ -279,16 +283,16 @@ mod tests {
 
     #[test]
     fn queue_and_dequeue() {
-        let FakeCtx { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtx::with_sync_ctx(FakeSyncCtxImpl::default());
+        let FakeCtx { mut core_ctx, mut bindings_ctx } =
+            FakeCtx::with_core_ctx(FakeCoreCtxImpl::default());
 
         for _ in 0..2 {
             for i in 0..MAX_RX_QUEUED_LEN {
                 let body = Buf::new(vec![i as u8], ..);
                 assert_eq!(
-                    BufferReceiveQueueHandler::queue_rx_frame(
-                        &mut sync_ctx,
-                        &mut non_sync_ctx,
+                    ReceiveQueueHandler::queue_rx_frame(
+                        &mut core_ctx,
+                        &mut bindings_ctx,
                         &FakeLinkDeviceId,
                         (),
                         body
@@ -297,14 +301,14 @@ mod tests {
                 );
                 // We should only ever be woken up once when the first frame
                 // was enqueued.
-                assert_eq!(non_sync_ctx.state().woken_rx_tasks, [FakeLinkDeviceId]);
+                assert_eq!(bindings_ctx.state().woken_rx_tasks, [FakeLinkDeviceId]);
             }
 
             let body = Buf::new(vec![131], ..);
             assert_eq!(
-                BufferReceiveQueueHandler::queue_rx_frame(
-                    &mut sync_ctx,
-                    &mut non_sync_ctx,
+                ReceiveQueueHandler::queue_rx_frame(
+                    &mut core_ctx,
+                    &mut bindings_ctx,
                     &FakeLinkDeviceId,
                     (),
                     body.clone(),
@@ -314,45 +318,45 @@ mod tests {
             // We should only ever be woken up once when the first frame
             // was enqueued.
             assert_eq!(
-                core::mem::take(&mut non_sync_ctx.state_mut().woken_rx_tasks),
+                core::mem::take(&mut bindings_ctx.state_mut().woken_rx_tasks),
                 [FakeLinkDeviceId]
             );
 
             assert!(MAX_RX_QUEUED_LEN > MAX_BATCH_SIZE);
             for i in (0..(MAX_RX_QUEUED_LEN - MAX_BATCH_SIZE)).step_by(MAX_BATCH_SIZE) {
-                ReceiveQueueHandler::handle_queued_rx_frames(
-                    &mut sync_ctx,
-                    &mut non_sync_ctx,
-                    &FakeLinkDeviceId,
+                assert_eq!(
+                    ReceiveQueueApi::handle_queued_rx_frames(
+                        &mut core_ctx,
+                        &mut bindings_ctx,
+                        &FakeLinkDeviceId,
+                    ),
+                    WorkQueueReport::Pending
                 );
                 assert_eq!(
-                    core::mem::take(&mut sync_ctx.get_mut().handled_frames),
+                    core::mem::take(&mut core_ctx.get_mut().handled_frames),
                     (i..i + MAX_BATCH_SIZE)
                         .map(|i| Buf::new(vec![i as u8], ..))
                         .collect::<Vec<_>>()
                 );
-                // We should get a wake up signal when frames remain after
-                // handling a batch of RX frames.
-                assert_eq!(
-                    core::mem::take(&mut non_sync_ctx.state_mut().woken_rx_tasks),
-                    [FakeLinkDeviceId]
-                );
             }
 
-            ReceiveQueueHandler::handle_queued_rx_frames(
-                &mut sync_ctx,
-                &mut non_sync_ctx,
-                &FakeLinkDeviceId,
+            assert_eq!(
+                ReceiveQueueApi::handle_queued_rx_frames(
+                    &mut core_ctx,
+                    &mut bindings_ctx,
+                    &FakeLinkDeviceId,
+                ),
+                WorkQueueReport::AllDone
             );
             assert_eq!(
-                core::mem::take(&mut sync_ctx.get_mut().handled_frames),
+                core::mem::take(&mut core_ctx.get_mut().handled_frames),
                 (MAX_BATCH_SIZE * (MAX_RX_QUEUED_LEN / MAX_BATCH_SIZE - 1)..MAX_RX_QUEUED_LEN)
                     .map(|i| Buf::new(vec![i as u8], ..))
                     .collect::<Vec<_>>()
             );
             // Should not have woken up the RX task since the queue should be
             // empty.
-            assert_eq!(core::mem::take(&mut non_sync_ctx.state_mut().woken_rx_tasks), []);
+            assert_eq!(core::mem::take(&mut bindings_ctx.state_mut().woken_rx_tasks), []);
 
             // The queue should now be empty so the next iteration of queueing
             // `MAX_RX_QUEUED_LEN` frames should succeed.

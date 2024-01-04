@@ -20,7 +20,6 @@
 #include <cstdio>
 #include <cstring>
 
-#include "fuchsia/hardware/wlan/fullmac/c/banjo.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/cfg80211.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/common.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/debug.h"
@@ -89,7 +88,7 @@ WlanInterface::WlanInterface(wlan::brcmfmac::Device* device,
 }
 
 zx_status_t WlanInterface::Create(wlan::brcmfmac::Device* device, const char* name,
-                                  wireless_dev* wdev, wlan_mac_role_t role,
+                                  wireless_dev* wdev, fuchsia_wlan_common_wire::WlanMacRole role,
                                   WlanInterface** out_interface) {
   std::unique_ptr<WlanInterface> interface(new WlanInterface(
       device, device->NetDev().NetDevIfcProto(), ndev_to_if(wdev->netdev)->ifidx, name));
@@ -101,18 +100,22 @@ zx_status_t WlanInterface::Create(wlan::brcmfmac::Device* device, const char* na
 
   NetworkPort::Role net_port_role;
   switch (role) {
-    case WLAN_MAC_ROLE_CLIENT:
+    case fuchsia_wlan_common_wire::WlanMacRole::kClient:
       net_port_role = NetworkPort::Role::Client;
       break;
-    case WLAN_MAC_ROLE_AP:
+    case fuchsia_wlan_common_wire::WlanMacRole::kAp:
       net_port_role = NetworkPort::Role::Ap;
       break;
     default:
-      BRCMF_ERR("Unsupported role %u", role);
+      BRCMF_ERR("Unsupported role %u", uint32_t(role));
       return ZX_ERR_INVALID_ARGS;
   }
 
-  interface->NetworkPort::Init(net_port_role);
+  zx_status_t status = interface->NetworkPort::Init(net_port_role);
+  if (status != ZX_OK) {
+    BRCMF_ERR("Failed to initialize port: %s", zx_status_get_string(status));
+    return status;
+  }
 
   *out_interface = interface.release();  // This now has its lifecycle managed by the devhost.
   return ZX_OK;
@@ -210,7 +213,8 @@ zx_status_t WlanInterface::GetSupportedMacRoles(
   return ZX_OK;
 }
 
-zx_status_t WlanInterface::SetCountry(brcmf_pub* drvr, const wlan_phy_country_t* country) {
+zx_status_t WlanInterface::SetCountry(brcmf_pub* drvr,
+                                      const fuchsia_wlan_phyimpl_wire::WlanPhyCountry* country) {
   if (country == nullptr) {
     BRCMF_ERR("Empty country from the parameter.");
     return ZX_ERR_INVALID_ARGS;
@@ -218,8 +222,8 @@ zx_status_t WlanInterface::SetCountry(brcmf_pub* drvr, const wlan_phy_country_t*
   return brcmf_set_country(drvr, country);
 }
 
-zx_status_t WlanInterface::GetCountry(brcmf_pub* drvr, wlan_phy_country_t* out_country) {
-  return brcmf_get_country(drvr, out_country);
+zx_status_t WlanInterface::GetCountry(brcmf_pub* drvr, uint8_t* cc_code) {
+  return brcmf_get_country(drvr, cc_code);
 }
 
 zx_status_t WlanInterface::ClearCountry(brcmf_pub* drvr) { return brcmf_clear_country(drvr); }
@@ -235,7 +239,8 @@ void WlanInterface::Start(StartRequestView request, fdf::Arena& arena,
 
   {
     std::lock_guard<std::shared_mutex> guard(wdev_->netdev->if_proto_lock);
-    wdev_->netdev->if_proto = std::make_unique<WlanFullmacIfc>(std::move(request->ifc));
+    wdev_->netdev->if_proto =
+        fdf::WireSyncClient<fuchsia_wlan_fullmac::WlanFullmacImplIfc>(std::move(request->ifc));
   }
 
   zx::channel out_mlme_channel;
@@ -304,8 +309,8 @@ void WlanInterface::StartScan(StartScanRequestView request, fdf::Arena& arena,
   completer.buffer(arena).Reply();
 }
 
-void WlanInterface::ConnectReq(ConnectReqRequestView request, fdf::Arena& arena,
-                               ConnectReqCompleter::Sync& completer) {
+void WlanInterface::Connect(ConnectRequestView request, fdf::Arena& arena,
+                            ConnectCompleter::Sync& completer) {
   std::shared_lock<std::shared_mutex> guard(lock_);
   if (wdev_ != nullptr) {
     brcmf_if_connect_req(wdev_->netdev, request);
@@ -313,12 +318,11 @@ void WlanInterface::ConnectReq(ConnectReqRequestView request, fdf::Arena& arena,
   completer.buffer(arena).Reply();
 }
 
-void WlanInterface::ReconnectReq(ReconnectReqRequestView request, fdf::Arena& arena,
-                                 ReconnectReqCompleter::Sync& completer) {
+void WlanInterface::Reconnect(ReconnectRequestView request, fdf::Arena& arena,
+                              ReconnectCompleter::Sync& completer) {
   std::shared_lock<std::shared_mutex> guard(lock_);
-  const fuchsia_wlan_fullmac::wire::WlanFullmacReconnectReq req = request->req;
   if (wdev_ != nullptr) {
-    brcmf_if_reconnect_req(wdev_->netdev, &req);
+    brcmf_if_reconnect_req(wdev_->netdev, request);
   }
   completer.buffer(arena).Reply();
 }
@@ -326,19 +330,17 @@ void WlanInterface::ReconnectReq(ReconnectReqRequestView request, fdf::Arena& ar
 void WlanInterface::AuthResp(AuthRespRequestView request, fdf::Arena& arena,
                              AuthRespCompleter::Sync& completer) {
   std::shared_lock<std::shared_mutex> guard(lock_);
-  const fuchsia_wlan_fullmac::wire::WlanFullmacAuthResp resp = request->resp;
   if (wdev_ != nullptr) {
-    brcmf_if_auth_resp(wdev_->netdev, &resp);
+    brcmf_if_auth_resp(wdev_->netdev, request);
   }
   completer.buffer(arena).Reply();
 }
 
-void WlanInterface::DeauthReq(DeauthReqRequestView request, fdf::Arena& arena,
-                              DeauthReqCompleter::Sync& completer) {
+void WlanInterface::Deauth(DeauthRequestView request, fdf::Arena& arena,
+                           DeauthCompleter::Sync& completer) {
   std::shared_lock<std::shared_mutex> guard(lock_);
-  const fuchsia_wlan_fullmac::wire::WlanFullmacDeauthReq req = request->req;
   if (wdev_ != nullptr) {
-    brcmf_if_deauth_req(wdev_->netdev, &req);
+    brcmf_if_deauth_req(wdev_->netdev, request);
   }
   completer.buffer(arena).Reply();
 }
@@ -346,49 +348,44 @@ void WlanInterface::DeauthReq(DeauthReqRequestView request, fdf::Arena& arena,
 void WlanInterface::AssocResp(AssocRespRequestView request, fdf::Arena& arena,
                               AssocRespCompleter::Sync& completer) {
   std::shared_lock<std::shared_mutex> guard(lock_);
-  const fuchsia_wlan_fullmac::wire::WlanFullmacAssocResp resp = request->resp;
   if (wdev_ != nullptr) {
-    brcmf_if_assoc_resp(wdev_->netdev, &resp);
+    brcmf_if_assoc_resp(wdev_->netdev, request);
   }
   completer.buffer(arena).Reply();
 }
 
-void WlanInterface::DisassocReq(DisassocReqRequestView request, fdf::Arena& arena,
-                                DisassocReqCompleter::Sync& completer) {
+void WlanInterface::Disassoc(DisassocRequestView request, fdf::Arena& arena,
+                             DisassocCompleter::Sync& completer) {
   std::shared_lock<std::shared_mutex> guard(lock_);
-  const fuchsia_wlan_fullmac::wire::WlanFullmacDisassocReq req = request->req;
   if (wdev_ != nullptr) {
-    brcmf_if_disassoc_req(wdev_->netdev, &req);
+    brcmf_if_disassoc_req(wdev_->netdev, request);
   }
   completer.buffer(arena).Reply();
 }
 
-void WlanInterface::ResetReq(ResetReqRequestView request, fdf::Arena& arena,
-                             ResetReqCompleter::Sync& completer) {
+void WlanInterface::Reset(ResetRequestView request, fdf::Arena& arena,
+                          ResetCompleter::Sync& completer) {
   std::shared_lock<std::shared_mutex> guard(lock_);
-  const fuchsia_wlan_fullmac::wire::WlanFullmacResetReq req = request->req;
   if (wdev_ != nullptr) {
-    brcmf_if_reset_req(wdev_->netdev, &req);
+    brcmf_if_reset_req(wdev_->netdev, request);
   }
   completer.buffer(arena).Reply();
 }
 
-void WlanInterface::StartReq(StartReqRequestView request, fdf::Arena& arena,
-                             StartReqCompleter::Sync& completer) {
+void WlanInterface::StartBss(StartBssRequestView request, fdf::Arena& arena,
+                             StartBssCompleter::Sync& completer) {
   std::shared_lock<std::shared_mutex> guard(lock_);
-  const fuchsia_wlan_fullmac::wire::WlanFullmacStartReq req = request->req;
   if (wdev_ != nullptr) {
-    brcmf_if_start_req(wdev_->netdev, &req);
+    brcmf_if_start_req(wdev_->netdev, request);
   }
   completer.buffer(arena).Reply();
 }
 
-void WlanInterface::StopReq(StopReqRequestView request, fdf::Arena& arena,
-                            StopReqCompleter::Sync& completer) {
+void WlanInterface::StopBss(StopBssRequestView request, fdf::Arena& arena,
+                            StopBssCompleter::Sync& completer) {
   std::shared_lock<std::shared_mutex> guard(lock_);
-  const fuchsia_wlan_fullmac::wire::WlanFullmacStopReq req = request->req;
   if (wdev_ != nullptr) {
-    brcmf_if_stop_req(wdev_->netdev, &req);
+    brcmf_if_stop_req(wdev_->netdev, request);
   }
   completer.buffer(arena).Reply();
 }
@@ -415,12 +412,11 @@ void WlanInterface::DelKeysReq(DelKeysReqRequestView request, fdf::Arena& arena,
   completer.buffer(arena).Reply();
 }
 
-void WlanInterface::EapolReq(EapolReqRequestView request, fdf::Arena& arena,
-                             EapolReqCompleter::Sync& completer) {
+void WlanInterface::EapolTx(EapolTxRequestView request, fdf::Arena& arena,
+                            EapolTxCompleter::Sync& completer) {
   std::shared_lock<std::shared_mutex> guard(lock_);
-  const fuchsia_wlan_fullmac::wire::WlanFullmacEapolReq req = request->req;
   if (wdev_ != nullptr) {
-    brcmf_if_eapol_req(wdev_->netdev, &req);
+    brcmf_if_eapol_req(wdev_->netdev, request);
   }
   completer.buffer(arena).Reply();
 }
@@ -461,26 +457,6 @@ void WlanInterface::GetIfaceHistogramStats(fdf::Arena& arena,
   } else {
     completer.buffer(arena).ReplySuccess(out_stats);
   }
-}
-
-void WlanInterface::StartCaptureFrames(StartCaptureFramesRequestView request, fdf::Arena& arena,
-                                       StartCaptureFramesCompleter::Sync& completer) {
-  std::shared_lock<std::shared_mutex> guard(lock_);
-  const fuchsia_wlan_fullmac::wire::WlanFullmacStartCaptureFramesReq req = request->req;
-  fuchsia_wlan_fullmac::wire::WlanFullmacStartCaptureFramesResp resp;
-  if (wdev_ != nullptr) {
-    brcmf_if_start_capture_frames(wdev_->netdev, &req, &resp);
-  }
-  completer.buffer(arena).Reply(resp);
-}
-
-void WlanInterface::StopCaptureFrames(fdf::Arena& arena,
-                                      StopCaptureFramesCompleter::Sync& completer) {
-  std::shared_lock<std::shared_mutex> guard(lock_);
-  if (wdev_ != nullptr) {
-    brcmf_if_stop_capture_frames(wdev_->netdev);
-  }
-  completer.buffer(arena).Reply();
 }
 
 void WlanInterface::SetMulticastPromisc(SetMulticastPromiscRequestView request, fdf::Arena& arena,
@@ -533,14 +509,14 @@ void WlanInterface::OnLinkStateChanged(OnLinkStateChangedRequestView request, fd
 
 uint32_t WlanInterface::PortGetMtu() { return kEthernetMtu; }
 
-void WlanInterface::MacGetAddress(uint8_t out_mac[MAC_SIZE]) {
+void WlanInterface::MacGetAddress(mac_address_t* out_mac) {
   std::shared_lock<std::shared_mutex> guard(lock_);
   if (wdev_ == nullptr) {
     BRCMF_WARN("Interface not available, returning empty MAC address");
     memset(out_mac, 0, MAC_SIZE);
     return;
   }
-  memcpy(out_mac, ndev_to_if(wdev_->netdev)->mac_addr, MAC_SIZE);
+  memcpy(out_mac->octets, ndev_to_if(wdev_->netdev)->mac_addr, MAC_SIZE);
 }
 
 void WlanInterface::MacGetFeatures(features_t* out_features) {
@@ -551,14 +527,14 @@ void WlanInterface::MacGetFeatures(features_t* out_features) {
   };
 }
 
-void WlanInterface::MacSetMode(mode_t mode, cpp20::span<const uint8_t> multicast_macs) {
+void WlanInterface::MacSetMode(mode_t mode, cpp20::span<const mac_address_t> multicast_macs) {
   zx_status_t status = ZX_OK;
   std::shared_lock<std::shared_mutex> guard(lock_);
   switch (mode) {
-    case MODE_MULTICAST_FILTER:
+    case MAC_FILTER_MODE_MULTICAST_FILTER:
       status = brcmf_if_set_multicast_promisc(wdev_->netdev, false);
       break;
-    case MODE_MULTICAST_PROMISCUOUS:
+    case MAC_FILTER_MODE_MULTICAST_PROMISCUOUS:
       status = brcmf_if_set_multicast_promisc(wdev_->netdev, true);
       break;
     default:

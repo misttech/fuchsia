@@ -62,9 +62,9 @@ should not be considered for eviction, thereby avoiding the cost of fetching
 them back in when they're accessed again.
 
 Learn more about eviction hints in the reference docs:
-[`zx_vmo_op_range`](/docs/reference/syscalls/vmo_op_range.md)
+[`zx_vmo_op_range`](/reference/syscalls/vmo_op_range.md)
 and
-[`zx_vmar_op_range`](/docs/reference/syscalls/vmar_op_range.md).
+[`zx_vmar_op_range`](/reference/syscalls/vmar_op_range.md).
 
 ## Zero page deduplication
 
@@ -93,7 +93,7 @@ they can be reconstructed from the VMAR tree.
 Userspace processes can create a special flavor of
 [VMOs that are discardable](/docs/contribute/governance/rfcs/0012_zircon_discardable_memory.md).
 Clients can
-[lock and unlock ](/docs/reference/syscalls/vmo_op_range.md)discardable
+[lock and unlock ](/reference/syscalls/vmo_op_range.md)discardable
 VMOs depending on whether or not they are being used. When the system is under
 memory pressure, the kernel finds discardable VMOs that are unlocked and frees
 them.
@@ -102,7 +102,8 @@ Sample code (modulo error handling):
 
 ```cpp
 // Create a discardable VMO.
-zx_handle_t vmo_handle;
+zx_handle_t vmo;
+uint64_t vmo_size = 5 * zx_system_get_page_size();
 zx_vmo_create(vmo_size, ZX_VMO_DISCARDABLE, &vmo);
 
 // Lock the VMO.
@@ -114,7 +115,7 @@ zx_vmo_op_range(vmo, ZX_VMO_OP_LOCK, 0, vmo_size, &lock_state,
 zx_vmo_read(vmo, buf, 0, sizeof(buf));
 
 // Unlock the VMO. The kernel is free to discard it now.
-vmo_op_range(vmo, ZX_VMO_OP_UNLOCK, 0, vmo_size, nullptr, 0);
+zx_vmo_op_range(vmo, ZX_VMO_OP_UNLOCK, 0, vmo_size, nullptr, 0);
 
 // Lock the VMO again before use.
 zx_vmo_op_range(vmo, ZX_VMO_OP_LOCK, 0, vmo_size, &lock_state,
@@ -404,7 +405,7 @@ memory-pressure: pausing for 8s after OOM mem signal
 [00028.317] 02811:03481> [fshost] INFO: [fs-manager.cc(281)] filesystem shutdown initiated
 [00028.317] 02811:38032> [fshost] INFO: [fs-manager.cc(310)] Shutting down /data
 [00028.318] 12900:12902> [minfs] INFO: [minfs.cc(1471)] Shutting down
-[00028.340] 12900:12902> [minfs] WARNING: [src/storage/bin/minfs/main.cc(53)] Unmounted
+[00028.340] 12900:12902> [minfs] WARNING: [src/storage/minfs/bin/main.cc(53)] Unmounted
 [00028.341] 02811:03481> [fshost] INFO: [admin-server.cc(39)] shutdown complete
 [00028.342] 02811:02813> [fshost] INFO: [main.cc(309)] terminating
 [00028.342] 02687:02689> [driver_manager.cm] INFO: [suspend_handler.cc(205)] Successfully waited for VFS exit completion

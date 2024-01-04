@@ -14,7 +14,7 @@ executable("msd_arm_mali_nonhardware_tests") {
   public_deps = [
     ":tests_not_requiring_hardware",
     "//src/devices/testing/no_ddk",
-    "//src/graphics/lib/magma/tests/helper:logger_init_helper",
+    "//src/graphics/magma/lib/magma/test_util:logger_init_helper",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",
     "//zircon/system/ulib/trace",
@@ -22,10 +22,11 @@ executable("msd_arm_mali_nonhardware_tests") {
   ]
 }
 
-source_set("tests_not_requiring_hardware") {
+# Tests that run in both DFv1 and DFv2
+source_set("common_non_hardware_tests") {
   testonly = true
-
   sources = [
+    "driver_logger_harness.h",
     "non_hardware_test_device.cc",
     "test_address_manager.cc",
     "test_address_space.cc",
@@ -37,29 +38,59 @@ source_set("tests_not_requiring_hardware") {
     "test_region.cc",
     "test_timestamp.cc",
   ]
+  deps = [
+    "../../include",
+    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
+    "//sdk/lib/async_patterns/testing/cpp",
+    "//sdk/lib/driver/runtime/testing/cpp",
+    "//sdk/lib/driver/testing/cpp",
+    "//src/devices/bus/testing/fake-pdev",
+    "//src/devices/testing/fake-resource",
+    "//src/graphics/drivers/msd-arm-mali/src",
+    "//src/graphics/magma/lib/magma/platform:buffer",
+    "//src/graphics/magma/lib/magma/platform:port",
+    "//src/graphics/magma/lib/magma_service/mock:bus_mapper",
+    "//src/graphics/magma/lib/magma_service/mock:mmio",
+    "//src/graphics/magma/lib/magma_service/test_util:msd_stubs",
+    "//src/graphics/magma/lib/magma_service/util:registers",
+    "//third_party/googletest:gtest",
+  ]
+}
+
+source_set("tests_not_requiring_hardware") {
+  testonly = true
+
+  sources = [ "driver_logger_harness_dfv1.cc" ]
 
   deps = [
+    ":common_non_hardware_tests",
     ":test_deps",
     "//sdk/lib/driver/testing/cpp",
     "//sdk/lib/fdio",
-    "//src/graphics/lib/magma/tests/helper:msd_stubs",
-    "//src/graphics/lib/magma/tests/mock:bus_mapper",
+    "//src/graphics/magma/lib/magma_service/mock:bus_mapper",
+    "//src/graphics/magma/lib/magma_service/test_util:msd_stubs",
     "//zircon/system/ulib/sync:sync-cpp",
   ]
 }
 
 executable("msd_arm_mali_dfv2_tests") {
   testonly = true
-  sources = [ "dfv2_tests.cc" ]
+  sources = [
+    "dfv2_tests.cc",
+    "driver_logger_harness_dfv2.cc",
+  ]
   deps = [
-    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
+    ":common_non_hardware_tests",
+    "../../include",
+    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp_testing",
     "//sdk/lib/async_patterns/testing/cpp",
+    "//sdk/lib/driver/runtime/testing/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//src/devices/bus/testing/fake-pdev",
     "//src/devices/testing/fake-resource",
     "//src/graphics/drivers/msd-arm-mali:msd_arm_entry_dfv2",
     "//src/graphics/drivers/msd-arm-mali/src",
-    "//src/graphics/lib/magma/src/magma_util:registers",
+    "//src/graphics/magma/lib/magma/platform/zircon:logger_for_dfv2",
     "//src/lib/fxl/test:gtest_main",
   ]
 }
@@ -83,14 +114,14 @@ group("test_deps") {
   public_deps = [
     "../../include",
     "//src/graphics/drivers/msd-arm-mali/src",
-    "//src/graphics/lib/magma/include:msd",
-    "//src/graphics/lib/magma/src/magma_util:macros",
-    "//src/graphics/lib/magma/src/magma_util:registers",
-    "//src/graphics/lib/magma/src/magma_util/platform:port",
-    "//src/graphics/lib/magma/src/magma_util/platform:semaphore",
-    "//src/graphics/lib/magma/src/sys_driver",
-    "//src/graphics/lib/magma/tests/helper:platform_msd_device_helper",
-    "//src/graphics/lib/magma/tests/mock:mmio",
+    "//src/graphics/magma:msd",
+    "//src/graphics/magma/lib/magma/platform:port",
+    "//src/graphics/magma/lib/magma/platform:semaphore",
+    "//src/graphics/magma/lib/magma/util:macros",
+    "//src/graphics/magma/lib/magma_service/mock:mmio",
+    "//src/graphics/magma/lib/magma_service/sys_driver",
+    "//src/graphics/magma/lib/magma_service/test_util:platform_msd_device_helper",
+    "//src/graphics/magma/lib/magma_service/util:registers",
     "//third_party/googletest:gtest",
   ]
 }

@@ -8,8 +8,10 @@ using zx;
 
 const BOARD_NAME_LEN uint8 = 32;
 const BOOTLOADER_VENDOR_LEN uint8 = 32;
+@available(added=HEAD)
+const SERIAL_NUMBER_LEN uint8 = 32;
 
-@available(removed=12)
+@available(replaced=12)
 type InterruptControllerType = strict enum {
     UNKNOWN = 0;
     APIC = 1;
@@ -38,7 +40,7 @@ closed protocol SysInfo {
         name string:<BOARD_NAME_LEN, optional>;
     });
 
-    // TODO (nealo):  Remove Transitional qualifier after all board bootloaders
+    // TODO(nealo):  Remove Transitional qualifier after all board bootloaders
     // provide board serial number, mac address and revision.
     /// Return the board revision for the board we are running on.
     @transitional("Adding Board Revision")
@@ -58,4 +60,9 @@ closed protocol SysInfo {
         status zx.Status;
         info box<InterruptControllerInfo>;
     });
+
+    @available(added=HEAD)
+    strict GetSerialNumber() -> (struct {
+        serial string:<SERIAL_NUMBER_LEN>;
+    }) error zx.Status;
 };

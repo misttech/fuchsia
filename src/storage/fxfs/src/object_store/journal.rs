@@ -27,12 +27,12 @@ use {
         checksum::Checksum,
         debug_assert_not_too_long,
         errors::FxfsError,
-        filesystem::{ApplyContext, ApplyMode, Filesystem, SyncOptions},
+        filesystem::{ApplyContext, ApplyMode, FxFilesystem, SyncOptions},
         log::*,
         lsm_tree::cache::NullCache,
         object_handle::{ObjectHandle as _, ReadObjectHandle},
         object_store::{
-            allocator::{Allocator, SimpleAllocator},
+            allocator::Allocator,
             extent_record::{Checksums, ExtentKey, ExtentValue, DEFAULT_DATA_ATTRIBUTE_ID},
             graveyard::Graveyard,
             journal::{
@@ -45,8 +45,8 @@ use {
             object_manager::ObjectManager,
             object_record::{AttributeKey, ObjectKey, ObjectKeyData, ObjectValue},
             transaction::{
-                AllocatorMutation, Mutation, MutationV20, MutationV25, MutationV29, MutationV30,
-                ObjectStoreMutation, Options, Transaction, TxnMutation,
+                lock_keys, AllocatorMutation, Mutation, MutationV20, MutationV25, MutationV29,
+                MutationV30, MutationV31, ObjectStoreMutation, Options, Transaction, TxnMutation,
                 TRANSACTION_MAX_JOURNAL_USAGE,
             },
             DataObjectHandle, HandleOptions, HandleOwner, Item, ItemRef, LastObjectId, LockState,
@@ -55,19 +55,17 @@ use {
         range::RangeExt,
         round::{round_div, round_down, round_up},
         serialized_types::{migrate_to_version, Migrate, Version, Versioned, LATEST_VERSION},
-        trace_duration,
     },
     anyhow::{anyhow, bail, Context, Error},
     event_listener::Event,
     fprint::TypeFingerprint,
-    futures::{self, future::poll_fn, FutureExt},
+    futures::{self, future::poll_fn, FutureExt as _},
     once_cell::sync::OnceCell,
     rand::Rng,
     serde::{Deserialize, Serialize},
     static_assertions::const_assert,
     std::{
         clone::Clone,
-        collections::HashMap,
         convert::AsRef,
         ops::{Bound, Range},
         sync::{
@@ -77,13 +75,12 @@ use {
         task::{Poll, Waker},
         vec::Vec,
     },
-    storage_device::buffer::Buffer,
 };
 
 // Exposed for serialized_types.
 pub use super_block::{
     SuperBlockHeader, SuperBlockRecord, SuperBlockRecordV25, SuperBlockRecordV29,
-    SuperBlockRecordV30, SuperBlockRecordV5,
+    SuperBlockRecordV30, SuperBlockRecordV31, SuperBlockRecordV5,
 };
 
 // The journal file is written to in blocks of this size.
@@ -146,9 +143,33 @@ pub enum JournalRecord {
     // to defensively flush the device before replaying the journal (if possible, i.e. not
     // read-only) in case the block device connection was reused.
     DidFlushDevice(u64),
+    // Checksums for a data range written by this transaction, for a particular store identified by
+    // the u64 object id. A transaction is only valid if these checksums are right. The range is
+    // the device offset the checksums are for.
+    DataChecksums(Range<u64>, Vec<Checksum>),
 }
 
 #[derive(Debug, Deserialize, Migrate, Serialize, Versioned, TypeFingerprint)]
+pub enum JournalRecordV32 {
+    EndBlock,
+    Mutation { object_id: u64, mutation: Mutation },
+    Commit,
+    Discard(u64),
+    DidFlushDevice(u64),
+}
+
+#[derive(Debug, Deserialize, Migrate, Serialize, Versioned, TypeFingerprint)]
+#[migrate_to_version(JournalRecordV32)]
+pub enum JournalRecordV31 {
+    EndBlock,
+    Mutation { object_id: u64, mutation: MutationV31 },
+    Commit,
+    Discard(u64),
+    DidFlushDevice(u64),
+}
+
+#[derive(Debug, Deserialize, Migrate, Serialize, Versioned, TypeFingerprint)]
+#[migrate_to_version(JournalRecordV31)]
 pub enum JournalRecordV30 {
     EndBlock,
     Mutation { object_id: u64, mutation: MutationV30 },
@@ -249,6 +270,12 @@ struct Inner {
     // The last offset we flushed to the journal file.
     flushed_offset: u64,
 
+    // The last offset that should be considered valid in the journal file.  Most of the time, this
+    // will be the same as `flushed_offset` but at mount time, this could be less and will only be
+    // up to the end of the last valid transaction; it won't include transactions that follow that
+    // have been discarded.
+    valid_to: u64,
+
     // If, after replaying, we have to discard a number of mutations (because they don't validate),
     // this offset specifies where we need to discard back to.  This is so that when we next replay,
     // we ignore those mutations and continue with new good mutations.
@@ -298,9 +325,6 @@ impl Default for JournalOptions {
 
 struct JournaledTransactions {
     transactions: Vec<JournaledTransaction>,
-    // Maps from owner_object_id to offset at which it was deleted. Required for checksum
-    // validation.
-    marked_for_deletion: HashMap<u64, u64>,
     device_flushed_offset: u64,
 }
 
@@ -310,6 +334,13 @@ pub struct JournaledTransaction {
     // List of (store_object_id, mutation).
     pub mutations: Vec<(u64, Mutation)>,
     pub end_offset: u64,
+    pub checksums: Vec<JournaledChecksums>,
+}
+
+#[derive(Debug)]
+pub struct JournaledChecksums {
+    pub device_range: Range<u64>,
+    pub checksums: Vec<Checksum>,
 }
 
 /// Handles for journal-like objects have some additional functionality to manage their extents,
@@ -319,7 +350,7 @@ pub trait JournalHandle: ReadObjectHandle {
     /// be skipped if None is returned).
     fn start_offset(&self) -> Option<u64>;
     /// Adds an extent to the current end of the journal stream.
-    fn push_extent(&mut self, devic_range: Range<u64>);
+    fn push_extent(&mut self, device_range: Range<u64>);
     /// Discards all extents whose logical offset succeeds |discard_offset|.
     fn discard_extents(&mut self, discard_offset: u64);
 }
@@ -339,6 +370,7 @@ impl<S: HandleOwner> JournalHandle for DataObjectHandle<S> {
     }
 }
 
+#[fxfs_trace::trace]
 impl Journal {
     pub fn new(objects: Arc<ObjectManager>, options: JournalOptions) -> Journal {
         let starting_checksum = rand::thread_rng().gen();
@@ -360,6 +392,7 @@ impl Journal {
                 compaction_running: false,
                 sync_waker: None,
                 flushed_offset: 0,
+                valid_to: 0,
                 discard_offset: None,
                 reclaim_size: options.reclaim_size,
             }),
@@ -458,11 +491,13 @@ impl Journal {
     fn update_checksum_list(
         &self,
         journal_offset: u64,
-        owner_object_id: u64,
         mutation: &Mutation,
         checksum_list: &mut ChecksumList,
     ) -> Result<(), Error> {
         match mutation {
+            // TODO(fxbug.dev/313678158): This can be removed the next time we bump
+            // EARLIEST_SUPPORTED_VERSION, because the latest journal code writes all the checksums
+            // out in a separate record.
             Mutation::ObjectStore(ObjectStoreMutation {
                 item:
                     Item {
@@ -487,7 +522,6 @@ impl Journal {
             }) => {
                 checksum_list.push(
                     journal_offset,
-                    owner_object_id,
                     *device_offset..*device_offset + range.length().unwrap(),
                     checksums,
                 )?;
@@ -502,12 +536,12 @@ impl Journal {
     }
 
     /// Reads the latest super-block, and then replays journaled records.
+    #[trace]
     pub async fn replay(
         &self,
-        filesystem: Arc<dyn Filesystem>,
-        on_new_allocator: Option<Box<dyn Fn(Arc<SimpleAllocator>) + Send + Sync>>,
+        filesystem: Arc<FxFilesystem>,
+        on_new_allocator: Option<Box<dyn Fn(Arc<Allocator>) + Send + Sync>>,
     ) -> Result<(), Error> {
-        trace_duration!("Journal::replay");
         let block_size = filesystem.block_size();
 
         let (super_block, root_parent) =
@@ -517,7 +551,7 @@ impl Journal {
 
         self.objects.set_root_parent_store(root_parent.clone());
         let allocator =
-            Arc::new(SimpleAllocator::new(filesystem.clone(), super_block.allocator_object_id));
+            Arc::new(Allocator::new(filesystem.clone(), super_block.allocator_object_id));
         if let Some(on_new_allocator) = on_new_allocator {
             on_new_allocator(allocator.clone());
         }
@@ -608,32 +642,32 @@ impl Journal {
         }
 
         let mut reader = JournalReader::new(handle, &super_block.journal_checkpoint);
-        let JournaledTransactions { transactions, marked_for_deletion, device_flushed_offset } =
+        let JournaledTransactions { transactions, device_flushed_offset } =
             self.read_transactions(&mut reader, None).await?;
 
         // Validate all the mutations.
         let mut checksum_list = ChecksumList::new(device_flushed_offset);
         let mut valid_to = reader.journal_file_checkpoint().file_offset;
         let device_size = device.size();
-        'bad_replay: for JournaledTransaction { checkpoint, mutations, .. } in &transactions {
-            for (object_id, mutation) in mutations {
+        'bad_replay: for JournaledTransaction { checkpoint, mutations, checksums, .. } in
+            &transactions
+        {
+            for JournaledChecksums { device_range, checksums } in checksums {
+                checksum_list.push(checkpoint.file_offset, device_range.clone(), &checksums)?;
+            }
+            for (_, mutation) in mutations {
                 if !self.validate_mutation(&mutation, block_size, device_size) {
                     info!(?mutation, "Stopping replay at bad mutation");
                     valid_to = checkpoint.file_offset;
                     break 'bad_replay;
                 }
-                self.update_checksum_list(
-                    checkpoint.file_offset,
-                    *object_id,
-                    &mutation,
-                    &mut checksum_list,
-                )?;
+                self.update_checksum_list(checkpoint.file_offset, &mutation, &mut checksum_list)?;
             }
         }
 
         // Validate the checksums.
         let valid_to = checksum_list
-            .verify(device.as_ref(), marked_for_deletion, valid_to)
+            .verify(device.as_ref(), valid_to)
             .await
             .context("Failed to validate checksums")?;
 
@@ -644,7 +678,7 @@ impl Journal {
             // Loop used here in place of for {} else {}
             #[allow(clippy::never_loop)]
             'outer: loop {
-                for JournaledTransaction { checkpoint, mutations, end_offset } in transactions {
+                for JournaledTransaction { checkpoint, mutations, end_offset, .. } in transactions {
                     if checkpoint.file_offset >= valid_to {
                         break 'outer checkpoint;
                     }
@@ -684,10 +718,12 @@ impl Journal {
                 None,
             )
             .await
-            .context(format!(
-                "Failed to open journal file (object id: {})",
-                super_block.journal_object_id
-            ))?;
+            .with_context(|| {
+                format!(
+                    "Failed to open journal file (object id: {})",
+                    super_block.journal_object_id
+                )
+            })?;
             let _ = self.handle.set(handle);
             let mut inner = self.inner.lock().unwrap();
             let mut writer_checkpoint = reader.journal_file_checkpoint();
@@ -700,6 +736,7 @@ impl Journal {
             inner.flushed_offset = writer_checkpoint.file_offset;
             inner.writer.seek(writer_checkpoint);
             inner.output_reset_version = true;
+            inner.valid_to = last_checkpoint.file_offset;
             if last_checkpoint.file_offset < inner.flushed_offset {
                 inner.discard_offset = Some(last_checkpoint.file_offset);
             }
@@ -709,6 +746,9 @@ impl Journal {
             .on_replay_complete()
             .await
             .context("Failed to complete replay for object manager")?;
+
+        // Tell the allocator where we know the device has been flushed to.
+        self.objects.allocator().did_flush_device(device_flushed_offset).await;
 
         if last_checkpoint.file_offset != reader.journal_file_checkpoint().file_offset {
             info!(
@@ -728,7 +768,6 @@ impl Journal {
         end_offset: Option<u64>,
     ) -> Result<JournaledTransactions, Error> {
         let mut transactions = Vec::new();
-        let mut marked_for_deletion: HashMap<u64, u64> = HashMap::new();
         let (mut device_flushed_offset, root_parent_store_object_id) = {
             let super_block = &self.inner.lock().unwrap().super_block_header;
             (super_block.super_block_journal_file_offset, super_block.root_parent_store_object_id)
@@ -767,6 +806,7 @@ impl Journal {
                                         checkpoint,
                                         mutations: Vec::new(),
                                         end_offset: 0,
+                                        checksums: Vec::new(),
                                     });
                                     current_transaction = transactions.last_mut();
                                     current_transaction.as_mut().unwrap()
@@ -779,11 +819,30 @@ impl Journal {
                                 current_transaction.mutations.push((object_id, mutation));
                             }
                         }
+                        JournalRecord::DataChecksums(device_range, checksums) => {
+                            let current_transaction = match current_transaction.as_mut() {
+                                None => {
+                                    transactions.push(JournaledTransaction {
+                                        checkpoint,
+                                        mutations: Vec::new(),
+                                        end_offset: 0,
+                                        checksums: Vec::new(),
+                                    });
+                                    current_transaction = transactions.last_mut();
+                                    current_transaction.as_mut().unwrap()
+                                }
+                                Some(transaction) => transaction,
+                            };
+                            current_transaction
+                                .checksums
+                                .push(JournaledChecksums { device_range, checksums });
+                        }
                         JournalRecord::Commit => {
                             if let Some(JournaledTransaction {
                                 checkpoint: _,
                                 mutations,
                                 ref mut end_offset,
+                                checksums: _,
                             }) = current_transaction.take()
                             {
                                 for (store_object_id, mutation) in mutations {
@@ -843,17 +902,6 @@ impl Journal {
                                             );
                                         }
                                     }
-                                    // If a MarkForDeletion mutation is found, we want to skip
-                                    // checksum validation of prior writes.
-                                    if let Mutation::Allocator(
-                                        AllocatorMutation::MarkForDeletion(owner_object_id),
-                                    ) = mutation
-                                    {
-                                        marked_for_deletion.insert(
-                                            *owner_object_id,
-                                            reader.journal_file_checkpoint().file_offset,
-                                        );
-                                    }
                                 }
                                 *end_offset = reader.journal_file_checkpoint().file_offset;
                             }
@@ -891,12 +939,12 @@ impl Journal {
             transactions.pop();
         }
 
-        Ok(JournaledTransactions { transactions, marked_for_deletion, device_flushed_offset })
+        Ok(JournaledTransactions { transactions, device_flushed_offset })
     }
 
     /// Creates an empty filesystem with the minimum viable objects (including a root parent and
     /// root store but no further child stores).
-    pub async fn init_empty(&self, filesystem: Arc<dyn Filesystem>) -> Result<(), Error> {
+    pub async fn init_empty(&self, filesystem: Arc<FxFilesystem>) -> Result<(), Error> {
         // The following constants are only used at format time. When mounting, the recorded values
         // in the superblock should be used.  The root parent store does not have a parent, but
         // needs an object ID to be registered with ObjectManager, so it cannot collide (i.e. have
@@ -921,8 +969,7 @@ impl Journal {
         );
         self.objects.set_root_parent_store(root_parent.clone());
 
-        let allocator =
-            Arc::new(SimpleAllocator::new(filesystem.clone(), INIT_ALLOCATOR_OBJECT_ID));
+        let allocator = Arc::new(Allocator::new(filesystem.clone(), INIT_ALLOCATOR_OBJECT_ID));
         self.objects.set_allocator(allocator.clone());
         self.objects.init_metadata_reservation()?;
 
@@ -932,7 +979,10 @@ impl Journal {
         let root_store;
         let mut transaction = filesystem
             .clone()
-            .new_transaction(&[], Options { skip_journal_checks: true, ..Default::default() })
+            .new_transaction(
+                lock_keys![],
+                Options { skip_journal_checks: true, ..Default::default() },
+            )
             .await?;
         root_store = root_parent
             .new_child_store(
@@ -986,10 +1036,14 @@ impl Journal {
         )
         .await
         .context("create journal")?;
+        let mut file_range = 0..self.chunk_size();
         journal_handle
-            .preallocate_range(&mut transaction, 0..self.chunk_size())
+            .preallocate_range(&mut transaction, &mut file_range)
             .await
             .context("preallocate journal")?;
+        if file_range.start < file_range.end {
+            bail!("preallocate_range returned too little space");
+        }
 
         // Write the root store object info.
         root_store.create(&mut transaction).await?;
@@ -1031,7 +1085,7 @@ impl Journal {
             handle.owner(),
             handle.object_id(),
             journal_handle_options(),
-            handle.store().crypt(),
+            None,
         )
         .await?;
 
@@ -1042,7 +1096,7 @@ impl Journal {
         let mut reader = JournalReader::new(handle, &checkpoint);
         // Record the current end offset and only read to there, so we don't accidentally read any
         // partially flushed blocks.
-        let end_offset = self.inner.lock().unwrap().flushed_offset;
+        let end_offset = self.inner.lock().unwrap().valid_to;
         self.read_transactions(&mut reader, Some(end_offset)).await.map(|mut r| {
             r.transactions.retain(|t| t.mutations.iter().any(|(oid, _)| *oid == object_id));
             r.transactions
@@ -1055,13 +1109,13 @@ impl Journal {
             return Ok(self.inner.lock().unwrap().writer.journal_file_checkpoint().file_offset);
         }
 
-        self.pre_commit().await?;
+        self.pre_commit(transaction).await?;
         Ok(debug_assert_not_too_long!(self.write_and_apply_mutations(transaction)))
     }
 
     // Before we commit, we might need to extend the journal or write pending records to the
     // journal.
-    async fn pre_commit(&self) -> Result<(), Error> {
+    async fn pre_commit(&self, transaction: &Transaction<'_>) -> Result<(), Error> {
         let handle;
 
         let (size, zero_offset) = {
@@ -1105,11 +1159,14 @@ impl Journal {
                 skip_journal_checks: true,
                 borrow_metadata_space: true,
                 allocator_reservation: Some(self.objects.metadata_reservation()),
+                txn_guard: Some(transaction.txn_guard()),
                 ..Default::default()
             })
             .await?;
         if let Some(size) = size {
-            handle.preallocate_range(&mut transaction, size..size + self.chunk_size()).await?;
+            handle
+                .preallocate_range(&mut transaction, &mut (size..size + self.chunk_size()))
+                .await?;
         }
         if let Some(zero_offset) = zero_offset {
             handle.zero(&mut transaction, 0..zero_offset).await?;
@@ -1379,6 +1436,12 @@ impl Journal {
                         .write_record(&JournalRecord::Mutation { object_id: 0, mutation })
                         .unwrap();
                 }
+                for (device_range, checksums) in transaction.take_checksums().into_iter() {
+                    inner
+                        .writer
+                        .write_record(&JournalRecord::DataChecksums(device_range, checksums))
+                        .unwrap();
+                }
                 inner.writer.write_record(&JournalRecord::Commit).unwrap();
 
                 inner.writer.journal_file_checkpoint()
@@ -1400,18 +1463,17 @@ impl Journal {
     /// This task will flush journal data to the device when there is data that needs flushing, and
     /// trigger compactions when short of journal space.  It will return after the terminate method
     /// has been called, or an error is encountered with either flushing or compaction.
-    pub async fn flush_task(&self) {
+    pub async fn flush_task(self: Arc<Self>) {
         let mut flush_fut = None;
         let mut compact_fut = None;
         let mut flush_error = false;
         poll_fn(|ctx| loop {
             {
                 let mut inner = self.inner.lock().unwrap();
-                if flush_fut.is_none() && !flush_error {
-                    if let Some(handle) = self.handle.get() {
-                        if let Some((offset, buf)) = inner.writer.take_buffer(handle) {
-                            flush_fut = Some(self.flush(offset, buf).boxed());
-                        }
+                if flush_fut.is_none() && !flush_error && self.handle.get().is_some() {
+                    let flushable = inner.writer.flushable_bytes();
+                    if flushable > 0 {
+                        flush_fut = Some(self.flush(flushable).boxed());
                     }
                 }
                 if inner.terminate && flush_fut.is_none() && compact_fut.is_none() {
@@ -1463,7 +1525,10 @@ impl Journal {
         .await;
     }
 
-    async fn flush(&self, offset: u64, mut buf: Buffer<'_>) -> Result<(), Error> {
+    async fn flush(&self, amount: usize) -> Result<(), Error> {
+        let handle = self.handle.get().unwrap();
+        let mut buf = handle.allocate_buffer(amount).await;
+        let offset = self.inner.lock().unwrap().writer.take_flushable(buf.as_mut());
         let len = buf.len() as u64;
         self.handle.get().unwrap().overwrite(offset, buf.as_mut(), false).await?;
         let mut inner = self.inner.lock().unwrap();
@@ -1471,16 +1536,19 @@ impl Journal {
             waker.wake();
         }
         inner.flushed_offset = offset + len;
+        inner.valid_to = inner.flushed_offset;
         Ok(())
     }
 
-    async fn compact(&self) -> Result<(), Error> {
+    /// This should generally NOT be called externally. It is public to allow use by FIDL service
+    /// fxfs.Debug.
+    #[trace]
+    pub async fn compact(&self) -> Result<(), Error> {
         let trace = self.trace.load(Ordering::Relaxed);
         debug!("Compaction starting");
         if trace {
             info!("J: start compaction");
         }
-        trace_duration!("Journal::compact");
         let earliest_version = self.objects.flush().await?;
         self.inner.lock().unwrap().super_block_header.earliest_version = earliest_version;
         self.write_super_block().await?;
@@ -1559,22 +1627,18 @@ impl Writer<'_> {
     pub fn write(&mut self, mutation: Mutation) {
         self.1.write_record(&JournalRecord::Mutation { object_id: self.0, mutation }).unwrap();
     }
-    pub fn journal_file_checkpoint(&self) -> JournalCheckpoint {
-        self.1.journal_file_checkpoint()
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use {
         crate::{
-            filesystem::{Filesystem, FxFilesystem, SyncOptions},
+            filesystem::{FxFilesystem, SyncOptions},
             fsck::fsck,
             object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle},
             object_store::{
-                directory::Directory,
-                transaction::{Options, TransactionHandler},
-                HandleOptions, LockKey, ObjectStore,
+                directory::Directory, lock_keys, transaction::Options, HandleOptions, LockKey,
+                ObjectStore,
             },
         },
         storage_device::{fake_device::FakeDevice, DeviceHolder},
@@ -1599,7 +1663,7 @@ mod tests {
             let mut transaction = fs
                 .clone()
                 .new_transaction(
-                    &[LockKey::object(
+                    lock_keys![LockKey::object(
                         root_store.store_object_id(),
                         root_store.root_directory_object_id(),
                     )],
@@ -1613,7 +1677,7 @@ mod tests {
                 .expect("create_child_file failed");
 
             transaction.commit().await.expect("commit failed");
-            let mut buf = handle.allocate_buffer(TEST_DATA.len());
+            let mut buf = handle.allocate_buffer(TEST_DATA.len()).await;
             buf.as_mut_slice().copy_from_slice(TEST_DATA);
             handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
             // As this is the first sync, this will actually trigger a new super-block, but normally
@@ -1635,7 +1699,7 @@ mod tests {
             )
             .await
             .expect("open_object failed");
-            let mut buf = handle.allocate_buffer(TEST_DEVICE_BLOCK_SIZE as usize);
+            let mut buf = handle.allocate_buffer(TEST_DEVICE_BLOCK_SIZE as usize).await;
             assert_eq!(handle.read(0, buf.as_mut()).await.expect("read failed"), TEST_DATA.len());
             assert_eq!(&buf.as_slice()[..TEST_DATA.len()], TEST_DATA);
             fsck(fs.clone()).await.expect("fsck failed");
@@ -1661,7 +1725,7 @@ mod tests {
             let mut transaction = fs
                 .clone()
                 .new_transaction(
-                    &[LockKey::object(
+                    lock_keys![LockKey::object(
                         root_store.store_object_id(),
                         root_store.root_directory_object_id(),
                     )],
@@ -1674,7 +1738,7 @@ mod tests {
                 .await
                 .expect("create_child_file failed");
             transaction.commit().await.expect("commit failed");
-            let mut buf = handle.allocate_buffer(TEST_DATA.len());
+            let mut buf = handle.allocate_buffer(TEST_DATA.len()).await;
             buf.as_mut_slice().copy_from_slice(TEST_DATA);
             handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
             fs.sync(SyncOptions::default()).await.expect("sync failed");
@@ -1686,7 +1750,7 @@ mod tests {
                 let mut transaction = fs
                     .clone()
                     .new_transaction(
-                        &[LockKey::object(
+                        lock_keys![LockKey::object(
                             root_store.store_object_id(),
                             root_store.root_directory_object_id(),
                         )],
@@ -1699,7 +1763,7 @@ mod tests {
                     .await
                     .expect("create_child_file failed");
                 transaction.commit().await.expect("commit failed");
-                let mut buf = handle.allocate_buffer(TEST_DATA.len());
+                let mut buf = handle.allocate_buffer(TEST_DATA.len()).await;
                 buf.as_mut_slice().copy_from_slice(TEST_DATA);
                 handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
                 object_ids.push(handle.object_id());
@@ -1722,7 +1786,7 @@ mod tests {
                 )
                 .await
                 .expect("open_object failed");
-                let mut buf = handle.allocate_buffer(TEST_DEVICE_BLOCK_SIZE as usize);
+                let mut buf = handle.allocate_buffer(TEST_DEVICE_BLOCK_SIZE as usize).await;
                 assert_eq!(
                     handle.read(0, buf.as_mut()).await.expect("read failed"),
                     TEST_DATA.len()
@@ -1738,7 +1802,7 @@ mod tests {
             let mut transaction = fs
                 .clone()
                 .new_transaction(
-                    &[LockKey::object(
+                    lock_keys![LockKey::object(
                         root_store.store_object_id(),
                         root_store.root_directory_object_id(),
                     )],
@@ -1751,7 +1815,7 @@ mod tests {
                 .await
                 .expect("create_child_file failed");
             transaction.commit().await.expect("commit failed");
-            let mut buf = handle.allocate_buffer(TEST_DATA.len());
+            let mut buf = handle.allocate_buffer(TEST_DATA.len()).await;
             buf.as_mut_slice().copy_from_slice(TEST_DATA);
             handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
             fs.sync(SyncOptions::default()).await.expect("sync failed");
@@ -1777,7 +1841,7 @@ mod tests {
                 .unwrap_or_else(|e| {
                     panic!("open_object failed (object_id: {}): {:?}", object_id, e)
                 });
-                let mut buf = handle.allocate_buffer(TEST_DEVICE_BLOCK_SIZE as usize);
+                let mut buf = handle.allocate_buffer(TEST_DEVICE_BLOCK_SIZE as usize).await;
                 assert_eq!(
                     handle.read(0, buf.as_mut()).await.expect("read failed"),
                     TEST_DATA.len()
@@ -1796,7 +1860,7 @@ mod fuzz {
     #[fuzz]
     fn fuzz_journal_bytes(input: Vec<u8>) {
         use {
-            crate::filesystem::{Filesystem as _, FxFilesystem},
+            crate::filesystem::FxFilesystem,
             fuchsia_async as fasync,
             std::io::Write,
             storage_device::{fake_device::FakeDevice, DeviceHolder},
@@ -1820,7 +1884,7 @@ mod fuzz {
     #[fuzz]
     fn fuzz_journal(input: Vec<super::JournalRecord>) {
         use {
-            crate::filesystem::{Filesystem as _, FxFilesystem},
+            crate::filesystem::FxFilesystem,
             fuchsia_async as fasync,
             storage_device::{fake_device::FakeDevice, DeviceHolder},
         };

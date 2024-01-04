@@ -25,9 +25,42 @@
 
 namespace arch {
 
-// Forward-declared; defined below.
-struct AccessPermissions;
-struct PagingSettings;
+/// Settings relating to the access permissions of a page or pages that map
+/// through an entry.
+struct AccessPermissions {
+  bool readable = false;
+  bool writable = false;
+  bool executable = false;
+  bool user_accessible = false;
+};
+
+namespace internal {
+
+template <typename T, typename = std::enable_if_t<std::is_default_constructible_v<T>>>
+inline constexpr T kDefaultConstructedValue = {};
+
+// See ExamplePagingTraits::PagingSettings below.
+template <typename MemoryType, auto& DefaultMemoryValue = kDefaultConstructedValue<MemoryType>>
+struct PagingSettings {
+  static constexpr MemoryType kDefaultMemory = DefaultMemoryValue;
+
+  uint64_t address = 0u;
+  bool present = false;
+  bool terminal = false;
+  AccessPermissions access;
+  MemoryType memory = DefaultMemoryValue;
+  bool global = false;
+};
+
+// See Paging<PagingTraits>::MemoryType below.
+template <typename MemoryType, auto& DefaultMemoryValue = kDefaultConstructedValue<MemoryType>>
+struct MapSettings {
+  AccessPermissions access;
+  MemoryType memory = DefaultMemoryValue;
+  bool global = false;
+};
+
+}  // namespace internal
 
 /// Parameterizes the unaddressable bits of a virtual address.
 enum class VirtualAddressExtension {
@@ -75,12 +108,36 @@ struct ExamplePagingTraits {
   ///
   enum class LevelType { kExampleLevel };
 
+  /// A type describing 'memory' configuration (both RAM and MMIO). This might
+  /// encode cache coherence policy or similar architecture-specific details.
+  struct MemoryType {};
+
   /// Captures runtime system information that feeds into translation or
   /// mapping considerations. The construction of this information is
   /// context-dependent and so is left to the user of the API.
   ///
   /// SystemState is expected to be default-constructible.
   struct SystemState {};
+
+  /// PagingSettings should be a class with the following public fields,
+  /// corresponding to TableEntry's accessors below:
+  /// *  bool present;
+  /// *  bool terminal;
+  /// *  uint64_t address;
+  /// *  AccessPermissions access;
+  /// *  MemoryType memory;
+  ///
+  /// Further, PagingSettings should define a default memory type value in the
+  /// form of
+  /// *  static constexpr MemoryType kDefaultMemory;
+  ///
+  /// This abstraction allows traits to define their own default settings.
+  ///
+  /// PagingSettings must be default-constructible.
+  ///
+  /// internal::PagingSettings may be instantiated to satisfy these
+  /// requirements.
+  using PagingSettings = internal::PagingSettings<MemoryType>;
 
   /// The register type representing a page table entry at a given level. It
   /// must meet the defined API below.
@@ -121,23 +178,60 @@ struct ExamplePagingTraits {
     constexpr bool executable() const { return false; }
     constexpr bool user_accessible() const { return false; }
 
-    /// Bulk-apply paging settings to the entry. This is done in one go as
-    /// there can be interdependicies among the different aspects of entry
-    /// state: these could not otherwise be captured by individual setters with
-    /// an unconstrained relative call order. (For example, the setting of
-    /// address could be sensitive to whether the entry is terminal.)
+    /// If terminal, whether the associated page was read from, written to, or
+    /// executed. If non-terminal, this *may* for certain implementations
+    /// indicate whether a page that maps through this entry was similarly
+    /// accessed; otherwise, this is expected to return false.
+    ///
+    /// Hardware may often be configured so as to manage this bit
+    /// automatically - but otherwise software must do so and contend with
+    /// access faults when unset.
+    constexpr bool accessed() const { return false; }
+
+    /// If terminal, whether the associated page is 'global'. A page being
+    /// designated as such prevents its TLB entries from being affected by
+    /// normal TLB invalidations. This is useful in the case of mappings that
+    /// are expected to exist within different page table trees being switched
+    /// between. If non-terminal, this is expected to return false.
+    constexpr bool global() const { return false; }
+
+    /// Returns the memory type of the associated page, which may require
+    /// access to system state to decode.
+    ///
+    /// This method may only be called on a terminal entry.
+    constexpr MemoryType Memory(const SystemState& state) const {
+      assert(terminal());
+      return PagingSettings::kDefaultMemory;
+    }
+
+    /// (Re)populates an entry as new. This is done in one go as there can be
+    /// interdependicies among the different aspects of entry state: these
+    /// could not otherwise be captured by individual setters with an
+    /// unconstrained relative call order. (For example, the setting of address
+    /// could be sensitive to whether the entry is terminal.)
     ///
     /// If `settings.present` is false, all other settings should be ignored.
     ///
     /// Once a setting is applied, the corresponding getter should return
     /// reflect that identically.
     ///
-    /// If `settings.terminal` is true, then it is the responsibility to have
-    /// called `Traits::IsValidPageAccess()` on the provided access permissions
-    /// before making this call; otherwise if
-    /// `!Traits::kNonTerminalAccessPermissions` then the provided access
-    /// permissions are expected to be maximally permissive.
-    constexpr TableEntry& Set(const PagingSettings& settings) { return *this; }
+    /// If `settings.terminal` is true, then it is the responsibility of the
+    /// user to check that the provided access permissions are valid (e.g.,
+    /// in consultation with Traits::kExecuteOnlyAllowed) before making this
+    /// call; otherwise if `!Traits::kNonTerminalAccessPermissions` then the
+    /// provided access permissions are expected to be maximally permissive.
+    ///
+    /// Where the qualifiers make sense (which is implementation-specific), a
+    /// call to Set() will result in a present entry being updated as accessed.
+    /// There is no case in which we would want to create a new
+    /// entry but not mark it as such. If hardware is managing these bits, then
+    /// there is no penalty to doing so; if software-managed, then we avoid an
+    /// unnecessary trap that we would only handle later on to set these bits.
+    /// Similarly, if an entry is Set() as writable, then it should reflect as
+    /// 'dirty' when that makes sense.
+    constexpr TableEntry& Set(const SystemState& state, const PagingSettings& settings) {
+      return *this;
+    }
   };
 
   /// The maximum number of addressable physical address bits permitted by the
@@ -154,7 +248,10 @@ struct ExamplePagingTraits {
 
   /// The log2 number of page table entries for a given level.
   template <LevelType Level>
-  static constexpr unsigned int kNumTableEntriesLog2 = 0;
+  static constexpr unsigned int kNumTableEntriesLog2 = 1;
+
+  /// Whether the hardware permits execute-only mappings.
+  static constexpr bool kExecuteOnlyAllowed = false;
 
   /// Whether access permissions may be set on non-terminal entries so as to
   /// narrow access for later levels. If false, then access permissions are
@@ -175,35 +272,11 @@ struct ExamplePagingTraits {
   /// Parameterizes the unaddressable virtual address space bits.
   static constexpr auto kVirtualAddressExtension = VirtualAddressExtension::kCanonical;
 
-  /// Whether the given set of access permissions is generally valid for a
-  /// page, as applied at the terminal level.
-  static bool IsValidPageAccess(const SystemState& state, const AccessPermissions& access) {
-    return false;
-  }
-
   /// Whether the given level can generally feature terminal entries.
   template <LevelType Level>
   static bool LevelCanBeTerminal(const SystemState& state) {
     return false;
   }
-};
-
-/// Settings relating to the access permissions of a page or pages that map
-/// through an entry.
-struct AccessPermissions {
-  bool readable = false;
-  bool writable = false;
-  bool executable = false;
-  bool user_accessible = false;
-};
-
-/// As described by `ExamplePagingTraits::TableEntry<Level>::Set()`.
-struct PagingSettings {
-  uint64_t address = 0u;
-  bool present = false;
-  bool terminal = false;
-  AccessPermissions access;
-  // TODO(fxbug.dev/129344): global, memory type.
 };
 
 /// A range of (zero-indexed) bits within a virtual address.
@@ -251,13 +324,6 @@ struct MapError {
   Type type = Type::kUnknown;
 };
 
-/// The settings to apply to each page mapped in the context of the mapping
-/// utilities below.
-struct MapSettings {
-  AccessPermissions access;
-  // TODO(fxbug.dev/129344): global, memory type.
-};
-
 /// Paging provides paging-related operations for a given a set of paging
 /// traits.
 template <class PagingTraits>
@@ -269,7 +335,17 @@ class Paging : public PagingTraits {
   template <LevelType Level>
   using TableEntry = typename PagingTraits::template TableEntry<Level>;
 
+  using typename PagingTraits::MemoryType;
+
+  using typename PagingTraits::PagingSettings;
+  static_assert(std::is_default_constructible_v<PagingSettings>);
+
   using typename PagingTraits::SystemState;
+  static_assert(std::is_default_constructible_v<SystemState>);
+
+  /// The settings to apply to each page mapped in the context of the mapping
+  /// utilities below.
+  using MapSettings = internal::MapSettings<MemoryType, PagingSettings::kDefaultMemory>;
 
   using PagingTraits::kLevels;
   static_assert(kLevels.size() > 0);
@@ -327,27 +403,8 @@ class Paging : public PagingTraits {
   /// The virtual address bit range at a given level that serves as the index
   /// into a page table at that level.
   template <LevelType Level>
-  static constexpr VirtualAddressBitRange kVirtualAddressBitRange = []() {
-    constexpr auto kRange = []() -> VirtualAddressBitRange {
-      constexpr unsigned int kWidth = kNumTableEntriesLog2<Level>;
-      if constexpr (Level == kLevels.back()) {
-        return {
-            .high = kTableAlignmentLog2 + kWidth - 1,
-            .low = kTableAlignmentLog2,
-        };
-      } else {
-        constexpr auto kNextRange = kVirtualAddressBitRange<kNextLevel<Level>>;
-        return {
-            .high = kNextRange.high + 1 + kWidth - 1,
-            .low = kNextRange.high + 1,
-        };
-      }
-    }();
-    static_assert(64 > kRange.high);
-    static_assert(kRange.high > kRange.low);
-    static_assert(kRange.low >= kTableAlignmentLog2);
-    return kRange;
-  }();
+  static constexpr VirtualAddressBitRange kVirtualAddressBitRange =
+      []() { return Paging::template GetVirtualAddressBitRange<Level>(); }();
 
   /// The size of a would-be page if mapped from a given level.
   template <LevelType Level>
@@ -543,7 +600,7 @@ class Paging : public PagingTraits {
       PaddrToTableIo&& paddr_to_io,  //
       Visitor&& visitor,             //
       uint64_t vaddr) {              //
-    AssertValidVirtualAddress<>(vaddr);
+    AssertValidVirtualAddress(vaddr);
     return VisitPageTablesFrom<kFirstLevel>(table_paddr, std::forward<PaddrToTableIo>(paddr_to_io),
                                             std::forward<Visitor>(visitor), vaddr);
   }
@@ -681,8 +738,10 @@ class Paging : public PagingTraits {
       if (terminal) {
         settings.address = output_paddr_;
         settings.access = settings_.access;
+        settings.memory = settings_.memory;
+        settings.global = settings_.global;
       } else {
-        std::optional<uint64_t> new_table_paddr = allocator_(kTableAlignment, kTableSize<Level>);
+        std::optional<uint64_t> new_table_paddr = allocator_(kTableSize<Level>, kTableAlignment);
         if (!new_table_paddr) {
           return fit::error(to_error(MapError::Type::kAllocationFailure));
         }
@@ -713,35 +772,51 @@ class Paging : public PagingTraits {
   template <typename PageTableAllocator>
   MappingVisitor(PageTableAllocator, ...) -> MappingVisitor<PageTableAllocator>;
 
-  template <VirtualAddressExtension Extension = kVirtualAddressExtension>
-  static void AssertValidVirtualAddress(uint64_t vaddr);
-
-  template <>
-  static void AssertValidVirtualAddress<VirtualAddressExtension::kCanonical>(uint64_t vaddr) {
-    ZX_DEBUG_ASSERT(kLowerVirtualAddressRangeEnd);
-    ZX_DEBUG_ASSERT(kUpperVirtualAddressRangeStart);
-    ZX_DEBUG_ASSERT_MSG(
-        vaddr < *kLowerVirtualAddressRangeEnd || vaddr >= *kUpperVirtualAddressRangeStart,
-        "virtual address %#" PRIx64 " must be within [0, %#" PRIx64 ") or [%#" PRIx64
-        ", 0xffff'ffff'ffff'ffff]",
-        vaddr, *kLowerVirtualAddressRangeEnd, *kUpperVirtualAddressRangeStart);
+  // A private helper for defining kVirtualAddressBitRange.
+  template <LevelType Level>
+  static constexpr VirtualAddressBitRange GetVirtualAddressBitRange() {
+    constexpr auto kRange = []() -> VirtualAddressBitRange {
+      constexpr unsigned int kWidth = kNumTableEntriesLog2<Level>;
+      if constexpr (Level == kLevels.back()) {
+        return {
+            .high = kTableAlignmentLog2 + kWidth - 1,
+            .low = kTableAlignmentLog2,
+        };
+      } else {
+        constexpr auto kNextRange = GetVirtualAddressBitRange<kNextLevel<Level>>();
+        return {
+            .high = kNextRange.high + 1 + kWidth - 1,
+            .low = kNextRange.high + 1,
+        };
+      }
+    }();
+    static_assert(64 > kRange.high);
+    static_assert(kRange.high >= kRange.low);
+    static_assert(kRange.low >= kTableAlignmentLog2);
+    return kRange;
   }
 
-  template <>
-  static void AssertValidVirtualAddress<VirtualAddressExtension::k0>(uint64_t vaddr) {
-    ZX_DEBUG_ASSERT(kLowerVirtualAddressRangeEnd);
-    ZX_DEBUG_ASSERT_MSG(vaddr < *kLowerVirtualAddressRangeEnd,
-                        "virtual address %#" PRIx64 " must be within [0, %#" PRIx64 ")", vaddr,
-                        *kLowerVirtualAddressRangeEnd);
-  }
-
-  template <>
-  static void AssertValidVirtualAddress<VirtualAddressExtension::k1>(uint64_t vaddr) {
-    ZX_DEBUG_ASSERT(kUpperVirtualAddressRangeStart);
-    ZX_DEBUG_ASSERT_MSG(vaddr >= *kUpperVirtualAddressRangeStart,
-                        "virtual address %#" PRIx64 " must be within [%#" PRIx64
-                        ", 0xffff'ffff'ffff'ffff]",
-                        vaddr, *kUpperVirtualAddressRangeStart);
+  static void AssertValidVirtualAddress(uint64_t vaddr) {
+    if constexpr (kVirtualAddressExtension == VirtualAddressExtension::kCanonical) {
+      ZX_DEBUG_ASSERT(kLowerVirtualAddressRangeEnd);
+      ZX_DEBUG_ASSERT(kUpperVirtualAddressRangeStart);
+      ZX_DEBUG_ASSERT_MSG(
+          vaddr < *kLowerVirtualAddressRangeEnd || vaddr >= *kUpperVirtualAddressRangeStart,
+          "virtual address %#" PRIx64 " must be within [0, %#" PRIx64 ") or [%#" PRIx64
+          ", 0xffff'ffff'ffff'ffff]",
+          vaddr, *kLowerVirtualAddressRangeEnd, *kUpperVirtualAddressRangeStart);
+    } else if constexpr (kVirtualAddressExtension == VirtualAddressExtension::k0) {
+      ZX_DEBUG_ASSERT(kLowerVirtualAddressRangeEnd);
+      ZX_DEBUG_ASSERT_MSG(vaddr < *kLowerVirtualAddressRangeEnd,
+                          "virtual address %#" PRIx64 " must be within [0, %#" PRIx64 ")", vaddr,
+                          *kLowerVirtualAddressRangeEnd);
+    } else if constexpr (kVirtualAddressExtension == VirtualAddressExtension::k1) {
+      ZX_DEBUG_ASSERT(kUpperVirtualAddressRangeStart);
+      ZX_DEBUG_ASSERT_MSG(vaddr >= *kUpperVirtualAddressRangeStart,
+                          "virtual address %#" PRIx64 " must be within [%#" PRIx64
+                          ", 0xffff'ffff'ffff'ffff]",
+                          vaddr, *kUpperVirtualAddressRangeStart);
+    }
   }
 
   /// A helper routine for `VisitPageTables()` starting a given level, allowing

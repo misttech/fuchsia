@@ -22,8 +22,8 @@ rustc_test("test") {
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test",
     "//src/lib/fuchsia-fs",
-    "//src/lib/storage/vfs/rust:vfs",
     "//src/recovery/system:ota_lib",
+    "//src/storage/lib/vfs/rust:vfs",
     "//src/sys/pkg/lib/fuchsia-pkg-testing",
     "//src/sys/pkg/lib/isolated-ota",
     "//src/sys/pkg/testing/blobfs-ramdisk",
@@ -43,12 +43,11 @@ fuchsia_test_component("ota_integration_test_component") {
   manifest = "meta/ota-integration-test.cml"
   deps = [
     ":test",
+    "//src/connectivity/network:netstack-for-tests",
     "//src/connectivity/network/dns:component",
-    "//src/connectivity/network/netstack:component",
     "//src/recovery/system:component_ota",
     "//src/storage/testing:storage_driver_test_realm",
     "//src/storage/tools/blobfs-compression",
-    "//src/sys/pkg/bin/pm:pm_bin",
     "//src/sys/pkg/lib/fuchsia-pkg-testing/certs",
     "//src/sys/pkg/tests/pkg-resolver:empty-repo",
   ]

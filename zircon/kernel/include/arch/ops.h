@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 #include <zircon/compiler.h>
+#include <zircon/time.h>
 
 #include <arch/defines.h>
 #include <kernel/cpu.h>
@@ -45,10 +46,10 @@ void arch_sync_cache_range(vaddr_t start, size_t len);
 // This will only be invoked with interrupts disabled.  This function
 // must not re-enter the scheduler.
 // flush_done should be signaled after state is flushed.
-class Event;
-void arch_flush_state_and_halt(Event *flush_done) __NO_RETURN;
+class MpUnplugEvent;
+void arch_flush_state_and_halt(MpUnplugEvent *flush_done) __NO_RETURN;
 
-int arch_idle_thread_routine(void *) __NO_RETURN;
+void arch_idle_enter(zx_duration_t max_latency);
 
 // Arch optimized version of a page zero routine against a page aligned buffer.
 // Usually implemented in or called from assembly.
@@ -64,13 +65,13 @@ extern "C" void arch_zero_page(void *);
 //
 // arch_blocking_disallowed() should only be true when interrupts are
 // disabled.
-inline bool arch_blocking_disallowed() { return READ_PERCPU_FIELD32(blocking_disallowed); }
+inline bool arch_blocking_disallowed() { return READ_PERCPU_FIELD(blocking_disallowed); }
 
 inline void arch_set_blocking_disallowed(bool value) {
-  WRITE_PERCPU_FIELD32(blocking_disallowed, value);
+  WRITE_PERCPU_FIELD(blocking_disallowed, value);
 }
 
-inline uint32_t arch_num_spinlocks_held() { return READ_PERCPU_FIELD32(num_spinlocks); }
+inline uint32_t arch_num_spinlocks_held() { return READ_PERCPU_FIELD(num_spinlocks); }
 
 #endif  // !__ASSEMBLER__
 

@@ -69,8 +69,13 @@ enum class Type : uint64_t {
   // Data structures related to legacy boot protocols.
   kLegacyBootData,
 
-  // Identity-mapping page tables.
-  kIdentityPageTables,
+  // Identity-mapping page tables intended only for the lifetime of the phys
+  // program in execution.
+  kTemporaryIdentityPageTables,
+
+  // Page tables that describe mappings intended to exist into the kernel
+  // proper's lifetime.
+  kKernelPageTables,
 
   // A firmware-provided devicetree blob.
   kDevicetreeBlob,
@@ -129,6 +134,13 @@ struct Range {
   // Gives a lexicographic order on Range.
   constexpr bool operator<(const Range& other) const {
     return addr < other.addr || (addr == other.addr && size < other.size);
+  }
+
+  constexpr bool IntersectsWith(const Range& other) const {
+    const auto [left, right] =
+        *this < other ? std::make_tuple(this, &other) : std::make_tuple(&other, this);
+    // Note: Until cpp20 reference wrappers are not constexpr.
+    return left->end() > right->addr;
   }
 };
 

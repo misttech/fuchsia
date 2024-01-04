@@ -43,12 +43,12 @@ toc:
 - title: "Security"
   section:
   - include: /docs/concepts/security/_toc.yaml
-- title: "Source code"
-  section:
-  - include: /docs/concepts/source_code/_toc.yaml
 - title: "Starnix"
   section:
   - include: /docs/concepts/starnix/_toc.yaml
 - title: "User interface"
   section:
   - include: /docs/concepts/ui/_toc.yaml
+- title: "Versioning"
+  section:
+  - include: /docs/concepts/versioning/_toc.yaml

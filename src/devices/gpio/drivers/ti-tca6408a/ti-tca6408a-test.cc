@@ -4,16 +4,16 @@
 
 #include "ti-tca6408a.h"
 
-#include <lib/async-loop/cpp/loop.h>
-#include <lib/async-loop/default.h>
-#include <lib/async-loop/testing/cpp/real_loop.h>
-#include <lib/component/outgoing/cpp/outgoing_directory.h>
+#include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/ddk/metadata.h>
+#include <lib/driver/compat/cpp/device_server.h>
+#include <lib/driver/testing/cpp/driver_lifecycle.h>
+#include <lib/driver/testing/cpp/driver_runtime.h>
+#include <lib/driver/testing/cpp/test_environment.h>
+#include <lib/driver/testing/cpp/test_node.h>
 #include <lib/fake-i2c/fake-i2c.h>
 
 #include <zxtest/zxtest.h>
-
-#include "src/devices/testing/mock-ddk/mock-device.h"
 
 namespace gpio {
 
@@ -24,6 +24,13 @@ class FakeTiTca6408aDevice : public fake_i2c::FakeI2c {
   uint8_t output_port() const { return output_port_; }
   uint8_t polarity_inversion() const { return polarity_inversion_; }
   uint8_t configuration() const { return configuration_; }
+
+  fuchsia_hardware_i2c::Service::InstanceHandler GetInstanceHandler() {
+    return fuchsia_hardware_i2c::Service::InstanceHandler({
+        .device = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                          fidl::kIgnoreBindingClosure),
+    });
+  }
 
  protected:
   zx_status_t Transact(const uint8_t* write_buffer, size_t write_buffer_size, uint8_t* read_buffer,
@@ -69,143 +76,303 @@ class FakeTiTca6408aDevice : public fake_i2c::FakeI2c {
   uint8_t configuration_ = 0b1111'1111;
 };
 
-class TiTca6408aTest : public zxtest::Test, public loop_fixture::RealLoop {
+struct IncomingNamespace {
+  fdf_testing::TestNode node_{std::string("root")};
+  fdf_testing::TestEnvironment env_{fdf::Dispatcher::GetCurrent()->get()};
+  compat::DeviceServer device_server_;
+  FakeTiTca6408aDevice fake_i2c_;
+};
+
+class TiTca6408aTest : public zxtest::Test {
  public:
-  TiTca6408aTest() : ddk_(MockDevice::FakeRootParent()), outgoing_(dispatcher()) {}
+  TiTca6408aTest()
+      : env_dispatcher_(runtime_.StartBackgroundDispatcher()),
+        driver_dispatcher_(runtime_.StartBackgroundDispatcher()),
+        dut_(driver_dispatcher_->async_dispatcher(), std::in_place),
+        incoming_(env_dispatcher_->async_dispatcher(), std::in_place) {}
 
   void SetUp() override {
     constexpr uint32_t kPinIndexOffset = 100;
-    ddk_->SetMetadata(DEVICE_METADATA_PRIVATE, &kPinIndexOffset, sizeof(kPinIndexOffset));
 
-    auto service_result = outgoing_.AddService<fuchsia_hardware_i2c::Service>(
-        fuchsia_hardware_i2c::Service::InstanceHandler(
-            {.device = fake_i2c_.bind_handler(dispatcher())}));
-    ZX_ASSERT(service_result.is_ok());
+    fuchsia_driver_framework::DriverStartArgs start_args;
+    fidl::ClientEnd<fuchsia_io::Directory> outgoing_directory_client;
+    incoming_.SyncCall([&kPinIndexOffset, &start_args,
+                        &outgoing_directory_client](IncomingNamespace* incoming) {
+      auto start_args_result = incoming->node_.CreateStartArgsAndServe();
+      ASSERT_TRUE(start_args_result.is_ok());
+      start_args = std::move(start_args_result->start_args);
+      outgoing_directory_client = std::move(start_args_result->outgoing_directory_client);
 
-    auto endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
-    ZX_ASSERT(endpoints.is_ok());
-    ZX_ASSERT(outgoing_.Serve(std::move(endpoints->server)).is_ok());
+      auto init_result =
+          incoming->env_.Initialize(std::move(start_args_result->incoming_directory_server));
+      ASSERT_TRUE(init_result.is_ok());
 
-    ddk_->AddFidlService(fuchsia_hardware_i2c::Service::Name, std::move(endpoints->client), "i2c");
+      incoming->device_server_.Init("pdev", "");
 
-    PerformBlockingWork([&] {
-      // This TiTca6408a gets released by the MockDevice destructor.
-      ASSERT_OK(TiTca6408a::Create(nullptr, ddk_.get()));
+      // Serve metadata.
+      auto status = incoming->device_server_.AddMetadata(DEVICE_METADATA_PRIVATE, &kPinIndexOffset,
+                                                         sizeof(kPinIndexOffset));
+      EXPECT_OK(status);
+      status = incoming->device_server_.Serve(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                              &incoming->env_.incoming_directory());
+      EXPECT_OK(status);
+
+      // Serve fake_i2c_.
+      auto result = incoming->env_.incoming_directory().AddService<fuchsia_hardware_i2c::Service>(
+          std::move(incoming->fake_i2c_.GetInstanceHandler()), "i2c");
+      ASSERT_TRUE(result.is_ok());
     });
 
-    MockDevice* device = ddk_->GetLatestChild();
-    ASSERT_NOT_NULL(device);
+    // Start dut_.
+    auto result = runtime_.RunToCompletion(dut_.SyncCall(
+        &fdf_testing::DriverUnderTest<TiTca6408aDevice>::Start, std::move(start_args)));
+    ASSERT_TRUE(result.is_ok());
 
-    TiTca6408a* dut = device->GetDeviceContext<TiTca6408a>();
-    ASSERT_NOT_NULL(dut);
+    // Connect to GpioImpl.
+    auto svc_endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
+    EXPECT_EQ(ZX_OK, svc_endpoints.status_value());
 
-    const gpio_impl_protocol_t proto{.ops = &dut->gpio_impl_protocol_ops_, .ctx = dut};
-    gpio_ = ddk::GpioImplProtocolClient(&proto);
+    zx_status_t status = fdio_open_at(outgoing_directory_client.handle()->get(), "/svc",
+                                      static_cast<uint32_t>(fuchsia_io::OpenFlags::kDirectory),
+                                      svc_endpoints->server.TakeChannel().release());
+    EXPECT_EQ(ZX_OK, status);
 
-    EXPECT_EQ(fake_i2c_.polarity_inversion(), 0);
+    auto connect_result =
+        fdf::internal::DriverTransportConnect<fuchsia_hardware_gpioimpl::Service::Device>(
+            svc_endpoints->client, component::kDefaultInstance);
+    ASSERT_TRUE(connect_result.is_ok());
+    gpio_.Bind(std::move(connect_result.value()));
+    ASSERT_TRUE(gpio_.is_valid());
+
+    incoming_.SyncCall([](IncomingNamespace* incoming) {
+      EXPECT_EQ(incoming->fake_i2c_.polarity_inversion(), 0);
+    });
   }
 
- protected:
-  FakeTiTca6408aDevice fake_i2c_;
-  ddk::GpioImplProtocolClient gpio_;
-
  private:
-  std::shared_ptr<MockDevice> ddk_;
-  component::OutgoingDirectory outgoing_;
+  fdf_testing::DriverRuntime runtime_;
+  fdf::UnownedSynchronizedDispatcher env_dispatcher_;
+  fdf::UnownedSynchronizedDispatcher driver_dispatcher_;
+  async_patterns::TestDispatcherBound<fdf_testing::DriverUnderTest<TiTca6408aDevice>> dut_;
+
+ protected:
+  async_patterns::TestDispatcherBound<IncomingNamespace> incoming_;
+  fdf::WireSyncClient<fuchsia_hardware_gpioimpl::GpioImpl> gpio_;
 };
 
 TEST_F(TiTca6408aTest, ConfigInOut) {
-  EXPECT_EQ(fake_i2c_.output_port(), 0b1111'1111);
-  EXPECT_EQ(fake_i2c_.configuration(), 0b1111'1111);
+  incoming_.SyncCall([](IncomingNamespace* incoming) {
+    EXPECT_EQ(incoming->fake_i2c_.output_port(), 0b1111'1111);
+    EXPECT_EQ(incoming->fake_i2c_.configuration(), 0b1111'1111);
+  });
 
-  PerformBlockingWork([&] { EXPECT_OK(gpio_.ConfigOut(100, 0)); });
-  EXPECT_EQ(fake_i2c_.output_port(), 0b1111'1110);
-  EXPECT_EQ(fake_i2c_.configuration(), 0b1111'1110);
+  fdf::Arena arena('TEST');
+  {
+    auto result = gpio_.buffer(arena)->ConfigOut(100, 0);
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+  };
+  incoming_.SyncCall([](IncomingNamespace* incoming) {
+    EXPECT_EQ(incoming->fake_i2c_.output_port(), 0b1111'1110);
+    EXPECT_EQ(incoming->fake_i2c_.configuration(), 0b1111'1110);
+  });
 
-  PerformBlockingWork([&] { EXPECT_OK(gpio_.ConfigIn(100, GPIO_NO_PULL)); });
-  EXPECT_EQ(fake_i2c_.output_port(), 0b1111'1110);
-  EXPECT_EQ(fake_i2c_.configuration(), 0b1111'1111);
+  {
+    auto result = gpio_.buffer(arena)->ConfigIn(100, fuchsia_hardware_gpio::GpioFlags::kNoPull);
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+  };
+  incoming_.SyncCall([](IncomingNamespace* incoming) {
+    EXPECT_EQ(incoming->fake_i2c_.output_port(), 0b1111'1110);
+    EXPECT_EQ(incoming->fake_i2c_.configuration(), 0b1111'1111);
+  });
 
-  PerformBlockingWork([&] { EXPECT_OK(gpio_.ConfigOut(105, 0)); });
-  EXPECT_EQ(fake_i2c_.output_port(), 0b1101'1110);
-  EXPECT_EQ(fake_i2c_.configuration(), 0b1101'1111);
+  {
+    auto result = gpio_.buffer(arena)->ConfigOut(105, 0);
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+  }
+  incoming_.SyncCall([](IncomingNamespace* incoming) {
+    EXPECT_EQ(incoming->fake_i2c_.output_port(), 0b1101'1110);
+    EXPECT_EQ(incoming->fake_i2c_.configuration(), 0b1101'1111);
+  });
 
-  PerformBlockingWork([&] { EXPECT_OK(gpio_.ConfigIn(105, GPIO_NO_PULL)); });
-  EXPECT_EQ(fake_i2c_.output_port(), 0b1101'1110);
-  EXPECT_EQ(fake_i2c_.configuration(), 0b1111'1111);
+  {
+    auto result = gpio_.buffer(arena)->ConfigIn(105, fuchsia_hardware_gpio::GpioFlags::kNoPull);
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+  };
+  incoming_.SyncCall([](IncomingNamespace* incoming) {
+    EXPECT_EQ(incoming->fake_i2c_.output_port(), 0b1101'1110);
+    EXPECT_EQ(incoming->fake_i2c_.configuration(), 0b1111'1111);
+  });
 
-  PerformBlockingWork([&] { EXPECT_OK(gpio_.ConfigOut(105, 1)); });
-  EXPECT_EQ(fake_i2c_.output_port(), 0b1111'1110);
-  EXPECT_EQ(fake_i2c_.configuration(), 0b1101'1111);
+  {
+    auto result = gpio_.buffer(arena)->ConfigOut(105, 1);
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+  };
+  incoming_.SyncCall([](IncomingNamespace* incoming) {
+    EXPECT_EQ(incoming->fake_i2c_.output_port(), 0b1111'1110);
+    EXPECT_EQ(incoming->fake_i2c_.configuration(), 0b1101'1111);
+  });
 
-  PerformBlockingWork([&] { EXPECT_OK(gpio_.ConfigOut(107, 0)); });
-  EXPECT_EQ(fake_i2c_.output_port(), 0b0111'1110);
-  EXPECT_EQ(fake_i2c_.configuration(), 0b0101'1111);
+  {
+    auto result = gpio_.buffer(arena)->ConfigOut(107, 0);
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+  };
 }
 
 TEST_F(TiTca6408aTest, Read) {
-  fake_i2c_.set_input_port(0x55);
+  incoming_.SyncCall([](IncomingNamespace* incoming) { incoming->fake_i2c_.set_input_port(0x55); });
 
-  PerformBlockingWork([&] {
-    uint8_t value;
-    EXPECT_OK(gpio_.Read(100, &value));
-    EXPECT_EQ(value, 1);
+  fdf::Arena arena('TEST');
+  {
+    auto result = gpio_.buffer(arena)->Read(100);
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+    EXPECT_EQ(result->value()->value, 1);
+  };
 
-    EXPECT_OK(gpio_.Read(103, &value));
-    EXPECT_EQ(value, 0);
+  {
+    auto result = gpio_.buffer(arena)->Read(103);
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+    EXPECT_EQ(result->value()->value, 0);
+  };
 
-    EXPECT_OK(gpio_.Read(104, &value));
-    EXPECT_EQ(value, 1);
+  {
+    auto result = gpio_.buffer(arena)->Read(104);
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+    EXPECT_EQ(result->value()->value, 1);
+  };
 
-    EXPECT_OK(gpio_.Read(107, &value));
-    EXPECT_EQ(value, 0);
+  {
+    auto result = gpio_.buffer(arena)->Read(107);
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+    EXPECT_EQ(result->value()->value, 0);
+  };
 
-    EXPECT_OK(gpio_.Read(105, nullptr));
-  });
+  {
+    auto result = gpio_.buffer(arena)->Read(105);
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+  };
 }
 
 TEST_F(TiTca6408aTest, Write) {
-  EXPECT_EQ(fake_i2c_.output_port(), 0b1111'1111);
-  EXPECT_EQ(fake_i2c_.configuration(), 0b1111'1111);
+  incoming_.SyncCall([](IncomingNamespace* incoming) {
+    EXPECT_EQ(incoming->fake_i2c_.output_port(), 0b1111'1111);
+    EXPECT_EQ(incoming->fake_i2c_.configuration(), 0b1111'1111);
+  });
 
-  PerformBlockingWork([&] { EXPECT_OK(gpio_.Write(100, 0)); });
-  EXPECT_EQ(fake_i2c_.output_port(), 0b1111'1110);
-  EXPECT_EQ(fake_i2c_.configuration(), 0b1111'1111);
+  fdf::Arena arena('TEST');
+  {
+    auto result = gpio_.buffer(arena)->Write(100, 0);
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+  };
+  incoming_.SyncCall([](IncomingNamespace* incoming) {
+    EXPECT_EQ(incoming->fake_i2c_.output_port(), 0b1111'1110);
+    EXPECT_EQ(incoming->fake_i2c_.configuration(), 0b1111'1111);
+  });
 
-  PerformBlockingWork([&] { EXPECT_OK(gpio_.Write(101, 0)); });
-  EXPECT_EQ(fake_i2c_.output_port(), 0b1111'1100);
-  EXPECT_EQ(fake_i2c_.configuration(), 0b1111'1111);
+  {
+    auto result = gpio_.buffer(arena)->Write(101, 0);
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+  };
+  incoming_.SyncCall([](IncomingNamespace* incoming) {
+    EXPECT_EQ(incoming->fake_i2c_.output_port(), 0b1111'1100);
+    EXPECT_EQ(incoming->fake_i2c_.configuration(), 0b1111'1111);
+  });
 
-  PerformBlockingWork([&] { EXPECT_OK(gpio_.Write(103, 0)); });
-  EXPECT_EQ(fake_i2c_.output_port(), 0b1111'0100);
-  EXPECT_EQ(fake_i2c_.configuration(), 0b1111'1111);
+  {
+    auto result = gpio_.buffer(arena)->Write(103, 0);
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+  };
+  incoming_.SyncCall([](IncomingNamespace* incoming) {
+    EXPECT_EQ(incoming->fake_i2c_.output_port(), 0b1111'0100);
+    EXPECT_EQ(incoming->fake_i2c_.configuration(), 0b1111'1111);
+  });
 
-  PerformBlockingWork([&] { EXPECT_OK(gpio_.Write(104, 0)); });
-  EXPECT_EQ(fake_i2c_.output_port(), 0b1110'0100);
-  EXPECT_EQ(fake_i2c_.configuration(), 0b1111'1111);
+  {
+    auto result = gpio_.buffer(arena)->Write(104, 0);
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+  };
+  incoming_.SyncCall([](IncomingNamespace* incoming) {
+    EXPECT_EQ(incoming->fake_i2c_.output_port(), 0b1110'0100);
+    EXPECT_EQ(incoming->fake_i2c_.configuration(), 0b1111'1111);
+  });
 
-  PerformBlockingWork([&] { EXPECT_OK(gpio_.Write(106, 0)); });
-  EXPECT_EQ(fake_i2c_.output_port(), 0b1010'0100);
-  EXPECT_EQ(fake_i2c_.configuration(), 0b1111'1111);
+  {
+    auto result = gpio_.buffer(arena)->Write(106, 0);
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+  };
+  incoming_.SyncCall([](IncomingNamespace* incoming) {
+    EXPECT_EQ(incoming->fake_i2c_.output_port(), 0b1010'0100);
+    EXPECT_EQ(incoming->fake_i2c_.configuration(), 0b1111'1111);
+  });
 
-  PerformBlockingWork([&] { EXPECT_OK(gpio_.Write(101, 1)); });
-  EXPECT_EQ(fake_i2c_.output_port(), 0b1010'0110);
-  EXPECT_EQ(fake_i2c_.configuration(), 0b1111'1111);
+  {
+    auto result = gpio_.buffer(arena)->Write(101, 1);
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+  };
+  incoming_.SyncCall([](IncomingNamespace* incoming) {
+    EXPECT_EQ(incoming->fake_i2c_.output_port(), 0b1010'0110);
+    EXPECT_EQ(incoming->fake_i2c_.configuration(), 0b1111'1111);
+  });
 
-  PerformBlockingWork([&] { EXPECT_OK(gpio_.Write(104, 1)); });
-  EXPECT_EQ(fake_i2c_.output_port(), 0b1011'0110);
-  EXPECT_EQ(fake_i2c_.configuration(), 0b1111'1111);
+  {
+    auto result = gpio_.buffer(arena)->Write(104, 1);
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+  };
+  incoming_.SyncCall([](IncomingNamespace* incoming) {
+    EXPECT_EQ(incoming->fake_i2c_.output_port(), 0b1011'0110);
+    EXPECT_EQ(incoming->fake_i2c_.configuration(), 0b1111'1111);
+  });
 }
 
 TEST_F(TiTca6408aTest, InvalidArgs) {
-  PerformBlockingWork([&] {
-    EXPECT_OK(gpio_.ConfigIn(107, GPIO_NO_PULL));
-    EXPECT_NOT_OK(gpio_.ConfigIn(108, GPIO_NO_PULL));
-    EXPECT_NOT_OK(gpio_.ConfigIn(107, GPIO_PULL_UP));
-    EXPECT_NOT_OK(gpio_.ConfigIn(100, GPIO_PULL_DOWN));
-    EXPECT_NOT_OK(gpio_.ConfigOut(0, 0));
-    EXPECT_NOT_OK(gpio_.ConfigOut(1, 1));
-  });
+  fdf::Arena arena('TEST');
+  {
+    auto result = gpio_.buffer(arena)->ConfigIn(107, fuchsia_hardware_gpio::GpioFlags::kNoPull);
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+  };
+  {
+    auto result = gpio_.buffer(arena)->ConfigIn(108, fuchsia_hardware_gpio::GpioFlags::kNoPull);
+    ASSERT_TRUE(result.ok());
+    ASSERT_FALSE(result->is_ok());
+  };
+  {
+    auto result = gpio_.buffer(arena)->ConfigIn(107, fuchsia_hardware_gpio::GpioFlags::kPullUp);
+    ASSERT_TRUE(result.ok());
+    ASSERT_FALSE(result->is_ok());
+  };
+  {
+    auto result = gpio_.buffer(arena)->ConfigIn(100, fuchsia_hardware_gpio::GpioFlags::kPullDown);
+    ASSERT_TRUE(result.ok());
+    ASSERT_FALSE(result->is_ok());
+  };
+  {
+    auto result = gpio_.buffer(arena)->ConfigOut(0, 0);
+    ASSERT_TRUE(result.ok());
+    ASSERT_FALSE(result->is_ok());
+  };
+  {
+    auto result = gpio_.buffer(arena)->ConfigOut(1, 1);
+    ASSERT_TRUE(result.ok());
+    ASSERT_FALSE(result->is_ok());
+  };
 }
 
 }  // namespace gpio

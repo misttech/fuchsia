@@ -102,8 +102,6 @@ zx_status_t sys_thread_create(zx_handle_t process_handle, user_in_ptr<const char
     return result;
   }
 
-  const zx_koid_t pid = process->get_koid();
-
   // create the thread dispatcher
   KernelHandle<ThreadDispatcher> handle;
   zx_rights_t thread_rights;
@@ -115,9 +113,6 @@ zx_status_t sys_thread_create(zx_handle_t process_handle, user_in_ptr<const char
   if (result != ZX_OK) {
     return result;
   }
-
-  KTRACE_KERNEL_OBJECT("kernel:meta", handle.dispatcher()->get_koid(), ZX_OBJ_TYPE_THREAD, buf,
-                       ("process", ktrace::Koid(pid)));
 
   return up->MakeAndAddHandle(ktl::move(handle), thread_rights, out);
 }
@@ -452,9 +447,8 @@ zx_status_t sys_process_read_memory(zx_handle_t handle, zx_vaddr_t vaddr, user_o
         ktl::min(buffer_size, vm_mapping->size_locked() - (vaddr - vm_mapping->base_locked()));
   }
   size_t out_actual = 0;
-  zx_status_t st =
-      vmo->ReadUser(Thread::Current::Get()->aspace(), buffer.reinterpret<char>(), offset,
-                    buffer_size, VmObjectReadWriteOptions::TrimLength, &out_actual);
+  zx_status_t st = vmo->ReadUser(buffer.reinterpret<char>(), offset, buffer_size,
+                                 VmObjectReadWriteOptions::TrimLength, &out_actual);
   if (st != ZX_OK) {
     // Do not write |out_actual| to |actual| on error
     return st;
@@ -522,9 +516,9 @@ zx_status_t sys_process_write_memory(zx_handle_t handle, zx_vaddr_t vaddr,
         ktl::min(buffer_size, vm_mapping->size_locked() - (vaddr - vm_mapping->base_locked()));
   }
   size_t out_actual = 0;
-  zx_status_t st = vmo->WriteUser(
-      Thread::Current::Get()->aspace(), buffer.reinterpret<const char>(), offset, buffer_size,
-      VmObjectReadWriteOptions::TrimLength, &out_actual, /*on_bytes_transferred=*/nullptr);
+  zx_status_t st = vmo->WriteUser(buffer.reinterpret<const char>(), offset, buffer_size,
+                                  VmObjectReadWriteOptions::TrimLength, &out_actual,
+                                  /*on_bytes_transferred=*/nullptr);
   if (st != ZX_OK) {
     // Do not write |out_actual| to |actual| on error~
     return st;

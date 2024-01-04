@@ -4,10 +4,12 @@
 
 #include "unit_lib.h"
 
+#include <lib/zircon-internal/thread_annotations.h>
+
 #include <gtest/gtest.h>
 
-#include "src/lib/storage/block_client/cpp/fake_block_device.h"
 #include "src/storage/f2fs/f2fs.h"
+#include "src/storage/lib/block_client/cpp/fake_block_device.h"
 
 namespace f2fs {
 
@@ -45,12 +47,12 @@ void F2fsFakeDevTestFixture::TearDown() {
   }
 }
 
-void FileTester::MkfsOnFakeDev(std::unique_ptr<Bcache> *bc, uint64_t block_count,
+void FileTester::MkfsOnFakeDev(std::unique_ptr<BcacheMapper> *bc, uint64_t block_count,
                                uint32_t block_size, bool btrim) {
   auto device = std::make_unique<FakeBlockDevice>(FakeBlockDevice::Config{
       .block_count = block_count, .block_size = block_size, .supports_trim = btrim});
   bool readonly_device = false;
-  auto bc_or = CreateBcache(std::move(device), &readonly_device);
+  auto bc_or = CreateBcacheMapper(std::move(device), &readonly_device);
   ASSERT_TRUE(bc_or.is_ok());
 
   MkfsOptions options;
@@ -60,12 +62,13 @@ void FileTester::MkfsOnFakeDev(std::unique_ptr<Bcache> *bc, uint64_t block_count
   *bc = std::move(*ret);
 }
 
-void FileTester::MkfsOnFakeDevWithOptions(std::unique_ptr<Bcache> *bc, const MkfsOptions &options,
-                                          uint64_t block_count, uint32_t block_size, bool btrim) {
+void FileTester::MkfsOnFakeDevWithOptions(std::unique_ptr<BcacheMapper> *bc,
+                                          const MkfsOptions &options, uint64_t block_count,
+                                          uint32_t block_size, bool btrim) {
   auto device = std::make_unique<FakeBlockDevice>(FakeBlockDevice::Config{
       .block_count = block_count, .block_size = block_size, .supports_trim = btrim});
   bool readonly_device = false;
-  auto bc_or = CreateBcache(std::move(device), &readonly_device);
+  auto bc_or = CreateBcacheMapper(std::move(device), &readonly_device);
   ASSERT_TRUE(bc_or.is_ok());
 
   MkfsWorker mkfs(std::move(*bc_or), options);
@@ -75,7 +78,7 @@ void FileTester::MkfsOnFakeDevWithOptions(std::unique_ptr<Bcache> *bc, const Mkf
 }
 
 void FileTester::MountWithOptions(async_dispatcher_t *dispatcher, const MountOptions &options,
-                                  std::unique_ptr<Bcache> *bc, std::unique_ptr<F2fs> *fs) {
+                                  std::unique_ptr<BcacheMapper> *bc, std::unique_ptr<F2fs> *fs) {
   // Create a vfs object for unit tests.
   auto vfs_or = Runner::CreateRunner(dispatcher);
   ASSERT_TRUE(vfs_or.is_ok());
@@ -89,8 +92,8 @@ void FileTester::MountWithOptions(async_dispatcher_t *dispatcher, const MountOpt
   *fs = std::move(*fs_or);
 }
 
-void FileTester::Unmount(std::unique_ptr<F2fs> fs, std::unique_ptr<Bcache> *bc) {
-  fs->SyncFs(true);
+void FileTester::Unmount(std::unique_ptr<F2fs> fs, std::unique_ptr<BcacheMapper> *bc) {
+  fs->Sync();
   fs->PutSuper();
   auto vfs_or = fs->TakeVfsForTests();
   ASSERT_TRUE(vfs_or.is_ok());
@@ -102,18 +105,16 @@ void FileTester::Unmount(std::unique_ptr<F2fs> fs, std::unique_ptr<Bcache> *bc) 
   (*vfs_or).reset();
 }
 
-void FileTester::SuddenPowerOff(std::unique_ptr<F2fs> fs, std::unique_ptr<Bcache> *bc) {
+void FileTester::SuddenPowerOff(std::unique_ptr<F2fs> fs, std::unique_ptr<BcacheMapper> *bc) {
   fs->GetVCache().ForDirtyVnodesIf([&](fbl::RefPtr<VnodeF2fs> &vnode) {
     vnode->ClearDirty();
     return ZX_OK;
   });
-  fs->ResetPsuedoVnodes();
   fs->GetVCache().Reset();
   fs->GetDirEntryCache().Reset();
 
   // destroy f2fs internal modules
-  fs->GetNodeManager().DestroyNodeManager();
-  fs->GetSegmentManager().DestroySegmentManager();
+  fs->Reset();
 
   auto vfs_for_tests = fs->TakeVfsForTests();
   ASSERT_TRUE(vfs_for_tests.is_ok());
@@ -125,7 +126,7 @@ void FileTester::SuddenPowerOff(std::unique_ptr<F2fs> fs, std::unique_ptr<Bcache
 }
 
 void FileTester::CreateRoot(F2fs *fs, fbl::RefPtr<VnodeF2fs> *out) {
-  ASSERT_EQ(VnodeF2fs::Vget(fs, fs->RawSb().root_ino, out), ZX_OK);
+  ASSERT_EQ(VnodeF2fs::Vget(fs, fs->GetSuperblockInfo().GetRootIno(), out), ZX_OK);
   ASSERT_EQ((*out)->Open((*out)->ValidateOptions(fs::VnodeConnectionOptions()).value(), nullptr),
             ZX_OK);
 }
@@ -184,12 +185,15 @@ void FileTester::DeleteChildren(std::vector<fbl::RefPtr<VnodeF2fs>> &vnodes,
 
 void FileTester::VnodeWithoutParent(F2fs *fs, uint32_t mode, fbl::RefPtr<VnodeF2fs> &vnode) {
   nid_t inode_nid;
-  ASSERT_TRUE(fs->GetNodeManager().AllocNid(inode_nid).is_ok());
+  auto nid_or = fs->GetNodeManager().AllocNid();
+  ASSERT_TRUE(nid_or.is_ok());
+  inode_nid = *nid_or;
 
   VnodeF2fs::Allocate(fs, inode_nid, static_cast<umode_t>(mode), &vnode);
   ASSERT_EQ(vnode->Open(vnode->ValidateOptions(fs::VnodeConnectionOptions()).value(), nullptr),
             ZX_OK);
   vnode->InitFileCache();
+  vnode->InitExtentTree();
   vnode->UnlockNewInode();
   fs->InsertVnode(vnode.get());
   vnode->SetDirty();
@@ -233,8 +237,13 @@ void FileTester::CheckChildrenFromReaddir(Dir *dir, std::unordered_set<std::stri
   uint8_t *buf_ptr = buf;
 
   while (len > 0 && buf_ptr < buf + kPageSize) {
+// TODO(b/293936429): Remove use of deprecated `vdirent_t` when transitioning ReadDir to Enumerate
+// as part of io2 migration.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     auto entry = reinterpret_cast<const vdirent_t *>(buf_ptr);
     size_t entry_size = entry->size + sizeof(vdirent_t);
+#pragma clang diagnostic pop
 
     std::string_view entry_name(entry->name, entry->size);
     auto iter = childs.begin();
@@ -269,9 +278,10 @@ void FileTester::CheckChildrenInBlock(Dir *vn, uint64_t bidx,
   auto page_or = vn->FindDataPage(bidx);
   ZX_ASSERT(page_or.is_ok());
   DentryBlock *dentry_blk = page_or->GetAddress<DentryBlock>();
+  PageBitmap dentry_bitmap(dentry_blk->dentry_bitmap, kNrDentryInBlock);
 
-  uint32_t bit_pos = FindNextBit(dentry_blk->dentry_bitmap, kNrDentryInBlock, 0);
-  while (bit_pos < kNrDentryInBlock) {
+  size_t bit_pos = 0;
+  while ((bit_pos = dentry_bitmap.FindNextBit(bit_pos)) < kNrDentryInBlock) {
     DirEntry *de = &dentry_blk->dentry[bit_pos];
     uint32_t slots = (LeToCpu(de->name_len) + kNameLen - 1) / kNameLen;
 
@@ -287,7 +297,7 @@ void FileTester::CheckChildrenInBlock(Dir *vn, uint64_t bidx,
     ASSERT_NE(iter, childs.end());
     childs.erase(iter);
 
-    bit_pos = FindNextBit(dentry_blk->dentry_bitmap, kNrDentryInBlock, bit_pos + slots);
+    bit_pos += slots;
   }
 
   ASSERT_TRUE(childs.empty());
@@ -302,19 +312,62 @@ std::string FileTester::GetRandomName(unsigned int len) {
   return str;
 }
 
-void FileTester::AppendToFile(File *file, const void *data, size_t len) {
-  size_t end = 0;
+void FileTester::AppendToInline(File *file, const void *data, size_t len) {
+  size_t offset = file->GetSize();
   size_t ret = 0;
+  if (file->TestFlag(InodeInfoFlag::kInlineData) && offset + len < file->MaxInlineData()) {
+    ASSERT_EQ(file->WriteInline(data, len, offset, &ret), ZX_OK);
+    ASSERT_EQ(ret, len);
+  }
+}
 
-  ASSERT_EQ(file->Append(data, len, &end, &ret), ZX_OK);
-  ASSERT_EQ(ret, len);
+void FileTester::AppendToFile(File *file, const void *data, size_t len) {
+  size_t actual;
+  size_t end;
+  ASSERT_EQ(Append(file, data, len, &end, &actual), ZX_OK);
+  ASSERT_EQ(actual, len);
 }
 
 void FileTester::ReadFromFile(File *file, void *data, size_t len, size_t off) {
-  size_t ret = 0;
+  size_t actual;
+  ASSERT_EQ(Read(file, data, len, off, &actual), ZX_OK);
+  ASSERT_EQ(actual, len);
+}
 
-  ASSERT_EQ(file->Read(data, len, off, &ret), ZX_OK);
-  ASSERT_EQ(ret, len);
+zx_status_t FileTester::Read(File *file, void *data, size_t len, size_t off, size_t *out_actual) {
+  zx::stream stream;
+  if (auto ret = file->CreateStream(ZX_STREAM_MODE_READ, &stream); ret != ZX_OK) {
+    return ret;
+  }
+
+  zx_iovec_t iov = {
+      .buffer = data,
+      .capacity = len,
+  };
+  return stream.readv_at(0, off, &iov, 1, out_actual);
+}
+
+zx_status_t FileTester::Write(File *file, const void *data, size_t len, size_t offset,
+                              size_t *out_actual) {
+  zx::stream stream;
+  if (auto ret = file->CreateStream(ZX_STREAM_MODE_WRITE, &stream); ret != ZX_OK) {
+    return ret;
+  }
+
+  // Since zx_iovec_t::buffer is not a const type, we make a copied buffer and use it.
+  auto copied = std::make_unique<uint8_t[]>(len);
+  std::memcpy(copied.get(), data, len);
+  zx_iovec_t iov = {
+      .buffer = copied.get(),
+      .capacity = len,
+  };
+  return stream.writev_at(0, offset, &iov, 1, out_actual);
+}
+
+zx_status_t FileTester::Append(File *file, const void *data, size_t len, size_t *out_end,
+                               size_t *out_actual) {
+  *out_end = file->GetSize();
+  return Write(file, data, len, *out_end, out_actual);
 }
 
 void MapTester::CheckNodeLevel(F2fs *fs, VnodeF2fs *vn, uint32_t level) {
@@ -366,9 +419,9 @@ void MapTester::CheckBlkaddrsFree(F2fs *fs, std::unordered_set<block_t> &blkaddr
   SuperblockInfo &superblock_info = fs->GetSuperblockInfo();
   for (auto blkaddr : blkaddrs) {
     SegmentManager &manager = fs->GetSegmentManager();
-    SegmentEntry &se = manager.GetSegmentEntry(manager.GetSegmentNumber(blkaddr));
+    const SegmentEntry &se = manager.GetSegmentEntry(manager.GetSegmentNumber(blkaddr));
     uint32_t offset = manager.GetSegOffFromSeg0(blkaddr) & (superblock_info.GetBlocksPerSeg() - 1);
-    ASSERT_EQ(TestValidBitmap(offset, se.ckpt_valid_map.get()), 0);
+    ASSERT_EQ(se.ckpt_valid_map.GetOne(ToMsbFirst(offset)), false);
   }
 }
 
@@ -376,9 +429,9 @@ void MapTester::CheckBlkaddrsInuse(F2fs *fs, std::unordered_set<block_t> &blkadd
   SuperblockInfo &superblock_info = fs->GetSuperblockInfo();
   for (auto blkaddr : blkaddrs) {
     SegmentManager &manager = fs->GetSegmentManager();
-    SegmentEntry &se = manager.GetSegmentEntry(manager.GetSegmentNumber(blkaddr));
+    const SegmentEntry &se = manager.GetSegmentEntry(manager.GetSegmentNumber(blkaddr));
     uint32_t offset = manager.GetSegOffFromSeg0(blkaddr) & (superblock_info.GetBlocksPerSeg() - 1);
-    ASSERT_NE(TestValidBitmap(offset, se.ckpt_valid_map.get()), 0);
+    ASSERT_NE(se.ckpt_valid_map.GetOne(ToMsbFirst(offset)), false);
   }
 }
 
@@ -432,10 +485,10 @@ void MapTester::DoWriteNat(F2fs *fs, nid_t nid, block_t blkaddr, uint8_t version
   nm_i->dirty_nat_list_.push_back(cache_entry);
 }
 
-void MapTester::DoWriteSit(F2fs *fs, CursegType type, uint32_t exp_segno, block_t *new_blkaddr) {
+void MapTester::DoWriteSit(F2fs *fs, CursegType type, uint32_t exp_segno,
+                           block_t *new_blkaddr) TA_NO_THREAD_SAFETY_ANALYSIS {
   SuperblockInfo &superblock_info = fs->GetSuperblockInfo();
   SegmentManager &segment_manager = fs->GetSegmentManager();
-  SitInfo &sit_i = fs->GetSegmentManager().GetSitInfo();
 
   if (!segment_manager.HasCursegSpace(type)) {
     segment_manager.AllocateSegmentByDefault(type, false);
@@ -450,7 +503,6 @@ void MapTester::DoWriteSit(F2fs *fs, CursegType type, uint32_t exp_segno, block_
   *new_blkaddr = segment_manager.NextFreeBlkAddr(type);
   uint32_t old_cursegno = curseg->segno;
 
-  std::lock_guard sentry_lock(sit_i.sentry_lock);
   segment_manager.RefreshNextBlkoff(curseg);
   superblock_info.IncBlockCount(curseg->alloc_type);
 
@@ -504,21 +556,33 @@ zx_status_t MkfsTester::InitAndGetDeviceInfo(MkfsWorker &mkfs) {
   return mkfs.GetDeviceInfo();
 }
 
-zx::result<std::unique_ptr<Bcache>> MkfsTester::FormatDevice(MkfsWorker &mkfs) {
+zx::result<std::unique_ptr<BcacheMapper>> MkfsTester::FormatDevice(MkfsWorker &mkfs) {
   if (zx_status_t ret = mkfs.FormatDevice(); ret != ZX_OK)
     return zx::error(ret);
   return zx::ok(std::move(mkfs.bc_));
 }
 
 zx_status_t GcTester::DoGarbageCollect(GcManager &manager, uint32_t segno, GcType gc_type) {
-  std::lock_guard gc_lock(manager.gc_mutex_);
+  std::lock_guard lock(f2fs::GetGlobalLock());
   return manager.DoGarbageCollect(segno, gc_type);
 }
 
+zx_status_t GcTester::GcDataSegment(GcManager &manager, const SummaryBlock &sum_blk,
+                                    unsigned int segno, GcType gc_type) {
+  std::lock_guard lock(f2fs::GetGlobalLock());
+  return manager.GcDataSegment(sum_blk, segno, gc_type);
+}
+
 void DeviceTester::SetHook(F2fs *fs, DeviceTester::Hook hook) {
-  static_cast<block_client::FakeBlockDevice *>(fs->GetBc().GetDevice())->Pause();
-  static_cast<block_client::FakeBlockDevice *>(fs->GetBc().GetDevice())->set_hook(std::move(hook));
-  static_cast<block_client::FakeBlockDevice *>(fs->GetBc().GetDevice())->Resume();
+  fs->GetBc().ForEachBcache([](Bcache *f2fs_device) {
+    static_cast<block_client::FakeBlockDevice *>(f2fs_device->GetDevice())->Pause();
+  });
+  fs->GetBc().ForEachBcache([hook](Bcache *f2fs_device) {
+    static_cast<block_client::FakeBlockDevice *>(f2fs_device->GetDevice())->set_hook(hook);
+  });
+  fs->GetBc().ForEachBcache([](Bcache *f2fs_device) {
+    static_cast<block_client::FakeBlockDevice *>(f2fs_device->GetDevice())->Resume();
+  });
 }
 
 }  // namespace f2fs

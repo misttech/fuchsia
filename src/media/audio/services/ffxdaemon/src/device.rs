@@ -2,90 +2,295 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_audio_ffxdaemon::DeviceSelector;
-
 use {
-    crate::{socket, stop_listener, RingBuffer, SECONDS_PER_NANOSECOND},
+    crate::{error::ControllerError, socket, stop_listener, RingBuffer, SECONDS_PER_NANOSECOND},
     anyhow::{self, Context, Error},
+    async_trait::async_trait,
     fdio,
-    fidl::endpoints::Proxy,
-    fidl_fuchsia_audio_ffxdaemon::{
-        AudioDaemonCancelerMarker, DeviceInfo, DeviceInfo::StreamConfig, StreamConfigDeviceInfo,
+    fidl::endpoints::{Proxy, ServerEnd},
+    fidl_fuchsia_audio_controller::{
+        CompositeDeviceInfo, DeviceInfo,
+        DeviceInfo::{Composite, StreamConfig},
+        DeviceSelector,
+        Error::UnknownCanRetry,
+        PlayerPlayResponse, RecordCancelerMarker, RecorderRecordResponse, StreamConfigDeviceInfo,
     },
-    fidl_fuchsia_hardware_audio::{GainState, StreamConfigProxy},
-    fidl_fuchsia_io as fio, fidl_fuchsia_virtualaudio, fuchsia_async as fasync,
+    fidl_fuchsia_hardware_audio::{
+        CompositeProperties, CompositeProxy, DaiSupportedFormats, GainState, PlugState,
+        RingBufferMarker, StreamConfigProxy, StreamProperties, SupportedFormats,
+    },
+    fidl_fuchsia_io as fio, fuchsia_async as fasync,
     fuchsia_zircon::{self as zx},
     futures::{AsyncWriteExt, StreamExt},
 };
 
+// TODO(b/317991807) Remove #[async_trait] when supported by compiler.
+#[async_trait]
+pub trait DeviceControl: Send + Sync {
+    async fn get_properties(&mut self) -> Result<Properties, Error>;
+    async fn get_supported_formats(&mut self) -> Result<Formats, Error>;
+    async fn watch_gain_state(&mut self) -> Result<GainState, Error>;
+    async fn watch_plug_state(&mut self) -> Result<PlugState, Error>;
+    fn create_ring_buffer(
+        &mut self,
+        format: &fidl_fuchsia_hardware_audio::Format,
+        rb_server: ServerEnd<RingBufferMarker>,
+    ) -> Result<(), Error>;
+    fn set_gain(&mut self, gain_state: GainState) -> Result<(), Error>;
+}
+
+pub enum Properties {
+    StreamConfig(StreamProperties),
+    Composite(CompositeProperties),
+}
+pub enum Formats {
+    StreamConfig(Vec<SupportedFormats>),
+    Composite { dai: Vec<DaiSupportedFormats>, stream: Vec<SupportedFormats> },
+}
+
 pub struct Device {
-    pub stream_config_client: StreamConfigProxy,
+    pub device_controller: Box<dyn DeviceControl>,
+}
+pub struct StreamConfigDevice {
+    pub proxy: StreamConfigProxy,
+}
+pub struct CompositeDevice {
+    pub proxy: CompositeProxy,
+}
+#[async_trait()]
+impl DeviceControl for StreamConfigDevice {
+    async fn get_properties(&mut self) -> Result<Properties, Error> {
+        let response = self
+            .proxy
+            .get_properties()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to get StreamConfig properties: {e}"))?;
+
+        Ok(Properties::StreamConfig(response))
+    }
+
+    async fn get_supported_formats(&mut self) -> Result<Formats, Error> {
+        let response =
+            self.proxy.get_supported_formats().await.map_err(|e| {
+                anyhow::anyhow!("Could not query streamconfig supported formats: {e}")
+            })?;
+
+        Ok(Formats::StreamConfig(response))
+    }
+
+    async fn watch_gain_state(&mut self) -> Result<GainState, Error> {
+        let response = self
+            .proxy
+            .watch_gain_state()
+            .await
+            .map_err(|e| anyhow::anyhow!("Could not query streamconfig gain state: {e}"))?;
+        Ok(response)
+    }
+
+    async fn watch_plug_state(&mut self) -> Result<PlugState, Error> {
+        let response = self
+            .proxy
+            .watch_plug_state()
+            .await
+            .map_err(|e| anyhow::anyhow!("Could not query streamconfig plug state: {e}"))?;
+        Ok(response)
+    }
+
+    fn create_ring_buffer(
+        &mut self,
+        format: &fidl_fuchsia_hardware_audio::Format,
+        rb_server: ServerEnd<RingBufferMarker>,
+    ) -> Result<(), Error> {
+        self.proxy
+            .create_ring_buffer(format, rb_server)
+            .map_err(|e| anyhow::anyhow!("Unable to create ring buffer: {e}"))
+    }
+    fn set_gain(&mut self, gain_state: GainState) -> Result<(), Error> {
+        self.proxy
+            .set_gain(&gain_state)
+            .map_err(|e| anyhow::anyhow!("Error setting gain state: {e}"))
+    }
+}
+
+#[async_trait()]
+impl DeviceControl for CompositeDevice {
+    async fn get_properties(&mut self) -> Result<Properties, Error> {
+        let response = self
+            .proxy
+            .get_properties()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to get Composite properties: {e}"))?;
+
+        Ok(Properties::Composite(response))
+    }
+
+    async fn get_supported_formats(&mut self) -> Result<Formats, Error> {
+        let _formats = Formats::Composite { dai: vec![], stream: vec![] };
+        Err(anyhow::anyhow!(
+            "Supported formats for Composite devices not yet supported yet in ffx audio."
+        ))
+    }
+    async fn watch_gain_state(&mut self) -> Result<GainState, Error> {
+        Err(anyhow::anyhow!(
+            "watch gain state for Composite devices not supported yet in ffx audio."
+        ))
+    }
+    async fn watch_plug_state(&mut self) -> Result<PlugState, Error> {
+        Err(anyhow::anyhow!(
+            "watch plug state for Composite devices not supported yet in ffx audio."
+        ))
+    }
+    fn create_ring_buffer(
+        &mut self,
+        _format: &fidl_fuchsia_hardware_audio::Format,
+        _rb_server: ServerEnd<RingBufferMarker>,
+    ) -> Result<(), Error> {
+        Err(anyhow::anyhow!(
+            "Creating ring buffers for Composite devices not supported yet in ffx audio."
+        ))
+    }
+
+    fn set_gain(&mut self, _gain_state: GainState) -> Result<(), Error> {
+        Err(anyhow::anyhow!(
+            "Setting gain not supported for Composite devices not supported yet in ffx audio."
+        ))
+    }
+}
+
+fn validate_format(
+    requested_format: &format_utils::Format,
+    supported_formats: Formats,
+) -> Result<(), ControllerError> {
+    match supported_formats {
+        Formats::Composite { stream: _stream, dai: _dai } => {
+            // TODO(b/310275209) Implement record for composite device type.
+            return Err(ControllerError::new(
+                fidl_fuchsia_audio_controller::Error::NotSupported,
+                format!("Playing to composite drivers not yet supported."),
+            ));
+        }
+        Formats::StreamConfig(stream_config_formats) => {
+            if !requested_format.is_supported_by(&stream_config_formats) {
+                return Err(ControllerError::new(
+                    fidl_fuchsia_audio_controller::Error::InvalidArguments,
+                    format!("Requested format not supported."),
+                ));
+            }
+            Ok(())
+        }
+    }
+}
+
+pub fn get_device_controller(
+    path: String,
+    device_type: fidl_fuchsia_hardware_audio::DeviceType,
+) -> Result<Box<dyn DeviceControl>, Error> {
+    match device_type {
+        fidl_fuchsia_hardware_audio::DeviceType::StreamConfig => {
+            // Connect to a StreamConfig channel.
+            let (connector_client, connector_server) = fidl::endpoints::create_proxy::<
+                fidl_fuchsia_hardware_audio::StreamConfigConnectorMarker,
+            >()
+            .map_err(|e| anyhow::anyhow!("Failed to create StreamConfigConnector: {}", e))?;
+
+            let (stream_config_client, stream_config_connector) =
+                fidl::endpoints::create_proxy::<fidl_fuchsia_hardware_audio::StreamConfigMarker>()
+                    .map_err(|e| anyhow::anyhow!("Failed to create StreamConfig: {}", e))?;
+
+            fdio::service_connect(&path, connector_server.into_channel()).map_err(|e| {
+                anyhow::anyhow!("Failed to connect to service at path {}: {}", &path, e)
+            })?;
+
+            // Using StreamConfigConnector client, pass the server end of StreamConfig
+            // channel to the device so that device can respond to StreamConfig requests.
+            connector_client
+                .connect(stream_config_connector)
+                .map_err(|e| anyhow::anyhow!("Failed to connect to StreamConfig: {}", e))?;
+
+            Ok(Box::new(StreamConfigDevice { proxy: stream_config_client }))
+        }
+        fidl_fuchsia_hardware_audio::DeviceType::Composite => {
+            // DFv2 drivers do not use a connector/trampoline as the DFv1 StreamConfig type above.
+            let (composite_client, server_end) =
+                fidl::endpoints::create_proxy::<fidl_fuchsia_hardware_audio::CompositeMarker>()
+                    .map_err(|e| anyhow::anyhow!("Failed to create CompositeProxy: {e}"))?;
+
+            fdio::service_connect(&path, server_end.into_channel()).map_err(|e| {
+                anyhow::anyhow!("Failed to connect to service at path {}: {}", &path, e)
+            })?;
+
+            Ok(Box::new(CompositeDevice { proxy: composite_client }))
+        }
+        _ => Err(anyhow::anyhow!("Unsupported Device type for get_device_controller()")),
+    }
 }
 
 impl Device {
-    pub fn connect(path: String) -> Result<Self, Error> {
-        // Connect to a StreamConfig channel.
-        let (connector_client, connector_server) = fidl::endpoints::create_proxy::<
-            fidl_fuchsia_hardware_audio::StreamConfigConnectorMarker,
-        >()
-        .map_err(|e| anyhow::anyhow!("Failed to create StreamConfigConnector: {}", e))?;
-
-        let (stream_config_client, stream_config_connector) =
-            fidl::endpoints::create_proxy::<fidl_fuchsia_hardware_audio::StreamConfigMarker>()
-                .map_err(|e| anyhow::anyhow!("Failed to create StreamConfig: {}", e))?;
-
-        fdio::service_connect(&path, connector_server.into_channel()).map_err(|e| {
-            anyhow::anyhow!("Failed to connect to service at path {}: {}", &path, e)
-        })?;
-        // Using StreamConfigConnector client, pass the server end of StreamConfig
-        // channel to the device so that device can respond to StreamConfig requests.
-        connector_client
-            .connect(stream_config_connector)
-            .map_err(|e| anyhow::anyhow!("Failed to connect to StreamConfig: {}", e))?;
-
-        Ok(Self { stream_config_client })
+    pub fn new(device_controller: Box<dyn DeviceControl>) -> Device {
+        Device { device_controller }
     }
 
-    pub async fn get_info(&self) -> Result<DeviceInfo, Error> {
-        let stream_properties = self.stream_config_client.get_properties().await;
-        let supported_formats = self.stream_config_client.get_supported_formats().await.ok();
-        let gain_state = self.stream_config_client.watch_gain_state().await.ok();
-        let plug_state = self.stream_config_client.watch_plug_state().await.ok();
+    pub async fn get_info(&mut self) -> Result<DeviceInfo, Error> {
+        let properties = self.device_controller.get_properties().await?;
 
-        match stream_properties {
-            Ok(stream_properties) => Ok(StreamConfig(StreamConfigDeviceInfo {
-                stream_properties: Some(stream_properties),
-                supported_formats,
-                gain_state,
-                plug_state,
-                ..Default::default()
-            })),
-            Err(e) => Err(e.into()),
+        match properties {
+            Properties::StreamConfig(stream_properties) => {
+                let supported_formats =
+                    match self.device_controller.get_supported_formats().await.ok() {
+                        Some(Formats::StreamConfig(supported_formats)) => Some(supported_formats),
+                        _ => None,
+                    };
+
+                let gain_state = self.device_controller.watch_gain_state().await.ok();
+                let plug_state = self.device_controller.watch_plug_state().await.ok();
+                Ok(StreamConfig(StreamConfigDeviceInfo {
+                    stream_properties: Some(stream_properties),
+                    supported_formats,
+                    gain_state,
+                    plug_state,
+                    ..Default::default()
+                }))
+            }
+            Properties::Composite(composite_properties) => {
+                let (supported_dai_formats, supported_ring_buffer_formats) =
+                    match self.device_controller.get_supported_formats().await.ok() {
+                        Some(Formats::Composite { dai, stream }) => (Some(dai), Some(stream)),
+                        _ => (None, None),
+                    };
+
+                Ok(Composite(CompositeDeviceInfo {
+                    composite_properties: Some(composite_properties),
+                    supported_dai_formats,
+                    supported_ring_buffer_formats,
+                    ..Default::default()
+                }))
+            }
         }
     }
 
-    pub fn set_gain(&self, gain_state: GainState) -> Result<(), Error> {
-        self.stream_config_client
-            .set_gain(&gain_state)
+    pub fn set_gain(&mut self, gain_state: GainState) -> Result<(), Error> {
+        self.device_controller
+            .set_gain(gain_state)
             .map_err(|e| anyhow::anyhow!("Error setting device gain state: {e}"))
     }
 
-    pub async fn play(self, mut data_socket: fasync::Socket) -> Result<String, Error> {
+    pub async fn play(
+        &mut self,
+        mut data_socket: fasync::Socket,
+    ) -> Result<PlayerPlayResponse, Error> {
         let mut socket = socket::Socket { socket: &mut data_socket };
         let spec = socket.read_wav_header().await?;
         let format = format_utils::Format::from(&spec);
 
-        let supported_formats = self.stream_config_client.get_supported_formats().await?;
-        if !format.is_supported_by(&supported_formats) {
-            return Err(anyhow::anyhow!("Requested format not supported"));
-        }
+        let supported_formats = self.device_controller.get_supported_formats().await?;
+        validate_format(&format, supported_formats)?;
 
         // Create ring buffer channel.
         let (ring_buffer_client, ring_buffer_server) =
             fidl::endpoints::create_proxy::<fidl_fuchsia_hardware_audio::RingBufferMarker>()
-                .map_err(|e| anyhow::anyhow!("Failed to create ring buffer channel: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to create ring buffer channel: {e}"))?;
 
-        self.stream_config_client.create_ring_buffer(
+        self.device_controller.create_ring_buffer(
             &fidl_fuchsia_hardware_audio::Format::from(&format),
             ring_buffer_server,
         )?;
@@ -228,39 +433,55 @@ impl Device {
 
         ring_buffer_wrapper.stop().await?;
 
-        let output_message = format!(
+        println!(
             "Successfully processed all audio data. \n Woke up late {} times.\n ",
             late_wakeups
         );
 
-        Ok(output_message)
+        Ok(PlayerPlayResponse { bytes_processed: None, ..Default::default() })
     }
 
     pub async fn record(
-        self,
+        &mut self,
         format: format_utils::Format,
         mut data_socket: fasync::Socket,
         duration: Option<std::time::Duration>,
-        cancel_server: Option<fidl::endpoints::ServerEnd<AudioDaemonCancelerMarker>>,
-    ) -> Result<String, Error> {
+        cancel_server: Option<fidl::endpoints::ServerEnd<RecordCancelerMarker>>,
+    ) -> Result<RecorderRecordResponse, ControllerError> {
         let mut socket = socket::Socket { socket: &mut data_socket };
 
-        let supported_formats = self.stream_config_client.get_supported_formats().await?;
-        if !format.is_supported_by(&supported_formats) {
-            return Err(anyhow::anyhow!("Requested format not supported"));
-        }
+        let supported_formats = self.device_controller.get_supported_formats().await?;
+        validate_format(&format, supported_formats)?;
 
         // Create ring buffer channel.
         let (ring_buffer_client, ring_buffer_server) =
             fidl::endpoints::create_proxy::<fidl_fuchsia_hardware_audio::RingBufferMarker>()
-                .map_err(|e| anyhow::anyhow!("Failed to create ring buffer channel: {}", e))?;
+                .map_err(|e| {
+                    ControllerError::new(
+                        fidl_fuchsia_audio_controller::Error::UnknownFatal,
+                        format!("Failed to create ring buffer channel: {e}"),
+                    )
+                })?;
 
-        self.stream_config_client.create_ring_buffer(
-            &fidl_fuchsia_hardware_audio::Format::from(&format),
-            ring_buffer_server,
-        )?;
+        self.device_controller
+            .create_ring_buffer(
+                &fidl_fuchsia_hardware_audio::Format::from(&format),
+                ring_buffer_server,
+            )
+            .map_err(|e| {
+                ControllerError::new(
+                    fidl_fuchsia_audio_controller::Error::UnknownFatal,
+                    format!("Failed to create ring buffer: {e}"),
+                )
+            })?;
 
-        let ring_buffer_wrapper = RingBuffer::new(&format, ring_buffer_client).await?;
+        let ring_buffer_wrapper =
+            RingBuffer::new(&format, ring_buffer_client).await.map_err(|e| {
+                ControllerError::new(
+                    fidl_fuchsia_audio_controller::Error::UnknownFatal,
+                    format!("Failed to allocate ring buffer memory: {e}"),
+                )
+            })?;
 
         // Hardware might not use all bytes in vmo. Only want to read frames hardware will write to.
         let bytes_in_rb = ring_buffer_wrapper.num_frames * format.bytes_per_frame() as u64;
@@ -274,12 +495,13 @@ impl Device {
             .floor() as u64;
 
         if producer_bytes + bytes_per_wakeup_interval > bytes_in_rb {
-            return Err(anyhow::anyhow!(
-                "Ring buffer not large enough for driver internal delay and plugin wakeup interval.
+            return Err(ControllerError::new(
+                fidl_fuchsia_audio_controller::Error::UnknownFatal,
+                format!("Ring buffer not large enough for driver internal delay and plugin wakeup interval.
                  Ring buffer bytes: {}, bytes_per_wakeup_interval + producer bytes: {}",
                 bytes_in_rb,
                 bytes_per_wakeup_interval + producer_bytes
-            ));
+            )));
         }
 
         let safe_bytes_in_rb = bytes_in_rb - producer_bytes;
@@ -372,29 +594,32 @@ impl Device {
                     break;
                 }
             }
-            Ok(())
+            Ok(RecorderRecordResponse {
+                bytes_processed: None,
+                packets_processed: None,
+                late_wakeups: Some(late_wakeups),
+                ..Default::default()
+            })
         };
 
-        if let Some(cancel_server) = cancel_server {
-            futures::future::try_join(stop_listener(cancel_server, &stop_signal), packet_fut)
-                .await?;
-        } else {
-            packet_fut.await?;
-        }
+        let result = if let Some(cancel_server) = cancel_server {
+            let (_cancel_res, packet_res) =
+                futures::future::try_join(stop_listener(cancel_server, &stop_signal), packet_fut)
+                    .await?;
 
-        let output_message = format!(
-            "Succesfully processed all audio data. \n Woke up late {} times.\n ",
-            late_wakeups
-        );
-        Ok(output_message)
+            Ok(packet_res)
+        } else {
+            packet_fut.await
+        };
+        result.map_err(|e| ControllerError::new(UnknownCanRetry, format!("{e}")))
     }
 }
 
 // Helper function to enumerate on device directories to get information about available drivers.
 pub async fn get_entries(
     path: &str,
-    device_type: fidl_fuchsia_virtualaudio::DeviceType,
-    is_input: bool,
+    device_type: fidl_fuchsia_hardware_audio::DeviceType,
+    is_input: Option<bool>,
 ) -> Result<Vec<DeviceSelector>, Error> {
     let (control_client, control_server) = zx::Channel::create();
 
@@ -417,6 +642,7 @@ pub async fn get_entries(
     }
 
     let entry_names = fuchsia_fs::directory::parse_dir_entries(&buf);
+
     let full_paths = entry_names.into_iter().filter_map(|s| match s {
         Ok(entry) => match entry.kind {
             fio::DirentType::Directory => {
@@ -433,7 +659,7 @@ pub async fn get_entries(
 
     let device_selectors = full_paths
         .map(|path| DeviceSelector {
-            is_input: Some(is_input),
+            is_input: is_input,
             id: format_utils::device_id_for_path(std::path::Path::new(&path)).ok(),
             device_type: Some(device_type),
             ..Default::default()

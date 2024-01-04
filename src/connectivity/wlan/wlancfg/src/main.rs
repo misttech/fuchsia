@@ -28,14 +28,19 @@ use {
         select, TryFutureExt,
     },
     pin_utils::pin_mut,
-    rand::Rng,
     std::{convert::Infallible, sync::Arc},
     tracing::{error, info, warn},
-    wlan_common::hasher::WlanHasher,
     wlan_trace as wtrace,
     wlancfg_lib::{
         access_point::AccessPoint,
-        client::{self, connection_selection::ConnectionSelector, scan},
+        client::{
+            self,
+            connection_selection::{
+                local_roam_manager::{LocalRoamManager, LocalRoamManagerService},
+                ConnectionSelector,
+            },
+            scan,
+        },
         config_management::{SavedNetworksManager, SavedNetworksManagerApi},
         legacy::{self, IfaceRef},
         mode_management::{
@@ -93,7 +98,10 @@ async fn serve_fidl(
 
     let mut fs = ServiceFs::new();
 
-    inspect_runtime::serve(component::inspector(), &mut fs)?;
+    let _inspect_server_task = inspect_runtime::publish(
+        component::inspector(),
+        inspect_runtime::PublishOptions::default(),
+    );
 
     let client_sender1 = client_sender.clone();
     let client_sender2 = client_sender.clone();
@@ -176,7 +184,7 @@ async fn serve_fidl(
 async fn saved_networks_manager_metrics_loop(saved_networks: Arc<dyn SavedNetworksManagerApi>) {
     loop {
         saved_networks.record_periodic_metrics().await;
-        fasync::Timer::new(1.minutes().after_now()).await;
+        fasync::Timer::new(24.hours().after_now()).await;
     }
 }
 
@@ -314,15 +322,6 @@ async fn run_all_futures() -> Result<(), Error> {
         }
     };
 
-    // According to doc, ThreadRng is cryptographically secure:
-    // https://docs.rs/rand/0.5.0/rand/rngs/struct.ThreadRng.html
-    //
-    // The hash key is different from other components, making us not able to correlate
-    // the same SSID and BSSID logged by each WLAN component.
-    // TODO(fxbug.dev/70385): Share the hash key across wlanstack and wlancfg. This TODO
-    //                        can also be closed once PII redaction for Inspect is
-    //                        supported. (see fxbug.dev/fxbug.dev/71903)
-    let hasher = WlanHasher::new(rand::thread_rng().gen::<u64>().to_le_bytes());
     let external_inspect_node = component::inspector().root().create_child("external");
     let (telemetry_sender, telemetry_fut) = serve_telemetry(
         monitor_svc.clone(),
@@ -336,7 +335,6 @@ async fn run_all_futures() -> Result<(), Error> {
             }
             .boxed()
         }),
-        hasher.clone(),
         component::inspector().root().create_child("client_stats"),
         external_inspect_node.create_child("client_stats"),
         persistence_req_sender.clone(),
@@ -346,15 +344,25 @@ async fn run_all_futures() -> Result<(), Error> {
     let (scan_request_sender, scan_request_receiver) =
         mpsc::channel(scan::SCAN_REQUEST_BUFFER_SIZE);
     let scan_requester = Arc::new(scan::ScanRequester { sender: scan_request_sender });
-    let saved_networks = Arc::new(SavedNetworksManager::new(telemetry_sender.clone()).await?);
+    let saved_networks = Arc::new(SavedNetworksManager::new(telemetry_sender.clone()).await);
     let connection_selector = Arc::new(ConnectionSelector::new(
         saved_networks.clone(),
         scan_requester.clone(),
-        hasher.clone(),
         component::inspector().root().create_child("connection_selector"),
         persistence_req_sender.clone(),
         telemetry_sender.clone(),
     ));
+
+    let (roam_stats_sender, roam_stats_receiver) = mpsc::unbounded();
+    let local_roam_manager =
+        Arc::new(Mutex::new(LocalRoamManager::new(roam_stats_sender, telemetry_sender.clone())));
+    let roam_manager_service = LocalRoamManagerService::new(
+        roam_stats_receiver,
+        telemetry_sender.clone(),
+        connection_selector.clone(),
+    );
+
+    let roam_manager_service_fut = roam_manager_service.serve();
 
     let phy_manager = Arc::new(Mutex::new(PhyManager::new(
         monitor_svc.clone(),
@@ -375,9 +383,9 @@ async fn run_all_futures() -> Result<(), Error> {
         ap_sender.clone(),
         monitor_svc.clone(),
         saved_networks.clone(),
+        local_roam_manager,
         connection_selector.clone(),
         telemetry_sender.clone(),
-        hasher,
     );
 
     let scanning_service = scan::serve_scanning_loop(
@@ -436,6 +444,7 @@ async fn run_all_futures() -> Result<(), Error> {
         low_power_fut,
         telemetry_fut.map(Ok),
         persistence_req_forwarder_fut.map(Ok),
+        roam_manager_service_fut.map(Ok),
     )?;
     Ok(())
 }

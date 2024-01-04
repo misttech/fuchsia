@@ -37,13 +37,15 @@
 
 class SimpleDisplay;
 using DeviceType = ddk::Device<SimpleDisplay>;
-using HeapServer = fidl::WireServer<fuchsia_sysmem2::Heap>;
-
+using HeapServer = fidl::WireServer<fuchsia_hardware_sysmem::Heap>;
+using BufferKey = std::pair<uint64_t, uint32_t>;
 class SimpleDisplay : public DeviceType,
                       public HeapServer,
                       public ddk::DisplayControllerImplProtocol<SimpleDisplay, ddk::base_protocol> {
  public:
-  SimpleDisplay(zx_device_t* parent, fidl::WireSyncClient<fuchsia_hardware_sysmem::Sysmem> sysmem,
+  SimpleDisplay(zx_device_t* parent,
+                fidl::WireSyncClient<fuchsia_hardware_sysmem::Sysmem> hardware_sysmem,
+                fidl::WireSyncClient<fuchsia_sysmem2::Allocator> sysmem,
                 fdf::MmioBuffer framebuffer_mmio, uint32_t width, uint32_t height, uint32_t stride,
                 fuchsia_images2::wire::PixelFormat format);
   ~SimpleDisplay() = default;
@@ -52,10 +54,7 @@ class SimpleDisplay : public DeviceType,
   zx_status_t Bind(const char* name, std::unique_ptr<SimpleDisplay>* controller_ptr);
 
   void AllocateVmo(AllocateVmoRequestView request, AllocateVmoCompleter::Sync& completer) override;
-  void CreateResource(CreateResourceRequestView request,
-                      CreateResourceCompleter::Sync& completer) override;
-  void DestroyResource(DestroyResourceRequestView request,
-                       DestroyResourceCompleter::Sync& completer) override;
+  void DeleteVmo(DeleteVmoRequestView request, DeleteVmoCompleter::Sync& completer) override;
 
   void DisplayControllerImplSetDisplayControllerInterface(
       const display_controller_interface_protocol_t* intf);
@@ -67,15 +66,15 @@ class SimpleDisplay : public DeviceType,
       uint64_t banjo_driver_buffer_collection_id, zx::channel collection_token);
   zx_status_t DisplayControllerImplReleaseBufferCollection(
       uint64_t banjo_driver_buffer_collection_id);
-  zx_status_t DisplayControllerImplImportImage(image_t* image,
+  zx_status_t DisplayControllerImplImportImage(const image_t* image,
                                                uint64_t banjo_driver_buffer_collection_id,
-                                               uint32_t index);
+                                               uint32_t index, uint64_t* out_image_handle);
   zx_status_t DisplayControllerImplImportImageForCapture(uint64_t banjo_driver_buffer_collection_id,
                                                          uint32_t index,
                                                          uint64_t* out_capture_handle) {
     return ZX_ERR_NOT_SUPPORTED;
   }
-  void DisplayControllerImplReleaseImage(image_t* image);
+  void DisplayControllerImplReleaseImage(uint64_t image_handle);
   config_check_result_t DisplayControllerImplCheckConfiguration(
       const display_config_t** display_configs, size_t display_count,
       client_composition_opcode_t* out_client_composition_opcodes_list,
@@ -100,30 +99,30 @@ class SimpleDisplay : public DeviceType,
   bool DisplayControllerImplIsCaptureCompleted() { return false; }
 
   const std::unordered_map<display::DriverBufferCollectionId,
-                           fidl::WireSyncClient<fuchsia_sysmem::BufferCollection>>&
+                           fidl::WireSyncClient<fuchsia_sysmem2::BufferCollection>>&
   GetBufferCollectionsForTesting() const {
     return buffer_collections_;
   }
 
  private:
-  zx_status_t InitSysmemAllocatorClient();
-
   void OnPeriodicVSync();
 
-  fidl::WireSyncClient<fuchsia_hardware_sysmem::Sysmem> sysmem_;
+  fidl::WireSyncClient<fuchsia_hardware_sysmem::Sysmem> hardware_sysmem_;
 
   // The sysmem allocator client used to bind incoming buffer collection tokens.
-  fidl::WireSyncClient<fuchsia_sysmem::Allocator> sysmem_allocator_client_;
+  fidl::WireSyncClient<fuchsia_sysmem2::Allocator> sysmem_;
 
   // Imported sysmem buffer collections.
   std::unordered_map<display::DriverBufferCollectionId,
-                     fidl::WireSyncClient<fuchsia_sysmem::BufferCollection>>
+                     fidl::WireSyncClient<fuchsia_sysmem2::BufferCollection>>
       buffer_collections_;
 
   async::Loop loop_;
 
-  static_assert(std::atomic<zx_koid_t>::is_always_lock_free);
-  std::atomic<zx_koid_t> framebuffer_koid_;
+  // protects only framebuffer_key_
+  fbl::Mutex framebuffer_key_mtx_;
+  std::optional<BufferKey> framebuffer_key_ TA_GUARDED(framebuffer_key_mtx_);
+
   static_assert(std::atomic<bool>::is_always_lock_free);
   std::atomic<bool> has_image_;
 

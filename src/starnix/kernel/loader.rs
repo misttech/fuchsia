@@ -2,21 +2,30 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_zircon::{self as zx, AsHandleRef, HandleBased};
+use crate::{
+    mm::{
+        vmo::round_up_to_system_page_size, DesiredAddress, MappingName, MappingOptions,
+        MemoryAccessor, MemoryManager, ProtectionFlags, PAGE_SIZE, VMEX_RESOURCE,
+    },
+    task::CurrentTask,
+    vfs::{FileHandle, FileWriteGuardMode, FileWriteGuardRef},
+};
+use fuchsia_zircon::{
+    HandleBased, {self as zx},
+};
 use process_builder::{elf_load, elf_parse};
+use starnix_logging::{log_error, log_warn};
+use starnix_uapi::{
+    errno, error, errors::Errno, from_status_like_fdio, open_flags::OpenFlags,
+    time::SCHEDULER_CLOCK_HZ, user_address::UserAddress, AT_BASE, AT_CLKTCK, AT_EGID, AT_ENTRY,
+    AT_EUID, AT_EXECFN, AT_GID, AT_NULL, AT_PAGESZ, AT_PHDR, AT_PHENT, AT_PHNUM, AT_RANDOM,
+    AT_SECURE, AT_SYSINFO_EHDR, AT_UID,
+};
 use std::{
     ffi::{CStr, CString},
     mem::size_of,
+    ops::Deref,
     sync::Arc,
-};
-
-use crate::{
-    fs::{FileHandle, FileWriteGuardMode, FileWriteGuardRef},
-    logging::*,
-    mm::{vmo::round_up_to_system_page_size, *},
-    task::*,
-    types::*,
-    vmex_resource::VMEX_RESOURCE,
 };
 
 #[derive(Debug)]
@@ -47,20 +56,15 @@ fn get_initial_stack_size(
 }
 
 fn populate_initial_stack(
-    stack_vmo: &zx::Vmo,
+    ma: &impl MemoryAccessor,
     path: &CStr,
     argv: &Vec<CString>,
     environ: &Vec<CString>,
     mut auxv: Vec<(u32, u64)>,
-    stack_base: UserAddress,
     original_stack_start_addr: UserAddress,
 ) -> Result<StackResult, Errno> {
     let mut stack_pointer = original_stack_start_addr;
-    let write_stack = |data: &[u8], addr: UserAddress| {
-        stack_vmo
-            .write(data, (addr - stack_base) as u64)
-            .map_err(|status| from_status_like_fdio!(status))
-    };
+    let write_stack = |data: &[u8], addr: UserAddress| ma.vmo_write_memory(addr, data);
 
     let argv_end = stack_pointer;
     for arg in argv.iter().rev() {
@@ -175,8 +179,17 @@ impl elf_load::Mapper for Mapper<'_> {
     ) -> Result<usize, zx::Status> {
         let vmo = Arc::new(vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?);
         self.mm
-            .map(
-                DesiredAddress::Fixed(self.mm.base_addr + vmar_offset),
+            .map_vmo(
+                DesiredAddress::Fixed(self.mm.base_addr.checked_add(vmar_offset).ok_or_else(
+                    || {
+                        log_error!(
+                            "in elf load, addition overflow attempting to map at {:?} + {:#x}",
+                            self.mm.base_addr,
+                            vmar_offset
+                        );
+                        zx::Status::INVALID_ARGS
+                    },
+                )?),
                 vmo,
                 vmo_offset,
                 length,
@@ -249,7 +262,7 @@ pub struct ResolvedInterpElf {
 
 // The magic bytes of a script file.
 const HASH_BANG: &[u8; 2] = b"#!";
-const MAX_RECURSION_DEPTH: usize = 4;
+const MAX_RECURSION_DEPTH: usize = 5;
 
 /// Resolves a file into a validated executable ELF, following script interpreters to a fixed
 /// recursion depth. `argv` may change due to script interpreter logic.
@@ -273,7 +286,7 @@ fn resolve_executable_impl(
     environ: Vec<CString>,
     recursion_depth: usize,
 ) -> Result<ResolvedElf, Errno> {
-    if recursion_depth >= MAX_RECURSION_DEPTH {
+    if recursion_depth > MAX_RECURSION_DEPTH {
         return error!(ELOOP);
     }
     let vmo = file.get_vmo(current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)?;
@@ -339,9 +352,13 @@ fn parse_interpreter_line(line: &[u8]) -> Result<Vec<CString>, Errno> {
     let end = line.iter().position(|&b| b == b'\n' || b == 0).ok_or_else(|| errno!(EINVAL))?;
     let line = &line[HASH_BANG.len()..end];
 
+    // Skip whitespace at the start.
+    let is_tab_or_space = |&b| b == b' ' || b == b'\t';
+    let begin = line.iter().position(|b| !is_tab_or_space(b)).unwrap_or(0);
+    let line = &line[begin..];
+
     // Split the byte string at the first whitespace character (or end of line). The first part
     // is the interpreter path.
-    let is_tab_or_space = |&b| b == b' ' || b == b'\t';
     let first_whitespace = line.iter().position(is_tab_or_space).unwrap_or(line.len());
     let (interpreter, rest) = line.split_at(first_whitespace);
     if interpreter.is_empty() {
@@ -409,12 +426,12 @@ pub fn load_executable(
     let main_elf = load_elf(
         resolved_elf.file,
         resolved_elf.vmo,
-        &current_task.mm,
+        current_task.mm(),
         resolved_elf.file_write_guard,
     )?;
     let interp_elf = resolved_elf
         .interp
-        .map(|interp| load_elf(interp.file, interp.vmo, &current_task.mm, interp.file_write_guard))
+        .map(|interp| load_elf(interp.file, interp.vmo, current_task.mm(), interp.file_write_guard))
         .transpose()?;
 
     let entry_elf = interp_elf.as_ref().unwrap_or(&main_elf);
@@ -422,57 +439,47 @@ pub fn load_executable(
         entry_elf.headers.file_header().entry.wrapping_add(entry_elf.vaddr_bias),
     );
 
-    let vdso_base = if let Some(vdso_vmo) = &current_task.kernel().vdso.vmo {
-        let vvar_vmo = current_task
-            .kernel()
-            .vdso
-            .vvar_readonly
-            .clone()
-            .expect("Couldn't find vvar in vdso struct");
+    let vdso_vmo = &current_task.kernel().vdso.vmo;
+    let vvar_vmo = current_task.kernel().vdso.vvar_readonly.clone();
 
-        let vdso_size = vdso_vmo.get_size().map_err(|_| errno!(EINVAL))?;
-        const VDSO_PROT_FLAGS: ProtectionFlags = ProtectionFlags::READ.union(ProtectionFlags::EXEC);
+    let vdso_size = vdso_vmo.get_size().map_err(|_| errno!(EINVAL))?;
+    const VDSO_PROT_FLAGS: ProtectionFlags = ProtectionFlags::READ.union(ProtectionFlags::EXEC);
 
-        let vvar_size = vvar_vmo.get_size().map_err(|_| errno!(EINVAL))?;
-        const VVAR_PROT_FLAGS: ProtectionFlags = ProtectionFlags::READ;
+    let vvar_size = vvar_vmo.get_size().map_err(|_| errno!(EINVAL))?;
+    const VVAR_PROT_FLAGS: ProtectionFlags = ProtectionFlags::READ;
 
-        // Create a private clone of the starnix kernel vDSO
-        let vdso_clone = vdso_vmo
-            .create_child(zx::VmoChildOptions::SNAPSHOT_AT_LEAST_ON_WRITE, 0, vdso_size)
-            .map_err(|status| from_status_like_fdio!(status))?;
+    // Create a private clone of the starnix kernel vDSO
+    let vdso_clone = vdso_vmo
+        .create_child(zx::VmoChildOptions::SNAPSHOT_AT_LEAST_ON_WRITE, 0, vdso_size)
+        .map_err(|status| from_status_like_fdio!(status))?;
 
-        let vdso_executable = vdso_clone
-            .replace_as_executable(&VMEX_RESOURCE)
-            .map_err(|status| from_status_like_fdio!(status))?;
+    let vdso_executable = vdso_clone
+        .replace_as_executable(&VMEX_RESOURCE)
+        .map_err(|status| from_status_like_fdio!(status))?;
 
-        // Memory map the vvar vmo, mapping a space the size of (size of vvar + size of vDSO)
-        let vvar_map_result = current_task.mm.map(
-            DesiredAddress::Any,
-            vvar_vmo,
-            0,
-            (vvar_size as usize) + (vdso_size as usize),
-            VVAR_PROT_FLAGS,
-            MappingOptions::empty(),
-            MappingName::Vvar,
-            FileWriteGuardRef(None),
-        )?;
+    // Memory map the vvar vmo, mapping a space the size of (size of vvar + size of vDSO)
+    let vvar_map_result = current_task.mm().map_vmo(
+        DesiredAddress::Any,
+        vvar_vmo,
+        0,
+        (vvar_size as usize) + (vdso_size as usize),
+        VVAR_PROT_FLAGS,
+        MappingOptions::empty(),
+        MappingName::Vvar,
+        FileWriteGuardRef(None),
+    )?;
 
-        // Overwrite the second part of the vvar mapping to contain the vDSO clone
-        let vdso_map_result = current_task.mm.map(
-            DesiredAddress::FixedOverwrite(vvar_map_result + vvar_size),
-            Arc::new(vdso_executable),
-            0,
-            vdso_size as usize,
-            VDSO_PROT_FLAGS,
-            MappingOptions::empty(),
-            MappingName::Vdso,
-            FileWriteGuardRef(None),
-        )?;
-
-        vdso_map_result.ptr() as u64
-    } else {
-        0
-    };
+    // Overwrite the second part of the vvar mapping to contain the vDSO clone
+    let vdso_base = current_task.mm().map_vmo(
+        DesiredAddress::FixedOverwrite(vvar_map_result + vvar_size),
+        Arc::new(vdso_executable),
+        0,
+        vdso_size as usize,
+        VDSO_PROT_FLAGS,
+        MappingOptions::DONT_SPLIT,
+        MappingName::Vdso,
+        FileWriteGuardRef(None),
+    )?;
 
     let auxv = {
         let creds = current_task.creds();
@@ -491,7 +498,7 @@ pub fn load_executable(
                 main_elf.vaddr_bias.wrapping_add(main_elf.headers.file_header().entry) as u64,
             ),
             (AT_CLKTCK, SCHEDULER_CLOCK_HZ as u64),
-            (AT_SYSINFO_EHDR, vdso_base),
+            (AT_SYSINFO_EHDR, vdso_base.into()),
             (AT_SECURE, 0),
         ]
     };
@@ -503,35 +510,29 @@ pub fn load_executable(
             + 0xf0000,
     )
     .expect("stack is too big");
-    let stack_vmo = Arc::new(zx::Vmo::create(stack_size as u64).map_err(|_| errno!(ENOMEM))?);
-    stack_vmo
-        .as_ref()
-        .set_name(CStr::from_bytes_with_nul(b"[stack]\0").unwrap())
-        .map_err(impossible_error)?;
+
     let prot_flags = ProtectionFlags::READ | ProtectionFlags::WRITE;
-    let stack_base = current_task.mm.map(
+
+    let stack_base = current_task.mm().map_anonymous(
         DesiredAddress::Any,
-        Arc::clone(&stack_vmo),
-        0,
         stack_size,
         prot_flags,
-        MappingOptions::empty(),
+        MappingOptions::ANONYMOUS,
         MappingName::Stack,
-        FileWriteGuardRef(None),
     )?;
+
     let stack = stack_base + (stack_size - 8);
 
     let stack = populate_initial_stack(
-        &stack_vmo,
+        current_task.mm().deref(),
         original_path,
         &resolved_elf.argv,
         &resolved_elf.environ,
         auxv,
-        stack_base,
         stack,
     )?;
 
-    let mut mm_state = current_task.mm.state.write();
+    let mut mm_state = current_task.mm().state.write();
     mm_state.stack_base = stack_base;
     mm_state.stack_size = stack_size;
     mm_state.stack_start = stack.stack_pointer;
@@ -542,7 +543,7 @@ pub fn load_executable(
     mm_state.environ_start = stack.environ_start;
     mm_state.environ_end = stack.environ_end;
 
-    mm_state.vdso_base = UserAddress::from(vdso_base);
+    mm_state.vdso_base = vdso_base;
 
     Ok(ThreadStartInfo { entry, stack: stack.stack_pointer })
 }
@@ -552,12 +553,89 @@ mod tests {
     use super::*;
     use crate::testing::*;
     use assert_matches::assert_matches;
+    use std::mem::MaybeUninit;
+
+    const TEST_STACK_ADDR: UserAddress = UserAddress::const_from(0x3000_0000);
+
+    struct StackVmo(zx::Vmo);
+
+    impl StackVmo {
+        fn address_to_offset(&self, addr: UserAddress) -> u64 {
+            (addr - TEST_STACK_ADDR) as u64
+        }
+    }
+
+    impl MemoryAccessor for StackVmo {
+        fn read_memory<'a>(
+            &self,
+            _addr: UserAddress,
+            _bytes: &'a mut [MaybeUninit<u8>],
+        ) -> Result<&'a mut [u8], Errno> {
+            todo!()
+        }
+
+        fn read_memory_partial_until_null_byte<'a>(
+            &self,
+            _addr: UserAddress,
+            _bytes: &'a mut [MaybeUninit<u8>],
+        ) -> Result<&'a mut [u8], Errno> {
+            todo!()
+        }
+
+        fn vmo_read_memory<'a>(
+            &self,
+            _addr: UserAddress,
+            _bytes: &'a mut [MaybeUninit<u8>],
+        ) -> Result<&'a mut [u8], Errno> {
+            todo!()
+        }
+
+        fn read_memory_partial<'a>(
+            &self,
+            _addr: UserAddress,
+            _bytes: &'a mut [MaybeUninit<u8>],
+        ) -> Result<&'a mut [u8], Errno> {
+            todo!()
+        }
+
+        fn vmo_read_memory_partial<'a>(
+            &self,
+            _addr: UserAddress,
+            _bytes: &'a mut [MaybeUninit<u8>],
+        ) -> Result<&'a mut [u8], Errno> {
+            todo!()
+        }
+
+        fn write_memory(&self, _addr: UserAddress, _bytes: &[u8]) -> Result<usize, Errno> {
+            todo!()
+        }
+
+        fn vmo_write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
+            self.0.write(bytes, self.address_to_offset(addr)).map_err(|_| errno!(EFAULT))?;
+            Ok(bytes.len())
+        }
+
+        fn write_memory_partial(&self, _addr: UserAddress, _bytes: &[u8]) -> Result<usize, Errno> {
+            todo!()
+        }
+
+        fn vmo_write_memory_partial(
+            &self,
+            _addr: UserAddress,
+            _bytes: &[u8],
+        ) -> Result<usize, Errno> {
+            todo!()
+        }
+
+        fn zero(&self, _addr: UserAddress, _length: usize) -> Result<usize, Errno> {
+            todo!()
+        }
+    }
 
     #[::fuchsia::test]
     fn test_trivial_initial_stack() {
-        let stack_vmo = zx::Vmo::create(0x4000).expect("VMO creation should succeed.");
-        let stack_base = UserAddress::from_ptr(0x3000_0000);
-        let original_stack_start_addr = UserAddress::from_ptr(0x3000_1000);
+        let stack_vmo = StackVmo(zx::Vmo::create(0x4000).expect("VMO creation should succeed."));
+        let original_stack_start_addr = TEST_STACK_ADDR + 0x1000u64;
 
         let path = CString::new(&b""[..]).unwrap();
         let argv = &vec![];
@@ -569,7 +647,6 @@ mod tests {
             argv,
             environ,
             vec![],
-            stack_base,
             original_stack_start_addr,
         )
         .expect("Populate initial stack should succeed.")
@@ -606,22 +683,22 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_load_hello_starnix() {
-        let (_kernel, mut current_task) = create_kernel_and_task_with_pkgfs();
+        let (_kernel, mut current_task, _) = create_kernel_task_and_unlocked_with_pkgfs();
         exec_hello_starnix(&mut current_task).expect("failed to load executable");
-        assert!(current_task.mm.get_mapping_count() > 0);
+        assert!(current_task.mm().get_mapping_count() > 0);
     }
 
     // TODO(fxbug.dev/121659): Figure out why this snapshot fails.
     #[cfg(target_arch = "x86_64")]
     #[::fuchsia::test]
     async fn test_snapshot_hello_starnix() {
-        let (kernel, mut current_task) = create_kernel_and_task_with_pkgfs();
+        let (kernel, mut current_task, mut locked) = create_kernel_task_and_unlocked_with_pkgfs();
         exec_hello_starnix(&mut current_task).expect("failed to load executable");
 
         let current2 = create_task(&kernel, "another-task");
-        current_task.mm.snapshot_to(&current2.mm).expect("failed to snapshot mm");
+        current_task.mm().snapshot_to(&mut locked, current2.mm()).expect("failed to snapshot mm");
 
-        assert_eq!(current_task.mm.get_mapping_count(), current2.mm.get_mapping_count());
+        assert_eq!(current_task.mm().get_mapping_count(), current2.mm().get_mapping_count());
     }
 
     #[::fuchsia::test]
@@ -661,6 +738,14 @@ mod tests {
         assert_eq!(
             parse_interpreter_line(b"#!/bin/bash\nfoobar"),
             Ok(vec![CString::new("/bin/bash").unwrap()])
+        );
+        assert_eq!(
+            parse_interpreter_line(b"#! /bin/bash -e  -x\t-l\n"),
+            Ok(vec![CString::new("/bin/bash").unwrap(), CString::new("-e  -x\t-l").unwrap(),])
+        );
+        assert_eq!(
+            parse_interpreter_line(b"#!\t/bin/bash \t-l\n"),
+            Ok(vec![CString::new("/bin/bash").unwrap(), CString::new("-l").unwrap(),])
         );
     }
 }

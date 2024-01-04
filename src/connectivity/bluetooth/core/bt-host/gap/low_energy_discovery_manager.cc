@@ -4,8 +4,6 @@
 
 #include "low_energy_discovery_manager.h"
 
-#include <lib/async/cpp/time.h>
-#include <lib/async/default.h>
 #include <lib/fit/function.h>
 
 #include "peer.h"
@@ -69,7 +67,7 @@ void LowEnergyDiscoverySession::NotifyDiscoveryResult(const Peer& peer) const {
     return;
   }
 
-  if (filter_.MatchLowEnergyResult(peer.le()->advertising_data(), peer.connectable(),
+  if (filter_.MatchLowEnergyResult(peer.le()->parsed_advertising_data(), peer.connectable(),
                                    peer.rssi())) {
     peer_found_callback_(peer);
   }
@@ -83,14 +81,14 @@ void LowEnergyDiscoverySession::NotifyError() {
 }
 
 LowEnergyDiscoveryManager::LowEnergyDiscoveryManager(hci::LowEnergyScanner* scanner,
-                                                     PeerCache* peer_cache)
+                                                     PeerCache* peer_cache,
+                                                     pw::async::Dispatcher& dispatcher)
     : WeakSelf(this),
-      dispatcher_(async_get_default_dispatcher()),
+      dispatcher_(dispatcher),
       state_(State::kIdle, StateToString),
       peer_cache_(peer_cache),
       paused_count_(0),
       scanner_(scanner) {
-  BT_DEBUG_ASSERT(dispatcher_);
   BT_DEBUG_ASSERT(peer_cache_);
   BT_DEBUG_ASSERT(scanner_);
 
@@ -134,10 +132,14 @@ void LowEnergyDiscoveryManager::StartDiscovery(bool active, SessionCallback call
     }
 
     auto session = AddSession(active);
-    async::PostTask(dispatcher_,
-                    [callback = std::move(callback), session = std::move(session)]() mutable {
-                      callback(std::move(session));
-                    });
+    // Post the callback instead of calling it synchronously to avoid bugs caused by client code not
+    // expecting this.
+    heap_dispatcher_.Post([callback = std::move(callback), session = std::move(session)](
+                              pw::async::Context /*ctx*/, pw::Status status) mutable {
+      if (status.ok()) {
+        callback(std::move(session));
+      }
+    });
     return;
   }
 
@@ -267,7 +269,7 @@ void LowEnergyDiscoveryManager::OnPeerFound(const hci::LowEnergyScanResult& resu
     peer->set_connectable(true);
   }
 
-  peer->MutLe().SetAdvertisingData(result.rssi, data, async::Now(async_get_default_dispatcher()));
+  peer->MutLe().SetAdvertisingData(result.rssi, data, dispatcher_.now());
 
   cached_scan_results_.insert(peer->identifier());
 

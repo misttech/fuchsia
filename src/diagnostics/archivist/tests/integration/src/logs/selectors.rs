@@ -4,7 +4,8 @@
 
 use crate::{constants, test_topology, utils};
 use component_events::{events::*, matcher::*};
-use diagnostics_reader::{assert_data_tree, ArchiveReader, Logs};
+use diagnostics_assertions::assert_data_tree;
+use diagnostics_reader::{ArchiveReader, Logs};
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_diagnostics::ArchiveAccessorMarker;
 use fuchsia_async as fasync;
@@ -33,16 +34,12 @@ async fn component_selectors_filter_logs() {
 
     // Start listening
     let mut reader = ArchiveReader::new();
-    reader
-        .add_selector(format!("realm_builder\\:{}/test/coll\\:a:root", realm.root.child_name()))
-        .with_archive(accessor)
-        .with_minimum_schema_count(5)
-        .retry_if_empty(true);
+    reader.add_selector("coll\\:a:root").with_archive(accessor).with_minimum_schema_count(5);
 
     let (mut stream, mut errors) =
         reader.snapshot_then_subscribe::<Logs>().unwrap().split_streams();
     let _errors = fasync::Task::spawn(async move {
-        while let Some(e) = errors.next().await {
+        if let Some(e) = errors.next().await {
             panic!("error in subscription: {e}");
         }
     });
@@ -56,7 +53,7 @@ async fn component_selectors_filter_logs() {
     // We should see logs from components started before and after we began to listen.
     for _ in 0..6 {
         let log = stream.next().await.unwrap();
-        assert_eq!(log.moniker, format!("realm_builder:{}/test/coll:a", realm.root.child_name()));
+        assert_eq!(log.moniker, "coll:a");
         assert_data_tree!(log.payload.unwrap(), root: {
             message: {
                 value: "Hello, world!",

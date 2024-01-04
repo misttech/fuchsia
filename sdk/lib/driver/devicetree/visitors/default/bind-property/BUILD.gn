@@ -1,0 +1,19 @@
+# Copyright 2023 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+source_set("bind-property") {
+  sources = [
+    "bind-property.cc",
+    "bind-property.h",
+  ]
+  deps = [
+    "//sdk/lib/driver/logging/cpp",
+    "//src/devices/bind/fuchsia.devicetree:fuchsia.devicetree_cpp",
+  ]
+
+  public_deps = [
+    "//sdk/lib/driver/devicetree/manager:headers",
+    "//zircon/system/ulib/zx",
+  ]
+}

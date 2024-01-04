@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.gpu.magma/cpp/wire.h>
-#include <fuchsia/hardware/platform/device/c/banjo.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/device.h>
@@ -11,6 +10,12 @@
 #include <lib/ddk/platform-defs.h>
 #include <lib/fidl/cpp/wire/arena.h>
 #include <lib/fit/thread_safety.h>
+#include <lib/magma/platform/platform_bus_mapper.h>
+#include <lib/magma/platform/platform_logger.h>
+#include <lib/magma/platform/zircon/zircon_platform_status.h>
+#include <lib/magma/util/short_macros.h>
+#include <lib/magma_service/sys_driver/dfv1/magma_device_impl.h>
+#include <lib/magma_service/sys_driver/magma_system_device.h>
 #include <zircon/errors.h>
 #include <zircon/process.h>
 #include <zircon/time.h>
@@ -22,14 +27,8 @@
 #include <ddktl/fidl.h>
 #include <ddktl/protocol/empty-protocol.h>
 
-#include "magma_util/platform/zircon/zircon_platform_status.h"
-#include "magma_util/short_macros.h"
 #include "parent_device_dfv1.h"
-#include "platform_bus_mapper.h"
-#include "platform_logger.h"
 #include "src/graphics/drivers/msd-arm-mali/src/parent_device.h"
-#include "src/graphics/lib/magma/src/sys_driver/dfv1/magma_device_impl.h"
-#include "sys_driver/magma_system_device.h"
 
 #if MAGMA_TEST_DRIVER
 zx_status_t magma_indriver_test(ParentDevice* device);
@@ -110,7 +109,7 @@ zx_status_t GpuDevice::Init() {
 
 static zx_status_t driver_bind(void* context, zx_device_t* parent) {
   MAGMA_LOG(INFO, "driver_bind: binding\n");
-  magma::PlatformBusMapper::SetInfoResource(zx::unowned_resource(get_root_resource(parent)));
+  magma::PlatformBusMapper::SetInfoResource(zx::unowned_resource(get_info_resource(parent)));
   auto gpu = std::make_unique<GpuDevice>(parent);
   if (!gpu)
     return ZX_ERR_NO_MEMORY;

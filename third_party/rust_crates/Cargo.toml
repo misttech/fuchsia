@@ -24,11 +24,14 @@ version = "0.1.0"
 [dependencies]
 # Keep this sorted alphabetically, please.
 aead = { version = "0.4.2", features = ["std"] }
-aes = { version = "0.7.5", features = ["armv8"] }
-aes-gcm = "0.9"
-aes-gcm-siv = { version = "0.10.3", features = ["std"] }
+# Once aes is updated to 0.8.3 or beyond, remove --cfg=aes_armv8 below
+# (see for context: https://fuchsia-review.git.corp.google.com/c/fuchsia/+/711365/comment/f64fc21a_309bf0b8/)
+aes = { version = "0.8.2" }
+aes-gcm = "0.10.1"
+aes-gcm-siv = { version = "0.11.1", features = ["std"] }
+ahash = { version = "0.8.6", default-features = false, features = [ "runtime-rng" ] }
 ansi_term = "0.12.0"
-anyhow = "1.0.57"
+anyhow = "1.0.75"
 arbitrary = { version = "1.0.3", features = ["derive"] }
 argh = "0.1.12"
 arrayvec = "0.7.1"
@@ -36,7 +39,7 @@ ash = { version = "0.37.0", features = ["linked"], default-features = false }
 assert_matches = "1.5.0"
 async-channel = "1.8.0"
 async-lock = "2.3"
-async-stream = "0.3.4"
+async-stream = "0.3.5"
 async-trait = "0.1.71"
 atty = "0.2.11"
 base64 = "0.13"
@@ -76,18 +79,19 @@ crossbeam = "0.8.0"
 crossbeam-utils = "0.8.14"
 crypto-mac = { version = "0.11.1", features = ["std"] }
 cfg-if = "1.0.0"
-chacha20 = "0.8.1"
+chacha20 = "0.9.0"
 csv = "1.2.1"
 darling = "0.12.0"
 data-encoding = "2.1.2"
 derivative = { version = "2.2.0", features = ["use_core"] }
 derive_builder = "0.11.1"
 derp = "0.0.14"
-downcast-rs = "1.2.0"
 difference = "2.0.0"
+digest = "0.10.7"
+downcast-rs = "1.2.0"
 dyn-clone = "1.0.5"
-ecdsa = { version = "0.13.4", features = ["pkcs8"] }
-elliptic-curve = { version = "0.11.12", features = [ "ecdh" ] }
+ecdsa = { version = "0.14.3", features = ["pkcs8"] }
+elliptic-curve = { version = "0.12.3", features = [ "ecdh" ] }
 either = "1.5.0"
 eui48 = { version = "1.1.0", default-features = false, features = ["serde", "disp_hexstring"] }
 event-listener = "2.5.1"
@@ -97,21 +101,22 @@ event-listener = "2.5.1"
 fancy-regex = "0.8"
 fatfs = "0.3.6"
 flate2 = { version = "1.0.14", default-features = false, features = ["rust_backend"] }
+fragile = "=1.0.0"
 futures = "=0.3.19"
 futures-executor = "=0.3.19"
 futures-io = "=0.3.19"
 futures-lite = "1.11.3"
 futures-test = "=0.3.19"
 futures-util = "=0.3.19"
-getrandom = { version = "0.2.2", features = ["js"] }
+getrandom = { version = "0.2.10", features = ["js"] }
 glob = "0.3.0"
 gpt = "3.0.0"
 half = "1.6.0"
 handlebars = "4.3.5"
 heck = "0.3.1"
 hex = "0.3.2"
-hmac = "0.11.0"
-hkdf = "0.11.0"
+hmac = "0.12.1"
+hkdf = "0.12.3"
 hound = "3.5.0"
 humansize = "1.1.1"
 http = "0.2.4"
@@ -125,18 +130,18 @@ itertools = "0.10"
 itoa = "0.4"
 json5format = "0.2.6"
 lazy_static = "1.4"
-libc = { version = "0.2.138", features = ["extra_traits"] }
+libc = { version = "0.2.149", features = ["extra_traits"] }
 libm = "0.2.1"
 linked-hash-map = "0.5.3"
 lock_api = "0.4.7"
-log = { version = "0.4.11", features = ["std"] }
-loom = "0.5.6"
+log = { version = "0.4.20", features = ["std"] }
 lru-cache = "0.1.2"
 maplit = "1.0"
 macro_rules_attribute = "0.1.3"
 maybe-owned = "0.3.2"
+md-5 = "0.10.5"
 memchr = "2.0"
-memoffset = "0.5.3"
+memoffset = "0.7.1"
 miniz_oxide = "0.3.6"
 # TODO(fxbug.dev/66092) limit to tests
 mockall = "0.9"
@@ -150,9 +155,9 @@ nom_locate = "2.0.0"
 num = { version = "0.4.0", features = ["rand"] }
 num-derive = "0.3"
 num-traits = "0.2"
-once_cell = { version = "1.2.0", features = ["parking_lot"] }
-p256 = { version = "0.10.1", features = ["pem", "serde"] }
-pkcs8 = "0.8.0"
+once_cell = { version = "1.17.0", features = ["parking_lot"] }
+p256 = { version = "0.11.1", features = ["pem", "serde"] }
+pkcs8 = "0.9.0"
 parking_lot = "0.9"
 paste = "1.0"
 pathdiff = { version = "0.2.1", features = ["camino"] }
@@ -176,42 +181,44 @@ rayon = "1.2.1"
 ref-cast = "1.0.9"
 regex = "1.0.6"
 regex-syntax = "0.6.5"
-ring = "0.16"
+ring = "=0.16.16"
 rustc-hash = "1.0.1"
 rustls = { version = "0.19.1", features = ["dangerous_configuration"] }
 rustyline = "2.1.0"
 schemars = { version = "0.8", features = ["chrono", "preserve_order"] }
 scopeguard = "1.1.0"
-scrypt = "0.8.0"
+scrypt = "0.10.0"
 serde = { version = "1.0.147", features = ["derive"] }
 serde_cbor = "0.11.1"
 serde_derive = "1.0.147"
 serde_json = "1.0.87"
 serde_json5 = "0.1.0"
 serde_repr = "0.1.7"
-sha2 = "0.9"
+sha1 = "0.10.5"
+sha2 = "0.10.2"
 signature =  "1.4.0"
 siphasher = "0.3.10"
 slab = "0.4.7"
-smallvec = {version= "1.8", features = ["const_generics"]}
+smallvec = {version= "1.8", features = ["const_generics", "const_new", "union"]}
 socket2 = { version = "0.4.4", features = ["all"] }
 splines = "2.2.0"
 static_assertions = "1.1.0"
 strsim = "0.10.0"
 structopt = "0.2.14"
 tempfile = "3.2"
+termtree = "0.4.1"
 tuf = { version = "0.3.0-beta11", default-features = false, features = ["hyper"] }
 termion = "1.5.3"
-test-case = "3.1.0"
+test-case = "3.2.1"
 textwrap = "0.11.0"
 thiserror = "1.0.23"
 tokio-rustls = "0.22.0"
 toml = "0.5"
 toml_edit = "0.2.1"
-tracing = { version = "0.1.29", default-features = false, features = ["std", "attributes"] }
-tracing-core = "0.1.21"
-tracing-log = "0.1.2"
-tracing-mutex = { version = "0.2.1", features = ["lockapi", "parkinglot"] }
+tracing = { version = "0.1.37", default-features = false, features = ["std", "attributes"] }
+tracing-core = "0.1.32"
+tracing-log = "0.1.3"
+tracing-mutex = { version = "0.3.0", features = ["lockapi", "parkinglot"] }
 typed-builder = "0.10.0"
 unicase = "2.2.0"
 untrusted = "0.7.1"
@@ -222,7 +229,6 @@ vte = "0.3"
 wasm-bindgen = "0.2.63"
 webpki = "0.21"
 xml-rs = "0.8"
-xts-mode = "0.4.1"
 unic-char-range = "0.9"
 unic-ucd-block = "0.9"
 unicode-segmentation = "1.0"
@@ -232,11 +238,11 @@ utf8parse = "0.1"
 vm-device = "0.1.0"
 walkdir = "2.2.7"
 which = "4.0.2"
-zerocopy = { version = "0.7.0-alpha.5", features = ["default", "simd"] }
+zerocopy = { version = "0.8.0-alpha.1", features = ["default", "derive", "simd"] }
 zstd = "0.11.2"
 
 [dependencies.tracing-subscriber]
-version = "0.3.1"
+version = "0.3.15"
 default-features = false
 features = ["env-filter", "fmt", "registry", "std", "tracing-log"]
 
@@ -250,17 +256,17 @@ hyper-rustls = { version = "0.22.1", default-features = false }
 lipsum = "0.6.0"
 openat = "0.1.17"
 pretty = "0.5.2"
-rust_icu_common = { version = "4.0.0", default-features = false, features = ["renaming"] }
-rust_icu_sys = { version = "4.0.0", default-features = false, features = ["renaming", "icu_version_in_env", "icu_version_67_plus"] }
-rust_icu_ucal = { version = "4.0.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
-rust_icu_uchar = { version = "4.0.0", default-features = false, features = ["renaming", "icu_version_in_env", "icu_version_67_plus"] }
-rust_icu_udat = { version = "4.0.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
-rust_icu_udata = { version = "4.0.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
-rust_icu_uenum = { version = "4.0.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
-rust_icu_uloc = { version = "4.0.0", default-features = false, features = ["renaming", "icu_version_in_env", "icu_version_67_plus"] }
-rust_icu_unorm2 = { version = "4.0.0", default-features = false, features = ["renaming", "icu_version_in_env", "icu_version_67_plus"] }
-rust_icu_ustring = { version = "4.0.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
-tokio = { version = "1.19.2", default-features = false }
+rust_icu_common = { version = "4.2.3", default-features = false, features = ["renaming"] }
+rust_icu_sys = { version = "4.2.3", default-features = false, features = ["renaming", "icu_version_in_env", "icu_version_67_plus"] }
+rust_icu_ucal = { version = "4.2.3", default-features = false, features = ["renaming", "icu_version_in_env"] }
+rust_icu_uchar = { version = "4.2.3", default-features = false, features = ["renaming", "icu_version_in_env", "icu_version_67_plus"] }
+rust_icu_udat = { version = "4.2.3", default-features = false, features = ["renaming", "icu_version_in_env"] }
+rust_icu_udata = { version = "4.2.3", default-features = false, features = ["renaming", "icu_version_in_env"] }
+rust_icu_uenum = { version = "4.2.3", default-features = false, features = ["renaming", "icu_version_in_env"] }
+rust_icu_uloc = { version = "4.2.3", default-features = false, features = ["renaming", "icu_version_in_env", "icu_version_67_plus"] }
+rust_icu_unorm2 = { version = "4.2.3", default-features = false, features = ["renaming", "icu_version_in_env", "icu_version_67_plus"] }
+rust_icu_ustring = { version = "4.2.3", default-features = false, features = ["renaming", "icu_version_in_env"] }
+tokio = { version = "=1.25.2", default-features = false }
 trust-dns-proto = { version = "0.22.0", default-features = false, features = ["testing"] }
 trust-dns-resolver = { version = "0.22.0", default-features = false, features = ["testing"] }
 ttf-parser = "0.10.1"
@@ -281,10 +287,11 @@ fuse3 = { version = "0.6.1", features = ["tokio-runtime", "unprivileged"] }
 home = "0.5.3"
 hyper-rustls = { version = "0.22.1", default-features = false, features = ["rustls-native-certs"] }
 indoc = "1.0.3"
+loom = "0.7.0"
 # TODO(fxbug.dev/106164) Remove this explicit mio dependency when it can be
 # pulled in automatically by tokio
 mio = { version = "0.8.5", features = ["net", "os-ext", "os-poll"] }
-notify = { version = "5.0.0", default-features = false, features = ["macos_fsevent"] }
+notify = { version = "5.1.0", default-features = false, features = ["macos_fsevent"] }
 petgraph = { version = "0.6.2" }
 proc-macro2 = { version = "1.0.58", features = ["span-locations"] }
 pulldown-cmark = "0.6.0"
@@ -294,8 +301,10 @@ rustls-native-certs = "0.5.0"
 serde_yaml = "0.9.14" # To use on Fuchsia, serde_yaml and unsafe-libyaml will need to be re-audited.
 serial_test = "0.5.1" # Not for use on Fuchsia, only for a single process.
 shared_child = "1.0.0"
-signal-hook = "0.3.8"
+signal-hook = "0.3.17"
 simplelog = "0.10.2"
+strum = "0.25.0"
+strum_macros = "0.25.3"
 syn = { version = "1.0.98", features = ["full", "visit", "visit-mut", "extra-traits"] }
 synstructure = "0.12.1"
 tar = "0.4.25"
@@ -304,8 +313,8 @@ termios = "0.3.2"
 tinyjson = "2.5.0"
 # TODO(fxbug.dev/106164) Enable the "rt" and "net" features here once gnaw
 # supports target-specific feature resolution
-tokio = { version = "1.19.2", default-features = false }
-tokio-stream = "0.1"
+tokio = { version = "=1.25.2", default-features = false }
+tokio-stream = "0.1.14"
 zip = { version = "0.5.5", default-features = false, features = ["deflate"] }
 
 # For crates we don't want to vendor, follow instructions at
@@ -341,7 +350,8 @@ wepoll-ffi = { path = "empty/wepoll-ffi" }
 winapi = { path = "empty/winapi" }
 winapi-util = { path = "empty/winapi-util" }
 windows = { path = "empty/windows" }
-windows-sys = { path = "empty/windows-sys" }
+windows-sys-0_42_0 = { package = "windows-sys", path = "empty/windows-sys-0.42.0" }
+windows-sys-0_45_0 = { package = "windows-sys", path = "empty/windows-sys-0.45.0" }
 
 ### Forks: vendored crates whose code doesn't match the upstream version
 async-io = { path = "forks/async-io" }
@@ -392,6 +402,8 @@ remove_cfgs = [
 ]
 add_cfgs = []
 
+require_licenses = true
+
 # The below config data is for the targets being used by cargo-gnaw. This provides custom input that
 # is usually provided by build.rs scripts. If the build.rs script is simple enough, cargo-gnaw will
 # suggest what to put in here. if not, usually reading the build.rs script is sufficient.
@@ -404,10 +416,14 @@ add_cfgs = []
 #
 # Keep this sorted alphabetically, please.
 
-[gn.package.aes."0.7.5"]
+[gn.package.aes."0.8.2"]
 configs = [ "//build/config/rust:allow_simd" ]
+rustflags = [ "--cfg=aes_armv8" ]
 
-[gn.package.anyhow."1.0.57"]
+[gn.package.ahash."0.8.6".platform."cfg(any(target_arch = \"x86_64\", target_arch = \"aarch64\", target_arch = \"mips64\", target_arch = \"powerpc64\", target_arch = \"riscv64gc\", target_arch = \"s390x\"))"]
+rustflags = [ "--cfg=feature=\\\"folded_multiply\\\"" ]
+
+[gn.package.anyhow."1.0.75"]
 # TODO(https://github.com/rust-lang/rust/pull/72981): uncomment when backtrace is stabilized.
 #rustflags = ["--cfg=backtrace"]
 
@@ -425,6 +441,9 @@ rustflags = []
 
 [gn.package.async-trait."0.1.71"]
 rustflags = []
+
+[gn.package.bitflags."1.3.2"]
+visibility = [":*", "//third_party/alacritty/alacritty_terminal:*" ]
 
 [gn.package.camino."1.1.1"]
 rustflags = [
@@ -471,18 +490,25 @@ rustflags = [ "--cfg=fn_like_proc_macro" ]
 # generator has not gone through a thorough safety review yet, and needs to be
 # re-reviewed before it can be used outside of tests.
 [gn.package.generator."0.7.5"]
+visibility = [ ":loom-v0_7_0" ]
+testonly = true
 deps = [
   "//build/validate:non_production_tag",
+]
+
+# generator's asm deps are only supported on x64 and arm64 so far, and we need
+# to not include the asm target when there's no suitable implementation to be
+# selected.
+[gn.package.generator."0.7.5".platform."cfg(not(target_os = \"fuchsia\"))"]
+deps = [
   "//third_party/rust_crates/compat/generator:asm",
 ]
-visibility = [ ":loom-v0_5_6" ]
-testonly = true
 
 [gn.package.generic-array."0.14.5"]
 rustflags = [ "--cfg=relaxed_coherence" ]
 
-[gn.package.getrandom."0.2.2"]
-env_vars = [ "CARGO_PKG_NAME=getrandom", "CARGO_PKG_VERSION=0.2.2", "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/getrandom-0.2.2" ]
+[gn.package.getrandom."0.2.10"]
+env_vars = [ "CARGO_PKG_NAME=getrandom", "CARGO_PKG_VERSION=0.2.10", "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/getrandom-0.2.10" ]
 rustflags = []
 
 [gn.package.httparse."1.7.1"]
@@ -494,7 +520,7 @@ rustflags = ["--cfg=has_std"]
 [gn.package.js-sys."0.3.40"]
 env_vars = [ "CARGO_PKG_NAME=js-sys", "CARGO_PKG_VERSION=0.3.40", "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/js-sys-0.3.40" ]
 
-[gn.package.libc."0.2.142"]
+[gn.package.libc."0.2.149"]
 rustflags = [
   "--cfg=libc_priv_mod_use",
   "--cfg=libc_union",
@@ -511,21 +537,23 @@ rustflags = [
   "--cfg=libc_const_extern_fn",
  ]
 
-[gn.package.libc."0.2.142".platform."cfg(target_os = \"freebsd\")"]
+[gn.package.libc."0.2.149".platform."cfg(target_os = \"freebsd\")"]
 rustflags = ["--cfg=freebsd11"]
 
 [gn.package.lock_api."0.4.7"]
 rustflags = ["--cfg=has_const_fn_trait_bound"]
 
-[gn.package.log."0.4.11"]
-rustflags = ["--cfg=atomic_cas"]
+[gn.package.log."0.4.20"]
 group_visibility = { import = "//src/lib/diagnostics/log/log_visibility.gni", variable = "third_party_rust_crate_log_visibility" }
 
 # Loom has not gone through a thorough safety review yet, and needs to be
 # re-reviewed before it can be used outside of tests.
-[gn.package.loom."0.5.6"]
+[gn.package.loom."0.7.0"]
 deps = [ "//build/validate:non_production_tag" ]
 testonly = true
+
+[gn.package.md-5."0.10.5"]
+group_visibility = { import = "//third_party/rust_crates/visibility.gni", variable = "md5_visibility" }
 
 [gn.package.memchr."2.4.0"]
 rustflags = ["--cfg=memchr_runtime_simd", "--cfg=memchr_runtime_sse2", "--cfg=memchr_runtime_sse42", "--cfg=memchr_runtime_avx"]
@@ -609,7 +637,7 @@ rustflags = ["--cfg=rust_1_26"]
 [gn.package.ref-cast."1.0.9"]
 rustflags = []
 
-[gn.package.ring."0.16.12"]
+[gn.package.ring."0.16.16"]
 # See fxbug.dev/104855 if you want to change this: Please talk to Security team.
 # Thank you!
 visibility = [
@@ -632,13 +660,13 @@ rustflags = ["--cfg=std_atomic64", "--cfg=std_atomic"]
 # re-reviewed before it can be used outside of tests.
 [gn.package.scoped-tls."1.0.1"]
 deps = [ "//build/validate:non_production_tag" ]
-visibility = [ ":loom-v0_5_6" ]
+visibility = [ ":loom-v0_7_0" ]
 testonly = true
 
 # We always want to optimize scrypt for speed, because a single key derivation
 # that takes 150 msec when speed-optimized takes 20 seconds (!) when not
 # optimized, and that's a terrible experience for checking passwords.
-[gn.package.scrypt."0.8.0"]
+[gn.package.scrypt."0.10.0"]
 configs = [ "//build/config:optimize_speed" ]
 
 [gn.package.serde."1.0.147"]
@@ -650,7 +678,10 @@ rustflags = []
 [gn.package.semver."1.0.4"]
 rustflags = []
 
-[gn.package.signal-hook."0.3.8"]
+[gn.package.sha1."0.10.5"]
+group_visibility = { import = "//third_party/rust_crates/visibility.gni", variable = "sha1_visibility" }
+
+[gn.package.signal-hook."0.3.17"]
 rustflags = []
 
 [gn.package.slab."0.4.7"]
@@ -664,15 +695,13 @@ group_visibility = { import = "//third_party/rust_crates/private_visibility.gni"
 # TODO(fxbug.dev/106164) This manual configuration enables the "rt", "net"
 # "fs" and "sync" features on non-Fuchsia targets. It should be removed
 # once gnaw supports target-specific features.
-[gn.package.tokio."1.19.2".platform."cfg(not(target_os = \"fuchsia\"))"]
+[gn.package.tokio."1.25.2".platform."cfg(not(target_os = \"fuchsia\"))"]
 deps = [
   ":bytes-v1_0_1",
-  ":libc-v0_2_142",
-  ":memchr-v2_4_0",
+  ":libc-v0_2_149",
   ":mio-v0_8_5",
   ":num_cpus-v1_13_0",
-  ":once_cell-v1_17_1",
-  ":signal-hook-registry-v1_3_0",
+  ":signal-hook-registry-v1_4_1",
   ":socket2-v0_4_4",
 ]
 rustflags = [
@@ -681,21 +710,23 @@ rustflags = [
   "--cfg=feature=\\\"mio\\\"",
   "--cfg=feature=\\\"net\\\"",
   "--cfg=feature=\\\"num_cpus\\\"",
-  "--cfg=feature=\\\"once_cell\\\"",
+  "--cfg=feature=\\\"process\\\"",
+  "--cfg=feature=\\\"io-util\\\"",
+  "--cfg=feature=\\\"bytes\\\"",
+  "--cfg=feature=\\\"signal-hook-registry\\\"",
   "--cfg=feature=\\\"rt\\\"",
   "--cfg=feature=\\\"rt-multi-thread\\\"",
   "--cfg=feature=\\\"socket2\\\"",
   "--cfg=feature=\\\"sync\\\"",
   "--cfg=feature=\\\"time\\\"",
-  "--cfg=feature=\\\"winapi\\\"",
 ]
 
 # TODO(fxbug.dev/106164) This manual configuration enables the "log" so that
 # tracing macros also emit log events and binaries with setting up a
 # log::Logger receive tracing events as logs. On Fuchsia we don't need that
 # since all binaries set up a tracing Subscriber.
-[gn.package.tracing."0.1.34".platform."cfg(not(target_os = \"fuchsia\"))"]
-deps = [ ":log-v0_4_11" ]
+[gn.package.tracing."0.1.37".platform."cfg(not(target_os = \"fuchsia\"))"]
+deps = [ ":log-v0_4_20" ]
 rustflags = [
   "--cfg=feature=\\\"log\\\"",
 ]
@@ -729,7 +760,8 @@ rustflags = []
 
 [gn.package.zstd-sys."2.0.1+zstd.1.5.2"]
 rustflags = []
-
+# It is a fork:
+uses_fuchsia_license = true
 
 # These don't have build.rs scripts, but they rely on Cargo populating the environment variables
 #
@@ -740,34 +772,34 @@ rustflags = []
 env_vars = [ "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/handlebars-4.3.5" ]
 
 # Refer to //build/icu/README.md for the details of the approach.
-[gn.package.rust_icu_uchar."4.0.0"]
+[gn.package.rust_icu_uchar."4.2.3"]
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rust_crates.gni", group_name = "icu_group", rule_name = "icu_rust_library" }
-[gn.package.rust_icu_common."4.0.0"]
+[gn.package.rust_icu_common."4.2.3"]
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rust_crates.gni", group_name = "icu_group", rule_name = "icu_rust_library" }
-[gn.package.rust_icu_sys."4.0.0"]
+[gn.package.rust_icu_sys."4.2.3"]
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rust_crates.gni", group_name = "icu_group", rule_name = "icu_rust_library" }
-[gn.package.rust_icu_ucal."4.0.0"]
+[gn.package.rust_icu_ucal."4.2.3"]
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rust_crates.gni", group_name = "icu_group", rule_name = "icu_rust_library" }
-[gn.package.rust_icu_udat."4.0.0"]
+[gn.package.rust_icu_udat."4.2.3"]
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rust_crates.gni", group_name = "icu_group", rule_name = "icu_rust_library" }
-[gn.package.rust_icu_udata."4.0.0"]
+[gn.package.rust_icu_udata."4.2.3"]
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rust_crates.gni", group_name = "icu_group", rule_name = "icu_rust_library" }
-[gn.package.rust_icu_uenum."4.0.0"]
+[gn.package.rust_icu_uenum."4.2.3"]
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rust_crates.gni", group_name = "icu_group", rule_name = "icu_rust_library" }
-[gn.package.rust_icu_uloc."4.0.0"]
+[gn.package.rust_icu_uloc."4.2.3"]
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rust_crates.gni", group_name = "icu_group", rule_name = "icu_rust_library" }
-[gn.package.rust_icu_unorm2."4.0.0"]
+[gn.package.rust_icu_unorm2."4.2.3"]
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rust_crates.gni", group_name = "icu_group", rule_name = "icu_rust_library" }
-[gn.package.rust_icu_ustring."4.0.0"]
+[gn.package.rust_icu_ustring."4.2.3"]
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rust_crates.gni", group_name = "icu_group", rule_name = "icu_rust_library" }
 
@@ -788,6 +820,14 @@ env_vars = [ "CARGO_PKG_VERSION=\\\"0.9.0\\\"", "CARGO_PKG_NAME=\\\"unic-ucd-blo
 [gn.package.wasm-bindgen-shared."0.2.63"]
 # Do not quote, this is embedded directly in .wasm sections and is needed by wasm-bindgen.
 env_vars = [ "CARGO_PKG_VERSION=0.2.63" ]
+
+[gn.package.libm."0.2.1"]
+# It is a fork:
+uses_fuchsia_license = true
+
+[gn.package.fuchsia-cprng."0.1.1"]
+# Lives in-tree
+uses_fuchsia_license = true
 
 # These dependencies have build.rs scripts, but dummy invocations indicating they
 # do not need to be run are sufficient for our build.

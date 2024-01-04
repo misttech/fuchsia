@@ -8,9 +8,11 @@
 
 #include "src/connectivity/bluetooth/core/bt-host/common/assert.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/expiring_set.h"
+#include "src/connectivity/bluetooth/core/bt-host/common/inspectable.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/log.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/bredr_connection.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/bredr_interrogator.h"
+#include "src/connectivity/bluetooth/core/bt-host/gap/gap.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/peer_cache.h"
 #include "src/connectivity/bluetooth/core/bt-host/hci-spec/constants.h"
 #include "src/connectivity/bluetooth/core/bt-host/hci-spec/protocol.h"
@@ -29,6 +31,7 @@ namespace {
 
 const char* const kInspectRequestsNodeName = "connection_requests";
 const char* const kInspectRequestNodeNamePrefix = "request_";
+const char* const kInspectSecurityModeName = "security_mode";
 const char* const kInspectConnectionsNodeName = "connections";
 const char* const kInspectConnectionNodeNamePrefix = "connection_";
 const char* const kInspectLastDisconnectedListName = "last_disconnected";
@@ -67,8 +70,7 @@ std::string ReasonAsString(DisconnectReason reason) {
 
 // This procedure can continue to operate independently of the existence of an
 // BrEdrConnectionManager instance, which will begin to disable Page Scan as it shuts down.
-void SetPageScanEnabled(bool enabled, hci::Transport::WeakPtr hci, async_dispatcher_t* dispatcher,
-                        hci::ResultFunction<> cb) {
+void SetPageScanEnabled(bool enabled, hci::Transport::WeakPtr hci, hci::ResultFunction<> cb) {
   BT_DEBUG_ASSERT(cb);
   auto read_enable =
       hci::EmbossCommandPacket::New<pw::bluetooth::emboss::ReadScanEnableCommandWriter>(
@@ -140,22 +142,22 @@ BrEdrConnectionManager::BrEdrConnectionManager(hci::Transport::WeakPtr hci, Peer
                                                DeviceAddress local_address,
                                                l2cap::ChannelManager* l2cap,
                                                bool use_interlaced_scan,
-                                               bool local_secure_connections_supported)
+                                               bool local_secure_connections_supported,
+                                               pw::async::Dispatcher& dispatcher)
     : hci_(std::move(hci)),
       cache_(peer_cache),
       local_address_(local_address),
       l2cap_(l2cap),
+      deny_incoming_(dispatcher),
       page_scan_interval_(0),
       page_scan_window_(0),
       use_interlaced_scan_(use_interlaced_scan),
       local_secure_connections_supported_(local_secure_connections_supported),
-      request_timeout_(kBrEdrCreateConnectionTimeout),
-      dispatcher_(async_get_default_dispatcher()),
+      dispatcher_(dispatcher),
       weak_self_(this) {
   BT_DEBUG_ASSERT(hci_.is_alive());
   BT_DEBUG_ASSERT(cache_);
   BT_DEBUG_ASSERT(l2cap_);
-  BT_DEBUG_ASSERT(dispatcher_);
 
   hci_cmd_runner_ =
       std::make_unique<hci::SequentialCommandRunner>(hci_->command_channel()->AsWeakPtr());
@@ -204,7 +206,7 @@ BrEdrConnectionManager::~BrEdrConnectionManager() {
     SendCreateConnectionCancelCommand(pending_request_->peer_address());
 
   // Become unconnectable
-  SetPageScanEnabled(/*enabled=*/false, hci_, dispatcher_, [](const auto) {});
+  SetPageScanEnabled(/*enabled=*/false, hci_, [](const auto) {});
 
   // Remove all event handlers
   for (auto handler_id : event_handler_ids_) {
@@ -225,7 +227,7 @@ void BrEdrConnectionManager::SetConnectable(bool connectable, hci::ResultFunctio
       }
       cb(status);
     };
-    SetPageScanEnabled(/*enabled=*/false, hci_, dispatcher_, std::move(not_connectable_cb));
+    SetPageScanEnabled(/*enabled=*/false, hci_, std::move(not_connectable_cb));
     return;
   }
 
@@ -240,7 +242,7 @@ void BrEdrConnectionManager::SetConnectable(bool connectable, hci::ResultFunctio
           cb(ToResult(HostError::kFailed));
           return;
         }
-        SetPageScanEnabled(/*enabled=*/true, self->hci_, self->dispatcher_, std::move(cb));
+        SetPageScanEnabled(/*enabled=*/true, self->hci_, std::move(cb));
       });
 }
 
@@ -270,6 +272,7 @@ void BrEdrConnectionManager::Pair(PeerId peer_id, BrEdrSecurityRequirements secu
     callback(ToResult(HostError::kNotFound));
     return;
   }
+
   auto& [handle, connection] = *conn_pair;
   auto pairing_callback = [pair_callback = std::move(callback)](auto, hci::Result<> status) {
     pair_callback(status);
@@ -277,7 +280,7 @@ void BrEdrConnectionManager::Pair(PeerId peer_id, BrEdrSecurityRequirements secu
   connection->pairing_state().InitiatePairing(security, std::move(pairing_callback));
 }
 
-void BrEdrConnectionManager::OpenL2capChannel(PeerId peer_id, l2cap::PSM psm,
+void BrEdrConnectionManager::OpenL2capChannel(PeerId peer_id, l2cap::Psm psm,
                                               BrEdrSecurityRequirements security_reqs,
                                               l2cap::ChannelParameters params,
                                               l2cap::ChannelCallback cb) {
@@ -336,7 +339,7 @@ BrEdrConnectionManager::SearchId BrEdrConnectionManager::AddServiceSearch(
             self->discoverer_.SingleSearch(search_id, peer_id, nullptr);
             return;
           }
-          auto client = sdp::Client::Create(std::move(channel));
+          auto client = sdp::Client::Create(std::move(channel), self->dispatcher_);
           self->discoverer_.SingleSearch(search_id, peer_id, std::move(client));
         });
   }
@@ -402,18 +405,46 @@ bool BrEdrConnectionManager::Disconnect(PeerId peer_id, DisconnectReason reason)
 
   const DeviceAddress& peer_addr = connection->link().peer_address();
   if (reason == DisconnectReason::kApiRequest) {
-    bt_log(DEBUG, "gap-bredr", "requested disconnect from peer, cooldown for %lds (addr: %s)",
-           kLocalDisconnectCooldownDuration.to_secs(), bt_str(peer_addr));
-    deny_incoming_.add_until(
-        peer_addr, async::Now(async_get_default_dispatcher()) + kLocalDisconnectCooldownDuration);
+    bt_log(
+        DEBUG, "gap-bredr", "requested disconnect from peer, cooldown for %llds (addr: %s)",
+        std::chrono::duration_cast<std::chrono::seconds>(kLocalDisconnectCooldownDuration).count(),
+        bt_str(peer_addr));
+    deny_incoming_.add_until(peer_addr, dispatcher_.now() + kLocalDisconnectCooldownDuration);
   }
 
   CleanUpConnection(handle, std::move(connections_.extract(handle).mapped()), reason);
   return true;
 }
 
+void BrEdrConnectionManager::SetSecurityMode(BrEdrSecurityMode mode) {
+  security_mode_.Set(mode);
+
+  if (mode == BrEdrSecurityMode::SecureConnectionsOnly) {
+    // `Disconnect`ing the peer must not be done while iterating through `connections_` as it
+    // removes the connection from `connections_`, hence the helper vector.
+    std::vector<PeerId> insufficiently_secure_peers;
+    for (auto& [_, connection] : connections_) {
+      if (connection.security_properties().level() != sm::SecurityLevel::kSecureAuthenticated) {
+        insufficiently_secure_peers.push_back(connection.peer_id());
+      }
+    }
+    for (PeerId id : insufficiently_secure_peers) {
+      bt_log(WARN, "gap-bredr",
+             "Peer has insufficient security for Secure Connections Only mode. \
+             Closing connection for peer (%s)",
+             bt_str(id));
+      Disconnect(id, DisconnectReason::kPairingFailed);
+    }
+  }
+  for (auto& [_, connection] : connections_) {
+    connection.set_security_mode(mode);
+  }
+}
+
 void BrEdrConnectionManager::AttachInspect(inspect::Node& parent, std::string name) {
   inspect_node_ = parent.CreateChild(name);
+
+  security_mode_.AttachInspect(inspect_node_, kInspectSecurityModeName);
 
   inspect_properties_.connections_node_ = inspect_node_.CreateChild(kInspectConnectionsNodeName);
   inspect_properties_.last_disconnected_list.AttachInspect(inspect_node_,
@@ -456,7 +487,8 @@ void BrEdrConnectionManager::AttachInspect(inspect::Node& parent, std::string na
       inspect_node_, kInspectPeerDisconnectionCountNodeName);
 }
 
-void BrEdrConnectionManager::WritePageTimeout(zx::duration page_timeout, hci::ResultFunction<> cb) {
+void BrEdrConnectionManager::WritePageTimeout(pw::chrono::SystemClock::duration page_timeout,
+                                              hci::ResultFunction<> cb) {
   BT_ASSERT(page_timeout >= hci_spec::kMinPageTimeoutDuration);
   BT_ASSERT(page_timeout <= hci_spec::kMaxPageTimeoutDuration);
 
@@ -586,15 +618,20 @@ void BrEdrConnectionManager::InitializeConnection(DeviceAddress addr,
                   handle);
     });
   };
-  auto disconnect_cb = [this, peer_id] { Disconnect(peer_id, DisconnectReason::kPairingFailed); };
+  auto disconnect_cb = [this, handle, peer_id] {
+    bt_log(WARN, "gap-bredr", "Error occurred during pairing (handle %#.4x)", handle);
+    Disconnect(peer_id, DisconnectReason::kPairingFailed);
+  };
   auto on_peer_disconnect_cb = [this, link = link.get()] { OnPeerDisconnect(link); };
   auto [conn_iter, success] = connections_.try_emplace(
       handle, peer->GetWeakPtr(), std::move(link), std::move(send_auth_request_cb),
-      std::move(disconnect_cb), std::move(on_peer_disconnect_cb), l2cap_, hci_, std::move(request));
+      std::move(disconnect_cb), std::move(on_peer_disconnect_cb), l2cap_, hci_, std::move(request),
+      dispatcher_);
   BT_ASSERT(success);
 
   BrEdrConnection& connection = conn_iter->second;
   connection.pairing_state().SetPairingDelegate(pairing_delegate_);
+  connection.set_security_mode(security_mode());
   connection.AttachInspect(
       inspect_properties_.connections_node_,
       inspect_properties_.connections_node_.UniqueName(kInspectConnectionNodeNamePrefix));
@@ -679,7 +716,7 @@ void BrEdrConnectionManager::CompleteConnectionSetup(Peer::WeakPtr peer,
                    bt_str(peer_id));
             return;
           }
-          auto client = sdp::Client::Create(std::move(channel));
+          auto client = sdp::Client::Create(std::move(channel), self->dispatcher_);
           self->discoverer_.StartServiceDiscovery(peer_id, std::move(client));
         });
   }
@@ -767,7 +804,7 @@ hci::CommandChannel::EventCallbackResult BrEdrConnectionManager::OnConnectionReq
   // Register that we're in the middle of an incoming request for this peer - create a new
   // request if one doesn't already exist
   auto [request, _] = connection_requests_.try_emplace(
-      peer_id, addr, peer_id, peer->MutBrEdr().RegisterInitializingConnection());
+      peer_id, dispatcher_, addr, peer_id, peer->MutBrEdr().RegisterInitializingConnection());
 
   inspect_properties_.incoming_.connection_attempts_.Add(1);
 
@@ -928,14 +965,14 @@ void BrEdrConnectionManager::CleanUpConnection(hci_spec::ConnectionHandle handle
 }
 
 hci::CommandChannel::EventCallbackResult BrEdrConnectionManager::OnIoCapabilityRequest(
-    const hci::EventPacket& event) {
-  BT_DEBUG_ASSERT(event.event_code() == hci_spec::kIOCapabilityRequestEventCode);
-  const auto& params = event.params<hci_spec::IOCapabilityRequestEventParams>();
+    const hci::EmbossEventPacket& event) {
+  const auto params = event.view<pw::bluetooth::emboss::IoCapabilityRequestEventView>();
+  const DeviceAddressBytes addr(params.bd_addr());
 
-  auto conn_pair = FindConnectionByAddress(params.bd_addr);
+  auto conn_pair = FindConnectionByAddress(addr);
   if (!conn_pair) {
-    bt_log(ERROR, "gap-bredr", "got %s for unconnected addr %s", __func__, bt_str(params.bd_addr));
-    SendIoCapabilityRequestNegativeReply(params.bd_addr,
+    bt_log(ERROR, "gap-bredr", "got %s for unconnected addr %s", __func__, bt_str(addr));
+    SendIoCapabilityRequestNegativeReply(addr,
                                          pw::bluetooth::emboss::StatusCode::PAIRING_NOT_ALLOWED);
     return hci::CommandChannel::EventCallbackResult::kContinue;
   }
@@ -943,7 +980,7 @@ hci::CommandChannel::EventCallbackResult BrEdrConnectionManager::OnIoCapabilityR
   auto reply = conn_ptr->pairing_state().OnIoCapabilityRequest();
 
   if (!reply) {
-    SendIoCapabilityRequestNegativeReply(params.bd_addr,
+    SendIoCapabilityRequestNegativeReply(addr,
                                          pw::bluetooth::emboss::StatusCode::PAIRING_NOT_ALLOWED);
     return hci::CommandChannel::EventCallbackResult::kContinue;
   }
@@ -960,34 +997,32 @@ hci::CommandChannel::EventCallbackResult BrEdrConnectionManager::OnIoCapabilityR
           ? pw::bluetooth::emboss::AuthenticationRequirements::GENERAL_BONDING
           : pw::bluetooth::emboss::AuthenticationRequirements::MITM_GENERAL_BONDING;
 
-  SendIoCapabilityRequestReply(params.bd_addr, io_capability, oob_data_present, auth_requirements);
+  SendIoCapabilityRequestReply(addr, io_capability, oob_data_present, auth_requirements);
   return hci::CommandChannel::EventCallbackResult::kContinue;
 }
 
 hci::CommandChannel::EventCallbackResult BrEdrConnectionManager::OnIoCapabilityResponse(
-    const hci::EventPacket& event) {
-  BT_DEBUG_ASSERT(event.event_code() == hci_spec::kIOCapabilityResponseEventCode);
-  const auto& params = event.params<hci_spec::IOCapabilityResponseEventParams>();
+    const hci::EmbossEventPacket& event) {
+  const auto params = event.view<pw::bluetooth::emboss::IoCapabilityResponseEventView>();
+  const DeviceAddressBytes addr(params.bd_addr());
 
-  auto conn_pair = FindConnectionByAddress(params.bd_addr);
+  auto conn_pair = FindConnectionByAddress(addr);
   if (!conn_pair) {
-    bt_log(INFO, "gap-bredr", "got %s for unconnected addr %s", __func__, bt_str(params.bd_addr));
+    bt_log(INFO, "gap-bredr", "got %s for unconnected addr %s", __func__, bt_str(addr));
     return hci::CommandChannel::EventCallbackResult::kContinue;
   }
-  conn_pair->second->pairing_state().OnIoCapabilityResponse(params.io_capability);
+  conn_pair->second->pairing_state().OnIoCapabilityResponse(params.io_capability().Read());
   return hci::CommandChannel::EventCallbackResult::kContinue;
 }
 
 hci::CommandChannel::EventCallbackResult BrEdrConnectionManager::OnLinkKeyRequest(
-    const hci::EventPacket& event) {
-  BT_DEBUG_ASSERT(event.event_code() == hci_spec::kLinkKeyRequestEventCode);
-  const auto& params = event.params<hci_spec::LinkKeyRequestParams>();
-
-  DeviceAddress addr(DeviceAddress::Type::kBREDR, params.bd_addr);
+    const hci::EmbossEventPacket& event) {
+  const auto params = event.view<pw::bluetooth::emboss::LinkKeyRequestEventView>();
+  const DeviceAddress addr(DeviceAddress::Type::kBREDR, DeviceAddressBytes(params.bd_addr()));
   auto* peer = cache_->FindByAddress(addr);
   if (!peer) {
     bt_log(WARN, "gap-bredr", "no peer with address %s found", bt_str(addr));
-    SendLinkKeyRequestNegativeReply(params.bd_addr);
+    SendLinkKeyRequestNegativeReply(addr.value());
     return hci::CommandChannel::EventCallbackResult::kContinue;
   }
 
@@ -996,43 +1031,42 @@ hci::CommandChannel::EventCallbackResult BrEdrConnectionManager::OnLinkKeyReques
 
   if (!conn_pair) {
     bt_log(WARN, "gap-bredr", "can't find connection for ltk (id: %s)", bt_str(peer_id));
-    SendLinkKeyRequestNegativeReply(params.bd_addr);
+    SendLinkKeyRequestNegativeReply(addr.value());
     return hci::CommandChannel::EventCallbackResult::kContinue;
   }
   auto& [handle, conn] = *conn_pair;
 
   auto link_key = conn->pairing_state().OnLinkKeyRequest();
   if (!link_key.has_value()) {
-    SendLinkKeyRequestNegativeReply(params.bd_addr);
+    SendLinkKeyRequestNegativeReply(addr.value());
     return hci::CommandChannel::EventCallbackResult::kContinue;
   }
 
-  SendLinkKeyRequestReply(params.bd_addr, link_key.value());
+  SendLinkKeyRequestReply(addr.value(), link_key.value());
   return hci::CommandChannel::EventCallbackResult::kContinue;
 }
 
 hci::CommandChannel::EventCallbackResult BrEdrConnectionManager::OnLinkKeyNotification(
-    const hci::EventPacket& event) {
-  BT_DEBUG_ASSERT(event.event_code() == hci_spec::kLinkKeyNotificationEventCode);
-  const auto& params = event.params<hci_spec::LinkKeyNotificationEventParams>();
+    const hci::EmbossEventPacket& event) {
+  const auto params = event.view<pw::bluetooth::emboss::LinkKeyNotificationEventView>();
 
-  DeviceAddress addr(DeviceAddress::Type::kBREDR, params.bd_addr);
+  const DeviceAddress addr(DeviceAddress::Type::kBREDR, DeviceAddressBytes(params.bd_addr()));
+  pw::bluetooth::emboss::KeyType key_type = params.key_type().Read();
 
   auto* peer = cache_->FindByAddress(addr);
   if (!peer) {
     bt_log(WARN, "gap-bredr",
            "no known peer with address %s found; link key not stored (key type: %u)", bt_str(addr),
-           params.key_type);
+           static_cast<uint8_t>(key_type));
     cache_->LogBrEdrBondingEvent(false);
     return hci::CommandChannel::EventCallbackResult::kContinue;
   }
 
-  bt_log(INFO, "gap-bredr", "got link key notification (key type: %u, peer: %s)", params.key_type,
-         bt_str(peer->identifier()));
+  bt_log(INFO, "gap-bredr", "got link key notification (key type: %u, peer: %s)",
+         static_cast<uint8_t>(key_type), bt_str(peer->identifier()));
 
-  auto key_type = hci_spec::LinkKeyType{params.key_type};
   sm::SecurityProperties sec_props;
-  if (key_type == hci_spec::LinkKeyType::kChangedCombination) {
+  if (key_type == pw::bluetooth::emboss::KeyType::CHANGED_COMBINATION_KEY) {
     if (!peer->bredr() || !peer->bredr()->bonded()) {
       bt_log(WARN, "gap-bredr", "can't update link key of unbonded peer %s",
              bt_str(peer->identifier()));
@@ -1043,9 +1077,9 @@ hci::CommandChannel::EventCallbackResult BrEdrConnectionManager::OnLinkKeyNotifi
     // Reuse current properties
     BT_DEBUG_ASSERT(peer->bredr()->link_key());
     sec_props = peer->bredr()->link_key()->security();
-    key_type = *sec_props.GetLinkKeyType();
+    key_type = static_cast<pw::bluetooth::emboss::KeyType>(sec_props.GetLinkKeyType().value());
   } else {
-    sec_props = sm::SecurityProperties(key_type);
+    sec_props = sm::SecurityProperties(static_cast<hci_spec::LinkKeyType>(key_type));
   }
 
   auto peer_id = peer->identifier();
@@ -1058,7 +1092,9 @@ hci::CommandChannel::EventCallbackResult BrEdrConnectionManager::OnLinkKeyNotifi
   }
 
   UInt128 key_value;
-  std::copy(params.link_key, &params.link_key[key_value.size()], key_value.begin());
+  ::emboss::support::ReadWriteContiguousBuffer(&key_value)
+      .CopyFrom(params.link_key().value().BackingStorage(), key_value.size());
+
   hci_spec::LinkKey hci_key(key_value, 0, 0);
   sm::LTK key(sec_props, hci_key);
 
@@ -1066,9 +1102,10 @@ hci::CommandChannel::EventCallbackResult BrEdrConnectionManager::OnLinkKeyNotifi
   if (!handle) {
     bt_log(WARN, "gap-bredr", "can't find current connection for ltk (peer: %s)", bt_str(peer_id));
   } else {
-    handle->second->link().set_link_key(hci_key, key_type);
-    handle->second->pairing_state().OnLinkKeyNotification(key_value, key_type,
-                                                          local_secure_connections_supported_);
+    handle->second->link().set_link_key(hci_key, static_cast<hci_spec::LinkKeyType>(key_type));
+    handle->second->pairing_state().OnLinkKeyNotification(
+        key_value, static_cast<hci_spec::LinkKeyType>(key_type),
+        local_secure_connections_supported_);
   }
 
   if (cache_->StoreBrEdrBond(addr, key)) {
@@ -1166,11 +1203,9 @@ hci::CommandChannel::EventCallbackResult BrEdrConnectionManager::OnUserPasskeyNo
 }
 
 hci::CommandChannel::EventCallbackResult BrEdrConnectionManager::OnRoleChange(
-    const hci::EventPacket& event) {
-  BT_ASSERT(event.event_code() == hci_spec::kRoleChangeEventCode);
-  const auto& params = event.params<hci_spec::RoleChangeEventParams>();
-
-  DeviceAddress address(DeviceAddress::Type::kBREDR, params.bd_addr);
+    const hci::EmbossEventPacket& event) {
+  const auto params = event.view<pw::bluetooth::emboss::RoleChangeEventView>();
+  const DeviceAddress address(DeviceAddress::Type::kBREDR, DeviceAddressBytes(params.bd_addr()));
   Peer* peer = cache_->FindByAddress(address);
   if (!peer) {
     bt_log(WARN, "gap-bredr", "got %s for unknown peer (address: %s)", __func__, bt_str(address));
@@ -1178,29 +1213,31 @@ hci::CommandChannel::EventCallbackResult BrEdrConnectionManager::OnRoleChange(
   }
   PeerId peer_id = peer->identifier();
 
+  const pw::bluetooth::emboss::ConnectionRole new_role = params.role().Read();
+
   // When a role change is requested in the HCI_Accept_Connection_Request command, a HCI_Role_Change
   // event may be received prior to the HCI_Connection_Complete event (so no connection object will
   // exist yet) (Core Spec v5.2, Vol 2, Part F, Sec 3.1).
   auto request_iter = connection_requests_.find(peer_id);
   if (request_iter != connection_requests_.end()) {
-    request_iter->second.set_role_change(params.new_role);
+    request_iter->second.set_role_change(new_role);
     return hci::CommandChannel::EventCallbackResult::kContinue;
   }
 
-  auto conn_pair = FindConnectionByAddress(params.bd_addr);
+  auto conn_pair = FindConnectionByAddress(address.value());
   if (!conn_pair) {
     bt_log(WARN, "gap-bredr", "got %s for unconnected peer %s", __func__, bt_str(peer_id));
     return hci::CommandChannel::EventCallbackResult::kContinue;
   }
 
   if (hci_is_error(event, WARN, "gap-bredr", "role change failed and remains %s (peer: %s)",
-                   hci_spec::ConnectionRoleToString(params.new_role).c_str(), bt_str(peer_id))) {
+                   hci_spec::ConnectionRoleToString(new_role).c_str(), bt_str(peer_id))) {
     return hci::CommandChannel::EventCallbackResult::kContinue;
   }
 
   bt_log(DEBUG, "gap-bredr", "role changed to %s (peer: %s)",
-         hci_spec::ConnectionRoleToString(params.new_role).c_str(), bt_str(peer_id));
-  conn_pair->second->link().set_role(params.new_role);
+         hci_spec::ConnectionRoleToString(new_role).c_str(), bt_str(peer_id));
+  conn_pair->second->link().set_role(new_role);
 
   return hci::CommandChannel::EventCallbackResult::kContinue;
 }
@@ -1271,8 +1308,8 @@ bool BrEdrConnectionManager::Connect(PeerId peer_id, ConnectResultCallback on_co
   }
   // If we are not already connected or pending, initiate a new connection
   auto [request_iter, _] = connection_requests_.try_emplace(
-      peer_id, peer->address(), peer_id, peer->MutBrEdr().RegisterInitializingConnection(),
-      std::move(on_connection_result));
+      peer_id, dispatcher_, peer->address(), peer_id,
+      peer->MutBrEdr().RegisterInitializingConnection(), std::move(on_connection_result));
   request_iter->second.AttachInspect(
       inspect_properties_.requests_node_,
       inspect_properties_.requests_node_.UniqueName(kInspectRequestNodeNamePrefix));
@@ -1323,8 +1360,8 @@ void BrEdrConnectionManager::InitiatePendingConnection(CreateConnectionParams pa
       self->OnRequestTimeout();
   };
   BrEdrConnectionRequest& pending_gap_req = connection_requests_.find(params.peer_id)->second;
-  pending_request_.emplace(params.peer_id, params.addr, on_timeout);
-  pending_request_->CreateConnection(hci_->command_channel(), dispatcher_, params.clock_offset,
+  pending_request_.emplace(params.peer_id, params.addr, on_timeout, dispatcher_);
+  pending_request_->CreateConnection(hci_->command_channel(), params.clock_offset,
                                      params.page_scan_repetition_mode, request_timeout_,
                                      on_failure);
   pending_gap_req.RecordHciCreateConnectionAttempt();
@@ -1541,9 +1578,12 @@ void BrEdrConnectionManager::RecordDisconnectInspect(const BrEdrConnection& conn
   auto& inspect_item = inspect_properties_.last_disconnected_list.CreateItem();
   inspect_item.node.RecordString(kInspectLastDisconnectedItemPeerPropertyName,
                                  conn.peer_id().ToString());
-  inspect_item.node.RecordUint(kInspectLastDisconnectedItemDurationPropertyName,
-                               conn.duration().to_secs());
-  inspect_item.node.RecordInt(kInspectTimestampPropertyName, async::Now(dispatcher_).get());
+  uint64_t conn_duration_s =
+      std::chrono::duration_cast<std::chrono::seconds>(conn.duration()).count();
+  inspect_item.node.RecordUint(kInspectLastDisconnectedItemDurationPropertyName, conn_duration_s);
+
+  int64_t time_ns = dispatcher_.now().time_since_epoch().count();
+  inspect_item.node.RecordInt(kInspectTimestampPropertyName, time_ns);
 
   switch (reason) {
     case DisconnectReason::kApiRequest:

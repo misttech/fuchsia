@@ -180,6 +180,16 @@ The code contains references to the following documents.
   - version 2.12a, dated April 2016; available from Synopsis
 * [Synopsis DesignWare Cores MIPI DSI Host Controller Databook][dw-dsi-databook]
   - version 1.51a, dated May 2021; available from Synopsis
+* [High-Definition Multimedia Interface (HDMI) Specification][hdmi1-spec]
+  - version 1.4b, dated October 11 2011, referenced as "HDMI 1.4b spec"
+* [HDMI Forum High-Definition Multimedia Interface (HDMI) Specification][hdmi2-spec]
+  - version 2.1b, dated July 20 2023, referenced as "HDMI 2 spec"
+* [MIPI Alliance Specification for Display Serial Interface 2 (DSI-2)][mipi-dsi2-spec] -
+  Version 2.1, dated 21 December 2022, referenced as "DSI spec"
+* [MIPI Alliance Specification for D-PHY][mipi-dphy-spec] - Version 3.5, dated
+  29 March 2023, referenced as "D-PHY spec"
+* [MIPI Alliance Specification for Display Command Set (MIPI DCS)][mipi-dcs-spec] -
+  Version 2.0, dated 6 November 2022, referenced as "DCS spec"
 
 [a311d-datasheet]: https://dl.khadas.com/products/vim3/datasheet/a311d_datasheet_08_wesion.pdf
 [a311d2-datasheet]: https://dl.khadas.com/products/vim4/datasheet/amlogic_a311d2_datasheet_v06.pdf
@@ -188,3 +198,8 @@ The code contains references to the following documents.
 [s912-datasheet]: https://dl.khadas.com/products/vim2/datasheet/s912_datasheet_v0.220170314publicversion-wesion.pdf
 [dw-hmdi-databook]: https://www.synopsys.com/dw/doc.php/iip/DWC_hdmi_tx/2.12a/doc/DWC_hdmi_tx_databook.pdf
 [dw-dsi-databook]: https://www.synopsys.com/dw/doc.php/iip/DWC_mipi_dsi_host/1.51a/doc/DWC_mipi_dsi_host_databook.pdf
+[hdmi1-spec]: https://www.hdmi.org/spec/hdmi1_4b
+[hdmi2-spec]: https://www.hdmi.org/spec/hdmi2_1
+[mipi-dsi2-spec]: https://www.mipi.org/specifications/dsi-2
+[mipi-dphy-spec]: https://www.mipi.org/specifications/d-phy
+[mipi-dcs-spec]: https://www.mipi.org/specifications/display-command-set

@@ -146,17 +146,31 @@ class Dispatcher : public async_dispatcher_t,
     void OnThreadWakeup();
 
     // Returns the number of threads that have been started on |loop_|.
-    uint32_t num_threads() {
+    uint32_t num_threads() const {
       fbl::AutoLock al(&lock_);
       return num_threads_;
     }
 
-    uint32_t num_dispatchers() {
+    uint32_t max_threads() const {
+      fbl::AutoLock al(&lock_);
+      return max_threads_;
+    }
+
+    zx_status_t set_max_threads(uint32_t max_threads) {
+      fbl::AutoLock al(&lock_);
+      if (max_threads < num_threads_) {
+        return ZX_ERR_OUT_OF_RANGE;
+      }
+      max_threads_ = max_threads;
+      return ZX_OK;
+    }
+
+    uint32_t num_dispatchers() const {
       fbl::AutoLock al(&lock_);
       return num_dispatchers_;
     }
 
-    std::string_view scheduler_role() { return scheduler_role_; }
+    std::string_view scheduler_role() const { return scheduler_role_; }
     async::Loop* loop() { return &loop_; }
 
    private:
@@ -226,12 +240,18 @@ class Dispatcher : public async_dispatcher_t,
 
     std::string scheduler_role_;
 
-    fbl::Mutex lock_;
+    mutable fbl::Mutex lock_;
     // Tracks the number of dispatchers which have sync calls allowed. We will only spawn additional
     // threads if this number exceeds |number_threads_|.
     uint32_t dispatcher_threads_needed_ __TA_GUARDED(&lock_) = 0;
     // Tracks the number of threads we've spawned via |loop_|.
     uint32_t num_threads_ __TA_GUARDED(&lock_) = 0;
+    // Total number of threads we will spawn.
+    // TODO(fxbug.dev/135980): We are clamping number_threads_ to 10 to avoid spawning too many
+    // threads. Technically this can result in a deadlock scenario in a very complex driver host. We
+    // need better support for dynamically starting threads as necessary.
+    uint32_t max_threads_ __TA_GUARDED(&lock_) = 10;
+
     uint32_t num_dispatchers_ __TA_GUARDED(&lock_) = 0;
 
     // Stores unbound irqs which will be garbage collected at a later time.
@@ -266,6 +286,8 @@ class Dispatcher : public async_dispatcher_t,
     bool allow_sync_calls;
     DispatcherState state;
     std::vector<TaskDebugInfo> queued_tasks;
+    size_t num_inlined_requests;
+    size_t num_total_requests;
   };
 
   // Public for std::make_unique.
@@ -562,13 +584,18 @@ class Dispatcher : public async_dispatcher_t,
   };
 
   // A timer primitive built on top of an async task.
-  class Timer {
+  // We do not use |async::Task|, as |async::Task::Cancel| will assert that cancellation is
+  // successful.
+  class Timer : public async_task_t {
    public:
-    Timer(Dispatcher* dispatcher) : dispatcher_(dispatcher) {}
+    explicit Timer(Dispatcher* dispatcher)
+        : async_task_t{{ASYNC_STATE_INIT}, &Timer::Handler, ZX_TIME_INFINITE},
+          dispatcher_(dispatcher) {}
 
-    zx_status_t BeginWait(async_dispatcher_t* dispatcher, zx::time deadline) {
+    zx_status_t BeginWait(zx::time deadline) {
       ZX_ASSERT(is_armed() == false);
-      zx_status_t status = task_.PostForTime(dispatcher, deadline);
+      this->deadline = deadline.get();
+      zx_status_t status = async_post_task(dispatcher_->process_shared_dispatcher_, this);
       if (status == ZX_OK) {
         current_deadline_ = deadline;
       }
@@ -582,7 +609,8 @@ class Dispatcher : public async_dispatcher_t,
         // Nothing to cancel.
         return ZX_OK;
       }
-      zx_status_t status = task_.Cancel();
+
+      zx_status_t status = async_cancel_task(dispatcher_->process_shared_dispatcher_, this);
       // ZX_ERR_NOT_FOUND can happen here when a pending timer fires and
       // the packet is picked up by port_wait in another thread but has
       // not reached dispatch.
@@ -596,9 +624,15 @@ class Dispatcher : public async_dispatcher_t,
     zx::time current_deadline() const { return current_deadline_; }
 
    private:
+    static void Handler(async_dispatcher_t* dispatcher, async_task_t* task, zx_status_t status) {
+      auto self = static_cast<Timer*>(task);
+      if (status == ZX_OK) {
+        self->Handler();
+      }
+    }
+
     void Handler();
 
-    async::TaskClosureMethod<Timer, &Timer::Handler> task_{this};
     // zx::time::infinite() means we are not scheduled.
     zx::time current_deadline_ = zx::time::infinite();
     Dispatcher* dispatcher_;
@@ -608,7 +642,6 @@ class Dispatcher : public async_dispatcher_t,
   void ResetTimerLocked() __TA_REQUIRES(&callback_lock_);
   void InsertDelayedTaskSortedLocked(std::unique_ptr<DelayedTask> task)
       __TA_REQUIRES(&callback_lock_);
-  void CheckDelayedTasks() __TA_EXCLUDES(&callback_lock_);
   void CheckDelayedTasksLocked() __TA_REQUIRES(&callback_lock_);
 
   // Calls |callback_request|.
@@ -694,6 +727,9 @@ class Dispatcher : public async_dispatcher_t,
   fbl::DoublyLinkedList<std::unique_ptr<AsyncIrq>> irqs_ __TA_GUARDED(&callback_lock_);
 
   Timer timer_ __TA_GUARDED(&callback_lock_);
+  // True if the dispatcher has begun shutting down, but is waiting on the timer
+  // handler to run and complete in another thread.
+  bool shutdown_waiting_for_timer_ __TA_GUARDED(&callback_lock_) = false;
 
   // Tasks which should move into callback_queue as soon as they are ready.
   // Sorted by earliest deadline first.
@@ -709,6 +745,10 @@ class Dispatcher : public async_dispatcher_t,
 
   // Number of threads currently servicing callbacks.
   size_t num_active_threads_ __TA_GUARDED(&callback_lock_) = 0;
+
+  // Stats for a dispatcher.
+  size_t num_inlined_requests_ __TA_GUARDED(&callback_lock_) = 0;
+  size_t num_total_requests_ __TA_GUARDED(&callback_lock_) = 0;
 
   CompleteShutdownEventManager complete_shutdown_event_manager_ __TA_GUARDED(&callback_lock_);
 
@@ -749,6 +789,10 @@ class DispatcherCoordinator {
   static zx_status_t TokenRegister(zx_handle_t token, fdf_dispatcher_t* dispatcher,
                                    fdf_token_t* handler);
   static zx_status_t TokenTransfer(zx_handle_t token, fdf_handle_t channel);
+
+  // Implementation of fdf_env_*.
+  static uint32_t GetThreadLimit(std::string_view scheduler_role);
+  static zx_status_t SetThreadLimit(std::string_view scheduler_role, uint32_t max_threads);
 
   // Returns ZX_OK if |dispatcher| was added successfully.
   // Returns ZX_ERR_BAD_STATE if the driver is currently shutting down.

@@ -8,49 +8,47 @@ namespace f2fs {
 namespace {
 
 TEST(FsckTest, InvalidSuperblockMagic) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
+  auto sb_or = LoadSuperblock(*bc);
+  ASSERT_TRUE(sb_or.is_ok());
+
   FsckWorker fsck(std::move(bc), FsckOptions{.repair = false});
-
   ASSERT_EQ(fsck.GetValidSuperblock(), ZX_OK);
 
-  // Get the first superblock.
-  FsBlock<> superblock;
-  ASSERT_TRUE(fsck.GetSuperblock(0, superblock).is_ok());
-
-  Superblock *superblock_pointer = reinterpret_cast<Superblock *>(&superblock + kSuperOffset);
-  ASSERT_EQ(fsck.SanityCheckRawSuper(superblock_pointer), ZX_OK);
-
-  // Pollute the first superblock and see validation fails.
+  // Pollute the first superblock.
+  Superblock *superblock_pointer = (*sb_or).get();
   superblock_pointer->magic = 0xdeadbeef;
-  ASSERT_EQ(fsck.SanityCheckRawSuper(superblock_pointer), ZX_ERR_INTERNAL);
-  ASSERT_EQ(fsck.WriteBlock(&superblock, kSuperblockStart), ZX_OK);
 
-  // Superblock load does not fail yet, since f2fs keeps a spare superblock.
+  BlockBuffer block;
+  memcpy(block.get<uint8_t>() + kSuperOffset, superblock_pointer, sizeof(Superblock));
+  ASSERT_EQ(fsck.WriteBlock(&block, kSuperblockStart), ZX_OK);
+
+  // 2nd superblock should be ok.
   ASSERT_EQ(fsck.GetValidSuperblock(), ZX_OK);
+  ASSERT_EQ(fsck.Run(), ZX_OK);
 
   // Pollute the second superblock, fsck won't proceed.
-  ASSERT_EQ(fsck.WriteBlock(&superblock, kSuperblockStart + 1), ZX_OK);
-  ASSERT_EQ(fsck.GetValidSuperblock(), ZX_ERR_NOT_FOUND);
+  ASSERT_EQ(fsck.WriteBlock(&block, kSuperblockStart + 1), ZX_OK);
   ASSERT_EQ(fsck.Run(), ZX_ERR_NOT_FOUND);
 }
 
 TEST(FsckTest, InvalidCheckpointCrc) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
-  FsckWorker fsck(std::move(bc), FsckOptions{.repair = false});
+  auto sb_or = LoadSuperblock(*bc);
+  ASSERT_TRUE(sb_or.is_ok());
 
+  FsckWorker fsck(std::move(bc), FsckOptions{.repair = false});
   ASSERT_EQ(fsck.GetValidSuperblock(), ZX_OK);
   ASSERT_EQ(fsck.GetValidCheckpoint(), ZX_OK);
 
-  FsBlock<> superblock;
-  ASSERT_TRUE(fsck.GetSuperblock(0, superblock).is_ok());
-  Superblock *superblock_pointer = reinterpret_cast<Superblock *>(&superblock + kSuperOffset);
+  Superblock *superblock_pointer = (*sb_or).get();
 
   // Read the 1st checkpoint pack header.
   uint32_t first_checkpoint_header_addr = LeToCpu(superblock_pointer->cp_blkaddr);
   ASSERT_TRUE(fsck.ValidateCheckpoint(first_checkpoint_header_addr).is_ok());
-  FsBlock<Checkpoint> first_checkpoint_block;
+  BlockBuffer<Checkpoint> first_checkpoint_block;
   ASSERT_EQ(fsck.ReadBlock(&first_checkpoint_block, first_checkpoint_header_addr), ZX_OK);
 
   // Pollute the 1st checkpoint pack header and see validation fails.
@@ -67,7 +65,7 @@ TEST(FsckTest, InvalidCheckpointCrc) {
   uint32_t second_checkpoint_header_addr = LeToCpu(superblock_pointer->cp_blkaddr) +
                                            (1 << LeToCpu(superblock_pointer->log_blocks_per_seg));
   ASSERT_TRUE(fsck.ValidateCheckpoint(second_checkpoint_header_addr).is_ok());
-  FsBlock<Checkpoint> second_checkpoint_block;
+  BlockBuffer<Checkpoint> second_checkpoint_block;
   ASSERT_EQ(fsck.ReadBlock(&second_checkpoint_block, second_checkpoint_header_addr), ZX_OK);
 
   // This time pollute the checkpoint pack footer and see validation fails.
@@ -97,17 +95,16 @@ TEST(FsckTest, UnreachableNatEntry) {
   constexpr uint32_t fake_ino = 7u;
   constexpr uint32_t fake_block_addr = 123u;
 
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
+  auto sb_or = LoadSuperblock(*bc);
+  ASSERT_TRUE(sb_or.is_ok());
   FsckWorker fsck(std::move(bc), FsckOptions{.repair = false});
 
-  // Read the superblock to locate NAT.
-  FsBlock<> superblock;
-  ASSERT_TRUE(fsck.GetSuperblock(0, superblock).is_ok());
-  auto superblock_pointer = reinterpret_cast<Superblock *>(&superblock + kSuperOffset);
+  Superblock *superblock_pointer = (*sb_or).get();
 
   // Read the NAT block.
-  FsBlock<NatBlock> nat_block;
+  BlockBuffer<NatBlock> nat_block;
   ASSERT_EQ(fsck.ReadBlock(&nat_block, LeToCpu(superblock_pointer->nat_blkaddr)), ZX_OK);
 
   ASSERT_EQ(LeToCpu(nat_block->entries[fake_nid].ino), 0u);
@@ -149,23 +146,22 @@ TEST(FsckTest, UnreachableNatEntryInJournal) {
   constexpr uint32_t fake_ino = 7u;
   constexpr uint32_t fake_block_addr = 123u;
 
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
+  auto sb_or = LoadSuperblock(*bc);
+  ASSERT_TRUE(sb_or.is_ok());
   FsckWorker fsck(std::move(bc), FsckOptions{.repair = false});
 
-  // Read the superblock to locate checkpoint.
-  FsBlock<> superblock;
-  ASSERT_TRUE(fsck.GetSuperblock(0, superblock).is_ok());
-  auto superblock_pointer = reinterpret_cast<Superblock *>(&superblock + kSuperOffset);
+  Superblock *superblock_pointer = (*sb_or).get();
 
   // Read the checkpoint to locate hot data summary (which holds Nat journal).
-  FsBlock<Checkpoint> checkpoint;
+  BlockBuffer<Checkpoint> checkpoint;
   ASSERT_EQ(fsck.ReadBlock(&checkpoint, LeToCpu(superblock_pointer->cp_blkaddr)), ZX_OK);
   ASSERT_FALSE(checkpoint->ckpt_flags & static_cast<uint32_t>(CpFlag::kCpCompactSumFlag));
   auto summary_offset = checkpoint->cp_pack_start_sum;
 
   // Read the hot data summary.
-  FsBlock<SummaryBlock> hot_data_summary;
+  BlockBuffer<SummaryBlock> hot_data_summary;
   ASSERT_EQ(
       fsck.ReadBlock(&hot_data_summary, LeToCpu(superblock_pointer->cp_blkaddr) + summary_offset),
       ZX_OK);
@@ -219,23 +215,22 @@ TEST(FsckTest, UnreachableSitEntry) {
   constexpr uint32_t target_segment = 7u;
   constexpr uint32_t target_offset = 123u;
 
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
+  auto sb_or = LoadSuperblock(*bc);
+  ASSERT_TRUE(sb_or.is_ok());
   FsckWorker fsck(std::move(bc), FsckOptions{.repair = false});
 
-  // Read the superblock to locate SIT.
-  FsBlock<> superblock;
-  ASSERT_TRUE(fsck.GetSuperblock(0, superblock).is_ok());
-  auto superblock_pointer = reinterpret_cast<Superblock *>(&superblock + kSuperOffset);
+  Superblock *superblock_pointer = (*sb_or).get();
 
   // Read the SIT block.
-  FsBlock<SitBlock> sit_block;
+  BlockBuffer<SitBlock> sit_block;
   ASSERT_EQ(fsck.ReadBlock(&sit_block, LeToCpu(superblock_pointer->sit_blkaddr)), ZX_OK);
 
   // Insert an unreachable entry and update counter.
   // SIT is consistent itself but the entry is unreachable from the directory tree.
-  ASSERT_EQ(TestValidBitmap(target_offset, sit_block->entries[target_segment].valid_map), 0);
-  SetValidBitmap(target_offset, sit_block->entries[target_segment].valid_map);
+  PageBitmap bits(sit_block->entries[target_segment].valid_map, kSitVBlockMapSizeInBit);
+  ASSERT_EQ(bits.Set(ToMsbFirst(target_offset)), false);
 
   sit_block->entries[target_segment].vblocks =
       CpuToLe(static_cast<uint16_t>(LeToCpu(sit_block->entries[target_segment].vblocks) + 1));
@@ -251,10 +246,9 @@ TEST(FsckTest, UnreachableSitEntry) {
 
   // Re-read the SIT block to check it is repaired.
   ASSERT_EQ(fsck.ReadBlock(&sit_block, LeToCpu(superblock_pointer->sit_blkaddr)), ZX_OK);
-  ASSERT_EQ(TestValidBitmap(target_offset, sit_block->entries[target_segment].valid_map), 0);
+  ASSERT_EQ(bits.Set(ToMsbFirst(target_offset)), false);
 
   // Re-insert the unreachable entry.
-  SetValidBitmap(target_offset, sit_block->entries[target_segment].valid_map);
   sit_block->entries[target_segment].vblocks =
       CpuToLe(static_cast<uint16_t>(LeToCpu(sit_block->entries[target_segment].vblocks) + 1));
   ASSERT_EQ(fsck.WriteBlock(&sit_block, LeToCpu(superblock_pointer->sit_blkaddr)), ZX_OK);
@@ -269,31 +263,30 @@ TEST(FsckTest, UnreachableSitEntryInJournal) {
   constexpr uint32_t target_entry_index = 3u;
   constexpr uint32_t target_offset = 123u;
 
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
+  auto sb_or = LoadSuperblock(*bc);
+  ASSERT_TRUE(sb_or.is_ok());
   FsckWorker fsck(std::move(bc), FsckOptions{.repair = false});
 
-  // Read the superblock to locate SIT.
-  FsBlock<> superblock;
-  ASSERT_TRUE(fsck.GetSuperblock(0, superblock).is_ok());
-  auto superblock_pointer = reinterpret_cast<Superblock *>(&superblock + kSuperOffset);
+  Superblock *superblock_pointer = (*sb_or).get();
 
   // Read the checkpoint to locate cold data summary (which holds Sit journal).
-  FsBlock<Checkpoint> checkpoint;
+  BlockBuffer<Checkpoint> checkpoint;
   ASSERT_EQ(fsck.ReadBlock(&checkpoint, LeToCpu(superblock_pointer->cp_blkaddr)), ZX_OK);
   ASSERT_FALSE(checkpoint->ckpt_flags & static_cast<uint32_t>(CpFlag::kCpCompactSumFlag));
   auto offset =
       LeToCpu(superblock_pointer->cp_blkaddr) + LeToCpu(checkpoint->cp_pack_start_sum) + 2;
 
   // Read the cold data summary.
-  FsBlock<SummaryBlock> cold_data_summary;
+  BlockBuffer<SummaryBlock> cold_data_summary;
   ASSERT_EQ(fsck.ReadBlock(&cold_data_summary, offset), ZX_OK);
 
   // Sit journal holds 6 summaries for open segments.
   // Set an address bit that is unreachable.
   SitEntry &target_sit_entry = cold_data_summary->sit_j.entries[target_entry_index].se;
-  ASSERT_EQ(TestValidBitmap(target_offset, target_sit_entry.valid_map), 0);
-  SetValidBitmap(target_offset, target_sit_entry.valid_map);
+  PageBitmap bits(target_sit_entry.valid_map, kSitVBlockMapSizeInBit);
+  ASSERT_EQ(bits.Set(ToMsbFirst(target_offset)), false);
   target_sit_entry.vblocks = CpuToLe(static_cast<uint16_t>(LeToCpu(target_sit_entry.vblocks) + 1));
 
   ASSERT_EQ(fsck.WriteBlock(&cold_data_summary, offset), ZX_OK);
@@ -307,12 +300,12 @@ TEST(FsckTest, UnreachableSitEntryInJournal) {
 
   // Re-read the summary to check it is repaired.
   ASSERT_EQ(fsck.ReadBlock(&cold_data_summary, offset), ZX_OK);
-  ASSERT_EQ(TestValidBitmap(target_offset, target_sit_entry.valid_map), 0);
+  ASSERT_EQ(bits.Test(ToMsbFirst(target_offset)), false);
 
   // Re-insert the unreachable entry.
   SitEntry &reinsert_sit_entry = cold_data_summary->sit_j.entries[target_entry_index].se;
-  ASSERT_EQ(TestValidBitmap(target_offset, reinsert_sit_entry.valid_map), 0);
-  SetValidBitmap(target_offset, reinsert_sit_entry.valid_map);
+  PageBitmap reinsert_bits(reinsert_sit_entry.valid_map, kSitVBlockMapSizeInBit);
+  ASSERT_EQ(reinsert_bits.Set(ToMsbFirst(target_offset)), false);
   reinsert_sit_entry.vblocks =
       CpuToLe(static_cast<uint16_t>(LeToCpu(reinsert_sit_entry.vblocks) + 1));
   ASSERT_EQ(fsck.WriteBlock(&cold_data_summary, offset), ZX_OK);
@@ -324,7 +317,7 @@ TEST(FsckTest, UnreachableSitEntryInJournal) {
 }
 
 TEST(FsckTest, OrphanNodes) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
 
   // Preconditioning
@@ -332,7 +325,6 @@ TEST(FsckTest, OrphanNodes) {
     std::unique_ptr<F2fs> fs;
     async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
     MountOptions options;
-    ASSERT_EQ(options.SetValue(MountOption::kInlineData, 0), ZX_OK);
     FileTester::MountWithOptions(loop.dispatcher(), options, &bc, &fs);
 
     fbl::RefPtr<VnodeF2fs> root;
@@ -349,10 +341,10 @@ TEST(FsckTest, OrphanNodes) {
     FileTester::AppendToFile(file.get(), buf, kPageSize);
     WritebackOperation op = {.bSync = true};
     file->Writeback(op);
-    fs->WriteCheckpoint(false, false);
+    fs->SyncFs(false);
 
     FileTester::DeleteChild(root_dir.get(), "test", false);
-    fs->WriteCheckpoint(false, false);
+    fs->SyncFs(false);
 
     ASSERT_EQ(file->Close(), ZX_OK);
     file = nullptr;
@@ -367,7 +359,7 @@ TEST(FsckTest, OrphanNodes) {
 }
 
 TEST(FsckTest, InvalidBlockAddress) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
 
   FsckWorker fsck(std::move(bc), FsckOptions{.repair = false});
@@ -377,7 +369,7 @@ TEST(FsckTest, InvalidBlockAddress) {
 }
 
 TEST(FsckTest, InvalidNatEntry) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
 
   block_t data_blkaddr;
@@ -386,7 +378,6 @@ TEST(FsckTest, InvalidNatEntry) {
     std::unique_ptr<F2fs> fs;
     async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
     MountOptions options;
-    ASSERT_EQ(options.SetValue(MountOption::kInlineData, 0), ZX_OK);
     FileTester::MountWithOptions(loop.dispatcher(), options, &bc, &fs);
 
     fbl::RefPtr<VnodeF2fs> root;
@@ -427,11 +418,11 @@ TEST(FsckTest, InvalidNatEntry) {
                       (seg_off << fsck.GetSuperblockInfo().GetLogBlocksPerSeg() << 1) +
                       (block_off & ((1 << fsck.GetSuperblockInfo().GetLogBlocksPerSeg()) - 1)));
 
-  if (TestValidBitmap(block_off, fsck.GetNodeManager().GetNatBitmap())) {
+  if (fsck.GetNodeManager().GetNatBitmap().GetOne(ToMsbFirst(block_off))) {
     nat_blkaddr += fsck.GetSuperblockInfo().GetBlocksPerSeg();
   }
 
-  FsBlock<NatBlock> nat_block;
+  BlockBuffer<NatBlock> nat_block;
   ASSERT_EQ(fsck.ReadBlock(&nat_block, nat_blkaddr), ZX_OK);
 
   // Corrupt root_ino block address.
@@ -460,7 +451,7 @@ TEST(FsckTest, InvalidNatEntry) {
 }
 
 TEST(FsckTest, InvalidSsaEntry) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
 
   block_t data_blkaddr;
@@ -470,7 +461,6 @@ TEST(FsckTest, InvalidSsaEntry) {
     std::unique_ptr<F2fs> fs;
     async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
     MountOptions options;
-    ASSERT_EQ(options.SetValue(MountOption::kInlineData, 0), ZX_OK);
     FileTester::MountWithOptions(loop.dispatcher(), options, &bc, &fs);
 
     fbl::RefPtr<VnodeF2fs> root;
@@ -512,7 +502,7 @@ TEST(FsckTest, InvalidSsaEntry) {
   uint32_t offset = blkoff_from_main % (1 << fsck.GetSuperblockInfo().GetLogBlocksPerSeg());
 
   {
-    FsBlock<SummaryBlock> ssa_block;
+    BlockBuffer<SummaryBlock> ssa_block;
     block_t ssa_blkaddr = fsck.GetSegmentManager().GetSumBlock(segno);
     ASSERT_EQ(fsck.ReadBlock(&ssa_block, ssa_blkaddr), ZX_OK);
 
@@ -527,7 +517,7 @@ TEST(FsckTest, InvalidSsaEntry) {
 }
 
 TEST(FsckTest, WrongInodeHardlinkCount) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   nid_t ino;
   uint32_t links;
   FileTester::MkfsOnFakeDev(&bc);
@@ -567,7 +557,7 @@ TEST(FsckTest, WrongInodeHardlinkCount) {
   ASSERT_EQ(fsck.DoMount(), ZX_OK);
 
   // Retrieve the node block with the saved ino.
-  FsBlock<Node> node_block;
+  BlockBuffer<Node> node_block;
   auto node_info_or = fsck.ReadNodeBlock(ino, node_block);
   ASSERT_TRUE(node_info_or.is_ok());
 
@@ -606,20 +596,20 @@ TEST(FsckTest, WrongInodeHardlinkCount) {
 }
 
 TEST(FsckTest, InconsistentCheckpointNodeCount) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
+  auto sb_or = LoadSuperblock(*bc);
+  ASSERT_TRUE(sb_or.is_ok());
   FsckWorker fsck(std::move(bc), FsckOptions{.repair = false});
 
   ASSERT_EQ(fsck.GetValidSuperblock(), ZX_OK);
   ASSERT_EQ(fsck.GetValidCheckpoint(), ZX_OK);
 
-  FsBlock<> superblock;
-  ASSERT_TRUE(fsck.GetSuperblock(0, superblock).is_ok());
-  Superblock *superblock_pointer = reinterpret_cast<Superblock *>(&superblock + kSuperOffset);
+  Superblock *superblock_pointer = (*sb_or).get();
   ASSERT_TRUE(fsck.ValidateCheckpoint(LeToCpu(superblock_pointer->cp_blkaddr)).is_ok());
 
   // Read the 1st checkpoint pack header.
-  FsBlock<Checkpoint> checkpoint;
+  BlockBuffer<Checkpoint> checkpoint;
   ASSERT_EQ(fsck.ReadBlock(&checkpoint, LeToCpu(superblock_pointer->cp_blkaddr)), ZX_OK);
 
   // Modify the checkpoint's node count (and CRC).
@@ -667,7 +657,7 @@ TEST(FsckTest, InconsistentCheckpointNodeCount) {
 }
 
 TEST(FsckTest, InconsistentInodeFooter) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   nid_t ino;
   FileTester::MkfsOnFakeDev(&bc);
 
@@ -702,7 +692,7 @@ TEST(FsckTest, InconsistentInodeFooter) {
   ASSERT_EQ(fsck.DoMount(), ZX_OK);
 
   // Retrieve the node block with the saved ino.
-  FsBlock<Node> node_block;
+  BlockBuffer<Node> node_block;
   auto node_info_or = fsck.ReadNodeBlock(ino, node_block);
   ASSERT_TRUE(node_info_or.is_ok());
 
@@ -725,7 +715,7 @@ TEST(FsckTest, InconsistentInodeFooter) {
 }
 
 TEST(FsckTest, InodeLinkCountAndBlockCount) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   nid_t ino;
   FileTester::MkfsOnFakeDev(&bc);
 
@@ -760,7 +750,7 @@ TEST(FsckTest, InodeLinkCountAndBlockCount) {
   ASSERT_EQ(fsck.DoMount(), ZX_OK);
 
   // Retrieve the node block with the saved ino.
-  FsBlock<Node> node_block;
+  BlockBuffer<Node> node_block;
   auto node_info_or = fsck.ReadNodeBlock(ino, node_block);
   ASSERT_TRUE(node_info_or.is_ok());
 
@@ -782,20 +772,20 @@ TEST(FsckTest, InodeLinkCountAndBlockCount) {
 }
 
 TEST(FsckTest, InvalidNextOffsetInCurseg) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
+  auto sb_or = LoadSuperblock(*bc);
+  ASSERT_TRUE(sb_or.is_ok());
   FsckWorker fsck(std::move(bc), FsckOptions{.repair = false});
 
   ASSERT_EQ(fsck.GetValidSuperblock(), ZX_OK);
   ASSERT_EQ(fsck.GetValidCheckpoint(), ZX_OK);
 
-  FsBlock<> superblock;
-  ASSERT_TRUE(fsck.GetSuperblock(0, superblock).is_ok());
-  Superblock *superblock_pointer = reinterpret_cast<Superblock *>(&superblock + kSuperOffset);
+  Superblock *superblock_pointer = (*sb_or).get();
   ASSERT_TRUE(fsck.ValidateCheckpoint(LeToCpu(superblock_pointer->cp_blkaddr)).is_ok());
 
   // Read the 1st checkpoint pack header.
-  FsBlock<Checkpoint> checkpoint;
+  BlockBuffer<Checkpoint> checkpoint;
   ASSERT_EQ(fsck.ReadBlock(&checkpoint, LeToCpu(superblock_pointer->cp_blkaddr)), ZX_OK);
 
   // Corrupt the next_blkoff for hot node curseg (and CRC).
@@ -842,7 +832,7 @@ TEST(FsckTest, InvalidNextOffsetInCurseg) {
 }
 
 TEST(FsckTest, WrongDataExistFlag) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   nid_t ino;
   FileTester::MkfsOnFakeDev(&bc);
 
@@ -850,8 +840,6 @@ TEST(FsckTest, WrongDataExistFlag) {
     std::unique_ptr<F2fs> fs;
     async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
     MountOptions options{};
-    // Enable inline data option
-    ASSERT_EQ(options.SetValue(MountOption::kInlineData, 1), ZX_OK);
     FileTester::MountWithOptions(loop.dispatcher(), options, &bc, &fs);
 
     fbl::RefPtr<VnodeF2fs> root;
@@ -862,18 +850,27 @@ TEST(FsckTest, WrongDataExistFlag) {
     fbl::RefPtr<fs::Vnode> child;
     ASSERT_EQ(root_dir->Create(file_name, S_IFREG, &child), ZX_OK);
 
-    // Write string and verify
+    // Write string in inode and verify
     fbl::RefPtr<VnodeF2fs> child_file = fbl::RefPtr<VnodeF2fs>::Downcast(std::move(child));
     File *child_file_ptr = static_cast<File *>(child_file.get());
+    child_file_ptr->SetFlag(InodeInfoFlag::kInlineData);
+
     const std::string_view data_string = "hello";
-    FileTester::AppendToFile(child_file_ptr, data_string.data(), data_string.size());
+    FileTester::AppendToInline(child_file_ptr, data_string.data(), data_string.size());
     ASSERT_EQ(child_file_ptr->GetSize(), data_string.size());
 
-    char r_buf[data_string.size()];
+    auto r_buf = std::make_unique<char[]>(data_string.size());
     size_t out;
-    ASSERT_EQ(child_file_ptr->Read(r_buf, data_string.size(), 0, &out), ZX_OK);
+    ASSERT_EQ(FileTester::Read(child_file_ptr, r_buf.get(), data_string.size(), 0, &out), ZX_OK);
     ASSERT_EQ(out, data_string.size());
-    ASSERT_EQ(memcmp(r_buf, data_string.data(), data_string.size()), 0);
+    ASSERT_EQ(memcmp(r_buf.get(), data_string.data(), data_string.size()), 0);
+    // read() migrated inline data to a file block.
+    FileTester::CheckNonInlineFile(child_file_ptr);
+
+    // fill inline data again.
+    child_file_ptr->Truncate(0);
+    child_file_ptr->SetFlag(InodeInfoFlag::kInlineData);
+    FileTester::AppendToInline(child_file_ptr, data_string.data(), data_string.size());
 
     // Save the inode number for fsck to retrieve it
     ino = child_file->GetKey();
@@ -890,7 +887,7 @@ TEST(FsckTest, WrongDataExistFlag) {
   ASSERT_EQ(fsck.DoMount(), ZX_OK);
 
   // Retrieve node block with saved ino
-  FsBlock<Node> node_block;
+  BlockBuffer<Node> node_block;
   auto node_info_or = fsck.ReadNodeBlock(ino, node_block);
   ASSERT_TRUE(node_info_or.is_ok());
 
@@ -918,7 +915,7 @@ TEST(FsckTest, WrongDataExistFlag) {
 }
 
 TEST(FsckTest, AllocateFreeSegmapInfoAfterSPO) {
-  std::unique_ptr<Bcache> bc;
+  std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDev(&bc);
 
   {
@@ -932,7 +929,7 @@ TEST(FsckTest, AllocateFreeSegmapInfoAfterSPO) {
     fbl::RefPtr<Dir> root_dir = fbl::RefPtr<Dir>::Downcast(std::move(root));
 
     // Checkpoint without unmount flag
-    fs->DoCheckpoint(false);
+    fs->SyncFs();
 
     ASSERT_EQ(root_dir->Close(), ZX_OK);
     root_dir = nullptr;
@@ -946,8 +943,6 @@ TEST(FsckTest, AllocateFreeSegmapInfoAfterSPO) {
 
   // Check FreeSegmapInfo is valid
   ASSERT_NE(&fsck.GetSegmentManager().GetFreeSegmentInfo(), nullptr);
-  ASSERT_NE(fsck.GetSegmentManager().GetFreeSegmentInfo().free_segmap, nullptr);
-  ASSERT_NE(fsck.GetSegmentManager().GetFreeSegmentInfo().free_secmap, nullptr);
   ASSERT_EQ(fsck.GetSegmentManager().GetFreeSegmentInfo().free_segments, 0U);
   ASSERT_EQ(fsck.GetSegmentManager().GetFreeSegmentInfo().free_sections, 0U);
 

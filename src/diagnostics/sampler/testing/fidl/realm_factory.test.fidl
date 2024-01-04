@@ -4,23 +4,23 @@
 
 library test.sampler;
 
+using fuchsia.component.sandbox;
 using fuchsia.testing.harness;
 
 /// RealmOptions tells the RealmFactory protocol how to create the test realm.
 type RealmOptions = resource table {
     /// Optional name to give to the realm component.
-    /// This will become part of the realm's Archivist selector.
-    1: realm_name string;
+    /// Defaults to "sampler".
+    1: sampler_component_name string;
 };
 
 @discoverable
 open protocol RealmFactory {
-    compose fuchsia.testing.harness.RealmFactory;
-
     /// Specifies the options to use when creating the realm.
     ///
     /// Returns OperationError.INVALID if called more than once.
-    flexible SetRealmOptions(resource struct {
+    flexible CreateRealm(resource struct {
         options RealmOptions;
+        dict_server server_end:fuchsia.component.sandbox.Dict;
     }) -> () error fuchsia.testing.harness.OperationError;
 };

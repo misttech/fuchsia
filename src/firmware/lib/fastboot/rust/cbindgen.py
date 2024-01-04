@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# allow-non-vendored-python
+#
 # TODO(b/295039695): we use the host python3 here intentionally; this script
 # calls out into tools such as cbindgen that are not part of the Fuchsia repo
 # and must be installed to the local host so we cannot use the hermetic Fuchsia
@@ -26,10 +28,12 @@ def generate_ffi():
     # Copy the generated file into this directory as required by cbindgen.
     subprocess.run(
         [
-            "fx", "gen-cargo",
-            "//src/firmware/lib/fastboot/rust:_fastboot_c_rustc_static"
+            "fx",
+            "gen-cargo",
+            "//src/firmware/lib/fastboot/rust:_fastboot_c_rustc_static",
         ],
-        check=True)
+        check=True,
+    )
 
     # Generate and format the bindings.
     logging.info("Generating C bindings at %s", BINDINGS_PATH)
@@ -56,9 +60,11 @@ def generate_ffi():
         // LINT.ThenChange(../src/lib.rs)
 
         #endif  // FOO_H_
-        """)
+        """
+    )
     subprocess.run(
-        ["fx", "format-code", f"--files={BINDINGS_PATH}"], check=True)
+        ["fx", "format-code", f"--files={BINDINGS_PATH}"], check=True
+    )
 
     # Remove the generated Cargo files.
     logging.info("Removing Cargo files")

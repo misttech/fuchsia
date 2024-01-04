@@ -825,7 +825,7 @@ impl Configurator for DefaultConfigurator {
             } else {
                 fidl_fuchsia_hardware_audio::PlugDetectCapabilities::CanAsyncNotify
             }),
-            clock_domain: Some(0u32),
+            clock_domain: Some(fidl_fuchsia_hardware_audio::CLOCK_DOMAIN_MONOTONIC),
             manufacturer: Some("Google".to_string()),
             product: Some(configurator_product),
             ..Default::default()
@@ -891,7 +891,7 @@ mod tests {
         std::sync::Arc,
     };
 
-    // Integration tests using //src/media/audio/drivers/tests/realm devices.
+    // Integration tests using //src/media/audio/drivers/testing/realm devices.
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_default_configurator_devices_found() -> Result<()> {
@@ -979,10 +979,17 @@ mod tests {
         );
         let configurator = Arc::new(Mutex::new(DefaultConfigurator::new(config)?));
         if let Err(e) = find_codecs(&codec_proxy, 2, configurator.clone()).await {
-            assert_eq!(
-                e.to_string(),
+            // Driver discovery order is not deterministic, hence multiple errors may be returned
+            // by find_codecs depending which codec is found first.
+            // One of the test drivers reports bad formats, if found first its bad format error is
+            // returned.
+            // Another test driver reports good formats but it won't be found in the devices loaded
+            // above.
+            assert!(
+                (&e.to_string() ==
                 "Codec processing error: Codec (Device { manufacturer: \"456\", product: \"789\", \
-                 is_codec: true, hardwired: true, is_input: false }) not in config"
+                 is_codec: true, hardwired: true, is_input: false }) not in config") ||
+                 (&e.to_string() == "Codec processing error: Codec with bad format reported")
             );
         }
         if let Err(e) = find_dais(&dai_proxy, 1, configurator).await {
@@ -1328,7 +1335,7 @@ mod tests {
             plug_detect_capabilities: Some(
                 fidl_fuchsia_hardware_audio::PlugDetectCapabilities::Hardwired,
             ),
-            clock_domain: Some(0u32),
+            clock_domain: Some(fidl_fuchsia_hardware_audio::CLOCK_DOMAIN_MONOTONIC),
             manufacturer: Some("Test Manufacturer".to_string()),
             product: Some("Test Product".to_string()),
             ..Default::default()

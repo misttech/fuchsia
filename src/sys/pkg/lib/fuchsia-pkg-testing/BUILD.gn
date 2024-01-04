@@ -24,6 +24,7 @@ rustc_library("fuchsia-pkg-testing") {
     "//src/lib/http-sse:http_sse",
     "//src/lib/versioning/version-history/rust:version-history",
     "//src/lib/zircon/rust:fuchsia-zircon",
+    "//src/storage/lib/delivery_blob",
     "//src/sys/lib/fidl-fuchsia-pkg-ext",
     "//src/sys/pkg/lib/blobfs",
     "//src/sys/pkg/lib/far/rust:fuchsia-archive",
@@ -55,7 +56,7 @@ rustc_library("fuchsia-pkg-testing") {
   ]
 
   test_deps = [
-    "//src/lib/storage/delivery_blob",
+    "//src/storage/lib/delivery_blob",
     "//third_party/rust_crates:assert_matches",
   ]
 
@@ -84,8 +85,8 @@ fuchsia_unittest_package("fuchsia-pkg-testing-tests") {
   manifest = "meta/fuchsia-pkg-testing-tests.cml"
   deps = [
     ":fuchsia-pkg-testing_test",
+    "//src/connectivity/network:netstack-for-tests",
     "//src/connectivity/network/dns:component",
-    "//src/connectivity/network/netstack:component",
     "//src/storage/tools/blobfs-compression",
   ]
 }

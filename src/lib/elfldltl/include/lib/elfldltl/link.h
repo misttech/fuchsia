@@ -8,6 +8,8 @@
 // This file provides template APIs that do the central orchestration of
 // dynamic linking: resolving and applying relocations.
 
+#include <type_traits>
+
 #include "diagnostics.h"
 #include "machine.h"
 #include "relocation.h"
@@ -84,22 +86,36 @@ enum class RelocateTls {
 //  * size_type static_tls_bias()
 //    Returns the static TLS layout bias for the defining module.
 //
-//  * size_type tls_desc_hook(), tls_desc_value()
-//    Returns the two values for the TLSDESC resolution.
+//  * TlsDescGot tls_desc_undefined_weak()
+//    This is only called if undefined_weak() returned true first.
+//    Returns the GOT contents for a TLSDESC resolution that was an
+//    undefined weak symbol.  The addend is always applied to the value.
+//
+//  * std::optional<TlsDescGot> tls_desc(Diagnostics&, Addr addend)
+//    Returns the GOT contents for a TLSDESC resolution, which can fail.
+//    If this overload is present, then it is always used and the second
+//    overload need not be defined.  This overload can use the relocation
+//    addend in choosing the TLSDESC implementation, but this requires an
+//    extra load in the DT_REL case.  The return value will be used as is.
+//
+//  * std::optional<TlsDescGot> tls_desc(Diagnostics&)
+//    Returns the GOT contents for a TLSDESC resolution, which can fail.
+//    This overload does not require the addend up front.  Instead, the
+//    TlsDescGot::value field will have the addend applied implicitly.
 //
 template <ElfMachine Machine = ElfMachine::kNative, class Memory, class DiagnosticsType,
           class RelocInfo, class SymbolInfo, typename Resolve>
-[[nodiscard]] constexpr bool RelocateSymbolic(Memory& memory, DiagnosticsType& diagnostics,
-                                              const RelocInfo& reloc_info,
-                                              const SymbolInfo& symbol_info,
-                                              typename RelocInfo::size_type bias,
-                                              Resolve&& resolve) {
+constexpr bool RelocateSymbolic(Memory& memory, DiagnosticsType& diagnostics,
+                                const RelocInfo& reloc_info, const SymbolInfo& symbol_info,
+                                typename RelocInfo::size_type bias, Resolve&& resolve) {
   using namespace std::literals;
 
-  using Addr = typename RelocInfo::Addr;
-  using size_type = typename RelocInfo::size_type;
-  using Rel = typename RelocInfo::Rel;
-  using Rela = typename RelocInfo::Rela;
+  using Elf = typename RelocInfo::Elf;
+  using Addr = typename Elf::Addr;
+  using size_type = typename Elf::size_type;
+  using Rel = typename Elf::Rel;
+  using Rela = typename Elf::Rela;
+  using TlsDescGot = typename Elf::TlsDescGot;
 
   static_assert(std::is_same_v<typename SymbolInfo::Addr, Addr>,
                 "incompatible RelocInfo and SymbolInfo types passed to elfldltl::RelocateSymbolic");
@@ -131,20 +147,23 @@ template <ElfMachine Machine = ElfMachine::kNative, class Memory, class Diagnost
   auto relocate_symbolic = [&](const auto& reloc, auto&& apply,
                                RelocateTls tls = RelocateTls::kNone) -> bool {
     const uint32_t symndx = reloc.symndx();
-    if (symndx == 0) [[unlikely]] {
-      return diagnostics.FormatError(
-          "symbolic relocation entry uses reserved symbol table index 0"sv);
-    }
     decltype(auto) symtab = symbol_info.symtab();
     if (symndx >= symtab.size()) [[unlikely]] {
       return diagnostics.FormatError("relocation entry symbol table index out of bounds"sv);
     }
     const Sym& sym = symtab[symndx];
-    const bool is_tls = tls != RelocateTls::kNone;
-    if ((sym.type() == ElfSymType::kTls) != is_tls) [[unlikely]] {
-      return diagnostics.FormatError(  //
-          is_tls ? "TLS relocation entry with non-STT_TLS symbol"sv
-                 : "non-TLS relocation entry with STT_TLS symbol"sv);
+    // Symbol index zero is mostly treated like anything else because the null
+    // symbol at index zero's all-zero fields map to an STB_LOCAL symbol with
+    // st_value of zero, which does the right thing.  However, it's also an
+    // STT_NOTYPE symbol but still does the right thing for a TLS relocation.
+    if (symndx != 0) {
+      const bool is_tls = tls != RelocateTls::kNone;
+      if ((sym.type() == ElfSymType::kTls) != is_tls) [[unlikely]] {
+        return diagnostics.FormatError(  //
+            is_tls ? "TLS relocation entry with non-STT_TLS symbol: "sv
+                   : "non-TLS relocation entry with STT_TLS symbol: "sv,
+            symbol_info.string(sym.name));
+      }
     }
     if (auto defn = resolve(sym, tls)) {
       return apply(reloc, *defn);
@@ -165,21 +184,31 @@ template <ElfMachine Machine = ElfMachine::kNative, class Memory, class Diagnost
 
   // Static TLS relocs resolve to an offset from the thread pointer.  Each
   // module capable of resolving definitions for static TLS relocs will have
-  // had a static TLS layout assigned.
+  // had a static TLS layout assigned.  Consistent with the glibc behavior, an
+  // undefined weak symbol results in not applying the relocation at all, which
+  // results in an offset from the thread pointer that's either zero or is the
+  // reloc's nonzero addend in the DT_REL (vs DT_RELA) case.
   auto tls_absolute = [apply_with_addend](const auto& reloc, const auto& defn) {
-    return apply_with_addend(reloc, defn.symbol().value() + defn.static_tls_bias());
+    return defn.undefined_weak() ||
+           apply_with_addend(reloc, defn.symbol().value() + defn.static_tls_bias());
   };
 
-  // TLSMOD relocs resolve to a module ID (index), not an address value.
-  // This is stored in a GOT slot to be passed to __tls_get_addr.
+  // TLSMOD relocs resolve to a module ID (index), not an address value.  This
+  // is stored in a GOT slot to be passed to __tls_get_addr.  Consistent with
+  // the glibc behavior, an undefined weak symbol results in not applying the
+  // relocation at all, leaving the slot to yield module ID zero.  The glibc
+  // __tls_get_addr will not handle that well--it's really not expected to be
+  // called at all when the symbol is an undefined weak, so nothing should
+  // really care what's in the GOT slots.
   auto tls_module = [apply_no_addend](const auto& reloc, const auto& defn) {
-    return apply_no_addend(reloc, defn.tls_module_id());
+    return defn.undefined_weak() || apply_no_addend(reloc, defn.tls_module_id());
   };
 
   // Dynamic TLS relocs resolve to an offset into the defining module's TLS
-  // segment, stored in a GOT slot to be passed to __tls_get_addr.
+  // segment, stored in a GOT slot to be passed to __tls_get_addr.  The
+  // undefined weak case is as for tls_module (above), see comments there.
   auto tls_relative = [apply_with_addend](const auto& reloc, const auto& defn) {
-    return apply_with_addend(reloc, defn.symbol().value());
+    return defn.undefined_weak() || apply_with_addend(reloc, defn.symbol().value());
   };
 
   // Each TLSDESC reloc acts like two relocs to consecutive GOT slots: first
@@ -190,11 +219,67 @@ template <ElfMachine Machine = ElfMachine::kNative, class Memory, class Diagnost
   // dynamic), and the encoding of the value is between the resolver and its
   // hook function (except that it must be some sort of byte offset in a TLS
   // block such that applying the addend here makes sense).
-  auto tls_desc = [&](const auto& reloc1, const auto& defn) {
-    auto reloc2 = reloc1;
-    reloc2.offset = reloc1.offset + sizeof(size_type);
-    return apply_no_addend(reloc1, defn.tls_desc_hook()) &&
-           apply_with_addend(reloc2, defn.tls_desc_value());
+  auto tls_desc = [&](const auto& reloc, const auto& defn) {
+    // reloc.offset points to the function slot but indicates filling both
+    // slots.  value_reloc will point to the second slot, which is where
+    // the addend is used.
+    auto value_reloc = reloc;
+    value_reloc.offset = reloc.offset + sizeof(size_type);
+
+    // Call either signature of the Definition::tls_desc_undefined_weak method.
+    auto weak_desc = [&defn](auto&&... args)
+        // This is the same return type that would be deduced for -> auto,
+        // but the explicit decltype makes calls SFINAE-friendly so that
+        // std::is_invocable_v can be used below.
+        -> decltype(defn.tls_desc_undefined_weak(std::forward<decltype(args)>(args)...)) {
+          return defn.tls_desc_undefined_weak(std::forward<decltype(args)>(args)...);
+        };
+
+    // Call either signature of the Definition::tls_desc method.
+    auto defn_desc = [&diagnostics, &defn](auto&&... args)
+        -> decltype(defn.tls_desc(diagnostics, std::forward<decltype(args)>(args)...)) {
+      return defn.tls_desc(diagnostics, std::forward<decltype(args)>(args)...);
+    };
+
+    auto apply = [reloc, value_reloc, apply_no_addend, apply_with_addend,
+                  &memory](auto&& get_desc) -> bool {
+      using Reloc = std::decay_t<decltype(value_reloc)>;
+      constexpr bool kAddend = std::is_invocable_v<decltype(get_desc), Addr>;
+
+      const auto& apply_value = [&]() -> auto& {
+        if constexpr (kAddend) {
+          // The callback gets the addend and includes it in the value.
+          return apply_no_addend;
+        } else {
+          // The callback doesn't see the addend, so it's implicitly applied
+          // to the value slot.
+          return apply_with_addend;
+        }
+      }();
+
+      std::optional<TlsDescGot> desc;
+      if constexpr (kAddend) {
+        if constexpr (std::is_same_v<Reloc, Rel>) {
+          // The addend must be read out of the memory being relocated.
+          auto read = memory.template ReadArray<Addr>(value_reloc.offset, 1);
+          if (read) {
+            desc = get_desc(read->front());
+          }
+        } else {
+          static_assert(std::is_same_v<Reloc, Rela>);
+          std::ignore = &memory;
+          desc = get_desc(value_reloc.addend);
+        }
+      } else {
+        std::ignore = &memory;
+        desc = get_desc();
+      }
+
+      return desc && apply_no_addend(reloc, desc->function) &&
+             apply_value(value_reloc, desc->value);
+    };
+
+    return defn.undefined_weak() ? apply(weak_desc) : apply(defn_desc);
   };
 
   // Apply a single relocation record by dispatching on its type.

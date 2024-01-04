@@ -94,23 +94,23 @@ pub(super) trait FragmentStateContext<I: Ip, Instant> {
     ) -> O;
 }
 
-/// The non-synchronized execution context for IP packet fragment reassembly.
-trait FragmentNonSyncContext<I: Ip>: TimerContext<FragmentCacheKey<I::Addr>> {}
-impl<I: Ip, C: TimerContext<FragmentCacheKey<I::Addr>>> FragmentNonSyncContext<I> for C {}
+/// The bindings execution context for IP packet fragment reassembly.
+trait FragmentBindingsContext<I: Ip>: TimerContext<FragmentCacheKey<I::Addr>> {}
+impl<I: Ip, BC: TimerContext<FragmentCacheKey<I::Addr>>> FragmentBindingsContext<I> for BC {}
 
 /// The execution context for IP packet fragment reassembly.
-trait FragmentContext<I: Ip, C: FragmentNonSyncContext<I>>:
-    FragmentStateContext<I, C::Instant>
+trait FragmentContext<I: Ip, BC: FragmentBindingsContext<I>>:
+    FragmentStateContext<I, BC::Instant>
 {
 }
 
-impl<I: Ip, C: FragmentNonSyncContext<I>, SC: FragmentStateContext<I, C::Instant>>
-    FragmentContext<I, C> for SC
+impl<I: Ip, BC: FragmentBindingsContext<I>, CC: FragmentStateContext<I, BC::Instant>>
+    FragmentContext<I, BC> for CC
 {
 }
 
 /// An implementation of a fragment cache.
-pub(crate) trait FragmentHandler<I: IpExt, C> {
+pub(crate) trait FragmentHandler<I: IpExt, BC> {
     /// Attempts to process a packet fragment.
     ///
     /// # Panics
@@ -118,7 +118,7 @@ pub(crate) trait FragmentHandler<I: IpExt, C> {
     /// Panics if the packet has no fragment data.
     fn process_fragment<B: ByteSlice>(
         &mut self,
-        ctx: &mut C,
+        bindings_ctx: &mut BC,
         packet: I::Packet<B>,
     ) -> FragmentProcessingState<I, B>
     where
@@ -143,18 +143,18 @@ pub(crate) trait FragmentHandler<I: IpExt, C> {
     /// to cancel the reassembly timer.
     fn reassemble_packet<B: ByteSliceMut, BV: BufferViewMut<B>>(
         &mut self,
-        ctx: &mut C,
+        bindings_ctx: &mut BC,
         key: &FragmentCacheKey<I::Addr>,
         buffer: BV,
     ) -> Result<I::Packet<B>, FragmentReassemblyError>;
 }
 
-impl<I: IpExt, C: FragmentNonSyncContext<I>, SC: FragmentContext<I, C>> FragmentHandler<I, C>
-    for SC
+impl<I: IpExt, BC: FragmentBindingsContext<I>, CC: FragmentContext<I, BC>> FragmentHandler<I, BC>
+    for CC
 {
     fn process_fragment<B: ByteSlice>(
         &mut self,
-        ctx: &mut C,
+        bindings_ctx: &mut BC,
         packet: I::Packet<B>,
     ) -> FragmentProcessingState<I, B>
     where
@@ -166,10 +166,10 @@ impl<I: IpExt, C: FragmentNonSyncContext<I>, SC: FragmentContext<I, C>> Fragment
             if let Some(timer_id) = timer_id {
                 match timer_id {
                     CacheTimerAction::CreateNewTimer(timer_id) => {
-                        assert_eq!(ctx.schedule_timer(REASSEMBLY_TIMEOUT, timer_id), None)
+                        assert_eq!(bindings_ctx.schedule_timer(REASSEMBLY_TIMEOUT, timer_id), None)
                     }
                     CacheTimerAction::CancelExistingTimer(timer_id) => {
-                        assert_ne!(ctx.cancel_timer(timer_id), None)
+                        assert_ne!(bindings_ctx.cancel_timer(timer_id), None)
                     }
                 }
             }
@@ -180,7 +180,7 @@ impl<I: IpExt, C: FragmentNonSyncContext<I>, SC: FragmentContext<I, C>> Fragment
 
     fn reassemble_packet<B: ByteSliceMut, BV: BufferViewMut<B>>(
         &mut self,
-        ctx: &mut C,
+        bindings_ctx: &mut BC,
         key: &FragmentCacheKey<I::Addr>,
         buffer: BV,
     ) -> Result<I::Packet<B>, FragmentReassemblyError> {
@@ -192,7 +192,7 @@ impl<I: IpExt, C: FragmentNonSyncContext<I>, SC: FragmentContext<I, C>> Fragment
                     // Cancel the reassembly timer as we attempt reassembly which
                     // means we had all the fragments for the final packet, even
                     // if parsing the reassembled packet failed.
-                    assert_matches!(ctx.cancel_timer(*key), Some(_));
+                    assert_matches!(bindings_ctx.cancel_timer(*key), Some(_));
                 }
                 Err(FragmentReassemblyError::InvalidKey)
                 | Err(FragmentReassemblyError::MissingFragments) => {}
@@ -203,12 +203,15 @@ impl<I: IpExt, C: FragmentNonSyncContext<I>, SC: FragmentContext<I, C>> Fragment
     }
 }
 
-impl<A: IpAddress, C: FragmentNonSyncContext<A::Version>, SC: FragmentContext<A::Version, C>>
-    TimerHandler<C, FragmentCacheKey<A>> for SC
+impl<
+        A: IpAddress,
+        BC: FragmentBindingsContext<A::Version>,
+        CC: FragmentContext<A::Version, BC>,
+    > TimerHandler<BC, FragmentCacheKey<A>> for CC
 where
     A::Version: IpExt,
 {
-    fn handle_timer(&mut self, _ctx: &mut C, key: FragmentCacheKey<A>) {
+    fn handle_timer(&mut self, _bindings_ctx: &mut BC, key: FragmentCacheKey<A>) {
         // If a timer fired, the `key` must still exist in our fragment cache.
         assert_matches!(self.with_state_mut(|cache| cache.remove_data(&key)), Some(_));
     }
@@ -821,7 +824,7 @@ mod tests {
     use crate::{
         context::{
             testutil::{
-                handle_timer_helper_with_sc_ref_mut, FakeCtx, FakeInstant, FakeSyncCtx,
+                handle_timer_helper_with_sc_ref_mut, FakeCoreCtx, FakeCtx, FakeInstant,
                 FakeTimerCtxExt,
             },
             InstantContext as _,
@@ -836,9 +839,9 @@ mod tests {
 
     type FakeCtxImpl<I> =
         FakeCtx<FakeFragmentContext<I>, FragmentCacheKey<<I as Ip>::Addr>, (), (), (), ()>;
-    type FakeSyncCtxImpl<I> = FakeSyncCtx<FakeFragmentContext<I>, (), ()>;
+    type FakeCoreCtxImpl<I> = FakeCoreCtx<FakeFragmentContext<I>, (), ()>;
 
-    impl<I: Ip> FragmentStateContext<I, FakeInstant> for FakeSyncCtxImpl<I> {
+    impl<I: Ip> FragmentStateContext<I, FakeInstant> for FakeCoreCtxImpl<I> {
         fn with_state_mut<O, F: FnOnce(&mut IpPacketFragmentCache<I, FakeInstant>) -> O>(
             &mut self,
             cb: F,
@@ -922,25 +925,32 @@ mod tests {
     /// be called when `I` is `Ipv4` and `Ipv6`, respectively.
     fn process_ip_fragment<
         I: TestIpExt,
-        SC: FragmentContext<I, C>,
-        C: FragmentNonSyncContext<I>,
+        CC: FragmentContext<I, BC>,
+        BC: FragmentBindingsContext<I>,
     >(
-        sync_ctx: &mut SC,
-        ctx: &mut C,
+        core_ctx: &mut CC,
+        bindings_ctx: &mut BC,
         fragment_id: u16,
         fragment_offset: u16,
         m_flag: bool,
         expected_result: ExpectedResult,
     ) {
-        I::process_ip_fragment(sync_ctx, ctx, fragment_id, fragment_offset, m_flag, expected_result)
+        I::process_ip_fragment(
+            core_ctx,
+            bindings_ctx,
+            fragment_id,
+            fragment_offset,
+            m_flag,
+            expected_result,
+        )
     }
 
     /// Generates and processes an IPv4 fragment packet.
     ///
     /// The generated packet will have body of size `FRAGMENT_BLOCK_SIZE` bytes.
-    fn process_ipv4_fragment<SC: FragmentContext<Ipv4, C>, C: FragmentNonSyncContext<Ipv4>>(
-        sync_ctx: &mut SC,
-        ctx: &mut C,
+    fn process_ipv4_fragment<CC: FragmentContext<Ipv4, BC>, BC: FragmentBindingsContext<Ipv4>>(
+        core_ctx: &mut CC,
+        bindings_ctx: &mut BC,
         fragment_id: u16,
         fragment_offset: u16,
         m_flag: bool,
@@ -959,7 +969,7 @@ mod tests {
         match expected_result {
             ExpectedResult::Ready { total_body_len } => {
                 let _: (FragmentCacheKey<_>, usize) = assert_frag_proc_state_ready!(
-                    FragmentHandler::process_fragment::<&[u8]>(sync_ctx, ctx, packet),
+                    FragmentHandler::process_fragment::<&[u8]>(core_ctx, bindings_ctx, packet),
                     FAKE_CONFIG_V4.remote_ip.get(),
                     FAKE_CONFIG_V4.local_ip.get(),
                     fragment_id,
@@ -968,19 +978,19 @@ mod tests {
             }
             ExpectedResult::NeedMore => {
                 assert_matches!(
-                    FragmentHandler::process_fragment::<&[u8]>(sync_ctx, ctx, packet),
+                    FragmentHandler::process_fragment::<&[u8]>(core_ctx, bindings_ctx, packet),
                     FragmentProcessingState::NeedMoreFragments
                 );
             }
             ExpectedResult::Invalid => {
                 assert_matches!(
-                    FragmentHandler::process_fragment::<&[u8]>(sync_ctx, ctx, packet),
+                    FragmentHandler::process_fragment::<&[u8]>(core_ctx, bindings_ctx, packet),
                     FragmentProcessingState::InvalidFragment
                 );
             }
             ExpectedResult::OutOfMemory => {
                 assert_matches!(
-                    FragmentHandler::process_fragment::<&[u8]>(sync_ctx, ctx, packet),
+                    FragmentHandler::process_fragment::<&[u8]>(core_ctx, bindings_ctx, packet),
                     FragmentProcessingState::OutOfMemory
                 );
             }
@@ -990,9 +1000,9 @@ mod tests {
     /// Generates and processes an IPv6 fragment packet.
     ///
     /// The generated packet will have body of size `FRAGMENT_BLOCK_SIZE` bytes.
-    fn process_ipv6_fragment<SC: FragmentContext<Ipv6, C>, C: FragmentNonSyncContext<Ipv6>>(
-        sync_ctx: &mut SC,
-        ctx: &mut C,
+    fn process_ipv6_fragment<CC: FragmentContext<Ipv6, BC>, BC: FragmentBindingsContext<Ipv6>>(
+        core_ctx: &mut CC,
+        bindings_ctx: &mut BC,
         fragment_id: u16,
         fragment_offset: u16,
         m_flag: bool,
@@ -1020,7 +1030,7 @@ mod tests {
         match expected_result {
             ExpectedResult::Ready { total_body_len } => {
                 let _: (FragmentCacheKey<_>, usize) = assert_frag_proc_state_ready!(
-                    FragmentHandler::process_fragment::<&[u8]>(sync_ctx, ctx, packet),
+                    FragmentHandler::process_fragment::<&[u8]>(core_ctx, bindings_ctx, packet),
                     FAKE_CONFIG_V6.remote_ip.get(),
                     FAKE_CONFIG_V6.local_ip.get(),
                     fragment_id,
@@ -1029,19 +1039,19 @@ mod tests {
             }
             ExpectedResult::NeedMore => {
                 assert_matches!(
-                    FragmentHandler::process_fragment::<&[u8]>(sync_ctx, ctx, packet),
+                    FragmentHandler::process_fragment::<&[u8]>(core_ctx, bindings_ctx, packet),
                     FragmentProcessingState::NeedMoreFragments
                 );
             }
             ExpectedResult::Invalid => {
                 assert_matches!(
-                    FragmentHandler::process_fragment::<&[u8]>(sync_ctx, ctx, packet),
+                    FragmentHandler::process_fragment::<&[u8]>(core_ctx, bindings_ctx, packet),
                     FragmentProcessingState::InvalidFragment
                 );
             }
             ExpectedResult::OutOfMemory => {
                 assert_matches!(
-                    FragmentHandler::process_fragment::<&[u8]>(sync_ctx, ctx, packet),
+                    FragmentHandler::process_fragment::<&[u8]>(core_ctx, bindings_ctx, packet),
                     FragmentProcessingState::OutOfMemory
                 );
             }
@@ -1051,9 +1061,9 @@ mod tests {
     trait TestIpExt: crate::testutil::TestIpExt {
         const HEADER_LENGTH: usize;
 
-        fn process_ip_fragment<SC: FragmentContext<Self, C>, C: FragmentNonSyncContext<Self>>(
-            sync_ctx: &mut SC,
-            ctx: &mut C,
+        fn process_ip_fragment<CC: FragmentContext<Self, BC>, BC: FragmentBindingsContext<Self>>(
+            core_ctx: &mut CC,
+            bindings_ctx: &mut BC,
             fragment_id: u16,
             fragment_offset: u16,
             m_flag: bool,
@@ -1064,17 +1074,17 @@ mod tests {
     impl TestIpExt for Ipv4 {
         const HEADER_LENGTH: usize = packet_formats::ipv4::HDR_PREFIX_LEN;
 
-        fn process_ip_fragment<SC: FragmentContext<Self, C>, C: FragmentNonSyncContext<Self>>(
-            sync_ctx: &mut SC,
-            ctx: &mut C,
+        fn process_ip_fragment<CC: FragmentContext<Self, BC>, BC: FragmentBindingsContext<Self>>(
+            core_ctx: &mut CC,
+            bindings_ctx: &mut BC,
             fragment_id: u16,
             fragment_offset: u16,
             m_flag: bool,
             expected_result: ExpectedResult,
         ) {
             process_ipv4_fragment(
-                sync_ctx,
-                ctx,
+                core_ctx,
+                bindings_ctx,
                 fragment_id,
                 fragment_offset,
                 m_flag,
@@ -1085,17 +1095,17 @@ mod tests {
     impl TestIpExt for Ipv6 {
         const HEADER_LENGTH: usize = packet_formats::ipv6::IPV6_FIXED_HDR_LEN;
 
-        fn process_ip_fragment<SC: FragmentContext<Self, C>, C: FragmentNonSyncContext<Self>>(
-            sync_ctx: &mut SC,
-            ctx: &mut C,
+        fn process_ip_fragment<CC: FragmentContext<Self, BC>, BC: FragmentBindingsContext<Self>>(
+            core_ctx: &mut CC,
+            bindings_ctx: &mut BC,
             fragment_id: u16,
             fragment_offset: u16,
             m_flag: bool,
             expected_result: ExpectedResult,
         ) {
             process_ipv6_fragment(
-                sync_ctx,
-                ctx,
+                core_ctx,
+                bindings_ctx,
                 fragment_id,
                 fragment_offset,
                 m_flag,
@@ -1107,11 +1117,11 @@ mod tests {
     /// Tries to reassemble the packet with the given fragment ID.
     fn try_reassemble_ip_packet<
         I: TestIpExt,
-        SC: FragmentContext<I, C>,
-        C: FragmentNonSyncContext<I>,
+        CC: FragmentContext<I, BC>,
+        BC: FragmentBindingsContext<I>,
     >(
-        sync_ctx: &mut SC,
-        ctx: &mut C,
+        core_ctx: &mut CC,
+        bindings_ctx: &mut BC,
         fragment_id: u16,
         total_body_len: usize,
     ) {
@@ -1122,7 +1132,8 @@ mod tests {
             I::FAKE_CONFIG.local_ip.get(),
             fragment_id.into(),
         );
-        let packet = FragmentHandler::reassemble_packet(sync_ctx, ctx, &key, &mut buffer).unwrap();
+        let packet =
+            FragmentHandler::reassemble_packet(core_ctx, bindings_ctx, &key, &mut buffer).unwrap();
         let expected_body = generate_body_fragment(fragment_id, 0, total_body_len);
         assert_eq!(packet.body(), &expected_body[..]);
     }
@@ -1149,8 +1160,8 @@ mod tests {
 
     #[test]
     fn test_ipv4_reassembly_not_needed() {
-        let FakeCtxImpl { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtxImpl::<Ipv4>::with_sync_ctx(FakeSyncCtxImpl::<Ipv4>::default());
+        let FakeCtxImpl { mut core_ctx, mut bindings_ctx } =
+            FakeCtxImpl::<Ipv4>::with_core_ctx(FakeCoreCtxImpl::<Ipv4>::default());
 
         // Test that we don't attempt reassembly if the packet is not
         // fragmented.
@@ -1161,7 +1172,7 @@ mod tests {
             Buf::new(body.to_vec(), ..).encapsulate(builder).serialize_vec_outer().unwrap();
         let packet = buffer.parse::<Ipv4Packet<_>>().unwrap();
         assert_matches!(
-            FragmentHandler::process_fragment::<&[u8]>(&mut sync_ctx, &mut non_sync_ctx, packet),
+            FragmentHandler::process_fragment::<&[u8]>(&mut core_ctx, &mut bindings_ctx, packet),
             FragmentProcessingState::NotNeeded(unfragmented) if unfragmented.body() == body
         );
     }
@@ -1171,8 +1182,8 @@ mod tests {
         expected = "internal error: entered unreachable code: Should never call this function if the packet does not have a fragment header"
     )]
     fn test_ipv6_reassembly_not_needed() {
-        let FakeCtxImpl { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtxImpl::<Ipv6>::with_sync_ctx(FakeSyncCtxImpl::<Ipv6>::default());
+        let FakeCtxImpl { mut core_ctx, mut bindings_ctx } =
+            FakeCtxImpl::<Ipv6>::with_core_ctx(FakeCoreCtxImpl::<Ipv6>::default());
 
         // Test that we panic if we call `fragment_data` on a packet that has no
         // fragment data.
@@ -1182,23 +1193,23 @@ mod tests {
             Buf::new(vec![1, 2, 3, 4, 5], ..).encapsulate(builder).serialize_vec_outer().unwrap();
         let packet = buffer.parse::<Ipv6Packet<_>>().unwrap();
         assert_matches!(
-            FragmentHandler::process_fragment::<&[u8]>(&mut sync_ctx, &mut non_sync_ctx, packet),
+            FragmentHandler::process_fragment::<&[u8]>(&mut core_ctx, &mut bindings_ctx, packet),
             FragmentProcessingState::InvalidFragment
         );
     }
 
     #[ip_test]
     fn test_ip_reassembly<I: Ip + TestIpExt>() {
-        let FakeCtxImpl { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtxImpl::<I>::with_sync_ctx(FakeSyncCtxImpl::<I>::default());
+        let FakeCtxImpl { mut core_ctx, mut bindings_ctx } =
+            FakeCtxImpl::<I>::with_core_ctx(FakeCoreCtxImpl::<I>::default());
         let fragment_id = 5;
 
         // Test that we properly reassemble fragmented packets.
 
         // Process fragment #0
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id,
             0,
             true,
@@ -1207,8 +1218,8 @@ mod tests {
 
         // Process fragment #1
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id,
             1,
             true,
@@ -1217,22 +1228,22 @@ mod tests {
 
         // Process fragment #2
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id,
             2,
             false,
             ExpectedResult::Ready { total_body_len: 24 },
         );
 
-        try_reassemble_ip_packet(&mut sync_ctx, &mut non_sync_ctx, fragment_id, 24);
+        try_reassemble_ip_packet(&mut core_ctx, &mut bindings_ctx, fragment_id, 24);
     }
 
     #[ip_test]
     fn test_ip_reassemble_with_missing_blocks<I: Ip + TestIpExt>() {
         let fake_config = I::FAKE_CONFIG;
-        let FakeCtxImpl { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtxImpl::<I>::with_sync_ctx(FakeSyncCtxImpl::<I>::default());
+        let FakeCtxImpl { mut core_ctx, mut bindings_ctx } =
+            FakeCtxImpl::<I>::with_core_ctx(FakeCoreCtxImpl::<I>::default());
         let fragment_id = 5;
 
         // Test the error we get when we attempt to reassemble with missing
@@ -1240,8 +1251,8 @@ mod tests {
 
         // Process fragment #0
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id,
             0,
             true,
@@ -1250,8 +1261,8 @@ mod tests {
 
         // Process fragment #2
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id,
             1,
             true,
@@ -1266,7 +1277,7 @@ mod tests {
             fragment_id as u32,
         );
         assert_eq!(
-            FragmentHandler::reassemble_packet(&mut sync_ctx, &mut non_sync_ctx, &key, &mut buffer)
+            FragmentHandler::reassemble_packet(&mut core_ctx, &mut bindings_ctx, &key, &mut buffer)
                 .unwrap_err(),
             FragmentReassemblyError::MissingFragments,
         );
@@ -1275,71 +1286,71 @@ mod tests {
     #[ip_test]
     fn test_ip_reassemble_after_timer<I: Ip + TestIpExt>() {
         let fake_config = I::FAKE_CONFIG;
-        let FakeCtxImpl { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtxImpl::<I>::with_sync_ctx(FakeSyncCtxImpl::<I>::default());
+        let FakeCtxImpl { mut core_ctx, mut bindings_ctx } =
+            FakeCtxImpl::<I>::with_core_ctx(FakeCoreCtxImpl::<I>::default());
         let fragment_id = 5;
         let key = test_key::<I>(fragment_id.into());
 
         // Make sure no timers in the dispatcher yet.
-        non_sync_ctx.timer_ctx().assert_no_timers_installed();
-        assert_eq!(sync_ctx.get_ref().cache.size, 0);
+        bindings_ctx.timer_ctx().assert_no_timers_installed();
+        assert_eq!(core_ctx.get_ref().cache.size, 0);
 
         // Test that we properly reset fragment cache on timer.
 
         // Process fragment #0
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id,
             0,
             true,
             ExpectedResult::NeedMore,
         );
         // Make sure a timer got added.
-        non_sync_ctx
+        bindings_ctx
             .timer_ctx()
             .assert_timers_installed([(key, FakeInstant::from(REASSEMBLY_TIMEOUT))]);
-        validate_size(&sync_ctx.get_ref().cache);
+        validate_size(&core_ctx.get_ref().cache);
 
         // Process fragment #1
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id,
             1,
             true,
             ExpectedResult::NeedMore,
         );
         // Make sure no new timers got added or fired.
-        non_sync_ctx
+        bindings_ctx
             .timer_ctx()
             .assert_timers_installed([(key, FakeInstant::from(REASSEMBLY_TIMEOUT))]);
-        validate_size(&sync_ctx.get_ref().cache);
+        validate_size(&core_ctx.get_ref().cache);
 
         // Process fragment #2
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id,
             2,
             false,
             ExpectedResult::Ready { total_body_len: 24 },
         );
         // Make sure no new timers got added or fired.
-        non_sync_ctx
+        bindings_ctx
             .timer_ctx()
             .assert_timers_installed([(key, FakeInstant::from(REASSEMBLY_TIMEOUT))]);
-        validate_size(&sync_ctx.get_ref().cache);
+        validate_size(&core_ctx.get_ref().cache);
 
         // Trigger the timer (simulate a timer for the fragmented packet)
         assert_eq!(
-            non_sync_ctx.trigger_next_timer(&mut sync_ctx, TimerHandler::handle_timer),
+            bindings_ctx.trigger_next_timer(&mut core_ctx, TimerHandler::handle_timer),
             Some(key)
         );
 
         // Make sure no other times exist..
-        non_sync_ctx.timer_ctx().assert_no_timers_installed();
-        assert_eq!(sync_ctx.get_ref().cache.size, 0);
+        bindings_ctx.timer_ctx().assert_no_timers_installed();
+        assert_eq!(core_ctx.get_ref().cache.size, 0);
 
         // Attempt to reassemble the packet but get an error since the fragment
         // data would have been reset/cleared.
@@ -1352,7 +1363,7 @@ mod tests {
         let mut buffer: Vec<u8> = vec![0; packet_len];
         let mut buffer = &mut buffer[..];
         assert_eq!(
-            FragmentHandler::reassemble_packet(&mut sync_ctx, &mut non_sync_ctx, &key, &mut buffer)
+            FragmentHandler::reassemble_packet(&mut core_ctx, &mut bindings_ctx, &key, &mut buffer)
                 .unwrap_err(),
             FragmentReassemblyError::InvalidKey,
         );
@@ -1360,56 +1371,56 @@ mod tests {
 
     #[ip_test]
     fn test_ip_fragment_cache_oom<I: Ip + TestIpExt>() {
-        let FakeCtxImpl { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtxImpl::<I>::with_sync_ctx(FakeSyncCtxImpl::<I>::default());
+        let FakeCtxImpl { mut core_ctx, mut bindings_ctx } =
+            FakeCtxImpl::<I>::with_core_ctx(FakeCoreCtxImpl::<I>::default());
         let mut fragment_id = 0;
         const THRESHOLD: usize = 8196usize;
 
-        assert_eq!(sync_ctx.get_ref().cache.size, 0);
-        sync_ctx.get_mut().cache.threshold = THRESHOLD;
+        assert_eq!(core_ctx.get_ref().cache.size, 0);
+        core_ctx.get_mut().cache.threshold = THRESHOLD;
 
         // Test that when cache size exceeds the threshold, process_fragment
         // returns OOM.
 
-        while sync_ctx.get_ref().cache.size < THRESHOLD {
+        while core_ctx.get_ref().cache.size < THRESHOLD {
             process_ip_fragment(
-                &mut sync_ctx,
-                &mut non_sync_ctx,
+                &mut core_ctx,
+                &mut bindings_ctx,
                 fragment_id,
                 0,
                 true,
                 ExpectedResult::NeedMore,
             );
-            validate_size(&sync_ctx.get_ref().cache);
+            validate_size(&core_ctx.get_ref().cache);
             fragment_id += 1;
         }
 
         // Now that the cache is at or above the threshold, observe OOM.
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id,
             0,
             true,
             ExpectedResult::OutOfMemory,
         );
-        validate_size(&sync_ctx.get_ref().cache);
+        validate_size(&core_ctx.get_ref().cache);
 
         // Trigger the timers, which will clear the cache.
-        let timers = non_sync_ctx
+        let timers = bindings_ctx
             .trigger_timers_for(
                 REASSEMBLY_TIMEOUT + Duration::from_secs(1),
-                handle_timer_helper_with_sc_ref_mut(&mut sync_ctx, TimerHandler::handle_timer),
+                handle_timer_helper_with_sc_ref_mut(&mut core_ctx, TimerHandler::handle_timer),
             )
             .len();
         assert!(timers == 171 || timers == 293); // ipv4 || ipv6
-        assert_eq!(sync_ctx.get_ref().cache.size, 0);
-        validate_size(&sync_ctx.get_ref().cache);
+        assert_eq!(core_ctx.get_ref().cache.size, 0);
+        validate_size(&core_ctx.get_ref().cache);
 
         // Can process fragments again.
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id,
             0,
             true,
@@ -1419,16 +1430,16 @@ mod tests {
 
     #[ip_test]
     fn test_unordered_fragments<I: Ip + TestIpExt>() {
-        let FakeCtxImpl { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtxImpl::<I>::with_sync_ctx(FakeSyncCtxImpl::<I>::default());
+        let FakeCtxImpl { mut core_ctx, mut bindings_ctx } =
+            FakeCtxImpl::<I>::with_core_ctx(FakeCoreCtxImpl::<I>::default());
         let fragment_id = 5;
 
         // Test that we error on overlapping/duplicate fragments.
 
         // Process fragment #0
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id,
             0,
             true,
@@ -1437,8 +1448,8 @@ mod tests {
 
         // Process fragment #2
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id,
             2,
             false,
@@ -1447,8 +1458,8 @@ mod tests {
 
         // Process fragment #1
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id,
             1,
             true,
@@ -1458,16 +1469,16 @@ mod tests {
 
     #[ip_test]
     fn test_ip_overlapping_single_fragment<I: Ip + TestIpExt>() {
-        let FakeCtxImpl { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtxImpl::<I>::with_sync_ctx(FakeSyncCtxImpl::<I>::default());
+        let FakeCtxImpl { mut core_ctx, mut bindings_ctx } =
+            FakeCtxImpl::<I>::with_core_ctx(FakeCoreCtxImpl::<I>::default());
         let fragment_id = 5;
 
         // Test that we error on overlapping/duplicate fragments.
 
         // Process fragment #0
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id,
             0,
             true,
@@ -1476,8 +1487,8 @@ mod tests {
 
         // Process fragment #0 (overlaps original fragment #0 completely)
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id,
             0,
             true,
@@ -1487,18 +1498,18 @@ mod tests {
 
     #[test]
     fn test_ipv4_fragment_not_multiple_of_offset_unit() {
-        let FakeCtxImpl { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtxImpl::<Ipv4>::with_sync_ctx(FakeSyncCtxImpl::<Ipv4>::default());
+        let FakeCtxImpl { mut core_ctx, mut bindings_ctx } =
+            FakeCtxImpl::<Ipv4>::with_core_ctx(FakeCoreCtxImpl::<Ipv4>::default());
         let fragment_id = 0;
 
-        assert_eq!(sync_ctx.get_ref().cache.size, 0);
+        assert_eq!(core_ctx.get_ref().cache.size, 0);
         // Test that fragment bodies must be a multiple of
         // `FRAGMENT_BLOCK_SIZE`, except for the last fragment.
 
         // Process fragment #0
         process_ipv4_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id,
             0,
             true,
@@ -1518,7 +1529,7 @@ mod tests {
         let mut buffer = Buf::new(body, ..).encapsulate(builder).serialize_vec_outer().unwrap();
         let packet = buffer.parse::<Ipv4Packet<_>>().unwrap();
         assert_matches!(
-            FragmentHandler::process_fragment::<&[u8]>(&mut sync_ctx, &mut non_sync_ctx, packet),
+            FragmentHandler::process_fragment::<&[u8]>(&mut core_ctx, &mut bindings_ctx, packet),
             FragmentProcessingState::InvalidFragment
         );
 
@@ -1536,38 +1547,38 @@ mod tests {
         let mut buffer = Buf::new(body, ..).encapsulate(builder).serialize_vec_outer().unwrap();
         let packet = buffer.parse::<Ipv4Packet<_>>().unwrap();
         let (key, packet_len) = assert_frag_proc_state_ready!(
-            FragmentHandler::process_fragment::<&[u8]>(&mut sync_ctx, &mut non_sync_ctx, packet),
+            FragmentHandler::process_fragment::<&[u8]>(&mut core_ctx, &mut bindings_ctx, packet),
             FAKE_CONFIG_V4.remote_ip.get(),
             FAKE_CONFIG_V4.local_ip.get(),
             fragment_id,
             35
         );
-        validate_size(&sync_ctx.get_ref().cache);
+        validate_size(&core_ctx.get_ref().cache);
         let mut buffer: Vec<u8> = vec![0; packet_len];
         let mut buffer = &mut buffer[..];
         let packet =
-            FragmentHandler::reassemble_packet(&mut sync_ctx, &mut non_sync_ctx, &key, &mut buffer)
+            FragmentHandler::reassemble_packet(&mut core_ctx, &mut bindings_ctx, &key, &mut buffer)
                 .unwrap();
         let mut expected_body: Vec<u8> = Vec::new();
         expected_body.extend(0..15);
         assert_eq!(packet.body(), &expected_body[..]);
-        assert_eq!(sync_ctx.get_ref().cache.size, 0);
+        assert_eq!(core_ctx.get_ref().cache.size, 0);
     }
 
     #[test]
     fn test_ipv6_fragment_not_multiple_of_offset_unit() {
-        let FakeCtxImpl { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtxImpl::<Ipv6>::with_sync_ctx(FakeSyncCtxImpl::<Ipv6>::default());
+        let FakeCtxImpl { mut core_ctx, mut bindings_ctx } =
+            FakeCtxImpl::<Ipv6>::with_core_ctx(FakeCoreCtxImpl::<Ipv6>::default());
         let fragment_id = 0;
 
-        assert_eq!(sync_ctx.get_ref().cache.size, 0);
+        assert_eq!(core_ctx.get_ref().cache.size, 0);
         // Test that fragment bodies must be a multiple of
         // `FRAGMENT_BLOCK_SIZE`, except for the last fragment.
 
         // Process fragment #0
         process_ipv6_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id,
             0,
             true,
@@ -1592,7 +1603,7 @@ mod tests {
         let mut buf = Buf::new(bytes, ..);
         let packet = buf.parse::<Ipv6Packet<_>>().unwrap();
         assert_matches!(
-            FragmentHandler::process_fragment::<&[u8]>(&mut sync_ctx, &mut non_sync_ctx, packet),
+            FragmentHandler::process_fragment::<&[u8]>(&mut core_ctx, &mut bindings_ctx, packet),
             FragmentProcessingState::InvalidFragment
         );
 
@@ -1615,28 +1626,28 @@ mod tests {
         let mut buf = Buf::new(bytes, ..);
         let packet = buf.parse::<Ipv6Packet<_>>().unwrap();
         let (key, packet_len) = assert_frag_proc_state_ready!(
-            FragmentHandler::process_fragment::<&[u8]>(&mut sync_ctx, &mut non_sync_ctx, packet),
+            FragmentHandler::process_fragment::<&[u8]>(&mut core_ctx, &mut bindings_ctx, packet),
             FAKE_CONFIG_V6.remote_ip.get(),
             FAKE_CONFIG_V6.local_ip.get(),
             fragment_id,
             55
         );
-        validate_size(&sync_ctx.get_ref().cache);
+        validate_size(&core_ctx.get_ref().cache);
         let mut buffer: Vec<u8> = vec![0; packet_len];
         let mut buffer = &mut buffer[..];
         let packet =
-            FragmentHandler::reassemble_packet(&mut sync_ctx, &mut non_sync_ctx, &key, &mut buffer)
+            FragmentHandler::reassemble_packet(&mut core_ctx, &mut bindings_ctx, &key, &mut buffer)
                 .unwrap();
         let mut expected_body: Vec<u8> = Vec::new();
         expected_body.extend(0..15);
         assert_eq!(packet.body(), &expected_body[..]);
-        assert_eq!(sync_ctx.get_ref().cache.size, 0);
+        assert_eq!(core_ctx.get_ref().cache.size, 0);
     }
 
     #[ip_test]
     fn test_ip_reassembly_with_multiple_intertwined_packets<I: Ip + TestIpExt>() {
-        let FakeCtxImpl { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtxImpl::<I>::with_sync_ctx(FakeSyncCtxImpl::<I>::default());
+        let FakeCtxImpl { mut core_ctx, mut bindings_ctx } =
+            FakeCtxImpl::<I>::with_core_ctx(FakeCoreCtxImpl::<I>::default());
         let fragment_id_0 = 5;
         let fragment_id_1 = 10;
 
@@ -1645,8 +1656,8 @@ mod tests {
 
         // Process fragment #0 for packet #0
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id_0,
             0,
             true,
@@ -1655,8 +1666,8 @@ mod tests {
 
         // Process fragment #0 for packet #1
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id_1,
             0,
             true,
@@ -1665,8 +1676,8 @@ mod tests {
 
         // Process fragment #1 for packet #0
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id_0,
             1,
             true,
@@ -1675,8 +1686,8 @@ mod tests {
 
         // Process fragment #1 for packet #0
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id_1,
             1,
             true,
@@ -1685,33 +1696,33 @@ mod tests {
 
         // Process fragment #2 for packet #0
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id_0,
             2,
             false,
             ExpectedResult::Ready { total_body_len: 24 },
         );
 
-        try_reassemble_ip_packet(&mut sync_ctx, &mut non_sync_ctx, fragment_id_0, 24);
+        try_reassemble_ip_packet(&mut core_ctx, &mut bindings_ctx, fragment_id_0, 24);
 
         // Process fragment #2 for packet #1
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id_1,
             2,
             false,
             ExpectedResult::Ready { total_body_len: 24 },
         );
 
-        try_reassemble_ip_packet(&mut sync_ctx, &mut non_sync_ctx, fragment_id_1, 24);
+        try_reassemble_ip_packet(&mut core_ctx, &mut bindings_ctx, fragment_id_1, 24);
     }
 
     #[ip_test]
     fn test_ip_reassembly_timer_with_multiple_intertwined_packets<I: Ip + TestIpExt>() {
-        let FakeCtxImpl { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtxImpl::<I>::with_sync_ctx(FakeSyncCtxImpl::<I>::default());
+        let FakeCtxImpl { mut core_ctx, mut bindings_ctx } =
+            FakeCtxImpl::<I>::with_core_ctx(FakeCoreCtxImpl::<I>::default());
         let fragment_id_0 = 5;
         let fragment_id_1 = 10;
         let fragment_id_2 = 15;
@@ -1742,8 +1753,8 @@ mod tests {
 
         // Process fragment #0 for packet #0
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id_0,
             0,
             true,
@@ -1752,8 +1763,8 @@ mod tests {
 
         // Process fragment #1 for packet #1
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id_1,
             2,
             false,
@@ -1762,8 +1773,8 @@ mod tests {
 
         // Process fragment #2 for packet #2
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id_2,
             2,
             false,
@@ -1771,15 +1782,15 @@ mod tests {
         );
 
         // Advance time by 30s (should be at 30s now).
-        assert_empty(non_sync_ctx.trigger_timers_for(
+        assert_empty(bindings_ctx.trigger_timers_for(
             Duration::from_secs(30),
-            handle_timer_helper_with_sc_ref_mut(&mut sync_ctx, TimerHandler::handle_timer),
+            handle_timer_helper_with_sc_ref_mut(&mut core_ctx, TimerHandler::handle_timer),
         ));
 
         // Process fragment #2 for packet #0
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id_0,
             2,
             false,
@@ -1787,15 +1798,15 @@ mod tests {
         );
 
         // Advance time by 10s (should be at 40s now).
-        assert_empty(non_sync_ctx.trigger_timers_for(
+        assert_empty(bindings_ctx.trigger_timers_for(
             Duration::from_secs(10),
-            handle_timer_helper_with_sc_ref_mut(&mut sync_ctx, TimerHandler::handle_timer),
+            handle_timer_helper_with_sc_ref_mut(&mut core_ctx, TimerHandler::handle_timer),
         ));
 
         // Process fragment #1 for packet #2
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id_2,
             1,
             true,
@@ -1804,26 +1815,26 @@ mod tests {
 
         // Process fragment #1 for packet #0
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id_0,
             1,
             true,
             ExpectedResult::Ready { total_body_len: 24 },
         );
 
-        try_reassemble_ip_packet(&mut sync_ctx, &mut non_sync_ctx, fragment_id_0, 24);
+        try_reassemble_ip_packet(&mut core_ctx, &mut bindings_ctx, fragment_id_0, 24);
 
         // Advance time by 10s (should be at 50s now).
-        assert_empty(non_sync_ctx.trigger_timers_for(
+        assert_empty(bindings_ctx.trigger_timers_for(
             Duration::from_secs(10),
-            handle_timer_helper_with_sc_ref_mut(&mut sync_ctx, TimerHandler::handle_timer),
+            handle_timer_helper_with_sc_ref_mut(&mut core_ctx, TimerHandler::handle_timer),
         ));
 
         // Process fragment #0 for packet #1
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id_1,
             0,
             true,
@@ -1832,33 +1843,33 @@ mod tests {
 
         // Process fragment #0 for packet #2
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id_2,
             0,
             true,
             ExpectedResult::Ready { total_body_len: 24 },
         );
 
-        try_reassemble_ip_packet(&mut sync_ctx, &mut non_sync_ctx, fragment_id_2, 24);
+        try_reassemble_ip_packet(&mut core_ctx, &mut bindings_ctx, fragment_id_2, 24);
 
         // Advance time by 10s (should be at 60s now)), triggering the timer for
         // the reassembly of packet #1
-        non_sync_ctx.trigger_timers_for_and_expect(
+        bindings_ctx.trigger_timers_for_and_expect(
             Duration::from_secs(10),
             [test_key::<I>(fragment_id_1.into())],
-            handle_timer_helper_with_sc_ref_mut(&mut sync_ctx, TimerHandler::handle_timer),
+            handle_timer_helper_with_sc_ref_mut(&mut core_ctx, TimerHandler::handle_timer),
         );
 
         // Make sure no other times exist.
-        non_sync_ctx.timer_ctx().assert_no_timers_installed();
+        bindings_ctx.timer_ctx().assert_no_timers_installed();
 
         // Process fragment #2 for packet #1 Should get a need more return value
         // since even though we technically received all the fragments, the last
         // fragment didn't arrive until after the reassembly timer.
         process_ip_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             fragment_id_1,
             2,
             true,
@@ -1868,11 +1879,11 @@ mod tests {
 
     #[test]
     fn test_no_more_fragments_in_middle_of_block() {
-        let FakeCtxImpl { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtxImpl::<Ipv4>::with_sync_ctx(FakeSyncCtxImpl::<Ipv4>::default());
+        let FakeCtxImpl { mut core_ctx, mut bindings_ctx } =
+            FakeCtxImpl::<Ipv4>::with_core_ctx(FakeCoreCtxImpl::<Ipv4>::default());
         process_ipv4_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             0,
             100,
             false,
@@ -1880,8 +1891,8 @@ mod tests {
         );
 
         process_ipv4_fragment(
-            &mut sync_ctx,
-            &mut non_sync_ctx,
+            &mut core_ctx,
+            &mut bindings_ctx,
             0,
             50,
             false,
@@ -1895,8 +1906,8 @@ mod tests {
         const FRAGMENT_OFFSET: u16 = 0;
         const M_FLAG: bool = true;
 
-        let FakeCtxImpl { mut sync_ctx, mut non_sync_ctx } =
-            FakeCtxImpl::<I>::with_sync_ctx(FakeSyncCtxImpl::<I>::default());
+        let FakeCtxImpl { mut core_ctx, mut bindings_ctx } =
+            FakeCtxImpl::<I>::with_core_ctx(FakeCoreCtxImpl::<I>::default());
 
         let FakeEventDispatcherConfig {
             subnet: _,
@@ -1911,27 +1922,27 @@ mod tests {
         // invalid packet's fragment cache key create a new entry.
         for _ in 0..=2 {
             process_ip_fragment(
-                &mut sync_ctx,
-                &mut non_sync_ctx,
+                &mut core_ctx,
+                &mut bindings_ctx,
                 FRAGMENT_ID,
                 FRAGMENT_OFFSET,
                 M_FLAG,
                 ExpectedResult::NeedMore,
             );
             assert_eq!(
-                non_sync_ctx.timer_ctx().timers(),
-                [(non_sync_ctx.now() + REASSEMBLY_TIMEOUT, key)]
+                bindings_ctx.timer_ctx().timers(),
+                [(bindings_ctx.now() + REASSEMBLY_TIMEOUT, key)]
             );
 
             process_ip_fragment(
-                &mut sync_ctx,
-                &mut non_sync_ctx,
+                &mut core_ctx,
+                &mut bindings_ctx,
                 FRAGMENT_ID,
                 FRAGMENT_OFFSET,
                 M_FLAG,
                 ExpectedResult::Invalid,
             );
-            assert_eq!(non_sync_ctx.timer_ctx().timers(), [],);
+            assert_eq!(bindings_ctx.timer_ctx().timers(), [],);
         }
     }
 }

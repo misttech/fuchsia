@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 #include "tools/fidl/fidlc/include/fidl/flat_ast.h"
 #include "tools/fidl/fidlc/include/fidl/source_file.h"
-#include "tools/fidl/fidlc/tests/error_test.h"
 #include "tools/fidl/fidlc/tests/test_library.h"
 
 namespace {
@@ -16,42 +15,36 @@ TEST(StrictnessTests, BadDuplicateModifier) {
 library example;
 
 type One = strict union { 1: b bool; };
-type Two = strict strict union { 1: b bool; };          // line 5
-type Three = strict strict strict union { 1: b bool; }; // line 6
+type Two = strict strict union { 1: b bool; };
+type Three = strict strict strict union { 1: b bool; };
 )FIDL");
-  ASSERT_FALSE(library.Compile());
-
-  const auto& errors = library.errors();
-  ASSERT_EQ(errors.size(), 3);
-  ASSERT_ERR(errors[0], fidl::ErrDuplicateModifier);
-  EXPECT_EQ(errors[0]->span.position().line, 5);
-  ASSERT_SUBSTR(errors[0]->msg.c_str(), "strict");
-  ASSERT_ERR(errors[1], fidl::ErrDuplicateModifier);
-  EXPECT_EQ(errors[1]->span.position().line, 6);
-  ASSERT_SUBSTR(errors[1]->msg.c_str(), "strict");
-  ASSERT_ERR(errors[2], fidl::ErrDuplicateModifier);
-  EXPECT_EQ(errors[2]->span.position().line, 6);
-  ASSERT_SUBSTR(errors[2]->msg.c_str(), "strict");
+  library.ExpectFail(fidl::ErrDuplicateModifier,
+                     fidl::Token::KindAndSubkind(fidl::Token::Subkind::kStrict));
+  library.ExpectFail(fidl::ErrDuplicateModifier,
+                     fidl::Token::KindAndSubkind(fidl::Token::Subkind::kStrict));
+  library.ExpectFail(fidl::ErrDuplicateModifier,
+                     fidl::Token::KindAndSubkind(fidl::Token::Subkind::kStrict));
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StrictnessTests, BadDuplicateModifierNonConsecutive) {
   TestLibrary library;
   library.AddFile("bad/fi-0032.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrDuplicateModifier);
+  library.ExpectFail(fidl::ErrDuplicateModifier,
+                     fidl::Token::KindAndSubkind(fidl::Token::Subkind::kStrict));
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StrictnessTests, BadConflictingModifiers) {
   TestLibrary library;
   library.AddFile("bad/fi-0033.test.fidl");
-
-  ASSERT_ERRORED_TWICE_DURING_COMPILE(library, fidl::ErrConflictingModifier,
-                                      fidl::ErrConflictingModifier);
-  EXPECT_EQ(library.errors()[0]->span.position().line, 6);
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "strict");
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "flexible");
-  EXPECT_EQ(library.errors()[1]->span.position().line, 10);
-  ASSERT_SUBSTR(library.errors()[1]->msg.c_str(), "strict");
-  ASSERT_SUBSTR(library.errors()[1]->msg.c_str(), "flexible");
+  library.ExpectFail(fidl::ErrConflictingModifier,
+                     fidl::Token::KindAndSubkind(fidl::Token::Subkind::kFlexible),
+                     fidl::Token::KindAndSubkind(fidl::Token::Subkind::kStrict));
+  library.ExpectFail(fidl::ErrConflictingModifier,
+                     fidl::Token::KindAndSubkind(fidl::Token::Subkind::kStrict),
+                     fidl::Token::KindAndSubkind(fidl::Token::Subkind::kFlexible));
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StrictnessTests, GoodBitsStrictness) {
@@ -121,7 +114,10 @@ type Foo = flexible bits {
 TEST(StrictnessTests, BadStrictnessStruct) {
   TestLibrary library;
   library.AddFile("bad/fi-0030.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrCannotSpecifyModifier);
+  library.ExpectFail(fidl::ErrCannotSpecifyModifier,
+                     fidl::Token::KindAndSubkind(fidl::Token::Subkind::kStrict),
+                     fidl::Token::KindAndSubkind(fidl::Token::Subkind::kStruct));
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StrictnessTests, BadStrictnessTable) {
@@ -130,7 +126,10 @@ library example;
 
 type StrictFoo = strict table {};
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrCannotSpecifyModifier);
+  library.ExpectFail(fidl::ErrCannotSpecifyModifier,
+                     fidl::Token::KindAndSubkind(fidl::Token::Subkind::kStrict),
+                     fidl::Token::KindAndSubkind(fidl::Token::Subkind::kTable));
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StrictnessTests, GoodUnionStrictness) {

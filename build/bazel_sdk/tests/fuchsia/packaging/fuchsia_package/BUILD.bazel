@@ -1,0 +1,63 @@
+# Copyright 2022 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(":fuchsia_package_checker_test.bzl", "fuchsia_package_checker_test")
+
+fuchsia_package_checker_test(
+    name = "cc_pkg_test",
+    package_name = "pkg_for_test",
+    size = "small",
+    expected_blobs_to_file_names = {
+        "bin/cc_bin": "cc_bin_native_stripped",
+        "data/text_file.txt": "text_file.txt",
+
+        # Common files that should automatically be added
+        "lib/ld.so.1": "ld.so.1_stripped",
+        "lib/libc++.so.2": "libc++.so.2_stripped",
+        "lib/libc++abi.so.1": "libc++abi.so.1_stripped",
+        "lib/libunwind.so.1": "libunwind.so.1_stripped",
+    },
+    manifests = [
+        "meta/cc_component.cm",
+        "meta/empty_component.cm",
+    ],
+    package_under_test = "//fuchsia/packaging/fuchsia_package/cc_component:pkg",
+    visibility = ["//visibility:public"],
+)
+
+fuchsia_package_checker_test(
+    name = "subpkg_test",
+    package_name = "pkg_with_subpkg_for_test",
+    size = "small",
+    expected_blobs_to_file_names = {},
+    expected_subpackages = ["pkg_for_test"],
+    manifests = ["meta/empty_component.cm"],
+    package_under_test = "//fuchsia/packaging/fuchsia_package/cc_component:pkg_with_subpkg",
+    visibility = ["//visibility:public"],
+)
+
+fuchsia_package_checker_test(
+    name = "cc_driver_pkg_test",
+    package_name = "test_driver",
+    size = "small",
+    bind_bytecode = "meta/bind/test_driver.bindbc",
+    expected_blobs_to_file_names = {
+        "driver/libtest_driver.so": "libtest_driver_cc_binary.so_stripped",
+        # Common files
+        # Note: all of these files are not required and will be cleaned up but we
+        # do not have a way to ignore files in this test so removing them will
+        # break the test
+        "lib/ld.so.1": "ld.so.1_stripped",
+        "lib/libasync-default.so": "libasync-default.so_stripped",
+        "lib/libbackend_fuchsia_globals.so": "libbackend_fuchsia_globals.so_stripped",
+        "lib/libfdio.so": "libfdio.so_stripped",
+        "lib/libsvc.so": "libsvc.so_stripped",
+        "lib/libtrace-engine.so": "libtrace-engine.so_stripped",
+        "lib/libdriver_runtime.so": "libdriver_runtime.so_stripped",
+        "lib/libsyslog.so": "libsyslog.so_stripped",
+    },
+    manifests = ["meta/test_driver.cm"],
+    package_under_test = "//fuchsia/packaging/fuchsia_package/cc_driver:pkg",
+    visibility = ["//visibility:public"],
+)

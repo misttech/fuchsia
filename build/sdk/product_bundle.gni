@@ -6,14 +6,19 @@ import("//build/compiled_action.gni")
 import("//build/info/info.gni")
 import("//build/python/python_action.gni")
 import("//build/sdk/product_bundle_transfer_manifest.gni")
-import("//build/security/verifier/scrutiny_verifiers.gni")
 import("//sdk/config.gni")
 import("//src/developer/ffx/build/ffx_action.gni")
+
+# The name of the main product bundle produced by a build.
+main_product_bundle_name = "${build_info_product}.${build_info_board}"
 
 # Generate a product bundle that can be used to flash, emulate, or update a
 # product onto a Fuchsia target.
 #
 # Arguments
+#   name (required)
+#     [string] The name of the product bundle.
+#
 #   partitions (required)
 #     [path] The path to the partitions config.
 #
@@ -63,39 +68,24 @@ import("//src/developer/ffx/build/ffx_action.gni")
 #   default_virtual_device (optional)
 #     [string] The name of the default virtual device
 #
-#   scrutiny_args           (optional; default={})
-#   scrutiny_recovery_args  (optional; default={})
-#     [scope] The scrutiny arguments that are forwarded to scrutiny_verifiers,
-#     which must include:
-#       assembly_image_name
-#       product_assembly_config_label
-#       route_sources_config
-#       static_pkgs_golden
-#       verify_component_resolvers_allowlist
-#       verify_routes_component_tree_config
-#       verify_routes_exceptions_allowlist
-#       verify_routes_exceptions_allowlist_product
-#       zbi_bootfs_filelist_goldens
-#       zbi_bootfs_packages_goldens
-#       zbi_kernel_cmdline_goldens
-#
-#   skip_scrutiny           (optional; default=false)
-#   skip_scrutiny_recovery  (optional; default=false)
-#     [bool] Whether to skip running scrutiny verifiers on a particular slot.
-#     These should not be true if the corresponding scrutiny args are supplied.
-#
 #   delivery_blob_type (optional)
 #     [int] The type of delivery blob the product needs.
 #
+#   skip_transfer_manifest           (optional; default=false)
+#     [bool] Whether to skip creating transfer manifest
+#
 template("product_bundle") {
-  assert(defined(invoker.partitions), "Need to define partitions")
+  assert(defined(invoker.partitions),
+         "product_bundle(${target_name}) must define `partitions`")
+  assert(defined(invoker.name),
+         "product_bundle(${target_name}) must define `name`")
+
+  product_name = invoker.name
 
   labels = {
     hermetic_inputs = "${target_name}_hermetic_inputs"
     product_bundle = "${target_name}_product_bundle"
     transfer_manifest = "${target_name}_transfer_manifest"
-    scrutiny = "${target_name}_scrutiny"
-    scrutiny_recovery = "${target_name}_scrutiny_recovery"
   }
 
   files = {
@@ -106,7 +96,7 @@ template("product_bundle") {
     target_out_dir = target_out_dir
     product_bundle_manifest = "${outdir}/product_bundle.json"
     vd_dir = "${outdir}/virtual_devices"
-    transfer_manifest = "$target_out_dir/transfer.json"
+    transfer_manifest = "$target_out_dir/${product_name}.transfer.json"
     tuf_keys = "//src/sys/pkg/repositories/devhost/keys"
   }
 
@@ -115,25 +105,9 @@ template("product_bundle") {
     virtual_devices += invoker.virtual_devices
   }
 
-  skip_scrutiny = false
-  if (defined(invoker.skip_scrutiny) && invoker.skip_scrutiny) {
-    assert(!defined(invoker.scrutiny_args),
-           "scrutiny_args should not be supplied when skip_scrutiny=true")
-    skip_scrutiny = invoker.skip_scrutiny
-  } else {
-    assert(defined(invoker.scrutiny_args), "scrutiny_args must be supplied")
-  }
-
-  skip_scrutiny_recovery = false
-  if (defined(invoker.skip_scrutiny_recovery) &&
-      invoker.skip_scrutiny_recovery) {
-    assert(
-        !defined(invoker.scrutiny_recovery_args),
-        "scrutiny_recovery_args should not be supplied when skip_scrutiny_recovery=true")
-    skip_scrutiny_recovery = invoker.skip_scrutiny_recovery
-  } else {
-    assert(defined(invoker.scrutiny_recovery_args),
-           "scrutiny_recovery_args must be supplied")
+  skip_transfer_manifest = false
+  if (defined(invoker.skip_transfer_manifest)) {
+    skip_transfer_manifest = invoker.skip_transfer_manifest
   }
 
   python_action(labels.hermetic_inputs) {
@@ -222,6 +196,7 @@ template("product_bundle") {
     hermetic_action_ignored_prefixes = [
       "${files.outdir}/blobs",
       "${files.outdir}/repository",
+      "${files.outdir}/recovery_repository",
     ]
 
     # The target below is generated as a part of the `ffx_tool` action at
@@ -236,7 +211,6 @@ template("product_bundle") {
     # the sdk version. So far they have been the same value.
     assert(sdk_id != "")
     product_version = sdk_id
-    product_name = "${build_info_product}.${build_info_board}"
     args = [
       "--config",
       "product.experimental=true",
@@ -336,45 +310,17 @@ template("product_bundle") {
     }
   }
 
-  product_bundle_transfer_manifest(labels.transfer_manifest) {
-    forward_variables_from(invoker,
-                           [
-                             "testonly",
-                             "visibility",
-                           ])
-    product_bundle_target = ":${labels.product_bundle}"
-    output_dir = files.target_out_dir
-    product_bundle_dir = files.outdir
-
-    # The definition of metadata.product_bundles.transfer_manifest_path
-    # below depends on the following assertion.
-    assert("${output_dir}/transfer.json" == files.transfer_manifest)
-  }
-
-  if (!skip_scrutiny) {
-    scrutiny_verifiers(labels.scrutiny) {
+  if (!skip_transfer_manifest) {
+    product_bundle_transfer_manifest(labels.transfer_manifest) {
       forward_variables_from(invoker,
                              [
                                "testonly",
                                "visibility",
                              ])
-      product_bundle = ":${labels.product_bundle}"
-      product_bundle_path = files.outdir
-      forward_variables_from(invoker.scrutiny_args, "*")
-    }
-  }
+      product_bundle_target = ":${labels.product_bundle}"
 
-  if (!skip_scrutiny_recovery) {
-    scrutiny_verifiers(labels.scrutiny_recovery) {
-      forward_variables_from(invoker,
-                             [
-                               "testonly",
-                               "visibility",
-                             ])
-      product_bundle = ":${labels.product_bundle}"
-      product_bundle_path = files.outdir
-      recovery = true
-      forward_variables_from(invoker.scrutiny_recovery_args, "*")
+      product_bundle_dir = files.outdir
+      outputs = [ files.transfer_manifest ]
     }
   }
 
@@ -385,15 +331,9 @@ template("product_bundle") {
                              "visibility",
                            ])
 
-    public_deps = [
-      ":${labels.product_bundle}",
-      ":${labels.transfer_manifest}",
-    ]
-    if (!skip_scrutiny) {
-      public_deps += [ ":${labels.scrutiny}" ]
-    }
-    if (!skip_scrutiny_recovery) {
-      public_deps += [ ":${labels.scrutiny_recovery}" ]
+    public_deps = [ ":${labels.product_bundle}" ]
+    if (!skip_transfer_manifest) {
+      public_deps += [ ":${labels.transfer_manifest}" ]
     }
 
     # This value can be set (e.g. for testing) with `--args sdk_id=1234` on the
@@ -409,11 +349,15 @@ template("product_bundle") {
         {
           label = get_label_info(":$target_name", "label_with_toolchain")
           path = rebase_path(files.outdir, root_build_dir)
-          name = "${build_info_product}.${build_info_board}"
+          name = product_name
+          cpu = current_cpu
           product_version = product_version
-          transfer_manifest_path =
-              rebase_path(files.transfer_manifest, root_build_dir)
-          transfer_manifest_url = "file://" + transfer_manifest_path
+          if (!skip_transfer_manifest) {
+            transfer_manifest_path =
+                rebase_path(files.transfer_manifest, root_build_dir)
+            transfer_manifest_url = "file://" + transfer_manifest_path
+          }
+          json = rebase_path(files.product_bundle_manifest, root_build_dir)
         },
       ]
     }

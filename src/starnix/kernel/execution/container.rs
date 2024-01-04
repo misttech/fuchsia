@@ -2,7 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::{
+    device::{init_common_devices, parse_features, run_container_features},
+    execution::{
+        create_filesystem_from_spec, create_remotefs_filesystem, execute_task_with_prerun_result,
+        expose_root, serve_component_runner, serve_container_controller, serve_graphical_presenter,
+    },
+    fs::{layeredfs::LayeredFs, tmpfs::TmpFs},
+    task::{set_thread_role, CurrentTask, ExitStatus, Kernel, Task, TaskBuilder},
+    time::utc::update_utc_clock,
+    vfs::{FileSystemOptions, FsContext, LookupContext, WhatToMount},
+};
 use anyhow::{anyhow, bail, Error};
+use bstr::BString;
 use fidl::{
     endpoints::{ControlHandle, RequestStream},
     AsyncChannel,
@@ -11,28 +23,35 @@ use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_runner as frunner;
 use fidl_fuchsia_element as felement;
 use fidl_fuchsia_io as fio;
+use fidl_fuchsia_scheduler::ProfileProviderMarker;
 use fidl_fuchsia_starnix_container as fstarcontainer;
 use fuchsia_async as fasync;
 use fuchsia_async::DurationExt;
-use fuchsia_component::server::ServiceFs;
+use fuchsia_component::{client::connect_to_protocol_sync, server::ServiceFs};
 use fuchsia_inspect as inspect;
 use fuchsia_runtime as fruntime;
-use fuchsia_zircon as zx;
-use fuchsia_zircon::Task as _;
+use fuchsia_zircon::{
+    Task as _, {self as zx},
+};
 use futures::{channel::oneshot, FutureExt, StreamExt, TryStreamExt};
 use runner::{get_program_string, get_program_strvec};
 use starnix_kernel_config::Config;
-use std::{collections::BTreeMap, ffi::CString, sync::Arc};
-
-use crate::{
-    auth::Credentials,
-    device::{init_common_devices, run_features},
-    execution::*,
-    fs::{layeredfs::LayeredFs, tmpfs::TmpFs, *},
-    logging::{log_error, log_info},
-    task::*,
-    types::*,
+use starnix_logging::{
+    log_error, log_info, log_warn, trace_category_starnix, trace_duration,
+    trace_name_create_container,
 };
+use starnix_uapi::{
+    auth::Credentials,
+    errno,
+    errors::{SourceContext, ENOENT},
+    mount_flags::MountFlags,
+    open_flags::OpenFlags,
+    ownership::{release_on_error, Releasable},
+    pid_t,
+    resource_limits::Resource,
+    rlimit,
+};
+use std::{collections::BTreeMap, ffi::CString, sync::Arc};
 
 /// A temporary wrapper struct that contains both a `Config` for the container, as well as optional
 /// handles for the container's component controller and `/pkg` directory.
@@ -81,7 +100,10 @@ fn get_config_from_component_start_info(
     mut start_info: frunner::ComponentStartInfo,
 ) -> ConfigWrapper {
     let get_strvec = |key| {
-        get_program_strvec(&start_info, key).map(|value| value.to_owned()).unwrap_or_default()
+        get_program_strvec(&start_info, key)
+            .unwrap_or_default()
+            .map(|value| value.to_owned())
+            .unwrap_or_default()
     };
 
     let get_string = |key| get_program_string(&start_info, key).unwrap_or_default().to_owned();
@@ -127,9 +149,17 @@ pub struct Container {
 
     /// Inspect node holding information about the state of the container.
     _node: inspect::Node,
+
+    /// Until negative trait bound are implemented, using `*mut u8` to prevent transferring
+    /// Container across threads.
+    _thread_bound: std::marker::PhantomData<*mut u8>,
 }
 
 impl Container {
+    pub fn system_task(&self) -> &CurrentTask {
+        self.kernel.kthreads.system_task()
+    }
+
     async fn serve_outgoing_directory(
         &self,
         outgoing_dir: Option<zx::Channel>,
@@ -146,14 +176,14 @@ impl Container {
             // Expose the root of the container's filesystem.
             let (fs_root, fs_root_server_end) = fidl::endpoints::create_proxy()?;
             fs.add_remote("fs_root", fs_root);
-            expose_root(self, fs_root_server_end)?;
+            expose_root(self.system_task(), fs_root_server_end)?;
 
             fs.serve_connection(outgoing_dir.into()).map_err(|_| errno!(EINVAL))?;
 
             fs.for_each_concurrent(None, |request_stream| async {
                 match request_stream {
                     ExposedServices::ComponentRunner(request_stream) => {
-                        match serve_component_runner(request_stream, self).await {
+                        match serve_component_runner(request_stream, self.system_task()).await {
                             Ok(_) => {}
                             Err(e) => {
                                 log_error!("Error serving component runner: {:?}", e);
@@ -161,12 +191,12 @@ impl Container {
                         }
                     }
                     ExposedServices::ContainerController(request_stream) => {
-                        serve_container_controller(request_stream, self)
+                        serve_container_controller(request_stream, self.system_task())
                             .await
                             .expect("failed to start container.")
                     }
                     ExposedServices::GrahicalPresenter(request_stream) => {
-                        serve_graphical_presenter(request_stream, self)
+                        serve_graphical_presenter(request_stream, &self.kernel)
                             .await
                             .expect("failed to start GrahicalPresenter.")
                     }
@@ -247,6 +277,14 @@ pub async fn create_component_from_stream(
                         format!("creating container \"{}\"", &config.config.name)
                     })?;
                 let service_config = ContainerServiceConfig { config, request_stream, receiver };
+                let kernel = &container.kernel;
+                let vvar = kernel.vdso.vvar_writeable.clone();
+                kernel.kthreads.spawner().spawn(move |_, _| loop {
+                    // TODO(fxb/129367): Replace polling for the clock transformation with having
+                    // some sort of a wait for a clock transform update notification.
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    update_utc_clock(&vvar);
+                });
                 return Ok((container, service_config));
             }
         }
@@ -276,71 +314,97 @@ async fn create_container(
 
     let pkg_dir_proxy = fio::DirectorySynchronousProxy::new(config.pkg_dir.take().unwrap());
 
+    let features = parse_features(&config.features)?;
+    let mut kernel_cmdline = BString::from(config.kernel_cmdline.as_bytes());
+    if features.android_serialno {
+        match crate::device::get_serial_number().await {
+            Ok(serial) => {
+                kernel_cmdline.extend(b" androidboot.serialno=");
+                kernel_cmdline.extend(&*serial);
+            }
+            Err(err) => log_warn!("could not get serial number: {err:?}"),
+        }
+    }
+
+    // Check whether we actually have access to a profile provider by trying to set our own
+    // thread's role.
+    let profile_provider = connect_to_protocol_sync::<ProfileProviderMarker>().unwrap();
+    let profile_provider = if let Err(e) =
+        set_thread_role(&profile_provider, &*fuchsia_runtime::thread_self(), Default::default())
+    {
+        log_warn!("Setting thread role failed ({e:?}), will not set thread priority.");
+        None
+    } else {
+        log_info!("Thread role set successfully.");
+        Some(profile_provider)
+    };
+
     let node = inspect::component::inspector().root().create_child("container");
     let kernel = Kernel::new(
-        config.name.as_bytes(),
-        config.kernel_cmdline.as_bytes(),
-        &config.features,
+        kernel_cmdline,
+        features,
         svc_dir,
         data_dir,
+        profile_provider,
         node.create_child("kernel"),
     )
     .with_source_context(|| format!("creating Kernel: {}", &config.name))?;
+    let fs_context =
+        create_fs_context(&kernel, config, &pkg_dir_proxy).source_context("creating FsContext")?;
+    let init_pid = kernel.pids.write().allocate_pid();
+    debug_assert!(init_pid == 1);
 
-    let mut init_task = create_init_task(&kernel, config)
+    let system_task = CurrentTask::create_system_task(&kernel, Arc::clone(&fs_context))
+        .source_context("create system task")?;
+
+    kernel.kthreads.init(system_task).source_context("initializing kthreads")?;
+    let system_task = kernel.kthreads.system_task();
+
+    kernel.syslog.init(&system_task).source_context("initializing syslog")?;
+
+    // Register common devices and add them in sysfs and devtmpfs.
+    init_common_devices(&system_task);
+
+    mount_filesystems(&system_task, config, &pkg_dir_proxy)
+        .source_context("mounting filesystems")?;
+
+    // Run all common features that were specified in the .cml.
+    run_container_features(&system_task)?;
+
+    // If there is an init binary path, run it, optionally waiting for the
+    // startup_file_path to be created. The task struct is still used
+    // to initialize the system up until this point, regardless of whether
+    // or not there is an actual init to be run.
+    let argv =
+        if config.init.is_empty() { vec![DEFAULT_INIT.to_string()] } else { config.init.clone() }
+            .iter()
+            .map(|s| to_cstr(s))
+            .collect::<Vec<_>>();
+
+    let executable = system_task
+        .open_file(argv[0].as_bytes(), OpenFlags::RDONLY)
+        .with_source_context(|| format!("opening init: {:?}", &argv[0]))?;
+
+    let init_task = create_init_task(&kernel, init_pid, Arc::clone(&fs_context), config)
         .with_source_context(|| format!("creating init task: {:?}", &config.init))?;
-    release_on_error!(init_task, &(), {
-        let fs_context = create_fs_context(&init_task, config, &pkg_dir_proxy)
-            .source_context("creating FsContext")?;
-        init_task.set_fs(fs_context.clone());
-        kernel.kthreads.init(&kernel, fs_context).source_context("initializing kthreads")?;
-        let system_task = kernel.kthreads.system_task();
-
-        // Register common devices and add them in sysfs and devtmpfs.
-        init_common_devices(&kernel);
-
-        mount_filesystems(system_task, config, &pkg_dir_proxy)
-            .source_context("mounting filesystems")?;
-
-        // Run all common features that were specified in the .cml.
-        run_features(&config.features, &kernel)
-            .with_source_context(|| format!("initializing features: {:?}", &config.features))?;
-
-        // If there is an init binary path, run it, optionally waiting for the
-        // startup_file_path to be created. The task struct is still used
-        // to initialize the system up until this point, regardless of whether
-        // or not there is an actual init to be run.
-        let argv = if config.init.is_empty() {
-            vec![DEFAULT_INIT.to_string()]
-        } else {
-            config.init.clone()
-        }
-        .iter()
-        .map(|s| to_cstr(s))
-        .collect::<Vec<_>>();
-
-        let executable = init_task
-            .open_file(argv[0].as_bytes(), OpenFlags::RDONLY)
-            .with_source_context(|| format!("opening init: {:?}", &argv[0]))?;
-        init_task
-            .exec(executable, argv[0].clone(), argv.clone(), vec![])
-            .with_source_context(|| format!("executing init: {:?}", &argv))?;
-        Ok(())
-    });
-    execute_task(init_task, move |result| {
-        log_info!("Finished running init process: {:?}", result);
-        let _ = task_complete.send(result);
-    });
+    execute_task_with_prerun_result(
+        init_task,
+        move |_, init_task| init_task.exec(executable, argv[0].clone(), argv.clone(), vec![]),
+        move |result| {
+            log_info!("Finished running init process: {:?}", result);
+            let _ = task_complete.send(result);
+        },
+    )?;
 
     if !config.startup_file_path.is_empty() {
-        wait_for_init_file(&config.startup_file_path, kernel.kthreads.system_task()).await?;
+        wait_for_init_file(&config.startup_file_path, &system_task).await?;
     };
 
-    Ok(Container { kernel, _node: node })
+    Ok(Container { kernel, _node: node, _thread_bound: Default::default() })
 }
 
 fn create_fs_context(
-    current_task: &CurrentTask,
+    kernel: &Arc<Kernel>,
     config: &ConfigWrapper,
     pkg_dir_proxy: &fio::DirectorySynchronousProxy,
 ) -> Result<Arc<FsContext>, Error> {
@@ -349,7 +413,7 @@ fn create_fs_context(
     // applied on top of it.
     let mut mounts_iter = config.mounts.iter();
     let (root_point, root_fs) = create_filesystem_from_spec(
-        current_task.kernel(),
+        kernel,
         pkg_dir_proxy,
         mounts_iter.next().ok_or_else(|| anyhow!("Mounts list is empty"))?,
     )?;
@@ -361,7 +425,6 @@ fn create_fs_context(
     // /container will mount the container pkg
     // /container/component will be a tmpfs where component using the starnix kernel will have their
     // package mounted.
-    let kernel = current_task.kernel();
     let rights = fio::OpenFlags::RIGHT_READABLE | fio::OpenFlags::RIGHT_EXECUTABLE;
     let container_fs = LayeredFs::new_fs(
         kernel,
@@ -375,10 +438,10 @@ fn create_fs_context(
     );
     let mut mappings =
         vec![(b"container".to_vec(), container_fs), (b"data".to_vec(), TmpFs::new_fs(kernel))];
-    if config.features.contains(&"custom_artifacts".to_string()) {
+    if kernel.features.custom_artifacts {
         mappings.push((b"custom_artifacts".to_vec(), TmpFs::new_fs(kernel)));
     }
-    if config.features.contains(&"test_data".to_string()) {
+    if kernel.features.test_data {
         mappings.push((b"test_data".to_vec(), TmpFs::new_fs(kernel)));
     }
     let root_fs = LayeredFs::new_fs(kernel, root_fs, mappings.into_iter().collect());
@@ -386,13 +449,9 @@ fn create_fs_context(
     Ok(FsContext::new(root_fs))
 }
 
-pub fn set_rlimits(current_task: &CurrentTask, rlimits: &[String]) -> Result<(), Error> {
+pub fn set_rlimits(task: &Task, rlimits: &[String]) -> Result<(), Error> {
     let set_rlimit = |resource, value| {
-        current_task
-            .thread_group
-            .limits
-            .lock()
-            .set(resource, rlimit { rlim_cur: value, rlim_max: value });
+        task.thread_group.limits.lock().set(resource, rlimit { rlim_cur: value, rlim_max: value });
     };
 
     for rlimit in rlimits.iter() {
@@ -409,15 +468,20 @@ pub fn set_rlimits(current_task: &CurrentTask, rlimits: &[String]) -> Result<(),
     Ok(())
 }
 
-fn create_init_task(kernel: &Arc<Kernel>, config: &ConfigWrapper) -> Result<CurrentTask, Error> {
+fn create_init_task(
+    kernel: &Arc<Kernel>,
+    pid: pid_t,
+    fs_context: Arc<FsContext>,
+    config: &ConfigWrapper,
+) -> Result<TaskBuilder, Error> {
     let credentials = Credentials::root();
     let initial_name = if config.init.is_empty() {
         CString::default()
     } else {
         CString::new(config.init[0].clone())?
     };
-    let task = Task::create_process_without_parent(kernel, initial_name, None)?;
-    release_on_error!(task, &(), {
+    let task = CurrentTask::create_init_process(kernel, pid, initial_name, fs_context)?;
+    release_on_error!(task, (), {
         task.set_creds(credentials);
         set_rlimits(&task, &config.rlimits)?;
         Ok(())
@@ -435,7 +499,7 @@ fn mount_filesystems(
     let _ = mounts_iter.next();
     for mount_spec in mounts_iter {
         let (mount_point, child_fs) =
-            create_filesystem_from_spec(system_task.kernel(), pkg_dir_proxy, mount_spec)
+            create_filesystem_from_spec(system_task, pkg_dir_proxy, mount_spec)
                 .with_source_context(|| {
                     format!("creating filesystem from spec: {}", &mount_spec)
                 })?;
@@ -469,9 +533,13 @@ async fn wait_for_init_file(
 #[cfg(test)]
 mod test {
     use super::wait_for_init_file;
-    use crate::{fs::FdNumber, testing::create_kernel_and_task, types::*};
+    use crate::{
+        testing::{create_kernel_and_task, create_kernel_task_and_unlocked},
+        vfs::FdNumber,
+    };
     use fuchsia_async as fasync;
     use futures::{SinkExt, StreamExt};
+    use starnix_uapi::{file_mode::FileMode, open_flags::OpenFlags, signals::SIGCHLD, CLONE_FS};
 
     #[fuchsia::test]
     async fn test_init_file_already_exists() {
@@ -500,10 +568,11 @@ mod test {
 
     #[fuchsia::test]
     async fn test_init_file_wait_required() {
-        let (_kernel, current_task) = create_kernel_and_task();
+        let (_kernel, current_task, mut locked) = create_kernel_task_and_unlocked();
         let (mut sender, mut receiver) = futures::channel::mpsc::unbounded();
 
-        let init_task = current_task.clone_task_for_test(CLONE_FS as u64, Some(SIGCHLD));
+        let init_task =
+            current_task.clone_task_for_test(&mut locked, CLONE_FS as u64, Some(SIGCHLD));
         let path = "/path";
 
         fasync::Task::local(async move {

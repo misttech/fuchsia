@@ -76,12 +76,13 @@
                 "fuchsia.boot.FactoryItems",
                 "fuchsia.boot.Items",
                 "fuchsia.boot.ReadOnlyLog",
-                "fuchsia.boot.RootResource",
                 "fuchsia.boot.WriteOnlyLog",
                 "fuchsia.device.NameProvider",
                 "fuchsia.diagnostics.ArchiveAccessor",
                 "fuchsia.diagnostics.FeedbackArchiveAccessor",
+                "fuchsia.diagnostics.host.ArchiveAccessor",
                 "fuchsia.diagnostics.LegacyMetricsArchiveAccessor",
+                "fuchsia.diagnostics.LogSettings",
                 "fuchsia.diagnostics.LoWPANArchiveAccessor",
                 "fuchsia.driver.development.DriverDevelopment",
                 "fuchsia.driver.registrar.DriverRegistrar",
@@ -92,8 +93,10 @@
                 "fuchsia.kernel.Counter",
                 "fuchsia.kernel.DebugBroker",
                 "fuchsia.kernel.DebugResource",
+                "fuchsia.kernel.FramebufferResource",
                 "fuchsia.kernel.HypervisorResource",
                 "fuchsia.kernel.InfoResource",
+                "fuchsia.kernel.IommuResource",
                 "fuchsia.kernel.IoportResource",
                 "fuchsia.kernel.IrqResource",
                 "fuchsia.kernel.MmioResource",
@@ -120,7 +123,6 @@
                 "fuchsia.tpm.cr50.Cr50",
                 "fuchsia.tracing.kernel.Controller",
                 "fuchsia.tracing.kernel.Reader",
-                "fuchsia.vboot.FirmwareParam",
                 "fuchsia.virtualconsole.SessionManager",
             ],
             from: "parent",
@@ -140,23 +142,6 @@
                 "fuchsia.pkg.rewrite.Engine",
             ],
             from: "#pkg-resolver",
-            to: "#sshd-host",
-        },
-
-        // Used by `remote_control_runner`
-        {
-            protocol: [
-                "fuchsia.overnet.MeshController",
-                "fuchsia.overnet.Overnet",
-                "fuchsia.overnet.ServiceConsumer",
-                "fuchsia.overnet.ServicePublisher",
-            ],
-            from: "#overnetstack",
-            to: "#sshd-host",
-        },
-        {
-            protocol: "fuchsia.hardware.serial.DeviceProxy",
-            from: "#debug_serial",
             to: "#sshd-host",
         },
 
@@ -290,7 +275,7 @@
             to: "#sshd-host",
         },
         {
-            protocol: "fuchsia.developer.remotecontrol.RemoteControl",
+            protocol: "fuchsia.developer.remotecontrol.connector.Connector",
             from: "#remote-control",
             to: "#sshd-host",
         },
@@ -446,6 +431,8 @@
             protocol: [
                 "fuchsia.update.channel.Provider",
                 "fuchsia.update.channelcontrol.ChannelControl",
+                "fuchsia.update.config.OptOut",
+                "fuchsia.update.config.OptOutAdmin",
                 "fuchsia.update.Manager",
             ],
             from: "#system-update",
@@ -457,20 +444,39 @@
             from: "#system-update",
             to: "#sshd-host",
         },
-        {
-            protocol: [
-                "fuchsia.update.config.OptOut",
-                "fuchsia.update.config.OptOutAdmin",
-            ],
-            from: "#system-update-configurator",
-            to: "#sshd-host",
-            source_availability: "unknown",
-        },
 
         // Media
         {
-            protocol: "fuchsia.audio.ffxdaemon.AudioDaemon",
+            protocol: [
+                "fuchsia.audio.device.ControlCreator",
+                "fuchsia.audio.device.Provider",
+                "fuchsia.audio.device.Registry",
+            ],
+            from: "#audio_device_registry",
+            to: "#sshd-host",
+            source_availability: "unknown",
+        },
+        {
+            protocol: [
+                "fuchsia.audio.ffxdaemon.DeviceControl",
+                "fuchsia.audio.ffxdaemon.Player",
+                "fuchsia.audio.ffxdaemon.Recorder",
+            ],
             from: "#audio_ffx_daemon",
+            to: "#sshd-host",
+            source_availability: "unknown",
+        },
+        {
+            protocol: [
+                "fuchsia.media.ActivityReporter",
+                "fuchsia.media.Audio",
+                "fuchsia.media.AudioCore",
+                "fuchsia.media.AudioDeviceEnumerator",
+                "fuchsia.media.UsageGainReporter",
+                "fuchsia.media.UsageReporter",
+                "fuchsia.ultrasound.Factory",
+            ],
+            from: "#audio_core",
             to: "#sshd-host",
             source_availability: "unknown",
         },
@@ -623,7 +629,6 @@
         {
             protocol: [
                 "fuchsia.memory.debug.MemoryPressure",
-                "fuchsia.memory.Debugger",
                 "fuchsia.memory.inspection.Collector",
                 "fuchsia.memory.Monitor",
                 "fuchsia.memorypressure.Provider",

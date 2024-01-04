@@ -64,20 +64,19 @@ impl WireMetadata {
     /// controls dynamic behavior in the read path.
     #[inline]
     fn decoding_context(&self) -> Context {
-        if self.at_rest_flags().contains(AtRestFlags::USE_V2_WIRE_FORMAT) {
-            Context { wire_format_version: WireFormatVersion::V2 }
-        } else {
-            Context { wire_format_version: WireFormatVersion::V1 }
-        }
+        Context { wire_format_version: WireFormatVersion::V2 }
     }
 
-    /// Returns an error if this header has an incompatible magic number.
+    /// Returns an error if this header has an incompatible wire format.
     #[inline]
-    fn validate_magic_number(&self) -> Result<()> {
-        match self.magic_number {
-            MAGIC_NUMBER_INITIAL => Ok(()),
-            n => Err(Error::IncompatibleMagicNumber(n)),
+    pub fn validate_wire_format(&self) -> Result<()> {
+        if self.magic_number != MAGIC_NUMBER_INITIAL {
+            return Err(Error::IncompatibleMagicNumber(self.magic_number));
         }
+        if !self.at_rest_flags().contains(AtRestFlags::USE_V2_WIRE_FORMAT) {
+            return Err(Error::UnsupportedWireFormatVersion);
+        }
+        Ok(())
     }
 }
 
@@ -90,27 +89,23 @@ fn default_persistent_encode_context() -> Context {
 /// Encodes a FIDL object to bytes following RFC-0120. This only works on
 /// non-resource structs, tables, and unions. See `unpersist` for the reverse.
 pub fn persist<T: Persistable>(body: &T) -> Result<Vec<u8>> {
-    persist_with_context::<T>(body, default_persistent_encode_context())
-}
-
-// TODO(fxbug.dev/79584): Kept only for overnet, remove when possible.
-#[doc(hidden)]
-pub fn persist_with_context<T: ValueTypeMarker>(
-    body: T::Borrowed<'_>,
-    context: Context,
-) -> Result<Vec<u8>> {
-    let header = WireMetadata::new_full(context, MAGIC_NUMBER_INITIAL);
-    let msg = GenericMessage { header, body };
-    let mut combined_bytes = Vec::<u8>::new();
-    let mut handles = Vec::<HandleDisposition<'static>>::new();
-    Encoder::encode_with_context::<GenericMessageType<WireMetadata, T>>(
-        context,
-        &mut combined_bytes,
-        &mut handles,
-        msg,
-    )?;
-    debug_assert!(handles.is_empty(), "value type contains handles");
-    Ok(combined_bytes)
+    // This helper is needed to convince rustc that &T implements Encode<T>.
+    fn helper<T: ValueTypeMarker>(body: T::Borrowed<'_>) -> Result<Vec<u8>> {
+        let context = default_persistent_encode_context();
+        let header = WireMetadata::new_full(context, MAGIC_NUMBER_INITIAL);
+        let msg = GenericMessage { header, body };
+        let mut bytes = Vec::<u8>::new();
+        let mut handles = Vec::<HandleDisposition<'static>>::new();
+        Encoder::encode_with_context::<GenericMessageType<WireMetadata, T>>(
+            context,
+            &mut bytes,
+            &mut handles,
+            msg,
+        )?;
+        debug_assert!(handles.is_empty(), "value type contains handles");
+        Ok(bytes)
+    }
+    helper::<T>(body)
 }
 
 /// Decodes a FIDL object from bytes following RFC-0120. Must be a non-resource
@@ -189,7 +184,7 @@ fn decode_wire_metadata(bytes: &[u8]) -> Result<(WireMetadata, &[u8])> {
     let (header_bytes, body_bytes) = bytes.split_at(header_len);
     Decoder::decode_with_context::<WireMetadata>(context, header_bytes, &mut [], &mut header)
         .map_err(|_| Error::InvalidHeader)?;
-    header.validate_magic_number()?;
+    header.validate_wire_format()?;
     Ok((header, body_bytes))
 }
 

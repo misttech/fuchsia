@@ -11,8 +11,47 @@ driver_bind_rules("sdmmc-bind") {
   rules = "sdmmc.bind"
   bind_output = "sdmmc.bindbc"
   tests = "sdmmc-bind-test.json"
-  deps = [ "//src/devices/bind/fuchsia.sdmmc" ]
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_bindlib",
+    "//src/devices/bind/fuchsia.sdmmc",
+  ]
 }
+
+common_deps = [
+  ":sdmmc-bind",
+  "//sdk/banjo/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_banjo_cpp",
+  "//sdk/banjo/fuchsia.hardware.sdio:fuchsia.hardware.sdio_banjo_cpp",
+  "//sdk/banjo/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_banjo_cpp",
+  "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
+  "//sdk/fidl/fuchsia.hardware.rpmb:fuchsia.hardware.rpmb_bindlib_cpp",
+  "//sdk/fidl/fuchsia.hardware.rpmb:fuchsia.hardware.rpmb_cpp",
+  "//sdk/fidl/fuchsia.hardware.sdio:fuchsia.hardware.sdio_bindlib_cpp",
+  "//sdk/fidl/fuchsia.hardware.sdio:fuchsia.hardware.sdio_cpp",
+  "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_cpp",
+  "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+  "//sdk/lib/component/outgoing/cpp",
+  "//sdk/lib/driver/compat/cpp",
+  "//sdk/lib/driver/component/cpp:cpp",
+  "//sdk/lib/driver/runtime:driver_runtime",
+  "//sdk/lib/driver/runtime:driver_runtime_cpp",
+  "//sdk/lib/inspect/component/cpp",
+  "//src/devices/bin/driver_runtime",
+  "//src/devices/block/lib/common",
+  "//src/devices/block/lib/sdio",
+  "//src/devices/block/lib/sdmmc",
+  "//src/devices/lib/dev-operation",
+  "//zircon/system/ulib/async-loop:async-loop-cpp",
+  "//zircon/system/ulib/async-loop:async-loop-default",
+  "//zircon/system/ulib/fbl",
+  "//zircon/system/ulib/fzl",
+  "//zircon/system/ulib/inspect",
+  "//zircon/system/ulib/pretty",
+  "//zircon/system/ulib/sync",
+  "//zircon/system/ulib/trace",
+  "//zircon/system/ulib/zircon-internal",
+  "//zircon/system/ulib/zx",
+  "//zircon/third_party/ulib/safemath",
+]
 
 fuchsia_driver("sdmmc-driver") {
   output_name = "sdmmc"
@@ -21,6 +60,7 @@ fuchsia_driver("sdmmc-driver") {
     "//build/config/fuchsia:enable_zircon_asserts",
   ]
   sources = [
+    "driver-export.cc",
     "mmc.cc",
     "sd.cc",
     "sdio-controller-device.cc",
@@ -31,38 +71,7 @@ fuchsia_driver("sdmmc-driver") {
     "sdmmc-root-device.cc",
     "sdmmc-rpmb-device.cc",
   ]
-  deps = [
-    ":sdmmc-bind",
-    "//sdk/banjo/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_banjo_cpp",
-    "//sdk/banjo/fuchsia.hardware.sdio:fuchsia.hardware.sdio_banjo_cpp",
-    "//sdk/banjo/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.rpmb:fuchsia.hardware.rpmb_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.sdio:fuchsia.hardware.sdio_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_cpp_wire",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
-    "//sdk/lib/component/outgoing/cpp",
-    "//sdk/lib/driver/runtime:driver_runtime",
-    "//src/devices/block/lib/common",
-    "//src/devices/block/lib/sdio",
-    "//src/devices/block/lib/sdmmc",
-    "//src/devices/lib/dev-operation",
-    "//src/devices/lib/driver",
-    "//src/devices/lib/driver:driver_runtime",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
-    "//zircon/system/ulib/async:async-cpp",
-    "//zircon/system/ulib/async-loop:async-loop-cpp",
-    "//zircon/system/ulib/async-loop:async-loop-default",
-    "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fzl",
-    "//zircon/system/ulib/inspect",
-    "//zircon/system/ulib/pretty",
-    "//zircon/system/ulib/sync",
-    "//zircon/system/ulib/trace",
-    "//zircon/system/ulib/zircon-internal",
-    "//zircon/system/ulib/zx",
-  ]
+  deps = common_deps
 }
 
 fuchsia_driver_component("sdmmc") {
@@ -78,9 +87,44 @@ fuchsia_driver_package("package") {
   driver_components = [ ":sdmmc" ]
 }
 
-test("sdmmc-test-bin") {
+test("sdmmc-block-test-bin") {
   configs += [ "//build/config:all_source" ]
-  output_name = "sdmmc-test"
+  output_name = "sdmmc-block-test"
+  sources = [
+    "fake-sdmmc-device.cc",
+    "mmc.cc",
+    "sd.cc",
+    "sdio-controller-device.cc",
+    "sdio-function-device.cc",
+    "sdmmc-block-device-test.cc",
+    "sdmmc-block-device.cc",
+    "sdmmc-device.cc",
+    "sdmmc-partition-device.cc",
+    "sdmmc-root-device.cc",
+    "sdmmc-rpmb-device.cc",
+  ]
+  deps = common_deps + [
+           "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
+           "//sdk/lib/async_patterns/testing/cpp",
+           "//sdk/lib/driver/testing/cpp:cpp",
+           "//sdk/lib/inspect/testing/cpp:zxtest",
+           "//zircon/system/ulib/zxtest",
+         ]
+}
+
+fuchsia_unittest_package("sdmmc-block-test") {
+  deps = [ ":sdmmc-block-test-bin" ]
+  test_specs = {
+    environments = basic_envs
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+}
+
+test("sdio-controller-test-bin") {
+  configs += [ "//build/config:all_source" ]
+  output_name = "sdio-controller-test"
   sources = [
     "fake-sdmmc-device.cc",
     "mmc.cc",
@@ -88,52 +132,23 @@ test("sdmmc-test-bin") {
     "sdio-controller-device-test.cc",
     "sdio-controller-device.cc",
     "sdio-function-device.cc",
-    "sdmmc-block-device-test.cc",
     "sdmmc-block-device.cc",
     "sdmmc-device.cc",
     "sdmmc-partition-device.cc",
+    "sdmmc-root-device.cc",
     "sdmmc-rpmb-device.cc",
   ]
-  deps = [
-    ":sdmmc-bind",
-    "//sdk/banjo/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_banjo_cpp",
-    "//sdk/banjo/fuchsia.hardware.sdio:fuchsia.hardware.sdio_banjo_cpp",
-    "//sdk/banjo/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.rpmb:fuchsia.hardware.rpmb_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.sdio:fuchsia.hardware.sdio_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_cpp_wire",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
-    "//sdk/lib/component/outgoing/cpp",
-    "//sdk/lib/driver/runtime:driver_runtime",
-    "//sdk/lib/fit",
-    "//sdk/lib/inspect/testing/cpp:zxtest",
-    "//src/devices/block/lib/common",
-    "//src/devices/block/lib/sdio",
-    "//src/devices/block/lib/sdmmc",
-    "//src/devices/lib/dev-operation",
-    "//src/devices/lib/driver:driver_runtime",
-    "//src/devices/testing/mock-ddk",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
-    "//src/lib/vmo_store",
-    "//zircon/system/ulib/async-loop:async-loop-cpp",
-    "//zircon/system/ulib/async-loop:async-loop-default",
-    "//zircon/system/ulib/fzl",
-    "//zircon/system/ulib/inspect",
-    "//zircon/system/ulib/mock-function",
-    "//zircon/system/ulib/pretty",
-    "//zircon/system/ulib/sync",
-    "//zircon/system/ulib/trace",
-    "//zircon/system/ulib/zircon-internal",
-    "//zircon/system/ulib/zx",
-    "//zircon/system/ulib/zxtest",
-  ]
+  deps = common_deps + [
+           "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
+           "//sdk/lib/async_patterns/testing/cpp",
+           "//sdk/lib/driver/testing/cpp:cpp",
+           "//sdk/lib/inspect/testing/cpp:zxtest",
+           "//zircon/system/ulib/zxtest",
+         ]
 }
 
-fuchsia_unittest_package("sdmmc-test") {
-  deps = [ ":sdmmc-test-bin" ]
+fuchsia_unittest_package("sdio-controller-test") {
+  deps = [ ":sdio-controller-test-bin" ]
   test_specs = {
     environments = basic_envs
     log_settings = {
@@ -145,7 +160,8 @@ fuchsia_unittest_package("sdmmc-test") {
 group("tests") {
   testonly = true
   deps = [
+    ":sdio-controller-test",
     ":sdmmc-bind_test",
-    ":sdmmc-test",
+    ":sdmmc-block-test",
   ]
 }

@@ -39,18 +39,6 @@ kernel_cmdline("kernel.render-dlog-to-crashlog--true") {
   args = [ "kernel.render-dlog-to-crashlog=true" ]
 }
 
-kernel_cmdline("kernel.serial--none") {
-  args = [ "kernel.serial=none" ]
-}
-
-kernel_cmdline("virtcon.hide-on-boot") {
-  args = [ "virtcon.hide-on-boot" ]
-}
-
-kernel_cmdline("virtcon.disable--true") {
-  args = [ "virtcon.disable=true" ]
-}
-
 kernel_cmdline("virtcon.keep-log-visible--true") {
   args = [ "virtcon.keep-log-visible=true" ]
 }

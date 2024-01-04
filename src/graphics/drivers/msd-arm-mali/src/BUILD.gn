@@ -24,7 +24,6 @@ declare_args() {
 }
 
 source_set("src") {
-  assert_no_deps = [ "//src/devices/bin/driver_host:driver" ]
   sources = [
     "address_manager.cc",
     "address_manager.h",
@@ -85,30 +84,30 @@ source_set("src") {
     "//sdk/lib/driver/runtime:driver_runtime",
     "//sdk/lib/fit",
     "//src/devices/bin/driver_runtime",
-    "//src/graphics/lib/magma/include:msd",
-    "//src/graphics/lib/magma/src/magma_util:allocator",
-    "//src/graphics/lib/magma/src/magma_util:macros",
-    "//src/graphics/lib/magma/src/magma_util:registers",
-    "//src/graphics/lib/magma/src/magma_util:thread",
-    "//src/graphics/lib/magma/src/magma_util/platform:barriers",
-    "//src/graphics/lib/magma/src/magma_util/platform:bus_mapper",
-    "//src/graphics/lib/magma/src/magma_util/platform:event",
-    "//src/graphics/lib/magma/src/magma_util/platform:logger",
-    "//src/graphics/lib/magma/src/magma_util/platform:port",
-    "//src/graphics/lib/magma/src/magma_util/platform:semaphore",
-    "//src/graphics/lib/magma/src/magma_util/platform:trace",
-    "//src/graphics/lib/magma/src/magma_util/platform/zircon:interrupt",
-    "//src/graphics/lib/magma/src/magma_util/platform/zircon:mmio",
+    "//src/graphics/magma:msd",
+    "//src/graphics/magma/lib/magma/platform:barriers",
+    "//src/graphics/magma/lib/magma/platform:bus_mapper",
+    "//src/graphics/magma/lib/magma/platform:event",
+    "//src/graphics/magma/lib/magma/platform:logger",
+    "//src/graphics/magma/lib/magma/platform:port",
+    "//src/graphics/magma/lib/magma/platform:semaphore",
+    "//src/graphics/magma/lib/magma/platform:trace",
+    "//src/graphics/magma/lib/magma/platform/zircon:interrupt",
+    "//src/graphics/magma/lib/magma/platform/zircon:mmio",
+    "//src/graphics/magma/lib/magma/util:macros",
+    "//src/graphics/magma/lib/magma/util:thread",
+    "//src/graphics/magma/lib/magma_service/util:allocator",
+    "//src/graphics/magma/lib/magma_service/util:registers",
     "//src/lib/debug:backtrace-request",
   ]
 
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.gpu.mali:fuchsia.hardware.gpu.mali_cpp",
-    "//sdk/fidl/fuchsia.hardware.gpu.mali:fuchsia.hardware.gpu.mali_cpp_driver",
-    "//src/graphics/lib/magma/include:msd",
-    "//src/graphics/lib/magma/src/magma_util:short_macros",
-    "//src/graphics/lib/magma/src/magma_util/platform:interrupt_header",
-    "//src/graphics/lib/magma/src/magma_util/platform:mmio_header",
+    "//sdk/fidl/fuchsia.hardware.gpu.mali:fuchsia.hardware.gpu.mali_cpp",
+    "//src/graphics/magma:msd",
+    "//src/graphics/magma/lib/magma/platform:interrupt_header",
+    "//src/graphics/magma/lib/magma/platform:mmio_header",
+    "//src/graphics/magma/lib/magma/util:short_macros",
     "//zircon/system/ulib/async-loop:async-loop-cpp",
     "//zircon/system/ulib/hwreg",
     "//zircon/system/ulib/inspect",
@@ -122,10 +121,10 @@ source_set("parent_device_dfv1") {
   ]
 
   deps = [
-    "//src/graphics/lib/magma/src/magma_util/platform:thread",
-    "//src/graphics/lib/magma/src/magma_util/platform/zircon:interrupt",
-    "//src/graphics/lib/magma/src/magma_util/platform/zircon:mmio",
-    "//src/graphics/lib/magma/src/magma_util/platform/zircon:thread_profile",
+    "//src/graphics/magma/lib/magma/platform:thread",
+    "//src/graphics/magma/lib/magma/platform/zircon:interrupt",
+    "//src/graphics/magma/lib/magma/platform/zircon:mmio",
+    "//src/graphics/magma/lib/magma/platform/zircon:thread_profile",
   ]
   public_deps = [
     ":src",
@@ -140,9 +139,9 @@ source_set("parent_device_dfv2") {
   ]
 
   deps = [
-    "//src/graphics/lib/magma/src/magma_util/platform:thread",
-    "//src/graphics/lib/magma/src/magma_util/platform/zircon:interrupt",
-    "//src/graphics/lib/magma/src/magma_util/platform/zircon:mmio",
+    "//src/graphics/magma/lib/magma/platform:thread",
+    "//src/graphics/magma/lib/magma/platform/zircon:interrupt",
+    "//src/graphics/magma/lib/magma/platform/zircon:mmio",
   ]
   public_deps = [
     ":src",
@@ -150,7 +149,7 @@ source_set("parent_device_dfv2") {
     "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/incoming/cpp",
-    "//src/graphics/lib/magma/src/magma_util/platform:interrupt_header",
-    "//src/graphics/lib/magma/src/magma_util/platform:mmio_header",
+    "//src/graphics/magma/lib/magma/platform:interrupt_header",
+    "//src/graphics/magma/lib/magma/platform:mmio_header",
   ]
 }

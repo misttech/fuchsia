@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include <assert.h>
-#include <fuchsia/diagnostics/stream/cpp/fidl.h>
 #include <fuchsia/logger/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/loop.h>
@@ -16,6 +15,7 @@
 #include <lib/syslog/cpp/log_level.h>
 #include <lib/syslog/cpp/logging_backend.h>
 #include <lib/syslog/cpp/logging_backend_fuchsia_globals.h>
+#include <lib/syslog/structured_backend/cpp/fuchsia_syslog.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/process.h>
 
@@ -25,14 +25,8 @@
 #include <sstream>
 
 #include "lib/syslog/cpp/macros.h"
-#include "sdk/lib/syslog/structured_backend/cpp/fuchsia_syslog.h"
 
-namespace syslog_backend {
-
-// Returns true if we are running in the DDK.
-// This is used to customize logging behavior for drivers
-// and related driver functionality.
-bool fx_log_compat_no_interest_listener();
+namespace syslog_runtime {
 
 bool HasStructuredBackend() { return true; }
 
@@ -50,7 +44,7 @@ zx_koid_t GetKoid(zx_handle_t handle) {
 }
 
 static zx_koid_t pid = GetKoid(zx_process_self());
-static thread_local zx_koid_t tid = GetCurrentThreadKoid();
+static thread_local zx_koid_t tid = FuchsiaLogGetCurrentThreadKoid();
 
 struct RecordState {
   // Message string -- valid if severity is FATAL. For FATAL
@@ -149,22 +143,22 @@ class LogState {
 class GlobalStateLock {
  public:
   GlobalStateLock() {
-    AcquireState();
-    if (!GetStateLocked()) {
+    FuchsiaLogAcquireState();
+    if (!FuchsiaLogGetStateLocked()) {
       LogState::Set(fuchsia_logging::LogSettings(), *this);
     }
   }
 
   // Retrieves the global state
-  syslog_backend::LogState* operator->() const { return GetStateLocked(); }
+  syslog_runtime::LogState* operator->() const { return FuchsiaLogGetStateLocked(); }
 
   // Sets the global state
-  void Set(syslog_backend::LogState* state) const { SetStateLocked(state); }
+  void Set(syslog_runtime::LogState* state) const { FuchsiaLogSetStateLocked(state); }
 
   // Retrieves the global state
-  syslog_backend::LogState* operator*() const { return GetStateLocked(); }
+  syslog_runtime::LogState* operator*() const { return FuchsiaLogGetStateLocked(); }
 
-  ~GlobalStateLock() { ReleaseState(); }
+  ~GlobalStateLock() { FuchsiaLogReleaseState(); }
 };
 
 static fuchsia_logging::LogSeverity IntoLogSeverity(fuchsia::diagnostics::Severity severity) {
@@ -241,14 +235,6 @@ void LogState::ConnectAsync() {
 }
 
 void LogState::Connect() {
-  // Always disable the interest listener for the DDK.
-  // Once structured logging is available in the SDK
-  // this may unblock support for this.
-  // For now -- we have no way to properly support
-  // this functionality for drivers.
-  if (fx_log_compat_no_interest_listener()) {
-    serve_interest_listener_ = false;
-  }
   if (serve_interest_listener_) {
     if (!interest_listener_dispatcher_) {
       loop_.StartThread("log-interest-listener-thread");
@@ -288,16 +274,10 @@ void SetInterestChangedListener(void (*callback)(void* context,
   log_state->set_severity_handler(callback, context);
 }
 
-static cpp17::optional<cpp17::string_view> CStringToStringView(const char* str) {
-  if (!str) {
-    return cpp17::nullopt;
-  }
-  return cpp17::string_view(str, strlen(str));
-}
-
 void BeginRecordInternal(LogBuffer* buffer, fuchsia_logging::LogSeverity severity,
-                         const char* file_name, unsigned int line, const char* msg,
-                         const char* condition, zx_handle_t socket) {
+                         cpp17::optional<cpp17::string_view> file_name, unsigned int line,
+                         cpp17::optional<cpp17::string_view> msg,
+                         cpp17::optional<cpp17::string_view> condition, zx_handle_t socket) {
   // Ensure we have log state
   GlobalStateLock log_state;
   // Optional so no allocation overhead
@@ -305,17 +285,18 @@ void BeginRecordInternal(LogBuffer* buffer, fuchsia_logging::LogSeverity severit
   std::optional<std::string> modified_msg;
   if (condition) {
     std::stringstream s;
-    s << "Check failed: " << condition << ". ";
+    s << "Check failed: " << *condition << ". ";
     if (msg) {
-      s << msg;
+      s << *msg;
     }
     modified_msg = s.str();
     if (severity == fuchsia_logging::LOG_FATAL) {
       // We're crashing -- so leak the string in order to prevent
       // use-after-free of the maybe_fatal_string.
       // We need this to prevent a use-after-free in FlushRecord.
-      msg = new char[modified_msg->size() + 1];
-      strcpy(const_cast<char*>(msg), modified_msg->c_str());
+      auto new_msg = new char[modified_msg->size() + 1];
+      strcpy(const_cast<char*>(new_msg), modified_msg->c_str());
+      msg = new_msg;
     } else {
       msg = modified_msg->data();
     }
@@ -330,51 +311,47 @@ void BeginRecordInternal(LogBuffer* buffer, fuchsia_logging::LogSeverity severit
   }
   state->socket = socket;
   if (severity == fuchsia_logging::LOG_FATAL) {
-    state->maybe_fatal_string = msg;
+    state->maybe_fatal_string = msg->data();
   }
-  state->buffer.BeginRecord(severity, CStringToStringView(file_name), line,
-                            CStringToStringView(msg), zx::unowned_socket(socket), 0, pid, tid);
+  state->buffer.BeginRecord(severity, file_name, line, msg, zx::unowned_socket(socket), 0, pid,
+                            tid);
   for (size_t i = 0; i < log_state->tag_count(); i++) {
     state->buffer.WriteKeyValue(kTagFieldName, log_state->tags()[i]);
   }
 }
 
-void BeginRecord(LogBuffer* buffer, fuchsia_logging::LogSeverity severity, const char* file_name,
-                 unsigned int line, const char* msg, const char* condition) {
-  BeginRecordInternal(buffer, severity, file_name, line, msg, condition, ZX_HANDLE_INVALID);
+void BeginRecord(LogBuffer* buffer, fuchsia_logging::LogSeverity severity, NullSafeStringView file,
+                 unsigned int line, NullSafeStringView msg, NullSafeStringView condition) {
+  BeginRecordInternal(buffer, severity, file, line, msg, condition, ZX_HANDLE_INVALID);
 }
 
 void BeginRecordWithSocket(LogBuffer* buffer, fuchsia_logging::LogSeverity severity,
-                           const char* file_name, unsigned int line, const char* msg,
-                           const char* condition, zx_handle_t socket) {
+                           NullSafeStringView file_name, unsigned int line, NullSafeStringView msg,
+                           NullSafeStringView condition, zx_handle_t socket) {
   BeginRecordInternal(buffer, severity, file_name, line, msg, condition, socket);
 }
 
-void WriteKeyValue(LogBuffer* buffer, const char* key, const char* value) {
-  WriteKeyValue(buffer, key, value, strlen(value));
-}
-
-void WriteKeyValue(LogBuffer* buffer, const char* key, const char* value, size_t value_length) {
-  auto* state = RecordState::CreatePtr(buffer);
-  state->buffer.WriteKeyValue(key, cpp17::string_view(value, value_length));
-}
-
-void WriteKeyValue(LogBuffer* buffer, const char* key, int64_t value) {
+void WriteKeyValue(LogBuffer* buffer, cpp17::string_view key, cpp17::string_view value) {
   auto* state = RecordState::CreatePtr(buffer);
   state->buffer.WriteKeyValue(key, value);
 }
 
-void WriteKeyValue(LogBuffer* buffer, const char* key, uint64_t value) {
+void WriteKeyValue(LogBuffer* buffer, cpp17::string_view key, int64_t value) {
   auto* state = RecordState::CreatePtr(buffer);
   state->buffer.WriteKeyValue(key, value);
 }
 
-void WriteKeyValue(LogBuffer* buffer, const char* key, double value) {
+void WriteKeyValue(LogBuffer* buffer, cpp17::string_view key, uint64_t value) {
   auto* state = RecordState::CreatePtr(buffer);
   state->buffer.WriteKeyValue(key, value);
 }
 
-void WriteKeyValue(LogBuffer* buffer, const char* key, bool value) {
+void WriteKeyValue(LogBuffer* buffer, cpp17::string_view key, double value) {
+  auto* state = RecordState::CreatePtr(buffer);
+  state->buffer.WriteKeyValue(key, value);
+}
+
+void WriteKeyValue(LogBuffer* buffer, cpp17::string_view key, bool value) {
   auto* state = RecordState::CreatePtr(buffer);
   state->buffer.WriteKeyValue(key, value);
 }
@@ -444,4 +421,4 @@ fuchsia_logging::LogSeverity GetMinLogLevel() {
   return lock->min_severity();
 }
 
-}  // namespace syslog_backend
+}  // namespace syslog_runtime

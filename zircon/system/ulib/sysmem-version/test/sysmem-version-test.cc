@@ -26,20 +26,6 @@ namespace {
 
 constexpr uint32_t kRunCount = 300;
 
-// HasWireTypeTraits - detect if a type has typetraits that seems to look like a FIDL wire type.
-//
-// This isn't entirely unambiguous, but probably good enough for the intended purpose in this test
-// context.
-template <typename FidlType, typename enable = void>
-class HasWireTypeTraits : public std::false_type {};
-constexpr uint32_t kConstexprUint32 = 0;
-template <typename FidlType>
-class HasWireTypeTraits<
-    FidlType,
-    std::enable_if_t<std::is_same_v<decltype((kConstexprUint32)),
-                                    decltype((fidl::TypeTraits<FidlType>::kPrimarySizeV1))>>>
-    : public std::true_type {};
-
 // IsNaturalFidlType<> - This is an ad-hoc detection of whether a given FidlType is a natural fidl
 // type.  Types which are the same type regardless of natural vs. wire will have value true, as the
 // type is valid for use as a natural FIDL type - such types are essentially both natural and wire.
@@ -58,7 +44,7 @@ class IsNaturalFidlType : public std::false_type {};
 template <typename FidlType>
 class IsNaturalFidlType<FidlType, std::enable_if_t<fidl::IsFidlType<FidlType>::value &&
                                                    fidl::IsFidlObject<FidlType>::value &&
-                                                   !HasWireTypeTraits<FidlType>::value>>
+                                                   !fidl::IsWire<FidlType>::value>>
     : public std::true_type {};
 // Non-aggregate FIDL types are shared between natural and wire, so IsNaturalFidlType<> is true for
 // non-aggregate types.
@@ -641,6 +627,37 @@ v1::VmoBuffer V1RandomVmoBuffer() {
   return r;
 }
 
+v2::VmoBuffer V2RandomVmoBuffer() {
+  v2::VmoBuffer r{};
+
+  bool vmo_present;
+  random(&vmo_present);
+  if (vmo_present) {
+    // Arbitrary is good enough - we don't need truly "random" for this.
+    zx::vmo arbitrary_vmo;
+    ZX_ASSERT(ZX_OK == zx::vmo::create(ZX_PAGE_SIZE, 0, &arbitrary_vmo));
+    r.vmo() = std::move(arbitrary_vmo);
+  }
+
+  bool vmo_usable_start_present;
+  random(&vmo_usable_start_present);
+  if (vmo_usable_start_present) {
+    r.vmo_usable_start().emplace(0);
+    random(&r.vmo_usable_start().value());
+  }
+
+  bool close_weak_asap_present;
+  random(&close_weak_asap_present);
+  if (close_weak_asap_present) {
+    zx::eventpair event_pair_0;
+    zx::eventpair event_pair_1;
+    ZX_ASSERT(ZX_OK == zx::eventpair::create(0, &event_pair_0, &event_pair_1));
+    r.close_weak_asap() = std::move(event_pair_0);
+  }
+
+  return r;
+}
+
 v1::wire::VmoBuffer V1WireRandomVmoBuffer() {
   v1::wire::VmoBuffer r{};
   // Arbitrary is good enough - we don't need truly "random" for this.
@@ -712,21 +729,6 @@ v1::wire::BufferCollectionConstraints V1WireRandomBufferCollectionConstraints() 
   for (uint32_t i = 0; i < r.image_format_constraints_count; ++i) {
     r.image_format_constraints[i] = V1WireRandomImageFormatConstraints();
   }
-  return r;
-}
-
-v1::BufferCollectionConstraintsAuxBuffers V1RandomBufferCollectionConstraintsAuxBuffers() {
-  v1::BufferCollectionConstraintsAuxBuffers r{};
-  random(&r.need_clear_aux_buffers_for_secure());
-  random(&r.allow_clear_aux_buffers_for_secure());
-  return r;
-}
-
-v1::wire::BufferCollectionConstraintsAuxBuffers
-V1WireRandomBufferCollectionConstraintsAuxBuffers() {
-  v1::wire::BufferCollectionConstraintsAuxBuffers r{};
-  random(&r.need_clear_aux_buffers_for_secure);
-  random(&r.allow_clear_aux_buffers_for_secure);
   return r;
 }
 
@@ -964,7 +966,9 @@ TEST(SysmemVersion, BufferMemorySettings) {
     auto v2_1 = sysmem::V2CopyFromV1BufferMemorySettings(snap_1->value());
     // clone
     auto v2_2 = v2_1;
-    auto v1_2 = sysmem::V1CopyFromV2BufferMemorySettings(v2_2);
+    auto v1_2_result = sysmem::V1CopyFromV2BufferMemorySettings(v2_2);
+    ASSERT_TRUE(v1_2_result.is_ok());
+    auto v1_2 = std::move(v1_2_result.value());
     auto snap_2 = SnapMoveFrom(std::move(v1_2));
     EXPECT_TRUE(IsEqual(*snap_1, *snap_2));
   }
@@ -977,7 +981,9 @@ TEST(SysmemVersion, BufferMemorySettingsWire) {
     auto snap_1 = SnapMoveFrom(std::move(v1_1));
     auto v2_1 = sysmem::V2CopyFromV1BufferMemorySettings(allocator, snap_1->value());
     auto v2_2 = sysmem::V2CloneBufferMemorySettings(allocator, v2_1);
-    auto v1_2 = sysmem::V1CopyFromV2BufferMemorySettings(v2_2);
+    auto v1_2_result = sysmem::V1CopyFromV2BufferMemorySettings(v2_2);
+    ASSERT_TRUE(v1_2_result.is_ok());
+    auto v1_2 = std::move(v1_2_result.value());
     auto snap_2 = SnapMoveFrom(std::move(v1_2));
     EXPECT_TRUE(IsEqual(*snap_1, *snap_2));
   }
@@ -1039,8 +1045,7 @@ TEST(SysmemVersion, VmoBuffer) {
     auto v1_1 = V1RandomVmoBuffer();
     auto snap_1 = SnapMoveFrom(std::move(v1_1));
     auto v2_1 = sysmem::V2MoveFromV1VmoBuffer(std::move(snap_1->value()));
-    auto v2_2_result = sysmem::V2CloneVmoBuffer(v2_1, std::numeric_limits<uint32_t>::max(),
-                                                std::numeric_limits<uint32_t>::max());
+    auto v2_2_result = sysmem::V2CloneVmoBuffer(v2_1, std::numeric_limits<uint32_t>::max());
     EXPECT_TRUE(v2_2_result.is_ok());
     auto v2_2 = v2_2_result.take_value();
     auto v1_2 = sysmem::V1MoveFromV2VmoBuffer(std::move(v2_1));
@@ -1054,6 +1059,19 @@ TEST(SysmemVersion, VmoBuffer) {
   }
 }
 
+TEST(SysmemVersion, VmoBufferV2) {
+  for (uint32_t run = 0; run < kRunCount; ++run) {
+    auto v2_1 = V2RandomVmoBuffer();
+    auto v2_2_result = sysmem::V2CloneVmoBuffer(v2_1, std::numeric_limits<uint32_t>::max());
+    ASSERT_TRUE(v2_2_result.is_ok());
+    auto snap_1 = SnapMoveFrom(std::move(v2_1));
+    auto v2_2 = v2_2_result.take_value();
+    auto snap_2 = SnapMoveFrom(std::move(v2_2));
+    EXPECT_FALSE(IsEqual(*snap_1, *snap_2));
+    EXPECT_TRUE(IsEqualByKoid(*snap_1, *snap_2));
+  }
+}
+
 TEST(SysmemVersion, VmoBufferWire) {
   for (uint32_t run = 0; run < kRunCount; ++run) {
     fidl::Arena allocator;
@@ -1061,8 +1079,7 @@ TEST(SysmemVersion, VmoBufferWire) {
     auto snap_1 = SnapMoveFrom(std::move(v1_1));
     auto v2_1 = sysmem::V2MoveFromV1VmoBuffer(allocator, std::move(snap_1->value()));
     auto v2_2_result =
-        sysmem::V2CloneVmoBuffer(allocator, v2_1, std::numeric_limits<uint32_t>::max(),
-                                 std::numeric_limits<uint32_t>::max());
+        sysmem::V2CloneVmoBuffer(allocator, v2_1, std::numeric_limits<uint32_t>::max());
     EXPECT_TRUE(v2_2_result.is_ok());
     auto v2_2 = v2_2_result.take_value();
     auto v1_2 = sysmem::V1MoveFromV2VmoBuffer(std::move(v2_1));
@@ -1083,8 +1100,8 @@ TEST(SysmemVersion, BufferCollectionInfo) {
     auto v2_1_result = sysmem::V2MoveFromV1BufferCollectionInfo(std::move(snap_1->value()));
     EXPECT_TRUE(v2_1_result.is_ok());
     auto v2_1 = v2_1_result.take_value();
-    auto v2_2_result = sysmem::V2CloneBufferCollectionInfo(
-        v2_1, std::numeric_limits<uint32_t>::max(), std::numeric_limits<uint32_t>::max());
+    auto v2_2_result =
+        sysmem::V2CloneBufferCollectionInfo(v2_1, std::numeric_limits<uint32_t>::max());
     EXPECT_TRUE(v2_2_result.is_ok());
     auto v2_2 = v2_2_result.take_value();
     auto v1_2_result = sysmem::V1MoveFromV2BufferCollectionInfo(std::move(v2_1));
@@ -1112,8 +1129,7 @@ TEST(SysmemVersion, BufferCollectionInfoWire) {
     EXPECT_TRUE(v2_1_result.is_ok());
     auto v2_1 = v2_1_result.take_value();
     auto v2_2_result =
-        sysmem::V2CloneBufferCollectionInfo(allocator, v2_1, std::numeric_limits<uint32_t>::max(),
-                                            std::numeric_limits<uint32_t>::max());
+        sysmem::V2CloneBufferCollectionInfo(allocator, v2_1, std::numeric_limits<uint32_t>::max());
     EXPECT_TRUE(v2_2_result.is_ok());
     auto v2_2 = v2_2_result.take_value();
     auto v1_2_result = sysmem::V1MoveFromV2BufferCollectionInfo(std::move(v2_1));
@@ -1134,29 +1150,21 @@ TEST(SysmemVersion, BufferCollectionInfoWire) {
 TEST(SysmemVersion, BufferCollectionConstraints) {
   for (uint32_t run = 0; run < kRunCount; ++run) {
     auto v1_1 = V1RandomBufferCollectionConstraints();
-    auto v1_aux_1 = V1RandomBufferCollectionConstraintsAuxBuffers();
     auto snap_1 = SnapMoveFrom(std::move(v1_1));
-    auto snap_aux_1 = SnapMoveFrom(std::move(v1_aux_1));
     bool has_main;
     random(&has_main);
-    bool has_aux = false;
-    if (has_main) {
-      random(&has_aux);
-    }
     v1::BufferCollectionConstraints* maybe_main = has_main ? &snap_1->value() : nullptr;
-    v1::BufferCollectionConstraintsAuxBuffers* maybe_aux = has_aux ? &snap_aux_1->value() : nullptr;
-    auto v2 = sysmem::V2CopyFromV1BufferCollectionConstraints(maybe_main, maybe_aux).take_value();
+    auto v2 = sysmem::V2CopyFromV1BufferCollectionConstraints(maybe_main).take_value();
     auto v2_clone = v2;
     auto v1_2_result = sysmem::V1CopyFromV2BufferCollectionConstraints(v2);
     EXPECT_TRUE(v1_2_result.is_ok());
-    auto v1_2_pair = v1_2_result.take_value();
+    auto v1_2_optional = v1_2_result.take_value();
 
     auto v2_snap = SnapMoveFrom(std::move(v2));
     auto v2_clone_snap = SnapMoveFrom(std::move(v2_clone));
     EXPECT_TRUE(IsEqual(*v2_snap, *v2_clone_snap));
 
     if (has_main) {
-      auto v1_2_optional = std::move(v1_2_pair.first);
       EXPECT_TRUE(!!v1_2_optional);
       auto v1_2 = std::move(v1_2_optional.value());
       auto snap_2 = SnapMoveFrom(std::move(v1_2));
@@ -1165,14 +1173,6 @@ TEST(SysmemVersion, BufferCollectionConstraints) {
       auto v1_2 = v1::BufferCollectionConstraints{};
       auto snap_2 = SnapMoveFrom(std::move(v1_2));
       EXPECT_TRUE(IsEqual(*snap_1, *snap_2));
-    }
-
-    auto v1_aux_2_optional = std::move(v1_2_pair.second);
-    EXPECT_EQ(has_aux, !!v1_aux_2_optional);
-    if (v1_aux_2_optional) {
-      auto v1_aux_2 = std::move(v1_aux_2_optional.value());
-      auto snap_aux_2 = SnapMoveFrom(std::move(v1_aux_2));
-      EXPECT_TRUE(IsEqual(*snap_aux_1, *snap_aux_2));
     }
 
     auto v2_2 = v2;
@@ -1186,31 +1186,21 @@ TEST(SysmemVersion, BufferCollectionConstraintsWire) {
   for (uint32_t run = 0; run < kRunCount; ++run) {
     fidl::Arena allocator;
     auto v1_1 = V1WireRandomBufferCollectionConstraints();
-    auto v1_aux_1 = V1WireRandomBufferCollectionConstraintsAuxBuffers();
     auto snap_1 = SnapMoveFrom(std::move(v1_1));
-    auto snap_aux_1 = SnapMoveFrom(std::move(v1_aux_1));
     bool has_main;
     random(&has_main);
-    bool has_aux = false;
-    if (has_main) {
-      random(&has_aux);
-    }
     v1::wire::BufferCollectionConstraints* maybe_main = has_main ? &snap_1->value() : nullptr;
-    v1::wire::BufferCollectionConstraintsAuxBuffers* maybe_aux =
-        has_aux ? &snap_aux_1->value() : nullptr;
-    auto v2 = sysmem::V2CopyFromV1BufferCollectionConstraints(allocator, maybe_main, maybe_aux)
-                  .take_value();
+    auto v2 = sysmem::V2CopyFromV1BufferCollectionConstraints(allocator, maybe_main).take_value();
     auto v2_clone = sysmem::V2CloneBufferCollectionConstraints(allocator, v2);
     auto v1_2_result = sysmem::V1CopyFromV2BufferCollectionConstraints(v2);
     EXPECT_TRUE(v1_2_result.is_ok());
-    auto v1_2_pair = v1_2_result.take_value();
+    auto v1_2_optional = v1_2_result.take_value();
 
     auto v2_snap = SnapMoveFrom(std::move(v2));
     auto v2_clone_snap = SnapMoveFrom(std::move(v2_clone));
     EXPECT_TRUE(IsEqual(*v2_snap, *v2_clone_snap));
 
     if (has_main) {
-      auto v1_2_optional = std::move(v1_2_pair.first);
       EXPECT_TRUE(!!v1_2_optional);
       auto v1_2 = std::move(v1_2_optional.value());
       auto snap_2 = SnapMoveFrom(std::move(v1_2));
@@ -1221,87 +1211,10 @@ TEST(SysmemVersion, BufferCollectionConstraintsWire) {
       EXPECT_TRUE(IsEqual(*snap_1, *snap_2));
     }
 
-    auto v1_aux_2_optional = std::move(v1_2_pair.second);
-    EXPECT_EQ(has_aux, !!v1_aux_2_optional);
-    if (v1_aux_2_optional) {
-      auto v1_aux_2 = std::move(v1_aux_2_optional.value());
-      auto snap_aux_2 = SnapMoveFrom(std::move(v1_aux_2));
-      EXPECT_TRUE(IsEqual(*snap_aux_1, *snap_aux_2));
-    }
-
     auto v2_2 = sysmem::V2CloneBufferCollectionConstraints(allocator, v2);
     auto snap_v2 = SnapMoveFrom(std::move(v2));
     auto snap_v2_2 = SnapMoveFrom(std::move(v2_2));
     EXPECT_TRUE(IsEqual(*snap_v2, *snap_v2_2));
-  }
-}
-
-// No v1<->v2 conversion for this, and no handles so only need to test wire clone.  Natural clone
-// is generated code.
-TEST(SysmemVersion, CoherencyDomainSupportWire) {
-  for (uint32_t run = 0; run < kRunCount; ++run) {
-    fidl::Arena allocator;
-    bool cpu_supported;
-    bool ram_supported;
-    bool inaccessible_supported;
-    random(&cpu_supported);
-    random(&ram_supported);
-    random(&inaccessible_supported);
-
-    v2::wire::CoherencyDomainSupport v2_1(allocator);
-    v2_1.set_cpu_supported(cpu_supported);
-    v2_1.set_ram_supported(ram_supported);
-    v2_1.set_inaccessible_supported(inaccessible_supported);
-
-    v2::wire::CoherencyDomainSupport v2_2 = sysmem::V2CloneCoherencyDomainSuppoort(allocator, v2_1);
-    EXPECT_TRUE(v2_2.has_cpu_supported());
-    EXPECT_TRUE(v2_2.has_ram_supported());
-    EXPECT_TRUE(v2_2.has_inaccessible_supported());
-
-    EXPECT_EQ(v2_2.cpu_supported(), v2_1.cpu_supported());
-    EXPECT_EQ(v2_2.ram_supported(), v2_1.ram_supported());
-    EXPECT_EQ(v2_2.inaccessible_supported(), v2_1.inaccessible_supported());
-  }
-}
-
-// No v1<->v2 conversion for this, and no handles so only need to test wire clone.  Natural clone
-// is generated code.
-TEST(SysmemVersion, HeapPropertiesWire) {
-  for (uint32_t run = 0; run < kRunCount; ++run) {
-    fidl::Arena allocator;
-    bool cpu_supported;
-    bool ram_supported;
-    bool inaccessible_supported;
-    bool need_clear;
-    random(&cpu_supported);
-    random(&ram_supported);
-    random(&inaccessible_supported);
-    random(&need_clear);
-
-    v2::wire::HeapProperties v2_1(allocator);
-    v2_1.set_need_clear(need_clear);
-    {
-      v2::wire::CoherencyDomainSupport coherency_domain_support(allocator);
-      coherency_domain_support.set_cpu_supported(cpu_supported);
-      coherency_domain_support.set_ram_supported(ram_supported);
-      coherency_domain_support.set_inaccessible_supported(inaccessible_supported);
-      v2_1.set_coherency_domain_support(allocator, std::move(coherency_domain_support));
-    }
-
-    v2::wire::HeapProperties v2_2 = sysmem::V2CloneHeapProperties(allocator, v2_1);
-    EXPECT_TRUE(v2_2.has_coherency_domain_support());
-    EXPECT_TRUE(v2_2.coherency_domain_support().has_cpu_supported());
-    EXPECT_TRUE(v2_2.coherency_domain_support().has_ram_supported());
-    EXPECT_TRUE(v2_2.coherency_domain_support().has_inaccessible_supported());
-    EXPECT_TRUE(v2_2.has_need_clear());
-
-    EXPECT_EQ(v2_2.coherency_domain_support().cpu_supported(),
-              v2_1.coherency_domain_support().cpu_supported());
-    EXPECT_EQ(v2_2.coherency_domain_support().ram_supported(),
-              v2_1.coherency_domain_support().ram_supported());
-    EXPECT_EQ(v2_2.coherency_domain_support().inaccessible_supported(),
-              v2_1.coherency_domain_support().inaccessible_supported());
-    EXPECT_EQ(v2_2.need_clear(), v2_1.need_clear());
   }
 }
 

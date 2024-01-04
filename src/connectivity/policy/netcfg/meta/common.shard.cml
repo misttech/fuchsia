@@ -1,0 +1,62 @@
+// Copyright 2021 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+{
+    include: [ "syslog/client.shard.cml" ],
+    program: {
+        // Subscribe to component lifecycle events
+        lifecycle: { stop_event: "notify" },
+    },
+    capabilities: [
+        {
+            protocol: [
+                "fuchsia.net.dhcpv6.PrefixProvider",
+                "fuchsia.net.masquerade.Factory",
+            ],
+        },
+    ],
+    use: [
+        {
+            protocol: [
+                "fuchsia.net.dhcp.Server",
+                "fuchsia.net.dhcpv6.ClientProvider",
+                "fuchsia.net.filter.deprecated.Filter",
+                "fuchsia.net.interfaces.admin.Installer",
+                "fuchsia.net.interfaces.State",
+                "fuchsia.net.name.DnsServerWatcher",
+                "fuchsia.net.name.LookupAdmin",
+                "fuchsia.net.stack.Stack",
+            ],
+        },
+        {
+            protocol: "fuchsia.net.dhcp.ClientProvider",
+
+            // TODO(https://fxbug.dev/125773): Mark this as "required" once all
+            // products are using the out-of-stack DHCP client component.
+            availability: "optional",
+        },
+        {
+            directory: "dev-class-network",
+            rights: [ "r*" ],
+            path: "/dev/class/network",
+        },
+        {
+            storage: "data",
+            path: "/data",
+        },
+        {
+            directory: "config-data",
+            rights: [ "r*" ],
+            path: "/config/data",
+        },
+    ],
+    expose: [
+        {
+            protocol: [
+                "fuchsia.net.dhcpv6.PrefixProvider",
+                "fuchsia.net.masquerade.Factory",
+            ],
+            from: "self",
+        },
+    ],
+}

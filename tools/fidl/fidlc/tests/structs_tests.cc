@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 #include "tools/fidl/fidlc/include/fidl/diagnostics.h"
-#include "tools/fidl/fidlc/tests/error_test.h"
 #include "tools/fidl/fidlc/tests/test_library.h"
 
 namespace {
@@ -27,14 +26,15 @@ type MyStruct = struct {
 )FIDL");
   ASSERT_COMPILED(library);
   auto type_decl = library.LookupStruct("MyStruct");
-  ASSERT_NOT_NULL(type_decl);
-  EXPECT_EQ(type_decl->members.size(), 1);
+  ASSERT_NE(type_decl, nullptr);
+  EXPECT_EQ(type_decl->members.size(), 1u);
 }
 
 TEST(StructsTests, BadPrimitiveDefaultValueNoAnnotation) {
   TestLibrary library;
   library.AddFile("bad/fi-0050.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrDeprecatedStructDefaults);
+  library.ExpectFail(fidl::ErrDeprecatedStructDefaults);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StructsTests, GoodPrimitiveDefaultValueConstReference) {
@@ -55,10 +55,12 @@ TEST(StructsTests, BadMissingDefaultValueReferenceTarget) {
 library example;
 
 type MyStruct = struct {
+    @allow_deprecated_struct_defaults
     field int64 = A;
 };
 )FIDL");
-  ASSERT_FALSE(library.Compile());
+  library.ExpectFail(fidl::ErrNameNotFound, "A", "example");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StructsTests, GoodEnumDefaultValueEnumMemberReference) {
@@ -103,16 +105,18 @@ type MyStruct = struct {
     field MyEnum = OtherEnum.A;
 };
 )FIDL");
-  ASSERT_ERRORED_TWICE_DURING_COMPILE(library, fidl::ErrMismatchedNameTypeAssignment,
-                                      fidl::ErrCouldNotResolveMemberDefault);
+  library.ExpectFail(fidl::ErrCouldNotResolveMemberDefault, "field");
+  library.ExpectFail(fidl::ErrMismatchedNameTypeAssignment, "MyEnum", "OtherEnum");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StructsTests, BadDefaultValuePrimitiveInEnum) {
   TestLibrary library;
   library.AddFile("bad/fi-0103.test.fidl");
-  ASSERT_ERRORED_TWICE_DURING_COMPILE(library, fidl::ErrTypeCannotBeConvertedToType,
-                                      fidl::ErrCouldNotResolveMemberDefault);
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "MyEnum");
+  library.ExpectFail(fidl::ErrCouldNotResolveMemberDefault, "field");
+  library.ExpectFail(fidl::ErrTypeCannotBeConvertedToType, "1", "untyped numeric",
+                     "test.bad.fi0103/MyEnum");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StructsTests, GoodEnumDefaultValueBitsMemberReference) {
@@ -157,8 +161,9 @@ type MyStruct = struct {
     field MyBits = OtherBits.A;
 };
 )FIDL");
-  ASSERT_ERRORED_TWICE_DURING_COMPILE(library, fidl::ErrMismatchedNameTypeAssignment,
-                                      fidl::ErrCouldNotResolveMemberDefault);
+  library.ExpectFail(fidl::ErrCouldNotResolveMemberDefault, "field");
+  library.ExpectFail(fidl::ErrMismatchedNameTypeAssignment, "MyBits", "OtherBits");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StructsTests, BadDefaultValuePrimitiveInBits) {
@@ -172,9 +177,10 @@ type MyStruct = struct {
     field MyBits = 1;
 };
 )FIDL");
-  ASSERT_ERRORED_TWICE_DURING_COMPILE(library, fidl::ErrTypeCannotBeConvertedToType,
-                                      fidl::ErrCouldNotResolveMemberDefault);
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "MyBits");
+  library.ExpectFail(fidl::ErrCouldNotResolveMemberDefault, "field");
+  library.ExpectFail(fidl::ErrTypeCannotBeConvertedToType, "1", "untyped numeric",
+                     "example/MyBits");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 // The old-style of enum-referencing should no longer work.
@@ -185,16 +191,19 @@ library example;
 type MyEnum = enum : int32 { A = 5; };
 
 type MyStruct = struct {
+    @allow_deprecated_struct_defaults
     field MyEnum = A;
 };
 )FIDL");
-  ASSERT_FALSE(library.Compile());
+  library.ExpectFail(fidl::ErrNameNotFound, "A", "example");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StructsTests, BadDefaultValueNullableString) {
   TestLibrary library;
   library.AddFile("bad/fi-0091.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrInvalidStructMemberType);
+  library.ExpectFail(fidl::ErrInvalidStructMemberType, "name", "string?");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StructsTests, BadDuplicateMemberName) {
@@ -206,9 +215,10 @@ type MyStruct = struct {
     my_struct_member uint8;
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrDuplicateElementName);
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "struct member");
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "my_struct_member");
+  library.ExpectFail(fidl::ErrNameCollision, fidl::flat::Element::Kind::kStructMember,
+                     "my_struct_member", fidl::flat::Element::Kind::kStructMember,
+                     "example.fidl:5:5");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StructsTests, GoodMaxInlineSize) {
@@ -224,23 +234,24 @@ type MyStruct = struct {
 TEST(StructsTests, BadInlineSizeExceeds64k) {
   TestLibrary library;
   library.AddFile("bad/fi-0111.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrInlineSizeExceedsLimit);
+  library.ExpectFail(fidl::ErrInlineSizeExceedsLimit, "MyStruct", 65536, 65535);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StructsTests, BadMutuallyRecursive) {
   TestLibrary library;
   library.AddFile("bad/fi-0057-a.test.fidl");
 
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrIncludeCycle);
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "struct 'Yang' -> struct 'Yin' -> struct 'Yang'");
+  library.ExpectFail(fidl::ErrIncludeCycle, "struct 'Yang' -> struct 'Yin' -> struct 'Yang'");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StructsTests, BadSelfRecursive) {
   TestLibrary library;
   library.AddFile("bad/fi-0057-c.test.fidl");
 
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrIncludeCycle);
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "struct 'MySelf' -> struct 'MySelf'");
+  library.ExpectFail(fidl::ErrIncludeCycle, "struct 'MySelf' -> struct 'MySelf'");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StructsTests, GoodOptionalityAllowsRecursion) {
@@ -266,10 +277,10 @@ type Leaf = struct {
   yin Yin;
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrIncludeCycle);
   // Leaf sorts before either Yin or Yang, so the cycle finder in sort_step.cc
   // starts there, which leads it to yin before yang.
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "struct 'Yin' -> struct 'Yang' -> struct 'Yin'");
+  library.ExpectFail(fidl::ErrIncludeCycle, "struct 'Yin' -> struct 'Yang' -> struct 'Yin'");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StructsTests, BadMutuallyRecursiveWithOutogingLeaf) {
@@ -289,8 +300,8 @@ type Leaf = struct {
   x int32;
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrIncludeCycle);
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "struct 'Yang' -> struct 'Yin' -> struct 'Yang'");
+  library.ExpectFail(fidl::ErrIncludeCycle, "struct 'Yang' -> struct 'Yin' -> struct 'Yang'");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StructsTests, BadMutuallyRecursiveIntersectingLoops) {
@@ -310,91 +321,91 @@ type Intersection = struct {
   yang Yang;
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrIncludeCycle);
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(),
-                "struct 'Intersection' -> struct 'Yang' -> struct 'Intersection'");
+  library.ExpectFail(fidl::ErrIncludeCycle,
+                     "struct 'Intersection' -> struct 'Yang' -> struct 'Intersection'");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StructsTests, BadBoxCannotBeOptional) {
   TestLibrary library;
   library.AddFile("bad/fi-0169.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrBoxCannotBeOptional);
+  library.ExpectFail(fidl::ErrBoxCannotBeOptional);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
-TEST(StructsTests, GoodWithoutFlagStructCanBeOptional) {
-  TestLibrary library(R"FIDL(
-library example;
-
-type SomeStruct = struct {};
-
-type Foo = struct {
-  foo SomeStruct:optional;
-};
-)FIDL");
-  ASSERT_COMPILED(library);
-}
-
-TEST(StructsTests, BadWithFlagStructCannotBeOptional) {
+TEST(StructsTests, BadStructCannotBeOptional) {
   TestLibrary library;
   library.AddFile("bad/fi-0159.test.fidl");
-  library.EnableFlag(fidl::ExperimentalFlags::Flag::kNoOptionalStructs);
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrStructCannotBeOptional);
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "box<Date>");
+  library.ExpectFail(fidl::ErrStructCannotBeOptional, "Date");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StructsTests, BadHandleCannotBeBoxedShouldBeOptional) {
   TestLibrary library;
   library.AddFile("bad/fi-0171.test.fidl");
   library.UseLibraryZx();
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrCannotBeBoxedShouldBeOptional);
+  library.ExpectFail(fidl::ErrCannotBeBoxedShouldBeOptional, "Handle");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StructsTests, BadTypeCannotBeBoxedShouldBeOptional) {
-  for (const std::string& definition : {
-           "type Foo = struct { union_member box<union { 1: data uint8; }>; };",
-           "type Foo = struct { vector_member box<vector<uint8>>; };",
-           "type Foo = struct { string_member box<string>; };",
-           "type Foo = resource struct { handle_member box<zx.Handle>; };",
-           "protocol Bar {}; type Foo = resource struct { client_member box<client_end:Bar>; };",
-           "protocol Bar {}; type Foo = resource struct { server_member box<server_end:Bar>; };",
-       }) {
-    std::string fidl_library = "library example;\nusing zx;\n\n" + definition + "\n";
-    TestLibrary library(fidl_library);
+  std::pair<const char*, const char*> cases[] = {
+      {"UnionMember", "type Foo = struct { union_member box<union { 1: data uint8; }>; };"},
+      {"vector", "type Foo = struct { vector_member box<vector<uint8>>; };"},
+      {"string", "type Foo = struct { string_member box<string>; };"},
+      {"Handle", "type Foo = resource struct { handle_member box<zx.Handle>; };"},
+      {"client_end",
+       "protocol Bar {}; type Foo = resource struct { client_member box<client_end:Bar>; };"},
+      {"server_end",
+       "protocol Bar {}; type Foo = resource struct { server_member box<server_end:Bar>; };"},
+  };
+  for (auto& [boxed_name, definition] : cases) {
+    std::ostringstream s;
+    s << "library example;\nusing zx;\n" << definition;
+    auto fidl = s.str();
+    SCOPED_TRACE(fidl);
+    TestLibrary library(fidl);
     library.UseLibraryZx();
-    ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrCannotBeBoxedShouldBeOptional);
+    library.ExpectFail(fidl::ErrCannotBeBoxedShouldBeOptional, boxed_name);
+    ASSERT_COMPILER_DIAGNOSTICS(library);
   }
 }
 
 TEST(StructsTests, BadCannotBoxPrimitive) {
   TestLibrary library;
   library.AddFile("bad/fi-0193.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrCannotBeBoxedNorOptional);
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "bool");
+  library.ExpectFail(fidl::ErrCannotBeBoxedNorOptional, "bool");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StructsTests, BadTypeCannotBeBoxedNorOptional) {
-  for (const std::string& definition : {
-           "type Foo = struct { table_member box<table { 1: data uint8; }>; };",
-           "type Foo = struct { box_member box<box<struct {}>>; };",
-           "type Foo = struct { enum_member box<enum { DATA = 1; }>; };",
-           "type Foo = struct { bits_member box<bits { DATA = 1; }>; };",
-           "type Foo = struct { array_member box<array<uint8, 1>>; };",
-           "type Foo = struct { bool_member box<bool>; };",
-           "type Foo = struct { int8_member box<int8>; };",
-           "type Foo = struct { int16_member box<int16>; };",
-           "type Foo = struct { int32_member box<int32>; };",
-           "type Foo = struct { int64_member box<int64>; };",
-           "type Foo = struct { uint8_member box<uint8>; };",
-           "type Foo = struct { uint16_member box<uint16>; };",
-           "type Foo = struct { uint32_member box<uint32>; };",
-           "type Foo = struct { uint64_member box<uint64>; };",
-           "type Foo = struct { float32_member box<float32>; };",
-           "type Foo = struct { float64_member box<float64>; };",
-       }) {
-    std::string fidl_library = "library example;\nusing zx;\n\n" + definition + "\n";
-    TestLibrary library(fidl_library);
+  std::pair<const char*, const char*> cases[] = {
+      {"TableMember", "type Foo = struct { table_member box<table { 1: data uint8; }>; };"},
+      {"box", "type Foo = struct { box_member box<box<struct {}>>; };"},
+      {"EnumMember", "type Foo = struct { enum_member box<enum { DATA = 1; }>; };"},
+      {"BitsMember", "type Foo = struct { bits_member box<bits { DATA = 1; }>; };"},
+      {"array", "type Foo = struct { array_member box<array<uint8, 1>>; };"},
+      {"bool", "type Foo = struct { bool_member box<bool>; };"},
+      {"int8", "type Foo = struct { int8_member box<int8>; };"},
+      {"int16", "type Foo = struct { int16_member box<int16>; };"},
+      {"int32", "type Foo = struct { int32_member box<int32>; };"},
+      {"int64", "type Foo = struct { int64_member box<int64>; };"},
+      {"uint8", "type Foo = struct { uint8_member box<uint8>; };"},
+      {"uint16", "type Foo = struct { uint16_member box<uint16>; };"},
+      {"uint32", "type Foo = struct { uint32_member box<uint32>; };"},
+      {"uint64", "type Foo = struct { uint64_member box<uint64>; };"},
+      {"float32", "type Foo = struct { float32_member box<float32>; };"},
+      {"float64", "type Foo = struct { float64_member box<float64>; };"},
+  };
+  for (auto& [boxed_name, definition] : cases) {
+    std::ostringstream s;
+    s << "library example;\nusing zx;\n" << definition;
+    auto fidl = s.str();
+    SCOPED_TRACE(fidl);
+    TestLibrary library(fidl);
     library.UseLibraryZx();
-    ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrCannotBeBoxedNorOptional);
+    library.ExpectFail(fidl::ErrCannotBeBoxedNorOptional, boxed_name);
+    ASSERT_COMPILER_DIAGNOSTICS(library);
   }
 }
 
@@ -409,25 +420,26 @@ type Foo = struct {
 
 const BAR bool = "not a bool";
 )FIDL");
-  ASSERT_FALSE(library.Compile());
-  ASSERT_EQ(library.errors().size(), 3);
-  EXPECT_ERR(library.errors()[0], fidl::ErrTypeCannotBeConvertedToType);
-  EXPECT_ERR(library.errors()[1], fidl::ErrCannotResolveConstantValue);
-  EXPECT_ERR(library.errors()[2], fidl::ErrCouldNotResolveMemberDefault);
+  library.ExpectFail(fidl::ErrCouldNotResolveMemberDefault, "flag");
+  library.ExpectFail(fidl::ErrCannotResolveConstantValue);
+  library.ExpectFail(fidl::ErrTypeCannotBeConvertedToType, "\"not a bool\"", "string:10", "bool");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StructsTests, CannotReferToIntMember) {
   TestLibrary library;
   library.AddFile("bad/fi-0053-a.test.fidl");
 
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrCannotReferToMember);
+  library.ExpectFail(fidl::ErrCannotReferToMember, "struct 'Person'");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(StructsTests, CannotReferToStructMember) {
   TestLibrary library;
   library.AddFile("bad/fi-0053-b.test.fidl");
 
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrCannotReferToMember);
+  library.ExpectFail(fidl::ErrCannotReferToMember, "struct 'Person'");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 }  // namespace

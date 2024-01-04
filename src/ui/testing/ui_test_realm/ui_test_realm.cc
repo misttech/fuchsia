@@ -59,7 +59,6 @@ constexpr auto kDisplayHeightPhysicalPixels = 800;
 
 // Pixel density + usage that result in a DPR of 1.
 constexpr float kLowResolutionDisplayPixelDensity = 4.1668f;
-constexpr auto kDisplayUsageNear = "near";
 
 // Base realm urls.
 constexpr auto kScenicOnlyUrl = "#meta/scenic_only.cm";
@@ -81,7 +80,6 @@ constexpr auto kScenicName = "scenic";
 constexpr auto kSceneManagerName = "scene_manager";
 constexpr auto kTextManagerName = "text_manager";
 constexpr auto kVirtualKeyboardManagerName = "virtual_keyboard_manager";
-constexpr auto kSceneProviderName = "scene-provider";
 constexpr auto kSetUIAccessibility = "setui";
 constexpr auto kIntl = "intl";
 
@@ -95,27 +93,18 @@ std::vector<std::string> DefaultSystemServices() {
 
 // List of scenic services available in the test realm.
 std::vector<std::string> ScenicServices(const UITestRealm::Config& config) {
-  if (config.use_flatland) {
-    // Note that we expose FlatlandDisplay to the client subrealm for now, since
-    // we only have in-tree test clients at the moment. Once UITestManager is
-    // used for out-of-tree tests, we'll want to add a flag to
-    // UITestRealm::Config to control whether we expose internal-only APIs to
-    // the client subrealm.
-    return {fuchsia::ui::observation::test::Registry::Name_,
-            fuchsia::ui::observation::scope::Registry::Name_,
-            fuchsia::ui::pointer::augment::LocalHit::Name_,
-            fuchsia::ui::composition::Allocator::Name_,
-            fuchsia::ui::composition::Flatland::Name_,
-            fuchsia::ui::composition::FlatlandDisplay::Name_,
-            fuchsia::ui::scenic::Scenic::Name_};
-  } else {
-    return {fuchsia::ui::observation::test::Registry::Name_,
-            fuchsia::ui::observation::scope::Registry::Name_,
-            fuchsia::ui::pointer::augment::LocalHit::Name_,
-            fuchsia::ui::focus::FocusChainListenerRegistry::Name_,
-            fuchsia::ui::scenic::Scenic::Name_,
-            fuchsia::ui::views::ViewRefInstalled::Name_};
-  }
+  // Note that we expose FlatlandDisplay to the client subrealm for now, since
+  // we only have in-tree test clients at the moment. Once UITestManager is
+  // used for out-of-tree tests, we'll want to add a flag to
+  // UITestRealm::Config to control whether we expose internal-only APIs to
+  // the client subrealm.
+  return {fuchsia::ui::observation::test::Registry::Name_,
+          fuchsia::ui::observation::scope::Registry::Name_,
+          fuchsia::ui::pointer::augment::LocalHit::Name_,
+          fuchsia::ui::composition::Allocator::Name_,
+          fuchsia::ui::composition::Flatland::Name_,
+          fuchsia::ui::composition::FlatlandDisplay::Name_,
+          fuchsia::ui::scenic::Scenic::Name_};
 }
 
 // List of a11y services available in the test realm.
@@ -251,11 +240,18 @@ void UITestRealm::ConfigureClientSubrealm() {
   //
   // NOTE: The client must offer the "config-data" capability to #realm_builder in
   // its test .cml file.
-  realm_builder_.AddRoute(
-      {.capabilities = {Directory{
-           .name = "config-data", .rights = fuchsia::io::R_STAR_DIR, .path = "/config/data"}},
-       .source = ParentRef(),
-       .targets = {ChildRef{kClientSubrealmName}}});
+  realm_builder_.AddRoute({.capabilities =
+                               {
+                                   Directory{.name = "config-data",
+                                             .rights = fuchsia::io::R_STAR_DIR,
+                                             .path = "/config/data"},
+
+                                   Directory{.name = "tzdata-icu",
+                                             .rights = fuchsia::io::R_STAR_DIR,
+                                             .path = "/config/tzdata/icu"},
+                               },
+                           .source = ParentRef(),
+                           .targets = {ChildRef{kClientSubrealmName}}});
 }
 
 void UITestRealm::ConfigureAccessibility() {
@@ -270,11 +266,7 @@ void UITestRealm::ConfigureAccessibility() {
 
   switch (config_.accessibility_owner.value()) {
     case UITestRealm::AccessibilityOwnerType::REAL:
-      // We can only enable real a11y manager on flatland because real a11y
-      // manager has circular dependency with gfx on
-      // `fuchsia.ui.accessibility.view.Registry` from scene_manager to real a11y
-      // manager.
-      a11y_manager_url = config_.use_flatland ? kRealA11yManagerUrl : kFakeA11yManagerUrl;
+      a11y_manager_url = kRealA11yManagerUrl;
       use_real_a11y_manager = true;
       break;
     case AccessibilityOwnerType::FAKE:
@@ -289,34 +281,27 @@ void UITestRealm::ConfigureAccessibility() {
   RouteServices({fuchsia::logger::LogSink::Name_},
                 /* source = */ ParentRef(),
                 /* targets = */ {ChildRef{kA11yManagerName}});
-  RouteServices({fuchsia::ui::composition::Flatland::Name_, fuchsia::ui::scenic::Scenic::Name_,
-                 fuchsia::ui::observation::scope::Registry::Name_,
-                 fuchsia::ui::pointer::augment::LocalHit::Name_},
-                /* source = */ ChildRef{kScenicName},
-                /* targets = */ {ChildRef{kA11yManagerName}});
+  RouteServices(
+      {fuchsia::ui::composition::Flatland::Name_, fuchsia::ui::observation::scope::Registry::Name_,
+       fuchsia::ui::pointer::augment::LocalHit::Name_},
+      /* source = */ ChildRef{kScenicName},
+      /* targets = */ {ChildRef{kA11yManagerName}});
   RouteServices({fuchsia::accessibility::semantics::SemanticsManager::Name_,
                  test::accessibility::Magnifier::Name_},
                 /* source = */ ChildRef{kA11yManagerName},
                 /* targets = */ {ParentRef()});
 
   if (config_.use_scene_owner) {
-    if (config_.use_flatland) {
-      RouteServices({fuchsia::tracing::provider::Registry::Name_},
-                    /* source = */ ParentRef(),
-                    /* targets = */ {ChildRef{kA11yManagerName}});
-      RouteServices({fuchsia::ui::focus::FocusChainListenerRegistry::Name_},
-                    /* source = */ ChildRef{kScenicName},
-                    /* targets = */ {ChildRef{kA11yManagerName}});
-      RouteServices({fuchsia::accessibility::scene::Provider::Name_,
-                     fuchsia::accessibility::ColorTransform::Name_},
-                    /* source = */ ChildRef{kA11yManagerName},
-                    /* targets = */ {ChildRef{kSceneManagerName}});
-
-    } else {
-      RouteServices({fuchsia::accessibility::Magnifier::Name_},
-                    /* source = */ ChildRef{kA11yManagerName},
-                    /* targets = */ {ChildRef{kSceneManagerName}});
-    }
+    RouteServices({fuchsia::tracing::provider::Registry::Name_},
+                  /* source = */ ParentRef(),
+                  /* targets = */ {ChildRef{kA11yManagerName}});
+    RouteServices({fuchsia::ui::focus::FocusChainListenerRegistry::Name_},
+                  /* source = */ ChildRef{kScenicName},
+                  /* targets = */ {ChildRef{kA11yManagerName}});
+    RouteServices({fuchsia::accessibility::scene::Provider::Name_,
+                   fuchsia::accessibility::ColorTransform::Name_},
+                  /* source = */ ChildRef{kA11yManagerName},
+                  /* targets = */ {ChildRef{kSceneManagerName}});
   }
 
   if (use_real_a11y_manager) {
@@ -330,45 +315,12 @@ void UITestRealm::ConfigureAccessibility() {
   }
 }
 
-void UITestRealm::RouteConfigData() {
-  auto config_directory_contents = component_testing::DirectoryContents();
-  std::vector<Ref> targets;
-
-  if (config_.use_scene_owner) {
-    // Supply a default display rotation.
-    config_directory_contents.AddFile("display_rotation", std::to_string(config_.display_rotation));
-
-    FX_CHECK(config_.device_pixel_ratio > 0) << "Device pixel ratio must be positive";
-    FX_CHECK(fmodf(static_cast<float>(kDisplayWidthPhysicalPixels), config_.device_pixel_ratio) ==
-             0)
-        << "DPR must result in integer logical display dimensions";
-    FX_CHECK(fmodf(static_cast<float>(kDisplayHeightPhysicalPixels), config_.device_pixel_ratio) ==
-             0)
-        << "DPR must result in integer logical display dimensions";
-
-    // Pick a display usage + pixel density pair that will result in the
-    // desired DPR.
-    config_directory_contents.AddFile("display_usage", kDisplayUsageNear);
-    auto display_pixel_density = kLowResolutionDisplayPixelDensity * config_.device_pixel_ratio;
-    config_directory_contents.AddFile("display_pixel_density",
-                                      std::to_string(display_pixel_density));
-    targets.push_back(ChildRef{kScenicName});
-    targets.push_back(ChildRef{kSceneManagerName});
-  }
-
-  if (!targets.empty()) {
-    realm_builder_.RouteReadOnlyDirectory("config-data", std::move(targets),
-                                          std::move(config_directory_contents));
-  }
-}
-
 void UITestRealm::ConfigureScenic() {
-  // Load default config for Scenic, and override its "i_can_haz_flatland" flag.
+  // Load default config for Scenic.
   realm_builder_.InitMutableConfigFromPackage(kScenicName);
-  realm_builder_.SetConfigValue(kScenicName, "flatland_enable_display_composition",
-                                ConfigValue::Bool(false));
-  realm_builder_.SetConfigValue(kScenicName, "i_can_haz_flatland",
-                                ConfigValue::Bool(config_.use_flatland));
+  realm_builder_.SetConfigValue(kScenicName, "display_composition", ConfigValue::Bool(false));
+  realm_builder_.SetConfigValue(kScenicName, "display_rotation",
+                                ConfigValue::Uint64(config_.display_rotation));
 }
 
 void UITestRealm::ConfigureSceneOwner() {
@@ -385,17 +337,24 @@ void UITestRealm::ConfigureSceneOwner() {
   realm_builder_.RouteReadOnlyDirectory("sensor-config", std::move(targets),
                                         std::move(input_config_directory_contents));
 
-  // Configure scene provider, which will only be present in the test realm if
-  // the client specifies a scene owner. Note: scene-provider has more config
-  // fields than we set here, load the defaults.
-  realm_builder_.InitMutableConfigFromPackage(kSceneProviderName);
-  realm_builder_.SetConfigValue(kSceneProviderName, "use_flatland",
-                                ConfigValue::Bool(config_.use_flatland));
-
   // Route non-public DisplayOwnership protocol from Scenic to SceneManager.
   RouteServices({fuchsia::ui::composition::internal::DisplayOwnership::Name_},
                 /* source = */ ChildRef{kScenicName},
                 /* targets = */ {ChildRef{kSceneManagerName}});
+
+  FX_CHECK(config_.device_pixel_ratio > 0) << "Device pixel ratio must be positive";
+  FX_CHECK(fmodf(static_cast<float>(kDisplayWidthPhysicalPixels), config_.device_pixel_ratio) == 0)
+      << "DPR must result in integer logical display dimensions";
+  FX_CHECK(fmodf(static_cast<float>(kDisplayHeightPhysicalPixels), config_.device_pixel_ratio) == 0)
+      << "DPR must result in integer logical display dimensions";
+  auto display_pixel_density = kLowResolutionDisplayPixelDensity * config_.device_pixel_ratio;
+
+  // Load config for Scene Manager.
+  realm_builder_.InitMutableConfigFromPackage(kSceneManagerName);
+  realm_builder_.SetConfigValue(kSceneManagerName, "display_pixel_density",
+                                ConfigValue(std::to_string(display_pixel_density)));
+  realm_builder_.SetConfigValue(kSceneManagerName, "display_rotation",
+                                ConfigValue::Uint64(config_.display_rotation));
 }
 
 void UITestRealm::Build() {
@@ -412,10 +371,6 @@ void UITestRealm::Build() {
 
   // Override flatland flags in Scenic configuration.
   ConfigureScenic();
-
-  // Route config data directories to appropriate recipients (currently, scenic
-  // and scene manager are the only use cases for config files.
-  RouteConfigData();
 
   // Configure Scene Manager if it is in use as the scene owner. This includes:
   // * routing input pipeline config data directories to Scene Manager

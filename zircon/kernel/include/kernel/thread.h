@@ -841,6 +841,15 @@ class PreemptionState {
     return false;
   }
 
+  // Resets the preemption state. This should only be called when reviving an
+  // idle/power thread that halted while taking a CPU offline.
+  void Reset() {
+    state_ = 0;
+    preempts_pending_ = 0;
+    timeslice_extension_ = 0;
+    timeslice_extension_deadline_ = 0;
+  }
+
  private:
   friend class PreemptDisableTestAccess;
 
@@ -1034,6 +1043,12 @@ struct Thread {
   ~Thread();
 
   static Thread* CreateIdleThread(cpu_num_t cpu_num);
+
+  // Revive the idle/power thread for the given CPU so that it starts fresh after
+  // halting while taking the CPU offline. Most state is preserved, including
+  // stack memory locations (useful for debugging) and accumulated runtime stats.
+  static void ReviveIdlePowerThread(cpu_num_t cpu_num);
+
   // Creates a thread with |name| that will execute |entry| at |priority|. |arg|
   // will be passed to |entry| when executed, the return value of |entry| will be
   // passed to Exit().
@@ -1139,9 +1154,13 @@ struct Thread {
   //     any common CPUs).
   //
   // If the two masks conflict, the hard affinity wins.
-  void SetCpuAffinity(cpu_mask_t affinity) TA_EXCL(thread_lock);
+  //
+  // Setting the affinity mask returns the previous value to make pinning and
+  // restoring operations simpler and more efficient.
+  //
+  cpu_mask_t SetCpuAffinity(cpu_mask_t affinity) TA_EXCL(thread_lock);
   cpu_mask_t GetCpuAffinity() const TA_EXCL(thread_lock);
-  void SetSoftCpuAffinity(cpu_mask_t affinity) TA_EXCL(thread_lock);
+  cpu_mask_t SetSoftCpuAffinity(cpu_mask_t affinity) TA_EXCL(thread_lock);
   cpu_mask_t GetSoftCpuAffinity() const TA_EXCL(thread_lock);
 
   enum class MigrateStage {
@@ -1268,6 +1287,19 @@ struct Thread {
       return Thread::Current::Get()->restricted_state();
     }
 
+    // These three functions handle faults on the address space containing va. If there is no
+    // aspace that contains va, or we don't have access to it, a ZX_ERR_NOT_FOUND is returned.
+    //
+    // Calling any of these methods on a pure kernel thread (i.e. one without an associated
+    // `ThreadDispatcher`) is a programming error.
+    static zx_status_t PageFault(vaddr_t va, uint flags) {
+      return Fault(FaultType::PageFault, va, flags);
+    }
+    static zx_status_t SoftFault(vaddr_t va, uint flags) {
+      return Fault(FaultType::SoftFault, va, flags);
+    }
+    static zx_status_t AccessedFault(vaddr_t va) { return Fault(FaultType::AccessedFault, va, 0); }
+
     // Generate a backtrace for the calling thread.
     //
     // |out_bt| will be reset() prior to be filled in and if a backtrace cannot
@@ -1285,6 +1317,12 @@ struct Thread {
     static void DumpDuringPanic(bool full) TA_NO_THREAD_SAFETY_ANALYSIS {
       Thread::Current::Get()->DumpDuringPanic(full);
     }
+
+   private:
+    // Handles a virtual memory fault in the address space that contains va. If there is no aspace
+    // that contains va, or we don't have access to it, a ZX_ERR_NOT_FOUND is returned.
+    enum class FaultType : uint8_t { PageFault, SoftFault, AccessedFault };
+    static zx_status_t Fault(FaultType type, vaddr_t va, uint flags);
   };  // struct Current;
 
   // Trait for the global Thread list.
@@ -1475,13 +1513,29 @@ struct Thread {
   KernelStack& stack() { return stack_; }
   const KernelStack& stack() const { return stack_; }
 
-  VmAspace* aspace() { return aspace_; }
-  const VmAspace* aspace() const { return aspace_; }
   VmAspace* switch_aspace(VmAspace* aspace) {
     VmAspace* old_aspace = aspace_;
     aspace_ = aspace;
     return old_aspace;
   }
+
+  // Returns the currently active address space, which is the address space currently hosting
+  // page tables for the thread.
+  //
+  // The active address space should be used only when context switching. It should not be used for
+  // resolving faults, as it may be a unified aspace that does not keep track of its own mappings.
+  //
+  // Kernel-only thread -- This will return nullptr, unless a caller has explicitly set aspace_
+  // using `switch_aspace`, which is done by a few kernel unittests.
+  //
+  // User thread -- If the thread is in Restricted Mode, this will return the restricted aspace.
+  // Otherwise, it will return the process's normal aspace.
+  //
+  // Note, the normal aspace is, by definition, the aspace that's active when a thread is in Normal
+  // Mode.  All threads not in Restricted Mode are said to be in Normal Mode.  See
+  // `ProcessDispatcher::normal_aspace()` for more information.
+  VmAspace* active_aspace() { return aspace_; }
+  const VmAspace* active_aspace() const { return aspace_; }
 
   const char* name() const { return name_; }
   // This may truncate |name|, so that it (including a trailing NUL
@@ -1619,7 +1673,9 @@ struct Thread {
   lockdep::ThreadLockState lock_state_;
 #endif
 
-  // pointer to the kernel address space this thread is associated with
+  // The current address space this thread is associated with.
+  // This can be null if this is a kernel thread.
+  // See the comments near active_aspace() for more details.
   VmAspace* aspace_{};
 
   // Saved by SignalPolicyException() to store the type of policy error, and

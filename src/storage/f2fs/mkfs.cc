@@ -15,7 +15,7 @@
 
 namespace f2fs {
 
-zx::result<std::unique_ptr<Bcache>> MkfsWorker::DoMkfs() {
+zx::result<std::unique_ptr<BcacheMapper>> MkfsWorker::DoMkfs() {
   InitGlobalParameters();
 
   if (zx_status_t ret = GetDeviceInfo(); ret != ZX_OK)
@@ -61,7 +61,7 @@ void MkfsWorker::InitGlobalParameters() {
 zx_status_t MkfsWorker::GetDeviceInfo() {
   fuchsia_hardware_block::wire::BlockInfo info;
 
-  bc_->GetDevice()->BlockGetInfo(&info);
+  bc_->BlockGetInfo(&info);
 
   params_.sector_size = info.block_size;
   params_.sectors_per_blk = kBlockSize / info.block_size;
@@ -252,7 +252,7 @@ zx_status_t MkfsWorker::PrepareSuperblock() {
 
   uint32_t max_nat_bitmap_size;
   if (max_sit_bitmap_size >
-      kChecksumOffset - sizeof(Checkpoint) + 1 + (kDefaultBlocksPerSegment / kBitsPerByte)) {
+      kChecksumOffset - sizeof(Checkpoint) + 1 + (kDefaultBlocksPerSegment >> kShiftForBitSize)) {
     max_nat_bitmap_size = kChecksumOffset - sizeof(Checkpoint) + 1;
     super_block_.cp_payload = (max_sit_bitmap_size + kBlockSize - 1) / kBlockSize;
   } else {
@@ -402,7 +402,7 @@ zx_status_t MkfsWorker::PrepareSuperblock() {
 }
 
 zx_status_t MkfsWorker::InitSitArea() {
-  FsBlock<> sit_block;
+  BlockBuffer sit_block;
   uint32_t segment_count_sit_blocks = (1 << LeToCpu(super_block_.log_blocks_per_seg)) *
                                       (LeToCpu(super_block_.segment_count_sit) / 2);
 
@@ -420,7 +420,7 @@ zx_status_t MkfsWorker::InitSitArea() {
 }
 
 zx_status_t MkfsWorker::InitNatArea() {
-  FsBlock<> nat_block;
+  BlockBuffer nat_block;
   uint32_t segment_count_nat_blocks = (1 << LeToCpu(super_block_.log_blocks_per_seg)) *
                                       (LeToCpu(super_block_.segment_count_nat) / 2);
 
@@ -438,7 +438,7 @@ zx_status_t MkfsWorker::InitNatArea() {
 }
 
 zx_status_t MkfsWorker::WriteCheckPointPack() {
-  FsBlock<Checkpoint> checkpoint;
+  BlockBuffer<Checkpoint> checkpoint;
   // 1. cp page 1 of checkpoint pack 1
   checkpoint->checkpoint_ver = 1;
   checkpoint->cur_node_segno[0] =
@@ -511,7 +511,7 @@ zx_status_t MkfsWorker::WriteCheckPointPack() {
 
   for (uint32_t i = 0; i < super_block_.cp_payload; ++i) {
     ++cp_segment_block_num;
-    FsBlock<> zero_block;
+    BlockBuffer zero_block;
     if (zx_status_t ret = WriteToDisk(zero_block.get(), cp_segment_block_num); ret != ZX_OK) {
       FX_LOGS(ERROR) << "failed to zero out the sit bitmap on disk " << zx_status_get_string(ret);
       return ret;
@@ -519,7 +519,7 @@ zx_status_t MkfsWorker::WriteCheckPointPack() {
   }
 
   // 2. Prepare and write Segment summary for data blocks
-  FsBlock<SummaryBlock> summary;
+  BlockBuffer<SummaryBlock> summary;
   SetSumType((&summary->footer), kSumTypeData);
 
   summary->entries[0].nid = super_block_.root_ino;
@@ -550,7 +550,7 @@ zx_status_t MkfsWorker::WriteCheckPointPack() {
   summary->sit_j.entries[0].segno = checkpoint->cur_node_segno[0];
   summary->sit_j.entries[0].se.vblocks =
       CpuToLe(uint16_t{(static_cast<int>(CursegType::kCursegHotNode) << 10) | 1});
-  SetValidBitmap(0, summary->sit_j.entries[0].se.valid_map);
+  summary->sit_j.entries[0].se.valid_map[0] |= GetMask(1, ToMsbFirst(0));
   summary->sit_j.entries[1].segno = checkpoint->cur_node_segno[1];
   summary->sit_j.entries[1].se.vblocks =
       CpuToLe(uint16_t{(static_cast<int>(CursegType::kCursegWarmNode) << 10)});
@@ -562,7 +562,7 @@ zx_status_t MkfsWorker::WriteCheckPointPack() {
   summary->sit_j.entries[3].segno = checkpoint->cur_data_segno[0];
   summary->sit_j.entries[3].se.vblocks =
       CpuToLe(uint16_t{(static_cast<uint16_t>(CursegType::kCursegHotData) << 10) | 1});
-  SetValidBitmap(0, summary->sit_j.entries[3].se.valid_map);
+  summary->sit_j.entries[3].se.valid_map[0] |= GetMask(1, ToMsbFirst(0));
   summary->sit_j.entries[4].segno = checkpoint->cur_data_segno[1];
   summary->sit_j.entries[4].se.vblocks =
       CpuToLe(uint16_t{(static_cast<int>(CursegType::kCursegWarmData) << 10)});
@@ -633,7 +633,7 @@ zx_status_t MkfsWorker::WriteCheckPointPack() {
 
   for (uint32_t i = 0; i < super_block_.cp_payload; ++i) {
     ++cp_segment_block_num;
-    FsBlock<> zero_buffer;
+    BlockBuffer zero_buffer;
     if (zx_status_t ret = WriteToDisk(zero_buffer.get(), cp_segment_block_num); ret != ZX_OK) {
       FX_LOGS(ERROR) << "failed to zero out the sit bitmap area on disk "
                      << zx_status_get_string(ret);
@@ -652,7 +652,7 @@ zx_status_t MkfsWorker::WriteCheckPointPack() {
 }
 
 zx_status_t MkfsWorker::WriteSuperblock() {
-  FsBlock<> super_block;
+  BlockBuffer super_block;
   memcpy(super_block.get<uint8_t>() + kSuperOffset, &super_block_, sizeof(super_block_));
 
   for (block_t index = 0; index < 2; ++index) {
@@ -667,7 +667,7 @@ zx_status_t MkfsWorker::WriteSuperblock() {
 }
 
 zx_status_t MkfsWorker::WriteRootInode() {
-  FsBlock<Node> raw_node;
+  BlockBuffer<Node> raw_node;
 
   raw_node->footer.nid = super_block_.root_ino;
   raw_node->footer.ino = super_block_.root_ino;
@@ -715,7 +715,7 @@ zx_status_t MkfsWorker::WriteRootInode() {
 }
 
 zx_status_t MkfsWorker::UpdateNatRoot() {
-  FsBlock<NatBlock> nat_block;
+  BlockBuffer<NatBlock> nat_block;
 
   // update root
   nat_block->entries[super_block_.root_ino].block_addr =
@@ -737,7 +737,7 @@ zx_status_t MkfsWorker::UpdateNatRoot() {
 }
 
 zx_status_t MkfsWorker::AddDefaultDentryRoot() {
-  FsBlock<DentryBlock> dent_block;
+  BlockBuffer<DentryBlock> dent_block;
 
   dent_block->dentry[0].hash_code = 0;
   dent_block->dentry[0].ino = super_block_.root_ino;
@@ -761,7 +761,7 @@ zx_status_t MkfsWorker::AddDefaultDentryRoot() {
 }
 
 zx_status_t MkfsWorker::PurgeNodeChain() {
-  FsBlock<Node> raw_node;
+  BlockBuffer<Node> raw_node;
   block_t node_segment_block_num = LeToCpu(super_block_.main_blkaddr);
   node_segment_block_num += safemath::checked_cast<uint64_t>(
       params_.cur_seg[static_cast<int>(CursegType::kCursegWarmNode)] * params_.blks_per_seg);
@@ -846,7 +846,8 @@ zx_status_t ParseOptions(const MkfsOptions &options) {
   return ZX_OK;
 }
 
-zx::result<std::unique_ptr<Bcache>> Mkfs(const MkfsOptions &options, std::unique_ptr<Bcache> bc) {
+zx::result<std::unique_ptr<BcacheMapper>> Mkfs(const MkfsOptions &options,
+                                               std::unique_ptr<BcacheMapper> bc) {
   MkfsWorker mkfs(std::move(bc), options);
   return mkfs.DoMkfs();
 }

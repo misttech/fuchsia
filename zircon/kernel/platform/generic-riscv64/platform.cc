@@ -141,10 +141,15 @@ void* platform_get_ramdisk(size_t* size) {
 }
 
 void platform_halt_cpu() {
-  arch::RiscvSbiRet result = sbi_hart_stop();
+  zx_status_t status = power_cpu_off();
 
   // Should not have returned
-  panic("sbi_hart_stop returned %ld\n", static_cast<long>(result.error));
+  panic("power_cpu_off returned %d\n", status);
+}
+
+zx::result<power_cpu_state> platform_get_cpu_state(cpu_num_t cpu_id) {
+  DEBUG_ASSERT(cpu_id < SMP_MAX_CPUS);
+  return power_get_cpu_state(arch_cpu_num_to_hart_id(cpu_id));
 }
 
 static void topology_cpu_init() {
@@ -160,13 +165,16 @@ static void topology_cpu_init() {
 
     const auto& processor = node->entity.processor;
     for (uint8_t i = 0; i < processor.logical_id_count; i++) {
-      // Skip the current (boot) hart, we are only starting secondary harts.
-      if (processor.flags == ZBI_TOPOLOGY_PROCESSOR_FLAGS_PRIMARY) {
-        continue;
-      }
-      // Try to start the hart.
       const uint64_t hart_id = processor.architecture_info.riscv64.hart_id;
       DEBUG_ASSERT(hart_id <= UINT32_MAX);
+
+      // Skip the current (boot) hart, we are only starting secondary harts.
+      if (processor.flags == ZBI_TOPOLOGY_PROCESSOR_FLAGS_PRIMARY ||
+          hart_id == riscv64_boot_hart_id()) {
+        continue;
+      }
+
+      // Try to start the hart.
       riscv64_start_cpu(processor.logical_ids[i], static_cast<uint32_t>(hart_id));
     }
   }
@@ -244,7 +252,7 @@ static zx::result<fbl::Array<zbi_topology_node_t>> sbi_detect_topology(size_t ma
     nodes[i] = {
       .entity = {
         .discriminant = ZBI_TOPOLOGY_ENTITY_PROCESSOR,
-        .processor = {          
+        .processor = {
           .architecture_info = {
             .discriminant = ZBI_TOPOLOGY_ARCHITECTURE_INFO_RISCV64,
             .riscv64 = {
@@ -594,13 +602,13 @@ void platform_specific_halt(platform_halt_action suggested_action, zircon_crash_
   TRACEF("suggested_action %u, reason %u, halt_on_panic %d\n", suggested_action,
          static_cast<unsigned int>(reason), halt_on_panic);
   if (suggested_action == HALT_ACTION_REBOOT) {
-    power_reboot(REBOOT_NORMAL);
+    power_reboot(power_reboot_flags::REBOOT_NORMAL);
     printf("reboot failed\n");
   } else if (suggested_action == HALT_ACTION_REBOOT_BOOTLOADER) {
-    power_reboot(REBOOT_BOOTLOADER);
+    power_reboot(power_reboot_flags::REBOOT_BOOTLOADER);
     printf("reboot-bootloader failed\n");
   } else if (suggested_action == HALT_ACTION_REBOOT_RECOVERY) {
-    power_reboot(REBOOT_RECOVERY);
+    power_reboot(power_reboot_flags::REBOOT_RECOVERY);
     printf("reboot-recovery failed\n");
   } else if (suggested_action == HALT_ACTION_SHUTDOWN) {
     power_shutdown();
@@ -612,7 +620,7 @@ void platform_specific_halt(platform_halt_action suggested_action, zircon_crash_
     Thread::Current::GetBacktrace(bt);
     bt.Print();
     if (!halt_on_panic) {
-      power_reboot(REBOOT_NORMAL);
+      power_reboot(power_reboot_flags::REBOOT_NORMAL);
       printf("reboot failed\n");
     }
 #if ENABLE_PANIC_SHELL
@@ -653,8 +661,11 @@ static void riscv64_resource_dispatcher_init_hook(unsigned int rl) {
     printf("Resources: Failed to initialize MMIO allocator: %d\n", status);
   }
   // Set up IRQs based on values from the PLIC
+  const auto max_vector = interrupt_get_max_vector();
+  // Normally there would be at least one interrupt vector.
+  DEBUG_ASSERT(max_vector > 0);
   status = ResourceDispatcher::InitializeAllocator(ZX_RSRC_KIND_IRQ, interrupt_get_base_vector(),
-                                                   interrupt_get_max_vector());
+                                                   max_vector);
   if (status != ZX_OK) {
     printf("Resources: Failed to initialize IRQ allocator: %d\n", status);
   }

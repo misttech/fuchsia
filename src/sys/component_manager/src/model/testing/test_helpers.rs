@@ -5,6 +5,7 @@
 use {
     crate::{
         builtin_environment::{BuiltinEnvironment, BuiltinEnvironmentBuilder},
+        framework::realm::RealmCapabilityHost,
         model::{
             component::{ComponentInstance, InstanceState, StartReason, WeakComponentInstance},
             events::{registry::EventSubscription, source::EventSource, stream::EventStream},
@@ -16,21 +17,20 @@ use {
             },
         },
     },
-    ::routing::config::RuntimeConfig,
+    camino::Utf8PathBuf,
+    cm_config::RuntimeConfig,
     cm_rust::{
         Availability, CapabilityDecl, ChildDecl, ComponentDecl, ConfigValuesData, EventStreamDecl,
         NativeIntoFidl, RunnerDecl, UseEventStreamDecl, UseSource,
     },
     cm_types::Name,
     cm_types::Url,
-    fidl::{endpoints, prelude::*},
+    fidl::endpoints,
     fidl_fidl_examples_routing_echo as echo, fidl_fuchsia_component as fcomponent,
     fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_runner as fcrunner,
-    fidl_fuchsia_io as fio,
-    fidl_fuchsia_logger::LogSinkRequestStream,
-    fuchsia_async as fasync,
+    fidl_fuchsia_io as fio, fuchsia_async as fasync,
     fuchsia_component::client::connect_to_named_protocol_at_dir_root,
-    fuchsia_zircon::{self as zx, AsHandleRef, Koid},
+    fuchsia_zircon::{self as zx, Koid},
     futures::{channel::mpsc::Receiver, lock::Mutex, StreamExt, TryStreamExt},
     moniker::{ChildName, Moniker},
     std::collections::HashSet,
@@ -51,10 +51,6 @@ pub fn component_decl_with_test_runner() -> ComponentDecl {
     ::routing_test_helpers::component_decl_with_test_runner()
 }
 
-pub enum MockServiceRequest {
-    LogSink(LogSinkRequestStream),
-}
-
 pub struct ComponentInfo {
     pub component: Arc<ComponentInstance>,
     pub channel_id: Koid,
@@ -72,14 +68,7 @@ impl ComponentInfo {
         let koid = {
             let component = component.lock_execution().await;
             let runtime = component.runtime.as_ref().expect("runtime is unexpectedly missing");
-            let controller =
-                runtime.controller.as_ref().expect("controller is unexpectedly missing");
-            let basic_info = controller
-                .as_channel()
-                .basic_info()
-                .expect("error getting basic info about controller channel");
-            // should be the koid of the other side of the channel
-            basic_info.related_koid
+            runtime.program_koid().expect("program is unexpectedly missing")
         };
 
         ComponentInfo { component, channel_id: koid }
@@ -264,7 +253,7 @@ pub struct TestEnvironmentBuilder {
     components: Vec<(&'static str, ComponentDecl)>,
     config_values: Vec<(&'static str, ConfigValuesData)>,
     runtime_config: RuntimeConfig,
-    component_id_index_path: Option<String>,
+    component_id_index_path: Option<Utf8PathBuf>,
     realm_moniker: Option<Moniker>,
     hooks: Vec<HooksRegistration>,
 }
@@ -300,8 +289,8 @@ impl TestEnvironmentBuilder {
         self
     }
 
-    pub fn set_component_id_index_path(mut self, index: Option<String>) -> Self {
-        self.component_id_index_path = index;
+    pub fn set_component_id_index_path(mut self, path: Utf8PathBuf) -> Self {
+        self.component_id_index_path = Some(path);
         self
     }
 
@@ -355,26 +344,27 @@ impl TestEnvironmentBuilder {
                 .await
                 .expect("builtin environment setup failed"),
         ));
+        builtin_environment.lock().await.discover_root_component().await;
         let model = builtin_environment.lock().await.model.clone();
 
         model.root().hooks.install(self.hooks).await;
 
         // Host framework service for `moniker`, if requested.
-        let builtin_environment_inner = builtin_environment.clone();
         let realm_proxy = if let Some(moniker) = self.realm_moniker {
             let (realm_proxy, stream) =
                 endpoints::create_proxy_and_stream::<fcomponent::RealmMarker>().unwrap();
             let component = WeakComponentInstance::from(
                 &model
-                    .look_up(&moniker)
+                    .find_and_maybe_resolve(&moniker)
                     .await
                     .unwrap_or_else(|e| panic!("could not look up {}: {:?}", moniker, e)),
             );
+            let realm_capability_host = RealmCapabilityHost::new_for_test(
+                Arc::downgrade(&model),
+                model.context().runtime_config().clone(),
+            );
             fasync::Task::spawn(async move {
-                builtin_environment_inner
-                    .lock()
-                    .await
-                    .realm_capability_host
+                realm_capability_host
                     .serve(component, stream)
                     .await
                     .expect("failed serving realm service");
@@ -438,7 +428,7 @@ impl ActionsTest {
 
     pub async fn look_up(&self, moniker: Moniker) -> Arc<ComponentInstance> {
         self.model
-            .look_up(&moniker)
+            .find_and_maybe_resolve(&moniker)
             .await
             .unwrap_or_else(|e| panic!("could not look up {}: {:?}", moniker, e))
     }
@@ -492,14 +482,8 @@ pub async fn new_event_stream(
     builtin_environment: Arc<Mutex<BuiltinEnvironment>>,
     events: Vec<Name>,
 ) -> (EventSource, EventStream) {
-    let mut event_source = builtin_environment
-        .as_ref()
-        .lock()
-        .await
-        .event_source_factory
-        .create_for_above_root()
-        .await
-        .expect("created event source");
+    let mut event_source =
+        builtin_environment.as_ref().lock().await.event_source_factory.create_for_above_root();
     let event_stream = event_source
         .subscribe(
             events

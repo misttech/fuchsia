@@ -5,13 +5,12 @@
 use crate::{constants::*, test_topology};
 use anyhow::Error;
 use archivist_lib::constants;
-use diagnostics_reader::{
-    assert_data_tree, assert_json_diff, AnyProperty, ArchiveReader, DiagnosticsHierarchy, Inspect,
-};
+use diagnostics_assertions::{assert_data_tree, assert_json_diff, AnyProperty};
+use diagnostics_reader::{ArchiveReader, Inspect};
 use difference::assert_diff;
+use fidl_fuchsia_archivist_test as ftest;
 use fidl_fuchsia_diagnostics::{ArchiveAccessorMarker, ArchiveAccessorProxy};
 use fuchsia_component_test::RealmInstance;
-use fuchsia_component_test::{Capability, ChildOptions, Ref, Route};
 use lazy_static::lazy_static;
 
 const MONIKER_KEY: &str = "moniker";
@@ -35,29 +34,26 @@ lazy_static! {
         include_str!("../../test_data/pipeline_reader_all_golden.json");
     static ref PIPELINE_NONOVERLAPPING_SELECTORS_GOLDEN: &'static str =
         include_str!("../../test_data/pipeline_reader_nonoverlapping_selectors_golden.json");
-    static ref MEMORY_MONITOR_V2_MONIKER_GOLDEN: &'static str =
-        include_str!("../../test_data/memory_monitor_v2_moniker_golden.json");
-    static ref MEMORY_MONITOR_LEGACY_MONIKER_GOLDEN: &'static str =
-        include_str!("../../test_data/memory_monitor_legacy_moniker_golden.json");
 }
 
 #[fuchsia::test]
 async fn read_components_inspect() {
-    let (builder, test_realm) = test_topology::create(test_topology::Options::default())
-        .await
-        .expect("create base topology");
-    test_topology::add_eager_child(&test_realm, "child", STUB_INSPECT_COMPONENT_URL)
-        .await
-        .expect("add child");
+    let realm_proxy = test_topology::create_realm(&ftest::RealmOptions {
+        puppets: Some(vec![ftest::PuppetDecl { name: "child".to_string() }]),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
 
-    let instance = builder.build().await.expect("create instance");
+    let child_puppet = test_topology::connect_to_puppet(&realm_proxy, "child").await.unwrap();
 
-    let accessor =
-        instance.root.connect_to_protocol_at_exposed_dir::<ArchiveAccessorMarker>().unwrap();
+    child_puppet.set_health_ok().await.unwrap();
+
+    let accessor = realm_proxy.connect_to_protocol::<ArchiveAccessorMarker>().await.unwrap();
+
     let data = ArchiveReader::new()
         .with_archive(accessor)
         .add_selector("child:root")
-        .retry_if_empty(true)
         .with_minimum_schema_count(1)
         .snapshot::<Inspect>()
         .await
@@ -72,21 +68,25 @@ async fn read_components_inspect() {
 }
 
 #[fuchsia::test]
-async fn read_component_with_hanging_lazy_node() {
-    let (builder, test_realm) = test_topology::create(test_topology::Options {
-        archivist_url: INTEGRATION_ARCHIVIST_URL,
-        realm_name: Some("hanging_lazy"),
+async fn read_component_with_hanging_lazy_node() -> Result<(), Error> {
+    let realm_proxy = test_topology::create_realm(&ftest::RealmOptions {
+        realm_name: Some("hanging_lazy".to_string()),
+        puppets: Some(vec![ftest::PuppetDecl { name: "hanging_data".to_string() }]),
+        ..Default::default()
     })
     .await
-    .expect("create base topology");
-    test_topology::add_eager_child(&test_realm, "hanging_data", HANGING_INSPECT_COMPONENT_URL)
-        .await
-        .expect("add child");
+    .expect("create realm");
 
-    let instance = builder.build().await.expect("create instance");
+    let puppet = test_topology::connect_to_puppet(&realm_proxy, "hanging_data").await?;
 
-    let accessor =
-        instance.root.connect_to_protocol_at_exposed_dir::<ArchiveAccessorMarker>().unwrap();
+    puppet.record_string("child", "value")?;
+
+    let lazy = puppet.record_lazy_values("lazy-node-always-hangs").await?.into_proxy()?;
+    lazy.commit(&ftest::CommitOptions { hang: Some(true), ..Default::default() })?;
+
+    puppet.record_int("int", 3)?;
+
+    let accessor = realm_proxy.connect_to_protocol::<ArchiveAccessorMarker>().await?;
     let data = ArchiveReader::new()
         .with_archive(accessor)
         .add_selector("hanging_data:*")
@@ -98,23 +98,29 @@ async fn read_component_with_hanging_lazy_node() {
         child: "value",
         int: 3i64,
     });
+
+    Ok(())
 }
 
 #[fuchsia::test]
-async fn read_components_single_selector() {
-    let (builder, test_realm) = test_topology::create(test_topology::Options::default())
-        .await
-        .expect("create base topology");
-    test_topology::add_eager_child(&test_realm, "child_a", STUB_INSPECT_COMPONENT_URL)
-        .await
-        .expect("add child a");
-    test_topology::add_eager_child(&test_realm, "child_b", STUB_INSPECT_COMPONENT_URL)
-        .await
-        .expect("add child b");
-    let instance = builder.build().await.expect("create instance");
+async fn read_components_single_selector() -> Result<(), Error> {
+    let realm_proxy = test_topology::create_realm(&ftest::RealmOptions {
+        puppets: Some(vec![
+            ftest::PuppetDecl { name: "child_a".to_string() },
+            ftest::PuppetDecl { name: "child_b".to_string() },
+        ]),
+        ..Default::default()
+    })
+    .await
+    .expect("create realm");
 
-    let accessor =
-        instance.root.connect_to_protocol_at_exposed_dir::<ArchiveAccessorMarker>().unwrap();
+    let child_a = test_topology::connect_to_puppet(&realm_proxy, "child_a").await?;
+    child_a.set_health_ok().await?;
+
+    let child_b = test_topology::connect_to_puppet(&realm_proxy, "child_b").await?;
+    child_b.set_health_ok().await?;
+
+    let accessor = realm_proxy.connect_to_protocol::<ArchiveAccessorMarker>().await?;
     let data = ArchiveReader::new()
         .with_archive(accessor)
         .add_selector("child_a:root")
@@ -131,6 +137,8 @@ async fn read_components_single_selector() {
         }
     });
     assert_eq!(data[0].moniker, "child_a");
+
+    Ok(())
 }
 
 #[fuchsia::test]
@@ -176,84 +184,6 @@ async fn unified_reader() -> Result<(), Error> {
         vec!["test_component:root/non-existent-node:bloop"],
         &UNIFIED_FULL_FILTER_GOLDEN,
         3,
-    )
-    .await;
-
-    Ok(())
-}
-
-#[fuchsia::test]
-async fn memory_monitor_moniker_rewrite() -> Result<(), Error> {
-    let (builder, test_realm) = test_topology::create(test_topology::Options {
-        archivist_url: ARCHIVIST_WITH_LEGACY_METRICS,
-        realm_name: None,
-    })
-    .await
-    .expect("create base topology");
-    let core_realm = test_realm.add_child_realm("core", ChildOptions::new().eager()).await?;
-    let memory_monitor = core_realm
-        .add_child("memory_monitor", IQUERY_TEST_COMPONENT_URL, ChildOptions::new().eager())
-        .await?;
-    test_realm
-        .add_route(
-            Route::new()
-                .capability(Capability::protocol_by_name("fuchsia.logger.LogSink"))
-                .from(Ref::child("archivist"))
-                .to(&core_realm),
-        )
-        .await?;
-    core_realm
-        .add_route(
-            Route::new()
-                .capability(Capability::protocol_by_name("fuchsia.logger.LogSink"))
-                .from(Ref::parent())
-                .to(&memory_monitor),
-        )
-        .await?;
-    let instance = builder.build().await.expect("create instance");
-
-    // Verify that fetching "core/memory_monitor" from ArchiveAccessor produces results with
-    // the correct v2 moniker.
-    let accessor =
-        instance.root.connect_to_protocol_at_exposed_dir::<ArchiveAccessorMarker>().unwrap();
-    retrieve_and_validate_results(
-        accessor,
-        vec!["core/memory_monitor:*:lazy-*"],
-        &MEMORY_MONITOR_V2_MONIKER_GOLDEN,
-        1,
-    )
-    .await;
-
-    // Verify that fetching "memory_monitor.cmx" from ArchiveAccessor does not fetch anything.
-    let accessor =
-        instance.root.connect_to_protocol_at_exposed_dir::<ArchiveAccessorMarker>().unwrap();
-    retrieve_and_validate_results(
-        accessor,
-        vec!["memory_monitor.cmx:*:lazy-*"],
-        &EMPTY_RESULT_GOLDEN,
-        0,
-    )
-    .await;
-
-    // Verify that fetching "core/memory_monitor" from Legacy produces results with the
-    // correct v2 moniker.
-    let accessor = connect_to_legacy_accessor(&instance);
-    retrieve_and_validate_results(
-        accessor,
-        vec!["core/memory_monitor:*:lazy-*"],
-        &MEMORY_MONITOR_V2_MONIKER_GOLDEN,
-        1,
-    )
-    .await;
-
-    // Verify that fetching "memory_monitor.cmx" from Legacy produces results with the
-    // correct (rewritten) v1 moniker.
-    let accessor = connect_to_legacy_accessor(&instance);
-    retrieve_and_validate_results(
-        accessor,
-        vec!["memory_monitor.cmx:*:lazy-*"],
-        &MEMORY_MONITOR_LEGACY_MONIKER_GOLDEN,
-        1,
     )
     .await;
 
@@ -399,15 +329,6 @@ fn connect_to_feedback_accessor(instance: &RealmInstance) -> ArchiveAccessorProx
         .root
         .connect_to_named_protocol_at_exposed_dir::<ArchiveAccessorMarker>(
             "fuchsia.diagnostics.FeedbackArchiveAccessor",
-        )
-        .unwrap()
-}
-
-fn connect_to_legacy_accessor(instance: &RealmInstance) -> ArchiveAccessorProxy {
-    instance
-        .root
-        .connect_to_named_protocol_at_exposed_dir::<ArchiveAccessorMarker>(
-            "fuchsia.diagnostics.LegacyMetricsArchiveAccessor",
         )
         .unwrap()
 }

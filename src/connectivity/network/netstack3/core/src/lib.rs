@@ -26,753 +26,294 @@ extern crate fakestd as std;
 mod macros;
 
 mod algorithm;
+mod context;
+mod convert;
+mod counters;
+mod data_structures;
+mod lock_ordering;
+mod state;
+mod time;
+mod trace;
+mod transport;
+mod uninstantiable;
+mod work_queue;
+
 #[cfg(test)]
 pub mod benchmarks;
-pub mod context;
-pub(crate) mod convert;
-pub mod data_structures;
-pub mod device;
-pub mod error;
-pub mod ip;
-mod lock_ordering;
-pub mod socket;
-pub mod sync;
 #[cfg(any(test, feature = "testutils"))]
 pub mod testutil;
-mod trace;
-pub mod transport;
 
-use alloc::vec::Vec;
-use core::{fmt::Debug, marker::PhantomData, time};
+/// The device layer.
+pub mod device {
+    pub(crate) mod arp;
+    pub(crate) mod base;
+    pub(crate) mod config;
+    pub(crate) mod ethernet;
+    pub(crate) mod id;
+    pub(crate) mod integration;
+    pub(crate) mod link;
+    pub(crate) mod loopback;
+    pub(crate) mod ndp;
+    pub(crate) mod queue;
+    pub(crate) mod socket;
+    mod state;
 
-use derivative::Derivative;
-use lock_order::Locked;
-use net_types::{
-    ip::{AddrSubnetEither, IpAddr, Ipv4, Ipv6, SubnetEither},
-    SpecifiedAddr,
-};
-use packet::{Buf, BufferMut, EmptyBuf};
-use tracing::trace;
+    pub(crate) use base::*;
+    pub(crate) use id::*;
 
-use crate::{
-    context::{
-        CounterContext, EventContext, InstantContext, RngContext, TimerContext, TracingContext,
-    },
-    device::{DeviceId, DeviceLayerState, DeviceLayerTimerId},
-    ip::{
-        device::{
-            state::AddrSubnetAndManualConfigEither, DualStackDeviceHandler, Ipv4DeviceTimerId,
-            Ipv6DeviceTimerId,
+    // Re-exported freestanding functions.
+    //
+    // TODO(https://fxbug.dev/42083910): Replace freestanding functions with API
+    // objects.
+    pub use base::{
+        add_ethernet_device_with_state, add_ip_addr_subnet, add_loopback_device_with_state,
+        del_ip_addr, flush_neighbor_table, get_all_ip_addr_subnets,
+        get_ipv4_configuration_and_flags, get_ipv6_configuration_and_flags, get_routing_metric,
+        handle_queued_rx_packets, insert_static_neighbor_entry, inspect_devices, inspect_neighbors,
+        new_ipv4_configuration_update, new_ipv6_configuration_update, receive_frame,
+        remove_ethernet_device, remove_loopback_device, remove_neighbor_table_entry,
+        set_ip_addr_properties, set_tx_queue_configuration, transmit_queued_tx_frames,
+    };
+    pub use config::{get_device_configuration, new_device_configuration_update};
+    pub use ethernet::resolve_ethernet_link_addr;
+
+    // Re-exported types.
+    pub use base::{
+        DeviceLayerEventDispatcher, DeviceLayerStateTypes, DeviceSendFrameError, DevicesVisitor,
+        InspectDeviceState, NeighborVisitor, RemoveDeviceResult, RemoveDeviceResultWithContext,
+    };
+    pub use config::{
+        ArpConfiguration, ArpConfigurationUpdate, DeviceConfiguration, DeviceConfigurationUpdate,
+        DeviceConfigurationUpdateError, NdpConfiguration, NdpConfigurationUpdate,
+    };
+    pub use ethernet::{EthernetLinkDevice, MaxEthernetFrameSize};
+    pub use id::{DeviceId, EthernetDeviceId, EthernetWeakDeviceId, WeakDeviceId};
+    pub use loopback::LoopbackDeviceId;
+    pub use queue::tx::TransmitQueueConfiguration;
+}
+
+/// Device socket API.
+pub mod device_socket {
+    // Re-exported functions.
+    //
+    // TODO(https://fxbug.dev/42083910): Replace freestanding functions with API
+    // objects.
+    pub use crate::device::socket::{
+        create, get_info, remove, send_datagram, send_frame, set_device, set_device_and_protocol,
+    };
+
+    // Re-exported types.
+    pub use crate::device::{
+        base::FrameDestination,
+        socket::{
+            DeviceSocketBindingsContext, DeviceSocketTypes, EthernetFrame, Frame, Protocol,
+            ReceivedFrame, SendDatagramError, SendDatagramParams, SendFrameError, SendFrameParams,
+            SentFrame, SocketId, SocketInfo, TargetDevice,
         },
-        icmp::{BufferIcmpContext, IcmpContext},
-        IpLayerTimerId, Ipv4State, Ipv6State,
-    },
-    transport::{TransportLayerState, TransportLayerTimerId},
+    };
+}
+
+// Allow direct public access to the error module. This module is unlikely to
+// evolve poorly or have sealed traits. We can revisit if this becomes hard to
+// uphold.
+pub mod error;
+
+/// Facilities for inspecting stack state for debugging.
+pub mod inspect {
+    // Re-exported functions.
+    //
+    // TODO(https://fxbug.dev/42083910): Replace freestanding functions with API
+    // objects.
+    pub use crate::counters::inspect_counters;
+
+    // Re-exported types.
+    pub use crate::counters::{CounterVisitor, StackCounters};
+}
+
+/// Methods for dealing with ICMP sockets.
+pub mod icmp {
+    // Re-exported functions.
+    //
+    // TODO(https://fxbug.dev/42083910): Replace freestanding functions with API
+    // objects.
+    pub use crate::ip::icmp::{
+        bind, close, connect, disconnect, get_bound_device, get_info, get_multicast_hop_limit,
+        get_shutdown, get_unicast_hop_limit, new_socket, send, send_to, set_device,
+        set_multicast_hop_limit, set_unicast_hop_limit, shutdown,
+    };
+
+    // Re-exported types.
+    pub use crate::ip::icmp::{IcmpEchoBindingsContext, IcmpIpExt, SocketId, SocketInfo};
+}
+
+/// The Internet Protocol, versions 4 and 6.
+pub mod ip {
+    #[macro_use]
+    pub(crate) mod path_mtu;
+
+    pub(crate) mod base;
+    pub(crate) mod device;
+    pub(crate) mod forwarding;
+    pub(crate) mod gmp;
+    pub(crate) mod icmp;
+    pub(crate) mod reassembly;
+    pub(crate) mod socket;
+    pub(crate) mod types;
+
+    mod integration;
+    mod ipv6;
+
+    pub(crate) use base::*;
+
+    // Re-exported types.
+    pub use crate::algorithm::STABLE_IID_SECRET_KEY_BYTES;
+    pub use base::{IpExt, IpLayerEvent, ResolveRouteError};
+    pub use device::{
+        slaac::{SlaacConfiguration, TemporarySlaacAddressConfiguration},
+        state::{
+            AddrSubnetAndManualConfigEither, Ipv4AddrConfig, Ipv6AddrManualConfig,
+            Ipv6DeviceConfiguration, Lifetime,
+        },
+        AddressRemovedReason, IpAddressState, IpDeviceConfigurationUpdate, IpDeviceEvent,
+        Ipv4DeviceConfigurationUpdate, Ipv6DeviceConfigurationUpdate, UpdateIpConfigurationError,
+    };
+    pub use socket::{IpSockCreateAndSendError, IpSockCreationError, IpSockSendError};
+}
+
+/// Types and utilities for dealing with neighbors.
+pub mod neighbor {
+    // Re-exported types.
+    pub use crate::ip::device::nud::{
+        Event, EventDynamicState, EventKind, EventState, LinkResolutionContext,
+        LinkResolutionNotifier, LinkResolutionResult, NeighborStateInspect, NudUserConfig,
+        NudUserConfigUpdate, MAX_ENTRIES,
+    };
+}
+
+/// Types and utilities for dealing with routes.
+pub mod routes {
+    // Re-exported functions.
+    //
+    // TODO(https://fxbug.dev/42083910): Replace freestanding functions with API
+    // objects.
+    pub use crate::ip::base::{get_all_routes, resolve_route};
+    pub use crate::ip::forwarding::{select_device_for_gateway, set_routes, with_routes};
+
+    // Re-exported types.
+    pub use crate::ip::forwarding::{AddRouteError, RoutesVisitor};
+    pub use crate::ip::types::{
+        AddableEntry, AddableEntryEither, AddableMetric, Entry, EntryEither, Generation, Metric,
+        NextHop, RawMetric, ResolvedRoute,
+    };
+}
+
+/// Common types for dealing with sockets.
+pub mod socket {
+    pub(crate) mod address;
+    mod base;
+    pub(crate) mod datagram;
+
+    pub(crate) use base::*;
+
+    pub use address::SocketZonedIpAddr;
+    pub use base::{NotDualStackCapableError, SetDualStackEnabledError, ShutdownType};
+    pub use datagram::{
+        ConnectError, ExpectedConnError, ExpectedUnboundError, MulticastInterfaceSelector,
+        MulticastMembershipInterfaceSelector, SendError, SendToError, SetMulticastMembershipError,
+    };
+}
+
+/// Useful synchronization primitives.
+pub mod sync {
+    // TODO(https://fxbug.dev/110884): Support single-threaded variants of types
+    // exported from this module.
+
+    #[cfg(all(feature = "instrumented", not(loom)))]
+    use netstack3_sync_instrumented as netstack3_sync;
+
+    // Don't perform recursive lock checks when benchmarking so that the benchmark
+    // results are not affected by the extra bookkeeping.
+    #[cfg(all(not(feature = "instrumented"), not(loom)))]
+    use netstack3_sync_not_instrumented as netstack3_sync;
+
+    #[cfg(loom)]
+    use netstack3_sync_loom as netstack3_sync;
+
+    // Exclusively re-exports from the sync crate.
+    pub use netstack3_sync::{
+        rc::{
+            DebugReferences, MapNotifier as MapRcNotifier, Notifier as RcNotifier,
+            Primary as PrimaryRc, Strong as StrongRc, Weak as WeakRc,
+        },
+        LockGuard, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard,
+    };
+}
+
+/// Methods for dealing with TCP sockets.
+pub mod tcp {
+    // Re-exported functions
+    //
+    // TODO(https://fxbug.dev/42083910): Replace freestanding functions with API
+    // objects.
+    pub use crate::transport::tcp::socket::{
+        accept, bind, close, connect, create_socket, do_send, get_info, get_socket_error, listen,
+        receive_buffer_size, reuseaddr, send_buffer_size, set_device, set_receive_buffer_size,
+        set_reuseaddr, set_send_buffer_size, shutdown, with_info, with_socket_options,
+        with_socket_options_mut,
+    };
+
+    // TODO(https://fxbug.dev/42083910): Expose a single marker IP extension
+    // trait.
+    pub use crate::transport::tcp::socket::DualStackIpExt;
+
+    // Re-exported types.
+    pub use crate::transport::tcp::{
+        buffer::{
+            Buffer, BufferLimits, IntoBuffers, ReceiveBuffer, RingBuffer, SendBuffer, SendPayload,
+        },
+        segment::Payload,
+        socket::{
+            AcceptError, BindError, BoundInfo, ConnectError, ConnectionInfo, InfoVisitor,
+            ListenError, ListenerNotifier, NoConnection, SetDeviceError, SetReuseAddrError,
+            SocketAddr, SocketInfo, SocketStats, TcpBindingsTypes, TcpSocketId, UnboundInfo,
+        },
+        state::Takeable,
+        BufferSizes, ConnectionError, SocketOptions, DEFAULT_FIN_WAIT2_TIMEOUT,
+    };
+}
+
+/// Miscellaneous and common types.
+pub mod types {
+    pub use crate::work_queue::WorkQueueReport;
+}
+
+/// Methods for dealing with UDP sockets.
+pub mod udp {
+    // Re-exported functions
+    //
+    // TODO(https://fxbug.dev/42083910): Replace freestanding functions with API
+    // objects.
+    pub use crate::transport::udp::{
+        close, connect, create_udp, disconnect_udp_connected, get_shutdown, get_udp_bound_device,
+        get_udp_dual_stack_enabled, get_udp_info, get_udp_multicast_hop_limit,
+        get_udp_posix_reuse_port, get_udp_transparent, get_udp_unicast_hop_limit, listen_udp,
+        send_udp, send_udp_to, set_udp_device, set_udp_dual_stack_enabled,
+        set_udp_multicast_hop_limit, set_udp_multicast_membership, set_udp_posix_reuse_port,
+        set_udp_transparent, set_udp_unicast_hop_limit, shutdown,
+    };
+
+    // Re-exported types.
+    pub use crate::transport::udp::{
+        ConnInfo, ListenerInfo, SendError, SendToError, SocketId, SocketInfo, UdpBindingsContext,
+        UdpRemotePort,
+    };
+}
+
+pub use context::{
+    BindingsContext, BindingsTypes, CoreCtx, EventContext, InstantBindingsTypes, InstantContext,
+    ReferenceNotifiers, RngContext, SyncCtx, TimerContext, TracingContext, UnlockedCoreCtx,
 };
+pub use state::StackState;
+pub use time::{handle_timer, Instant, TimerId};
+
 pub(crate) use trace::trace_duration;
-
-/// Map an expression over either version of one or more addresses.
-///
-/// `map_addr_version!` when given a value of a type which is an enum with two
-/// variants - `V4` and `V6` - matches on the variants, and for both variants,
-/// invokes an expression on the inner contents. `$addr` is both the name of the
-/// variable to match on, and the name that the address will be bound to for the
-/// scope of the expression.
-///
-/// `map_addr_version!` when given a list of values and their types (all enums
-/// with variants `V4` and `V6`), matches on the tuple of values and invokes the
-/// `$match` expression when all values are of the same variant. Otherwise the
-/// `$mismatch` expression is invoked.
-///
-/// To make it concrete, the expression `map_addr_version!(bar: Foo; blah(bar))`
-/// desugars to:
-///
-/// ```rust,ignore
-/// match bar {
-///     Foo::V4(bar) => blah(bar),
-///     Foo::V6(bar) => blah(bar),
-/// }
-/// ```
-///
-/// Also,
-/// `map_addr_version!((foo: Foo, bar: Bar); blah(foo, bar), unreachable!())`
-/// desugars to:
-///
-/// ```rust,ignore
-/// match (foo, bar) {
-///     (Foo::V4(foo), Bar::V4(bar)) => blah(foo, bar),
-///     (Foo::V6(foo), Bar::V6(bar)) => blah(foo, bar),
-///     _ => unreachable!(),
-/// }
-/// ```
-#[macro_export]
-macro_rules! map_addr_version {
-    ($addr:ident: $ty:tt; $expr:expr) => {
-        match $addr {
-            $ty::V4($addr) => $expr,
-            $ty::V6($addr) => $expr,
-        }
-    };
-    ($addr:ident: $ty:tt; $expr_v4:expr, $expr_v6:expr) => {
-        match $addr {
-            $ty::V4($addr) => $expr_v4,
-            $ty::V6($addr) => $expr_v6,
-        }
-    };
-    (( $( $addr:ident : $ty:tt ),+ ); $match:expr, $mismatch:expr) => {
-        match ( $( $addr ),+ ) {
-            ( $( $ty::V4( $addr ) ),+ ) => $match,
-            ( $( $ty::V6( $addr ) ),+ ) => $match,
-            _ => $mismatch,
-        }
-    };
-    (( $( $addr:ident : $ty:tt ),+ ); $match_v4:expr, $match_v6:expr, $mismatch:expr) => {
-        match ( $( $addr ),+ ) {
-            ( $( $ty::V4( $addr ) ),+ ) => $match_v4,
-            ( $( $ty::V6( $addr ) ),+ ) => $match_v6,
-            _ => $mismatch,
-        }
-    };
-    (( $( $addr:ident : $ty:tt ),+ ); $match:expr, $mismatch:expr,) => {
-        map_addr_version!(($( $addr: $ty ),+); $match, $mismatch)
-    };
-}
-
-/// A builder for [`StackState`].
-#[derive(Default, Clone)]
-pub struct StackStateBuilder {
-    transport: transport::TransportStateBuilder,
-    ipv4: ip::Ipv4StateBuilder,
-    ipv6: ip::Ipv6StateBuilder,
-}
-
-impl StackStateBuilder {
-    /// Get the builder for the transport layer state.
-    pub fn transport_builder(&mut self) -> &mut transport::TransportStateBuilder {
-        &mut self.transport
-    }
-
-    /// Get the builder for the IPv4 state.
-    pub fn ipv4_builder(&mut self) -> &mut ip::Ipv4StateBuilder {
-        &mut self.ipv4
-    }
-
-    /// Get the builder for the IPv6 state.
-    pub fn ipv6_builder(&mut self) -> &mut ip::Ipv6StateBuilder {
-        &mut self.ipv6
-    }
-
-    /// Consume this builder and produce a `StackState`.
-    pub fn build_with_ctx<C: NonSyncContext>(self, ctx: &mut C) -> StackState<C> {
-        StackState {
-            transport: self.transport.build_with_ctx(ctx),
-            ipv4: self.ipv4.build(),
-            ipv6: self.ipv6.build(),
-            device: DeviceLayerState::new(),
-        }
-    }
-}
-
-/// The state associated with the network stack.
-pub struct StackState<C: NonSyncContext> {
-    transport: TransportLayerState<C>,
-    ipv4: Ipv4State<C::Instant, DeviceId<C>>,
-    ipv6: Ipv6State<C::Instant, DeviceId<C>>,
-    device: DeviceLayerState<C>,
-}
-
-impl<C: NonSyncContext + Default> Default for StackState<C> {
-    fn default() -> StackState<C> {
-        StackStateBuilder::default().build_with_ctx(&mut Default::default())
-    }
-}
-
-/// The non synchronized context for the stack with a buffer.
-pub trait BufferNonSyncContextInner<B: BufferMut>:
-    transport::udp::BufferNonSyncContext<Ipv4, B>
-    + transport::udp::BufferNonSyncContext<Ipv6, B>
-    + BufferIcmpContext<Ipv4, B>
-    + BufferIcmpContext<Ipv6, B>
-{
-}
-impl<
-        B: BufferMut,
-        C: transport::udp::BufferNonSyncContext<Ipv4, B>
-            + transport::udp::BufferNonSyncContext<Ipv6, B>
-            + BufferIcmpContext<Ipv4, B>
-            + BufferIcmpContext<Ipv6, B>,
-    > BufferNonSyncContextInner<B> for C
-{
-}
-
-/// The non synchronized context for the stack with a buffer.
-pub trait BufferNonSyncContext<B: BufferMut>:
-    NonSyncContext + BufferNonSyncContextInner<B>
-{
-}
-impl<B: BufferMut, C: NonSyncContext + BufferNonSyncContextInner<B>> BufferNonSyncContext<B> for C {}
-
-/// The non-synchronized context for the stack.
-pub trait NonSyncContext: CounterContext
-    + BufferNonSyncContextInner<Buf<Vec<u8>>>
-    + BufferNonSyncContextInner<EmptyBuf>
-    + RngContext
-    + TimerContext<TimerId<Self>>
-    + EventContext<ip::device::IpDeviceEvent<DeviceId<Self>, Ipv4, <Self as InstantContext>::Instant>>
-    + EventContext<ip::device::IpDeviceEvent<DeviceId<Self>, Ipv6, <Self as InstantContext>::Instant>>
-    + EventContext<ip::IpLayerEvent<DeviceId<Self>, Ipv4>>
-    + EventContext<ip::IpLayerEvent<DeviceId<Self>, Ipv6>>
-    + transport::udp::NonSyncContext<Ipv4>
-    + transport::udp::NonSyncContext<Ipv6>
-    + IcmpContext<Ipv4>
-    + IcmpContext<Ipv6>
-    + transport::tcp::socket::NonSyncContext
-    + device::DeviceLayerEventDispatcher
-    + device::socket::NonSyncContext<DeviceId<Self>>
-    + TracingContext
-    + 'static
-{
-}
-impl<
-        C: CounterContext
-            + BufferNonSyncContextInner<Buf<Vec<u8>>>
-            + BufferNonSyncContextInner<EmptyBuf>
-            + RngContext
-            + TimerContext<TimerId<Self>>
-            + EventContext<
-                ip::device::IpDeviceEvent<DeviceId<Self>, Ipv4, <Self as InstantContext>::Instant>,
-            > + EventContext<
-                ip::device::IpDeviceEvent<DeviceId<Self>, Ipv6, <Self as InstantContext>::Instant>,
-            > + EventContext<ip::IpLayerEvent<DeviceId<Self>, Ipv4>>
-            + EventContext<ip::IpLayerEvent<DeviceId<Self>, Ipv6>>
-            + transport::udp::NonSyncContext<Ipv4>
-            + transport::udp::NonSyncContext<Ipv6>
-            + IcmpContext<Ipv4>
-            + IcmpContext<Ipv6>
-            + transport::tcp::socket::NonSyncContext
-            + device::DeviceLayerEventDispatcher
-            + device::socket::NonSyncContext<DeviceId<Self>>
-            + TracingContext
-            + 'static,
-    > NonSyncContext for C
-{
-}
-
-/// The synchronized context.
-#[derive(Default)]
-pub struct SyncCtx<NonSyncCtx: NonSyncContext> {
-    /// Contains the state of the stack.
-    pub state: StackState<NonSyncCtx>,
-    /// A marker for the non-synchronized context type.
-    pub non_sync_ctx_marker: PhantomData<NonSyncCtx>,
-}
-
-/// The identifier for any timer event.
-#[derive(Derivative)]
-#[derivative(
-    Clone(bound = ""),
-    Eq(bound = ""),
-    PartialEq(bound = ""),
-    Hash(bound = ""),
-    Debug(bound = "")
-)]
-pub struct TimerId<C: NonSyncContext>(TimerIdInner<C>);
-
-#[derive(Derivative)]
-#[derivative(
-    Clone(bound = ""),
-    Eq(bound = ""),
-    PartialEq(bound = ""),
-    Hash(bound = ""),
-    Debug(bound = "")
-)]
-enum TimerIdInner<C: NonSyncContext> {
-    /// A timer event in the device layer.
-    DeviceLayer(DeviceLayerTimerId<C>),
-    /// A timer event in the transport layer.
-    TransportLayer(TransportLayerTimerId),
-    /// A timer event in the IP layer.
-    IpLayer(IpLayerTimerId),
-    /// A timer event for an IPv4 device.
-    Ipv4Device(Ipv4DeviceTimerId<DeviceId<C>>),
-    /// A timer event for an IPv6 device.
-    Ipv6Device(Ipv6DeviceTimerId<DeviceId<C>>),
-    /// A no-op timer event (used for tests)
-    #[cfg(test)]
-    Nop(usize),
-}
-
-impl<C: NonSyncContext> From<DeviceLayerTimerId<C>> for TimerId<C> {
-    fn from(id: DeviceLayerTimerId<C>) -> TimerId<C> {
-        TimerId(TimerIdInner::DeviceLayer(id))
-    }
-}
-
-impl<C: NonSyncContext> From<Ipv4DeviceTimerId<DeviceId<C>>> for TimerId<C> {
-    fn from(id: Ipv4DeviceTimerId<DeviceId<C>>) -> TimerId<C> {
-        TimerId(TimerIdInner::Ipv4Device(id))
-    }
-}
-
-impl<C: NonSyncContext> From<Ipv6DeviceTimerId<DeviceId<C>>> for TimerId<C> {
-    fn from(id: Ipv6DeviceTimerId<DeviceId<C>>) -> TimerId<C> {
-        TimerId(TimerIdInner::Ipv6Device(id))
-    }
-}
-
-impl<C: NonSyncContext> From<IpLayerTimerId> for TimerId<C> {
-    fn from(id: IpLayerTimerId) -> TimerId<C> {
-        TimerId(TimerIdInner::IpLayer(id))
-    }
-}
-
-impl<C: NonSyncContext> From<TransportLayerTimerId> for TimerId<C> {
-    fn from(id: TransportLayerTimerId) -> Self {
-        TimerId(TimerIdInner::TransportLayer(id))
-    }
-}
-
-impl_timer_context!(
-    C: NonSyncContext,
-    TimerId<C>,
-    DeviceLayerTimerId<C>,
-    TimerId(TimerIdInner::DeviceLayer(id)),
-    id
-);
-impl_timer_context!(
-    C: NonSyncContext,
-    TimerId<C>,
-    IpLayerTimerId,
-    TimerId(TimerIdInner::IpLayer(id)),
-    id
-);
-impl_timer_context!(
-    C: NonSyncContext,
-    TimerId<C>,
-    Ipv4DeviceTimerId<DeviceId<C>>,
-    TimerId(TimerIdInner::Ipv4Device(id)),
-    id
-);
-impl_timer_context!(
-    C: NonSyncContext,
-    TimerId<C>,
-    Ipv6DeviceTimerId<DeviceId<C>>,
-    TimerId(TimerIdInner::Ipv6Device(id)),
-    id
-);
-impl_timer_context!(
-    C: NonSyncContext,
-    TimerId<C>,
-    TransportLayerTimerId,
-    TimerId(TimerIdInner::TransportLayer(id)),
-    id
-);
-
-/// Handles a generic timer event.
-pub fn handle_timer<NonSyncCtx: NonSyncContext>(
-    sync_ctx: &SyncCtx<NonSyncCtx>,
-    ctx: &mut NonSyncCtx,
-    id: TimerId<NonSyncCtx>,
-) {
-    trace!("handle_timer: dispatching timerid: {:?}", id);
-    let mut sync_ctx = Locked::new(sync_ctx);
-
-    match id {
-        TimerId(TimerIdInner::DeviceLayer(x)) => {
-            device::handle_timer(&mut sync_ctx, ctx, x);
-        }
-        TimerId(TimerIdInner::TransportLayer(x)) => {
-            transport::handle_timer(&mut sync_ctx, ctx, x);
-        }
-        TimerId(TimerIdInner::IpLayer(x)) => {
-            ip::handle_timer(&mut sync_ctx, ctx, x);
-        }
-        TimerId(TimerIdInner::Ipv4Device(x)) => {
-            ip::device::handle_ipv4_timer(&mut sync_ctx, ctx, x);
-        }
-        TimerId(TimerIdInner::Ipv6Device(x)) => {
-            ip::device::handle_ipv6_timer(&mut sync_ctx, ctx, x);
-        }
-        #[cfg(test)]
-        TimerId(TimerIdInner::Nop(_)) => {
-            ctx.increment_debug_counter("timer::nop");
-        }
-    }
-}
-
-/// A type representing an instant in time.
-///
-/// `Instant` can be implemented by any type which represents an instant in
-/// time. This can include any sort of real-world clock time (e.g.,
-/// [`std::time::Instant`]) or fake time such as in testing.
-pub trait Instant: Sized + Ord + Copy + Clone + Debug + Send + Sync {
-    /// Returns the amount of time elapsed from another instant to this one.
-    ///
-    /// # Panics
-    ///
-    /// This function will panic if `earlier` is later than `self`.
-    fn duration_since(&self, earlier: Self) -> time::Duration;
-
-    /// Returns `Some(t)` where `t` is the time `self + duration` if `t` can be
-    /// represented as `Instant` (which means it's inside the bounds of the
-    /// underlying data structure), `None` otherwise.
-    fn checked_add(&self, duration: time::Duration) -> Option<Self>;
-
-    /// Unwraps the result from `checked_add`.
-    ///
-    /// # Panics
-    ///
-    /// This function will panic if the addition makes the clock wrap around.
-    fn add(&self, duration: time::Duration) -> Self {
-        self.checked_add(duration).unwrap_or_else(|| {
-            panic!("clock wraps around when adding {:?} to {:?}", duration, *self);
-        })
-    }
-
-    /// Returns `Some(t)` where `t` is the time `self - duration` if `t` can be
-    /// represented as `Instant` (which means it's inside the bounds of the
-    /// underlying data structure), `None` otherwise.
-    fn checked_sub(&self, duration: time::Duration) -> Option<Self>;
-}
-
-/// Get all IPv4 and IPv6 address/subnet pairs configured on a device
-pub fn get_all_ip_addr_subnets<NonSyncCtx: NonSyncContext>(
-    sync_ctx: &SyncCtx<NonSyncCtx>,
-    device: &DeviceId<NonSyncCtx>,
-) -> Vec<AddrSubnetEither> {
-    DualStackDeviceHandler::get_all_ip_addr_subnets(&mut Locked::new(sync_ctx), device)
-}
-
-/// Set the IP address and subnet for a device.
-pub fn add_ip_addr_subnet<NonSyncCtx: NonSyncContext>(
-    sync_ctx: &SyncCtx<NonSyncCtx>,
-    ctx: &mut NonSyncCtx,
-    device: &DeviceId<NonSyncCtx>,
-    addr_sub: impl Into<AddrSubnetAndManualConfigEither<NonSyncCtx::Instant>>,
-) -> Result<(), error::ExistsError> {
-    crate::device::add_ip_addr_subnet(&sync_ctx, ctx, device, addr_sub.into())
-}
-
-/// Delete an IP address on a device.
-pub fn del_ip_addr<NonSyncCtx: NonSyncContext>(
-    sync_ctx: &SyncCtx<NonSyncCtx>,
-    ctx: &mut NonSyncCtx,
-    device: &DeviceId<NonSyncCtx>,
-    addr: SpecifiedAddr<IpAddr>,
-) -> Result<(), error::NotFoundError> {
-    let addr = addr.into();
-    map_addr_version!(
-        addr: IpAddr;
-        crate::device::del_ip_addr(&sync_ctx, ctx, device, &addr)
-    )
-}
-
-/// Adds a route to the forwarding table.
-pub fn add_route<NonSyncCtx: NonSyncContext>(
-    sync_ctx: &SyncCtx<NonSyncCtx>,
-    ctx: &mut NonSyncCtx,
-    entry: ip::types::AddableEntryEither<DeviceId<NonSyncCtx>>,
-) -> Result<(), ip::forwarding::AddRouteError> {
-    let mut sync_ctx = Locked::new(sync_ctx);
-    match entry {
-        ip::types::AddableEntryEither::V4(entry) => {
-            ip::forwarding::add_route::<Ipv4, _, _>(&mut sync_ctx, ctx, entry)
-        }
-        ip::types::AddableEntryEither::V6(entry) => {
-            ip::forwarding::add_route::<Ipv6, _, _>(&mut sync_ctx, ctx, entry)
-        }
-    }
-}
-
-/// Delete a route from the forwarding table, returning `Err` if no
-/// route was found to be deleted.
-pub fn del_route<NonSyncCtx: NonSyncContext>(
-    sync_ctx: &SyncCtx<NonSyncCtx>,
-    ctx: &mut NonSyncCtx,
-    subnet: SubnetEither,
-) -> error::Result<()> {
-    let mut sync_ctx = Locked::new(sync_ctx);
-    map_addr_version!(
-        subnet: SubnetEither;
-        crate::ip::forwarding::del_subnet_route::<Ipv4, _, _>(&mut sync_ctx, ctx, subnet),
-        crate::ip::forwarding::del_subnet_route::<Ipv6, _, _>(&mut sync_ctx, ctx, subnet)
-    )
-    .map_err(From::from)
-}
-
-#[cfg(test)]
-mod tests {
-    use core::time::Duration;
-
-    use ip_test_macro::ip_test;
-    use net_declare::{net_subnet_v4, net_subnet_v6};
-    use net_types::{
-        ip::{AddrSubnet, Ip, Ipv4, Ipv6},
-        Witness,
-    };
-    use test_case::test_case;
-
-    use super::*;
-    use crate::{
-        context::testutil::FakeInstant,
-        ip::{
-            device::state::{Ipv4AddrConfig, Ipv6AddrManualConfig, Lifetime},
-            forwarding::AddRouteError,
-            types::{AddableEntry, AddableEntryEither, AddableMetric, Entry, Metric, RawMetric},
-        },
-        testutil::{
-            Ctx, FakeCtx, TestIpExt, DEFAULT_INTERFACE_METRIC, IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
-        },
-    };
-
-    fn test_add_remove_ip_addresses<I: Ip + TestIpExt>(
-        addr_config: Option<I::ManualAddressConfig<FakeInstant>>,
-    ) {
-        let config = I::FAKE_CONFIG;
-        let Ctx { sync_ctx, mut non_sync_ctx } = crate::testutil::FakeCtx::default();
-        let device = crate::device::add_ethernet_device(
-            &sync_ctx,
-            config.local_mac,
-            IPV6_MIN_IMPLIED_MAX_FRAME_SIZE,
-            DEFAULT_INTERFACE_METRIC,
-        )
-        .into();
-        crate::device::testutil::enable_device(&sync_ctx, &mut non_sync_ctx, &device);
-
-        let ip = I::get_other_ip_address(1).get();
-        let prefix = config.subnet.prefix();
-        let addr_subnet = AddrSubnetEither::new(ip.into(), prefix).unwrap();
-
-        // IP doesn't exist initially.
-        assert_eq!(
-            get_all_ip_addr_subnets(&sync_ctx, &device).into_iter().find(|&a| a == addr_subnet),
-            None
-        );
-
-        // Add IP (OK).
-        if let Some(addr_config) = addr_config {
-            add_ip_addr_subnet(
-                &sync_ctx,
-                &mut non_sync_ctx,
-                &device,
-                AddrSubnetAndManualConfigEither::new::<I>(
-                    AddrSubnet::new(ip, prefix).unwrap(),
-                    addr_config,
-                ),
-            )
-            .unwrap();
-        } else {
-            let () =
-                add_ip_addr_subnet(&sync_ctx, &mut non_sync_ctx, &device, addr_subnet).unwrap();
-        }
-        assert_eq!(
-            get_all_ip_addr_subnets(&sync_ctx, &device).into_iter().find(|&a| a == addr_subnet),
-            Some(addr_subnet)
-        );
-
-        // Add IP again (already exists).
-        assert_eq!(
-            add_ip_addr_subnet(&sync_ctx, &mut non_sync_ctx, &device, addr_subnet).unwrap_err(),
-            error::ExistsError
-        );
-        assert_eq!(
-            get_all_ip_addr_subnets(&sync_ctx, &device).into_iter().find(|&a| a == addr_subnet),
-            Some(addr_subnet)
-        );
-
-        // Add IP with different subnet (already exists).
-        let wrong_addr_subnet = AddrSubnetEither::new(ip.into(), prefix - 1).unwrap();
-        assert_eq!(
-            add_ip_addr_subnet(&sync_ctx, &mut non_sync_ctx, &device, wrong_addr_subnet)
-                .unwrap_err(),
-            error::ExistsError
-        );
-        assert_eq!(
-            get_all_ip_addr_subnets(&sync_ctx, &device).into_iter().find(|&a| a == addr_subnet),
-            Some(addr_subnet)
-        );
-
-        let ip: SpecifiedAddr<IpAddr> = SpecifiedAddr::new(ip.into()).unwrap();
-        // Del IP (ok).
-        let () = del_ip_addr(&sync_ctx, &mut non_sync_ctx, &device, ip).unwrap();
-        assert_eq!(
-            get_all_ip_addr_subnets(&sync_ctx, &device).into_iter().find(|&a| a == addr_subnet),
-            None
-        );
-
-        // Del IP again (not found).
-        assert_eq!(
-            del_ip_addr(&sync_ctx, &mut non_sync_ctx, &device, ip).unwrap_err(),
-            error::NotFoundError
-        );
-        assert_eq!(
-            get_all_ip_addr_subnets(&sync_ctx, &device).into_iter().find(|&a| a == addr_subnet),
-            None
-        );
-    }
-
-    #[test_case(None; "with no AddressConfig specified")]
-    #[test_case(Some(Ipv4AddrConfig {
-        valid_until: Lifetime::Finite(FakeInstant::from(Duration::from_secs(1)))
-    }); "with AddressConfig specified")]
-    fn test_add_remove_ipv4_addresses(addr_config: Option<Ipv4AddrConfig<FakeInstant>>) {
-        test_add_remove_ip_addresses::<Ipv4>(addr_config);
-    }
-
-    #[test_case(None; "with no AddressConfig specified")]
-    #[test_case(Some(Ipv6AddrManualConfig {
-        valid_until: Lifetime::Finite(FakeInstant::from(Duration::from_secs(1)))
-    }); "with AddressConfig specified")]
-    fn test_add_remove_ipv6_addresses(addr_config: Option<Ipv6AddrManualConfig<FakeInstant>>) {
-        test_add_remove_ip_addresses::<Ipv6>(addr_config);
-    }
-
-    struct AddGatewayRouteTestCase {
-        should_specify_device: bool,
-        enable_before_final_route_add: bool,
-        expected_first_result: Result<(), AddRouteError>,
-        expected_second_result: Result<(), AddRouteError>,
-    }
-
-    #[ip_test]
-    #[test_case(AddGatewayRouteTestCase {
-        should_specify_device: false,
-        enable_before_final_route_add: false,
-        expected_first_result: Err(AddRouteError::GatewayNotNeighbor),
-        expected_second_result: Err(AddRouteError::GatewayNotNeighbor),
-    }; "without_specified_device_no_enable")]
-    #[test_case(AddGatewayRouteTestCase {
-        should_specify_device: true,
-        enable_before_final_route_add: false,
-        expected_first_result: Ok(()),
-        expected_second_result: Ok(()),
-    }; "with_specified_device_no_enable")]
-    #[test_case(AddGatewayRouteTestCase {
-        should_specify_device: false,
-        enable_before_final_route_add: true,
-        expected_first_result: Err(AddRouteError::GatewayNotNeighbor),
-        expected_second_result: Ok(()),
-    }; "without_specified_device_enabled")]
-    #[test_case(AddGatewayRouteTestCase {
-        should_specify_device: true,
-        enable_before_final_route_add: true,
-        expected_first_result: Ok(()),
-        expected_second_result: Ok(()),
-    }; "with_specified_device_enabled")]
-    fn add_gateway_route<I: Ip + TestIpExt>(test_case: AddGatewayRouteTestCase) {
-        let AddGatewayRouteTestCase {
-            should_specify_device,
-            enable_before_final_route_add,
-            expected_first_result,
-            expected_second_result,
-        } = test_case;
-        let FakeCtx { sync_ctx, mut non_sync_ctx } =
-            Ctx::new_with_builder(crate::StackStateBuilder::default());
-        non_sync_ctx.timer_ctx().assert_no_timers_installed();
-
-        let gateway_subnet = I::map_ip(
-            (),
-            |()| net_subnet_v4!("10.0.0.0/16"),
-            |()| net_subnet_v6!("::0a00:0000/112"),
-        );
-
-        let device_id: DeviceId<_> = crate::device::add_ethernet_device(
-            &sync_ctx,
-            I::FAKE_CONFIG.local_mac,
-            crate::device::ethernet::MaxFrameSize::from_mtu(I::MINIMUM_LINK_MTU).unwrap(),
-            DEFAULT_INTERFACE_METRIC,
-        )
-        .into();
-        let gateway_device = should_specify_device.then_some(device_id.clone());
-
-        // Attempt to add the gateway route when there is no known route to the
-        // gateway.
-        assert_eq!(
-            crate::add_route(
-                &sync_ctx,
-                &mut non_sync_ctx,
-                AddableEntryEither::from(AddableEntry::with_gateway(
-                    gateway_subnet,
-                    gateway_device.clone(),
-                    I::FAKE_CONFIG.remote_ip,
-                    AddableMetric::ExplicitMetric(RawMetric(0))
-                ))
-            ),
-            expected_first_result,
-        );
-
-        assert_eq!(
-            crate::del_route(&sync_ctx, &mut non_sync_ctx, gateway_subnet.into()),
-            expected_first_result.map_err(|_: AddRouteError| error::NetstackError::NotFound),
-        );
-
-        // Then, add a route to the gateway, and try again, expecting success.
-        assert_eq!(
-            crate::add_route(
-                &sync_ctx,
-                &mut non_sync_ctx,
-                AddableEntryEither::from(AddableEntry::without_gateway(
-                    I::FAKE_CONFIG.subnet,
-                    device_id.clone(),
-                    AddableMetric::ExplicitMetric(RawMetric(0))
-                ))
-            ),
-            Ok(())
-        );
-
-        if enable_before_final_route_add {
-            crate::device::testutil::enable_device(&sync_ctx, &mut non_sync_ctx, &device_id);
-        }
-        assert_eq!(
-            crate::add_route(
-                &sync_ctx,
-                &mut non_sync_ctx,
-                AddableEntryEither::from(AddableEntry::with_gateway(
-                    gateway_subnet,
-                    gateway_device,
-                    I::FAKE_CONFIG.remote_ip,
-                    AddableMetric::ExplicitMetric(RawMetric(0))
-                ))
-            ),
-            expected_second_result,
-        );
-    }
-
-    #[ip_test]
-    fn test_route_tracks_interface_metric<I: Ip + TestIpExt>() {
-        let FakeCtx { sync_ctx, mut non_sync_ctx } =
-            Ctx::new_with_builder(crate::StackStateBuilder::default());
-        non_sync_ctx.timer_ctx().assert_no_timers_installed();
-
-        let metric = RawMetric(9999);
-        //let device_id = sync_ctx.state.device.add_ethernet_device(
-        let device_id = crate::device::add_ethernet_device(
-            &sync_ctx,
-            I::FAKE_CONFIG.local_mac,
-            crate::device::ethernet::MaxFrameSize::from_mtu(I::MINIMUM_LINK_MTU).unwrap(),
-            metric,
-        );
-        assert_eq!(
-            crate::add_route(
-                &sync_ctx,
-                &mut non_sync_ctx,
-                AddableEntryEither::from(AddableEntry::without_gateway(
-                    I::FAKE_CONFIG.subnet,
-                    device_id.clone().into(),
-                    AddableMetric::MetricTracksInterface
-                ))
-            ),
-            Ok(())
-        );
-        assert_eq!(
-            crate::ip::get_all_routes(&sync_ctx),
-            &[Entry {
-                subnet: I::FAKE_CONFIG.subnet,
-                device: device_id.into(),
-                gateway: None,
-                metric: Metric::MetricTracksInterface(metric)
-            }
-            .into()]
-        );
-    }
-}

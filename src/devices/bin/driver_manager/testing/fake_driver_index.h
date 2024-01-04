@@ -17,7 +17,7 @@ class FakeDriverIndex final : public fidl::WireServer<fuchsia_driver_index::Driv
  public:
   struct MatchResult {
     std::string url;
-    std::optional<fuchsia_driver_index::MatchedCompositeNodeSpecInfo> spec;
+    std::optional<fuchsia_driver_framework::CompositeParent> spec;
     bool is_fallback = false;
     bool colocate = false;
   };
@@ -53,28 +53,13 @@ class FakeDriverIndex final : public fidl::WireServer<fuchsia_driver_index::Driv
     completer.ReplySuccess(GetMatchedDriver(arena, match.value()));
   }
 
-  void WaitForBaseDrivers(WaitForBaseDriversCompleter::Sync& completer) override {
-    completer.Reply();
+  void WatchForDriverLoad(WatchForDriverLoadCompleter::Sync& completer) override {
+    watch_completer_ = completer.ToAsync();
   }
 
   void AddCompositeNodeSpec(AddCompositeNodeSpecRequestView request,
                             AddCompositeNodeSpecCompleter::Sync& completer) override {
-    auto name = std::string(request->name().get());
-    if (spec_match_.find(name) == spec_match_.end()) {
-      completer.ReplyError(ZX_ERR_NOT_FOUND);
-      return;
-    }
-
-    auto matched_result = spec_match_[name];
-    auto composite = matched_result.composite();
-    auto names = matched_result.node_names();
-    if (!composite.has_value() || !names.has_value()) {
-      completer.ReplyError(ZX_ERR_INVALID_ARGS);
-      return;
-    }
-    fidl::Arena arena;
-    completer.ReplySuccess(fidl::ToWire(arena, composite.value()),
-                           fidl::ToWire(arena, names.value()));
+    completer.ReplySuccess();
   }
 
   void RebindCompositeNodeSpec(RebindCompositeNodeSpecRequestView request,
@@ -82,9 +67,9 @@ class FakeDriverIndex final : public fidl::WireServer<fuchsia_driver_index::Driv
     completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
   }
 
-  void AddCompositeNodeSpecMatch(std::string_view name,
-                                 fuchsia_driver_index::MatchedCompositeNodeSpecInfo result) {
-    spec_match_[std::string(name)] = result;
+  void InvokeWatchDriverResponse() {
+    ZX_ASSERT(watch_completer_.has_value());
+    watch_completer_->Reply();
   }
 
   void set_match_callback(MatchCallback match_callback) {
@@ -98,39 +83,32 @@ class FakeDriverIndex final : public fidl::WireServer<fuchsia_driver_index::Driv
   }
 
  private:
-  static fuchsia_driver_index::wire::MatchedDriver GetMatchedDriver(fidl::AnyArena& arena,
-                                                                    MatchResult match) {
+  static fuchsia_driver_index::wire::MatchDriverResult GetMatchedDriver(fidl::AnyArena& arena,
+                                                                        MatchResult match) {
     if (match.spec) {
-      fuchsia_driver_index::MatchedCompositeNodeParentInfo const result(
-          {.specs = std::vector<fuchsia_driver_index::MatchedCompositeNodeSpecInfo>{
-               match.spec.value()}});
-      return fuchsia_driver_index::wire::MatchedDriver::WithParentSpec(arena,
-                                                                       fidl::ToWire(arena, result));
+      return fuchsia_driver_index::wire::MatchDriverResult::WithCompositeParents(
+          arena, fidl::ToWire(arena, std::vector<fuchsia_driver_framework::CompositeParent>{
+                                         match.spec.value()}));
     }
 
     auto driver_info = GetDriverInfo(arena, match);
-    return fuchsia_driver_index::wire::MatchedDriver::WithDriver(
-        fidl::ObjectView<fuchsia_driver_index::wire::MatchedDriverInfo>(arena, driver_info));
+    return fuchsia_driver_index::wire::MatchDriverResult::WithDriver(arena, driver_info);
   }
 
-  static fuchsia_driver_index::wire::MatchedDriverInfo GetDriverInfo(fidl::AnyArena& arena,
-                                                                     MatchResult match) {
-    return fuchsia_driver_index::wire::MatchedDriverInfo::Builder(arena)
-        .driver_url(fidl::ObjectView<fidl::StringView>(arena, arena, match.url))
+  static fuchsia_driver_framework::wire::DriverInfo GetDriverInfo(fidl::AnyArena& arena,
+                                                                  MatchResult match) {
+    return fuchsia_driver_framework::wire::DriverInfo::Builder(arena)
         .url(fidl::ObjectView<fidl::StringView>(arena, arena, match.url))
         .is_fallback(match.is_fallback)
         .colocate(match.colocate)
-        .package_type(fuchsia_driver_index::DriverPackageType::kBoot)
+        .package_type(fuchsia_driver_framework::DriverPackageType::kBoot)
         .Build();
   }
 
   async_dispatcher_t* dispatcher_;
   MatchCallback match_callback_;
 
-  // Maps a MatchedCompositeNodeSpecInfo to a composite node spec topological path. This gets
-  // returned when FakeDriverIndex receives an AddCompositeNodeSpec() call for a matching
-  // topological path.
-  std::unordered_map<std::string, fuchsia_driver_index::MatchedCompositeNodeSpecInfo> spec_match_;
+  std::optional<WatchForDriverLoadCompleter::Async> watch_completer_;
 
   std::unordered_set<std::string> disabled_driver_urls_;
 };

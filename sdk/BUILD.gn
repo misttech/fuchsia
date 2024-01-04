@@ -5,24 +5,23 @@
 # Definitions to build each of the Fuchsia SDKs.
 
 import("//build/config/build_api_module.gni")
+import("//build/config/fuchsia/platform_version.gni")
 import("//build/dart/toolchain.gni")
 import("//build/fidl/toolchain.gni")
 import("//build/sdk/config.gni")
-import("//build/sdk/generate_final_idk.gni")
-import("//build/sdk/merged_sdk.gni")
-import("//build/sdk/sdk.gni")
+import("//build/sdk/idk.gni")
+import("//build/sdk/idk_archive.gni")
+import("//build/sdk/sdk_collection.gni")
 import("//build/sdk/sdk_documentation.gni")
+import("//build/sdk/sdk_final_manifest_golden.gni")
+import("//build/sdk/sdk_molecule.gni")
 import("//tools/check-licenses/build/license_data.gni")
 import("config.gni")
 
-# A list of sdk_collection() targets that determine the content
-# if the Fuchsia Core IDK, which provides stable and officially
-# supported Fuchsia APIs and ABIs.
-_fuchsia_core_idk_deps = [
-  ":core",
-  ":core_testing",
-  ":e2e_testing",
-]
+visibility = [ ":*" ]
+
+assert(sdk_inside_supported_api_sub_build ==
+       (sdk_inside_sub_build && override_target_api_level != -1))
 
 # A list of sdk_collection() targets that correspond to all
 # IDK targets in the "public" and "partner" category. For now
@@ -36,15 +35,19 @@ _fuchsia_core_idk_deps = [
 # this target here only ensures that `fx build sdk` will
 # also create $OUTPUT_DIR/sdk/exported/zircon_sysroot/ by
 # default, and should not affect other uses of _sdk_public_deps.
-_sdk_public_deps = _fuchsia_core_idk_deps + [ ":zircon_sysroot" ]
+_sdk_public_deps = [
+  ":core",
+  ":zircon_sysroot",
+]
 
 # This default target should depend on all public or partner IDKs.
 group("sdk") {
+  visibility += [ "//:*" ]
+
   testonly = true
 
   public_deps = _sdk_public_deps
   data_deps = [ ":sdk_source_set_list" ]
-  deps = [ ":sdk_atom_manifest_goldens($target_toolchain)" ]
 }
 
 # This file contains the list of all source files used in sdk_source_set()
@@ -53,23 +56,17 @@ group("sdk") {
 # directory. Path are not sorted and appear in order of metadata walk, which
 # is unstable.
 build_api_module("sdk_source_set_list") {
+  visibility += [ "//:*" ]
   testonly = true
   data_keys = [ "sdk_source_set_sources" ]
   deps = _sdk_public_deps
-}
-
-# Create generated file for fidldoc to read.
-generated_file("all_fidl_sdk_json") {
-  deps = [ "//sdk/fidl" ]
-
-  outputs = [ "$root_build_dir/all_fidl_sdk_json.txt" ]
-  data_keys = [ "fidl_json" ]
 }
 
 # Compatibility testing goldens for SDK publishable FIDLs.
 # This is a list of scopes like { src = "", dst = "" } specifying which files
 # to copy from the build directory into the source tree.
 generated_file("compatibility_testing_goldens") {
+  visibility += [ "*" ]
   testonly = true
   deps = [
     # Pulls in SDKs containing the FIDLs to generate golden files for
@@ -83,6 +80,7 @@ generated_file("compatibility_testing_goldens") {
 # Contains the list of all plasa fragment files, which have a dump of the
 # public API surfaces.
 generated_file("plasa_manifest") {
+  visibility += [ "//sdk/ctf/plasa:*" ]
   testonly = true
   data_keys = [ "plasa" ]
   outputs = [ "$root_build_dir/manifest.plasa.json" ]
@@ -90,59 +88,176 @@ generated_file("plasa_manifest") {
   deps = _sdk_public_deps
 }
 
-# This target is used by infra builders to build all SDK archives that
-# make up the "core" SDK. This is deprecated and will be removed once
-# https://fxbug.dev/126262 is fixed.
-group("archives") {
+# Generates, validates, and archive the "final" IDK, including prebuilt binaries
+# for several target_cpu architectures and API levels.
+group("final_fuchsia_idk") {
+  visibility += [ "*" ]
+  deps = [
+    ":final_fuchsia_idk.archive",
+    ":final_fuchsia_idk.exported",
+    ":final_fuchsia_idk.validation",
+  ]
   testonly = true
-  public_deps = [
-    ":core_archive",
-    ":core_testing_archive",
-    ":e2e_testing_archive",
+}
+
+# This targets generates a "final" IDK archive, including prebuilt binaries for
+# several target_cpu architectures.
+idk("final_fuchsia_idk.exported") {
+  visibility += [ "*" ]
+  output_name = "fuchsia_idk"
+  sdk_collection_label = ":core"
+  target_cpus = idk_target_cpus
+  api_levels = platform_version.supported_fuchsia_api_levels
+}
+
+idk_archive("final_fuchsia_idk.archive") {
+  visibility += [ "*" ]
+  idk = ":final_fuchsia_idk.exported"
+  idk_output_name = "fuchsia_idk"
+}
+
+group("final_fuchsia_idk.validation") {
+  deps = [ ":final_fuchsia_idk_manifest_golden" ]
+  if (host_os == "linux") {
+    deps += [
+      # Run the Bazel SDK test suite against the final exported directory,
+      # TODO(fxbug.dev/124321): Make the Bazel SDK test suite runnable on MacOS!
+      "//build/bazel/bazel_sdk:bazel_sdk_tests_idk",
+    ]
+  }
+  testonly = true
+}
+
+sdk_final_manifest_golden("final_fuchsia_idk_manifest_golden") {
+  golden = "manifests/fuchsia_idk.manifest"
+  idk_name = "fuchsia_idk"
+  idk_exported_label = ":final_fuchsia_idk.exported"
+}
+
+# NOTHING TO SEE HERE FOLKS.
+#
+# This build rule is an implementation detail. It should probably get
+# consolidated with ":final_fuchsia_idk".
+sdk_collection("core") {
+  visibility += [ "*" ]
+
+  id = sdk_id
+  category = "partner"
+
+  deps = [
+    # NOTE: Don't add any other sdk_molecules here.  Instead, add atoms to the
+    # ":fuchsia_idk_atoms" or ":fuchsia_idk_atoms_host_tools" sdk_molecule.
+    ":fuchsia_idk_atoms",
   ]
 }
 
-# A target used to generate an IDK archive
-# that only contains prebuilt binaries for
-# a single target_cpu architecture.
+# A "molecule" of SDK atoms exposing the stable and officially supported APIs
+# and ABI of the Fuchsia platform.
 #
-# This will be replaced by "final_fuchsia_idk"
-# defined below once we update our infra
-# recipes and builder configurations.
-# See https://fxbug.dev/126262
-merged_sdk("merged") {
-  testonly = true
-  deps = _fuchsia_core_idk_deps
+# Due to limitations of the build system at the GN/Bazel boundary, this cannot
+# contain testonly atoms. Libraries and packages for use in tests absolutely
+# belong in the IDK, but unfortunately, before they can be added, the `testonly`
+# attribute must be removed.
+sdk_molecule("fuchsia_idk_atoms") {
+  visibility += [ "//vendor/*" ]
+
+  deps = [ ":fuchsia_idk_atoms_for_each_api_level" ]
+
+  if (!sdk_inside_supported_api_sub_build) {
+    deps += [
+      # Do not add to this list. Instead, add new items to
+      # fuchsia_idk_atoms_independent_of_api_level, which verifies there are no
+      # API level dependencies.
+      ":fuchsia_idk_atoms_independent_of_api_level",
+
+      # There are very limited exceptions that do depend on API level but are
+      # only built at head.
+      ":fuchsia_idk_atoms_built_at_head",
+    ]
+  }
+
+  host_tools_deps = [ ":fuchsia_idk_atoms_host_tools" ]
 }
 
-# This targets generates a "final" IDK archive
+# Prebulilt libraries and packages must be built and included for all API
+# levels they support. The sysroot includes prebuilt libraries.
+sdk_molecule("fuchsia_idk_atoms_for_each_api_level") {
+  deps = [
+    ":core_cc_prebuilt_libraries",
+    ":core_loadable_modules",
+    ":core_packages",
+    ":core_sysroot",
+  ]
+}
 
-# Note that this is part of the Fuchsia Core IDK.# that contains prebuilt binaries for several
-# target_cpu architecture. This is done by
-# performing several sub-builds and merging
-# the results explicitly.
-#
-# This will deprecate the :merged target
-# above once infra recipes and builder
-# configuration have been updated.
-# See https://fxbug.dev/126262
-generate_final_idk("final_fuchsia_idk") {
-  output_name = "fuchsia_idk"
-  sdk_target_labels = _fuchsia_core_idk_deps
-  testonly = true
+if (!sdk_inside_supported_api_sub_build) {
+  # Do not add dependencies to this target without a really good reason.
+  # Most dependencies should be built at every API level (add to
+  # :fuchsia_idk_atoms_for_each_api_level) or be verifiably independent of the
+  # API level (add to :fuchsia_idk_atoms_independent_of_api_level).
+  sdk_molecule("fuchsia_idk_atoms_built_at_head") {
+    deps = [
+      # The C++ source libraries must be buildable at each supported API level
+      # but are only built once.
+      ":core_cc_source_libraries",
+
+      # This target compiles the FIDL files, but the output used in the SDK is
+      # not specific to any API level.
+      "//sdk/fidl",
+
+      # TODO(b/309679524): Remove this once it is empty..
+      ":core_packages_built_at_head",
+    ]
+  }
+
+  # IDK atoms that are independent of a specific API level.
+  # This is enforced by an assert_no_deps.
+  sdk_molecule("fuchsia_idk_atoms_independent_of_api_level") {
+    # The following serve as a proxy for the building of FIDL files. A
+    # dependency on these suggests that there is a dependency on FIDL
+    # interface(s), which would likely mean that the code must be built at each
+    # API level and should be in a different molecule..
+    assert_no_deps = [
+      "//tools/fidl/fidl_api_diff:host",
+      "//tools/fidl/fidl_api_summarize:fidl_api_summarize($host_toolchain)",
+      "//tools/fidl/fidlc:fidl-lint.host",
+    ]
+
+    deps = [
+      ":core_bindlib",
+      ":core_dart_library",
+      ":core_data",
+      ":core_documentation",
+      ":core_licenses",
+      ":version_history",
+      "//sdk/devices",
+      "//sdk/docs",
+    ]
+  }
+}
+
+# IDK atoms that are host tools. These may rely on an API level because they
+# are not shipped to devices.
+sdk_molecule("fuchsia_idk_atoms_host_tools") {
+  deps = [
+    ":host_tools",
+    "//tools/docsgen:ref_docs_sdk",
+  ]
 }
 
 group("tests_no_e2e") {
+  visibility += [ "*" ]
   testonly = true
   assert_no_deps = e2e_test_libs
 
   deps = [
-    "ctf/plasa:tests",
-    "lib:tests",
+    "//sdk/ctf/plasa:tests",
+    "//sdk/lib:tests",
   ]
 }
 
 group("tests") {
+  visibility += [ "*" ]
   testonly = true
 
   deps = [
@@ -150,7 +265,7 @@ group("tests") {
 
     # `testing:tests` contains unit tests for sl4f, which depend on sl4f so it
     # can't live inside `test_no_e2e`.
-    "testing:tests",
+    "//sdk/testing:tests",
   ]
 }
 
@@ -225,16 +340,6 @@ sdk_documentation("sdk_notice") {
   ]
 }
 
-# License/copyright files for the SDK.
-sdk_molecule("license") {
-  visibility = [ ":*" ]
-  deps = [
-    ":musl_license",
-    ":open_source",
-    ":sdk_notice",
-  ]
-}
-
 # A tiny SDK collection used to export the content of the Zircon sysroot
 # This is only needed because several other parts of the Fuchsia build
 # depend on $OUTPUT_DIR/sdk/exported/zircon_sysroot/ to be available
@@ -250,78 +355,52 @@ sdk_collection("zircon_sysroot") {
   category = "internal"
 
   deps = [ "//zircon/public/sysroot/sdk:sysroot_sdk" ]
-
-  # A compressed archive is never needed for this collection, only its
-  # export directory should be used by Fuchsia team developers.
-  generate_archive = false
-}
-
-# A set of SDK atoms related to developing end-to-end tests.
-# Note that this is part of the Fuchsia Core IDK.
-sdk_collection("e2e_testing") {
-  # TODO(fxbug.dev/6128): this id should not be necessary.
-  id = sdk_id
-
-  category = "partner"
-
-  api = "manifests/e2e_testing.manifest"
-
-  deps = [
-    ":e2e_testing_tools",
-    "//sdk/testing/sl4f/client:client_sdk($dart_toolchain)",
-  ]
-
-  # TODO(https://fxbug.dev/126262): Remove this.
-  if (build_sdk_archives) {
-    generate_archive = true
-  }
-}
-
-sdk_molecule("e2e_testing_tools") {
-  visibility = [ ":*" ]
-
-  if (!sdk_no_host_tools) {
-    deps = [
-      "//src/performance/trace2json:bin_sdk($host_toolchain)",
-      "//src/sys/pkg/testing/fake-omaha-client:bin_sdk($host_toolchain)",
-    ]
-  }
 }
 
 # Tools and data used on a 'host' development machine; where host is often
 # Linux or Mac OS.
 sdk_molecule("host_tools") {
-  visibility = [ ":*" ]
+  visibility += [ "//tools/docsgen:invoke_clidoc" ]
 
   _host_tools = [
-    "//tools/fidl/fidlgen_rust:fidlgen_rust_sdk",
-    "//tools/bindc:bindc_sdk",
-    "//tools/cmc:cmc_sdk",
-    "//tools/configc:configc_sdk",
-    "//tools/fidl/fidlgen_hlcpp:fidlgen_hlcpp_sdk",
-    "//tools/fidl/fidlgen_cpp:fidlgen_cpp_sdk",
-    "//tools/sdk-tools/fpublish:fpublish_sdk",
-    "//tools/sdk-tools/fserve:fserve_sdk",
-    "//tools/sdk-tools/fssh:fssh_sdk",
     "//src/developer/debug/zxdb:zxdb_sdk",
     "//src/developer/ffx:bin_sdk",
+    "//src/developer/ffx/plugins/agis:sdk",
     "//src/developer/ffx/plugins/assembly:sdk",
+    "//src/developer/ffx/plugins/audio:sdk",
+    "//src/developer/ffx/plugins/emulator:uefi_internal",
+    "//src/developer/ffx/plugins/coverage:sdk",
+    "//src/developer/ffx/plugins/inspect:sdk",
     "//src/developer/ffx/plugins/package:sdk",
     "//src/developer/ffx/plugins/product:sdk",
     "//src/developer/ffx/plugins/scrutiny:sdk",
+    "//src/developer/ffx/plugins/test:sdk",
+    "//src/performance/trace2json:bin_sdk",
     "//src/storage/bin/fvm:fvm_sdk",
+    "//src/storage/blobfs/tools:blobfs_sdk",
+    "//src/storage/minfs/tools:minfs_sdk",
     "//src/storage/tools/blobfs-compression:blobfs-compression_sdk",
     "//src/sys/pkg/bin/far:bin_sdk",
     "//src/sys/pkg/bin/pm:pm_bin_sdk",
+    "//src/sys/pkg/testing/fake-omaha-client:bin_sdk",
+    "//tools/bindc:bindc_sdk",
     "//tools/bootserver_old:bootserver_sdk",
-    "//tools/net/device-finder:device-finder_sdk",
-    "//tools/symbolizer:sdk",
+    "//tools/cmc:cmc_sdk",
+    "//tools/configc:configc_sdk",
     "//tools/fidl/fidlc:fidl-format_sdk",
     "//tools/fidl/fidlc:fidlc_sdk",
+    "//tools/fidl/fidlgen_cpp:fidlgen_cpp_sdk",
+    "//tools/fidl/fidlgen_hlcpp:fidlgen_hlcpp_sdk",
+    "//tools/fidl/fidlgen_rust:fidlgen_rust_sdk",
     "//tools/fidlcat:fidlcat_sdk",
-    "//src/storage/blobfs/tools:blobfs_sdk",
+    "//tools/funnel:funnel_sdk",
+    "//tools/fuchsia-sdk-run:fuchsia-sdk-run_sdk",
+    "//tools/net/device-finder:device-finder_sdk",
+    "//tools/sdk-tools/fpublish:fpublish_sdk",
+    "//tools/sdk-tools/fserve:fserve_sdk",
+    "//tools/sdk-tools/fssh:fssh_sdk",
+    "//tools/symbolizer:sdk",
     "//zircon/tools/merkleroot:merkleroot_sdk",
-    "//src/storage/minfs/tools:minfs_sdk",
     "//zircon/tools/zbi:zbi_sdk",
 
     # TODO(fxbug.dev/95661): Remove these once the emulators are available independently.
@@ -347,101 +426,140 @@ sdk_molecule("host_tools") {
   }
 }
 
-sdk_molecule("core_lib") {
-  visibility = [ ":*" ]
-
+sdk_molecule("core_bindlib") {
   deps = [
-    "//sdk/lib/async-loop-testing/cpp:cpp_sdk",
-    "//sdk/lib/component/incoming/cpp:cpp_sdk",
-    "//sdk/lib/component/outgoing/cpp:cpp_sdk",
-    "//sdk/lib/driver/component/cpp:cpp_sdk",
-    "//sdk/lib/driver/devfs/cpp:cpp_sdk",
-    "//sdk/lib/fdio:fdio_sdk",
-    "//sdk/lib/fidl/cpp:cpp_sdk",
-    "//sdk/lib/fidl/cpp/wire:wire_sdk",
-    "//sdk/lib/fidl_driver:fidl_driver_sdk",
-    "//sdk/lib/fit-promise:fit-promise_sdk",
-    "//sdk/lib/input_report_reader:input_report_reader_sdk",
+    "//src/devices/bind/fuchsia:fuchsia_sdk",
+    "//src/devices/bind/fuchsia.arm.platform:fuchsia.arm.platform_sdk",
+    "//src/devices/bind/fuchsia.devicetree:fuchsia.devicetree_sdk",
+    "//src/devices/bind/fuchsia.nxp.platform:fuchsia.nxp.platform_sdk",
+    "//src/devices/bind/fuchsia.platform:fuchsia.platform_sdk",
+  ]
+}
+
+sdk_molecule("core_packages") {
+  deps =
+      [ "//src/graphics/magma/tests/integration:magma_conformance_tests_sdk" ]
+}
+
+# TODO(b/309679524): Move the contents of this target to ":core_packages"
+# once they build at individual API levels.
+sdk_molecule("core_packages_built_at_head") {
+  deps = [
+    "//src/lib/fuchsia-component-test/realm_builder_server:realm_builder_server_sdk",
+    "//src/performance/memory/heapdump/collector:collector_sdk",
+  ]
+}
+
+sdk_molecule("core_data") {
+  deps = [
+    # TODO(ddorwin): Rename these to make it clear that they are data (e.g., _shards).
     "//sdk/lib/inspect",
-    "//sdk/lib/inspect/service/cpp:cpp_sdk",
-    "//sdk/lib/magma_client:magma_client_sdk",
-    "//sdk/lib/magma_common:magma_common_sdk",
-    "//sdk/lib/media/cpp:cpp_sdk",
-    "//sdk/lib/stdcompat:stdcompat_sdk",
-    "//sdk/lib/svc:svc_sdk",
     "//sdk/lib/sys/component:realm_builder_shard_sdk",
-    "//sdk/lib/sys/cpp:cpp_sdk",
-    "//sdk/lib/sys/inspect/cpp:cpp_sdk",
-    "//sdk/lib/sys/testing:testing_sdk",
     "//sdk/lib/syslog",
-    "//sdk/lib/syslog/structured_backend:structured_backend_sdk",
-    "//sdk/lib/trace",
-    "//sdk/lib/ui/scenic/cpp:cpp_sdk",
-    "//sdk/lib/vfs/cpp:cpp_sdk",
     "//sdk/lib/vulkan",
+    "//src/developer/ffx/lib/symbol-index:symbol-index-sdk",
+  ]
+}
+
+sdk_molecule("core_documentation") {
+  deps = [ "//third_party/Vulkan-Loader:vulkan_license" ]
+}
+
+sdk_molecule("core_loadable_modules") {
+  deps = [ "//src/lib/vulkan:vulkan_layers" ]
+}
+
+sdk_molecule("core_dart_library") {
+  deps = [ "//sdk/testing/sl4f/client:client_sdk($dart_toolchain)" ]
+}
+
+# C/C++ code that must be provided as prebuilt libraries for each supported API
+# level. Must export symbols with C linkage.
+sdk_molecule("core_cc_prebuilt_libraries") {
+  deps = [
+    "//sdk/lib/fdio:fdio_sdk",
+    "//sdk/lib/magma_client:magma_client_sdk",
+    "//sdk/lib/svc:svc_sdk",
+    "//sdk/lib/virtgralloc:virtgralloc_headers_sdk",
     "//src/devices/bin/driver_runtime:driver_runtime_sdk",
-    "//src/lib/fidl/cpp:cpp_sdk",
-    "//src/lib/fidl/cpp:hlcpp_conversion_sdk",
-    "//src/lib/fidl/cpp:natural_ostream_sdk",
-    "//zircon/system/ulib/async:async-cpp_sdk",
-    "//zircon/system/ulib/async:async_sdk",
+    "//src/performance/memory/heapdump/instrumentation:instrumentation_sdk",
+    "//third_party/Vulkan-Loader:libvulkan_sdk",
     "//zircon/system/ulib/async-default:async-default_sdk",
-    "//zircon/system/ulib/async-loop:async-loop-cpp_sdk",
     "//zircon/system/ulib/async-loop:async-loop-default_sdk",
-    "//zircon/system/ulib/async-loop:async-loop_sdk",
-    "//zircon/system/ulib/inspect:inspect_sdk",
     "//zircon/system/ulib/sync:sync_sdk",
     "//zircon/system/ulib/syslog:syslog_sdk",
-    "//zircon/system/ulib/trace:trace_sdk",
     "//zircon/system/ulib/trace-engine:trace-engine_sdk",
     "//zircon/system/ulib/trace-provider:trace-provider-so_sdk",
   ]
 }
 
-# Pieces of the IDK sans host tools (which are in ":host_tools").
-sdk_molecule("core_deps") {
-  visibility = [ ":*" ]
-
+# C++ code that is provided as source in the SDK. Must be buildable at each
+# supported API level, though this is not part of the build.
+# Prefer providing source code if all dependencies are available in the SDK.
+sdk_molecule("core_cc_source_libraries") {
   deps = [
-    ":core_lib",
-    ":license",
-    ":version_history",
-    "devices",
-    "docs",
-    "//sdk/fidl",
-    "//src/developer/ffx/lib/symbol-index:symbol-index-sdk",
-    "//src/lib/vulkan:vulkan_layers",
-    "//third_party/Vulkan-Loader:libvulkan_sdk",
-    "//third_party/Vulkan-Loader:vulkan_license",
-    "//zircon/public/sysroot/sdk:sysroot_sdk",
+    "//sdk/lib/async-loop-testing/cpp:cpp_sdk",
+    "//sdk/lib/async_patterns/cpp:cpp_sdk",
+    "//sdk/lib/async_patterns/testing/cpp:cpp_sdk",
+    "//sdk/lib/component/incoming/cpp:cpp_sdk",
+    "//sdk/lib/component/outgoing/cpp:cpp_sdk",
+    "//sdk/lib/driver/component/cpp:cpp_sdk",
+    "//sdk/lib/driver/devfs/cpp:cpp_sdk",
+    "//sdk/lib/driver/testing/cpp:cpp_sdk",
+    "//sdk/lib/fidl/cpp:cpp_sdk",
+    "//sdk/lib/fidl/cpp/wire:wire_sdk",
+    "//sdk/lib/fidl_driver:fidl_driver_natural_sdk",
+    "//sdk/lib/fidl_driver:fidl_driver_sdk",
+    "//sdk/lib/fit-promise:fit-promise_sdk",
+    "//sdk/lib/input_report_reader:input_report_reader_sdk",
+    "//sdk/lib/inspect/service/cpp:cpp_sdk",
+    "//sdk/lib/magma_common:magma_common_sdk",
+    "//sdk/lib/media/cpp:cpp_sdk",
+    "//sdk/lib/stdcompat:stdcompat_sdk",
+    "//sdk/lib/sys/component/cpp/testing:cpp_library_sdk",
+    "//sdk/lib/sys/cpp:cpp_sdk",
+    "//sdk/lib/sys/cpp/testing:cpp_sdk",
+    "//sdk/lib/sys/inspect/cpp:cpp_sdk",
+    "//sdk/lib/sys/testing:testing_sdk",
+    "//sdk/lib/syslog/structured_backend:structured_backend_sdk",
+    "//sdk/lib/trace",
+    "//sdk/lib/ui/scenic/cpp:cpp_sdk",
+    "//sdk/lib/ui/scenic/cpp/testing:testing_sdk",
+    "//sdk/lib/vfs/cpp:cpp_sdk",
+    "//src/lib/fidl/cpp:cpp_sdk",
+    "//src/lib/fidl/cpp:hlcpp_conversion_sdk",
+    "//src/lib/fidl/cpp:natural_ostream_sdk",
+    "//zircon/system/ulib/async:async-cpp_sdk",
+    "//zircon/system/ulib/async:async_sdk",
+    "//zircon/system/ulib/async-loop:async-loop-cpp_sdk",
+    "//zircon/system/ulib/async-loop:async-loop_sdk",
+    "//zircon/system/ulib/async-testing:async-testing_sdk",
+    "//zircon/system/ulib/inspect:inspect_sdk",
+    "//zircon/system/ulib/trace:trace_sdk",
+    "//zircon/system/ulib/trace-vthread:trace-vthread_sdk",
   ]
 }
 
-sdk_molecule("core_testing_deps") {
-  visibility = [ ":*" ]
+sdk_molecule("core_sysroot") {
+  deps = [ "//zircon/public/sysroot/sdk:sysroot_sdk" ]
+}
 
-  testonly = true
-
+# License/copyright files for the SDK.
+sdk_molecule("core_licenses") {
   deps = [
-    "//sdk/fidl:fidl_testing",
-    "//sdk/lib/async-loop-testing/cpp:cpp_sdk",
-    "//sdk/lib/driver/testing/cpp:cpp_sdk",
-    "//sdk/lib/sys/component/cpp/testing:cpp_library_sdk",
-    "//sdk/lib/sys/cpp/testing:cpp_sdk",
-    "//sdk/lib/ui/scenic/cpp/testing:testing_sdk",
-    "//zircon/system/ulib/async-testing:async-testing_sdk",
+    ":musl_license",
+    ":open_source",
+    ":sdk_notice",
   ]
-  if (!sdk_no_host_tools) {
-    # This target depends on //sdk:host_tools.all($host_toolchain) indirectly.
-    deps += [ "//tools/docsgen:ref_docs_sdk" ]
-  }
 }
 
 sdk_molecule("platform_fidls") {
-  visibility = [ ":*" ]
   deps = [
     "//sdk/fidl/fuchsia.debugger:fuchsia.debugger_sdk($fidl_toolchain)",
     "//sdk/fidl/fuchsia.exception:fuchsia.exception_sdk($fidl_toolchain)",
+    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_sdk($fidl_toolchain)",
+    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_sdk($fidl_toolchain)",
+    "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_sdk($fidl_toolchain)",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_sdk($fidl_toolchain)",
     "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_sdk($fidl_toolchain)",
   ]
@@ -450,13 +568,12 @@ sdk_molecule("platform_fidls") {
 # This SDK molecule is a collection of libraries only available to the in-tree
 # Bazel build. See //sdk:platform.
 sdk_molecule("platform_libs") {
-  visibility = [ ":*" ]
-
   deps = [
     ":version_history",
-    "//sdk/lib/syslog/cpp:backend_fuchsia_lib_sdk",
+    "//sdk/lib/driver/compat/cpp:cpp_sdk",
     "//src/developer/debug/ipc:ipc_sdk",
     "//src/developer/debug/shared:shared_sdk",
+    "//src/devices/block/lib/sdmmc:sdmmc_sdk",
     "//src/lib/containers/cpp:cpp_sdk",
     "//src/lib/diagnostics/accessor2logger:accessor2logger_sdk",
     "//src/lib/elflib:elflib_sdk",
@@ -464,6 +581,8 @@ sdk_molecule("platform_libs") {
     "//src/lib/process:process_sdk",
     "//third_party/re2:re2_sdk",
     "//zircon/public/sysroot/sdk:sysroot_sdk",
+    "//zircon/system/ulib/fbl:fbl_sdk",
+    "//zircon/system/ulib/fzl:fzl_sdk",
   ]
 }
 
@@ -472,6 +591,8 @@ sdk_molecule("platform_libs") {
 # Content are bound to change a lot. Nothing else should rely on this.
 # See https://fxrev.dev/737558 and https://fxbug.dev/113063.
 sdk_collection("platform") {
+  visibility += [ "*" ]
+
   id = sdk_id
 
   category = "internal"
@@ -482,66 +603,6 @@ sdk_collection("platform") {
   ]
 }
 
-# A collection of SDK atoms exposing the stable and officially supported
-# APIs and ABI of the "core" Fuchsia platform. Due to limitations of the
-# build system at the GN/Bazel boundary, this collection cannot contain
-# testonly atoms, but see //sdk:core_testing for those.
-#
-# This collection is part of the Fuchsia Core IDK, as well as used to
-# populate the @fuchsia_sdk Bazel repository used internally by the build.
-sdk_collection("core") {
-  id = sdk_id
-
-  category = "partner"
-
-  api = "manifests/core.manifest"
-
-  filter_api_host_tools = !sdk_cross_compile_host_tools
-
-  deps = [ ":core_deps" ]
-  if (!sdk_no_host_tools) {
-    deps += [ ":host_tools" ]
-  }
-
-  # TODO(https://fxbug.dev/126262): Remove this.
-  if (build_sdk_archives) {
-    generate_archive = true
-  }
-}
-
-# A collection of test-related SDK atoms for the Fuchsia Core IDK.
-# Unlike //sdk:core, this collection can contain testonly atoms.
-# However, it cannot be used to popualte the @fuchsia_sdk Bazel
-# repository used internally.
-sdk_collection("core_testing") {
-  id = sdk_id
-
-  testonly = true
-
-  category = "partner"
-
-  api = "manifests/core_testing.manifest"
-
-  deps = [ ":core_testing_deps" ]
-
-  # TODO(https://fxbug.dev/126262): Remove this.
-  if (build_sdk_archives) {
-    generate_archive = true
-  }
-}
-
-group("host_tools.all") {
-  public_deps = []
-  if (host_os == "linux" && sdk_cross_compile_host_tools) {
-    public_deps += [
-      ":host_tools.internal($host_arm64_toolchain)",
-      ":host_tools.internal($host_x64_toolchain)",
-    ]
-  } else {
-    public_deps += [ ":host_tools.internal($host_toolchain)" ]
-  }
-}
-
 if (is_host) {
   # A collection that only contains host tools that are used by the
   # Fuchsia build system itself. In particular, this is where
@@ -549,11 +610,27 @@ if (is_host) {
   sdk_collection("host_tools.internal") {
     id = sdk_id
     category = "partner"
-    api = "manifests/host_tools_${current_os}_${current_cpu}.manifest"
+
+    # This is a collection of host tools that are used _by_ ffx itself to
+    # perform actions within the build.  As such, it CANNOT have a dependency
+    # the main ffx binary, or any of the subtools, or it will cause all
+    # ffx_action()'s using subtools to be dependent on the compilation of the
+    # main ffx binary (and/or all subtools), adding minutes to any incremental
+    # build of an ffx subtool.
+    assert_no_deps = [
+      "//src/developer/ffx:bin_sdk",
+      "//src/developer/ffx:ffx_tool",
+      "//src/developer/ffx/frontends/ffx:ffx_bin($host_toolchain)",
+    ]
+
+    # This (sorta) restricts the use of this group to instances of the
+    # `ffx_action()` template, which uses the group below (which doesn't have
+    # visibility restrictions to have a dependency on this group.)
+    visibility = []
+    visibility = [ "//src/developer/ffx/build:internal_sdk_tools_for_ffx" ]
 
     deps = [
       "//src/developer/debug/zxdb:zxdb_sdk",
-      "//src/developer/ffx:bin_sdk",
       "//src/storage/bin/fvm:fvm_sdk",
       "//src/storage/blobfs/tools:blobfs_sdk",
       "//src/storage/minfs/tools:minfs_sdk",
@@ -574,8 +651,95 @@ if (is_host) {
   }
 }
 
+# Host tools necessary to build the IDK. Keep this minimal, so IDK subbuilds can
+# start running as quickly as possible.
+#
+# This rule copies each of the tools listed below into
+# `$root_build_dir/sdk/idk_build_tools`. For example, a tool like `cmc` will
+# appear in `$root_build_dir/sdk/idk_build_tools/host_x64/cmc` on an x64 host.
+# SDK subbuilds will look for host tools in that directory, so they will only
+# have access to binaries that they explicitly depend on via this rule.
+copy("idk_build_tools") {
+  visibility += [
+    "//build/*",
+    "//vendor/*",
+  ]
+
+  sources = [
+    "$host_out_dir/bindc",
+    "$host_out_dir/cmc",
+    "$host_out_dir/configc",
+    "$host_out_dir/far",
+    "$host_out_dir/ffx-package_unversioned",
+    "$host_out_dir/fidl-format",
+    "$host_out_dir/fidl-lint",
+    "$host_out_dir/fidl_api_diff",
+    "$host_out_dir/fidl_api_summarize",
+    "$host_out_dir/fidlc",
+    "$host_out_dir/fidlgen_cpp",
+    "$host_out_dir/fidlgen_hlcpp",
+    "$host_out_dir/fidlgen_rust",
+    "$host_out_dir/json_merge",
+    "$host_out_dir/measure-tape",
+    "$host_out_dir/package-tool",
+    "$host_out_dir/zither",
+  ]
+
+  # Looks like `host_x64`.
+  _rebased_host_dir = rebase_path(host_out_dir, root_build_dir)
+  outputs = [ "$root_build_dir/sdk/idk_build_tools/${_rebased_host_dir}/{{source_file_part}}" ]
+
+  deps = [
+    "//build/tools/json_merge($host_toolchain)",
+    "//src/developer/ffx/plugins/package:ffx_package_tool($host_toolchain)",
+    "//src/sys/pkg/bin/far:bin($host_toolchain)",
+    "//src/sys/pkg/bin/package-tool($host_toolchain)",
+    "//tools/bindc:bin($host_toolchain)",
+    "//tools/cmc:cmc($host_toolchain)",
+    "//tools/configc:configc($host_toolchain)",
+    "//tools/fidl/fidl_api_diff($host_toolchain)",
+    "//tools/fidl/fidl_api_summarize($host_toolchain)",
+    "//tools/fidl/fidlc:fidl-format($host_toolchain)",
+    "//tools/fidl/fidlc:fidl-lint($host_toolchain)",
+    "//tools/fidl/fidlc($host_toolchain)",
+    "//tools/fidl/fidlgen_cpp($host_toolchain)",
+    "//tools/fidl/fidlgen_hlcpp($host_toolchain)",
+    "//tools/fidl/fidlgen_rust($host_toolchain)",
+    "//tools/fidl/measure-tape/src:measure-tape($host_toolchain)",
+    "//zircon/tools/zither($host_toolchain)",
+  ]
+}
+
 # Firmware IDK. See /src/firmware/README.md
-sdk_collection("firmware") {
+group("firmware") {
+  deps = [
+    ":firmware.archive",
+    ":firmware.exported",
+    ":firmware_manifest_golden",
+  ]
+}
+
+idk("firmware.exported") {
+  output_name = "firmware"
+  sdk_collection_label = ":firmware_collection"
+  target_cpus = idk_target_cpus
+  api_levels = platform_version.supported_fuchsia_api_levels
+}
+
+idk_archive("firmware.archive") {
+  idk = ":firmware.exported"
+  idk_output_name = "firmware"
+}
+
+sdk_final_manifest_golden("firmware_manifest_golden") {
+  golden = "manifests/firmware.manifest"
+  idk_name = "firmware"
+  idk_exported_label = ":firmware.exported"
+}
+
+sdk_collection("firmware_collection") {
+  visibility += [ "*" ]
+
   category = "experimental"
 
   deps = [
@@ -588,9 +752,6 @@ sdk_collection("firmware") {
     "//third_party/android/platform/external/avb:avb_sdk",
     "//zircon/public/sysroot/sdk:sysroot_sdk",
   ]
-
-  # An archive is always needed when building this target.
-  generate_archive = true
 }
 
 # Tools Fuchsia driver developers used on the host platform; where host is often
@@ -598,8 +759,6 @@ sdk_collection("firmware") {
 # WARNING (fxbug.dev/116642): the driver SDK will soon be removed.
 # DO NOT ADD anything here!
 sdk_molecule("driver_host_tools") {
-  visibility = [ ":*" ]
-
   _driver_host_tools = [
     "//src/devices/tools/fidlgen_banjo:fidlgen_banjo_bin_sdk",
     "//tools/bindc:bindc_sdk",
@@ -628,7 +787,6 @@ sdk_molecule("driver_host_tools") {
 # WARNING (fxbug.dev/116642): the driver SDK will soon be removed.
 # DO NOT ADD anything here!
 sdk_molecule("bind") {
-  visibility = [ ":*" ]
   deps = [
     "//src/devices/bind/fuchsia:fuchsia_sdk",
     "//src/devices/bind/fuchsia.acpi:fuchsia.acpi_sdk",
@@ -639,10 +797,14 @@ sdk_molecule("bind") {
   ]
 }
 
+# Controls the maximum number of simultaneous subbuilds.
+pool("subbuild_pool") {
+  depth = sdk_max_simultaneous_sub_builds
+}
+
 # WARNING (fxbug.dev/116642): the driver SDK will soon be removed.
 # DO NOT ADD anything here!
 sdk_molecule("driver_fidl") {
-  visibility = [ ":*" ]
   deps = [
     "//sdk/fidl/fuchsia.device.fs:fuchsia.device.fs_sdk($fidl_toolchain)",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_sdk($fidl_toolchain)",
@@ -660,110 +822,78 @@ sdk_molecule("driver_fidl") {
 # Their API/ABI is not stable at all. Note: this cannot contain
 # testonly atoms.
 sdk_collection("driver") {
-  id = sdk_id
+  visibility += [ "*" ]
 
+  id = sdk_id
   category = "experimental"
 
-  api = "manifests/driver.manifest"
+  deps = [
+    # NOTE: Don't add any other sdk_molecules here.  Instead, add atoms to the
+    # ":fuchsia_idk_atoms" or ":driver_atoms" sdk_molecules.
+    ":driver_atoms",
+  ]
+}
 
-  filter_api_host_tools = !sdk_cross_compile_host_tools
+# An SDK molecule providing SDK atoms used for driver development. Their API/ABI
+# is not stable at all. Note: this cannot contain testonly atoms.
+sdk_molecule("driver_atoms") {
+  category = "experimental"
 
   deps = [
     ":bind",
     ":driver_fidl",
+    ":fuchsia_idk_atoms",
     "//sdk/lib/component/incoming/cpp:cpp_sdk",
     "//sdk/lib/component/outgoing/cpp:cpp_sdk",
-    "//sdk/lib/driver/component:driver_component",
     "//sdk/lib/driver/component/cpp:cpp_sdk",
     "//sdk/lib/driver/devfs/cpp:cpp_sdk",
     "//sdk/lib/driver/runtime:driver_runtime_cpp_sdk",
     "//sdk/lib/driver/runtime:driver_runtime_sdk",
+    "//sdk/lib/driver_component:driver_component",
     "//sdk/lib/fidl/cpp/wire:wire_sdk",
     "//sdk/lib/fidl_driver:fidl_driver_natural_sdk",
     "//sdk/lib/fidl_driver:fidl_driver_sdk",
     "//sdk/lib/input_report_reader:input_report_reader_sdk",
-    "//sdk/lib/inspect/component/cpp:inspect_component_cpp_sdk",
+    "//sdk/lib/inspect/component/cpp:cpp_sdk",
     "//src/devices/bin/driver_runtime:driver_runtime_sdk",
     "//src/devices/lib/mmio:mmio_sdk",
+    "//src/lib/ddk:ddk_metadata_sdk",
     "//src/lib/fidl/cpp:cpp_sdk",
     "//zircon/system/ulib/hwreg:hwreg_sdk_sdk",
   ]
-  if (!sdk_no_host_tools) {
-    deps += [ ":driver_host_tools" ]
-  }
 
-  if (build_sdk_archives) {
-    # TODO(fxbug.dev/116642): the driver SDK archive will soon be removed.
-    generate_archive = true
-  }
-}
-
-action("get_atoms_from_sdk_manifest") {
-  testonly = true
-
-  deps = []
-  inputs = []
-  outputs = []
-  sdk_manifests = []
-  foreach(dep, _sdk_public_deps) {
-    name = get_label_info(dep, "name")
-    copy_dep = dep + "_final_manifest"
-    foreach(output, get_target_outputs(copy_dep)) {
-      sdk_manifests += [ rebase_path(output, root_build_dir) ]
-      inputs += [ output ]
-    }
-    deps += [ copy_dep ]
-
-    outputs += [ "$target_gen_dir/$name" ]
-  }
-
-  script = "//sdk/ctf/build/scripts/get_atoms_from_sdk_manifest.py"
-
-  args = [ "--sdk_manifests" ]
-  args += sdk_manifests
-  args += [
-    "--output_path",
-    rebase_path(target_gen_dir, root_build_dir),
-  ]
-}
-
-golden_files("sdk_atom_manifest_goldens") {
-  testonly = true
-
-  comparisons = []
-  sdk_manifests = get_target_outputs(":get_atoms_from_sdk_manifest")
-  foreach(manifest, sdk_manifests) {
-    name = get_path_info(manifest, "name")
-    comparisons += [
-      {
-        golden = "//sdk/manifests/atoms/${name}.golden"
-        candidate = manifest
-      },
-    ]
-  }
-  deps = [ ":get_atoms_from_sdk_manifest($target_toolchain)" ]
+  host_tools_deps = [ ":driver_host_tools" ]
 }
 
 # These markers are used to define dependencies on FIDL bindings
 # so host tools can assert_no_deps to make sure all host tools
 # in the SDK are only using FIDL libraries included in the SDK.
 group("marker-cts") {
+  visibility += [ "*" ]
 }
 group("marker-excluded") {
+  visibility += [ "*" ]
 }
 group("marker-experimental") {
+  visibility += [ "*" ]
 }
 group("marker-internal") {
+  visibility += [ "*" ]
 }
 group("marker-unknown") {
+  visibility += [ "*" ]
 }
 group("marker-partner") {
+  visibility += [ "*" ]
 }
 group("marker-partner_internal") {
+  visibility += [ "*" ]
 }
 group("marker-public") {
+  visibility += [ "*" ]
 }
 
 # Marker for the allow list for use in a subtool.
 group("marker-allowed-for-ffx-subtool") {
+  visibility += [ "*" ]
 }

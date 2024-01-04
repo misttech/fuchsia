@@ -29,11 +29,7 @@ template("fidlc") {
          "json_representation is required")
   assert(defined(invoker.sources), "sources is required")
 
-  experimental_flags = [
-    "no_optional_structs",
-    "unknown_interactions",
-    "unknown_interactions_mandate",
-  ]
+  experimental_flags = [ "transitional_allow_list" ]
 
   if (defined(invoker.experimental_flags)) {
     experimental_flags += invoker.experimental_flags
@@ -44,7 +40,6 @@ template("fidlc") {
 
   # These paths are expected by the templates in //build/c/fidlc.gni.
   generated_binding_dir = "${invoker.gen_dir}/$fidl_target_name/c"
-  coding_tables = "$generated_binding_dir/$fidl_target_name.fidl.tables.c"
   fidlc_depfile_path = "$generated_binding_dir/${invoker.fidl_library_name}.d"
 
   libraries_file = "${invoker.gen_dir}/$fidl_target_name.libraries"
@@ -53,6 +48,7 @@ template("fidlc") {
   action(response_file_target_name) {
     forward_variables_from(invoker,
                            [
+                             "applicable_licenses",
                              "testonly",
                              "public_deps",
                            ])
@@ -72,8 +68,6 @@ template("fidlc") {
              rebase_path(libraries_file, root_build_dir),
              "--json",
              rebase_path(invoker.json_representation, root_build_dir),
-             "--tables",
-             rebase_path(coding_tables, root_build_dir),
              "--name",
              invoker.fidl_library_name,
              "--depfile",
@@ -113,6 +107,7 @@ template("fidlc") {
   compiled_action(main_target_name) {
     forward_variables_from(invoker,
                            [
+                             "applicable_licenses",
                              "sources",
                              "testonly",
                              "visibility",
@@ -120,10 +115,7 @@ template("fidlc") {
     tool = "//tools/fidl/fidlc:fidlc"
     inputs = [ response_file ]
     depfile = fidlc_depfile_path
-    outputs = [
-      coding_tables,
-      invoker.json_representation,
-    ]
+    outputs = [ invoker.json_representation ]
     mnemonic = "FIDLC"
     args = [ "@" + rebase_path(response_file, root_build_dir) ]
     if (defined(invoker.non_fidl_deps)) {

@@ -252,21 +252,25 @@ closed protocol RealmQuery {
     }) error GetStructuredConfigError;
 
     // replaced by ABI-compatible version above
-    @available(added=11, removed=13)
+    @available(added=11, replaced=13)
     strict GetStructuredConfig(struct {
         moniker string:fuchsia.component.MAX_MONIKER_LENGTH;
     }) -> (struct {
         config fuchsia.component.config.ResolvedConfig;
     }) error GetStructuredConfigError;
 
-    /// Returns an iterator over all instances in this realm.
+    /// Returns an iterator over all component instances in this realm and instances within resolved
+    /// children, recursively. Unresolved child components will be included in this list, but
+    /// children of unresolved children will not be.
     @available(added=11)
     strict GetAllInstances() -> (resource struct {
         iterator client_end:InstanceIterator;
     }) error GetAllInstancesError;
 
-    /// Constructs the namespace of an instance exactly as it would be given to the component's
-    /// runner.
+    /// Constructs the namespace of an instance as determined by its use declarations.
+    /// This is usually identical to what would be given to the component's runner on
+    /// component start time, unless extended by
+    /// `fuchsia.component/StartChildArgs.namespace_entries`.
     @available(added=11)
     strict ConstructNamespace(struct {
         moniker string:fuchsia.component.MAX_MONIKER_LENGTH;

@@ -9,7 +9,7 @@ use assert_matches::assert_matches;
 use async_trait::async_trait;
 use fidl_fuchsia_hardware_network as fhardware_network;
 use fidl_fuchsia_net as fnet;
-use fidl_fuchsia_net_ext::{self as fnet_ext, IntoExt as _};
+use fidl_fuchsia_net_ext::{self as fnet_ext, IntoExt as _, IpExt as _};
 use fidl_fuchsia_net_interfaces as fnet_interfaces;
 use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
 use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
@@ -1404,6 +1404,7 @@ async fn tcp_socket_accept_cross_ns<
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
     let net = sandbox.create_network("net").await.expect("failed to create network");
 
+    let _packet_capture = net.start_capture(name).await.expect("starting packet capture");
     let client = sandbox
         .create_netstack_realm::<Client, _>(format!("{}_client", name))
         .expect("failed to create client realm");
@@ -2106,7 +2107,7 @@ async fn ip_endpoint_packets<N: Netstack>(name: &str) {
     let src_ip = Ipv4Addr::new(BOB_ADDR_V4.addr);
     let dst_ip = Ipv4Addr::new(ALICE_ADDR_V4.addr);
     let packet = packet::Buf::new(&mut payload[..], ..)
-        .encapsulate(IcmpPacketBuilder::<Ipv4, &[u8], _>::new(
+        .encapsulate(IcmpPacketBuilder::<Ipv4, _>::new(
             src_ip,
             dst_ip,
             IcmpUnusedCode,
@@ -2178,7 +2179,7 @@ async fn ip_endpoint_packets<N: Netstack>(name: &str) {
     let src_ip = Ipv6Addr::from_bytes(BOB_ADDR_V6.addr);
     let dst_ip = Ipv6Addr::from_bytes(ALICE_ADDR_V6.addr);
     let packet = packet::Buf::new(&mut payload[..], ..)
-        .encapsulate(IcmpPacketBuilder::<Ipv6, &[u8], _>::new(
+        .encapsulate(IcmpPacketBuilder::<Ipv6, _>::new(
             src_ip,
             dst_ip,
             IcmpUnusedCode,
@@ -2740,6 +2741,117 @@ async fn udp_send_from_bound_to_device<N: Netstack>(name: &str) {
 }
 
 #[netstack_test]
+async fn test_udp_source_address_has_zone<N: Netstack>(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    let net = sandbox.create_network("net").await.expect("failed to create network");
+
+    let client = sandbox
+        .create_netstack_realm::<N, _>(format!("{}_client", name))
+        .expect("failed to create client realm");
+    let server = sandbox
+        .create_netstack_realm::<N, _>(format!("{}_server", name))
+        .expect("failed to create server realm");
+
+    let client_ep = client
+        .join_network_with(
+            &net,
+            "client",
+            netemul::new_endpoint_config(netemul::DEFAULT_MTU, Some(CLIENT_MAC)),
+            Default::default(),
+        )
+        .await
+        .expect("client failed to join network");
+    client_ep.add_address_and_subnet_route(Ipv6::CLIENT_SUBNET).await.expect("configure address");
+    let server_ep = server
+        .join_network_with(
+            &net,
+            "server",
+            netemul::new_endpoint_config(netemul::DEFAULT_MTU, Some(SERVER_MAC)),
+            Default::default(),
+        )
+        .await
+        .expect("server failed to join network");
+    server_ep.add_address_and_subnet_route(Ipv6::SERVER_SUBNET).await.expect("configure address");
+
+    if let NetstackVersion::Netstack2 { .. } = N::VERSION {
+        // Add static ARP entries as we've observed flakes in CQ due to ARP timeouts
+        // and ARP resolution is immaterial to this test.
+        futures::stream::iter([
+            (&server, &server_ep, Ipv6::CLIENT_SUBNET.addr, CLIENT_MAC),
+            (&client, &client_ep, Ipv6::SERVER_SUBNET.addr, SERVER_MAC),
+        ])
+        .for_each_concurrent(None, |(realm, ep, addr, mac)| {
+            realm.add_neighbor_entry(ep.id(), addr, mac).map(|r| r.expect("add_neighbor_entry"))
+        })
+        .await;
+    }
+
+    // Get the link local address for the client.
+    let link_local_addr = std::pin::pin!(client_ep
+        .get_interface_event_stream()
+        .expect("get_interface_event_stream failed")
+        .filter_map(|event| async {
+            match event.expect("event error") {
+                fnet_interfaces::Event::Existing(properties)
+                | fnet_interfaces::Event::Added(properties) => {
+                    if let Some(addresses) = properties.addresses {
+                        for address in addresses {
+                            if let Some(fnet::Subnet {
+                                addr: fnet::IpAddress::Ipv6(addr), ..
+                            }) = address.addr
+                            {
+                                if addr.is_unicast_link_local() {
+                                    return Some(addr);
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+            None
+        }))
+    .next()
+    .await
+    .expect("unexpected end of events");
+
+    let client_addr = assert_matches!(fnet::IpAddress::Ipv6(link_local_addr).into(),
+                                      fnet_ext::IpAddress(std::net::IpAddr::V6(client_addr)) => client_addr);
+    let client_addr = std::net::SocketAddr::V6(std::net::SocketAddrV6::new(
+        client_addr,
+        1234,
+        0,
+        client_ep.id().try_into().unwrap(),
+    ));
+
+    let fnet_ext::IpAddress(server_addr) = fnet_ext::IpAddress::from(Ipv6::SERVER_SUBNET.addr);
+    let server_addr = std::net::SocketAddr::new(server_addr, 8080);
+
+    let client_sock = fasync::net::UdpSocket::bind_in_realm(&client, client_addr)
+        .await
+        .expect("failed to create client socket");
+
+    let server_sock = fasync::net::UdpSocket::bind_in_realm(&server, server_addr)
+        .await
+        .expect("failed to create server socket");
+
+    const PAYLOAD: &'static str = "Hello World";
+
+    let client_fut = async move {
+        let r = client_sock.send_to(PAYLOAD.as_bytes(), server_addr).await.expect("sendto failed");
+        assert_eq!(r, PAYLOAD.as_bytes().len());
+    };
+    let server_fut = async move {
+        let mut buf = [0u8; 1024];
+        let (_, from) = server_sock.recv_from(&mut buf[..]).await.expect("recvfrom failed");
+        // This will also check the zone.
+        assert_eq!(from, client_addr);
+    };
+
+    let ((), ()) = futures::future::join(client_fut, server_fut).await;
+}
+
+#[netstack_test]
 async fn tcp_connect_bound_to_device<N: Netstack>(name: &str) {
     const NUM_PEERS: u8 = 2;
     const PORT: u16 = 90;
@@ -3238,7 +3350,7 @@ async fn tcp_icmp_error_v4<N: Netstack>(name: &str, code: Icmpv4DestUnreachableC
                 };
                 let mut body = eth.body().to_vec();
                 let icmp_error = packet::Buf::new(&mut body, ..)
-                    .encapsulate(IcmpPacketBuilder::<Ipv4, &[u8], _>::new(
+                    .encapsulate(IcmpPacketBuilder::<Ipv4, _>::new(
                         v4_packet.dst_ip(),
                         v4_packet.src_ip(),
                         code,
@@ -3340,7 +3452,7 @@ async fn tcp_icmp_error_v6<N: Netstack>(name: &str, code: Icmpv6DestUnreachableC
                 };
                 let mut body = eth.body().to_vec();
                 let icmp_error = packet::Buf::new(&mut body, ..)
-                    .encapsulate(IcmpPacketBuilder::<Ipv6, &[u8], _>::new(
+                    .encapsulate(IcmpPacketBuilder::<Ipv6, _>::new(
                         v6_packet.dst_ip(),
                         v6_packet.src_ip(),
                         code,
@@ -3379,4 +3491,99 @@ async fn tcp_icmp_error_v6<N: Netstack>(name: &str, code: Icmpv6DestUnreachableC
         () = fake_ep_loop.fuse() => unreachable!("should never finish"),
         errno = connect.fuse() => return errno.expect("must have an errno"),
     }
+}
+
+/// Tests that a connection pending in an accept queue can be accepted and
+/// returns the expected scope id even if the device the scope id matches has
+/// been removed from the stack.
+#[netstack_test]
+async fn tcp_accept_with_removed_device_scope<N: Netstack>(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    let net = sandbox.create_network("net").await.expect("failed to create network");
+
+    let client = sandbox
+        .create_netstack_realm::<N, _>(format!("{name}_client"))
+        .expect("failed to create client realm");
+
+    let server = sandbox
+        .create_netstack_realm::<N, _>(format!("{name}_server"))
+        .expect("failed to create client realm");
+
+    let client_iface =
+        client.join_network(&net, "client-ep").await.expect("failed to join network");
+    let server_iface =
+        server.join_network(&net, "server-ep").await.expect("failed to join network");
+
+    async fn get_ll_addr(
+        realm: &netemul::TestRealm<'_>,
+        ep: &netemul::TestInterface<'_>,
+    ) -> std::net::Ipv6Addr {
+        let interfaces_state = realm
+            .connect_to_protocol::<fidl_fuchsia_net_interfaces::StateMarker>()
+            .expect("connect to protocol");
+        netstack_testing_common::interfaces::wait_for_v6_ll(&interfaces_state, ep.id())
+            .await
+            .expect("wait LL address")
+            .into()
+    }
+
+    let server_addr = get_ll_addr(&server, &server_iface).await;
+    let client_addr = get_ll_addr(&client, &client_iface).await;
+
+    const PORT: u16 = 8080;
+    let server_sock = fasync::net::TcpListener::listen_in_realm(
+        &server,
+        std::net::SocketAddrV6::new(std::net::Ipv6Addr::UNSPECIFIED, PORT, 0, 0).into(),
+    )
+    .await
+    .expect("listen in realm");
+
+    // We need to notify that we want readable so that fuchsia_async clears the
+    // cached readable signals within _before_ we actually start the connection
+    // process so we can wait for readable later with a clean slate.
+    futures::future::poll_fn(|cx| {
+        server_sock.need_read(cx);
+        futures::task::Poll::Ready(())
+    })
+    .await;
+
+    let client_sock = fasync::net::TcpStream::connect_in_realm(
+        &client,
+        std::net::SocketAddrV6::new(
+            server_addr.into(),
+            PORT,
+            0,
+            client_iface.id().try_into().unwrap(),
+        )
+        .into(),
+    )
+    .await
+    .expect("connect");
+
+    let client_port = client_sock.std().local_addr().expect("local addr").port();
+
+    let server_scope: u32 = server_iface.id().try_into().unwrap();
+
+    // Ensure that the connection is ready to be accepted, the server socket
+    // must be readable.
+    futures::future::poll_fn(|cx| server_sock.poll_readable(cx))
+        .await
+        .expect("polling server socket");
+
+    server_iface
+        .control()
+        .remove()
+        .await
+        .expect("requesting removal")
+        .expect("failed to request removal");
+    assert_eq!(
+        server_iface.wait_removal().await.expect("waiting removal"),
+        fnet_interfaces_admin::InterfaceRemovedReason::User
+    );
+
+    let (_server_sock, _connection, from) = server_sock.accept().await.expect("accept failed");
+    let v6_addr = assert_matches!(from, std::net::SocketAddr::V6(v6) => v6);
+    assert_eq!(v6_addr.ip(), &client_addr);
+    assert_eq!(v6_addr.port(), client_port);
+    assert_eq!(v6_addr.scope_id(), server_scope);
 }

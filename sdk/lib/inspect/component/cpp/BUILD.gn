@@ -4,7 +4,7 @@
 
 import("//build/cpp/sdk_source_set.gni")
 
-sdk_source_set("inspect_component_cpp") {
+sdk_source_set("cpp") {
   category = "partner"
 
   sdk_name = "inspect_component_cpp"
@@ -21,7 +21,8 @@ sdk_source_set("inspect_component_cpp") {
   ]
 
   public_deps = [
-    "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_cpp_wire",
+    "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_cpp",
+    "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//src/lib/fidl/cpp",
     "//zircon/system/ulib/async:async-cpp",
@@ -36,5 +37,5 @@ sdk_source_set("inspect_component_cpp") {
 
 group("tests") {
   testonly = true
-  deps = [ "tests:inspect_service_llcpp_tests" ]
+  deps = [ "tests" ]
 }

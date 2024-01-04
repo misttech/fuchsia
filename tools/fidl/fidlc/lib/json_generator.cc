@@ -209,8 +209,8 @@ void JSONGenerator::Generate(const flat::Type* value) {
       case flat::Type::Kind::kInternal: {
         const auto* type = static_cast<const flat::InternalType*>(value);
         switch (type->subtype) {
-          case types::InternalSubtype::kTransportErr:
-            GenerateObjectMember("subtype", std::string_view("transport_error"));
+          case types::InternalSubtype::kFrameworkErr:
+            GenerateObjectMember("subtype", std::string_view("framework_error"));
             break;
         }
         break;
@@ -377,8 +377,7 @@ void JSONGenerator::Generate(const flat::Protocol& value) {
     GenerateObjectMember("location", NameSpan(value.name));
     if (!value.attributes->Empty())
       GenerateObjectMember("maybe_attributes", value.attributes);
-    if (experimental_flags_.IsFlagEnabled(ExperimentalFlags::Flag::kUnknownInteractions))
-      GenerateObjectMember("openness", value.openness);
+    GenerateObjectMember("openness", value.openness);
     GenerateObjectMember("composed_protocols", value.composed_protocols);
     GenerateObjectMember("methods", value.all_methods);
   });
@@ -399,8 +398,7 @@ void JSONGenerator::Generate(const flat::Protocol::MethodWithInfo& method_with_i
   GenerateObject([&]() {
     GenerateObjectMember("ordinal", value.generated_ordinal64, Position::kFirst);
     GenerateObjectMember("name", value.name);
-    if (experimental_flags_.IsFlagEnabled(ExperimentalFlags::Flag::kUnknownInteractions))
-      GenerateObjectMember("strict", value.strictness);
+    GenerateObjectMember("strict", value.strictness);
     GenerateObjectMember("location", NameSpan(value.name));
     GenerateObjectMember("has_request", value.has_request);
     if (!value.attributes->Empty())
@@ -546,7 +544,7 @@ void JSONGenerator::GenerateParameterizedType(TypeKind parent_type_kind, const f
         ZX_PANIC("unexpected kind");
       case flat::Type::Kind::kInternal: {
         switch (static_cast<const flat::InternalType*>(type)->subtype) {
-          case types::InternalSubtype::kTransportErr:
+          case types::InternalSubtype::kFrameworkErr:
             ZX_PANIC("unexpected kind");
         }
       }
@@ -667,7 +665,6 @@ void JSONGenerator::Generate(const TypeShape& type_shape) {
     GenerateObjectMember("max_handles", type_shape.max_handles);
     GenerateObjectMember("max_out_of_line", type_shape.max_out_of_line);
     GenerateObjectMember("has_padding", type_shape.has_padding);
-    GenerateObjectMember("has_envelope", type_shape.has_envelope);
     GenerateObjectMember("has_flexible_envelope", type_shape.has_flexible_envelope);
   });
 }
@@ -857,7 +854,9 @@ void JSONGenerator::Generate(const flat::Alias& value) {
     GenerateObjectMember("location", NameSpan(value.name));
     if (!value.attributes->Empty())
       GenerateObjectMember("maybe_attributes", value.attributes);
+    // TODO(fxbug.dev/7807): Remove "partial_type_ctor".
     GenerateObjectMember("partial_type_ctor", value.partial_type_ctor);
+    GenerateTypeAndFromAlias(value.partial_type_ctor.get());
   });
 }
 
@@ -880,13 +879,10 @@ void JSONGenerator::Generate(const flat::Compilation::Dependency& dependency) {
 }
 
 void JSONGenerator::GenerateTypeShapes(const flat::Object& object) {
-  GenerateObjectMember("type_shape_v1", TypeShape(object, WireFormat::kV1NoEe));
   GenerateObjectMember("type_shape_v2", TypeShape(object, WireFormat::kV2));
 }
 
 void JSONGenerator::GenerateFieldShapes(const flat::Struct::Member& struct_member) {
-  auto v1 = FieldShape(struct_member, WireFormat::kV1NoEe);
-  GenerateObjectMember("field_shape_v1", v1);
   auto v2 = FieldShape(struct_member, WireFormat::kV2);
   GenerateObjectMember("field_shape_v2", v2);
 }
@@ -1027,6 +1023,20 @@ std::ostringstream JSONGenerator::Produce() {
           }
         });
     GenerateObjectMember("experiments", active_experiments);
+
+    if (compilation_->version_selection_) {
+      GenerateObjectPunctuation(Position::kSubsequent);
+      EmitObjectKey("available");
+      GenerateObject([&]() {
+        Position p = Position::kFirst;
+        compilation_->version_selection_->ForEach([&](const Platform& platform, Version version) {
+          GenerateObjectMember(platform.name(), version.ToString(), p);
+          if (p == Position::kFirst) {
+            p = Position::kSubsequent;
+          }
+        });
+      });
+    }
 
     GenerateObjectPunctuation(Position::kSubsequent);
     EmitObjectKey("library_dependencies");

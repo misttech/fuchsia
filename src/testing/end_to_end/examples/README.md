@@ -13,25 +13,43 @@ detectable by FFX
     ```
    If you need instructions to start an emulator, refer to [Fuchsia Emulator].
 
-2. Ensure the testbeds used by the test case (will be listed in
-"local_config_source" field in test case's BUILD.gn file) has correct device
-information listed (`name` and `ssh_private_key` fields. For more information
-about these fields, refer to
+2. Determine if your local testbed requires a manual local config to be provided
+or not. For more information, refer to
 [Lacewing Mobly Config YAML file](../README.md#Mobly-Config-YAML-File))
 
 ## Test execution in local mode
+
+Refer to [SL4F vs Fuchsia-Controller] to learn more about how to run these
+example lacewing tests using SL4F or Fuchsia-Controller transports.
+
+### Hello World Test
+```shell
+$ fx set core.qemu-x64 --with //src/testing/end_to_end/examples
+
+$ fx test //src/testing/end_to_end/examples/test_hello_world:hello_world_test_fc --e2e --output
+```
+
 ### Soft Reboot Test
 ```shell
-$ fx set core.qemu-x64 \
-    --with //src/testing/sl4f \
-    --with //src/sys/bin/start_sl4f \
-    --args 'core_realm_shards += [ "//src/testing/sl4f:sl4f_core_shard" ]' \
-    --with-host //src/testing/end_to_end/examples:tests
-
 # start the emulator with networking enabled
 $ ffx emu stop ; ffx emu start -H --net tap
 
-$ fx test //src/testing/end_to_end/examples/test_soft_reboot:soft_reboot_test --e2e --output
+# Run SoftRebootTest using SL4F
+$ fx set core.qemu-x64 \
+    --args 'core_realm_shards += [ "//src/testing/sl4f:sl4f_core_shard" ]' \
+    --with //src/testing/end_to_end/examples
+$ fx test //src/testing/end_to_end/examples/test_soft_reboot:soft_reboot_test_sl4f --e2e --output
+
+# Run SoftRebootTest using Fuchsia-Controller
+$ fx set core.qemu-x64 --with //src/testing/end_to_end/examples
+$ fx test //src/testing/end_to_end/examples/test_soft_reboot:soft_reboot_test_fc --e2e --output
 ```
 
+### Multi Device Test
+Refer to [Multi Device Test]
+
+[SL4F vs Fuchsia-Controller]: ../honeydew/tests/functional_tests/README.md#SL4F-vs-Fuchsia_Controller
+
 [Fuchsia Emulator]: ../honeydew/tests/functional_tests/README.md#Fuchsia-Emulator
+
+[Multi Device Test]: test_multi_device/README.md

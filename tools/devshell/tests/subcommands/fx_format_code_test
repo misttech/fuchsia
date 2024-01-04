@@ -3,13 +3,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-### Test "contrib/format-code" script.
+### Test "format-code" script.
 
 readonly TESTDATA="data/fx_format_code_test"
 
 BT_FILE_DEPS=(
   "scripts/fx"
-  "tools/devshell/contrib/format-code"
+  "tools/devshell/format-code"
   "tools/devshell/lib/fx-cmd-locator.sh"
   "tools/devshell/lib/fx-optional-features.sh"
   "tools/devshell/lib/vars.sh"
@@ -20,23 +20,20 @@ BT_FILE_DEPS=(
   "tools/devshell/tests/subcommands/${TESTDATA}/gidl.gidl"
   "tools/devshell/tests/subcommands/${TESTDATA}/gn.gn"
   "tools/devshell/tests/subcommands/${TESTDATA}/gn.gni"
+  "tools/devshell/tests/subcommands/${TESTDATA}/json5.json5"
   "tools/devshell/tests/subcommands/${TESTDATA}/python3.py"
-  "tools/devshell/tests/subcommands/${TESTDATA}/no-extension"
-  "tools/devshell/tests/subcommands/${TESTDATA}/unknown-extension.blah"
 )
 
 MOCK_CLANG_DIR="prebuilt/third_party/clang/test"
-MOCK_GN="prebuilt/third_party/gn/test/gn"
+MOCK_SHAC="prebuilt/third_party/shac/shac"
 MOCK_PYTHON3_DIR="prebuilt/third_party/python3/test"
-MOCK_RUST_DIR="prebuilt/third_party/rust/test"
 BT_MOCKED_TOOLS=(
+  "scripts/fuchsia-vendored-python"
   "tools/devshell/list-build-artifacts"
   "tools/devshell/lib/platform.sh"
-  "prebuilt/third_party/vpython/vpython3"
   "${MOCK_CLANG_DIR}/bin/clang-format"
-  "${MOCK_GN}"
   "${MOCK_PYTHON3_DIR}/bin/python3"
-  "${MOCK_RUST_DIR}/bin/rustfmt"
+  "${MOCK_SHAC}"
   "${FUCHSIA_BUILD_DIR}/host_x64/cmc"
   "${FUCHSIA_BUILD_DIR}/host_x64/fidl-format"
   "${FUCHSIA_BUILD_DIR}/host_x64/gidl-format"
@@ -55,9 +52,8 @@ BT_SET_UP() {
   export PATH="${BT_TEMP_DIR}/bin:${PATH}"
   cat > "${BT_TEMP_DIR}/tools/devshell/lib/platform.sh.mock_side_effects" <<EOF
     readonly PREBUILT_CLANG_DIR=${BT_TEMP_DIR}/${MOCK_CLANG_DIR}
-    readonly PREBUILT_GN=${BT_TEMP_DIR}/${MOCK_GN}
+    readonly PREBUILT_SHAC=${BT_TEMP_DIR}/${MOCK_SHAC}
     readonly PREBUILT_PYTHON3_DIR=${BT_TEMP_DIR}/${MOCK_PYTHON3_DIR}
-    readonly PREBUILT_RUST_DIR=${BT_TEMP_DIR}/${MOCK_RUST_DIR}
 EOF
 }
 
@@ -80,33 +76,7 @@ TEST_fx-format-code-commands() {
   printf -v csfiles ",%s" "${files[@]}"
   BT_EXPECT "${fx}" format-code --verbose --files="${csfiles:1}" > "${out}"
   BT_EXPECT grep -q -E '"clang-format.*cplusplus.cc"' "${out}"
-  BT_EXPECT grep -q -E '"gn format.*gn.gn"' "${out}"
-  BT_EXPECT grep -q -E '"gn format.*gn.gni"' "${out}"
-  BT_EXPECT grep -q -E '"rustfmt.*rust.rs"' "${out}"
-  BT_EXPECT grep -q -E '"yapf.*python3.py"' "${out}"
-}
-
-# Ensure that the command fails if a file with no extension is specified.
-TEST_fx-format-code-no-extension() {
-  local out="${BT_TEMP_DIR}/_fx_format_code_output"
-  BT_ASSERT_FAIL "${fx}" format-code --files="${TESTDATA}/no-extension" 2> "${out}"
-  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${out}" "Unable to determine language"
-}
-
-# Ensure that the command fails if a file with an unsupported extension is
-# specified.
-TEST_fx-format-code-unknown-extension() {
-  local out="${BT_TEMP_DIR}/_fx_format_code_output"
-  BT_ASSERT_FAIL "${fx}" format-code --files="${TESTDATA}/unknown-extension.blah" 2> "${out}"
-  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${out}" "Unsupported extension"
-  local files=(
-    "${TESTDATA}/cplusplus.cc"
-    "${TESTDATA}/unknown-extension.blah"
-  )
-  local csfiles
-  printf -v csfiles ",%s" "${files[@]}"
-  BT_EXPECT "${fx}" format-code --verbose --files="${csfiles:1}" > "${out}"
-  BT_EXPECT grep -q -E '"clang-format.*cplusplus.cc"' "${out}"
+  BT_EXPECT grep -q -E '"shac fmt .*/rust.rs .*/gn.gn .*/gn.gni .*/python3.py"' "${out}"
 }
 
 # Ensure that buildable format commands are built when needed
@@ -117,10 +87,10 @@ TEST_fx-format-code-builds-required-commands() {
   local err="${BT_TEMP_DIR}/_fx_format_code_stderr"
   local files=(
     "${TESTDATA}/cplusplus.cc"
-    "${TESTDATA}/rust.rs"
     "${TESTDATA}/gidl.gidl"
     "${TESTDATA}/fidl.test.fidl"
     "${TESTDATA}/cml.cml"
+    "${TESTDATA}/json5.json5"
   )
   local csfiles
   printf -v csfiles ",%s" "${files[@]}"
@@ -131,9 +101,9 @@ TEST_fx-format-code-builds-required-commands() {
   # but this test verifies that they would be built.
   "${fx}" format-code --verbose --files="${csfiles:1}" > "${out}" 2> "${err}"
   BT_EXPECT grep -q -E '"clang-format.*cplusplus.cc"' "${out}"
-  BT_EXPECT grep -q -E '"rustfmt.*rust.rs"' "${out}"
   BT_EXPECT grep -q -E '"fidl-format not built; building now..."' "${err}"
   BT_EXPECT grep -q -E '"gidl-format not built; building now..."' "${err}"
+  BT_EXPECT grep -q -E '"formatjson5 not built; building now..."' "${err}"
   BT_EXPECT grep -q -E '"cmc not built; building now..."' "${err}"
 }
 

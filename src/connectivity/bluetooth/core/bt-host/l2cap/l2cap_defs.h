@@ -7,36 +7,38 @@
 
 // clang-format off
 
+#include <chrono>
 #include <cstdint>
 #include <limits>
 #include <string>
 
+#include <pw_chrono/system_clock.h>
+
 #include "src/connectivity/bluetooth/core/bt-host/common/macros.h"
-
-
-#include "lib/zx/time.h"
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/frame_headers.h"
 
 namespace bt::l2cap {
 
 // See Core Spec v5.0, Volume 3, Part A, Sec 8.6.2.1. Note that we assume there is no flush timeout
 // on the underlying logical link.
-static constexpr auto kErtmReceiverReadyPollTimerDuration = zx::sec(2);
-static_assert(kErtmReceiverReadyPollTimerDuration <= zx::msec(std::numeric_limits<uint16_t>::max()));
+static constexpr auto kErtmReceiverReadyPollTimerDuration = std::chrono::seconds(2);
+static_assert(kErtmReceiverReadyPollTimerDuration <= std::chrono::milliseconds(std::numeric_limits<uint16_t>::max()));
+static constexpr uint16_t kErtmReceiverReadyPollTimerMsecs = static_cast<uint16_t>(std::chrono::duration_cast<std::chrono::milliseconds>(kErtmReceiverReadyPollTimerDuration).count());
 
 // See Core Spec v5.0, Volume 3, Part A, Sec 8.6.2.1. Note that we assume there is no flush timeout
 // on the underlying logical link. If the link _does_ have a flush timeout, then our implementation
 // will be slower to trigger the monitor timeout than the specification recommends.
-static constexpr auto kErtmMonitorTimerDuration = zx::sec(12);
-static_assert(kErtmMonitorTimerDuration <= zx::msec(std::numeric_limits<uint16_t>::max()));
+static constexpr auto kErtmMonitorTimerDuration = std::chrono::seconds(12);
+static_assert(kErtmMonitorTimerDuration <= std::chrono::milliseconds(std::numeric_limits<uint16_t>::max()));
+static constexpr uint16_t kErtmMonitorTimerMsecs = static_cast<uint16_t>(std::chrono::duration_cast<std::chrono::milliseconds>(kErtmMonitorTimerDuration).count());
 
 // See Core Spec v5.0, Volume 3, Part A, Sec 6.2.1. This is the initial value of the timeout duration.
 // Although Signaling Channel packets are not sent as automatically flushable, Signaling Channel packets
 // may not receive a response for reasons other than packet loss (e.g. peer is slow to respond due to pairing).
 // As such, L2CAP uses the "at least double" back-off scheme to increase this timeout after retransmissions.
-static constexpr auto kSignalingChannelResponseTimeout = zx::sec(1);
-static_assert(kSignalingChannelResponseTimeout >= zx::sec(1));
-static_assert(kSignalingChannelResponseTimeout <= zx::sec(60));
+static constexpr auto kSignalingChannelResponseTimeout = std::chrono::seconds(1);
+static_assert(kSignalingChannelResponseTimeout >= std::chrono::seconds(1));
+static_assert(kSignalingChannelResponseTimeout <= std::chrono::seconds(60));
 
 // Selected so that total time between initial transmission and last retransmission timout is less
 // than 60 seconds when using the exponential back-off scheme.
@@ -45,9 +47,10 @@ static constexpr size_t kMaxSignalingChannelTransmissions = 5;
 // See Core Spec v5.0, Volume 3, Part A, Sec 6.2.2. This initial value is the only timeout duration
 // used because Signaling Channel packets are not to be sent as automatically flushable and thus
 // requests will not be retransmitted at the L2CAP level per its "at least double" back-off scheme.
-static constexpr auto kSignalingChannelExtendedResponseTimeout = zx::sec(60);
-static_assert(kSignalingChannelExtendedResponseTimeout >= zx::sec(60));
-static_assert(kSignalingChannelExtendedResponseTimeout <= zx::sec(300));
+static constexpr auto kSignalingChannelExtendedResponseTimeout = std::chrono::seconds(60);
+static_assert(kSignalingChannelExtendedResponseTimeout >= std::chrono::seconds(60));
+static_assert(kSignalingChannelExtendedResponseTimeout <= std::chrono::seconds(300));
+static constexpr pw::chrono::SystemClock::duration kPwSignalingChannelExtendedResponseTimeout = std::chrono::seconds(60);
 
 // L2CAP channel identifier uniquely identifies fixed and connection-oriented
 // channels over a logical link.
@@ -69,7 +72,6 @@ constexpr ChannelId kAMPTestManagerChannelId = 0x003F;
 constexpr ChannelId kATTChannelId = 0x0004;
 constexpr ChannelId kLESignalingChannelId = 0x0005;
 constexpr ChannelId kLESMPChannelId = 0x0006;
-
 
 // Range of dynamic channel identifiers; each logical link has its own set of
 // channel IDs (except for ACL-U and AMP-U, which share a namespace)
@@ -152,7 +154,7 @@ enum class RejectReason : uint16_t {
 enum class ConnectionResult : uint16_t {
   kSuccess = 0x0000,
   kPending = 0x0001,
-  kPSMNotSupported = 0x0002,
+  kPsmNotSupported = 0x0002,
   kSecurityBlock = 0x0003,
   kNoResources = 0x0004,
   kControllerNotSupported = 0x0005,  // for Create Channel only
@@ -178,12 +180,24 @@ enum class ConfigurationResult : uint16_t {
   kFlowSpecRejected = 0x0005,
 };
 
-enum class ChannelMode : uint8_t {
+// Channel modes available in a L2CAP_CONFIGURATION_REQ packet. These are not
+// the full set of possible channel modes, see CreditBasedFlowControlMode.
+enum class RetransmissionAndFlowControlMode : uint8_t {
   kBasic = 0x00,
   kRetransmission = 0x01,
   kFlowControl = 0x02,
   kEnhancedRetransmission = 0x03,
-  kStreaming = 0x04
+  kStreaming = 0x04,
+};
+
+// Channel modes defined by an associated channel establishment packet rather
+// than an L2CAP_CONFIGURATION_REQ packet. The values here are the signaling
+// packet code of the connection establishment request packet associated with
+// the mode. These are not the full set of possible channel modes, see
+// RetransmissionAndFlowControlMode.
+enum class CreditBasedFlowControlMode : uint8_t {
+  kLeCreditBasedFlowControl = 0x14,
+  kEnhancedCreditBasedFlowControl = 0x17,
 };
 
 enum class InformationType : uint16_t {
@@ -231,7 +245,7 @@ enum class ConnectionParameterUpdateResult : uint16_t {
 
 enum class LECreditBasedConnectionResult : uint16_t {
   kSuccess = 0x0000,
-  kPSMNotSupported = 0x0002,
+  kPsmNotSupported = 0x0002,
   kNoResources = 0x0004,
   kInsufficientAuthentication = 0x0005,
   kInsufficientAuthorization = 0x0006,
@@ -244,33 +258,36 @@ enum class LECreditBasedConnectionResult : uint16_t {
 
 // Type used for all Protocol and Service Multiplexer (PSM) identifiers,
 // including those dynamically-assigned/-obtained
-using PSM = uint16_t;
-constexpr PSM kInvalidPSM = 0x0000;
+using Psm = uint16_t;
+constexpr Psm kInvalidPsm = 0x0000;
+// The minimum PSM value in the dynamic range of PSMs.
+// Defined in 5.2, Vol 3, Part A, 4.2.
+constexpr Psm kMinDynamicPsm = 0x1001;
 
 // Well-known Protocol and Service Multiplexer values defined by the Bluetooth
 // SIG in Logical Link Control Assigned Numbers
 // https://www.bluetooth.com/specifications/assigned-numbers/logical-link-control
-constexpr PSM kSDP = 0x0001;
-constexpr PSM kRFCOMM = 0x0003;
-constexpr PSM kTCSBIN = 0x0005; // Telephony Control Specification
-constexpr PSM kTCSBINCordless = 0x0007;
-constexpr PSM kBNEP = 0x0009; // Bluetooth Network Encapsulation Protocol
-constexpr PSM kHIDControl = 0x0011; // Human Interface Device
-constexpr PSM kHIDInteerup = 0x0013; // Human Interface Device
-constexpr PSM kAVCTP = 0x0017; // Audio/Video Control Transport Protocol
-constexpr PSM kAVDTP = 0x0019; // Audio/Video Distribution Transport Protocol
-constexpr PSM kAVCTP_Browse = 0x001B; // Audio/Video Remote Control Profile (Browsing)
-constexpr PSM kATT = 0x001F; // ATT
-constexpr PSM k3DSP = 0x0021; // 3D Synchronization Profile
-constexpr PSM kLE_IPSP = 0x0023; // Internet Protocol Support Profile
-constexpr PSM kOTS = 0x0025; // Object Transfer Service
+constexpr Psm kSDP = 0x0001;
+constexpr Psm kRFCOMM = 0x0003;
+constexpr Psm kTCSBIN = 0x0005; // Telephony Control Specification
+constexpr Psm kTCSBINCordless = 0x0007;
+constexpr Psm kBNEP = 0x0009; // Bluetooth Network Encapsulation Protocol
+constexpr Psm kHIDControl = 0x0011; // Human Interface Device
+constexpr Psm kHIDInteerup = 0x0013; // Human Interface Device
+constexpr Psm kAVCTP = 0x0017; // Audio/Video Control Transport Protocol
+constexpr Psm kAVDTP = 0x0019; // Audio/Video Distribution Transport Protocol
+constexpr Psm kAVCTP_Browse = 0x001B; // Audio/Video Remote Control Profile (Browsing)
+constexpr Psm kATT = 0x001F; // ATT
+constexpr Psm k3DSP = 0x0021; // 3D Synchronization Profile
+constexpr Psm kLE_IPSP = 0x0023; // Internet Protocol Support Profile
+constexpr Psm kOTS = 0x0025; // Object Transfer Service
 
 // Convenience function for visualizing a PSM. Used for Inspect and logging.
 // Returns string formatted |psm| if not recognized.
-inline std::string PsmToString(l2cap::PSM psm) {
+inline std::string PsmToString(l2cap::Psm psm) {
   switch (psm) {
-    case kInvalidPSM:
-      return "InvalidPSM";
+    case kInvalidPsm:
+      return "InvalidPsm";
     case kSDP:
       return "SDP";
     case kRFCOMM:
@@ -376,7 +393,7 @@ struct FlushTimeoutOptionPayload {
 
 // Payload of Configuration Option (see Vol 3, Part A, Section 5.4)
 struct RetransmissionAndFlowControlOptionPayload {
-  ChannelMode mode;
+  RetransmissionAndFlowControlMode mode;
   uint8_t tx_window_size;
   uint8_t max_transmit;
   uint16_t rtx_timeout;

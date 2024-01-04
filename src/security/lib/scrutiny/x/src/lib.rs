@@ -4,6 +4,7 @@
 
 pub(crate) mod api;
 pub(crate) mod blob;
+pub(crate) mod bootfs;
 pub(crate) mod data_source;
 pub(crate) mod hash;
 pub(crate) mod package;
@@ -16,7 +17,11 @@ pub(crate) mod zbi;
 // Directly expose all API types from top-level crate.
 pub use api::*;
 
-pub fn scrutiny(product_bundle_path: Box<dyn Path>) -> Result<Box<dyn Scrutiny>, scrutiny::Error> {
-    let scrutiny: Box<dyn Scrutiny> = Box::new(scrutiny::Scrutiny::new(product_bundle_path)?);
+pub fn scrutiny(
+    product_bundle_path: Box<dyn Path>,
+    variant: SystemVariant,
+) -> Result<Box<dyn Scrutiny>, scrutiny::Error> {
+    let scrutiny: Box<dyn Scrutiny> =
+        Box::new(scrutiny::Scrutiny::new(product_bundle_path, variant)?);
     Ok(scrutiny)
 }

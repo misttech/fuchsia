@@ -12,9 +12,9 @@ driver_bind_rules("ahci_bind") {
   tests = "tests.json"
   deps = [
     "//src/devices/bind/fuchsia.acpi",
-    "//src/devices/bind/fuchsia.hardware.sysmem",
     "//src/devices/bind/fuchsia.pci",
     "//src/devices/bind/fuchsia.pci.massstorage",
+    "//src/devices/bind/fuchsia.sysmem",
   ]
 }
 fuchsia_driver("ahci-driver") {
@@ -34,6 +34,11 @@ fuchsia_driver_component("ahci") {
   deps = [ ":ahci-driver" ]
   info = "ahci-info.json"
   manifest = "meta/ahci.cml"
+}
+
+fuchsia_driver_package("package") {
+  package_name = "ahci"
+  driver_components = [ ":ahci" ]
 }
 
 group("tests") {
@@ -88,7 +93,7 @@ source_set("shared") {
   deps = [
     ":ahci_bind",
     "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
-    "//src/devices/block/lib/common",
+    "//src/devices/block/lib/common:common-dfv1",
     "//src/devices/lib/mmio",
     "//src/devices/pci/lib/device-protocol-pci",
     "//src/devices/pci/lib/pci",

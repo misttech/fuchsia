@@ -2,12 +2,29 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# C and Assembly parts of ring 0.16.9
+# C and Assembly parts of ring 0.16.16
 #
 # More advanced usages of might require more sophisticated
 # build rules
 
-ring_crate = "../../vendor/ring-0.16.12"
+import("//build/licenses/license.gni")
+
+ring_crate = "../../vendor/ring-0.16.16"
+
+license("ring_license") {
+  public_package_name = "ring"
+  license_files = [ "${ring_crate}/LICENSE" ]
+}
+
+license("fiat_license") {
+  public_package_name = "fiat"
+  license_files = [ "${ring_crate}/third_party/fiat/LICENSE" ]
+}
+
+applicable_licenses = [
+  ":ring_license",
+  ":fiat_license",
+]
 
 config("ring-config") {
   if (current_cpu == "riscv64") {
@@ -34,25 +51,24 @@ static_library("ring-core") {
 
   deps = [
     # c libs
+    ":ring-aes",
     ":ring-crypto",
     ":ring-curve25519",
     ":ring-ecp-nistz",
     ":ring-ecp-nistz256",
-    ":ring-gcm",
-    ":ring-generic",
     ":ring-gfp-p256",
     ":ring-gfp-p384",
     ":ring-limbs",
     ":ring-mem",
     ":ring-montgomery",
     ":ring-montgomery-inv",
+    ":ring-poly1305",
 
     # asm
-    ":ring-aes",
+    ":ring-aesni-gcm",
     ":ring-chacha",
     ":ring-ghash",
     ":ring-mont-elf",
-    ":ring-poly1305",
     ":ring-sha256",
     ":ring-sha512",
     ":ring-vpaes",
@@ -62,7 +78,6 @@ static_library("ring-core") {
     deps += [
       # asm
       ":ring-aesni",
-      ":ring-aesni-gcm",
       ":ring-cpu-intel",
       ":ring-mont5-elf",
       ":ring-p256",
@@ -79,12 +94,11 @@ static_library("ring-aes") {
   include_dirs = [ "$ring_crate/include" ]
   visibility = [ ":*" ]
 
-  if (current_cpu == "x64" && !is_mac) {
-    sources = [ "$ring_crate/pregenerated/aes-x86_64-elf.S" ]
-  } else if (current_cpu == "x64" && is_mac) {
-    sources = [ "$ring_crate/pregenerated/aes-x86_64-macosx.S" ]
-  } else if (current_cpu == "arm64") {
-    sources = [ "$ring_crate/pregenerated/aesv8-armx-linux64.S" ]
+  sources = [ "$ring_crate/crypto/fipsmodule/aes/aes_nohw.c" ]
+  if (current_cpu == "arm64" && !is_mac) {
+    sources += [ "$ring_crate/pregenerated/aesv8-armx-linux64.S" ]
+  } else if (current_cpu == "arm64" && is_mac) {
+    sources += [ "$ring_crate/pregenerated/aesv8-armx-ios64.S" ]
   }
 }
 
@@ -108,8 +122,10 @@ static_library("ring-vpaes") {
     sources = [ "$ring_crate/pregenerated/vpaes-x86_64-elf.S" ]
   } else if (current_cpu == "x64" && is_mac) {
     sources = [ "$ring_crate/pregenerated/vpaes-x86_64-macosx.S" ]
-  } else if (current_cpu == "arm64") {
+  } else if (current_cpu == "arm64" && !is_mac) {
     sources = [ "$ring_crate/pregenerated/vpaes-armv8-linux64.S" ]
+  } else if (current_cpu == "arm64" && is_mac) {
+    sources = [ "$ring_crate/pregenerated/vpaes-armv8-ios64.S" ]
   }
 }
 
@@ -122,8 +138,10 @@ static_library("ring-mont-elf") {
     sources = [ "$ring_crate/pregenerated/x86_64-mont-elf.S" ]
   } else if (current_cpu == "x64" && is_mac) {
     sources = [ "$ring_crate/pregenerated/x86_64-mont-macosx.S" ]
-  } else if (current_cpu == "arm64") {
+  } else if (current_cpu == "arm64" && !is_mac) {
     sources = [ "$ring_crate/pregenerated/armv8-mont-linux64.S" ]
+  } else if (current_cpu == "arm64" && is_mac) {
+    sources = [ "$ring_crate/pregenerated/armv8-mont-ios64.S" ]
   }
 }
 
@@ -149,8 +167,10 @@ static_library("ring-chacha") {
     sources = [ "$ring_crate/pregenerated/chacha-x86_64-elf.S" ]
   } else if (current_cpu == "x64" && is_mac) {
     sources = [ "$ring_crate/pregenerated/chacha-x86_64-macosx.S" ]
-  } else if (current_cpu == "arm64") {
+  } else if (current_cpu == "arm64" && !is_mac) {
     sources = [ "$ring_crate/pregenerated/chacha-armv8-linux64.S" ]
+  } else if (current_cpu == "arm64" && is_mac) {
+    sources = [ "$ring_crate/pregenerated/chacha-armv8-ios64.S" ]
   }
 }
 
@@ -166,14 +186,18 @@ static_library("ring-p256") {
 }
 
 static_library("ring-aesni-gcm") {
+  configs += [ ":ring-config" ]
+  include_dirs = [ "$ring_crate/include" ]
   visibility = [ ":*" ]
 
   if (current_cpu == "x64" && !is_mac) {
     sources = [ "$ring_crate/pregenerated/aesni-gcm-x86_64-elf.S" ]
   } else if (current_cpu == "x64" && is_mac) {
     sources = [ "$ring_crate/pregenerated/aesni-gcm-x86_64-macosx.S" ]
-  } else if (current_cpu == "arm64") {
+  } else if (current_cpu == "arm64" && !is_mac) {
     sources = [ "$ring_crate/pregenerated/aesv8-armx-linux64.S" ]
+  } else if (current_cpu == "arm64" && !is_mac) {
+    sources = [ "$ring_crate/pregenerated/aesv8-armx-ios64.S" ]
   }
 }
 
@@ -186,10 +210,15 @@ static_library("ring-ghash") {
     sources = [ "$ring_crate/pregenerated/ghash-x86_64-elf.S" ]
   } else if (current_cpu == "x64" && is_mac) {
     sources = [ "$ring_crate/pregenerated/ghash-x86_64-macosx.S" ]
-  } else if (current_cpu == "arm64") {
+  } else if (current_cpu == "arm64" && !is_mac) {
     sources = [
       "$ring_crate/pregenerated/ghash-neon-armv8-linux64.S",
       "$ring_crate/pregenerated/ghashv8-armx-linux64.S",
+    ]
+  } else if (current_cpu == "arm64" && is_mac) {
+    sources = [
+      "$ring_crate/pregenerated/ghash-neon-armv8-ios64.S",
+      "$ring_crate/pregenerated/ghashv8-armx-ios64.S",
     ]
   }
 }
@@ -199,12 +228,14 @@ static_library("ring-poly1305") {
   include_dirs = [ "$ring_crate/include" ]
   configs += [ ":ring-config" ]
 
-  if (current_cpu == "x64" && !is_mac) {
-    sources = [ "$ring_crate/pregenerated/poly1305-x86_64-elf.S" ]
-  } else if (current_cpu == "x64" && is_mac) {
-    sources = [ "$ring_crate/pregenerated/poly1305-x86_64-macosx.S" ]
+  sources = [ "$ring_crate/crypto/poly1305/poly1305.c" ]
+  if (current_cpu == "x64") {
+    sources += [ "$ring_crate/crypto/poly1305/poly1305_vec.c" ]
   } else if (current_cpu == "arm64") {
-    sources = [ "$ring_crate/pregenerated/poly1305-armv8-linux64.S" ]
+    sources += [
+      "$ring_crate/crypto/poly1305/poly1305_arm.c",
+      "$ring_crate/crypto/poly1305/poly1305_arm_asm.S",
+    ]
   }
 }
 
@@ -217,8 +248,10 @@ static_library("ring-sha512") {
     sources = [ "$ring_crate/pregenerated/sha512-x86_64-elf.S" ]
   } else if (current_cpu == "x64" && is_mac) {
     sources = [ "$ring_crate/pregenerated/sha512-x86_64-macosx.S" ]
-  } else if (current_cpu == "arm64") {
+  } else if (current_cpu == "arm64" && !is_mac) {
     sources = [ "$ring_crate/pregenerated/sha512-armv8-linux64.S" ]
+  } else if (current_cpu == "arm64" && is_mac) {
+    sources = [ "$ring_crate/pregenerated/sha512-armv8-ios64.S" ]
   }
 }
 
@@ -231,17 +264,11 @@ static_library("ring-sha256") {
     sources = [ "$ring_crate/pregenerated/sha256-x86_64-elf.S" ]
   } else if (current_cpu == "x64" && is_mac) {
     sources = [ "$ring_crate/pregenerated/sha256-x86_64-macosx.S" ]
-  } else if (current_cpu == "arm64") {
+  } else if (current_cpu == "arm64" && !is_mac) {
     sources = [ "$ring_crate/pregenerated/sha256-armv8-linux64.S" ]
+  } else if (current_cpu == "arm64" && is_mac) {
+    sources = [ "$ring_crate/pregenerated/sha256-armv8-ios64.S" ]
   }
-}
-
-static_library("ring-generic") {
-  visibility = [ ":*" ]
-  include_dirs = [ "$ring_crate/include" ]
-  configs += [ ":ring-config" ]
-
-  sources = [ "$ring_crate/crypto/fipsmodule/bn/generic.c" ]
 }
 
 static_library("ring-montgomery") {
@@ -282,8 +309,10 @@ static_library("ring-ecp-nistz256") {
   configs += [ ":ring-config" ]
 
   sources = [ "$ring_crate/crypto/fipsmodule/ec/ecp_nistz256.c" ]
-  if (current_cpu == "arm64") {
+  if (current_cpu == "arm64" && !is_mac) {
     sources += [ "$ring_crate/pregenerated/ecp_nistz256-armv8-linux64.S" ]
+  } else if (current_cpu == "arm64" && is_mac) {
+    sources += [ "$ring_crate/pregenerated/ecp_nistz256-armv8-ios64.S" ]
   }
 }
 
@@ -319,20 +348,12 @@ static_library("ring-mem") {
   sources = [ "$ring_crate/crypto/mem.c" ]
 }
 
-static_library("ring-gcm") {
-  visibility = [ ":*" ]
-  include_dirs = [ "$ring_crate/include" ]
-  configs += [ ":ring-config" ]
-
-  sources = [ "$ring_crate/crypto/fipsmodule/modes/gcm.c" ]
-}
-
 static_library("ring-curve25519") {
   visibility = [ ":*" ]
   include_dirs = [ "$ring_crate/include" ]
   configs += [ ":ring-config" ]
 
-  sources = [ "$ring_crate/third_party/fiat/curve25519.c" ]
+  sources = [ "$ring_crate/crypto/curve25519/curve25519.c" ]
 }
 
 static_library("ring-cpu-intel") {

@@ -41,52 +41,64 @@ static const clock_id_t clock_ids[] = {
     {g12b_clk::G12B_CLK_SYS_CPUB_CLK_DIV16},
     {g12b_clk::G12B_CLK_DOS_GCLK_VDEC},
     {g12b_clk::G12B_CLK_DOS},
+    {g12b_clk::G12B_CLK_AUDIO},
+    {g12b_clk::G12B_CLK_EMMC_C},
     {g12b_clk::CLK_SYS_CPU_BIG_CLK},
     {g12b_clk::CLK_SYS_CPU_LITTLE_CLK},
+    {g12b_clk::CLK_HIFI_PLL},
 };
 // clang-format on
 
-static const std::vector<fpbus::Metadata> clock_metadata{
-    {{
-        .type = DEVICE_METADATA_CLOCK_IDS,
-        .data =
-            std::vector<uint8_t>(reinterpret_cast<const uint8_t*>(clock_ids),
-                                 reinterpret_cast<const uint8_t*>(clock_ids) + sizeof(clock_ids)),
-    }},
-};
-
-static fpbus::Node clk_dev = []() {
-  fpbus::Node dev = {};
-  dev.name() = "vim3-clk";
-  dev.vid() = PDEV_VID_AMLOGIC;
-  dev.pid() = PDEV_PID_AMLOGIC_A311D;
-  dev.did() = PDEV_DID_AMLOGIC_G12B_CLK;
-  dev.mmio() = clk_mmios;
-  dev.metadata() = clock_metadata;
-  return dev;
-}();
-
 zx_status_t Vim3::ClkInit() {
+  fuchsia_hardware_clockimpl::wire::InitMetadata metadata;
+  metadata.steps = fidl::VectorView<fuchsia_hardware_clockimpl::wire::InitStep>::FromExternal(
+      clock_init_steps_.data(), clock_init_steps_.size());
+
+  const fit::result encoded_metadata = fidl::Persist(metadata);
+  if (!encoded_metadata.is_ok()) {
+    zxlogf(ERROR, "Failed to encode clock init metadata: %s",
+           encoded_metadata.error_value().FormatDescription().c_str());
+    return encoded_metadata.error_value().status();
+  }
+
+  const std::vector<fpbus::Metadata> clock_metadata{
+      {{
+          .type = DEVICE_METADATA_CLOCK_IDS,
+          .data =
+              std::vector<uint8_t>(reinterpret_cast<const uint8_t*>(clock_ids),
+                                   reinterpret_cast<const uint8_t*>(clock_ids) + sizeof(clock_ids)),
+      }},
+      {{
+          .type = DEVICE_METADATA_CLOCK_INIT,
+          .data = encoded_metadata.value(),
+      }},
+  };
+
+  const fpbus::Node clk_dev = [&clock_metadata]() {
+    fpbus::Node dev = {};
+    dev.name() = "vim3-clk";
+    dev.vid() = PDEV_VID_AMLOGIC;
+    dev.pid() = PDEV_PID_AMLOGIC_A311D;
+    dev.did() = PDEV_DID_AMLOGIC_G12B_CLK;
+    dev.mmio() = clk_mmios;
+    dev.metadata() = clock_metadata;
+    return dev;
+  }();
+
   fidl::Arena fidl_arena;
   fdf::Arena arena('CLK_');
-  auto result = pbus_.buffer(arena)->ProtocolNodeAdd(ZX_PROTOCOL_CLOCK_IMPL,
-                                                     fidl::ToWire(fidl_arena, clk_dev));
+  auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, clk_dev));
   if (!result.ok()) {
-    zxlogf(ERROR, "Clk(clk_dev)Init: ProtocolNodeAdd Clk(clk_dev) request failed: %s",
+    zxlogf(ERROR, "Clk(clk_dev)Init: NodeAdd Clk(clk_dev) request failed: %s",
            result.FormatDescription().data());
     return result.status();
   }
   if (result->is_error()) {
-    zxlogf(ERROR, "Clk(clk_dev)Init: ProtocolNodeAdd Clk(clk_dev) failed: %s",
+    zxlogf(ERROR, "Clk(clk_dev)Init: NodeAdd Clk(clk_dev) failed: %s",
            zx_status_get_string(result->error_value()));
     return result->error_value();
   }
 
-  clk_impl_ = ddk::ClockImplProtocolClient(parent());
-  if (!clk_impl_.is_valid()) {
-    zxlogf(ERROR, "%s: ClockImplProtocolClient failed", __func__);
-    return ZX_ERR_INTERNAL;
-  }
   return ZX_OK;
 }
 }  // namespace vim3

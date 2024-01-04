@@ -11,7 +11,7 @@
 
 #include "fuchsia/bluetooth/gatt2/cpp/fidl.h"
 #include "gtest/gtest.h"
-#include "src/connectivity/bluetooth/core/bt-host/gatt/fake_layer_test.h"
+#include "src/connectivity/bluetooth/core/bt-host/fidl/fake_gatt_fixture.h"
 #include "src/connectivity/bluetooth/core/bt-host/gatt/remote_service.h"
 #include "src/connectivity/bluetooth/core/bt-host/testing/test_helpers.h"
 
@@ -28,7 +28,7 @@ const bt::UUID kServiceUuid(uint16_t{0x180D});
 const bt::UUID kCharacteristicUuid(uint16_t{0x180E});
 const bt::UUID kDescriptorUuid(uint16_t{0x180F});
 
-class Gatt2RemoteServiceServerTest : public bt::gatt::testing::FakeLayerTest {
+class Gatt2RemoteServiceServerTest : public bt::fidl::testing::FakeGattFixture {
  public:
   Gatt2RemoteServiceServerTest() = default;
   ~Gatt2RemoteServiceServerTest() override = default;
@@ -53,8 +53,10 @@ class Gatt2RemoteServiceServerTest : public bt::gatt::testing::FakeLayerTest {
     // so that write requests sent during RemoteService::ShutDown() are ignored.
     fake_client()->set_write_request_callback({});
 
-    bt::gatt::testing::FakeLayerTest::TearDown();
+    bt::fidl::testing::FakeGattFixture::TearDown();
   }
+
+  pw::async::HeapDispatcher& heap_dispatcher() { return heap_dispatcher_; }
 
  protected:
   const bt::gatt::testing::FakeClient::WeakPtr& fake_client() const {
@@ -73,6 +75,8 @@ class Gatt2RemoteServiceServerTest : public bt::gatt::testing::FakeLayerTest {
   fbg::RemoteServicePtr proxy_;
   bt::gatt::RemoteService::WeakPtr service_;
   bt::gatt::testing::FakeClient::WeakPtr fake_client_;
+  pw::async::fuchsia::FuchsiaDispatcher pw_dispatcher_{dispatcher()};
+  pw::async::HeapDispatcher heap_dispatcher_{pw_dispatcher_};
 
   BT_DISALLOW_COPY_ASSIGN_AND_MOVE(Gatt2RemoteServiceServerTest);
 };
@@ -295,10 +299,13 @@ TEST_F(Gatt2RemoteServiceServerTest, ReadByTypeTooManyResults) {
         }
 
         // Dispatch callback to prevent recursing too deep and breaking the stack.
-        async::PostTask(dispatcher(), [start, cb = std::move(callback), &value = value]() {
-          std::vector<bt::gatt::Client::ReadByTypeValue> values = {
-              {start, value.view(), /*maybe_truncated=*/false}};
-          cb(fit::ok(values));
+        heap_dispatcher().Post([start, cb = std::move(callback), &value = value](
+                                   pw::async::Context /*ctx*/, pw::Status status) {
+          if (status.ok()) {
+            std::vector<bt::gatt::Client::ReadByTypeValue> values = {
+                {start, value.view(), /*maybe_truncated=*/false}};
+            cb(fit::ok(values));
+          }
         });
       });
 

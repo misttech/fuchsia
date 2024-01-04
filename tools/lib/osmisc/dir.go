@@ -11,6 +11,15 @@ import (
 	"path/filepath"
 )
 
+// UnknownFilesMode is a mode that describes how to deal with
+// unknown file types.
+type UnknownFilesMode int
+
+const (
+	RaiseError UnknownFilesMode = iota
+	SkipUnknownFiles
+)
+
 // IsDir determines whether a given path exists *and* is a directory. It will
 // return false (with no error) if the path does not exist. It will return true
 // if the path exists, even if the user doesn't have permission to enter and
@@ -38,8 +47,14 @@ func DirIsEmpty(dir string) (bool, error) {
 }
 
 // CopyDir copies the src directory into the target directory, preserving file
-// and directory modes.
-func CopyDir(srcDir, dstDir string) error {
+// and directory modes. If skipUnknown is true, it returns the list of skipped files.
+func CopyDir(srcDir, dstDir string, unknownFilesMode UnknownFilesMode) ([]string, error) {
+	var skippedFiles []string
+	// Requires srcDir to be an absolute path given that the code below (filepath.Rel and
+	// filepath.EvalSymlinks) are not going to work as expected with relative paths.
+	if !filepath.IsAbs(srcDir) {
+		return skippedFiles, fmt.Errorf("CopyDir wants %s argument to be absolute, got relative path.", srcDir)
+	}
 	err := filepath.Walk(srcDir, func(srcPath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -64,20 +79,33 @@ func CopyDir(srcDir, dstDir string) error {
 			}
 
 		case os.ModeSymlink:
-			srcLink, err := os.Readlink(srcPath)
-			if err != nil {
-				return err
+			srcLink, err := filepath.EvalSymlinks(srcPath)
+			if errors.Is(err, os.ErrNotExist) {
+				switch unknownFilesMode {
+				case RaiseError:
+					return fmt.Errorf("symlink %s: link %s does not exist", srcPath, srcLink)
+				case SkipUnknownFiles:
+					skippedFiles = append(skippedFiles, srcPath)
+					return nil
+				}
+			} else if err != nil {
+				return fmt.Errorf("filepath.EvalSymlinks %s: %w", srcPath, err)
 			}
 			if err := os.Symlink(srcLink, dstPath); err != nil {
-				return err
+				return fmt.Errorf("os.Symlink %s, %s: %w", srcLink, dstPath, err)
 			}
 
 		default:
-			return fmt.Errorf("unknown file type for %s", srcPath)
+			switch unknownFilesMode {
+			case RaiseError:
+				return fmt.Errorf("unknown file type for %s", srcPath)
+			case SkipUnknownFiles:
+				skippedFiles = append(skippedFiles, srcPath)
+			}
 		}
 
 		return nil
 	})
 
-	return err
+	return skippedFiles, err
 }

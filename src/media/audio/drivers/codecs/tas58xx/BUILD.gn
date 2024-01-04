@@ -16,8 +16,9 @@ driver_bind_rules("ti_tas58xx-bind") {
   # fragments for composite bind rules.
   disable_fragment_gen = true
   deps = [
-    "//src/devices/bind/fuchsia.hardware.gpio",
+    "//src/devices/bind/fuchsia.gpio",
     "//src/devices/bind/fuchsia.i2c",
+    "//src/devices/bind/fuchsia.platform",
     "//src/devices/bind/fuchsia.ti.platform",
   ]
 }
@@ -34,7 +35,7 @@ fuchsia_driver("tas58xx-driver") {
   ]
   deps = [
     ":ti_tas58xx-bind",
-    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
     "//sdk/lib/sys/inspect/cpp",
     "//src/devices/i2c/lib/device-protocol-i2c-channel",
     "//src/devices/lib/driver",
@@ -57,6 +58,11 @@ fuchsia_driver_component("tas58xx") {
   manifest = "meta/tas58xx.cml"
 }
 
+fuchsia_driver_package("package") {
+  package_name = "tas58xx"
+  driver_components = [ ":tas58xx" ]
+}
+
 test("tas58xx-test") {
   output_name = "tas58xx-test"
   configs += [ "//build/config:all_source" ]
@@ -67,8 +73,8 @@ test("tas58xx-test") {
   ]
   deps = [
     ":ti_tas58xx-bind",
-    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
+    "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_cpp",
     "//sdk/lib/async_patterns/testing/cpp",
     "//sdk/lib/inspect/testing/cpp:zxtest",
     "//sdk/lib/sys/inspect/cpp",

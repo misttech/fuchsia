@@ -83,6 +83,26 @@ config("compiler") {
                                 []),
                     root_build_dir)
 
+    # When linking C++ runtime libraries into Rust binaries, we should use
+    # the correct multilib variant.
+    #
+    # TODO(fxbug.dev/95670): Rather then hardcoding the directory names here,
+    # these should ideally come from runtime.json.
+    _multilib_dir = ""
+    if (toolchain_variant.tags + [ "asan" ] - [ "asan" ] !=
+        toolchain_variant.tags) {
+      _multilib_dir = "/asan+noexcept"
+    } else if (toolchain_variant.tags + [ "hwasan" ] - [ "hwasan" ] !=
+               toolchain_variant.tags) {
+      _multilib_dir = "/hwasan+noexcept"
+    } else {
+      _multilib_dir = "/noexcept"
+    }
+
+    # Which libc++ to link:
+    _libcxx_dir =
+        "${rebased_clang_prefix}/../lib/${current_target_tuple}${_multilib_dir}"
+
     rustflags = [
       "-L",
       rebase_path(rust_sysroot_dir, root_build_dir) + "/lib",
@@ -92,13 +112,16 @@ config("compiler") {
       # These could alternatively come from clang's '--print-search-dirs', but that would require an
       # exec_script and post-processing of the output or a JSON file generated during the toolchain
       # build.
-      "-Clink-arg=-L" + rebased_clang_prefix + "/../lib/" +
-          current_target_tuple,
-      "-Clink-arg=-L" + _clang_resource_dir + "/lib/" + current_target_tuple,
+      "-Clink-arg=-L${_libcxx_dir}",
+      "-Clink-arg=-L${_clang_resource_dir}/lib/${current_target_tuple}",
       "-Clink-arg=--pack-dyn-relocs=relr",
       "-Clink-arg=-dynamic-linker=ld.so.1",
       "-Clink-arg=--icf=all",
     ]
+
+    if (rust_rbe_enable) {
+      rustflags += [ "--remote-flag=--cxx-stdlibdir=${_libcxx_dir}" ]
+    }
 
     # TODO(fxbug.dev/53078): Eventually the default in the compler driver.
     rustflags += [ "-Clink-arg=-zrel" ]
@@ -106,9 +129,11 @@ config("compiler") {
 }
 
 config("compiler_sysroot") {
-  cflags = [ "--sysroot=" + rebase_path(sysroot, root_build_dir) ]
-  asmflags = cflags
-  ldflags = cflags
+  if (defined(sysroot) && sysroot != "") {
+    cflags = [ "--sysroot=" + rebase_path(sysroot, root_build_dir) ]
+    asmflags = cflags
+    ldflags = cflags
+  }
 }
 
 config("compiler_target") {
@@ -118,9 +143,15 @@ config("compiler_target") {
 }
 
 config("compiler_fuchsia_api_level") {
-  cflags = [ "-ffuchsia-api-level=${platform_version.clang_fuchsia_api_level}" ]
-  asmflags = cflags
-  ldflags = cflags
+  if (is_gcc || !is_fuchsia) {
+    defines =
+        [ "__Fuchsia_API_level__=${platform_version.clang_fuchsia_api_level}" ]
+  } else {
+    cflags =
+        [ "-ffuchsia-api-level=${platform_version.clang_fuchsia_api_level}" ]
+    asmflags = cflags
+    ldflags = cflags
+  }
 }
 
 config("shared_library_config") {

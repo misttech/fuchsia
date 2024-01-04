@@ -34,7 +34,7 @@ fuchsia_driver("zxcrypt-driver") {
     "//sdk/banjo/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.block.encrypted:fuchsia.hardware.block.encrypted_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.block.encrypted:fuchsia.hardware.block.encrypted_cpp",
     "//sdk/lib/sys/inspect/cpp",
     "//src/devices/lib/driver",
     "//src/lib/ddk",
@@ -67,6 +67,9 @@ fuchsia_driver("zxcrypt-driver") {
     "//src/security/lib/zxcrypt:zxcrypt-client",
     "//src/security/lib/zxcrypt:zxcrypt-fdio",
   ]
+
+  # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
 }
 
 fuchsia_driver_component("zxcrypt") {
@@ -85,13 +88,13 @@ fuchsia_driver_package("package") {
 driver_bind_rules("bind") {
   rules = "zxcrypt.bind"
   bind_output = "zxcrypt.bindbc"
-  deps = [ "//src/devices/bind/fuchsia.hardware.block" ]
+  deps = [ "//src/devices/bind/fuchsia.block" ]
 }
 
 bind_test("zxcrypt-bind-test") {
   rules = "zxcrypt.bind"
   tests = "bind-tests.json"
-  deps = [ "//src/devices/bind/fuchsia.hardware.block" ]
+  deps = [ "//src/devices/bind/fuchsia.block" ]
 }
 
 test("device-manager-test-bin") {
@@ -108,11 +111,11 @@ test("device-manager-test-bin") {
     "//src/devices/block/drivers/zxcrypt",
     "//src/devices/testing/driver-integration-test-shim",
     "//src/lib/fxl",
-    "//src/lib/storage/ramdevice_client/cpp",
     "//src/lib/uuid",
     "//src/security/lib/fcrypto",
     "//src/security/lib/zxcrypt:zxcrypt-client",
     "//src/security/lib/zxcrypt:zxcrypt-dev",
+    "//src/storage/lib/ramdevice_client/cpp",
     "//zircon/system/ulib/zxtest",
   ]
 }

@@ -35,14 +35,14 @@
 
 #include "sdk/lib/syslog/cpp/macros.h"
 #include "src/lib/json_parser/json_parser.h"
-#include "src/lib/storage/fs_management/cpp/admin.h"
-#include "src/lib/storage/fs_management/cpp/format.h"
-#include "src/lib/storage/fs_management/cpp/fvm.h"
-#include "src/lib/storage/fs_management/cpp/mkfs_with_default.h"
-#include "src/lib/storage/fs_management/cpp/mount.h"
 #include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/fs_test/blobfs_test.h"
 #include "src/storage/fs_test/json_filesystem.h"
+#include "src/storage/lib/fs_management/cpp/admin.h"
+#include "src/storage/lib/fs_management/cpp/format.h"
+#include "src/storage/lib/fs_management/cpp/fvm.h"
+#include "src/storage/lib/fs_management/cpp/mkfs_with_default.h"
+#include "src/storage/lib/fs_management/cpp/mount.h"
 #include "src/storage/testing/fvm.h"
 
 namespace fs_test {
@@ -439,8 +439,7 @@ std::vector<TestFilesystemOptions> AllTestFilesystems() {
                                                .use_fvm = false,
                                                .device_block_size = 512,
                                                .device_block_count = 196'608,
-                                               .filesystem = filesystem.get(),
-                                               .allow_delivery_blobs = false});
+                                               .filesystem = filesystem.get()});
     } else {
       for (rapidjson::SizeType i = 0; i < iter->value.Size(); ++i) {
         const auto& opt = iter->value[i];
@@ -452,7 +451,6 @@ std::vector<TestFilesystemOptions> AllTestFilesystems() {
             .device_block_count = ConfigGetOrDefault<uint64_t>(opt, "device_block_count", 196'608),
             .fvm_slice_size = 32'768,
             .filesystem = filesystem.get(),
-            .allow_delivery_blobs = ConfigGetOrDefault<bool>(opt, "allow_delivery_blobs", false),
         });
       }
     }
@@ -568,6 +566,12 @@ class BlobfsInstance : public FilesystemInstance {
   void Reset() override {
     binding_.Reset();
     fs_.reset();
+  }
+
+  std::string GetMoniker() const override {
+    return component_.collection_name().has_value()
+               ? *component_.collection_name() + ":" + component_.child_name()
+               : component_.child_name();
   }
 
  private:

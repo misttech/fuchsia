@@ -2,12 +2,36 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_zircon::{self as zx, Task};
+use crate::{
+    mm::MemoryAccessorExt,
+    signals::{RunState, SignalEvent},
+    task::{ClockId, CurrentTask, TimerId},
+    time::utc::utc_now,
+};
+use fuchsia_inspect_contrib::profile_duration;
+use fuchsia_zircon::{
+    Task, {self as zx},
+};
+use starnix_logging::{log_trace, not_implemented};
 use starnix_sync::{InterruptibleEvent, WakeReason};
-
-use crate::{mm::MemoryAccessorExt, signals::RunState, syscalls::*, task::*, time::utc::*};
+use starnix_sync::{Locked, Unlocked};
+use starnix_uapi::{
+    errno, error,
+    errors::{Errno, EINTR},
+    from_status_like_fdio, itimerspec, itimerval, pid_t, sigevent,
+    time::{
+        duration_from_timespec, duration_to_scheduler_clock, time_from_timespec,
+        timespec_from_duration, timespec_is_zero, timeval_from_time, NANOS_PER_SECOND,
+    },
+    timespec, timeval, timezone, tms, uapi,
+    user_address::UserRef,
+    CLOCK_BOOTTIME, CLOCK_BOOTTIME_ALARM, CLOCK_MONOTONIC, CLOCK_MONOTONIC_COARSE,
+    CLOCK_MONOTONIC_RAW, CLOCK_PROCESS_CPUTIME_ID, CLOCK_REALTIME, CLOCK_REALTIME_ALARM,
+    CLOCK_REALTIME_COARSE, CLOCK_TAI, CLOCK_THREAD_CPUTIME_ID, MAX_CLOCKS, TIMER_ABSTIME,
+};
 
 pub fn sys_clock_getres(
+    _locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     which_clock: i32,
     tp_addr: UserRef<timespec>,
@@ -41,20 +65,32 @@ pub fn sys_clock_getres(
 }
 
 pub fn sys_clock_gettime(
+    _locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     which_clock: i32,
     tp_addr: UserRef<timespec>,
 ) -> Result<(), Errno> {
     let nanos = if which_clock < 0 {
+        profile_duration!("GetDynamicClock");
         get_dynamic_clock(current_task, which_clock)?
     } else {
         match which_clock as u32 {
-            CLOCK_REALTIME | CLOCK_REALTIME_COARSE => utc_now().into_nanos(),
+            CLOCK_REALTIME | CLOCK_REALTIME_COARSE => {
+                profile_duration!("GetUtcTime");
+                utc_now().into_nanos()
+            }
             CLOCK_MONOTONIC | CLOCK_MONOTONIC_COARSE | CLOCK_MONOTONIC_RAW | CLOCK_BOOTTIME => {
+                profile_duration!("GetMonotonic");
                 zx::Time::get_monotonic().into_nanos()
             }
-            CLOCK_THREAD_CPUTIME_ID => get_thread_cpu_time(current_task, current_task.id)?,
-            CLOCK_PROCESS_CPUTIME_ID => get_process_cpu_time(current_task, current_task.id)?,
+            CLOCK_THREAD_CPUTIME_ID => {
+                profile_duration!("GetThreadCpuTime");
+                get_thread_cpu_time(current_task, current_task.id)?
+            }
+            CLOCK_PROCESS_CPUTIME_ID => {
+                profile_duration!("GetProcessCpuTime");
+                get_process_cpu_time(current_task, current_task.id)?
+            }
             _ => return error!(EINVAL),
         }
     };
@@ -64,6 +100,7 @@ pub fn sys_clock_gettime(
 }
 
 pub fn sys_gettimeofday(
+    _locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     user_tv: UserRef<timeval>,
     user_tz: UserRef<timezone>,
@@ -79,8 +116,9 @@ pub fn sys_gettimeofday(
 }
 
 pub fn sys_clock_nanosleep(
+    _locked: &mut Locked<'_, Unlocked>,
     current_task: &mut CurrentTask,
-    which_clock: uapi::__kernel_clockid_t,
+    which_clock: ClockId,
     flags: u32,
     user_request: UserRef<timespec>,
     user_remaining: UserRef<timespec>,
@@ -98,8 +136,16 @@ pub fn sys_clock_nanosleep(
     // timers accordingly.
     match which_clock {
         CLOCK_REALTIME | CLOCK_MONOTONIC => {}
-        CLOCK_TAI | CLOCK_BOOTTIME | CLOCK_PROCESS_CPUTIME_ID => {
-            not_implemented!("clock_nanosleep, clock {:?}, flags {:?}", which_clock, flags);
+        CLOCK_TAI => {
+            not_implemented!("clock_nanosleep, CLOCK_TAI", flags);
+            return error!(EINVAL);
+        }
+        CLOCK_BOOTTIME => {
+            not_implemented!("clock_nanosleep, CLOCK_BOOTTIME", flags);
+            return error!(EINVAL);
+        }
+        CLOCK_PROCESS_CPUTIME_ID => {
+            not_implemented!("clock_nanosleep, CLOCK_PROCESS_CPUTIME_ID", flags);
             return error!(EINVAL);
         }
         _ => return error!(EOPNOTSUPP),
@@ -211,13 +257,15 @@ fn clock_nanosleep_monotonic_with_deadline(
 }
 
 pub fn sys_nanosleep(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &mut CurrentTask,
     user_request: UserRef<timespec>,
     user_remaining: UserRef<timespec>,
 ) -> Result<(), Errno> {
     sys_clock_nanosleep(
+        locked,
         current_task,
-        CLOCK_REALTIME as uapi::__kernel_clockid_t,
+        CLOCK_REALTIME as ClockId,
         0,
         user_request,
         user_remaining,
@@ -304,59 +352,90 @@ fn get_dynamic_clock(current_task: &CurrentTask, which_clock: i32) -> Result<i64
 }
 
 pub fn sys_timer_create(
+    _locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
-    clockid: uapi::__kernel_clockid_t,
+    clock_id: ClockId,
     event: UserRef<sigevent>,
-    timerid: UserRef<uapi::__kernel_timer_t>,
+    timerid: UserRef<TimerId>,
 ) -> Result<(), Errno> {
-    not_implemented!("timer_create");
-    let timers = &current_task.thread_group.read().timers;
-    let user_event = current_task.read_object(event)?;
-    let id = timers.create(clockid, &user_event)? as uapi::__kernel_timer_t;
+    if clock_id >= MAX_CLOCKS as TimerId {
+        return error!(EINVAL);
+    }
+    let user_event =
+        if event.addr().is_null() { None } else { Some(current_task.read_object(event)?) };
+
+    let mut checked_signal_event: Option<SignalEvent> = None;
+    let thread_group = current_task.thread_group.read();
+    if let Some(user_event) = user_event {
+        let signal_event: SignalEvent = user_event.try_into()?;
+        if !signal_event.is_valid(&thread_group) {
+            return error!(EINVAL);
+        }
+        checked_signal_event = Some(signal_event);
+    }
+
+    let id = &thread_group.timers.create(clock_id, checked_signal_event)?;
     current_task.write_object(timerid, &id)?;
     Ok(())
 }
 
 pub fn sys_timer_delete(
+    _locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     id: uapi::__kernel_timer_t,
 ) -> Result<(), Errno> {
-    not_implemented!("timer_delete");
     let timers = &current_task.thread_group.read().timers;
-    timers.delete(id as usize)
+    timers.delete(id)
 }
 
 pub fn sys_timer_gettime(
+    _locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     id: uapi::__kernel_timer_t,
     curr_value: UserRef<itimerspec>,
 ) -> Result<(), Errno> {
     let timers = &current_task.thread_group.read().timers;
-    current_task.write_object(curr_value, &timers.get_time(id as usize)?)?;
+    current_task.write_object(curr_value, &timers.get_time(id)?)?;
     Ok(())
 }
 
 pub fn sys_timer_getoverrun(
+    _locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     id: uapi::__kernel_timer_t,
 ) -> Result<i32, Errno> {
     let timers = &current_task.thread_group.read().timers;
-    timers.get_overrun(id as usize)
+    timers.get_overrun(id)
 }
 
 pub fn sys_timer_settime(
+    _locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     id: uapi::__kernel_timer_t,
     flags: i32,
-    new_value: UserRef<itimerspec>,
-    old_value: UserRef<itimerspec>,
+    user_new_value: UserRef<itimerspec>,
+    user_old_value: UserRef<itimerspec>,
 ) -> Result<(), Errno> {
-    not_implemented!("timer_settime");
+    if user_new_value.is_null() {
+        return error!(EINVAL);
+    }
+    let new_value = current_task.read_object(user_new_value)?;
+
+    // Return early if the user passes an obviously invalid pointer. This avoids changing the timer
+    // settings for common pointer errors. This check is not a guarantee.
+    current_task.mm().check_plausible(user_old_value.addr(), std::mem::size_of::<itimerspec>())?;
+
     let timers = &current_task.thread_group.read().timers;
-    timers.set_time(id as usize, flags, new_value, old_value)
+    let old_value = timers.set_time(current_task, id, flags, new_value)?;
+
+    if !user_old_value.is_null() {
+        current_task.write_object(user_old_value, &old_value)?;
+    }
+    Ok(())
 }
 
 pub fn sys_getitimer(
+    _locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     which: u32,
     user_curr_value: UserRef<itimerval>,
@@ -367,6 +446,7 @@ pub fn sys_getitimer(
 }
 
 pub fn sys_setitimer(
+    _locked: &mut Locked<'_, Unlocked>,
     current_task: &CurrentTask,
     which: u32,
     user_new_value: UserRef<itimerval>,
@@ -383,7 +463,11 @@ pub fn sys_setitimer(
     Ok(())
 }
 
-pub fn sys_times(current_task: &CurrentTask, buf: UserRef<tms>) -> Result<i64, Errno> {
+pub fn sys_times(
+    _locked: &mut Locked<'_, Unlocked>,
+    current_task: &CurrentTask,
+    buf: UserRef<tms>,
+) -> Result<i64, Errno> {
     if !buf.is_null() {
         let thread_group = &current_task.thread_group;
         let process_time_stats = thread_group.time_stats();
@@ -403,13 +487,14 @@ pub fn sys_times(current_task: &CurrentTask, buf: UserRef<tms>) -> Result<i64, E
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{mm::PAGE_SIZE, testing::*};
+    use crate::{mm::PAGE_SIZE, testing::*, time::utc::UtcClockOverrideGuard};
     use fuchsia_zircon::HandleBased;
+    use starnix_uapi::{ownership::TempRef, signals, user_address::UserAddress};
     use test_util::{assert_geq, assert_leq};
 
     #[::fuchsia::test]
     async fn test_nanosleep_without_remainder() {
-        let (_kernel, mut current_task) = create_kernel_and_task();
+        let (_kernel, mut current_task, mut locked) = create_kernel_task_and_unlocked();
 
         let thread = std::thread::spawn({
             let task = current_task.weak_task();
@@ -434,7 +519,7 @@ mod test {
         // nanosleep will be interrupted by the current thread and should not fail with EFAULT
         // because the remainder pointer is null.
         assert_eq!(
-            sys_nanosleep(&mut current_task, address.into(), UserRef::default()),
+            sys_nanosleep(&mut locked, &mut current_task, address.into(), UserRef::default()),
             error!(ERESTART_RESTARTBLOCK)
         );
 
@@ -443,7 +528,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_clock_nanosleep_relative_to_slow_clock() {
-        let (_kernel, mut current_task) = create_kernel_and_task();
+        let (_kernel, mut current_task, _) = create_kernel_task_and_unlocked();
 
         let test_clock = zx::Clock::create(zx::ClockOpts::AUTO_START, None).unwrap();
         let _test_clock_guard = UtcClockOverrideGuard::new(
@@ -467,7 +552,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_clock_nanosleep_interrupted_relative_to_fast_utc_clock() {
-        let (_kernel, mut current_task) = create_kernel_and_task();
+        let (_kernel, mut current_task, _) = create_kernel_task_and_unlocked();
 
         let test_clock = zx::Clock::create(zx::ClockOpts::AUTO_START, None).unwrap();
         let _test_clock_guard = UtcClockOverrideGuard::new(
@@ -497,17 +582,16 @@ mod test {
             .spawn(move || {
                 interruption_target.sleep();
                 if let Some(thread_group) = thread_group.upgrade() {
-                    let signal_info = crate::signals::SignalInfo::default(signals::SIGALRM);
+                    let signal = signals::SIGALRM;
                     let signal_target = thread_group
                         .read()
-                        .get_signal_target(&signal_info.signal.into())
-                        .map(|task| {
-                            // SAFETY: signal_target is kept on the stack. The static is required
-                            // to ensure the lock on ThreadGroup can be dropped.
-                            unsafe { TempRef::into_static(task) }
-                        });
+                        .get_signal_target(signal.into())
+                        .map(TempRef::into_static);
                     if let Some(task) = signal_target {
-                        crate::signals::send_signal(&task, signal_info);
+                        crate::signals::send_standard_signal(
+                            &task,
+                            crate::signals::SignalInfo::default(signal),
+                        );
                     }
                 }
             })
@@ -523,7 +607,7 @@ mod test {
         if result.is_err() {
             assert_eq!(result, error!(ERESTART_RESTARTBLOCK));
             remaining_written = {
-                let mm = &current_task.mm;
+                let mm = current_task.mm();
                 mm.read_object(remaining).unwrap()
             };
         }

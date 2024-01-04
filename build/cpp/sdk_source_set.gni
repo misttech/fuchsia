@@ -101,6 +101,7 @@ template("sdk_source_set") {
 
   target(target_type, main_target_name) {
     deps = []
+    public_deps = []
     forward_variables_from(invoker,
                            "*",
                            [
@@ -120,6 +121,7 @@ template("sdk_source_set") {
 
     if (defined(invoker.non_sdk_deps)) {
       deps += invoker.non_sdk_deps
+      public_deps += invoker.non_sdk_deps
     }
 
     # 'source_set()' targets in the 'partner' or 'public' category that are not
@@ -139,14 +141,6 @@ template("sdk_source_set") {
     metadata = {
       if (defined(invoker.metadata)) {
         forward_variables_from(invoker.metadata, "*")
-      }
-      if (is_fuchsia) {
-        component_catalog = [
-          {
-            sdk_id = sdk_id
-            label = get_label_info(":${target_name}", "label_with_toolchain")
-          },
-        ]
       }
     }
   }
@@ -254,7 +248,10 @@ template("sdk_source_set") {
     }
   }
 
-  verify_public_headers(target_name) {
+  verify_public_headers_target = "${target_name}_verify_public_headers"
+  verify_public_headers(verify_public_headers_target) {
+    forward_variables_from(invoker, [ "testonly" ])
+    target_label = ":${target_name}"
     headers = all_headers
   }
 
@@ -330,6 +327,7 @@ template("sdk_source_set") {
     deps = sdk_deps
 
     non_sdk_deps = [ ":$metadata_target_name" ]
+    non_sdk_deps += [ ":${verify_public_headers_target}" ]
     if (should_verify_pragma) {
       non_sdk_deps += [ ":$verify_pragma_target_name" ]
     }

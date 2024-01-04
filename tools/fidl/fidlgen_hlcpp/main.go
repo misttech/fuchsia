@@ -5,13 +5,20 @@
 package main
 
 import (
+	"text/template"
+
 	"go.fuchsia.dev/fuchsia/tools/fidl/fidlgen_hlcpp/codegen"
+	"go.fuchsia.dev/fuchsia/tools/fidl/fidlgen_hlcpp/coding_tables"
 	cpp "go.fuchsia.dev/fuchsia/tools/fidl/lib/fidlgen_cpp"
 )
 
 func main() {
 	flags := cpp.NewCmdlineFlags("hlcpp", []string{})
 	fidl := flags.ParseAndLoadIR()
-	generator := codegen.NewGenerator(flags)
-	generator.GenerateFiles(fidl, []string{"Header", "Implementation", "TestBase"})
+	root := cpp.Compile(fidl)
+	tables := coding_tables.Compile(fidl)
+	generator := codegen.NewGenerator(flags, template.FuncMap{
+		"GetCodingTables": func() coding_tables.Root { return tables },
+	})
+	generator.GenerateFiles(root, []string{"Header", "Implementation", "TestBase", "CodingTables"})
 }

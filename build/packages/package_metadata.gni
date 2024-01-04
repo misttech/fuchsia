@@ -4,6 +4,7 @@
 
 import("//build/dist/generated_resource.gni")
 import("//build/group_with_inputs.gni")
+import("//build/images/args.gni")
 
 # Generate a list of package metadata exported from all packages in the
 # transitive closure of declared dependencies. This list is then used to form
@@ -35,6 +36,10 @@ import("//build/group_with_inputs.gni")
 #       package_barrier
 #         Metadata barrier.
 #
+#       package_names_barrier
+#         Metadata barrier.
+#
+#   applicable_licenses (optional)
 #   data_deps (optional)
 #   data_keys (optional)
 #   deps (optional)
@@ -52,6 +57,7 @@ template("generate_package_metadata") {
   generated_file(_metadata_target) {
     forward_variables_from(invoker,
                            [
+                             "applicable_licenses",
                              "data_deps",
                              "data_keys",
                              "deps",
@@ -63,12 +69,21 @@ template("generate_package_metadata") {
                            ])
 
     outputs = [ _metadata_output ]
-    walk_keys = [ "package_barrier" ]
+    walk_keys = [
+      "bazel_inputs_barrier",
+      "package_barrier",
+      "package_names_barrier",
+    ]
+
+    if (use_bazel_images_only) {
+      assert_no_deps = [ "//build/images/fuchsia" ]
+    }
   }
 
   action(target_name) {
     forward_variables_from(invoker,
                            [
+                             "applicable_licenses",
                              "outputs",
                              "testonly",
                              "visibility",
@@ -96,6 +111,7 @@ template("generate_package_metadata") {
 #
 # Parameters (see `generate_package_metadata` for full definitions)
 #
+#   applicable_licenses (optional)
 #   package_name (required)
 #   snapshot_entry (required)
 #   blob_manifest (required)
@@ -112,6 +128,7 @@ template("define_package_metadata") {
   group(target_name) {
     forward_variables_from(invoker,
                            [
+                             "applicable_licenses",
                              "testonly",
                              "visibility",
                            ])
@@ -128,6 +145,7 @@ template("define_package_metadata") {
 #
 # Parameters
 #
+#   applicable_licenses (optional)
 #   package_name (required)
 #   testonly
 #   visibility
@@ -135,6 +153,7 @@ template("generate_meta_package") {
   generated_resource(target_name) {
     forward_variables_from(invoker,
                            [
+                             "applicable_licenses",
                              "testonly",
                              "visibility",
                            ])
@@ -154,6 +173,7 @@ template("generate_meta_package") {
 # Parameters
 #
 #   subpackages (required)
+#   applicable_licenses (optional)
 #   testonly
 #   visibility
 template("generate_meta_subpackages") {
@@ -187,6 +207,7 @@ template("generate_meta_subpackages") {
   group_with_inputs(target_name + ".subpackage_deps") {
     forward_variables_from(invoker,
                            [
+                             "applicable_licenses",
                              "testonly",
                              "visibility",
                            ])
@@ -202,6 +223,7 @@ template("generate_meta_subpackages") {
   generated_resource(target_name) {
     forward_variables_from(invoker,
                            [
+                             "applicable_licenses",
                              "testonly",
                              "visibility",
                            ])

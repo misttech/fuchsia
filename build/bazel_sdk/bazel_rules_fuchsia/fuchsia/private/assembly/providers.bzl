@@ -27,14 +27,34 @@ FuchsiaProductConfigInfo = provider(
     doc = "A product-info used to containing the product_config.json and deps.",
     fields = {
         "product_config": "The JSON product configuration file.",
+        "build_type": "The build type of the product.",
     },
 )
 
-FuchsiaBoardConfigInfo = provider(
-    doc = "A board-info used to containing the board_config.json and deps.",
+def _board_config_info_init(*, board_config):
+    if not board_config:
+        fail("board_config may not be empty")
+    return {"board_config": board_config}
+
+FuchsiaBoardConfigInfo, _new_board_config_info = provider(
+    doc = "A board-info used to containing only the board_config.json",
     fields = {
         "board_config": "The JSON board configuration file.",
     },
+    init = _board_config_info_init,
+)
+
+def _board_config_directory_info_init(*, config_directory):
+    if not config_directory:
+        fail("config_directory may not be empty")
+    return {"config_directory": config_directory}
+
+FuchsiaBoardConfigDirectoryInfo, _new_board_config_directory_info = provider(
+    doc = "A prebuilt board configuration in a directory, containing the board_config.json and deps",
+    fields = {
+        "config_directory": "The directory containing the board_config file and the main HardwareSupportBundle",
+    },
+    init = _board_config_directory_info_init,
 )
 
 FuchsiaAssemblyConfigInfo = provider(
@@ -47,6 +67,7 @@ FuchsiaAssemblyConfigInfo = provider(
 FuchsiaSizeCheckerInfo = provider(
     doc = """Size reports created by size checker tool.""",
     fields = {
+        "size_budgets": "size_budgets.json file",
         "size_report": "size_report.json file",
         "verbose_output": "verbose version of size report file",
     },
@@ -79,6 +100,7 @@ FuchsiaProductImageInfo = provider(
         "images_out": "images out directory",
         "product_assembly_out": "product assembly out directory",
         "platform_aibs": "platform aibs file listing path to platform AIBS",
+        "build_type": "The build type of the product",
     },
 )
 
@@ -94,6 +116,7 @@ FuchsiaProductAssemblyInfo = provider(
     fields = {
         "product_assembly_out": "product assembly out directory",
         "platform_aibs": "platform aibs file listing path to platform AIBS",
+        "build_type": "The build type of the product",
     },
 )
 
@@ -118,10 +141,19 @@ FuchsiaScrutinyConfigInfo = provider(
         "component_route_exceptions": "Allowlist of all capability routes that are exempt from route checking",
         "base_packages": "Set of base packages expected in the fvm",
         "structured_config_policy": "File describing the policy of structured config",
+        "pre_signing_policy": "File describing the policy of checks required before signing",
     },
 )
 
 FuchsiaRepositoryKeysInfo = provider(
     doc = "A directory containing Fuchsia TUF repository keys.",
     fields = {"dir": "Path to the directory"},
+)
+
+FuchsiaOmahaOtaConfigInfo = provider(
+    doc = "OTA configuration data for products that use the Omaha client.",
+    fields = {
+        "channels": "The omaha channel configuration data.",
+        "tuf_repositories": "A dict of TUF repository configurations, by hostname.",
+    },
 )

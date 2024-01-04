@@ -22,9 +22,9 @@
 
 #include "fuchsia/io/cpp/fidl.h"
 #include "fuchsia/io/test/cpp/fidl.h"
-#include "src/lib/storage/block_client/cpp/fake_block_device.h"
-#include "src/lib/storage/vfs/cpp/pseudo_dir.h"
-#include "src/lib/storage/vfs/cpp/vfs_types.h"
+#include "src/storage/lib/block_client/cpp/fake_block_device.h"
+#include "src/storage/lib/vfs/cpp/pseudo_dir.h"
+#include "src/storage/lib/vfs/cpp/vfs_types.h"
 #include "src/storage/minfs/bcache.h"
 #include "src/storage/minfs/directory.h"
 #include "src/storage/minfs/format.h"
@@ -78,6 +78,7 @@ class MinfsHarness : public fuchsia::io::test::Io1Harness {
     config.set_supports_get_token(true);
     config.set_conformant_path_handling(true);
     config.set_supports_unlink(true);
+    config.set_supports_directory_watchers(true);
 
     // Unsupported options
     config.set_supports_executable_file(false);

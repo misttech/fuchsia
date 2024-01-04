@@ -15,12 +15,16 @@
 pub mod admin;
 pub mod testutil;
 
-use std::collections::HashSet;
+use std::{
+    collections::HashSet,
+    fmt::{Debug, Display},
+};
 
 use async_utils::fold;
 use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_ext::{IntoExt as _, TryIntoExt as _};
 use fidl_fuchsia_net_routes as fnet_routes;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
 use fidl_fuchsia_net_stack as fnet_stack;
 use futures::{Future, Stream, StreamExt as _, TryStreamExt as _};
 use net_types::{
@@ -32,11 +36,11 @@ use thiserror::Error;
 /// Conversion errors from `fnet_routes` FIDL types to the generic equivalents
 /// defined in this module.
 #[derive(Clone, Copy, Debug, Error, PartialEq)]
-pub enum FidlConversionError {
+pub enum FidlConversionError<UnsetFieldSpecifier: Debug + Display> {
     /// A required field was unset. The provided string is the human-readable
     /// name of the unset field.
     #[error("required field is unset: {0}")]
-    RequiredFieldUnset(&'static str),
+    RequiredFieldUnset(UnsetFieldSpecifier),
     /// Destination Subnet conversion failed.
     #[error("failed to convert `destination` to net_types subnet: {0:?}")]
     DestinationSubnet(net_types::ip::SubnetError),
@@ -46,6 +50,49 @@ pub enum FidlConversionError {
     /// Next-Hop unicast address conversion failed.
     #[error("failed to convert `next_hop` to a unicast addr")]
     NextHopNotUnicast,
+}
+
+impl<T: Debug + Display> FidlConversionError<T> {
+    fn map_unset_fields<U: Debug + Display>(
+        self,
+        f: impl FnOnce(T) -> U,
+    ) -> FidlConversionError<U> {
+        match self {
+            FidlConversionError::RequiredFieldUnset(field) => {
+                FidlConversionError::RequiredFieldUnset(f(field))
+            }
+            FidlConversionError::DestinationSubnet(err) => {
+                FidlConversionError::DestinationSubnet(err)
+            }
+            FidlConversionError::UnspecifiedNextHop => FidlConversionError::UnspecifiedNextHop,
+            FidlConversionError::NextHopNotUnicast => FidlConversionError::NextHopNotUnicast,
+        }
+    }
+}
+
+impl From<FidlConversionError<RoutePropertiesRequiredFields>> for fnet_routes_admin::RouteSetError {
+    fn from(error: FidlConversionError<RoutePropertiesRequiredFields>) -> Self {
+        match error {
+            FidlConversionError::RequiredFieldUnset(field_name) => match field_name {
+                RoutePropertiesRequiredFields::SpecifiedProperties => {
+                    fnet_routes_admin::RouteSetError::MissingRouteProperties
+                }
+                RoutePropertiesRequiredFields::WithinSpecifiedProperties(field_name) => {
+                    match field_name {
+                        SpecifiedRoutePropertiesRequiredFields::Metric => {
+                            fnet_routes_admin::RouteSetError::MissingMetric
+                        }
+                    }
+                }
+            },
+            FidlConversionError::DestinationSubnet(_subnet_error) => {
+                fnet_routes_admin::RouteSetError::InvalidDestinationSubnet
+            }
+            FidlConversionError::UnspecifiedNextHop | FidlConversionError::NextHopNotUnicast => {
+                fnet_routes_admin::RouteSetError::InvalidNextHop
+            }
+        }
+    }
 }
 
 /// Conversion errors from generic route types defined in this module to their
@@ -59,20 +106,28 @@ pub enum NetTypeConversionError {
 
 /// The specified properties of a route. This type enforces that all required
 /// fields from [`fnet_routes::SpecifiedRouteProperties`] are set.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub struct SpecifiedRouteProperties {
     /// The specified metric of the route.
     pub metric: fnet_routes::SpecifiedMetric,
 }
 
+/// Required fields in [`SpecifiedRouteProperties`].
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[allow(missing_docs)]
+pub enum SpecifiedRoutePropertiesRequiredFields {
+    #[error("fuchsia.net.routes/SpecifiedRouteProperties.metric")]
+    Metric,
+}
+
 impl TryFrom<fnet_routes::SpecifiedRouteProperties> for SpecifiedRouteProperties {
-    type Error = FidlConversionError;
+    type Error = FidlConversionError<SpecifiedRoutePropertiesRequiredFields>;
     fn try_from(
         specified_properties: fnet_routes::SpecifiedRouteProperties,
     ) -> Result<Self, Self::Error> {
         Ok(SpecifiedRouteProperties {
             metric: specified_properties.metric.ok_or(FidlConversionError::RequiredFieldUnset(
-                "fuchsia.net.routes/SpecifiedRouteProperties.metric",
+                SpecifiedRoutePropertiesRequiredFields::Metric,
             ))?,
         })
     }
@@ -89,20 +144,27 @@ impl From<SpecifiedRouteProperties> for fnet_routes::SpecifiedRouteProperties {
 
 /// The effective properties of a route. This type enforces that all required
 /// fields from [`fnet_routes::EffectiveRouteProperties`] are set.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub struct EffectiveRouteProperties {
     /// The effective metric of the route.
     pub metric: u32,
 }
 
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+#[allow(missing_docs)]
+pub enum EffectiveRoutePropertiesRequiredFields {
+    #[error("fuchsia.net.routes/EffectiveRouteProperties.metric")]
+    Metric,
+}
+
 impl TryFrom<fnet_routes::EffectiveRouteProperties> for EffectiveRouteProperties {
-    type Error = FidlConversionError;
+    type Error = FidlConversionError<EffectiveRoutePropertiesRequiredFields>;
     fn try_from(
         effective_properties: fnet_routes::EffectiveRouteProperties,
     ) -> Result<Self, Self::Error> {
         Ok(EffectiveRouteProperties {
             metric: effective_properties.metric.ok_or(FidlConversionError::RequiredFieldUnset(
-                "fuchsia.net.routes/EffectiveRouteProperties.metric",
+                EffectiveRoutePropertiesRequiredFields::Metric,
             ))?,
         })
     }
@@ -119,36 +181,51 @@ impl From<EffectiveRouteProperties> for fnet_routes::EffectiveRouteProperties {
 
 /// The properties of a route, abstracting over
 /// [`fnet_routes::RoutePropertiesV4`] and [`fnet_routes::RoutePropertiesV6`].
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub struct RouteProperties {
     /// the specified properties of the route.
     pub specified_properties: SpecifiedRouteProperties,
 }
 
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+#[allow(missing_docs)]
+pub enum RoutePropertiesRequiredFields {
+    #[error("fuchsia.net.routes/RoutePropertiesV#.specified_properties")]
+    SpecifiedProperties,
+    #[error(transparent)]
+    WithinSpecifiedProperties(#[from] SpecifiedRoutePropertiesRequiredFields),
+}
+
 impl TryFrom<fnet_routes::RoutePropertiesV4> for RouteProperties {
-    type Error = FidlConversionError;
+    type Error = FidlConversionError<RoutePropertiesRequiredFields>;
     fn try_from(properties: fnet_routes::RoutePropertiesV4) -> Result<Self, Self::Error> {
         Ok(RouteProperties {
             specified_properties: properties
                 .specified_properties
                 .ok_or(FidlConversionError::RequiredFieldUnset(
-                    "fuchsia.net.routes/RoutePropertiesV4.specified_properties",
+                    RoutePropertiesRequiredFields::SpecifiedProperties,
                 ))?
-                .try_into()?,
+                .try_into()
+                .map_err(|e: FidlConversionError<_>| {
+                    e.map_unset_fields(RoutePropertiesRequiredFields::WithinSpecifiedProperties)
+                })?,
         })
     }
 }
 
 impl TryFrom<fnet_routes::RoutePropertiesV6> for RouteProperties {
-    type Error = FidlConversionError;
+    type Error = FidlConversionError<RoutePropertiesRequiredFields>;
     fn try_from(properties: fnet_routes::RoutePropertiesV6) -> Result<Self, Self::Error> {
         Ok(RouteProperties {
             specified_properties: properties
                 .specified_properties
                 .ok_or(FidlConversionError::RequiredFieldUnset(
-                    "fuchsia.net.routes/RoutePropertiesV6.specified_properties",
+                    RoutePropertiesRequiredFields::SpecifiedProperties,
                 ))?
-                .try_into()?,
+                .try_into()
+                .map_err(|e: FidlConversionError<_>| {
+                    e.map_unset_fields(RoutePropertiesRequiredFields::WithinSpecifiedProperties)
+                })?,
         })
     }
 }
@@ -180,7 +257,7 @@ impl From<RouteProperties> for fnet_routes::RoutePropertiesV6 {
 /// determined to be unicast within the broader context of a subnet, hence they
 /// are only guaranteed to be specified in this context. IPv6 addresses,
 /// however, will be confirmed to be unicast.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub struct RouteTarget<I: Ip> {
     /// The outbound_interface to use when forwarding packets.
     pub outbound_interface: u64,
@@ -189,21 +266,26 @@ pub struct RouteTarget<I: Ip> {
 }
 
 impl TryFrom<fnet_routes::RouteTargetV4> for RouteTarget<Ipv4> {
-    type Error = FidlConversionError;
+    type Error = FidlConversionError<NeverMissingFields>;
     fn try_from(target: fnet_routes::RouteTargetV4) -> Result<Self, Self::Error> {
         let fnet_routes::RouteTargetV4 { outbound_interface, next_hop } = target;
-        let next_hop = next_hop
+        let next_hop: Option<SpecifiedAddr<net_types::ip::Ipv4Addr>> = next_hop
             .map(|addr| {
                 SpecifiedAddr::new((*addr).into_ext())
                     .ok_or(FidlConversionError::UnspecifiedNextHop)
             })
             .transpose()?;
+        if let Some(next_hop) = next_hop {
+            if next_hop.is_limited_broadcast() {
+                return Err(FidlConversionError::NextHopNotUnicast);
+            }
+        }
         Ok(RouteTarget { outbound_interface, next_hop })
     }
 }
 
 impl TryFrom<fnet_routes::RouteTargetV6> for RouteTarget<Ipv6> {
-    type Error = FidlConversionError;
+    type Error = FidlConversionError<NeverMissingFields>;
     fn try_from(target: fnet_routes::RouteTargetV6) -> Result<Self, Self::Error> {
         let fnet_routes::RouteTargetV6 { outbound_interface, next_hop } = target;
         let addr: Option<SpecifiedAddr<Ipv6Addr>> = next_hop
@@ -247,7 +329,7 @@ impl From<RouteTarget<Ipv6>> for fnet_routes::RouteTargetV6 {
 /// These fidl types are both defined as flexible unions, which allows the
 /// definition to grow over time. The `Unknown` enum variant accounts for any
 /// new types that are not yet known to the local version of the FIDL bindings.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub enum RouteAction<I: Ip> {
     /// The RouteAction is unknown.
     Unknown,
@@ -255,8 +337,12 @@ pub enum RouteAction<I: Ip> {
     Forward(RouteTarget<I>),
 }
 
+#[derive(Debug, Error, PartialEq, Eq)]
+#[allow(missing_docs)]
+pub enum NeverMissingFields {}
+
 impl TryFrom<fnet_routes::RouteActionV4> for RouteAction<Ipv4> {
-    type Error = FidlConversionError;
+    type Error = FidlConversionError<NeverMissingFields>;
     fn try_from(action: fnet_routes::RouteActionV4) -> Result<Self, Self::Error> {
         match action {
             fnet_routes::RouteActionV4::Forward(target) => {
@@ -268,7 +354,7 @@ impl TryFrom<fnet_routes::RouteActionV4> for RouteAction<Ipv4> {
 }
 
 impl TryFrom<fnet_routes::RouteActionV6> for RouteAction<Ipv6> {
-    type Error = FidlConversionError;
+    type Error = FidlConversionError<NeverMissingFields>;
     fn try_from(action: fnet_routes::RouteActionV6) -> Result<Self, Self::Error> {
         match action {
             fnet_routes::RouteActionV6::Forward(target) => {
@@ -312,7 +398,7 @@ impl TryFrom<RouteAction<Ipv6>> for fnet_routes::RouteActionV6 {
 ///
 /// The `destination` subnet is verified to be a valid subnet; e.g. its
 /// prefix-len is a valid value, and its host bits are cleared.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub struct Route<I: Ip> {
     /// The destination subnet of the route.
     pub destination: Subnet<I::Addr>,
@@ -323,26 +409,34 @@ pub struct Route<I: Ip> {
 }
 
 impl TryFrom<fnet_routes::RouteV4> for Route<Ipv4> {
-    type Error = FidlConversionError;
+    type Error = FidlConversionError<RoutePropertiesRequiredFields>;
     fn try_from(route: fnet_routes::RouteV4) -> Result<Self, Self::Error> {
         let fnet_routes::RouteV4 { destination, action, properties } = route;
         Ok(Route {
             destination: destination
                 .try_into_ext()
                 .map_err(FidlConversionError::DestinationSubnet)?,
-            action: action.try_into()?,
+            action: action
+                .try_into()
+                .map_err(|e: FidlConversionError<_>| e.map_unset_fields(|never| match never {}))?,
             properties: properties.try_into()?,
         })
     }
 }
 
 impl TryFrom<fnet_routes::RouteV6> for Route<Ipv6> {
-    type Error = FidlConversionError;
+    type Error = FidlConversionError<RoutePropertiesRequiredFields>;
     fn try_from(route: fnet_routes::RouteV6) -> Result<Self, Self::Error> {
         let fnet_routes::RouteV6 { destination, action, properties } = route;
         let destination =
             destination.try_into_ext().map_err(FidlConversionError::DestinationSubnet)?;
-        Ok(Route { destination, action: action.try_into()?, properties: properties.try_into()? })
+        Ok(Route {
+            destination,
+            action: action
+                .try_into()
+                .map_err(|e: FidlConversionError<_>| e.map_unset_fields(|never| match never {}))?,
+            properties: properties.try_into()?,
+        })
     }
 }
 
@@ -420,7 +514,7 @@ impl<I: Ip> TryFrom<Route<I>> for fnet_stack::ForwardingEntry {
 
 /// An installed route, abstracting over [`fnet_routes::InstalledRouteV4`] and
 /// [`fnet_routes::InstalledRouteV6`].
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub struct InstalledRoute<I: Ip> {
     /// The route.
     pub route: Route<I>,
@@ -428,42 +522,67 @@ pub struct InstalledRoute<I: Ip> {
     pub effective_properties: EffectiveRouteProperties,
 }
 
+#[derive(Error, Clone, Debug, PartialEq, Eq)]
+#[allow(missing_docs)]
+pub enum InstalledRouteRequiredFields {
+    #[error("fuchsia.net.routes/InstalledRouteV#.route")]
+    Route,
+    #[error("fuchsia.net.routes/InstalledRouteV#.effective_properties")]
+    EffectiveProperties,
+    #[error(transparent)]
+    WithinRoute(#[from] RoutePropertiesRequiredFields),
+    #[error(transparent)]
+    WithinEffectiveProperties(#[from] EffectiveRoutePropertiesRequiredFields),
+}
+
 impl TryFrom<fnet_routes::InstalledRouteV4> for InstalledRoute<Ipv4> {
-    type Error = FidlConversionError;
+    type Error = FidlConversionError<InstalledRouteRequiredFields>;
     fn try_from(installed_route: fnet_routes::InstalledRouteV4) -> Result<Self, Self::Error> {
         Ok(InstalledRoute {
             route: installed_route
                 .route
                 .ok_or(FidlConversionError::RequiredFieldUnset(
-                    "fuchsia.net.routes/InstalledRouteV4.route",
+                    InstalledRouteRequiredFields::Route,
                 ))?
-                .try_into()?,
+                .try_into()
+                .map_err(|e: FidlConversionError<_>| {
+                    e.map_unset_fields(InstalledRouteRequiredFields::WithinRoute)
+                })?,
             effective_properties: installed_route
                 .effective_properties
                 .ok_or(FidlConversionError::RequiredFieldUnset(
-                    "fuchsia.net.routes/InstalledRouteV4.effective_properties",
+                    InstalledRouteRequiredFields::EffectiveProperties,
                 ))?
-                .try_into()?,
+                .try_into()
+                .map_err(|e: FidlConversionError<_>| {
+                    e.map_unset_fields(InstalledRouteRequiredFields::WithinEffectiveProperties)
+                })?,
         })
     }
 }
 
 impl TryFrom<fnet_routes::InstalledRouteV6> for InstalledRoute<Ipv6> {
-    type Error = FidlConversionError;
+    type Error = FidlConversionError<InstalledRouteRequiredFields>;
     fn try_from(installed_route: fnet_routes::InstalledRouteV6) -> Result<Self, Self::Error> {
         Ok(InstalledRoute {
             route: installed_route
                 .route
                 .ok_or(FidlConversionError::RequiredFieldUnset(
-                    "fuchsia.net.routes/InstalledRouteV6.route",
+                    InstalledRouteRequiredFields::Route,
                 ))?
-                .try_into()?,
+                .try_into()
+                .map_err(|e: FidlConversionError<_>| {
+                    e.map_unset_fields(InstalledRouteRequiredFields::WithinRoute)
+                })?,
             effective_properties: installed_route
                 .effective_properties
                 .ok_or(FidlConversionError::RequiredFieldUnset(
-                    "fuchsia.net.routes/InstalledRouteV6.effective_properties",
+                    InstalledRouteRequiredFields::EffectiveProperties,
                 ))?
-                .try_into()?,
+                .try_into()
+                .map_err(|e: FidlConversionError<_>| {
+                    e.map_unset_fields(InstalledRouteRequiredFields::WithinEffectiveProperties)
+                })?,
         })
     }
 }
@@ -513,7 +632,7 @@ pub enum Event<I: Ip> {
 }
 
 impl TryFrom<fnet_routes::EventV4> for Event<Ipv4> {
-    type Error = FidlConversionError;
+    type Error = FidlConversionError<InstalledRouteRequiredFields>;
     fn try_from(event: fnet_routes::EventV4) -> Result<Self, Self::Error> {
         match event {
             fnet_routes::EventV4::Existing(route) => Ok(Event::Existing(route.try_into()?)),
@@ -526,7 +645,7 @@ impl TryFrom<fnet_routes::EventV4> for Event<Ipv4> {
 }
 
 impl TryFrom<fnet_routes::EventV6> for Event<Ipv6> {
-    type Error = FidlConversionError;
+    type Error = FidlConversionError<InstalledRouteRequiredFields>;
     fn try_from(event: fnet_routes::EventV6) -> Result<Self, Self::Error> {
         match event {
             fnet_routes::EventV6::Existing(route) => Ok(Event::Existing(route.try_into()?)),
@@ -587,7 +706,7 @@ pub enum WatchError {
     Fidl(fidl::Error),
     /// The event returned by `Watch` encountered a conversion error.
     #[error("failed to convert event returned by `Watch()`: {0}")]
-    Conversion(FidlConversionError),
+    Conversion(FidlConversionError<InstalledRouteRequiredFields>),
     /// The server returned an empty batch of events.
     #[error("the call to `Watch()` returned an empty batch of events")]
     EmptyEventBatch,
@@ -600,7 +719,7 @@ pub trait FidlRouteIpExt: Ip {
     /// The "watcher" protocol to use for this IP version.
     type WatcherMarker: fidl::endpoints::ProtocolMarker;
     /// The type of "event" returned by this IP version's watcher protocol.
-    type WatchEvent: TryInto<Event<Self>, Error = FidlConversionError>
+    type WatchEvent: TryInto<Event<Self>, Error = FidlConversionError<InstalledRouteRequiredFields>>
         + TryFrom<Event<Self>, Error = NetTypeConversionError>
         + Clone
         + std::fmt::Debug
@@ -608,7 +727,7 @@ pub trait FidlRouteIpExt: Ip {
         + Unpin;
     /// The "route" FIDL type to use for this IP version.
     type Route: TryFrom<Route<Self>, Error = NetTypeConversionError>
-        + TryInto<Route<Self>, Error = FidlConversionError>
+        + TryInto<Route<Self>, Error = FidlConversionError<RoutePropertiesRequiredFields>>
         + std::fmt::Debug;
 }
 
@@ -634,7 +753,8 @@ pub fn get_watcher<I: FidlRouteIpExt>(
         .map_err(WatcherCreationError::CreateProxy)?;
 
     #[derive(GenericOverIp)]
-    struct GetWatcherInputs<'a, I: Ip + FidlRouteIpExt> {
+    #[generic_over_ip(I, Ip)]
+    struct GetWatcherInputs<'a, I: FidlRouteIpExt> {
         watcher_server_end: fidl::endpoints::ServerEnd<I::WatcherMarker>,
         state_proxy: &'a <I::StateMarker as fidl::endpoints::ProtocolMarker>::Proxy,
     }
@@ -657,11 +777,13 @@ pub fn watch<'a, I: FidlRouteIpExt>(
     watcher_proxy: &'a <I::WatcherMarker as fidl::endpoints::ProtocolMarker>::Proxy,
 ) -> impl Future<Output = Result<Vec<I::WatchEvent>, fidl::Error>> {
     #[derive(GenericOverIp)]
-    struct WatchInputs<'a, I: Ip + FidlRouteIpExt> {
+    #[generic_over_ip(I, Ip)]
+    struct WatchInputs<'a, I: FidlRouteIpExt> {
         watcher_proxy: &'a <I::WatcherMarker as fidl::endpoints::ProtocolMarker>::Proxy,
     }
     #[derive(GenericOverIp)]
-    struct WatchOutputs<I: Ip + FidlRouteIpExt> {
+    #[generic_over_ip(I, Ip)]
+    struct WatchOutputs<I: FidlRouteIpExt> {
         watch_fut: fidl::client::QueryResponseFut<Vec<I::WatchEvent>>,
     }
     let WatchOutputs { watch_fut } = I::map_ip::<WatchInputs<'_, I>, WatchOutputs<I>>(
@@ -957,7 +1079,7 @@ mod tests {
         assert_eq!(
             SpecifiedRouteProperties::try_from(fnet_routes::SpecifiedRouteProperties::default()),
             Err(FidlConversionError::RequiredFieldUnset(
-                "fuchsia.net.routes/SpecifiedRouteProperties.metric",
+                SpecifiedRoutePropertiesRequiredFields::Metric
             ))
         )
     }
@@ -984,7 +1106,7 @@ mod tests {
         assert_eq!(
             EffectiveRouteProperties::try_from(fnet_routes::EffectiveRouteProperties::default()),
             Err(FidlConversionError::RequiredFieldUnset(
-                "fuchsia.net.routes/EffectiveRouteProperties.metric",
+                EffectiveRoutePropertiesRequiredFields::Metric
             ))
         )
     }
@@ -1008,7 +1130,7 @@ mod tests {
         assert_eq!(
             RouteProperties::try_from(fnet_routes::RoutePropertiesV4::default()),
             Err(FidlConversionError::RequiredFieldUnset(
-                "fuchsia.net.routes/RoutePropertiesV4.specified_properties"
+                RoutePropertiesRequiredFields::SpecifiedProperties
             ))
         )
     }
@@ -1018,7 +1140,7 @@ mod tests {
         assert_eq!(
             RouteProperties::try_from(fnet_routes::RoutePropertiesV6::default()),
             Err(FidlConversionError::RequiredFieldUnset(
-                "fuchsia.net.routes/RoutePropertiesV6.specified_properties"
+                RoutePropertiesRequiredFields::SpecifiedProperties
             ))
         )
     }
@@ -1087,6 +1209,17 @@ mod tests {
             }),
             Err(FidlConversionError::UnspecifiedNextHop)
         );
+    }
+
+    #[test]
+    fn route_target_try_from_limited_broadcast_next_hop_v4() {
+        assert_eq!(
+            RouteTarget::try_from(fnet_routes::RouteTargetV4 {
+                outbound_interface: 1,
+                next_hop: Some(Box::new(fidl_ip_v4!("255.255.255.255"))),
+            }),
+            Err(FidlConversionError::NextHopNotUnicast)
+        )
     }
 
     #[test]
@@ -1250,9 +1383,7 @@ mod tests {
                 ),
                 ..Default::default()
             }),
-            Err(FidlConversionError::RequiredFieldUnset(
-                "fuchsia.net.routes/InstalledRouteV4.route"
-            ))
+            Err(FidlConversionError::RequiredFieldUnset(InstalledRouteRequiredFields::Route))
         )
     }
 
@@ -1266,9 +1397,7 @@ mod tests {
                 ),
                 ..Default::default()
             }),
-            Err(FidlConversionError::RequiredFieldUnset(
-                "fuchsia.net.routes/InstalledRouteV6.route"
-            ))
+            Err(FidlConversionError::RequiredFieldUnset(InstalledRouteRequiredFields::Route))
         )
     }
 
@@ -1281,7 +1410,7 @@ mod tests {
                 ..Default::default()
             }),
             Err(FidlConversionError::RequiredFieldUnset(
-                "fuchsia.net.routes/InstalledRouteV4.effective_properties"
+                InstalledRouteRequiredFields::EffectiveProperties
             ))
         )
     }
@@ -1295,7 +1424,7 @@ mod tests {
                 ..Default::default()
             }),
             Err(FidlConversionError::RequiredFieldUnset(
-                "fuchsia.net.routes/InstalledRouteV6.effective_properties"
+                InstalledRouteRequiredFields::EffectiveProperties
             ))
         )
     }
@@ -1575,7 +1704,8 @@ mod tests {
         // Define an event with an invalid destination subnet; receiving it
         // from a call to `Watch` will result in conversion errors.
         #[derive(GenericOverIp)]
-        struct EventHolder<I: Ip + FidlRouteIpExt>(I::WatchEvent);
+        #[generic_over_ip(I, Ip)]
+        struct EventHolder<I: FidlRouteIpExt>(I::WatchEvent);
         let EventHolder(bad_event) = I::map_ip(
             (),
             |()| {
@@ -1674,7 +1804,8 @@ mod tests {
 
     fn arbitrary_test_route<I: Ip + FidlRouteIpExt>() -> InstalledRoute<I> {
         #[derive(GenericOverIp)]
-        struct RouteHolder<I: Ip + FidlRouteIpExt>(InstalledRoute<I>);
+        #[generic_over_ip(I, Ip)]
+        struct RouteHolder<I: FidlRouteIpExt>(InstalledRoute<I>);
         let RouteHolder(route) = I::map_ip(
             (),
             |()| {

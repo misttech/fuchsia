@@ -3,25 +3,31 @@
 # found in the LICENSE file.
 
 if (is_host) {
-  group("emulator_tests") {
-    testonly = true
-    public_deps = [ "test_tracing:tracing_test($host_toolchain)" ]
-  }
-
-  group("emulator_tests_fyi") {
-    testonly = true
-    public_deps = [
-      ":emulator_tests",
-      "test_tracing:tracing_test_fc($host_toolchain)",
-    ]
-  }
-
+  # Group containing all of the HoneyDew affordances functional test cases.
   group("tests") {
     testonly = true
     public_deps = [
-      ":emulator_tests_fyi",
-      "test_bluetooth:bluetooth_gap_test($host_toolchain)",
-      "test_bluetooth:bluetooth_gap_test_fc($host_toolchain)",
+      "test_bluetooth:tests",
+      "test_session:tests",
+      "test_tracing:tests",
+      "test_ui:tests",
+      "test_wlan:tests",
     ]
   }
+}
+
+group("packages") {
+  testonly = true
+  public_deps = [
+    "test_session:packages",
+    "test_ui:packages",
+  ]
+}
+
+group("affordance_tests") {
+  testonly = true
+  public_deps = [
+    ":packages",
+    ":tests($host_toolchain)",
+  ]
 }

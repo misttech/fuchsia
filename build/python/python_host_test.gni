@@ -45,7 +45,7 @@ import("//build/testing/host_test_data.gni")
 #  test_dir (optional)
 #    Path to where the test executes.
 #    Type: string
-#    Default: "${root_out_dir}/test_data/${target_dir}"
+#    Default: "${target_out_dir}/${target_name}"
 #
 #  extra_args (optional)
 #    Additional arguments to pass to the test.
@@ -56,6 +56,9 @@ import("//build/testing/host_test_data.gni")
 #    In the example above, this is "my_module.main".
 #    Type: string
 #    Default: unittest.main
+#
+#  test_data_deps (optional)
+#    The dependencies used only at runtime for this test.
 #
 #  deps
 #  environments
@@ -69,6 +72,7 @@ template("python_host_test") {
                            [
                              "main_source",
                              "sources",
+                             "deps",
                            ])
 
     testonly = true
@@ -80,13 +84,15 @@ template("python_host_test") {
       main_callable = invoker.main_callable
     }
 
+    if (!defined(deps)) {
+      deps = []
+    }
     if (defined(invoker.libraries)) {
-      deps = invoker.libraries
+      deps += invoker.libraries
     }
   }
 
-  _target_dir = get_label_info(target_name, "dir")
-  _test_dir = "${root_out_dir}/test_data/${_target_dir}"
+  _test_dir = "${target_out_dir}/${target_name}"
   if (defined(invoker.test_dir)) {
     _test_dir = invoker.test_dir
   }
@@ -102,6 +108,12 @@ template("python_host_test") {
     deps = [ ":${_python_binary_target}" ]
     if (defined(invoker.deps)) {
       deps += invoker.deps
+    }
+    if (!defined(data_deps)) {
+      data_deps = []
+    }
+    if (defined(invoker.test_data_deps)) {
+      data_deps += invoker.test_data_deps
     }
   }
 

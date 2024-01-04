@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/zxio/cpp/vector.h>
 #include <lib/zxio/null.h>
+#include <zircon/errors.h>
 #include <zircon/syscalls.h>
 
 #include <cerrno>
+
+#include "sdk/lib/zxio/vector.h"
 
 zx_status_t zxio_default_close(zxio_t* io, const bool should_wait) { return ZX_OK; }
 
@@ -32,7 +34,7 @@ void zxio_default_wait_end(zxio_t* io, zx_signals_t zx_signals, zxio_signals_t* 
 
 zx_status_t zxio_default_sync(zxio_t* io) { return ZX_ERR_NOT_SUPPORTED; }
 
-zx_status_t zxio_default_attr_get(zxio_t* io, zxio_node_attributes_t* out_attr) {
+zx_status_t zxio_default_attr_get(zxio_t* io, zxio_node_attributes_t* inout_attr) {
   return ZX_ERR_NOT_SUPPORTED;
 }
 
@@ -244,22 +246,24 @@ static constexpr zxio_ops_t zxio_null_ops = []() {
     if (flags) {
       return ZX_ERR_NOT_SUPPORTED;
     }
-    return zxio_do_vector(vector, vector_count, out_actual,
-                          [](void* buffer, size_t capacity, size_t* out_actual) {
-                            *out_actual = 0;
-                            return ZX_OK;
-                          });
+    return zxio_do_vector(
+        vector, vector_count, out_actual,
+        [](void* buffer, size_t capacity, size_t total_so_far, size_t* out_actual) {
+          *out_actual = 0;
+          return ZX_OK;
+        });
   };
   ops.writev = [](zxio_t* io, const zx_iovec_t* vector, size_t vector_count, zxio_flags_t flags,
                   size_t* out_actual) {
     if (flags) {
       return ZX_ERR_NOT_SUPPORTED;
     }
-    return zxio_do_vector(vector, vector_count, out_actual,
-                          [](void* buffer, size_t capacity, size_t* out_actual) {
-                            *out_actual = capacity;
-                            return ZX_OK;
-                          });
+    return zxio_do_vector(
+        vector, vector_count, out_actual,
+        [](void* buffer, size_t capacity, size_t total_so_far, size_t* out_actual) {
+          *out_actual = capacity;
+          return ZX_OK;
+        });
   };
   return ops;
 }();
@@ -305,5 +309,18 @@ zx_status_t zxio_default_xattr_remove(zxio_t* io, const uint8_t* name, size_t na
 zx_status_t zxio_default_open2(zxio_t* directory, const char* path, size_t path_len,
                                const zxio_open_options_t* options,
                                zxio_node_attributes_t* inout_attr, zxio_storage_t* storage) {
+  return ZX_ERR_NOT_SUPPORTED;
+}
+
+zx_status_t zxio_default_allocate(zxio_t* io, uint64_t offset, uint64_t len,
+                                  zxio_allocate_mode_t mode) {
+  return ZX_ERR_NOT_SUPPORTED;
+}
+
+zx_status_t zxio_default_enable_verity(zxio_t* io, const zxio_fsverity_descriptor_t* descriptor) {
+  return ZX_ERR_NOT_SUPPORTED;
+}
+
+zx_status_t zxio_default_get_descriptor(zxio_t* io, zxio_fsverity_descriptor_t* out_descriptor) {
   return ZX_ERR_NOT_SUPPORTED;
 }

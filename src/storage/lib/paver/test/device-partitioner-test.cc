@@ -5,17 +5,28 @@
 #include "src/storage/lib/paver/device-partitioner.h"
 
 #include <dirent.h>
+#include <fidl/fuchsia.device.manager/cpp/fidl.h>
+#include <fidl/fuchsia.device.manager/cpp/wire.h>
 #include <fidl/fuchsia.device/cpp/wire.h>
+#include <fidl/fuchsia.fshost/cpp/wire_test_base.h>
 #include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.hardware.power.statecontrol/cpp/wire.h>
+#include <fidl/fuchsia.kernel/cpp/wire.h>
+#include <fidl/fuchsia.scheduler/cpp/wire.h>
+#include <fidl/fuchsia.tracing.provider/cpp/wire.h>
 #include <lib/abr/util.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/async/default.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/driver-integration-test/fixture.h>
 #include <lib/fdio/cpp/caller.h>
 #include <lib/fdio/directory.h>
 #include <lib/fdio/fd.h>
+#include <lib/fidl/cpp/binding_set.h>
 #include <lib/stdcompat/span.h>
+#include <lib/sys/cpp/testing/component_context_provider.h>
+#include <lib/sys/cpp/testing/service_directory_provider.h>
 #include <lib/zbi-format/zbi.h>
 #include <zircon/errors.h>
 #include <zircon/hw/gpt.h>
@@ -30,23 +41,24 @@
 #include <utility>
 
 #include <fbl/unique_fd.h>
-#include <gpt/cros.h>
 #include <gpt/gpt.h>
+#include <sdk/lib/component/outgoing/cpp/outgoing_directory.h>
 #include <soc/aml-common/aml-guid.h>
 #include <zxtest/zxtest.h>
 
-#include "src/lib/storage/block_client/cpp/remote_block_device.h"
-#include "src/storage/lib/paver/as370.h"
+#include "fidl/fuchsia.device.manager/cpp/common_types.h"
+#include "fidl/fuchsia.device.manager/cpp/markers.h"
+#include "lib/zx/result.h"
+#include "src/storage/lib/block_client/cpp/remote_block_device.h"
 #include "src/storage/lib/paver/astro.h"
-#include "src/storage/lib/paver/chromebook-x64.h"
 #include "src/storage/lib/paver/luis.h"
 #include "src/storage/lib/paver/nelson.h"
-#include "src/storage/lib/paver/pinecrest.h"
-#include "src/storage/lib/paver/pinecrest_abr_avbab_conversion.h"
 #include "src/storage/lib/paver/sherlock.h"
+#include "src/storage/lib/paver/system_shutdown_state.h"
 #include "src/storage/lib/paver/test/test-utils.h"
 #include "src/storage/lib/paver/utils.h"
 #include "src/storage/lib/paver/vim3.h"
+#include "src/storage/lib/paver/violet.h"
 #include "src/storage/lib/paver/x64.h"
 
 namespace paver {
@@ -64,6 +76,8 @@ constexpr uint64_t kTebibyte{kGibibyte * 1024};
 
 using device_watcher::RecursiveWaitForFile;
 using driver_integration_test::IsolatedDevmgr;
+using fuchsia_device_manager::SystemPowerState;
+using fuchsia_device_manager::SystemStateTransition;
 using paver::BlockWatcherPauser;
 using paver::PartitionSpec;
 
@@ -76,7 +90,6 @@ constexpr uint8_t kNewFvmType[GPT_GUID_LEN] = GPT_FVM_TYPE_GUID;
 // Legacy Type GUID's
 constexpr uint8_t kBootloaderType[GPT_GUID_LEN] = GUID_BOOTLOADER_VALUE;
 constexpr uint8_t kEfiType[GPT_GUID_LEN] = GUID_EFI_VALUE;
-constexpr uint8_t kCrosKernelType[GPT_GUID_LEN] = GUID_CROS_KERNEL_VALUE;
 constexpr uint8_t kZirconAType[GPT_GUID_LEN] = GUID_ZIRCON_A_VALUE;
 constexpr uint8_t kZirconBType[GPT_GUID_LEN] = GUID_ZIRCON_B_VALUE;
 constexpr uint8_t kZirconRType[GPT_GUID_LEN] = GUID_ZIRCON_R_VALUE;
@@ -94,134 +107,6 @@ constexpr uint8_t kBoot1Type[GPT_GUID_LEN] = GUID_EMMC_BOOT2_VALUE;
 
 constexpr uint8_t kDummyType[GPT_GUID_LEN] = {0xaf, 0x3d, 0xc6, 0x0f, 0x83, 0x84, 0x72, 0x47,
                                               0x8e, 0x79, 0x3d, 0x69, 0xd8, 0x47, 0x7d, 0xe4};
-
-fuchsia_hardware_nand::wire::RamNandInfo NandInfo() {
-  return {
-      .nand_info =
-          {
-              .page_size = kPageSize,
-              .pages_per_block = kPagesPerBlock,
-              .num_blocks = kNumBlocks,
-              .ecc_bits = 8,
-              .oob_size = kOobSize,
-              .nand_class = fuchsia_hardware_nand::wire::Class::kPartmap,
-              .partition_guid = {},
-          },
-      .partition_map =
-          {
-              .device_guid = {},
-              .partition_count = 7,
-              .partitions =
-                  {
-                      fuchsia_hardware_nand::wire::Partition{
-                          .type_guid = {},
-                          .unique_guid = {},
-                          .first_block = 0,
-                          .last_block = 3,
-                          .copy_count = 0,
-                          .copy_byte_offset = 0,
-                          .name = {},
-                          .hidden = true,
-                          .bbt = true,
-                      },
-                      {
-                          .type_guid = GUID_BOOTLOADER_VALUE,
-                          .unique_guid = {},
-                          .first_block = 4,
-                          .last_block = 7,
-                          .copy_count = 0,
-                          .copy_byte_offset = 0,
-                          .name = {'b', 'o', 'o', 't', 'l', 'o', 'a', 'd', 'e', 'r'},
-                          .hidden = false,
-                          .bbt = false,
-                      },
-                      {
-                          .type_guid = GUID_ZIRCON_A_VALUE,
-                          .unique_guid = {},
-                          .first_block = 8,
-                          .last_block = 9,
-                          .copy_count = 0,
-                          .copy_byte_offset = 0,
-                          .name = {'z', 'i', 'r', 'c', 'o', 'n', '-', 'a'},
-                          .hidden = false,
-                          .bbt = false,
-                      },
-                      {
-                          .type_guid = GUID_ZIRCON_B_VALUE,
-                          .unique_guid = {},
-                          .first_block = 10,
-                          .last_block = 11,
-                          .copy_count = 0,
-                          .copy_byte_offset = 0,
-                          .name = {'z', 'i', 'r', 'c', 'o', 'n', '-', 'b'},
-                          .hidden = false,
-                          .bbt = false,
-                      },
-                      {
-                          .type_guid = GUID_ZIRCON_R_VALUE,
-                          .unique_guid = {},
-                          .first_block = 12,
-                          .last_block = 13,
-                          .copy_count = 0,
-                          .copy_byte_offset = 0,
-                          .name = {'z', 'i', 'r', 'c', 'o', 'n', '-', 'r'},
-                          .hidden = false,
-                          .bbt = false,
-                      },
-                      {
-                          .type_guid = GUID_SYS_CONFIG_VALUE,
-                          .unique_guid = {},
-                          .first_block = 14,
-                          .last_block = 17,
-                          .copy_count = 0,
-                          .copy_byte_offset = 0,
-                          .name = {'s', 'y', 's', 'c', 'o', 'n', 'f', 'i', 'g'},
-                          .hidden = false,
-                          .bbt = false,
-                      },
-                      {
-                          .type_guid = GUID_BL2_VALUE,
-                          .unique_guid = {},
-                          .first_block = 18,
-                          .last_block = 22,
-                          .copy_count = 0,
-                          .copy_byte_offset = 0,
-                          .name =
-                              {
-                                  'b',
-                                  'l',
-                                  '2',
-                              },
-                          .hidden = false,
-                          .bbt = false,
-                      },
-                  },
-          },
-      .export_nand_config = true,
-      .export_partition_map = true,
-  };
-}
-
-// Returns the start address of the given partition in |mapper|, or nullptr if
-// the partition doesn't exist in |nand_info|.
-uint8_t* PartitionStart(const fzl::VmoMapper& mapper,
-                        const fuchsia_hardware_nand::wire::RamNandInfo& nand_info,
-                        const std::array<uint8_t, GPT_GUID_LEN> guid) {
-  const auto& map = nand_info.partition_map;
-  const auto* partitions_begin = map.partitions.begin();
-  const auto* partitions_end = partitions_begin + map.partition_count;
-
-  const auto* part = std::find_if(
-      partitions_begin, partitions_end, [&guid](const fuchsia_hardware_nand::wire::Partition& p) {
-        return memcmp(p.type_guid.data(), guid.data(), guid.size()) == 0;
-      });
-  if (part == partitions_end) {
-    return nullptr;
-  }
-
-  return reinterpret_cast<uint8_t*>(mapper.start()) +
-         (part->first_block * static_cast<size_t>(kPageSize) * kPagesPerBlock);
-}
 
 struct PartitionDescription {
   const char* name;
@@ -538,21 +423,88 @@ TEST_F(GptDevicePartitionerTests, AddPartitionAtLargeOffset) {
                                                   15LU * kGibibyte, 0));
 }
 
+class FakeSystemStateTransition final : public fidl::WireServer<SystemStateTransition> {
+ public:
+  void GetTerminationSystemState(GetTerminationSystemStateCompleter::Sync& completer) override {
+    completer.Reply(state_);
+  }
+  void GetMexecZbis(GetMexecZbisCompleter::Sync& completer) override {
+    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+  }
+
+  void SetTerminationSystemState(SystemPowerState state) { state_ = state; }
+
+ private:
+  fidl::ServerBindingGroup<SystemStateTransition> bindings_;
+  SystemPowerState state_ = SystemPowerState::kFullyOn;
+};
+
+class FakeSvc {
+ public:
+  explicit FakeSvc(async_dispatcher_t* dispatcher, IsolatedDevmgr& devmgr) {
+    zx::result server_end = fidl::CreateEndpoints(&root_);
+    ASSERT_OK(server_end);
+    async::PostTask(dispatcher, [dispatcher, &devmgr = devmgr,
+                                 &fake_system_shutdown_state = fake_system_shutdown_state_,
+                                 server_end = std::move(server_end.value())]() mutable {
+      component::OutgoingDirectory outgoing{dispatcher};
+      ASSERT_OK(outgoing.AddUnmanagedProtocol<SystemStateTransition>(
+          [&fake_system_shutdown_state, dispatcher](fidl::ServerEnd<SystemStateTransition> server) {
+            fidl::BindServer(dispatcher, std::move(server), &fake_system_shutdown_state);
+          }));
+
+      // Forward protocol(s) to devmgr
+      ASSERT_OK(outgoing.AddUnmanagedProtocol<fuchsia_fshost::BlockWatcher>(
+          [&devmgr](fidl::ServerEnd<fuchsia_fshost::BlockWatcher> server_end) {
+            ASSERT_OK(component::ConnectAt(devmgr.fshost_svc_dir(), std::move(server_end)));
+          }));
+
+      ASSERT_OK(outgoing.Serve(std::move(server_end)));
+
+      // Stash the outgoing directory on the dispatcher so that the dtor runs on the dispatcher
+      // thread.
+      async::PostDelayedTask(
+          dispatcher, [outgoing = std::move(outgoing)]() {}, zx::duration::infinite());
+    });
+  }
+
+  FakeSystemStateTransition& fake_system_shutdown_state() { return fake_system_shutdown_state_; }
+
+  zx::result<fidl::ClientEnd<fuchsia_io::Directory>> svc() {
+    return component::ConnectAt<fuchsia_io::Directory>(
+        root_, component::OutgoingDirectory::kServiceDirectory);
+  }
+
+ private:
+  FakeSystemStateTransition fake_system_shutdown_state_;
+  fidl::ClientEnd<fuchsia_io::Directory> root_;
+};
+
 class EfiDevicePartitionerTests : public GptDevicePartitionerTests {
  protected:
-  EfiDevicePartitionerTests() : GptDevicePartitionerTests(fbl::String(), 512) {}
+  EfiDevicePartitionerTests() : GptDevicePartitionerTests(fbl::String(), 512) {
+    EXPECT_OK(loop_.StartThread("efi-devicepartitioner-tests-loop"));
+  }
+
+  ~EfiDevicePartitionerTests() { loop_.Shutdown(); }
 
   // Create a DevicePartition for a device.
   zx::result<std::unique_ptr<paver::DevicePartitioner>> CreatePartitioner(BlockDevice* gpt) {
-    fidl::ClientEnd<fuchsia_io::Directory> svc_root = GetSvcRoot();
+    return CreatePartitioner(gpt, GetSvcRoot());
+  }
+  zx::result<std::unique_ptr<paver::DevicePartitioner>> CreatePartitioner(
+      BlockDevice* gpt, fidl::ClientEnd<fuchsia_io::Directory> svc_root) {
     zx::result controller = ControllerFromBlock(gpt);
     if (controller.is_error()) {
       return controller.take_error();
     }
-    return paver::EfiDevicePartitioner::Initialize(devmgr_.devfs_root().duplicate(), svc_root,
-                                                   paver::Arch::kX64,
-                                                   std::move(controller.value()));
+    std::shared_ptr<paver::Context> context;
+    return paver::EfiDevicePartitioner::Initialize(devmgr_.devfs_root().duplicate(),
+                                                   std::move(svc_root), paver::Arch::kX64,
+                                                   std::move(controller.value()), context);
   }
+
+  async::Loop loop_{&kAsyncLoopConfigNeverAttachToThread};
 };
 
 TEST_F(EfiDevicePartitionerTests, InitializeWithoutGptFails) {
@@ -885,237 +837,66 @@ TEST_F(EfiDevicePartitionerTests, ValidatePayload) {
                                          cpp20::span<uint8_t>()));
 }
 
-class CrosDevicePartitionerTests : public GptDevicePartitionerTests {
- protected:
-  CrosDevicePartitionerTests() : GptDevicePartitionerTests(fbl::String(), 512) {}
+TEST_F(EfiDevicePartitionerTests, OnStopRebootBootloader) {
+  std::unique_ptr<BlockDevice> gpt_dev;
+  ASSERT_NO_FATAL_FAILURE(CreateDisk(64 * kGibibyte, &gpt_dev));
 
-  // Create a DevicePartition for a device.
-  void CreatePartitioner(BlockDevice* device,
-                         std::unique_ptr<paver::DevicePartitioner>* partitioner) {
-    zx::result controller_endpoints = fidl::CreateEndpoints<fuchsia_device::Controller>();
-    ASSERT_OK(controller_endpoints);
-    auto& [controller, controller_server] = controller_endpoints.value();
+  FakeSvc fake_svc(loop_.dispatcher(), devmgr_);
+  zx::result svc = fake_svc.svc();
+  EXPECT_OK(svc);
 
-    ASSERT_OK(fidl::WireCall(device->block_controller_interface())
-                  ->ConnectToController(std::move(controller_server))
-                  .status());
-    fidl::ClientEnd<fuchsia_io::Directory> svc_root = GetSvcRoot();
-    zx::result status = paver::CrosDevicePartitioner::Initialize(
-        devmgr_.devfs_root().duplicate(), svc_root, paver::Arch::kX64, std::move(controller));
-    ASSERT_OK(status);
-    *partitioner = std::move(status.value());
-  }
-};
-
-TEST_F(CrosDevicePartitionerTests, InitPartitionTables) {
-  std::unique_ptr<BlockDevice> disk;
-  ASSERT_NO_FATAL_FAILURE(CreateDisk(64 * kGibibyte, &disk));
-
-  {
-    // Pause the block watcher while we write partitions to the disk.
-    // This is to avoid the block watcher seeing an intermediate state of the partition table
-    // and incorrectly treating it as an MBR.
-    // The watcher is automatically resumed when this goes out of scope.
-    auto pauser = paver::BlockWatcherPauser::Create(GetSvcRoot());
-    ASSERT_OK(pauser);
-
-    // Write initial partitions to disk.
-    std::unique_ptr<gpt::GptDevice> gpt;
-    ASSERT_NO_FATAL_FAILURE(CreateGptDevice(disk.get(), &gpt));
-    const std::array<PartitionDescription, 5> partitions_at_start{
-        PartitionDescription{"SYSCFG", kSysConfigType, 0x22, 0x800},
-        PartitionDescription{"ZIRCON-A", kCrosKernelType, 0x822, 0x20000},
-        PartitionDescription{"ZIRCON-B", kCrosKernelType, 0x20822, 0x20000},
-        PartitionDescription{"ZIRCON-R", kCrosKernelType, 0x40822, 0x20000},
-        PartitionDescription{"fvm", kFvmType, 0x60822, 0x1000000},
-    };
-    for (auto& part : partitions_at_start) {
-      ASSERT_OK(
-          gpt->AddPartition(part.name, part.type, GetRandomGuid(), part.start, part.length, 0),
-          "%s", part.name);
-    }
-
-    ASSERT_OK(gpt->Sync());
-  }
-
-  // Create CrOS device partitioner and initialise partition tables.
-  std::unique_ptr<paver::DevicePartitioner> partitioner;
-  ASSERT_NO_FATAL_FAILURE(CreatePartitioner(disk.get(), &partitioner));
+  zx::result partitioner_status = CreatePartitioner(gpt_dev.get(), std::move(svc.value()));
+  ASSERT_OK(partitioner_status);
+  std::unique_ptr<paver::DevicePartitioner> partitioner = std::move(partitioner_status.value());
   ASSERT_OK(partitioner->InitPartitionTables());
 
-  // Ensure the final partition layout looks like we expect it to.
-  std::unique_ptr<gpt::GptDevice> gpt;
-  ASSERT_NO_FATAL_FAILURE(CreateGptDevice(disk.get(), &gpt));
-  const std::array<PartitionDescription, 7> partitions_at_end{
-      PartitionDescription{GPT_ZIRCON_A_NAME, kCrosKernelType, 0x22, 0x20000},
-      PartitionDescription{GPT_ZIRCON_B_NAME, kCrosKernelType, 0x20022, 0x20000},
-      PartitionDescription{GPT_ZIRCON_R_NAME, kCrosKernelType, 0x40022, 0x20000},
-      PartitionDescription{GPT_VBMETA_A_NAME, kVbMetaType, 0x60022, 0x80},
-      PartitionDescription{GPT_VBMETA_B_NAME, kVbMetaType, 0x600a2, 0x80},
-      PartitionDescription{GPT_VBMETA_R_NAME, kVbMetaType, 0x60122, 0x80},
-      PartitionDescription{GPT_FVM_NAME, kNewFvmType, 0x601a2, 0x7000000},
-  };
-  ASSERT_NO_FATAL_FAILURE(EnsurePartitionsMatch(gpt.get(), partitions_at_end));
+  // Set Termination system state to "reboot to bootloader"
+  fake_svc.fake_system_shutdown_state().SetTerminationSystemState(
+      SystemPowerState::kRebootBootloader);
 
-  // Make sure we can find the important partitions.
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kZirconA)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kZirconB)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kZirconR)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kVbMetaA)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kVbMetaB)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kVbMetaR)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kFuchsiaVolumeManager)));
+  // Trigger OnStop event that should set one shot flag
+  ASSERT_OK(partitioner->OnStop());
+
+  // Verify ABR flags
+  auto partition = partitioner->FindPartition(paver::PartitionSpec(paver::Partition::kAbrMeta));
+  ASSERT_OK(partition);
+  auto abr_partition_client = abr::AbrPartitionClient::Create(std::move(partition.value()));
+  ASSERT_OK(abr_partition_client);
+  auto abr_flags_res = abr_partition_client.value()->GetAndClearOneShotFlags();
+  ASSERT_OK(abr_flags_res);
+  EXPECT_TRUE(AbrIsOneShotBootloaderBootSet(abr_flags_res.value()));
+  EXPECT_FALSE(AbrIsOneShotRecoveryBootSet(abr_flags_res.value()));
 }
 
-TEST_F(CrosDevicePartitionerTests, SupportsPartition) {
-  // Create a 32 GiB disk.
-  std::unique_ptr<BlockDevice> disk;
-  ASSERT_NO_FATAL_FAILURE(CreateDisk(32 * kGibibyte, &disk));
+TEST_F(EfiDevicePartitionerTests, OnStopRebootRecovery) {
+  std::unique_ptr<BlockDevice> gpt_dev;
+  ASSERT_NO_FATAL_FAILURE(CreateDisk(64 * kGibibyte, &gpt_dev));
 
-  // Create EFI device partitioner and initialise partition tables.
-  std::unique_ptr<paver::DevicePartitioner> partitioner;
-  ASSERT_NO_FATAL_FAILURE(CreatePartitioner(disk.get(), &partitioner));
+  FakeSvc fake_svc(loop_.dispatcher(), devmgr_);
+  zx::result svc = fake_svc.svc();
+  EXPECT_OK(svc);
 
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconA)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconB)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconR)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kVbMetaA)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kVbMetaB)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kVbMetaR)));
-  EXPECT_TRUE(
-      partitioner->SupportsPartition(PartitionSpec(paver::Partition::kFuchsiaVolumeManager)));
-  EXPECT_TRUE(partitioner->SupportsPartition(
-      PartitionSpec(paver::Partition::kFuchsiaVolumeManager, paver::kOpaqueVolumeContentType)));
+  zx::result partitioner_status = CreatePartitioner(gpt_dev.get(), std::move(svc.value()));
+  ASSERT_OK(partitioner_status);
+  std::unique_ptr<paver::DevicePartitioner> partitioner = std::move(partitioner_status.value());
+  ASSERT_OK(partitioner->InitPartitionTables());
 
-  // Unsupported partition type.
-  EXPECT_FALSE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kUnknown)));
-  EXPECT_FALSE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kBootloaderA)));
-  EXPECT_FALSE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kAbrMeta)));
+  // Set Termination system state to "reboot to bootloader"
+  fake_svc.fake_system_shutdown_state().SetTerminationSystemState(
+      SystemPowerState::kRebootRecovery);
 
-  // Unsupported content type.
-  EXPECT_FALSE(
-      partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconA, "foo_type")));
-}
+  // Trigger OnStop event that should set one shot flag
+  ASSERT_OK(partitioner->OnStop());
 
-TEST_F(CrosDevicePartitionerTests, ValidatePayload) {
-  // Create a 32 GiB disk.
-  std::unique_ptr<BlockDevice> disk;
-  ASSERT_NO_FATAL_FAILURE(CreateDisk(32 * kGibibyte, &disk));
-
-  // Create EFI device partitioner and initialise partition tables.
-  std::unique_ptr<paver::DevicePartitioner> partitioner;
-  ASSERT_NO_FATAL_FAILURE(CreatePartitioner(disk.get(), &partitioner));
-
-  // Test invalid partitions.
-  ASSERT_NOT_OK(partitioner->ValidatePayload(PartitionSpec(paver::Partition::kZirconA),
-                                             cpp20::span<uint8_t>()));
-  ASSERT_NOT_OK(partitioner->ValidatePayload(PartitionSpec(paver::Partition::kZirconB),
-                                             cpp20::span<uint8_t>()));
-  ASSERT_NOT_OK(partitioner->ValidatePayload(PartitionSpec(paver::Partition::kZirconR),
-                                             cpp20::span<uint8_t>()));
-
-  // Test valid partition.
-  constexpr std::string_view kChromeOsMagicHeader = "CHROMEOS";
-  ASSERT_OK(partitioner->ValidatePayload(
-      PartitionSpec(paver::Partition::kZirconA),
-      cpp20::span<const uint8_t>(reinterpret_cast<const uint8_t*>(kChromeOsMagicHeader.data()),
-                                 kChromeOsMagicHeader.size())));
-
-  // Non-kernel partitions are not validated.
-  ASSERT_OK(partitioner->ValidatePayload(PartitionSpec(paver::Partition::kFuchsiaVolumeManager),
-                                         cpp20::span<uint8_t>()));
-}
-
-// Get Cros GPT flags for a kernel with the given priority.
-uint64_t CrosGptPriorityFlags(uint8_t priority) {
-  uint64_t flags = 0;
-  ZX_ASSERT(gpt_cros_attr_set_priority(&flags, priority) >= 0);
-  return flags;
-}
-
-uint8_t CrosGptHighestKernelPriority(const gpt::GptDevice* gpt) {
-  uint8_t top_priority = 0;
-  for (uint32_t i = 0; i < gpt::kPartitionCount; ++i) {
-    zx::result<const gpt_partition_t*> partition_or = gpt->GetPartition(i);
-    if (partition_or.is_error()) {
-      continue;
-    }
-    const gpt_partition_t* partition = partition_or.value();
-    const uint8_t priority = gpt_cros_attr_get_priority(partition->flags);
-    // Ignore anything not of type CROS KERNEL.
-    if (uuid::Uuid(partition->type) != uuid::Uuid(GUID_CROS_KERNEL_VALUE)) {
-      continue;
-    }
-
-    if (priority > top_priority) {
-      top_priority = priority;
-    }
-  }
-
-  return top_priority;
-}
-
-TEST_F(CrosDevicePartitionerTests, KernelPriority) {
-  // Create a 32 GiB disk.
-  std::unique_ptr<BlockDevice> disk;
-  ASSERT_NO_FATAL_FAILURE(CreateDisk(64 * kGibibyte, &disk));
-
-  {
-    // Pause the block watcher while we write partitions to the disk.
-    // This is to avoid the block watcher seeing an intermediate state of the partition table
-    // and incorrectly treating it as an MBR.
-    // The watcher is automatically resumed when this goes out of scope.
-    auto pauser = paver::BlockWatcherPauser::Create(GetSvcRoot());
-    ASSERT_OK(pauser);
-
-    // Set up partition table for test.
-    // Add non-ChromeOS partitions.
-    std::unique_ptr<gpt::GptDevice> gpt;
-    ASSERT_NO_FATAL_FAILURE(CreateGptDevice(disk.get(), &gpt));
-    ASSERT_OK(gpt->AddPartition("CROS_KERNEL", kCrosKernelType, GetRandomGuid(), 0x1000, 0x1000,
-                                CrosGptPriorityFlags(3)));
-    ASSERT_OK(gpt->AddPartition("NOT_KERNEL", GetRandomGuid(), GetRandomGuid(), 0x2000, 0x10,
-                                CrosGptPriorityFlags(7)));
-
-    ASSERT_OK(gpt->Sync());
-  }
-
-  // Partition the disk, which will add ChromeOS partitions and adjust priorities.
-  {
-    std::unique_ptr<paver::DevicePartitioner> partitioner;
-    ASSERT_NO_FATAL_FAILURE(CreatePartitioner(disk.get(), &partitioner));
-    ASSERT_OK(partitioner->InitPartitionTables());
-    ASSERT_OK(partitioner->FinalizePartition(PartitionSpec(paver::Partition::kZirconA)));
-  }
-
-  // Ensure that the "zircon-a" kernel has the highest priority.
-  {
-    std::unique_ptr<gpt::GptDevice> gpt;
-    ASSERT_NO_FATAL_FAILURE(CreateGptDevice(disk.get(), &gpt));
-    const gpt_partition_t* zircon_a_partition =
-        FindPartitionWithLabel(gpt.get(), GPT_ZIRCON_A_NAME);
-    ASSERT_TRUE(zircon_a_partition != nullptr);
-    EXPECT_EQ(gpt_cros_attr_get_priority(zircon_a_partition->flags),
-              CrosGptHighestKernelPriority(gpt.get()));
-  }
-
-  // Partition the disk again.
-  {
-    std::unique_ptr<paver::DevicePartitioner> partitioner;
-    ASSERT_NO_FATAL_FAILURE(CreatePartitioner(disk.get(), &partitioner));
-    ASSERT_OK(partitioner->FinalizePartition(PartitionSpec(paver::Partition::kZirconA)));
-  }
-
-  // Ensure that the "zircon-a" kernel still has the highest priority.
-  {
-    std::unique_ptr<gpt::GptDevice> gpt;
-    ASSERT_NO_FATAL_FAILURE(CreateGptDevice(disk.get(), &gpt));
-    const gpt_partition_t* zircon_a_partition =
-        FindPartitionWithLabel(gpt.get(), GPT_ZIRCON_A_NAME);
-    ASSERT_TRUE(zircon_a_partition != nullptr);
-    EXPECT_EQ(gpt_cros_attr_get_priority(zircon_a_partition->flags),
-              CrosGptHighestKernelPriority(gpt.get()));
-  }
+  // Verify ABR flags
+  auto partition = partitioner->FindPartition(paver::PartitionSpec(paver::Partition::kAbrMeta));
+  ASSERT_OK(partition);
+  auto abr_partition_client = abr::AbrPartitionClient::Create(std::move(partition.value()));
+  ASSERT_OK(abr_partition_client);
+  auto abr_flags_res = abr_partition_client.value()->GetAndClearOneShotFlags();
+  ASSERT_OK(abr_flags_res);
+  EXPECT_FALSE(AbrIsOneShotBootloaderBootSet(abr_flags_res.value()));
+  EXPECT_TRUE(AbrIsOneShotRecoveryBootSet(abr_flags_res.value()));
 }
 
 class FixedDevicePartitionerTests : public zxtest::Test {
@@ -2036,9 +1817,11 @@ TEST_F(NelsonPartitionerTests, ReadBootloaderBSucceed) {
   ASSERT_NO_FATAL_FAILURE(ValidateBootloaderRead(read_buf.data(), kBL2ImageValue, kTplImageValue));
 }
 
-class PinecrestPartitionerTests : public GptDevicePartitionerTests {
+class VioletPartitionerTests : public GptDevicePartitionerTests {
  protected:
-  PinecrestPartitionerTests() : GptDevicePartitionerTests("pinecrest", 512) {}
+  static constexpr size_t kVioletBlockSize = 512;
+
+  VioletPartitionerTests() : GptDevicePartitionerTests("violet", kVioletBlockSize) {}
 
   // Create a DevicePartition for a device.
   zx::result<std::unique_ptr<paver::DevicePartitioner>> CreatePartitioner(BlockDevice* gpt) {
@@ -2047,19 +1830,19 @@ class PinecrestPartitionerTests : public GptDevicePartitionerTests {
     if (controller.is_error()) {
       return controller.take_error();
     }
-    return paver::PinecrestPartitioner::Initialize(devmgr_.devfs_root().duplicate(), svc_root,
-                                                   std::move(controller.value()));
+    return paver::VioletPartitioner::Initialize(devmgr_.devfs_root().duplicate(), svc_root,
+                                                std::move(controller.value()));
   }
 };
 
-TEST_F(PinecrestPartitionerTests, InitializeWithoutGptFails) {
+TEST_F(VioletPartitionerTests, InitializeWithoutGptFails) {
   std::unique_ptr<BlockDevice> gpt_dev;
   ASSERT_NO_FATAL_FAILURE(CreateDisk(&gpt_dev));
 
   ASSERT_NOT_OK(CreatePartitioner({}));
 }
 
-TEST_F(PinecrestPartitionerTests, InitializeWithoutFvmSucceeds) {
+TEST_F(VioletPartitionerTests, InitializeWithoutFvmSucceeds) {
   std::unique_ptr<BlockDevice> gpt_dev;
   ASSERT_NO_FATAL_FAILURE(CreateDisk(32 * kGibibyte, &gpt_dev));
 
@@ -2079,7 +1862,7 @@ TEST_F(PinecrestPartitionerTests, InitializeWithoutFvmSucceeds) {
   }
 }
 
-TEST_F(PinecrestPartitionerTests, AddPartitionNotSupported) {
+TEST_F(VioletPartitionerTests, AddPartitionNotSupported) {
   std::unique_ptr<BlockDevice> gpt_dev;
   ASSERT_NO_FATAL_FAILURE(CreateDisk(64 * kMebibyte, &gpt_dev));
 
@@ -2090,48 +1873,44 @@ TEST_F(PinecrestPartitionerTests, AddPartitionNotSupported) {
                 ZX_ERR_NOT_SUPPORTED);
 }
 
-TEST_F(PinecrestPartitionerTests, FindPartition) {
+TEST_F(VioletPartitionerTests, FindPartition) {
   std::unique_ptr<BlockDevice> gpt_dev;
-  // kBlockCount should be a value large enough to accommodate all partitions and blocks reserved by
-  // gpt. The current value is copied from the case of sherlock.
+  // kBlockCount should be a value large enough to accommodate all partitions and blocks reserved
+  // by GPT. The current value is copied from the case of sherlock. The actual size of fvm
+  // partition on Violet is yet to be finalized.
   constexpr uint64_t kBlockCount = 0x748034;
   ASSERT_NO_FATAL_FAILURE(CreateDisk(kBlockCount * block_size_, &gpt_dev));
 
-  // The initial gpt partitions are randomly chosen and does not necessarily reflect the
-  // actual gpt partition layout in product.
-  const std::vector<PartitionDescription> kPinecrestNewPartitions = {
-      // ABR is matched by type GUID instead of partition name.
+  // The initial GPT partitions are randomly chosen and does not necessarily reflect the
+  // actual GPT partition layout in product.
+  const std::vector<PartitionDescription> kVioletStartingPartitions = {
       {GUID_ABR_META_NAME, kAbrMetaType, 0x10400, 0x10000},
-      {GPT_VBMETA_A_NAME, kDummyType, 0x20400, 0x10000},
-      {GPT_VBMETA_B_NAME, kDummyType, 0x30400, 0x10000},
-      {GPT_VBMETA_R_NAME, kDummyType, 0x40400, 0x10000},
-      {GPT_ZIRCON_A_NAME, kDummyType, 0x50400, 0x10000},
-      {GPT_ZIRCON_B_NAME, kDummyType, 0x60400, 0x10000},
-      {GPT_ZIRCON_R_NAME, kDummyType, 0x70400, 0x10000},
-      {GPT_FVM_NAME, kNewFvmType, 0x80400, 0x10000},
-      {GPT_BOOTLOADER_A_NAME, kDummyType, 0x90400, 0x10000},
-      {GPT_BOOTLOADER_B_NAME, kDummyType, 0xA0400, 0x10000},
+      {"boot", kDummyType, 0x30400, 0x20000},
+      {"boot_a", kZirconAType, 0x50400, 0x10000},
+      {"boot_b", kZirconBType, 0x60400, 0x10000},
+      {"system_a", kDummyType, 0x70400, 0x10000},
+      {"system_b", kDummyType, 0x80400, 0x10000},
+      {GPT_VBMETA_A_NAME, kVbMetaAType, 0x90400, 0x10000},
+      {GPT_VBMETA_B_NAME, kVbMetaBType, 0xa0400, 0x10000},
+      {"reserved_a", kDummyType, 0xc0400, 0x10000},
+      {"reserved_b", kDummyType, 0xd0400, 0x10000},
+      {"reserved_c", kVbMetaRType, 0xe0400, 0x10000},
+      {"cache", kZirconRType, 0xf0400, 0x10000},
+      {"data", kFvmType, 0x100400, 0x10000},
+
   };
-  ASSERT_NO_FATAL_FAILURE(InitializeStartingGPTPartitions(gpt_dev.get(), kPinecrestNewPartitions));
+  ASSERT_NO_FATAL_FAILURE(
+      InitializeStartingGPTPartitions(gpt_dev.get(), kVioletStartingPartitions));
 
   zx::result status = CreatePartitioner(gpt_dev.get());
   ASSERT_OK(status);
   std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
 
-  // Make sure we can find the important partitions.
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kBootloaderA)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kBootloaderB)));
+  // Make sure we can find the ZirconA partition.
   EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kZirconA)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kZirconB)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kZirconR)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kVbMetaA)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kVbMetaB)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kVbMetaR)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kAbrMeta)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kFuchsiaVolumeManager)));
 }
 
-TEST_F(PinecrestPartitionerTests, SupportsPartition) {
+TEST_F(VioletPartitionerTests, SupportsPartition) {
   std::unique_ptr<BlockDevice> gpt_dev;
   ASSERT_NO_FATAL_FAILURE(CreateDisk(64 * kMebibyte, &gpt_dev));
 
@@ -2139,590 +1918,13 @@ TEST_F(PinecrestPartitionerTests, SupportsPartition) {
   ASSERT_OK(status);
   std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
 
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kBootloaderA)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kBootloaderB)));
   EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconA)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconB)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconR)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kVbMetaA)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kVbMetaB)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kVbMetaR)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kAbrMeta)));
-  EXPECT_TRUE(
-      partitioner->SupportsPartition(PartitionSpec(paver::Partition::kFuchsiaVolumeManager)));
-  // Unsupported partition type.
-  EXPECT_FALSE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kUnknown)));
-
-  // Unsupported content type.
-  EXPECT_FALSE(
-      partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconA, "foo_type")));
-}
-
-struct TestAbrData {
-  AbrData data;
-
-  static bool ReadAbrMetaData(void* context, size_t size, uint8_t* buffer) {
-    memcpy(buffer, context, std::min(size, sizeof(AbrData)));
-    return true;
-  }
-
-  static bool WriteAbrMetaData(void* context, const uint8_t* buffer, size_t size) {
-    memcpy(context, buffer, std::min(size, sizeof(AbrData)));
-    return true;
-  }
-
-  AbrOps GetAbrOps() {
-    return AbrOps{
-        .context = &data,
-        .read_abr_metadata = ReadAbrMetaData,
-        .write_abr_metadata = WriteAbrMetaData,
-    };
-  }
-
-  AbrData GetAsAvbab() {
-    AbrData ret = data;
-    ret.crc32 = AbrBigEndianToHost(ret.crc32);
-    return ret;
-  }
-};
-
-TEST(PinecrestAbrAvbabConversionTest, AbrToAvbabCrcUpdated) {
-  TestAbrData abr_data;
-  AbrOps ops = abr_data.GetAbrOps();
-  // This will initialize abr data
-  AbrGetBootSlot(&ops, true, nullptr);
-  AbrData data = abr_data.data;
-  ASSERT_TRUE(abr_to_avbab(&data, kAbrSlotIndexA));
-  // Check that crc is little endian
-  ASSERT_EQ(AbrCrc32(&data, sizeof(data) - sizeof(uint32_t)), data.crc32);
-  // ab slot unbootable flag in reserve is not set.
-  ASSERT_EQ(abr_get_reserve2_ab_slot_unbootable(&data), 0);
-}
-
-TEST(PinecrestAbrAvbabConversionTest, AbrToAvbabUnbootableFlagUpdated) {
-  TestAbrData abr_data;
-  AbrOps ops = abr_data.GetAbrOps();
-  ASSERT_EQ(AbrMarkSlotUnbootable(&ops, kAbrSlotIndexA), kAbrResultOk);
-  ASSERT_EQ(AbrMarkSlotUnbootable(&ops, kAbrSlotIndexB), kAbrResultOk);
-
-  {
-    AbrData data = abr_data.data;
-    ASSERT_TRUE(abr_to_avbab(&data, kAbrSlotIndexA));
-    ASSERT_EQ(abr_get_reserve2_ab_slot_unbootable(&data), 1);
-    ASSERT_EQ(data.slot_data[kAbrSlotIndexA].successful_boot, 1);
-    ASSERT_EQ(AbrCrc32(&data, sizeof(data) - sizeof(uint32_t)), data.crc32);
-  }
-
-  {
-    AbrData data = abr_data.data;
-    ASSERT_TRUE(abr_to_avbab(&data, kAbrSlotIndexB));
-    ASSERT_EQ(abr_get_reserve2_ab_slot_unbootable(&data), 1);
-    ASSERT_EQ(data.slot_data[kAbrSlotIndexB].successful_boot, 1);
-    ASSERT_EQ(AbrCrc32(&data, sizeof(data) - sizeof(uint32_t)), data.crc32);
-  }
-}
-
-TEST(PinecrestAbrAvbabConversionTest, AbrToAvbabIgnoreInvalidAbr) {
-  TestAbrData abr_data;
-  AbrOps ops = abr_data.GetAbrOps();
-  AbrGetBootSlot(&ops, false, nullptr);
-
-  abr_data.data.crc32++;
-  AbrData data = abr_data.data;
-  ASSERT_TRUE(abr_to_avbab(&data, kAbrSlotIndexA));
-  // Data not changed
-  ASSERT_EQ(memcmp(&data, &abr_data.data, sizeof(data)), 0);
-}
-
-TEST(PinecrestAbrAvbabConversionTest, AvbabToAbrCrcUpdated) {
-  TestAbrData abr_data;
-  AbrOps ops = abr_data.GetAbrOps();
-  AbrGetBootSlot(&ops, true, nullptr);
-  AbrData avbab_data = abr_data.GetAsAvbab();
-  avbab_to_abr(&avbab_data);
-  ASSERT_EQ(avbab_data.crc32, abr_data.data.crc32);
-}
-
-TEST(PinecrestAbrAvbabConversionTest, AvbabToAbrABSlotUnbootable) {
-  TestAbrData abr_data;
-  AbrOps ops = abr_data.GetAbrOps();
-  ASSERT_EQ(AbrMarkSlotUnbootable(&ops, kAbrSlotIndexA), kAbrResultOk);
-  ASSERT_EQ(AbrMarkSlotUnbootable(&ops, kAbrSlotIndexB), kAbrResultOk);
-  AbrData data = abr_data.data;
-  ASSERT_TRUE(abr_to_avbab(&data, kAbrSlotIndexA));
-  avbab_to_abr(&data);
-  ASSERT_EQ(data.slot_data[kAbrSlotIndexA].tries_remaining, 0);
-  ASSERT_EQ(data.slot_data[kAbrSlotIndexA].successful_boot, 0);
-  ASSERT_EQ(data.slot_data[kAbrSlotIndexB].tries_remaining, 0);
-  ASSERT_EQ(data.slot_data[kAbrSlotIndexB].successful_boot, 0);
-}
-
-// A placeholder partition client backend for PinecrestAbrClient test.
-class TestPinecrestAbrClientBackend : public paver::PartitionClient {
- public:
-  zx::result<size_t> GetBlockSize() { return zx::ok(1); }
-  zx::result<size_t> GetPartitionSize() { return zx::ok(1); }
-  zx::result<> Trim() { return zx::ok(); }
-  zx::result<> Flush() { return zx::ok(); }
-  zx::result<> Read(const zx::vmo& vmo, size_t size) { return zx::ok(); }
-  zx::result<> Write(const zx::vmo& vmo, size_t vmo_size) { return zx::ok(); }
-};
-
-TEST(PinecrestAbrAvbabConversionTest, PinecrestAbrClient) {
-  fzl::OwnedVmoMapper mapper;
-  ASSERT_OK(mapper.CreateAndMap(sizeof(AbrData), "pinecrest-test"));
-  std::unique_ptr<paver::PartitionClient> partition(new TestPinecrestAbrClientBackend);
-  paver::PinecrestAbrClient client(std::move(partition), kAbrSlotIndexA);
-  EXPECT_TRUE(client.Read(mapper.vmo(), sizeof(AbrData)).is_ok());
-  EXPECT_TRUE(client.Write(mapper.vmo(), sizeof(AbrData)).is_ok());
-}
-
-TEST(PinecrestAbrAvbabConversionTest, PinecrestAbrClientFailsOnInvalidSize) {
-  fzl::OwnedVmoMapper mapper;
-  ASSERT_OK(mapper.CreateAndMap(sizeof(AbrData), "pinecrest-test"));
-  std::unique_ptr<paver::PartitionClient> partition(new TestPinecrestAbrClientBackend);
-  paver::PinecrestAbrClient client(std::move(partition), kAbrSlotIndexA);
-  EXPECT_TRUE(client.Read(mapper.vmo(), sizeof(AbrData) - 1).is_error());
-  EXPECT_TRUE(client.Write(mapper.vmo(), sizeof(AbrData) - 1).is_error());
-}
-
-TEST(PinecrestAbrAvbabConversionTest, PinecrestAbrClientWriteFailsConversionError) {
-  fzl::OwnedVmoMapper mapper;
-  ASSERT_OK(mapper.CreateAndMap(sizeof(AbrData), "pinecrest-test"));
-  std::unique_ptr<paver::PartitionClient> partition(new TestPinecrestAbrClientBackend);
-
-  // Create a A/B unbootable metadata state.
-  TestAbrData abr_data;
-  AbrOps ops = abr_data.GetAbrOps();
-  ASSERT_EQ(AbrMarkSlotUnbootable(&ops, kAbrSlotIndexA), kAbrResultOk);
-  ASSERT_EQ(AbrMarkSlotUnbootable(&ops, kAbrSlotIndexB), kAbrResultOk);
-  memcpy(mapper.start(), &abr_data, sizeof(abr_data));
-
-  // Give an R bootloader slot. This will trigger conversion error when it tries to
-  // mark the target bootloader slot successful.
-  paver::PinecrestAbrClient client(std::move(partition), kAbrSlotIndexR);
-  EXPECT_TRUE(client.Write(mapper.vmo(), sizeof(AbrData)).is_error());
-}
-
-class Vim3PartitionerTests : public GptDevicePartitionerTests {
- protected:
-  static constexpr size_t kVim3BlockSize = 512;
-  Vim3PartitionerTests() : GptDevicePartitionerTests("vim3", kVim3BlockSize) {}
-
-  // Create a DevicePartition for a device.
-  zx::result<std::unique_ptr<paver::DevicePartitioner>> CreatePartitioner(BlockDevice* gpt) {
-    fidl::ClientEnd<fuchsia_io::Directory> svc_root = GetSvcRoot();
-    zx::result controller = ControllerFromBlock(gpt);
-    if (controller.is_error()) {
-      return controller.take_error();
-    }
-    return paver::Vim3Partitioner::Initialize(devmgr_.devfs_root().duplicate(), svc_root,
-                                              std::move(controller.value()));
-  }
-};
-
-TEST_F(Vim3PartitionerTests, InitializeWithoutGptFails) {
-  std::unique_ptr<BlockDevice> gpt_dev;
-  ASSERT_NO_FATAL_FAILURE(CreateDisk(&gpt_dev));
-
-  ASSERT_NOT_OK(CreatePartitioner({}));
-}
-
-TEST_F(Vim3PartitionerTests, InitializeWithoutFvmSucceeds) {
-  std::unique_ptr<BlockDevice> gpt_dev;
-  ASSERT_NO_FATAL_FAILURE(CreateDisk(32 * kGibibyte, &gpt_dev));
-
-  {
-    // Pause the block watcher while we write partitions to the disk.
-    // This is to avoid the block watcher seeing an intermediate state of the partition table
-    // and incorrectly treating it as an MBR.
-    // The watcher is automatically resumed when this goes out of scope.
-    auto pauser = paver::BlockWatcherPauser::Create(GetSvcRoot());
-    ASSERT_OK(pauser);
-
-    // Set up a valid GPT.
-    std::unique_ptr<gpt::GptDevice> gpt;
-    ASSERT_NO_FATAL_FAILURE(CreateGptDevice(gpt_dev.get(), &gpt));
-
-    ASSERT_OK(CreatePartitioner({}));
-  }
-}
-
-TEST_F(Vim3PartitionerTests, AddPartitionNotSupported) {
-  std::unique_ptr<BlockDevice> gpt_dev;
-  ASSERT_NO_FATAL_FAILURE(CreateDisk(64 * kMebibyte, &gpt_dev));
-
-  zx::result status = CreatePartitioner(gpt_dev.get());
-  ASSERT_OK(status);
-
-  ASSERT_STATUS(status->AddPartition(PartitionSpec(paver::Partition::kZirconB)),
-                ZX_ERR_NOT_SUPPORTED);
-}
-
-TEST_F(Vim3PartitionerTests, FindPartition) {
-  std::unique_ptr<BlockDevice> gpt_dev;
-  constexpr uint64_t kBlockCount = 0x800000;
-  ASSERT_NO_FATAL_FAILURE(CreateDisk(kBlockCount * block_size_, &gpt_dev));
-
-  // The initial gpt partitions are randomly chosen and does not necessarily reflect the
-  // actual gpt partition layout in product.
-  std::vector<PartitionDescription> vim3_partitions = {
-      {GPT_DURABLE_BOOT_NAME, kDummyType, 0, 0x10000}, {GPT_VBMETA_A_NAME, kDummyType, 0, 0x10000},
-      {GPT_VBMETA_B_NAME, kDummyType, 0, 0x10000},     {GPT_VBMETA_R_NAME, kDummyType, 0, 0x10000},
-      {GPT_ZIRCON_A_NAME, kDummyType, 0, 0x10000},     {GPT_ZIRCON_B_NAME, kDummyType, 0, 0x10000},
-      {GPT_ZIRCON_R_NAME, kDummyType, 0, 0x10000},     {GPT_FVM_NAME, kDummyType, 0, 0x10000},
-  };
-  vim3_partitions[0].start = 0x10400;
-  for (size_t i = 1; i < vim3_partitions.size(); i++) {
-    vim3_partitions[i].start = vim3_partitions[i - 1].start + vim3_partitions[i - 1].length;
-  }
-  ASSERT_NO_FATAL_FAILURE(InitializeStartingGPTPartitions(gpt_dev.get(), vim3_partitions));
-
-  zx::result status = CreatePartitioner(gpt_dev.get());
-  ASSERT_OK(status);
-  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
-
-  EXPECT_NOT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kBootloaderA)));
-
-  std::unique_ptr<BlockDevice> boot0_dev, boot1_dev;
-  ASSERT_NO_FATAL_FAILURE(CreateDisk(kBlockCount * kBlockSize, kBoot0Type, &boot0_dev));
-  ASSERT_NO_FATAL_FAILURE(CreateDisk(kBlockCount * kBlockSize, kBoot1Type, &boot1_dev));
-
-  // Make sure we can find the important partitions.
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kBootloaderA)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kZirconA)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kZirconB)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kZirconR)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kVbMetaA)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kVbMetaB)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kVbMetaR)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kAbrMeta)));
-  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kFuchsiaVolumeManager)));
-}
-
-TEST_F(Vim3PartitionerTests, CreateAbrClient) {
-  std::unique_ptr<BlockDevice> gpt_dev;
-  constexpr uint64_t kBlockCount = 0x748034;
-  ASSERT_NO_FATAL_FAILURE(CreateDisk(kBlockCount * block_size_, &gpt_dev));
-
-  const std::vector<PartitionDescription> kStartingPartitions = {
-      {GPT_DURABLE_BOOT_NAME, kDummyType, 0x10400, 0x10000},
-  };
-  ASSERT_NO_FATAL_FAILURE(InitializeStartingGPTPartitions(gpt_dev.get(), kStartingPartitions));
-  fidl::ClientEnd<fuchsia_io::Directory> svc_root = GetSvcRoot();
-  std::shared_ptr<paver::Context> context;
-  EXPECT_OK(paver::Vim3AbrClientFactory().New(devmgr_.devfs_root().duplicate(), svc_root, context));
-}
-
-TEST_F(Vim3PartitionerTests, SupportsPartition) {
-  std::unique_ptr<BlockDevice> gpt_dev;
-  ASSERT_NO_FATAL_FAILURE(CreateDisk(64 * kMebibyte, &gpt_dev));
-
-  zx::result status = CreatePartitioner(gpt_dev.get());
-  ASSERT_OK(status);
-  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
-
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kBootloaderA)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconA)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconB)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconR)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kVbMetaA)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kVbMetaB)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kVbMetaR)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kAbrMeta)));
-  EXPECT_TRUE(
-      partitioner->SupportsPartition(PartitionSpec(paver::Partition::kFuchsiaVolumeManager)));
   // Unsupported partition type.
   EXPECT_FALSE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kUnknown)));
 
   // Unsupported content type.
   EXPECT_FALSE(
       partitioner->SupportsPartition(PartitionSpec(paver::Partition::kAbrMeta, "foo_type")));
-}
-
-TEST(AstroPartitionerTests, IsFvmWithinFtl) {
-  std::unique_ptr<SkipBlockDevice> device;
-  ASSERT_NO_FATAL_FAILURE(SkipBlockDevice::Create(NandInfo(), &device));
-
-  fidl::ClientEnd<fuchsia_io::Directory> svc_root;
-  std::shared_ptr<paver::Context> context = std::make_shared<paver::Context>();
-  auto status = paver::AstroPartitioner::Initialize(device->devfs_root(), svc_root, context);
-  ASSERT_OK(status);
-  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
-  ASSERT_TRUE(partitioner->IsFvmWithinFtl());
-}
-
-TEST(AstroPartitionerTests, ChooseAstroPartitioner) {
-  std::unique_ptr<SkipBlockDevice> device;
-  ASSERT_NO_FATAL_FAILURE(SkipBlockDevice::Create(NandInfo(), &device));
-  auto devfs_root = device->devfs_root();
-  ASSERT_OK(RecursiveWaitForFile(devfs_root.get(), "sys/platform/00:00:2d/ramctl").status_value());
-  std::unique_ptr<BlockDevice> zircon_a;
-  ASSERT_NO_FATAL_FAILURE(BlockDevice::Create(devfs_root, kZirconAType, &zircon_a));
-
-  std::shared_ptr<paver::Context> context = std::make_shared<paver::Context>();
-  zx::result partitioner = paver::DevicePartitionerFactory::Create(
-      std::move(devfs_root), kInvalidSvcRoot, paver::Arch::kArm64, context);
-  ASSERT_OK(partitioner);
-  ASSERT_TRUE(partitioner.value()->IsFvmWithinFtl());
-}
-
-TEST(AstroPartitionerTests, AddPartitionTest) {
-  std::unique_ptr<SkipBlockDevice> device;
-  ASSERT_NO_FATAL_FAILURE(SkipBlockDevice::Create(NandInfo(), &device));
-
-  fidl::ClientEnd<fuchsia_io::Directory> svc_root;
-  std::shared_ptr<paver::Context> context = std::make_shared<paver::Context>();
-  auto status = paver::AstroPartitioner::Initialize(device->devfs_root(), svc_root, context);
-  ASSERT_OK(status);
-  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
-  ASSERT_STATUS(partitioner->AddPartition(PartitionSpec(paver::Partition::kZirconB)),
-                ZX_ERR_NOT_SUPPORTED);
-}
-
-TEST(AstroPartitionerTests, WipeFvmTest) {
-  std::unique_ptr<SkipBlockDevice> device;
-  ASSERT_NO_FATAL_FAILURE(SkipBlockDevice::Create(NandInfo(), &device));
-
-  fidl::ClientEnd<fuchsia_io::Directory> svc_root;
-  std::shared_ptr<paver::Context> context = std::make_shared<paver::Context>();
-  auto status = paver::AstroPartitioner::Initialize(device->devfs_root(), svc_root, context);
-  ASSERT_OK(status);
-  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
-  ASSERT_OK(partitioner->WipeFvm());
-}
-
-TEST(AstroPartitionerTests, FinalizePartitionTest) {
-  std::unique_ptr<SkipBlockDevice> device;
-  ASSERT_NO_FATAL_FAILURE(SkipBlockDevice::Create(NandInfo(), &device));
-
-  fidl::ClientEnd<fuchsia_io::Directory> svc_root;
-  std::shared_ptr<paver::Context> context = std::make_shared<paver::Context>();
-  auto status = paver::AstroPartitioner::Initialize(device->devfs_root(), svc_root, context);
-  ASSERT_OK(status);
-  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
-
-  ASSERT_OK(partitioner->FinalizePartition(PartitionSpec(paver::Partition::kBootloaderA)));
-  ASSERT_OK(partitioner->FinalizePartition(PartitionSpec(paver::Partition::kZirconA)));
-  ASSERT_OK(partitioner->FinalizePartition(PartitionSpec(paver::Partition::kZirconB)));
-  ASSERT_OK(partitioner->FinalizePartition(PartitionSpec(paver::Partition::kZirconR)));
-  ASSERT_OK(partitioner->FinalizePartition(PartitionSpec(paver::Partition::kVbMetaA)));
-  ASSERT_OK(partitioner->FinalizePartition(PartitionSpec(paver::Partition::kVbMetaB)));
-  ASSERT_OK(partitioner->FinalizePartition(PartitionSpec(paver::Partition::kVbMetaR)));
-  ASSERT_OK(partitioner->FinalizePartition(PartitionSpec(paver::Partition::kSysconfig)));
-}
-
-TEST(AstroPartitionerTests, FindPartitionTest) {
-  std::unique_ptr<SkipBlockDevice> device;
-  ASSERT_NO_FATAL_FAILURE(SkipBlockDevice::Create(NandInfo(), &device));
-  auto devfs_root = device->devfs_root();
-  ASSERT_OK(RecursiveWaitForFile(devfs_root.get(), "sys/platform/00:00:2d/ramctl").status_value());
-  std::unique_ptr<BlockDevice> fvm;
-  ASSERT_NO_FATAL_FAILURE(BlockDevice::Create(devfs_root, kFvmType, &fvm));
-
-  fidl::ClientEnd<fuchsia_io::Directory> svc_root;
-  std::shared_ptr<paver::Context> context = std::make_shared<paver::Context>();
-  auto status = paver::AstroPartitioner::Initialize(device->devfs_root(), svc_root, context);
-  ASSERT_OK(status);
-  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
-
-  ASSERT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kBootloaderA, "bl2")));
-  ASSERT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kZirconA)));
-  ASSERT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kZirconB)));
-  ASSERT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kZirconR)));
-  ASSERT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kVbMetaA)));
-  ASSERT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kVbMetaB)));
-  ASSERT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kVbMetaR)));
-  ASSERT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kSysconfig)));
-
-  ASSERT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kFuchsiaVolumeManager)));
-}
-
-TEST(AstroPartitionerTests, SupportsPartition) {
-  std::unique_ptr<SkipBlockDevice> device;
-  ASSERT_NO_FATAL_FAILURE(SkipBlockDevice::Create(NandInfo(), &device));
-
-  fidl::ClientEnd<fuchsia_io::Directory> svc_root;
-  std::shared_ptr<paver::Context> context = std::make_shared<paver::Context>();
-  auto status = paver::AstroPartitioner::Initialize(device->devfs_root(), svc_root, context);
-  ASSERT_OK(status);
-  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
-
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kBootloaderA)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kBootloaderA, "bl2")));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconA)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconB)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconR)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kVbMetaA)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kVbMetaB)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kVbMetaR)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kAbrMeta)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kSysconfig)));
-  EXPECT_TRUE(
-      partitioner->SupportsPartition(PartitionSpec(paver::Partition::kFuchsiaVolumeManager)));
-
-  // Unsupported partition type.
-  EXPECT_FALSE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kUnknown)));
-
-  // Unsupported content type.
-  EXPECT_FALSE(
-      partitioner->SupportsPartition(PartitionSpec(paver::Partition::kBootloaderA, "unknown")));
-  EXPECT_FALSE(
-      partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconA, "foo_type")));
-}
-
-// Gets a PartitionClient for the given |spec| and writes |contents| padded to
-// the partition's block size.
-//
-// Call with ASSERT_NO_FATAL_FAILURE.
-void WritePartition(const paver::DevicePartitioner* partitioner, const PartitionSpec& spec,
-                    std::string_view contents) {
-  auto status = partitioner->FindPartition(spec);
-  ASSERT_OK(status);
-  std::unique_ptr<paver::PartitionClient>& partition = status.value();
-
-  auto status2 = partition->GetBlockSize();
-  ASSERT_OK(status2);
-  size_t& block_size = status2.value();
-
-  zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(block_size, ZX_VMO_RESIZABLE, &vmo));
-  ASSERT_OK(vmo.write(contents.data(), 0, contents.size()));
-  ASSERT_OK(partition->Write(vmo, block_size));
-}
-
-TEST(AstroPartitionerTests, BootloaderTplTest) {
-  std::unique_ptr<SkipBlockDevice> device;
-  ASSERT_NO_FATAL_FAILURE(SkipBlockDevice::Create(NandInfo(), &device));
-
-  fidl::ClientEnd<fuchsia_io::Directory> svc_root;
-  std::shared_ptr<paver::Context> context = std::make_shared<paver::Context>();
-  auto status = paver::AstroPartitioner::Initialize(device->devfs_root(), svc_root, context);
-  ASSERT_OK(status);
-  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
-
-  ASSERT_NO_FATAL_FAILURE(
-      WritePartition(partitioner.get(), PartitionSpec(paver::Partition::kBootloaderA), "abcd1234"));
-
-  const uint8_t* tpl_partition =
-      PartitionStart(device->mapper(), NandInfo(), GUID_BOOTLOADER_VALUE);
-  ASSERT_NOT_NULL(tpl_partition);
-  ASSERT_EQ(0, memcmp("abcd1234", tpl_partition, 8));
-}
-
-TEST(AstroPartitionerTests, BootloaderBl2Test) {
-  std::unique_ptr<SkipBlockDevice> device;
-  ASSERT_NO_FATAL_FAILURE(SkipBlockDevice::Create(NandInfo(), &device));
-
-  fidl::ClientEnd<fuchsia_io::Directory> svc_root;
-  std::shared_ptr<paver::Context> context = std::make_shared<paver::Context>();
-  auto status = paver::AstroPartitioner::Initialize(device->devfs_root(), svc_root, context);
-  ASSERT_OK(status);
-  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
-
-  ASSERT_NO_FATAL_FAILURE(WritePartition(
-      partitioner.get(), PartitionSpec(paver::Partition::kBootloaderA, "bl2"), "123xyz"));
-
-  const uint8_t* bl2_partition = PartitionStart(device->mapper(), NandInfo(), GUID_BL2_VALUE);
-  ASSERT_NOT_NULL(bl2_partition);
-  // Special BL2 handling - image contents start at offset 4096 (page 1 on Astro).
-  ASSERT_EQ(0, memcmp("123xyz", bl2_partition + 4096, 6));
-}
-
-class As370PartitionerTests : public zxtest::Test {
- protected:
-  As370PartitionerTests() {
-    IsolatedDevmgr::Args args;
-    args.disable_block_watcher = false;
-    args.board_name = "visalia";
-
-    ASSERT_OK(IsolatedDevmgr::Create(&args, &devmgr_));
-
-    ASSERT_OK(RecursiveWaitForFile(devmgr_.devfs_root().get(), "sys/platform").status_value());
-    ASSERT_OK(RecursiveWaitForFile(devmgr_.devfs_root().get(), "sys/platform/00:00:2d/ramctl")
-                  .status_value());
-  }
-
-  IsolatedDevmgr devmgr_;
-};
-
-TEST_F(As370PartitionerTests, IsFvmWithinFtl) {
-  auto status = paver::As370Partitioner::Initialize(devmgr_.devfs_root().duplicate());
-  ASSERT_OK(status);
-  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
-  ASSERT_TRUE(partitioner->IsFvmWithinFtl());
-}
-
-TEST_F(As370PartitionerTests, ChooseAs370Partitioner) {
-  std::shared_ptr<paver::Context> context = std::make_shared<paver::Context>();
-  zx::result partitioner = paver::DevicePartitionerFactory::Create(
-      devmgr_.devfs_root().duplicate(), kInvalidSvcRoot, paver::Arch::kArm64, context);
-  ASSERT_OK(partitioner);
-  ASSERT_TRUE(partitioner.value()->IsFvmWithinFtl());
-}
-
-TEST_F(As370PartitionerTests, AddPartitionTest) {
-  auto status = paver::As370Partitioner::Initialize(devmgr_.devfs_root().duplicate());
-  ASSERT_OK(status);
-  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
-  ASSERT_STATUS(partitioner->AddPartition(PartitionSpec(paver::Partition::kZirconB)),
-                ZX_ERR_NOT_SUPPORTED);
-}
-
-TEST_F(As370PartitionerTests, WipeFvmTest) {
-  auto status = paver::As370Partitioner::Initialize(devmgr_.devfs_root().duplicate());
-  ASSERT_OK(status);
-  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
-  ASSERT_OK(partitioner->WipeFvm());
-}
-
-TEST_F(As370PartitionerTests, FinalizePartitionTest) {
-  auto status = paver::As370Partitioner::Initialize(devmgr_.devfs_root().duplicate());
-  ASSERT_OK(status);
-  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
-
-  ASSERT_OK(partitioner->FinalizePartition(PartitionSpec(paver::Partition::kBootloaderA)));
-  ASSERT_OK(partitioner->FinalizePartition(PartitionSpec(paver::Partition::kZirconA)));
-  ASSERT_OK(partitioner->FinalizePartition(PartitionSpec(paver::Partition::kZirconB)));
-  ASSERT_OK(partitioner->FinalizePartition(PartitionSpec(paver::Partition::kZirconR)));
-  ASSERT_OK(partitioner->FinalizePartition(PartitionSpec(paver::Partition::kVbMetaA)));
-  ASSERT_OK(partitioner->FinalizePartition(PartitionSpec(paver::Partition::kVbMetaB)));
-  ASSERT_OK(partitioner->FinalizePartition(PartitionSpec(paver::Partition::kVbMetaR)));
-}
-
-TEST_F(As370PartitionerTests, FindPartitionTest) {
-  std::unique_ptr<BlockDevice> fvm;
-  ASSERT_NO_FATAL_FAILURE(BlockDevice::Create(devmgr_.devfs_root(), kFvmType, &fvm));
-
-  auto status = paver::As370Partitioner::Initialize(devmgr_.devfs_root().duplicate());
-  ASSERT_OK(status);
-  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
-
-  ASSERT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kFuchsiaVolumeManager)));
-}
-
-TEST_F(As370PartitionerTests, SupportsPartition) {
-  auto status = paver::As370Partitioner::Initialize(devmgr_.devfs_root().duplicate());
-  ASSERT_OK(status);
-  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
-
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kBootloaderA)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconA)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconB)));
-  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconR)));
-  EXPECT_TRUE(
-      partitioner->SupportsPartition(PartitionSpec(paver::Partition::kFuchsiaVolumeManager)));
-
-  // Unsupported partition type.
-  EXPECT_FALSE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kUnknown)));
-  EXPECT_FALSE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kVbMetaA)));
-  EXPECT_FALSE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kVbMetaB)));
-  EXPECT_FALSE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kVbMetaR)));
-  EXPECT_FALSE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kAbrMeta)));
-
-  // Unsupported content type.
-  EXPECT_FALSE(
-      partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconA, "foo_type")));
 }
 
 }  // namespace

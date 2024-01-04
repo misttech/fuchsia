@@ -12,7 +12,7 @@
 // The section and page numbers reference Revision 5, published August 2021.
 
 #include <fidl/fuchsia.hardware.i2c/cpp/wire.h>
-#include <lib/ddk/debug.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/zx/result.h>
 #include <zircon/assert.h>
 #include <zircon/status.h>
@@ -101,8 +101,8 @@ class Fusb302Register : public hwreg::I2cRegisterBase<RegType, uint8_t, 1> {
 
     const zx_status_t write_status = reg.WriteTo(i2c);
     if (write_status != ZX_OK) {
-      zxlogf(ERROR, "Failed to write register 0x%02x over I2C: %s", reg.reg_addr(),
-             zx_status_get_string(write_status));
+      FDF_LOG(ERROR, "Failed to write register 0x%02x over I2C: %s", reg.reg_addr(),
+              zx_status_get_string(write_status));
       return zx::error_result(write_status);
     }
     return zx::ok();
@@ -1264,7 +1264,7 @@ inline SwitchBlockConfig Switches0Reg::SwitchBlockConfigFor(
       return SwitchBlockConfig::kOpen;
     };
   }
-  ZX_DEBUG_ASSERT_MSG(false, "Invalid CC pin ID: %" PRIu8, static_cast<unsigned char>(cc_pin_id));
+  ZX_DEBUG_ASSERT_MSG(false, "Invalid CC pin ID: %" PRIu8, static_cast<uint8_t>(cc_pin_id));
 }
 
 inline Switches0Reg& Switches0Reg::SetSwitchBlockConfig(usb_pd::ConfigChannelPinId cc_pin_id,
@@ -1282,7 +1282,7 @@ inline Switches0Reg& Switches0Reg::SetSwitchBlockConfig(usb_pd::ConfigChannelPin
       break;
     };
   }
-  ZX_DEBUG_ASSERT_MSG(false, "Invalid CC pin ID: %" PRIu8, static_cast<unsigned char>(cc_pin_id));
+  ZX_DEBUG_ASSERT_MSG(false, "Invalid CC pin ID: %" PRIu8, static_cast<uint8_t>(cc_pin_id));
   return *this;
 }
 

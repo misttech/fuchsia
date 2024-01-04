@@ -20,11 +20,11 @@ void TypeCPortStateMachine::EnterState(TypeCPortState state) {
     case TypeCPortState::kSinkAttached:
       return;
     case TypeCPortState::kSourceAttached:
-      zxlogf(ERROR, "SourceAttached not implemented");
+      FDF_LOG(ERROR, "SourceAttached not implemented");
       return;
   }
 
-  zxlogf(ERROR, "Invalid state: %d", static_cast<int>(state));
+  FDF_LOG(ERROR, "Invalid state: %" PRId32, static_cast<int32_t>(state));
 }
 
 void TypeCPortStateMachine::ExitState(TypeCPortState state) {}
@@ -40,7 +40,7 @@ TypeCPortState TypeCPortStateMachine::NextState(TypeCPortInput input,
         return current_state;
       }
       if (device_.sensors().detected_power_role() != usb_pd::PowerRole::kSink) {
-        zxlogf(DEBUG, "Sink-only, ignoring Source power state");
+        FDF_LOG(DEBUG, "Sink-only, ignoring Source power state");
         return current_state;
       }
       return TypeCPortState::kSinkAttached;
@@ -56,11 +56,11 @@ TypeCPortState TypeCPortStateMachine::NextState(TypeCPortInput input,
 
     case TypeCPortState::kSourceAttached:
       // Only sink is currently implemented
-      zxlogf(ERROR, "SourceAttached not implemented");
+      FDF_LOG(ERROR, "SourceAttached not implemented");
       return current_state;
   }
 
-  zxlogf(ERROR, "Invalid state: %" PRId32, static_cast<int>(current_state));
+  FDF_LOG(ERROR, "Invalid state: %" PRId32, static_cast<int32_t>(current_state));
 }
 
 const char* TypeCPortStateMachine::StateToString(TypeCPortState state) const {
@@ -73,8 +73,8 @@ const char* TypeCPortStateMachine::StateToString(TypeCPortState state) const {
       return "SourceAttached";
   }
 
-  ZX_DEBUG_ASSERT_MSG(false, "Invalid TypeCPortStateMachine: %" PRId32, static_cast<int>(state));
-  return nullptr;
+  ZX_DEBUG_ASSERT_MSG(false, "Invalid TypeCPortState: %" PRId32, static_cast<int32_t>(state));
+  return "(invalid)";
 }
 
 }  // namespace fusb302

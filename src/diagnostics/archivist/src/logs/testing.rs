@@ -20,6 +20,7 @@ use fuchsia_async as fasync;
 use fuchsia_async::Task;
 use fuchsia_component::client::connect_to_protocol_at_dir_svc;
 use fuchsia_inspect::Inspector;
+use fuchsia_sync::Mutex;
 use fuchsia_syslog_listener::{run_log_listener_with_proxy, LogProcessor};
 use fuchsia_zircon as zx;
 use futures::channel::mpsc;
@@ -69,20 +70,20 @@ pub fn create_log_sink_requested_event(
 }
 
 impl TestHarness {
-    pub async fn default() -> Self {
-        Self::make(false).await
+    pub fn default() -> Self {
+        Self::make(false)
     }
 
     /// Create a new test harness which will keep its LogSinks alive as long as it itself is,
     /// useful for testing inspect hierarchies for attribution.
     // TODO(fxbug.dev/53932) this will be made unnecessary by historical retention of component stats
-    pub async fn with_retained_sinks() -> Self {
-        Self::make(true).await
+    pub fn with_retained_sinks() -> Self {
+        Self::make(true)
     }
 
-    async fn make(hold_sinks: bool) -> Self {
+    fn make(hold_sinks: bool) -> Self {
         let inspector = Inspector::default();
-        let log_manager = LogsRepository::new(1_000_000, inspector.root()).await;
+        let log_manager = LogsRepository::new(1_000_000, inspector.root());
         let log_server = LogServer::new(Arc::clone(&log_manager));
 
         let (log_proxy, log_stream) =
@@ -150,7 +151,7 @@ impl TestHarness {
         };
         let mut lm2 = copy_log_message(&lm1);
         let mut lm3 = copy_log_message(&lm1);
-        let mut stream = self.create_stream(Arc::new(ComponentIdentity::unknown())).await;
+        let mut stream = self.create_stream(Arc::new(ComponentIdentity::unknown()));
         stream.write_packet(&p);
 
         p.metadata.severity = LogLevelFilter::Info.into_primitive().into();
@@ -172,39 +173,37 @@ impl TestHarness {
 
     /// Create a [`TestStream`] which should be dropped before calling `filter_test` or
     /// `manager_test`.
-    pub async fn create_stream(
+    pub fn create_stream(
         &mut self,
         identity: Arc<ComponentIdentity>,
     ) -> TestStream<LogPacketWriter> {
         self.make_stream(Arc::new(DefaultLogReader::new(Arc::clone(&self.log_manager), identity)))
-            .await
     }
 
     /// Create a [`TestStream`] which should be dropped before calling `filter_test` or
     /// `manager_test`.
-    pub async fn create_stream_from_log_reader(
+    pub fn create_stream_from_log_reader(
         &mut self,
         log_reader: Arc<dyn LogReader>,
     ) -> TestStream<LogPacketWriter> {
-        self.make_stream(log_reader).await
+        self.make_stream(log_reader)
     }
 
     /// Create a [`TestStream`] which should be dropped before calling `filter_test` or
     /// `manager_test`.
-    pub async fn create_structured_stream(
+    pub fn create_structured_stream(
         &mut self,
         identity: Arc<ComponentIdentity>,
     ) -> TestStream<StructuredMessageWriter> {
         self.make_stream(Arc::new(DefaultLogReader::new(Arc::clone(&self.log_manager), identity)))
-            .await
     }
 
-    async fn make_stream<E, P>(&mut self, log_reader: Arc<dyn LogReader>) -> TestStream<E>
+    fn make_stream<E, P>(&mut self, log_reader: Arc<dyn LogReader>) -> TestStream<E>
     where
         E: LogWriter<Packet = P>,
     {
         let (log_sender, log_receiver) = mpsc::unbounded();
-        let _log_sink_proxy = log_reader.handle_request(log_sender).await;
+        let _log_sink_proxy = log_reader.handle_request(log_sender);
 
         fasync::Task::spawn(log_receiver.for_each_concurrent(None, |rx| rx)).detach();
 
@@ -267,9 +266,8 @@ impl LogWriter for StructuredMessageWriter {
 }
 
 /// A `LogReader` host a LogSink connection.
-#[async_trait]
 pub trait LogReader {
-    async fn handle_request(&self, sender: mpsc::UnboundedSender<Task<()>>) -> LogSinkProxy;
+    fn handle_request(&self, sender: mpsc::UnboundedSender<Task<()>>) -> LogSinkProxy;
 }
 
 // A LogReader that exercises the handle_log_sink code path.
@@ -284,13 +282,12 @@ impl DefaultLogReader {
     }
 }
 
-#[async_trait]
 impl LogReader for DefaultLogReader {
-    async fn handle_request(&self, log_sender: mpsc::UnboundedSender<Task<()>>) -> LogSinkProxy {
+    fn handle_request(&self, log_sender: mpsc::UnboundedSender<Task<()>>) -> LogSinkProxy {
         let (log_sink_proxy, log_sink_stream) =
             fidl::endpoints::create_proxy_and_stream::<LogSinkMarker>().unwrap();
-        let container = self.log_manager.get_log_container(Arc::clone(&self.identity)).await;
-        container.handle_log_sink(log_sink_stream, log_sender).await;
+        let container = self.log_manager.get_log_container(Arc::clone(&self.identity));
+        container.handle_log_sink(log_sink_stream, log_sender);
         log_sink_proxy
     }
 }
@@ -319,12 +316,12 @@ impl EventStreamLogReader {
     ) {
         while let Ok(res) = stream.get_next().await {
             for event in res {
-                Self::handle_event(event, sender.clone(), Arc::clone(&log_manager)).await
+                Self::handle_event(event, sender.clone(), Arc::clone(&log_manager))
             }
         }
     }
 
-    async fn handle_event(
+    fn handle_event(
         event: fcomponent::Event,
         sender: mpsc::UnboundedSender<Task<()>>,
         log_manager: Arc<LogsRepository>,
@@ -334,14 +331,13 @@ impl EventStreamLogReader {
                 Event { payload: EventPayload::LogSinkRequested(payload), .. } => payload,
                 other => unreachable!("should never see {:?} here", other),
             };
-        let container = log_manager.get_log_container(component).await;
-        container.handle_log_sink(request_stream, sender).await;
+        let container = log_manager.get_log_container(component);
+        container.handle_log_sink(request_stream, sender);
     }
 }
 
-#[async_trait]
 impl LogReader for EventStreamLogReader {
-    async fn handle_request(&self, log_sender: mpsc::UnboundedSender<Task<()>>) -> LogSinkProxy {
+    fn handle_request(&self, log_sender: mpsc::UnboundedSender<Task<()>>) -> LogSinkProxy {
         let (event_stream_proxy, mut event_stream) =
             fidl::endpoints::create_proxy_and_stream::<fcomponent::EventStreamMarker>().unwrap();
         let (log_sink_proxy, log_sink_server_end) =
@@ -407,11 +403,11 @@ pub async fn debuglog_test(
     debug_log: TestDebugLog,
 ) -> Inspector {
     let inspector = Inspector::default();
-    let lm = LogsRepository::new(1_000_000, inspector.root()).await;
+    let lm = LogsRepository::new(1_000_000, inspector.root());
     let log_server = LogServer::new(Arc::clone(&lm));
     let (log_proxy, log_stream) = fidl::endpoints::create_proxy_and_stream::<LogMarker>().unwrap();
     log_server.spawn(log_stream);
-    lm.drain_debuglog(debug_log).await;
+    lm.drain_debuglog(debug_log);
 
     validate_log_stream(expected, log_proxy, None).await;
     inspector
@@ -443,18 +439,18 @@ pub fn copy_log_message(log_message: &LogMessage) -> LogMessage {
 
 /// A fake reader that returns enqueued responses on read.
 pub struct TestDebugLog {
-    read_responses: async_lock::Mutex<VecDeque<ReadResponse>>,
+    read_responses: Mutex<VecDeque<ReadResponse>>,
 }
 type ReadResponse = Result<zx::sys::zx_log_record_t, zx::Status>;
 
 #[async_trait]
 impl crate::logs::debuglog::DebugLog for TestDebugLog {
-    async fn read(&self) -> Result<zx::sys::zx_log_record_t, zx::Status> {
-        self.read_responses.lock().await.pop_front().expect("Got more read requests than enqueued")
+    fn read(&self) -> Result<zx::sys::zx_log_record_t, zx::Status> {
+        self.read_responses.lock().pop_front().expect("Got more read requests than enqueued")
     }
 
     async fn ready_signal(&self) -> Result<(), zx::Status> {
-        if self.read_responses.lock().await.is_empty() {
+        if self.read_responses.lock().is_empty() {
             // ready signal should never complete if we have no logs left.
             futures::future::pending().await
         }
@@ -464,21 +460,21 @@ impl crate::logs::debuglog::DebugLog for TestDebugLog {
 
 impl Default for TestDebugLog {
     fn default() -> Self {
-        TestDebugLog { read_responses: async_lock::Mutex::new(VecDeque::new()) }
+        TestDebugLog { read_responses: Mutex::new(VecDeque::new()) }
     }
 }
 
 impl TestDebugLog {
-    pub async fn enqueue_read(&self, response: zx::sys::zx_log_record_t) {
-        self.read_responses.lock().await.push_back(Ok(response));
+    pub fn enqueue_read(&self, response: zx::sys::zx_log_record_t) {
+        self.read_responses.lock().push_back(Ok(response));
     }
 
-    pub async fn enqueue_read_entry(&self, entry: &TestDebugEntry) {
-        self.enqueue_read(entry.record).await;
+    pub fn enqueue_read_entry(&self, entry: &TestDebugEntry) {
+        self.enqueue_read(entry.record);
     }
 
-    pub async fn enqueue_read_fail(&self, error: zx::Status) {
-        self.read_responses.lock().await.push_back(Err(error))
+    pub fn enqueue_read_fail(&self, error: zx::Status) {
+        self.read_responses.lock().push_back(Err(error))
     }
 }
 
@@ -502,7 +498,14 @@ impl TestDebugEntry {
         rec.pid = TEST_KLOG_PID;
         rec.tid = TEST_KLOG_TID;
         rec.data[..len].copy_from_slice(&log_data[..len]);
+        rec.severity = 0x30 /* info */;
         TestDebugEntry { record: rec }
+    }
+
+    pub fn new_with_severity(log_data: &[u8], severity: u8) -> Self {
+        let mut this = Self::new(log_data);
+        this.record.severity = severity;
+        this
     }
 }
 

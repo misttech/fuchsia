@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 #include "tools/fidl/fidlc/include/fidl/diagnostics.h"
 #include "tools/fidl/fidlc/include/fidl/experimental_flags.h"
-#include "tools/fidl/fidlc/tests/error_test.h"
 #include "tools/fidl/fidlc/tests/test_library.h"
 
 namespace fidl {
@@ -58,7 +57,8 @@ type C = struct { b B; };
 )FIDL");
 
   library.EnableFlag(ExperimentalFlags::Flag::kAllowNewTypes);
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrTypeMustBeResource);
+  library.ExpectFail(fidl::ErrTypeMustBeResource, "C", "b", "struct");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(NewTypeTests, GoodNewTypesSimple) {
@@ -141,7 +141,8 @@ TEST(NewTypeTests, BadNewTypesConstraints) {
   TestLibrary library;
   library.AddFile("bad/fi-0179.test.fidl");
   library.EnableFlag(ExperimentalFlags::Flag::kAllowNewTypes);
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrNewTypeCannotHaveConstraint);
+  library.ExpectFail(fidl::ErrNewTypeCannotHaveConstraint, "Name");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 }  // namespace

@@ -1,23 +1,37 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use super::*;
 
 use crate::{
-    fs::{
+    device::{kobject::DeviceMetadata, DeviceMode},
+    fs::sysfs::BlockDeviceDirectory,
+    mm::{MemoryAccessorExt, ProtectionFlags, PAGE_SIZE},
+    task::CurrentTask,
+    vfs::{
         buffers::{InputBuffer, OutputBuffer},
-        kobject::KObjectDeviceAttribute,
-        *,
+        default_ioctl, fileops_impl_dataless, fileops_impl_seekable, fileops_impl_seekless,
+        FdNumber, FileHandle, FileObject, FileOps, FsNode,
     },
-    lock::Mutex,
-    logging::*,
-    mm::*,
-    syscalls::*,
-    task::*,
-    types::*,
 };
 use bitflags::bitflags;
 use fuchsia_zircon::{Vmo, VmoChildOptions};
+use starnix_logging::not_implemented;
+use starnix_sync::Mutex;
+use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_uapi::{
+    __kernel_old_dev_t,
+    device_type::{DeviceType, LOOP_MAJOR},
+    errno, error,
+    errors::Errno,
+    loop_info, loop_info64,
+    open_flags::OpenFlags,
+    uapi,
+    user_address::UserRef,
+    BLKFLSBUF, BLKGETSIZE, BLKGETSIZE64, LOOP_CHANGE_FD, LOOP_CLR_FD, LOOP_CONFIGURE, LOOP_CTL_ADD,
+    LOOP_CTL_GET_FREE, LOOP_CTL_REMOVE, LOOP_GET_STATUS, LOOP_GET_STATUS64, LOOP_SET_BLOCK_SIZE,
+    LOOP_SET_CAPACITY, LOOP_SET_DIRECT_IO, LOOP_SET_FD, LOOP_SET_STATUS, LOOP_SET_STATUS64,
+    LO_FLAGS_AUTOCLEAR, LO_FLAGS_DIRECT_IO, LO_FLAGS_PARTSCAN, LO_FLAGS_READ_ONLY, LO_KEY_SIZE,
+};
 use std::{
     collections::btree_map::{BTreeMap, Entry},
     sync::Arc,
@@ -115,15 +129,22 @@ struct LoopDevice {
 }
 
 impl LoopDevice {
-    fn new(kernel: &Arc<Kernel>, minor: u32) -> Arc<Self> {
+    fn new(current_task: &CurrentTask, minor: u32) -> Arc<Self> {
+        let kernel = current_task.kernel();
+        let registry = &kernel.device_registry;
         let loop_device_name = format!("loop{minor}");
-        kernel.add_device(KObjectDeviceAttribute::new(
-            None,
+        let virtual_block_class = registry.get_or_create_class(b"block", registry.virtual_bus());
+        registry.add_device(
+            current_task,
             loop_device_name.as_bytes(),
-            loop_device_name.as_bytes(),
-            DeviceType::new(LOOP_MAJOR, minor),
-            DeviceMode::Block,
-        ));
+            DeviceMetadata::new(
+                loop_device_name.as_bytes(),
+                DeviceType::new(LOOP_MAJOR, minor),
+                DeviceMode::Block,
+            ),
+            virtual_block_class,
+            BlockDeviceDirectory::new,
+        );
         Arc::new(Self { number: minor, state: Default::default() })
     }
 
@@ -407,15 +428,17 @@ impl FileOps for LoopDeviceFile {
     }
 }
 
-pub fn loop_device_init(kernel: &Arc<Kernel>) {
+pub fn loop_device_init(current_task: &CurrentTask) {
+    let kernel = current_task.kernel();
+
     // Device registry.
     kernel
         .device_registry
-        .register_blkdev_major(LOOP_MAJOR, get_or_create_loop_device)
+        .register_major(LOOP_MAJOR, get_or_create_loop_device, DeviceMode::Block)
         .expect("loop device register failed.");
 
     // Ensure initial loop devices.
-    kernel.loop_device_registry.ensure_initial_devices(kernel);
+    kernel.loop_device_registry.ensure_initial_devices(current_task);
 }
 
 #[derive(Debug, Default)]
@@ -425,22 +448,26 @@ pub struct LoopDeviceRegistry {
 
 impl LoopDeviceRegistry {
     /// Ensure initial loop devices.
-    fn ensure_initial_devices(&self, kernel: &Arc<Kernel>) {
+    fn ensure_initial_devices(&self, current_task: &CurrentTask) {
         for minor in 0..8 {
-            self.get_or_create(kernel, minor);
+            self.get_or_create(current_task, minor);
         }
     }
 
-    fn get_or_create(&self, kernel: &Arc<Kernel>, minor: u32) -> Arc<LoopDevice> {
-        self.devices.lock().entry(minor).or_insert_with(|| LoopDevice::new(kernel, minor)).clone()
+    fn get_or_create(&self, current_task: &CurrentTask, minor: u32) -> Arc<LoopDevice> {
+        self.devices
+            .lock()
+            .entry(minor)
+            .or_insert_with(|| LoopDevice::new(current_task, minor))
+            .clone()
     }
 
-    fn find(&self, kernel: &Arc<Kernel>) -> Result<u32, Errno> {
+    fn find(&self, current_task: &CurrentTask) -> Result<u32, Errno> {
         let mut devices = self.devices.lock();
         for minor in 0..u32::MAX {
             match devices.entry(minor) {
                 Entry::Vacant(e) => {
-                    e.insert(LoopDevice::new(kernel, minor));
+                    e.insert(LoopDevice::new(current_task, minor));
                     return Ok(minor);
                 }
                 Entry::Occupied(e) => {
@@ -453,10 +480,10 @@ impl LoopDeviceRegistry {
         Err(errno!(ENODEV))
     }
 
-    fn add(&self, kernel: &Arc<Kernel>, minor: u32) -> Result<(), Errno> {
+    fn add(&self, current_task: &CurrentTask, minor: u32) -> Result<(), Errno> {
         match self.devices.lock().entry(minor) {
             Entry::Vacant(e) => {
-                e.insert(LoopDevice::new(kernel, minor));
+                e.insert(LoopDevice::new(current_task, minor));
                 Ok(())
             }
             Entry::Occupied(_) => {
@@ -510,10 +537,16 @@ impl FileOps for LoopControlDevice {
         arg: SyscallArg,
     ) -> Result<SyscallResult, Errno> {
         match request {
-            LOOP_CTL_GET_FREE => Ok(self.registry.find(current_task.kernel())?.into()),
+            LOOP_CTL_GET_FREE => Ok(self.registry.find(current_task)?.into()),
             LOOP_CTL_ADD => {
                 let minor = arg.into();
-                self.registry.add(current_task.kernel(), minor)?;
+                let registry = Arc::clone(&self.registry);
+                // Delegate to the system task to have the permission to create the loop device.
+                current_task
+                    .kernel()
+                    .kthreads
+                    .spawner()
+                    .spawn_and_get_result_sync(move |_, task| registry.add(task, minor))??;
                 Ok(minor.into())
             }
             LOOP_CTL_REMOVE => {
@@ -535,7 +568,7 @@ fn get_or_create_loop_device(
     Ok(current_task
         .kernel()
         .loop_device_registry
-        .get_or_create(&current_task.kernel(), id.minor())
+        .get_or_create(current_task, id.minor())
         .create_file_ops())
 }
 
@@ -543,8 +576,11 @@ fn get_or_create_loop_device(
 mod tests {
     use super::*;
     use crate::{
-        fs::{buffers::*, fuchsia::new_remote_file},
+        fs::fuchsia::new_remote_file,
         testing::*,
+        vfs::{
+            buffers::*, Anon, DynamicFile, DynamicFileBuf, DynamicFileSource, FdFlags, FsNodeOps,
+        },
     };
     use fidl::endpoints::Proxy;
     use fidl_fuchsia_io as fio;
@@ -643,7 +679,7 @@ mod tests {
     async fn basic_get_vmo() {
         let test_data_path = "/pkg/data/testfile.txt";
         let expected_contents = std::fs::read(test_data_path).unwrap();
-        let (kernel, current_task) = create_kernel_and_task();
+        let (_kernel, current_task) = create_kernel_and_task();
 
         let txt_channel: zx::Channel =
             fuchsia_fs::file::open_in_namespace(test_data_path, fio::OpenFlags::RIGHT_READABLE)
@@ -652,7 +688,8 @@ mod tests {
                 .unwrap()
                 .into();
 
-        let backing_file = new_remote_file(&kernel, txt_channel.into(), OpenFlags::RDONLY).unwrap();
+        let backing_file =
+            new_remote_file(&current_task, txt_channel.into(), OpenFlags::RDONLY).unwrap();
         let loop_file = bind_simple_loop_device(&current_task, backing_file, OpenFlags::RDONLY);
 
         let vmo = loop_file.get_vmo(&current_task, None, ProtectionFlags::READ).unwrap();
@@ -673,7 +710,7 @@ mod tests {
         let expected_contents = &expected_contents
             [expected_offset as usize..(expected_offset + expected_size_limit) as usize];
 
-        let (kernel, current_task) = create_kernel_and_task();
+        let (_kernel, current_task) = create_kernel_and_task();
 
         let txt_channel: zx::Channel =
             fuchsia_fs::file::open_in_namespace(&test_data_path, fio::OpenFlags::RIGHT_READABLE)
@@ -682,7 +719,8 @@ mod tests {
                 .unwrap()
                 .into();
 
-        let backing_file = new_remote_file(&kernel, txt_channel.into(), OpenFlags::RDONLY).unwrap();
+        let backing_file =
+            new_remote_file(&current_task, txt_channel.into(), OpenFlags::RDONLY).unwrap();
         let loop_file = bind_simple_loop_device(&current_task, backing_file, OpenFlags::RDONLY);
 
         let info_addr = map_object_anywhere(

@@ -22,12 +22,11 @@ use {
     fidl_fuchsia_wlan_sme as fidl_sme,
     fuchsia_inspect_contrib::{inspect_log, log::InspectBytes},
     fuchsia_zircon as zx,
-    ieee80211::{Bssid, MacAddr, Ssid},
+    ieee80211::{Bssid, MacAddr, MacAddrBytes, Ssid},
     link_state::LinkState,
     tracing::{error, info, warn},
     wlan_common::{
         bss::BssDescription,
-        format::MacFmt as _,
         ie::{
             self,
             rsn::{cipher, suite_selector::OUI},
@@ -37,7 +36,7 @@ use {
     },
     wlan_rsn::{
         auth,
-        rsna::{AuthStatus, SecAssocUpdate, UpdateSink},
+        rsna::{AuthRejectedReason, AuthStatus, SecAssocUpdate, UpdateSink},
     },
     wlan_statemachine::*,
 };
@@ -51,8 +50,7 @@ const DEFAULT_JOIN_AUTH_ASSOC_FAILURE_TIMEOUT: u32 = 60; // beacon intervals
 const MAX_REASSOCIATIONS_WITHOUT_LINK_UP: u32 = 5;
 
 const IDLE_STATE: &str = "IdleState";
-const DISCONNECTING_STATE: &str = "Disconnecting
-State";
+const DISCONNECTING_STATE: &str = "DisconnectingState";
 const CONNECTING_STATE: &str = "ConnectingState";
 const RSNA_STATE: &str = "EstablishingRsnaState";
 const LINK_UP_STATE: &str = "LinkUpState";
@@ -183,7 +181,13 @@ impl Idle {
         let protection_ie = match build_protection_ie(&cmd.protection) {
             Ok(ie) => ie,
             Err(e) => {
-                error!("Failed to build protection IEs: {}", e);
+                let msg = format!("Failed to build protection IEs: {}", e);
+                error!("{}", msg);
+                let _ = state_change_ctx.replace(StateChangeContext::Connect {
+                    msg,
+                    bssid: cmd.bss.bssid,
+                    ssid: cmd.bss.ssid,
+                });
                 return Err(self);
             }
         };
@@ -201,7 +205,7 @@ impl Idle {
                 let wep_key = build_wep_set_key_descriptor(cmd.bss.bssid.clone(), key);
                 inspect_log!(context.inspect.rsn_events.lock(), {
                     derived_key: "WEP",
-                    cipher: format!("{:?}", cipher::Cipher::new_dot11(wep_key.cipher_suite_type)),
+                    cipher: format!("{:?}", cipher::Cipher::new_dot11(wep_key.cipher_suite_type.into_primitive() as u8)),
                     key_index: wep_key.key_id,
                 });
                 (fidl_mlme::AuthenticationTypes::SharedKey, vec![], Some(wep_key))
@@ -313,6 +317,7 @@ impl Connecting {
             other => {
                 let msg = format!("Connect request failed: {:?}", other);
                 warn!("{}", msg);
+                state_change_ctx.set_msg(msg);
                 send_deauthenticate_request(&self.cmd.bss, &context.mlme_sink);
                 let timeout_id = context.timer.schedule(event::DeauthenticateTimeout);
                 return Err(Disconnecting {
@@ -526,7 +531,7 @@ impl Associated {
                 connect_txn_sink: self.connect_txn_sink,
                 protection,
             };
-            let req = fidl_mlme::ReconnectRequest { peer_sta_address: cmd.bss.bssid.0 };
+            let req = fidl_mlme::ReconnectRequest { peer_sta_address: cmd.bss.bssid.to_array() };
             context.mlme_sink.send(MlmeRequest::Reconnect(req));
             Ok(Connecting {
                 cfg: self.cfg,
@@ -647,14 +652,12 @@ impl Associated {
         }
 
         // Reject EAPoL frames from other BSS.
-        if ind.src_addr != self.latest_ap_state.bssid.0 {
+        if &ind.src_addr != self.latest_ap_state.bssid.as_array() {
             let eapol_pdu = &ind.data[..];
             inspect_log!(context.inspect.rsn_events.lock(), {
                 rx_eapol_frame: InspectBytes(&eapol_pdu),
-                foreign_bssid: ind.src_addr.to_mac_string(),
-                foreign_bssid_hash: context.inspect.hasher.hash_mac_addr(&ind.src_addr),
-                current_bssid: self.latest_ap_state.bssid.0.to_mac_string(),
-                current_bssid_hash: context.inspect.hasher.hash_mac_addr(&self.latest_ap_state.bssid.0),
+                foreign_bssid: MacAddr::from(ind.src_addr).to_string(),
+                current_bssid: self.latest_ap_state.bssid.to_string(),
                 status: "rejected (foreign BSS)",
             });
             return Ok(self);
@@ -882,21 +885,21 @@ impl ClientState {
                     let (transition, associated) = state.release_data();
                     match associated.on_eapol_ind(ind, &mut state_change_ctx, context) {
                         Ok(associated) => transition.to(associated).into(),
-                        Err(idle) => transition.to(idle).into(),
+                        Err(disconnecting) => transition.to(disconnecting).into(),
                     }
                 }
                 MlmeEvent::EapolConf { resp } => {
                     let (transition, associated) = state.release_data();
                     match associated.on_eapol_conf(resp, &mut state_change_ctx, context) {
                         Ok(associated) => transition.to(associated).into(),
-                        Err(idle) => transition.to(idle).into(),
+                        Err(disconnecting) => transition.to(disconnecting).into(),
                     }
                 }
                 MlmeEvent::SetKeysConf { conf } => {
                     let (transition, associated) = state.release_data();
                     match associated.on_set_keys_conf(conf, &mut state_change_ctx, context) {
                         Ok(associated) => transition.to(associated).into(),
-                        Err(idle) => transition.to(idle).into(),
+                        Err(disconnecting) => transition.to(disconnecting).into(),
                     }
                 }
                 MlmeEvent::OnChannelSwitched { info } => {
@@ -1140,12 +1143,17 @@ fn process_sae_updates(updates: UpdateSink, peer_sta_address: MacAddr, context: 
             }
             SecAssocUpdate::SaeAuthStatus(status) => context.mlme_sink.send(
                 MlmeRequest::SaeHandshakeResp(fidl_mlme::SaeHandshakeResponse {
-                    peer_sta_address,
+                    peer_sta_address: peer_sta_address.to_array(),
                     status_code: match status {
                         AuthStatus::Success => fidl_ieee80211::StatusCode::Success,
-                        AuthStatus::Rejected => {
-                            fidl_ieee80211::StatusCode::RefusedReasonUnspecified
-                        }
+                        AuthStatus::Rejected(reason) => match reason {
+                            AuthRejectedReason::TooManyRetries => {
+                                fidl_ieee80211::StatusCode::RejectedSequenceTimeout
+                            }
+                            AuthRejectedReason::PmksaExpired | AuthRejectedReason::AuthFailed => {
+                                fidl_ieee80211::StatusCode::RefusedReasonUnspecified
+                            }
+                        },
                         AuthStatus::InternalError => {
                             fidl_ieee80211::StatusCode::RefusedReasonUnspecified
                         }
@@ -1173,7 +1181,7 @@ fn process_sae_handshake_ind(
 
     let mut updates = UpdateSink::default();
     supplicant.on_sae_handshake_ind(&mut updates)?;
-    process_sae_updates(updates, ind.peer_sta_address, context);
+    process_sae_updates(updates, MacAddr::from(ind.peer_sta_address), context);
     Ok(())
 }
 
@@ -1182,7 +1190,7 @@ fn process_sae_frame_rx(
     frame: fidl_mlme::SaeFrame,
     context: &mut Context,
 ) -> Result<(), anyhow::Error> {
-    let peer_sta_address = frame.peer_sta_address.clone();
+    let peer_sta_address = MacAddr::from(frame.peer_sta_address.clone());
     let supplicant = match protection {
         Protection::Rsna(rsna) => &mut rsna.supplicant,
         _ => bail!("Unexpected SAE frame received"),
@@ -1210,7 +1218,7 @@ fn process_sae_timeout(
 
             let mut updates = UpdateSink::default();
             supplicant.on_sae_timeout(&mut updates, timer.0)?;
-            process_sae_updates(updates, bssid.0, context);
+            process_sae_updates(updates, MacAddr::from(bssid), context);
         }
         _ => (),
     }
@@ -1253,10 +1261,8 @@ fn log_state_change(
                     from: start_state,
                     to: new_state.state_name(),
                     ctx: msg,
-                    bssid: bssid.0.to_mac_string(),
-                    bssid_hash: context.inspect.hasher.hash_mac_addr(&bssid.0),
+                    bssid: bssid.to_string(),
                     ssid: ssid.to_string(),
-                    ssid_hash: context.inspect.hasher.hash_ssid(&ssid)
                 });
             }
             StateChangeContext::Msg(msg) => {
@@ -1285,9 +1291,11 @@ fn build_wep_set_key_descriptor(bssid: Bssid, key: &WepKey) -> fidl_mlme::SetKey
         key_type: fidl_mlme::KeyType::Pairwise,
         key: key.clone().into(),
         key_id: 0,
-        address: bssid.0,
+        address: bssid.to_array(),
         cipher_suite_oui: OUI.into(),
-        cipher_suite_type: cipher_suite,
+        cipher_suite_type: fidl_ieee80211::CipherSuiteType::from_primitive_allow_unknown(
+            cipher_suite.into(),
+        ),
         rsc: 0,
     }
 }
@@ -1317,7 +1325,7 @@ fn connect_cmd_inspect_summary(cmd: &ConnectCommand) -> String {
 
 fn send_deauthenticate_request(current_bss: &BssDescription, mlme_sink: &MlmeSink) {
     mlme_sink.send(MlmeRequest::Deauthenticate(fidl_mlme::DeauthenticateRequest {
-        peer_sta_address: current_bss.bssid.0,
+        peer_sta_address: current_bss.bssid.to_array(),
         reason_code: fidl_ieee80211::ReasonCode::StaLeaving,
     }));
 }
@@ -1331,8 +1339,11 @@ mod tests {
     use {
         super::*,
         anyhow::format_err,
+        diagnostics_assertions::{
+            assert_data_tree, AnyBytesProperty, AnyNumericProperty, AnyStringProperty,
+        },
         fuchsia_async::DurationExt,
-        fuchsia_inspect::{assert_data_tree, testing::AnyProperty, Inspector},
+        fuchsia_inspect::Inspector,
         futures::{channel::mpsc, Stream, StreamExt},
         ieee80211::Ssid,
         link_state::{EstablishingRsna, LinkUp},
@@ -1342,13 +1353,15 @@ mod tests {
             bss::Protection as BssProtection,
             channel::{Cbw, Channel},
             fake_bss_description,
-            hasher::WlanHasher,
             ie::{
                 fake_ies::{fake_probe_resp_wsc_ie_bytes, get_vendor_ie_bytes_for_wsc_ie},
                 rsn::rsne::Rsne,
             },
             test_utils::{
-                fake_features::{fake_mac_sublayer_support, fake_security_support},
+                fake_features::{
+                    fake_mac_sublayer_support, fake_security_support,
+                    fake_spectrum_management_support_empty,
+                },
                 fake_stas::IesOverrides,
             },
             timer,
@@ -1370,7 +1383,7 @@ mod tests {
                 create_connect_conf, create_on_wmm_status_resp, expect_stream_empty,
                 fake_wmm_param, mock_psk_supplicant, MockSupplicant, MockSupplicantController,
             },
-            ConnectTransactionStream, TimeStream,
+            ConnectTransactionStream,
         },
         test_utils::{self, make_wpa1_ie},
         MlmeStream,
@@ -1406,6 +1419,27 @@ mod tests {
         assert_variant!(connect_txn_stream.try_next(), Ok(Some(ConnectTransactionEvent::OnConnectResult { result, is_reconnect: false })) => {
             assert_eq!(result, ConnectResult::Success);
         });
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: IDLE_STATE,
+                        to: CONNECTING_STATE,
+                        bssid: bss.bssid.to_string(),
+                        ssid: bss.ssid.to_string(),
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: CONNECTING_STATE,
+                        to: LINK_UP_STATE,
+                    },
+                },
+            },
+        });
     }
 
     #[test]
@@ -1439,9 +1473,10 @@ mod tests {
         });
 
         // (mlme->sme) Send a ConnectConf as a response
+        suppl_mock
+            .set_start_updates(vec![SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished)]);
         let connect_conf = create_connect_conf(bss.bssid, fidl_ieee80211::StatusCode::Success);
         let state = state.on_mlme_event(connect_conf, &mut h.context);
-
         assert!(suppl_mock.is_supplicant_started());
 
         // (mlme->sme) Send an EapolInd, mock supplicant with key frame
@@ -1470,6 +1505,33 @@ mod tests {
         expect_set_ctrl_port(&mut h.mlme_stream, bss.bssid, fidl_mlme::ControlledPortState::Open);
         assert_variant!(connect_txn_stream.try_next(), Ok(Some(ConnectTransactionEvent::OnConnectResult { result, is_reconnect: false })) => {
             assert_eq!(result, ConnectResult::Success);
+        });
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: IDLE_STATE,
+                        to: CONNECTING_STATE,
+                        bssid: bss.bssid.to_string(),
+                        ssid: bss.ssid.to_string(),
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: CONNECTING_STATE,
+                        to: RSNA_STATE,
+                    },
+                    "2": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: RSNA_STATE,
+                        to: LINK_UP_STATE,
+                    },
+                },
+            },
         });
     }
 
@@ -1505,9 +1567,10 @@ mod tests {
         });
 
         // (mlme->sme) Send a ConnectConf as a response
+        suppl_mock
+            .set_start_updates(vec![SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished)]);
         let connect_conf = create_connect_conf(bss.bssid, fidl_ieee80211::StatusCode::Success);
         let state = state.on_mlme_event(connect_conf, &mut h.context);
-
         assert!(suppl_mock.is_supplicant_started());
 
         // (mlme->sme) Send an EapolInd, mock supplicant with key frame
@@ -1537,6 +1600,33 @@ mod tests {
         assert_variant!(connect_txn_stream.try_next(), Ok(Some(ConnectTransactionEvent::OnConnectResult { result, is_reconnect: false })) => {
             assert_eq!(result, ConnectResult::Success);
         });
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: IDLE_STATE,
+                        to: CONNECTING_STATE,
+                        bssid: bss.bssid.to_string(),
+                        ssid: bss.ssid.to_string(),
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: CONNECTING_STATE,
+                        to: RSNA_STATE,
+                    },
+                    "2": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: RSNA_STATE,
+                        to: LINK_UP_STATE,
+                    },
+                },
+            },
+        });
     }
 
     #[test]
@@ -1561,9 +1651,9 @@ mod tests {
                     key_type: fidl_mlme::KeyType::Pairwise,
                     key: vec![3; 5],
                     key_id: 0,
-                    address: bss.bssid.0,
+                    address: bss.bssid.to_array(),
                     cipher_suite_oui: OUI.into(),
-                    cipher_suite_type: 1,
+                    cipher_suite_type: fidl_ieee80211::CipherSuiteType::from_primitive_allow_unknown(1),
                     rsc: 0,
                 })),
                 security_ie: vec![],
@@ -1577,6 +1667,27 @@ mod tests {
         // User should be notified that we are connected
         assert_variant!(connect_txn_stream.try_next(), Ok(Some(ConnectTransactionEvent::OnConnectResult { result, is_reconnect: false })) => {
             assert_eq!(result, ConnectResult::Success);
+        });
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: IDLE_STATE,
+                        to: CONNECTING_STATE,
+                        bssid: bss.bssid.to_string(),
+                        ssid: bss.ssid.to_string(),
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: CONNECTING_STATE,
+                        to: LINK_UP_STATE,
+                    },
+                },
+            },
         });
     }
 
@@ -1596,7 +1707,7 @@ mod tests {
         // (mlme->sme) Send a ConnectConf as a response
         let connect_conf = fidl_mlme::MlmeEvent::ConnectConf {
             resp: fidl_mlme::ConnectConfirm {
-                peer_sta_address: bss.bssid.0,
+                peer_sta_address: bss.bssid.to_array(),
                 result_code: fidl_ieee80211::StatusCode::Success,
                 association_id: 42,
                 association_ies: vec![
@@ -1617,6 +1728,27 @@ mod tests {
         assert_variant!(connect_txn_stream.try_next(), Ok(Some(ConnectTransactionEvent::OnConnectResult { result, is_reconnect: false })) => {
             assert_eq!(result, ConnectResult::Success);
         });
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: IDLE_STATE,
+                        to: CONNECTING_STATE,
+                        bssid: bss.bssid.to_string(),
+                        ssid: bss.ssid.to_string(),
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: CONNECTING_STATE,
+                        to: LINK_UP_STATE,
+                    },
+                },
+            },
+        });
     }
 
     #[test]
@@ -1635,9 +1767,10 @@ mod tests {
         assert_variant!(h.mlme_stream.try_next(), Ok(Some(MlmeRequest::Connect(_req))));
 
         // (mlme->sme) Send a ConnectConf as a response
+        suppl_mock
+            .set_start_updates(vec![SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished)]);
         let connect_conf = create_connect_conf(bss.bssid, fidl_ieee80211::StatusCode::Success);
         let state = state.on_mlme_event(connect_conf, &mut h.context);
-
         assert!(suppl_mock.is_supplicant_started());
 
         // (mlme->sme) Send an EapolInd, mock supplicant with key frame
@@ -1665,7 +1798,7 @@ mod tests {
         assert!(connect_txn_stream.try_next().is_err());
 
         // One key fails to set
-        let _next_state = state.on_mlme_event(
+        let state = state.on_mlme_event(
             MlmeEvent::SetKeysConf {
                 conf: fidl_mlme::SetKeysConfirm {
                     results: vec![
@@ -1684,13 +1817,49 @@ mod tests {
         Ok(Some(ConnectTransactionEvent::OnConnectResult { result, is_reconnect: false })) => {
             assert_variant!(result, ConnectResult::Failed(_))
         });
+
+        let state = exchange_deauth(state, &mut h);
+        assert_idle(state);
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: IDLE_STATE,
+                        to: CONNECTING_STATE,
+                        bssid: bss.bssid.to_string(),
+                        ssid: bss.ssid.to_string(),
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: CONNECTING_STATE,
+                        to: RSNA_STATE,
+                    },
+                    "2": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: RSNA_STATE,
+                        to: DISCONNECTING_STATE,
+                    },
+                    "3": {
+                        "@time": AnyNumericProperty,
+                        from: DISCONNECTING_STATE,
+                        to: IDLE_STATE,
+                    },
+                },
+            },
+        });
     }
 
     #[test]
     fn deauth_while_connecting() {
         let mut h = TestHelper::new();
         let (cmd_one, mut connect_txn_stream1) = connect_command_one();
-        let bss_protection = cmd_one.bss.protection();
+        let bss = cmd_one.bss.clone();
+        let bss_protection = bss.protection();
         let state = connecting_state(cmd_one);
         let deauth_ind = MlmeEvent::DeauthenticateInd {
             ind: fidl_mlme::DeauthenticateIndication {
@@ -1708,13 +1877,27 @@ mod tests {
             .into());
         });
         assert_idle(state);
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: CONNECTING_STATE,
+                        to: IDLE_STATE,
+                    },
+                },
+            },
+        });
     }
 
     #[test]
     fn disassoc_while_connecting() {
         let mut h = TestHelper::new();
         let (cmd_one, mut connect_txn_stream1) = connect_command_one();
-        let bss_protection = cmd_one.bss.protection();
+        let bss = cmd_one.bss.clone();
+        let bss_protection = bss.protection();
         let state = connecting_state(cmd_one);
         let disassoc_ind = MlmeEvent::DisassociateInd {
             ind: fidl_mlme::DisassociateIndication {
@@ -1733,6 +1916,24 @@ mod tests {
             .into());
         });
         assert_idle(state);
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: CONNECTING_STATE,
+                        to: DISCONNECTING_STATE,
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        from: DISCONNECTING_STATE,
+                        to: IDLE_STATE,
+                    },
+                },
+            },
+        });
     }
 
     #[test]
@@ -1740,22 +1941,41 @@ mod tests {
         let mut h = TestHelper::new();
         let (supplicant, suppl_mock) = mock_psk_supplicant();
         let (command, mut connect_txn_stream) = connect_command_wpa2(supplicant);
-        let bssid = command.bss.bssid.clone();
+        let bss = command.bss.clone();
         let state = connecting_state(command);
 
         suppl_mock.set_start_failure(format_err!("failed to start supplicant"));
 
         // (mlme->sme) Send a ConnectConf
-        let assoc_conf = create_connect_conf(bssid, fidl_ieee80211::StatusCode::Success);
+        let assoc_conf = create_connect_conf(bss.bssid, fidl_ieee80211::StatusCode::Success);
         let state = state.on_mlme_event(assoc_conf, &mut h.context);
 
-        let _state = exchange_deauth(state, &mut h);
+        let state = exchange_deauth(state, &mut h);
         assert_variant!(connect_txn_stream.try_next(), Ok(Some(ConnectTransactionEvent::OnConnectResult { result, is_reconnect: false })) => {
             assert_eq!(result, EstablishRsnaFailure {
                 auth_method: Some(auth::MethodName::Psk),
                 reason: EstablishRsnaFailureReason::StartSupplicantFailed,
             }
             .into());
+        });
+        assert_idle(state);
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: CONNECTING_STATE,
+                        to: DISCONNECTING_STATE,
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        from: DISCONNECTING_STATE,
+                        to: IDLE_STATE,
+                    },
+                },
+            },
         });
     }
 
@@ -1764,7 +1984,7 @@ mod tests {
         let mut h = TestHelper::new();
         let (supplicant, suppl_mock) = mock_psk_supplicant();
         let (command, mut connect_txn_stream) = connect_command_wpa2(supplicant);
-        let bssid = command.bss.bssid.clone();
+        let bss = command.bss.clone();
         let state = establishing_rsna_state(command);
 
         // doesn't matter what we mock here
@@ -1772,7 +1992,7 @@ mod tests {
         suppl_mock.set_on_eapol_frame_updates(vec![update]);
 
         // (mlme->sme) Send an EapolInd with bad eapol data
-        let eapol_ind = create_eapol_ind(bssid.clone(), vec![1, 2, 3, 4]);
+        let eapol_ind = create_eapol_ind(bss.bssid, vec![1, 2, 3, 4]);
         let s = state.on_mlme_event(eapol_ind, &mut h.context);
 
         // There should be no message in the connect_txn_stream
@@ -1781,6 +2001,19 @@ mod tests {
             assert_variant!(&state.link_state, LinkState::EstablishingRsna { .. })});
 
         expect_stream_empty(&mut h.mlme_stream, "unexpected event in mlme stream");
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {},
+                rsn_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        rx_eapol_frame: AnyBytesProperty,
+                        status: AnyStringProperty,
+                    }
+                },
+            },
+        });
     }
 
     #[test]
@@ -1788,13 +2021,13 @@ mod tests {
         let mut h = TestHelper::new();
         let (supplicant, suppl_mock) = mock_psk_supplicant();
         let (command, mut connect_txn_stream) = connect_command_wpa2(supplicant);
-        let bssid = command.bss.bssid.clone();
+        let bss = command.bss.clone();
         let state = establishing_rsna_state(command);
 
         suppl_mock.set_on_eapol_frame_failure(format_err!("supplicant::on_eapol_frame fails"));
 
         // (mlme->sme) Send an EapolInd
-        let eapol_ind = create_eapol_ind(bssid.clone(), test_utils::eapol_key_frame().into());
+        let eapol_ind = create_eapol_ind(bss.bssid, test_utils::eapol_key_frame().into());
         let s = state.on_mlme_event(eapol_ind, &mut h.context);
 
         // There should be no message in the connect_txn_stream
@@ -1803,6 +2036,19 @@ mod tests {
             assert_variant!(&state.link_state, LinkState::EstablishingRsna { .. })});
 
         expect_stream_empty(&mut h.mlme_stream, "unexpected event in mlme stream");
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {},
+                rsn_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        rx_eapol_frame: AnyBytesProperty,
+                        status: AnyStringProperty,
+                    }
+                },
+            },
+        });
     }
 
     #[test]
@@ -1810,13 +2056,15 @@ mod tests {
         let mut h = TestHelper::new();
         let (supplicant, mock) = mock_psk_supplicant();
         let (cmd, _connect_txn_stream) = connect_command_wpa2(supplicant);
+        let bss = cmd.bss.clone();
         let state = link_up_state(cmd);
         mock.set_on_eapol_frame_callback(|| {
             panic!("eapol frame should not have been processed");
         });
 
         // Send an EapolInd from foreign BSS.
-        let eapol_ind = create_eapol_ind(Bssid([1; 6]), test_utils::eapol_key_frame().into());
+        let foreign_bssid = Bssid::from([1; 6]);
+        let eapol_ind = create_eapol_ind(foreign_bssid, test_utils::eapol_key_frame().into());
         let state = state.on_mlme_event(eapol_ind, &mut h.context);
 
         // Verify state did not change.
@@ -1826,6 +2074,21 @@ mod tests {
                 LinkState::LinkUp(state) => assert_variant!(&state.protection, Protection::Rsna(_))
             )
         });
+
+        assert_data_tree!(h.inspector, root: {
+            usme: contains {
+                state_events: {},
+                rsn_events:  {
+                    "0" : {
+                        "@time": AnyNumericProperty,
+                        rx_eapol_frame: AnyBytesProperty,
+                        foreign_bssid: foreign_bssid.to_string(),
+                        current_bssid: bss.bssid.to_string(),
+                        status: "rejected (foreign BSS)"
+                    }
+                }
+            }
+        });
     }
 
     #[test]
@@ -1833,14 +2096,14 @@ mod tests {
         let mut h = TestHelper::new();
         let (supplicant, suppl_mock) = mock_psk_supplicant();
         let (command, mut connect_txn_stream) = connect_command_wpa2(supplicant);
-        let bssid = command.bss.bssid.clone();
+        let bss = command.bss.clone();
         let state = establishing_rsna_state(command);
 
         // (mlme->sme) Send an EapolInd, mock supplicant with wrong password status
         let update = SecAssocUpdate::Status(SecAssocStatus::WrongPassword);
-        let _state = on_eapol_ind(state, &mut h, bssid, &suppl_mock, vec![update]);
+        let state = on_eapol_ind(state, &mut h, bss.bssid, &suppl_mock, vec![update]);
 
-        expect_deauth_req(&mut h.mlme_stream, bssid, fidl_ieee80211::ReasonCode::StaLeaving);
+        expect_deauth_req(&mut h.mlme_stream, bss.bssid, fidl_ieee80211::ReasonCode::StaLeaving);
         assert_variant!(connect_txn_stream.try_next(), Ok(Some(ConnectTransactionEvent::OnConnectResult { result, is_reconnect: false })) => {
             assert_eq!(result, EstablishRsnaFailure {
                 auth_method: Some(auth::MethodName::Psk),
@@ -1848,13 +2111,38 @@ mod tests {
             }
             .into());
         });
+
+        // (mlme->sme) Send a DeauthenticateConf as a response
+        let deauth_conf = MlmeEvent::DeauthenticateConf {
+            resp: fidl_mlme::DeauthenticateConfirm { peer_sta_address: bss.bssid.to_array() },
+        };
+        let state = state.on_mlme_event(deauth_conf, &mut h.context);
+        assert_idle(state);
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: RSNA_STATE,
+                        to: DISCONNECTING_STATE,
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        from: DISCONNECTING_STATE,
+                        to: IDLE_STATE,
+                    },
+                },
+            },
+        });
     }
 
     fn expect_next_event_at_deadline<E: std::fmt::Debug>(
         executor: &mut fuchsia_async::TestExecutor,
-        mut timed_event_stream: impl Stream<Item = timer::TimedEvent<E>> + std::marker::Unpin,
+        mut timed_event_stream: impl Stream<Item = timer::Event<E>> + std::marker::Unpin,
         deadline: fuchsia_async::Time,
-    ) -> timer::TimedEvent<E> {
+    ) -> timer::Event<E> {
         assert_variant!(executor.run_until_stalled(&mut timed_event_stream.next()), Poll::Pending);
         assert_eq!(deadline, executor.wake_next_timer().expect("expected pending timer"));
         executor.set_fake_time(deadline);
@@ -1870,7 +2158,7 @@ mod tests {
         h.executor.set_fake_time(fuchsia_async::Time::from_nanos(0));
         let (supplicant, suppl_mock) = mock_psk_supplicant();
         let (command, mut connect_txn_stream) = connect_command_wpa2(supplicant);
-        let bssid = command.bss.bssid.clone();
+        let bss = command.bss.clone();
 
         // Start in an "Connecting" state
         let state = ClientState::from(testing::new_state(Connecting {
@@ -1879,9 +2167,12 @@ mod tests {
             protection_ie: None,
             reassociation_loop_count: 0,
         }));
-        let assoc_conf = create_connect_conf(bssid, fidl_ieee80211::StatusCode::Success);
+        suppl_mock
+            .set_start_updates(vec![SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished)]);
+        let assoc_conf = create_connect_conf(bss.bssid, fidl_ieee80211::StatusCode::Success);
         let rsna_response_deadline = event::RSNA_RESPONSE_TIMEOUT_MILLIS.millis().after_now();
         let state = state.on_mlme_event(assoc_conf, &mut h.context);
+        assert!(suppl_mock.is_supplicant_started());
 
         // Advance to the response timeout and setup a failure reason
         let mut timed_event_stream = timer::make_async_timed_event_stream(h.time_stream);
@@ -1894,15 +2185,46 @@ mod tests {
         suppl_mock.set_on_rsna_response_timeout(EstablishRsnaFailureReason::RsnaResponseTimeout(
             wlan_rsn::Error::EapolHandshakeNotStarted,
         ));
-        let _ = state.handle_timeout(timed_event.id, timed_event.event, &mut h.context);
+        let state = state.handle_timeout(timed_event.id, timed_event.event, &mut h.context);
 
         // Check that SME sends a deauthenticate request and fails the connection
-        expect_deauth_req(&mut h.mlme_stream, bssid, fidl_ieee80211::ReasonCode::StaLeaving);
+        expect_deauth_req(&mut h.mlme_stream, bss.bssid, fidl_ieee80211::ReasonCode::StaLeaving);
         assert_variant!(connect_txn_stream.try_next(), Ok(Some(ConnectTransactionEvent::OnConnectResult { result, is_reconnect: false })) => {
             assert_eq!(result, EstablishRsnaFailure {
                 auth_method: Some(auth::MethodName::Psk),
                 reason: EstablishRsnaFailureReason::RsnaResponseTimeout(wlan_rsn::Error::EapolHandshakeNotStarted),
             }.into());
+        });
+
+        // (mlme->sme) Send a DeauthenticateConf as a response
+        let deauth_conf = MlmeEvent::DeauthenticateConf {
+            resp: fidl_mlme::DeauthenticateConfirm { peer_sta_address: bss.bssid.to_array() },
+        };
+        let state = state.on_mlme_event(deauth_conf, &mut h.context);
+        assert_idle(state);
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: CONNECTING_STATE,
+                        to: RSNA_STATE,
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: RSNA_STATE,
+                        to: DISCONNECTING_STATE,
+                    },
+                    "2": {
+                        "@time": AnyNumericProperty,
+                        from: DISCONNECTING_STATE,
+                        to: IDLE_STATE,
+                    },
+                },
+            },
         });
     }
 
@@ -1922,8 +2244,11 @@ mod tests {
             protection_ie: None,
             reassociation_loop_count: 0,
         }));
+        suppl_mock
+            .set_start_updates(vec![SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished)]);
         let assoc_conf = create_connect_conf(bssid, fidl_ieee80211::StatusCode::Success);
         let state = state.on_mlme_event(assoc_conf, &mut h.context);
+        assert!(suppl_mock.is_supplicant_started());
 
         let mut timed_event_stream = timer::make_async_timed_event_stream(h.time_stream);
 
@@ -1937,7 +2262,7 @@ mod tests {
         // Send an initial EAPOL frame to SME
         let eapol_ind = MlmeEvent::EapolInd {
             ind: fidl_mlme::EapolIndication {
-                src_addr: bssid.clone().0,
+                src_addr: bssid.to_array(),
                 dst_addr: fake_device_info().sta_addr,
                 data: test_utils::eapol_key_frame().into(),
             },
@@ -1968,6 +2293,54 @@ mod tests {
 
         // Check that the connection does not fail
         expect_stream_empty(&mut h.mlme_stream, "unexpected event in mlme stream");
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: CONNECTING_STATE,
+                        to: RSNA_STATE,
+                    },
+                },
+                rsn_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        "rsna_status": "PmkSaEstablished"
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        "rx_eapol_frame": AnyBytesProperty,
+                        "status": "processed",
+                    },
+                    "2": {
+                        "@time": AnyNumericProperty,
+                        "tx_eapol_frame": AnyBytesProperty,
+                    },
+                    "3": {
+                        "@time": AnyNumericProperty,
+                        "tx_eapol_frame": AnyBytesProperty,
+                    },
+                    "4": {
+                        "@time": AnyNumericProperty,
+                        "tx_eapol_frame": AnyBytesProperty,
+                    },
+                    "5": {
+                        "@time": AnyNumericProperty,
+                        "tx_eapol_frame": AnyBytesProperty,
+                    },
+                    "6": {
+                        "@time": AnyNumericProperty,
+                        "tx_eapol_frame": AnyBytesProperty,
+                    },
+                    "7": {
+                        "@time": AnyNumericProperty,
+                        "tx_eapol_frame": AnyBytesProperty,
+                    },
+                }
+            },
+        });
     }
 
     #[test]
@@ -1977,7 +2350,7 @@ mod tests {
 
         let (supplicant, suppl_mock) = mock_psk_supplicant();
         let (command, mut connect_txn_stream) = connect_command_wpa2(supplicant);
-        let bssid = command.bss.bssid.clone();
+        let bss = command.bss.clone();
 
         // Start in an "Connecting" state
         let state = ClientState::from(testing::new_state(Connecting {
@@ -1986,8 +2359,11 @@ mod tests {
             protection_ie: None,
             reassociation_loop_count: 0,
         }));
-        let assoc_conf = create_connect_conf(bssid, fidl_ieee80211::StatusCode::Success);
+        suppl_mock
+            .set_start_updates(vec![SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished)]);
+        let assoc_conf = create_connect_conf(bss.bssid, fidl_ieee80211::StatusCode::Success);
         let state = state.on_mlme_event(assoc_conf, &mut h.context);
+        assert!(suppl_mock.is_supplicant_started());
 
         let mut timed_event_stream = timer::make_async_timed_event_stream(h.time_stream);
 
@@ -2001,7 +2377,7 @@ mod tests {
         // Send an initial EAPOL frame to SME
         let eapol_ind = MlmeEvent::EapolInd {
             ind: fidl_mlme::EapolIndication {
-                src_addr: bssid.clone().0,
+                src_addr: bss.bssid.to_array(),
                 dst_addr: fake_device_info().sta_addr,
                 data: test_utils::eapol_key_frame().into(),
             },
@@ -2012,7 +2388,7 @@ mod tests {
         let mock_number_of_retransmissions = 5;
         let rsna_response_deadline = event::RSNA_RESPONSE_TIMEOUT_MILLIS.millis().after_now();
         for i in 0..=mock_number_of_retransmissions {
-            expect_eapol_req(&mut h.mlme_stream, bssid);
+            expect_eapol_req(&mut h.mlme_stream, bss.bssid);
             expect_stream_empty(&mut h.mlme_stream, "unexpected event in mlme stream");
 
             let rsna_retransmission_deadline =
@@ -2042,14 +2418,80 @@ mod tests {
         suppl_mock.set_on_rsna_response_timeout(EstablishRsnaFailureReason::RsnaResponseTimeout(
             wlan_rsn::Error::EapolHandshakeIncomplete("PTKSA never initialized".to_string()),
         ));
-        let _next_state = state.handle_timeout(timed_event.id, timed_event.event, &mut h.context);
+        let state = state.handle_timeout(timed_event.id, timed_event.event, &mut h.context);
 
-        expect_deauth_req(&mut h.mlme_stream, bssid, fidl_ieee80211::ReasonCode::StaLeaving);
+        expect_deauth_req(&mut h.mlme_stream, bss.bssid, fidl_ieee80211::ReasonCode::StaLeaving);
         assert_variant!(connect_txn_stream.try_next(), Ok(Some(ConnectTransactionEvent::OnConnectResult { result, is_reconnect: false })) => {
             assert_eq!(result, EstablishRsnaFailure {
                 auth_method: Some(auth::MethodName::Psk),
                 reason: EstablishRsnaFailureReason::RsnaResponseTimeout(wlan_rsn::Error::EapolHandshakeIncomplete("PTKSA never initialized".to_string())),
             }.into());
+        });
+
+        // (mlme->sme) Send a DeauthenticateConf as a response
+        let deauth_conf = MlmeEvent::DeauthenticateConf {
+            resp: fidl_mlme::DeauthenticateConfirm { peer_sta_address: bss.bssid.to_array() },
+        };
+        let state = state.on_mlme_event(deauth_conf, &mut h.context);
+        assert_idle(state);
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: CONNECTING_STATE,
+                        to: RSNA_STATE,
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: RSNA_STATE,
+                        to: DISCONNECTING_STATE,
+                    },
+                    "2": {
+                        "@time": AnyNumericProperty,
+                        from: DISCONNECTING_STATE,
+                        to: IDLE_STATE,
+                    },
+                },
+                rsn_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        "rsna_status": "PmkSaEstablished"
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        "rx_eapol_frame": AnyBytesProperty,
+                        "status": "processed",
+                    },
+                    "2": {
+                        "@time": AnyNumericProperty,
+                        "tx_eapol_frame": AnyBytesProperty,
+                    },
+                    "3": {
+                        "@time": AnyNumericProperty,
+                        "tx_eapol_frame": AnyBytesProperty,
+                    },
+                    "4": {
+                        "@time": AnyNumericProperty,
+                        "tx_eapol_frame": AnyBytesProperty,
+                    },
+                    "5": {
+                        "@time": AnyNumericProperty,
+                        "tx_eapol_frame": AnyBytesProperty,
+                    },
+                    "6": {
+                        "@time": AnyNumericProperty,
+                        "tx_eapol_frame": AnyBytesProperty,
+                    },
+                    "7": {
+                        "@time": AnyNumericProperty,
+                        "tx_eapol_frame": AnyBytesProperty,
+                    }
+                }
+            },
         });
     }
 
@@ -2060,7 +2502,7 @@ mod tests {
 
         let (supplicant, suppl_mock) = mock_psk_supplicant();
         let (command, mut connect_txn_stream) = connect_command_wpa2(supplicant);
-        let bssid = command.bss.bssid.clone();
+        let bss = command.bss.clone();
 
         // Start in an "Connecting" state
         let state = ClientState::from(testing::new_state(Connecting {
@@ -2069,8 +2511,11 @@ mod tests {
             protection_ie: None,
             reassociation_loop_count: 0,
         }));
-        let assoc_conf = create_connect_conf(bssid, fidl_ieee80211::StatusCode::Success);
+        suppl_mock
+            .set_start_updates(vec![SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished)]);
+        let assoc_conf = create_connect_conf(bss.bssid, fidl_ieee80211::StatusCode::Success);
         let state = state.on_mlme_event(assoc_conf, &mut h.context);
+        assert!(suppl_mock.is_supplicant_started());
         let rsna_completion_deadline = event::RSNA_COMPLETION_TIMEOUT_MILLIS.millis().after_now();
         let mut initial_rsna_response_deadline_in_effect =
             Some(event::RSNA_RESPONSE_TIMEOUT_MILLIS.millis().after_now());
@@ -2088,13 +2533,13 @@ mod tests {
         // simultaneous response timeouts for simplicity.
         h.executor.set_fake_time(fuchsia_async::Time::from_nanos(100));
         let eapol_ind = fidl_mlme::EapolIndication {
-            src_addr: bssid.clone().0,
+            src_addr: bss.bssid.to_array(),
             dst_addr: fake_device_info().sta_addr,
             data: test_utils::eapol_key_frame().into(),
         };
         let mut state =
             state.on_mlme_event(MlmeEvent::EapolInd { ind: eapol_ind.clone() }, &mut h.context);
-        expect_eapol_req(&mut h.mlme_stream, bssid);
+        expect_eapol_req(&mut h.mlme_stream, bss.bssid);
         expect_stream_empty(&mut h.mlme_stream, "unexpected event in mlme stream");
 
         let mut rsna_retransmission_deadline =
@@ -2125,7 +2570,7 @@ mod tests {
             suppl_mock.set_on_eapol_frame_updates(tx_eapol_frame_update_sink.clone());
             state =
                 state.on_mlme_event(MlmeEvent::EapolInd { ind: eapol_ind.clone() }, &mut h.context);
-            expect_eapol_req(&mut h.mlme_stream, bssid);
+            expect_eapol_req(&mut h.mlme_stream, bss.bssid);
             expect_stream_empty(&mut h.mlme_stream, "unexpected event in mlme stream");
             rsna_retransmission_deadline =
                 event::RSNA_RETRANSMISSION_TIMEOUT_MILLIS.millis().after_now();
@@ -2179,15 +2624,79 @@ mod tests {
                 wlan_rsn::Error::EapolHandshakeIncomplete("PTKSA never initialized".to_string()),
             ),
         );
-        let _next_state = state.handle_timeout(timed_event.id, timed_event.event, &mut h.context);
+        let state = state.handle_timeout(timed_event.id, timed_event.event, &mut h.context);
 
         // Check that SME sends a deauthenticate request and fails the connection
-        expect_deauth_req(&mut h.mlme_stream, bssid, fidl_ieee80211::ReasonCode::StaLeaving);
+        expect_deauth_req(&mut h.mlme_stream, bss.bssid, fidl_ieee80211::ReasonCode::StaLeaving);
         assert_variant!(connect_txn_stream.try_next(), Ok(Some(ConnectTransactionEvent::OnConnectResult { result, is_reconnect: false })) => {
             assert_eq!(result, EstablishRsnaFailure {
                 auth_method: Some(auth::MethodName::Psk),
                 reason: EstablishRsnaFailureReason::RsnaCompletionTimeout(wlan_rsn::Error::EapolHandshakeIncomplete("PTKSA never initialized".to_string())),
             }.into());
+        });
+
+        // (mlme->sme) Send a DeauthenticateConf as a response
+        let deauth_conf = MlmeEvent::DeauthenticateConf {
+            resp: fidl_mlme::DeauthenticateConfirm { peer_sta_address: bss.bssid.to_array() },
+        };
+        let state = state.on_mlme_event(deauth_conf, &mut h.context);
+        assert_idle(state);
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: CONNECTING_STATE,
+                        to: RSNA_STATE,
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: RSNA_STATE,
+                        to: DISCONNECTING_STATE,
+                    },
+                    "2": {
+                        "@time": AnyNumericProperty,
+                        from: DISCONNECTING_STATE,
+                        to: IDLE_STATE,
+                    },
+                },
+                rsn_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        "rsna_status": "PmkSaEstablished"
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        "rx_eapol_frame": AnyBytesProperty,
+                        "status": "processed",
+                    },
+                    "2": {
+                        "@time": AnyNumericProperty,
+                        "tx_eapol_frame": AnyBytesProperty,
+                    },
+                    "3": {
+                        "@time": AnyNumericProperty,
+                        "rx_eapol_frame": AnyBytesProperty,
+                        "status": "processed",
+                    },
+                    "4": {
+                        "@time": AnyNumericProperty,
+                        "tx_eapol_frame": AnyBytesProperty,
+                    },
+                    "5": {
+                        "@time": AnyNumericProperty,
+                        "rx_eapol_frame": AnyBytesProperty,
+                        "status": "processed",
+                    },
+                    "6": {
+                        "@time": AnyNumericProperty,
+                        "tx_eapol_frame": AnyBytesProperty,
+                    },
+                }
+            },
         });
     }
 
@@ -2277,6 +2786,19 @@ mod tests {
         // Expect no messages to the MLME
         assert!(h.mlme_stream.try_next().is_err());
         assert_variant!(h.executor.run_until_stalled(&mut disconnect_fut), Poll::Ready(Ok(())));
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: IDLE_STATE,
+                        to: IDLE_STATE,
+                    },
+                }
+            },
+        });
     }
 
     #[test]
@@ -2291,19 +2813,19 @@ mod tests {
         });
         assert_idle(state);
 
-        assert_data_tree!(h._inspector, root: contains {
-            sme: contains {
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
                 state_events: {
                     "0": {
-                        "@time": AnyProperty,
-                        ctx: AnyProperty,
-                        from: AnyProperty,
-                        to: AnyProperty,
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: CONNECTING_STATE,
+                        to: DISCONNECTING_STATE,
                     },
                     "1": {
-                        "@time": AnyProperty,
-                        from: AnyProperty,
-                        to: AnyProperty,
+                        "@time": AnyNumericProperty,
+                        from: DISCONNECTING_STATE,
+                        to: IDLE_STATE,
                     },
                 },
             },
@@ -2317,6 +2839,24 @@ mod tests {
         let state = disconnect(state, &mut h, fidl_sme::UserDisconnectReason::FailedToConnect);
         let state = exchange_deauth(state, &mut h);
         assert_idle(state);
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: LINK_UP_STATE,
+                        to: DISCONNECTING_STATE,
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        from: DISCONNECTING_STATE,
+                        to: IDLE_STATE,
+                    },
+                },
+            },
+        });
     }
 
     #[test]
@@ -2340,6 +2880,25 @@ mod tests {
         let state = state.handle_timeout(timed_event.id, timed_event.event, &mut h.context);
         assert_idle(state);
         assert_variant!(h.executor.run_until_stalled(&mut disconnect_fut), Poll::Ready(Ok(())));
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: LINK_UP_STATE,
+                        to: DISCONNECTING_STATE,
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: DISCONNECTING_STATE,
+                        to: IDLE_STATE,
+                    },
+                },
+            },
+        });
     }
 
     #[test]
@@ -2347,6 +2906,7 @@ mod tests {
         let mut h = TestHelper::new();
         let (cmd1, _connect_txn_stream) = connect_command_one();
         let (cmd2, _connect_txn_stream) = connect_command_two();
+        let bss2 = cmd2.bss.clone();
         let state = link_up_state(cmd1);
         let (mut disconnect_fut, responder) = make_disconnect_request(&mut h);
         let state = state.disconnect(
@@ -2367,6 +2927,27 @@ mod tests {
         assert_variant!(h.executor.run_until_stalled(&mut disconnect_fut), Poll::Ready(Ok(())));
         let state = exchange_deauth(state, &mut h);
         assert_connecting(state, &connect_command_two().0.bss);
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: LINK_UP_STATE,
+                        to: DISCONNECTING_STATE,
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: DISCONNECTING_STATE,
+                        to: CONNECTING_STATE,
+                        bssid: bss2.bssid.to_string(),
+                        ssid: bss2.ssid.to_string(),
+                    },
+                },
+            },
+        });
     }
 
     #[test]
@@ -2390,6 +2971,19 @@ mod tests {
             Ok(Some(ConnectTransactionEvent::OnConnectResult { result, .. })) => result
         );
         assert_eq!(result, ConnectResult::Canceled);
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: DISCONNECTING_STATE,
+                        to: DISCONNECTING_STATE,
+                    }
+                },
+            },
+        });
     }
 
     #[test]
@@ -2469,6 +3063,19 @@ mod tests {
             Ok(Some(ConnectTransactionEvent::OnDisconnect { info })) => info
         );
         assert!(!info.is_sme_reconnecting);
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: RSNA_STATE,
+                        to: DISCONNECTING_STATE,
+                    }
+                },
+            },
+        });
     }
 
     #[test]
@@ -2491,14 +3098,14 @@ mod tests {
             &fake_bss_description!(Wpa2, ssid: Ssid::try_from("wpa2").unwrap()),
         );
 
-        assert_data_tree!(h._inspector, root: contains {
-            sme: contains {
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
                 state_events: {
                     "0": {
-                        "@time": AnyProperty,
-                        ctx: AnyProperty,
-                        from: AnyProperty,
-                        to: AnyProperty,
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: RSNA_STATE,
+                        to: CONNECTING_STATE,
                     }
                 },
             },
@@ -2532,6 +3139,19 @@ mod tests {
                 reason_code: fidl_ieee80211::ReasonCode::LeavingNetworkDeauth,
             })
         );
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: LINK_UP_STATE,
+                        to: IDLE_STATE,
+                    }
+                },
+            },
+        });
     }
 
     #[test]
@@ -2565,7 +3185,7 @@ mod tests {
 
         // Check that reconnect is attempted
         assert_variant!(h.mlme_stream.try_next(), Ok(Some(MlmeRequest::Reconnect(req))) => {
-            assert_eq!(req.peer_sta_address, bss.bssid.0);
+            assert_eq!(&req.peer_sta_address, bss.bssid.as_array());
         });
 
         // (mlme->sme) Send a ConnectConf
@@ -2577,6 +3197,25 @@ mod tests {
             assert_eq!(result, ConnectResult::Success);
             assert!(is_reconnect);
         });
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: LINK_UP_STATE,
+                        to: CONNECTING_STATE,
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: CONNECTING_STATE,
+                        to: LINK_UP_STATE,
+                    }
+                },
+            },
+        });
     }
 
     #[test]
@@ -2586,7 +3225,7 @@ mod tests {
         let bss = cmd.bss.clone();
         let state = link_up_state(cmd);
 
-        let deauth_ind = MlmeEvent::DisassociateInd {
+        let disassoc_ind = MlmeEvent::DisassociateInd {
             ind: fidl_mlme::DisassociateIndication {
                 peer_sta_address: [0, 0, 0, 0, 0, 0],
                 reason_code: fidl_ieee80211::ReasonCode::ReasonInactivity,
@@ -2594,7 +3233,7 @@ mod tests {
             },
         };
 
-        let state = state.on_mlme_event(deauth_ind, &mut h.context);
+        let state = state.on_mlme_event(disassoc_ind, &mut h.context);
         assert_variant!(
             connect_txn_stream.try_next(),
             Ok(Some(ConnectTransactionEvent::OnDisconnect { .. }))
@@ -2602,7 +3241,7 @@ mod tests {
 
         // Check that reconnect is attempted
         assert_variant!(h.mlme_stream.try_next(), Ok(Some(MlmeRequest::Reconnect(req))) => {
-            assert_eq!(req.peer_sta_address, bss.bssid.0);
+            assert_eq!(&req.peer_sta_address, bss.bssid.as_array());
         });
 
         // (mlme->sme) Send a ConnectConf
@@ -2610,7 +3249,8 @@ mod tests {
             create_connect_conf(bss.bssid, fidl_ieee80211::StatusCode::RefusedReasonUnspecified);
         let state = state.on_mlme_event(connect_conf, &mut h.context);
 
-        let _state = exchange_deauth(state, &mut h);
+        let state = exchange_deauth(state, &mut h);
+        assert_idle(state);
 
         // User should be notified that reconnection attempt failed
         assert_variant!(connect_txn_stream.try_next(), Ok(Some(ConnectTransactionEvent::OnConnectResult { result, is_reconnect })) => {
@@ -2620,6 +3260,30 @@ mod tests {
             }.into());
             assert!(is_reconnect);
         });
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: LINK_UP_STATE,
+                        to: CONNECTING_STATE,
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: CONNECTING_STATE,
+                        to: DISCONNECTING_STATE,
+                    },
+                    "2": {
+                        "@time": AnyNumericProperty,
+                        from: DISCONNECTING_STATE,
+                        to: IDLE_STATE,
+                    },
+                },
+            },
+        });
     }
 
     #[test]
@@ -2628,7 +3292,8 @@ mod tests {
         let (cmd, mut connect_txn_stream) = connect_command_one();
         let state = link_up_state(cmd);
 
-        let _state = disconnect(state, &mut h, fidl_sme::UserDisconnectReason::WlanSmeUnitTesting);
+        let state = disconnect(state, &mut h, fidl_sme::UserDisconnectReason::WlanSmeUnitTesting);
+        assert_idle(state);
         let info = assert_variant!(
             connect_txn_stream.try_next(),
             Ok(Some(ConnectTransactionEvent::OnDisconnect { info })) => info
@@ -2638,6 +3303,24 @@ mod tests {
             info.disconnect_source,
             fidl_sme::DisconnectSource::User(fidl_sme::UserDisconnectReason::WlanSmeUnitTesting)
         );
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: LINK_UP_STATE,
+                        to: DISCONNECTING_STATE,
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        from: DISCONNECTING_STATE,
+                        to: IDLE_STATE,
+                    }
+                },
+            },
+        });
     }
 
     #[test]
@@ -2654,8 +3337,8 @@ mod tests {
         )));
 
         let state = link_up_state(cmd);
-        let _next_state =
-            disconnect(state, &mut h, fidl_sme::UserDisconnectReason::WlanSmeUnitTesting);
+        let state = disconnect(state, &mut h, fidl_sme::UserDisconnectReason::WlanSmeUnitTesting);
+        assert_idle(state);
 
         let info = assert_variant!(
             connect_txn_stream.try_next(),
@@ -2666,6 +3349,24 @@ mod tests {
             info.disconnect_source,
             fidl_sme::DisconnectSource::User(fidl_sme::UserDisconnectReason::WlanSmeUnitTesting)
         );
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: LINK_UP_STATE,
+                        to: DISCONNECTING_STATE,
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        from: DISCONNECTING_STATE,
+                        to: IDLE_STATE,
+                    }
+                },
+            },
+        });
     }
 
     #[test]
@@ -2700,6 +3401,7 @@ mod tests {
         let (supplicant, _suppl_mock) = mock_psk_supplicant();
 
         let (mut command, _connect_txn_stream) = connect_command_wpa2(supplicant);
+        let bss = command.bss.clone();
         // Take the RSNA and wrap it in LegacyWpa to make it invalid.
         if let Protection::Rsna(rsna) = command.protection {
             command.protection = Protection::LegacyWpa(rsna);
@@ -2712,6 +3414,21 @@ mod tests {
 
         // State did not change to Connecting because command is invalid, thus ignored.
         assert_variant!(state, ClientState::Idle(_));
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: IDLE_STATE,
+                        to: IDLE_STATE,
+                        bssid: bss.bssid.to_string(),
+                        ssid: bss.ssid.to_string(),
+                    }
+                },
+            },
+        });
     }
 
     #[test]
@@ -2719,6 +3436,7 @@ mod tests {
         let (supplicant, _suppl_mock) = mock_psk_supplicant();
 
         let (mut command, _connect_txn_stream) = connect_command_wpa1(supplicant);
+        let bss = command.bss.clone();
         // Take the LegacyWpa RSNA and wrap it in Rsna to make it invalid.
         if let Protection::LegacyWpa(rsna) = command.protection {
             command.protection = Protection::Rsna(rsna);
@@ -2732,6 +3450,21 @@ mod tests {
 
         // State did not change to Connecting because command is invalid, thus ignored.
         assert_variant!(state, ClientState::Idle(_));
+
+        assert_data_tree!(h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: IDLE_STATE,
+                        to: IDLE_STATE,
+                        bssid: bss.bssid.to_string(),
+                        ssid: bss.ssid.to_string(),
+                    }
+                },
+            },
+        });
     }
 
     #[test]
@@ -2971,10 +3704,10 @@ mod tests {
     // Helper functions and data structures for tests
     struct TestHelper {
         mlme_stream: MlmeStream,
-        time_stream: TimeStream,
+        time_stream: timer::EventStream<Event>,
         context: Context,
         // Inspector is kept so that root node doesn't automatically get removed from VMO
-        _inspector: Inspector,
+        inspector: Inspector,
         // Executor is needed as a time provider for the [`inspect_log!`] macro which panics
         // without a fuchsia_async executor set up
         executor: fuchsia_async::TestExecutor,
@@ -2991,26 +3724,20 @@ mod tests {
             let (mlme_sink, mlme_stream) = mpsc::unbounded();
             let (timer, time_stream) = timer::create_timer();
             let inspector = Inspector::default();
-            let hasher = WlanHasher::new([88, 77, 66, 55, 44, 33, 22, 11]);
             let context = Context {
                 device_info: Arc::new(fake_device_info()),
                 mlme_sink: MlmeSink::new(mlme_sink),
                 timer,
                 att_id: 0,
                 inspect: Arc::new(inspect::SmeTree::new(
-                    inspector.root().create_child("sme"),
-                    hasher,
+                    inspector.root().create_child("usme"),
+                    &test_utils::fake_device_info([1u8; 6].into()),
+                    &fake_spectrum_management_support_empty(),
                 )),
                 mac_sublayer_support: fake_mac_sublayer_support(),
                 security_support: fake_security_support(),
             };
-            TestHelper {
-                mlme_stream,
-                time_stream,
-                context,
-                _inspector: inspector,
-                executor: executor,
-            }
+            TestHelper { mlme_stream, time_stream, context, inspector, executor }
         }
         fn new() -> Self {
             Self::new_(false)
@@ -3057,7 +3784,7 @@ mod tests {
     fn create_eapol_ind(bssid: Bssid, data: Vec<u8>) -> MlmeEvent {
         MlmeEvent::EapolInd {
             ind: fidl_mlme::EapolIndication {
-                src_addr: bssid.0,
+                src_addr: bssid.to_array(),
                 dst_addr: fake_device_info().sta_addr,
                 data,
             },
@@ -3084,7 +3811,7 @@ mod tests {
         state: fidl_mlme::ControlledPortState,
     ) {
         assert_variant!(mlme_stream.try_next(), Ok(Some(MlmeRequest::SetCtrlPort(req))) => {
-            assert_eq!(req.peer_sta_address, bssid.0);
+            assert_eq!(&req.peer_sta_address, bssid.as_array());
             assert_eq!(req.state, state);
         });
     }
@@ -3096,7 +3823,7 @@ mod tests {
     ) {
         // (sme->mlme) Expect a DeauthenticateRequest
         assert_variant!(mlme_stream.try_next(), Ok(Some(MlmeRequest::Deauthenticate(req))) => {
-            assert_eq!(bssid.0, req.peer_sta_address);
+            assert_eq!(bssid.as_array(), &req.peer_sta_address);
             assert_eq!(reason_code, req.reason_code);
         });
     }
@@ -3105,7 +3832,7 @@ mod tests {
     fn expect_eapol_req(mlme_stream: &mut MlmeStream, bssid: Bssid) {
         assert_variant!(mlme_stream.try_next(), Ok(Some(MlmeRequest::Eapol(req))) => {
             assert_eq!(req.src_addr, fake_device_info().sta_addr);
-            assert_eq!(req.dst_addr, bssid.0);
+            assert_eq!(&req.dst_addr, bssid.as_array());
             assert_eq!(req.data, Vec::<u8>::from(test_utils::eapol_key_frame()));
         });
     }
@@ -3114,13 +3841,13 @@ mod tests {
         assert_variant!(mlme_stream.try_next(), Ok(Some(MlmeRequest::SetKeys(set_keys_req))) => {
             assert_eq!(set_keys_req.keylist.len(), 1);
             let k = set_keys_req.keylist.get(0).expect("expect key descriptor");
-            assert_eq!(k.key, vec![0xCCu8; test_utils::cipher().tk_bytes().unwrap()]);
+            assert_eq!(k.key, vec![0xCCu8; test_utils::cipher().tk_bytes().unwrap() as usize]);
             assert_eq!(k.key_id, 0);
             assert_eq!(k.key_type, fidl_mlme::KeyType::Pairwise);
-            assert_eq!(k.address, bssid.0);
+            assert_eq!(&k.address, bssid.as_array());
             assert_eq!(k.rsc, 0);
             assert_eq!(k.cipher_suite_oui, [0x00, 0x0F, 0xAC]);
-            assert_eq!(k.cipher_suite_type, 4);
+            assert_eq!(k.cipher_suite_type, fidl_ieee80211::CipherSuiteType::from_primitive_allow_unknown(4));
         });
     }
 
@@ -3128,13 +3855,13 @@ mod tests {
         assert_variant!(mlme_stream.try_next(), Ok(Some(MlmeRequest::SetKeys(set_keys_req))) => {
             assert_eq!(set_keys_req.keylist.len(), 1);
             let k = set_keys_req.keylist.get(0).expect("expect key descriptor");
-            assert_eq!(k.key, test_utils::gtk_bytes());
+            assert_eq!(&k.key[..], &test_utils::gtk_bytes()[..]);
             assert_eq!(k.key_id, 2);
             assert_eq!(k.key_type, fidl_mlme::KeyType::Group);
             assert_eq!(k.address, [0xFFu8; 6]);
             assert_eq!(k.rsc, 0);
             assert_eq!(k.cipher_suite_oui, [0x00, 0x0F, 0xAC]);
-            assert_eq!(k.cipher_suite_type, 4);
+            assert_eq!(k.cipher_suite_type, fidl_ieee80211::CipherSuiteType::from_primitive_allow_unknown(4));
         });
     }
 
@@ -3142,13 +3869,13 @@ mod tests {
         assert_variant!(mlme_stream.try_next(), Ok(Some(MlmeRequest::SetKeys(set_keys_req))) => {
             assert_eq!(set_keys_req.keylist.len(), 1);
             let k = set_keys_req.keylist.get(0).expect("expect key descriptor");
-            assert_eq!(k.key, vec![0xCCu8; test_utils::wpa1_cipher().tk_bytes().unwrap()]);
+            assert_eq!(k.key, vec![0xCCu8; test_utils::wpa1_cipher().tk_bytes().unwrap() as usize]);
             assert_eq!(k.key_id, 0);
             assert_eq!(k.key_type, fidl_mlme::KeyType::Pairwise);
-            assert_eq!(k.address, bssid.0);
+            assert_eq!(&k.address, bssid.as_array());
             assert_eq!(k.rsc, 0);
             assert_eq!(k.cipher_suite_oui, [0x00, 0x50, 0xF2]);
-            assert_eq!(k.cipher_suite_type, 2);
+            assert_eq!(k.cipher_suite_type, fidl_ieee80211::CipherSuiteType::from_primitive_allow_unknown(2));
         });
     }
 
@@ -3156,13 +3883,13 @@ mod tests {
         assert_variant!(mlme_stream.try_next(), Ok(Some(MlmeRequest::SetKeys(set_keys_req))) => {
             assert_eq!(set_keys_req.keylist.len(), 1);
             let k = set_keys_req.keylist.get(0).expect("expect key descriptor");
-            assert_eq!(k.key, test_utils::wpa1_gtk_bytes());
+            assert_eq!(&k.key[..], &test_utils::wpa1_gtk_bytes()[..]);
             assert_eq!(k.key_id, 2);
             assert_eq!(k.key_type, fidl_mlme::KeyType::Group);
             assert_eq!(k.address, [0xFFu8; 6]);
             assert_eq!(k.rsc, 0);
             assert_eq!(k.cipher_suite_oui, [0x00, 0x50, 0xF2]);
-            assert_eq!(k.cipher_suite_type, 2);
+            assert_eq!(k.cipher_suite_type, fidl_ieee80211::CipherSuiteType::from_primitive_allow_unknown(2));
         });
     }
 
@@ -3281,7 +4008,7 @@ mod tests {
         let state = state
             .on_mlme_event(
                 fidl_mlme::MlmeEvent::DeauthenticateConf {
-                    resp: fidl_mlme::DeauthenticateConfirm { peer_sta_address: bssid.0 },
+                    resp: fidl_mlme::DeauthenticateConfirm { peer_sta_address: bssid.to_array() },
                 },
                 &mut h.context,
             )
@@ -3366,6 +4093,6 @@ mod tests {
     }
 
     fn fake_device_info() -> fidl_mlme::DeviceInfo {
-        test_utils::fake_device_info([0, 1, 2, 3, 4, 5])
+        test_utils::fake_device_info([0, 1, 2, 3, 4, 5].into())
     }
 }

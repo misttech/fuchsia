@@ -3,8 +3,13 @@
 # found in the LICENSE file.
 
 import("//build/assembly/assembly_input_bundle.gni")
+import("//build/assembly/assembly_resources_directory.gni")
+import("//build/assembly/kernel_aib.gni")
+import("//build/bazel/bazel_inputs.gni")
 import("//build/icu/icu_assembly_input_bundle.gni")
 import("//bundles/assembly/platform_aibs.gni")
+import("//src/lib/icu/tzdata/icu_tzres_source.gni")
+import("//third_party/sbase/binaries.gni")
 import("//zircon/kernel/phys/qemu.gni")
 
 ########
@@ -56,6 +61,19 @@ group("assembly") {
 
   # eng_platform_aib_labels come from //bundles/assembly/platform_aibs.gni.
   deps = eng_platform_aib_labels
+
+  # Coverage and sanitizer builders rename the shared libs, therefore ignore them.
+  if (!is_coverage && !is_asan && !is_hwasan) {
+    deps += [ "//bundles/assembly/scrutiny" ]
+  }
+}
+
+########
+#
+# The Zircon kernel itself
+#
+# This uses a specialized template to create the AIB.
+kernel_assembly_input_bundle("zircon") {
 }
 
 ########
@@ -79,9 +97,7 @@ assembly_input_bundle("bootstrap") {
   bootfs_files_labels = [
     "//build/info:bootfs",
     "//src/bringup:bootfs",
-    "//src/sys/bootstrap:bootfs",
     "//src/sys/component_manager:bootfs",
-    "//src/sys/root:bootfs",
 
     # tools
     "//src/bringup/bin/debuglog:bootfs",
@@ -105,6 +121,10 @@ assembly_input_bundle("bootstrap") {
     "//src/diagnostics/archivist:package",
     "//src/power/power-manager:package",
     "//src/power/shutdown-shim:package",
+    "//src/sys/bootstrap:package",
+    "//src/sys/root:package",
+    "//src/sys/startup:package",
+    "//src/zircon/bin/role_manager:package",
   ]
   kernel_cmdline = [ "blobfs.cache-eviction-policy=NEVER_EVICT" ]
 
@@ -133,6 +153,10 @@ assembly_input_bundle("bootstrap") {
       package_target =
           "//src/connectivity/network/drivers/network-device:package"
       driver_components = [ "meta/network-device.cm" ]
+    },
+    {
+      package_target = "//src/devices/adc/drivers/adc:package"
+      driver_components = [ "meta/adc.cm" ]
     },
     {
       package_target = "//src/devices/block/drivers/core:package"
@@ -330,17 +354,16 @@ assembly_input_bundle("bootstrap_eng") {
     "//src/devices/block/bin/iotime:bootfs",
     "//src/devices/block/bin/lsblk:bootfs",
     "//src/devices/block/bin/sdio:bootfs",
-    "//src/devices/clock/bin/clock:bootfs",
     "//src/devices/cpu/bin/cpuctl:bootfs",
     "//src/devices/gpio/bin/gpioutil:bootfs",
     "//src/devices/i2c/bin:bootfs",
     "//src/devices/power/bin/lspwr:bootfs",
-    "//src/devices/misc/drivers/cpu-trace:bootfs",
     "//src/devices/ram/bin/ram-info:bootfs",
     "//src/devices/spi/bin/spiutil:bootfs",
     "//src/devices/thermal/bin/temperature-cli:bootfs",
     "//src/devices/thermal/bin/thermal-cli:bootfs",
     "//src/devices/usb/bin/lsusb:bootfs",
+    "//src/diagnostics/iquery:bootfs",
     "//src/graphics/display/bin/dsiutil:bootfs",
     "//src/media/audio/tools/audio-driver-ctl:bootfs",
     "//src/security/bin/syscall-check:bootfs",
@@ -383,6 +406,13 @@ assembly_input_bundle("virtcon") {
   bootfs_packages = [ "//src/bringup/bin/virtcon:package" ]
 }
 
+assembly_input_bundle("virtcon_disable") {
+  kernel_cmdline = [
+    "virtcon.hide-on-boot",
+    "virtcon.disable=true",
+  ]
+}
+
 # All eng build type products will include this Assembly Input Bundle.
 # These kernel args should be refactored so that the AIBs have logical names.
 #
@@ -421,7 +451,63 @@ assembly_input_bundle("kernel_args_user") {
     "kernel.enable-debugging-syscalls=false",
     "kernel.enable-serial-syscalls=false",
     "netsvc.disable=true",
+    "kernel.serial=none",
   ]
+}
+
+# Added when a board supports the PMM checker (ie, it's real hardware that can
+# do this without a large performance penalty), and when desired by the product
+# (based on build-type).
+assembly_input_bundle("kernel_pmm_checker_enabled") {
+  kernel_cmdline = [
+    # Enable PMM checker to detect certain kinds of buffer overrun and
+    # use-after-free bugs.
+    "kernel.pmm-checker.enable=true",
+
+    # Use a small fill size to minimize performance impact.  In practice,
+    # corruption tends to happen at the start of a page so filling/checking only
+    # the first 16 bytes provides decent coverage without sacrificing
+    # performance.
+    "kernel.pmm-checker.fill-size=16",
+  ]
+}
+
+# sl4f: Scripting Layer for Fuchsia
+#
+# Often used for manipulating device during E2E tests.
+assembly_input_bundle("sl4f") {
+  base_packages = [
+    # We currently include SL4F in base to support E2E tests that
+    # either do not download fuchsia packages or cannot start
+    # package serving due to network limitations.
+    "//src/testing/sl4f",
+    "//src/sys/bin/start_sl4f",
+  ]
+  shell_commands = [
+    {
+      package = "start_sl4f"
+      components = [ "start_sl4f" ]
+    },
+  ]
+
+  compiled_packages = [
+    {
+      name = "core"
+      component_shards = [
+        {
+          component_name = "core"
+          shards = rebase_path(
+                  [ "//src/testing/sl4f/meta/sl4f_assembly.core_shard.cml" ],
+                  root_build_dir)
+        },
+      ]
+    },
+  ]
+}
+
+# Includes the bin/clock and clkctl developer tools
+assembly_input_bundle("clock_development_tools") {
+  bootfs_files_labels = [ "//src/devices/clock/bin/clock:bootfs" ]
 }
 
 ########
@@ -443,11 +529,8 @@ assembly_input_bundle("kernel_args_user") {
 # All children in `/core` receive InspectSink and LogSink.
 #
 assembly_input_bundle("core_realm") {
-  bootfs_files_labels = [ "//src/sys/base-resolver:bootfs" ]
+  bootfs_packages = [ "//src/sys/pkg/bin/pkg-cache" ]
   base_packages = [
-    # The required SWD stack artifacts to enable packages in an FVM.
-    "//src/sys/pkg/bin/pkg-cache",
-
     # This is a required dependency of pkg-cache
     "//src/sys/pkg/bin/system-update-committer",
 
@@ -515,8 +598,7 @@ assembly_input_bundle("core_realm_networking") {
     "//src/hwinfo",
 
     # System Time
-    "//src/sys/time/timekeeper",
-    "//src/sys/time/httpsdate_time_source:httpsdate-time-source",
+    "//src/sys/time/timekeeper:timekeeper-without-config",
     "//src/sys/time/httpsdate_time_source:httpsdate-time-source-pull",
 
     # Other
@@ -524,19 +606,12 @@ assembly_input_bundle("core_realm_networking") {
   ]
 }
 
-# network_realm
+# Network realm definition.
 #
-# This AIB is the base on which to build up networking support. It includes all
-# the packages that are common across all products that require networking.
+# This AIB defines the base network package, which lays out the network realm.
+# It must be used in conjunction with network_realm_packages or
+# network_realm_packages_gub.
 assembly_input_bundle("network_realm") {
-  base_packages = [
-    "//src/connectivity/network/dhcpv4/server:package",
-    "//src/connectivity/network/dhcpv6/client:package",
-    "//src/connectivity/network/dns:package",
-    "//src/connectivity/network/http-client:package",
-    "//src/connectivity/network/reachability:package",
-  ]
-
   compiled_packages = [
     {
       name = "network"
@@ -569,13 +644,49 @@ assembly_input_bundle("network_realm") {
   ]
 }
 
+# Network realm packages without unified binary.
+#
+# This AIB includes all the packages that are common across all products that
+# require networking. It provides the network realm using packages that utilize
+# separate, more-optimized, binaries, trading space for performance. This is
+# the default implementation used.
+#
+# It is mutually-exclusive with 'network_realm_packages_gub'.
+assembly_input_bundle("network_realm_packages") {
+  base_packages = [
+    "//src/connectivity/network/dhcpv4/server:package",
+    "//src/connectivity/network/dhcpv6/client:package",
+    "//src/connectivity/network/dns:package",
+    "//src/connectivity/network/http-client:package",
+    "//src/connectivity/network/reachability:package",
+  ]
+}
+
+# Network realm packages with unified binary.
+#
+# This AIB is equivalent to network_realm_packages. It provides the network
+# realm using packages that utilize a "grand unified binary" (GUB), saving space
+# at the cost of a minor loss in performance.  This is for space- constrained
+# devices that don't have the space for the non-GUB binaries.
+#
+# It is mutually-exclusive with 'network_realm_packages'.
+assembly_input_bundle("network_realm_packages_gub") {
+  base_packages = [
+    "//src/connectivity/network/dhcpv4/server:package_gub",
+    "//src/connectivity/network/dhcpv6/client:package_gub",
+    "//src/connectivity/network/dns:package_gub",
+    "//src/connectivity/network/http-client:package_gub",
+    "//src/connectivity/network/reachability:package_gub",
+  ]
+}
+
 # networking_with_virtualization
 #
 # This AIB adds the networking capabilities that include virtualization support.
 # It is mutually-exclusive with networking_basic.
 #
 assembly_input_bundle("networking_with_virtualization") {
-  base_packages = [ "//src/connectivity/network/netcfg:package-advanced" ]
+  base_packages = [ "//src/connectivity/policy/netcfg:package-advanced" ]
   compiled_packages = [
     {
       name = "network"
@@ -591,13 +702,14 @@ assembly_input_bundle("networking_with_virtualization") {
   ]
 }
 
-# networking_basic
+# Basic networking.
 #
-# This AIB adds the basic networking capabilities.
-# It is mutually-exclusive with networking_with_virtualization.
+# This AIB adds the basic networking capabilities. It is mutually-exclusive with
+# networking_with_virtualization.
 #
+# It must be used in conjunction with either network_basic_packages or
+# network_basic_packages_gub.
 assembly_input_bundle("networking_basic") {
-  base_packages = [ "//src/connectivity/network/netcfg:package-basic" ]
   compiled_packages = [
     {
       name = "network"
@@ -611,6 +723,23 @@ assembly_input_bundle("networking_basic") {
       ]
     },
   ]
+}
+
+# Basic networking packages without unified binary.
+#
+# This AIB provides packages for the networking_basic configuration. It is
+# mutually exlucisve with networking_basic_packages_gub.
+assembly_input_bundle("networking_basic_packages") {
+  base_packages = [ "//src/connectivity/policy/netcfg:package-basic" ]
+}
+
+# Basic networking packages with unified binary.
+#
+# This AIB provides space-saving equivalent packages for the networking_basic
+# configuration as found in networking_basic_packages. It is mutually exlucisve
+# with networking_basic_packages.
+assembly_input_bundle("networking_basic_packages_gub") {
+  base_packages = [ "//src/connectivity/policy/netcfg:package-basic_gub" ]
 }
 
 # networking_test_collection
@@ -650,10 +779,6 @@ assembly_input_bundle("core_realm_eng") {
     "//src/storage/fs_realm",
     "//src/storage/bin:fs_realm_tools",
   ]
-  bootfs_files_labels = [
-    # NOTE: this might belong to a currently not-existing bootstrap_eng AIB.
-    "//src/diagnostics/iquery:bootfs",
-  ]
   shell_commands = [
     {
       package = "fs_realm_tools"
@@ -665,6 +790,227 @@ assembly_input_bundle("core_realm_eng") {
       ]
     },
   ]
+
+  # Included with //bundles/tools.
+  shell_commands += [
+    {
+      package = "sched"
+      components = [ "sched" ]
+    },
+    {
+      package = "cowsay"
+      components = [ "cowsay" ]
+    },
+    {
+      package = "hwstress-cli"
+      components = [ "hwstress" ]
+    },
+    {
+      package = "time"
+      components = [ "time" ]
+    },
+    {
+      package = "uname"
+      components = [ "uname" ]
+    },
+    {
+      package = "far"
+      components = [ "far" ]
+    },
+    {
+      package = "trace"
+      components = [ "trace" ]
+    },
+    {
+      package = "camera_benchmark"
+      components = [ "camera_benchmark_bin" ]
+    },
+    {
+      package = "camera_sensor_cli"
+      components = [ "camera_sensor_cli_bin" ]
+    },
+    {
+      package = "lowpanctl"
+      components = [ "lowpanctl" ]
+    },
+    {
+      package = "nc"
+      components = [ "nc" ]
+    },
+    {
+      package = "sockscripter"
+      components = [ "sockscripter" ]
+    },
+    {
+      package = "iperf3"
+      components = [ "iperf3" ]
+    },
+    {
+      package = "tcpdump"
+      components = [ "tcpdump" ]
+    },
+    {
+      package = "mdns-util"
+      components = [ "mdns-util" ]
+    },
+    {
+      package = "net-cli"
+      components = [ "net" ]
+    },
+    {
+      package = "donut"
+      components = [ "donut" ]
+    },
+    {
+      package = "dai-info"
+      components = [ "dai-info" ]
+    },
+    {
+      package = "bt-bredr-profile"
+      components = [ "bt-bredr-profile" ]
+    },
+    {
+      package = "bt-cli"
+      components = [ "bt-cli" ]
+    },
+    {
+      package = "bt-le-central"
+      components = [ "bt-le-central" ]
+    },
+    {
+      package = "bt-le-peripheral"
+      components = [ "bt-le-peripheral" ]
+    },
+    {
+      package = "bt-pairing-tool"
+      components = [ "bt-pairing-tool" ]
+    },
+    {
+      package = "bt-snoop-cli"
+      components = [ "bt-snoop-cli" ]
+    },
+    {
+      package = "bt-fct-hci"
+      components = [ "bt-fct-hci" ]
+    },
+    {
+      package = "bt-hci-tool"
+      components = [ "bt-hci-tool" ]
+    },
+    {
+      package = "bt-intel-tool"
+      components = [ "bt-intel-tool" ]
+    },
+    {
+      package = "bt-avdtp-tool"
+      components = [ "bt-avdtp-tool" ]
+    },
+    {
+      package = "bt-avrcp-controller"
+      components = [ "bt-avrcp-controller" ]
+    },
+    {
+      package = "display-detect"
+      components = [ "display_detect" ]
+    },
+    {
+      package = "display-png"
+      components = [ "display_png" ]
+    },
+    {
+      package = "display-tool"
+      components = [ "display-tool" ]
+    },
+    {
+      package = "display-tweak"
+      components = [ "display-tweak" ]
+    },
+    {
+      package = "magma-info"
+      components = [ "magma-info" ]
+    },
+    {
+      package = "audio_listener"
+      components = [ "audio_listener" ]
+    },
+    {
+      package = "signal_generator"
+      components = [ "signal_generator" ]
+    },
+    {
+      package = "virtual_audio_util"
+      components = [ "virtual_audio" ]
+    },
+    {
+      package = "vol"
+      components = [ "vol" ]
+    },
+    {
+      package = "wav_player"
+      components = [ "wav_player" ]
+    },
+    {
+      package = "wav_recorder"
+      components = [ "wav_recorder" ]
+    },
+    {
+      package = "mediasession_cli_tool"
+      components = [ "mediasession_cli_tool" ]
+    },
+    {
+      package = "fdr_cli"
+      components = [ "fdr" ]
+    },
+    {
+      package = "export-ffs"
+      components = [ "export-ffs" ]
+    },
+    {
+      package = "pm"
+      components = [ "pm" ]
+    },
+    {
+      package = "activity-ctl"
+      components = [ "activity_ctl" ]
+    },
+    {
+      package = "log"
+      components = [ "log" ]
+    },
+    {
+      package = "input"
+      components = [ "input" ]
+    },
+    {
+      package = "boringssl_tool"
+      components = [ "bssl" ]
+    },
+    {
+      package = "curl"
+      components = [ "curl" ]
+    },
+    {
+      package = "scp"
+      components = [ "scp" ]
+    },
+    {
+      package = "ssh-keygen"
+      components = [ "ssh-keygen" ]
+    },
+    {
+      package = "ssh"
+      components = [ "ssh" ]
+    },
+  ]
+  foreach(bin, sbase_binaries) {
+    shell_commands += [
+      {
+        package = bin
+        components = [ bin ]
+      },
+    ]
+  }
+
   compiled_packages = [
     {
       name = "core"
@@ -766,11 +1112,12 @@ assembly_input_bundle("core_realm_development_access") {
 
     # ffx's remote-control (remote access) components:
     "//src/developer/remote-control:remote-control-package",
-    "//src/developer/remote-control:pkg-diagnostics-bridge",
-    "//src/connectivity/overnet/overnetstack",
 
     # The developer snapshot tool.
     "//src/developer/forensics/snapshot:pkg",
+
+    # log_listener shell tool.
+    "//src/diagnostics/log_listener:log_listener_shell_pkg",
   ]
   config_data_labels = [ "//src/developer/sshd-host:config" ]
   compiled_packages = [
@@ -783,11 +1130,24 @@ assembly_input_bundle("core_realm_development_access") {
           component_name = "core"
           shards = rebase_path(
                   [
-                    "//src/developer/sshd-host/meta/sshd-host.core_shard.cml",
-                    "//src/developer/remote-control/meta/remote-control-base.core_shard.cml",
                     "//src/developer/debug/debug_agent/meta/debug_agent.core_shard.cml",
+                    "//src/developer/meta/default-laboratory-env.core_shard.cml",
+                    "//src/developer/remote-control/meta/laboratory.core_shard.cml",
+                    "//src/developer/remote-control/meta/remote-control-base.core_shard.cml",
+                    "//src/developer/sshd-host/meta/sshd-host.core_shard.cml",
+                    "//src/developer/toolbox/meta/toolbox.core_shard.cml",
                   ],
                   root_build_dir)
+        },
+      ]
+    },
+    {
+      name = "toolbox"
+      components = [
+        {
+          component_name = "toolbox"
+          shards = rebase_path("//src/developer/toolbox/meta/toolbox.cml",
+                               root_build_dir)
         },
       ]
     },
@@ -804,10 +1164,14 @@ assembly_input_bundle("core_realm_development_access") {
       package = "snapshot"
       components = [ "snapshot" ]
     },
+    {
+      package = "log_listener_shell"
+      components = [ "log_listener" ]
+    },
   ]
 }
 
-assembly_input_bundle("mdns_fuchsia_dev_wired_service") {
+assembly_input_bundle("mdns_fuchsia_device_wired_service") {
   config_data_labels =
       [ "//src/connectivity/network/mdns/service:mdns_fuchsia_udp_config" ]
 }
@@ -890,6 +1254,47 @@ assembly_input_bundle("radar_proxy_without_injector") {
   ]
 }
 
+assembly_input_bundle("feedback_low_memory_product_config") {
+  config_data_labels =
+      [ "//src/developer/forensics:feedback_low_memory_product_config" ]
+}
+
+assembly_input_bundle("feedback_remote_device_id_provider") {
+  config_data_labels = [
+    "//src/developer/forensics:feedback_remote_device_id_provider_for_assembly",
+  ]
+}
+
+assembly_input_bundle("feedback_large_disk") {
+  config_data_labels =
+      [ "//src/developer/forensics:feedback_large_disk_product_config" ]
+}
+
+assembly_input_bundle("feedback_userdebug_config") {
+  config_data_labels = [ "//src/developer/forensics:feedback_userdebug_config" ]
+}
+
+assembly_input_bundle("feedback_user_config") {
+  config_data_labels = [ "//src/developer/forensics:feedback_user_config" ]
+}
+
+assembly_input_bundle("factory_reset_trigger") {
+  base_packages = [ "//src/recovery/factory-reset-trigger" ]
+  compiled_packages = [
+    {
+      name = "core"
+      component_shards = [
+        {
+          component_name = "core"
+          shards = rebase_path(
+                  [ "//src/recovery/factory-reset-trigger/meta/factory-reset-trigger.core_shard.cml" ],
+                  root_build_dir)
+        },
+      ]
+    },
+  ]
+}
+
 ########
 #
 # The "minimal" AIBs
@@ -915,9 +1320,11 @@ assembly_input_bundle("common_minimal") {
     "//src/sys/pkg/bin/system-updater",
     "//src/sys/full-resolver:full-resolver-pkg",
 
-    # Diagnostics
+    # Cobalt
     "//src/cobalt/bin/app:cobalt",
     "//src/cobalt/bin/system-metrics:cobalt_system_metrics",
+
+    # Diagnostics
     "//src/diagnostics/persistence:diagnostics-persistence",
     "//src/diagnostics/kcounter:diagnostics-kcounter",
     "//src/diagnostics/sampler",
@@ -930,9 +1337,6 @@ assembly_input_bundle("common_minimal") {
 
     # Activity
     "//src/sys/activity",
-
-    # Developer
-    "//src/developer/memory/monitor",
 
     # Recovery
     "//src/recovery/factory_reset:factory_reset_pkg",
@@ -952,6 +1356,21 @@ assembly_input_bundle("common_minimal") {
           source = "$root_build_dir/gen/src/sys/pkg/bin/system-update-committer/system_update_committer_config_enable_reboot_on_verification_failure.json"
           destination = "config.json"
           label = "//src/sys/pkg/bin/system-update-committer:enable_reboot_on_verification_failure"
+        },
+      ]
+    },
+    {
+      # Ideally we would reference a config_data_for_assembly() target instead,
+      # but they don't support deps yet, which is needed here.
+      package_name = "cobalt"
+      label = "//src/cobalt/bin/app:global_metrics_registry_gen"
+      files = [
+        {
+          # This file is generated by GN, but its contents are always the same
+          # (the template which generates it is basically a macro, and has no
+          # product-controlled GN arguments or metadata).
+          source = "$root_gen_dir/src/cobalt/bin/app/global_metrics_registry.pb"
+          destination = "global_metrics_registry.pb"
         },
       ]
     },
@@ -1012,20 +1431,11 @@ assembly_input_bundle("common_minimal") {
                     "//src/intl/tzdata_provider/meta/tzdata_provider.core_shard.cml",
                     "//src/sys/cache_manager/meta/cache_manager.core_shard.cml",
                     "//src/sys/pkg/bin/system-updater/meta/system_updater.core_shard.cml",
-                    "//src/developer/memory/monitor/meta/memory_monitor.core_shard.cml",
                     "//src/recovery/factory_reset/meta/factory_reset.core_shard.cml",
 
                     # TODO(fxbug.dev/80375): only include in eng builds
                     "//src/sys/test_manager/meta/test_manager.core_shard.cml",
                     "//src/sys/testing/meta/test_realm.core_shard.cml",
-
-                    # TODO(fxbug.dev/112433): The trace manager core shard should only
-                    # appear in eng builds, however, many components do not properly
-                    # declare their route dependencies on it as optional causing scrutiny
-                    # to fail route checking. Once the all of the component routes are
-                    # properly declared optional, this shard should be removed from here
-                    # and added in "common_minimal_eng" instead.
-                    "//src/performance/trace_manager/meta/trace_manager.core_shard.cml",
                   ],
                   root_build_dir)
         },
@@ -1080,6 +1490,11 @@ assembly_input_bundle("common_minimal") {
 # This is exclusive to user builds on the minimal support level.
 #
 assembly_input_bundle("minimal_user") {
+  base_packages = [
+    # memory_monitor with profiling disabled.
+    "//src/developer/memory/monitor:monitor_without_memory_sampler",
+  ]
+
   config_data = [
     {
       package_name = "cobalt"
@@ -1087,6 +1502,22 @@ assembly_input_bundle("minimal_user") {
         {
           source = "//src/cobalt/bin/app/configs/user_config.json"
           destination = "config.json"
+        },
+      ]
+    },
+  ]
+
+  compiled_packages = [
+    {
+      name = "core"
+      component_shards = [
+        {
+          # All paths must be rebased since this is passed directly to the AIB
+          # config.
+          component_name = "core"
+          shards = rebase_path(
+                  [ "//src/developer/memory/monitor/meta/memory_monitor.core_shard.cml" ],
+                  root_build_dir)
         },
       ]
     },
@@ -1103,6 +1534,32 @@ assembly_input_bundle("minimal_userdebug") {
         {
           source = "//src/cobalt/bin/app/configs/userdebug_config.json"
           destination = "config.json"
+        },
+      ]
+    },
+    {
+      package_name = "triage-detect"
+      files = [
+        {
+          source = "//src/diagnostics/detect/configs/enable-filing.json"
+          destination = "config.json"
+        },
+        {
+          source = "//src/diagnostics/detect/configs/netstack-detect.triage"
+          destination = "netstack-detect.triage"
+        },
+        {
+          source = "//src/diagnostics/detect/configs/cobalt-detect.triage"
+          destination = "cobalt-detect.triage"
+        },
+      ]
+    },
+    {
+      package_name = "memory_monitor"
+      files = [
+        {
+          source = "//src/developer/memory/monitor/config/send_critical_pressure_crash_reports"
+          destination = "send_critical_pressure_crash_reports"
         },
       ]
     },
@@ -1132,6 +1589,7 @@ assembly_input_bundle("minimal_eng") {
                     "//src/developer/process_explorer/meta/process_explorer.core_shard.cml",
                     "//src/devices/bin/driver_playground/meta/driver_playground.core_shard.cml",
                     "//src/testing/metrics-logger/meta/metrics-logger.core_shard.cml",
+                    "//src/performance/trace_manager/meta/trace_manager.core_shard.cml",
                   ],
                   root_build_dir)
         },
@@ -1159,6 +1617,10 @@ assembly_input_bundle("minimal_userdebug_and_eng") {
     "//src/diagnostics/detect:triage-detect",
     "//src/sys/pkg/bin/pkgctl",
     "//src/sys/pkg/bin/update",
+
+    # memory_monitor with profiling enabled.
+    "//src/developer/memory/monitor:monitor_with_memory_sampler",
+    "//src/performance/memory/sampler:memory_sampler",
   ]
   shell_commands = [
     {
@@ -1188,7 +1650,12 @@ assembly_input_bundle("minimal_userdebug_and_eng") {
         {
           component_name = "core"
           shards = rebase_path(
-                  [ "//src/diagnostics/detect/meta/detect.core_shard.cml" ],
+                  [
+                    "//src/diagnostics/detect/meta/detect.core_shard.cml",
+                    "//src/developer/memory/monitor/meta/memory_monitor.core_shard.cml",
+                    "//src/developer/memory/monitor/meta/memory_monitor_with_memory_sampler.core_shard.cml",
+                    "//src/performance/memory/sampler/meta/memory_sampler.core_shard.cml",
+                  ],
                   root_build_dir)
         },
       ]
@@ -1204,33 +1671,152 @@ assembly_input_bundle("minimal_userdebug_and_eng") {
 # (via the `:core_realm` AIB).  Each should list which feature_set_level and
 # build type that it is valid for.
 
-# Cobalt registry that is added by default if the product does not provide one
+# Input groups
 #
-# feature_set: minimal
-# build-types: all
+# feature_set_levels: minimal
+# build-types:all
 #
-assembly_input_bundle("cobalt_default_registry") {
-  config_data = [
+# These AIBs are opaque groups of inputs that are common to many products, but
+# have not been organized into specific features yet.
+assembly_input_bundle("input_group_one") {
+  kernel_cmdline = [ "kernel.oom.behavior=reboot" ]
+  base_packages = [ "//src/sys/cache_manager" ]
+  compiled_packages = [
     {
-      package_name = "cobalt"
-      label = "//src/cobalt/bin/app:global_metrics_registry_gen"
-      files = [
+      name = "core"
+      component_shards = [
         {
-          source = "$root_gen_dir/src/cobalt/bin/app/global_metrics_registry.pb"
-          destination = "global_metrics_registry.pb"
+          component_name = "core"
+          shards = rebase_path(
+                  [
+                    "//src/media/sounds/soundplayer/meta/soundplayer.core_shard.cml",
+
+                    # TODO(fxbug.dev/80375): only include in eng builds
+                    "//src/sys/fuzzing/meta/fuzzing.core-shard.cml",
+                  ],
+                  root_build_dir)
         },
       ]
     },
   ]
 }
 
-# Driver Framework V1 support
+# Bluetooth core support
 #
 # feature_set_levels: minimal
 # build-types: all
 #
-assembly_input_bundle("driver_framework_v1") {
-  bootfs_packages = [ "//src/devices/bin/driver_manager:dfv1_package" ]
+assembly_input_bundle("bluetooth_core") {
+  base_packages = [
+    "//src/connectivity/bluetooth/core/bt-gap",
+    "//src/connectivity/bluetooth/core/bt-init",
+    "//src/connectivity/bluetooth/profiles/bt-rfcomm",
+  ]
+  base_driver_packages = [
+    {
+      package_target = "//src/connectivity/bluetooth/core/bt-host"
+      driver_components = [ "meta/bt-host.cm" ]
+    },
+  ]
+}
+
+# Bluetooth snoop support
+#
+# feature_set_levels: minimal
+# build-types: all
+# This AIB provides packages for the Bluetooth snoop configuration which lazily starts. It is
+# mutually exclusive with the `bluetooth_snoop_eager` AIB.
+assembly_input_bundle("bluetooth_snoop_lazy") {
+  base_packages = [ "//src/connectivity/bluetooth/tools/bt-snoop" ]
+  compiled_packages = [
+    {
+      name = "core"
+      component_shards = [
+        {
+          component_name = "core"
+          shards = rebase_path(
+                  [ "//src/connectivity/bluetooth/tools/bt-snoop/meta/bt-snoop.core_shard.cml" ],
+                  root_build_dir)
+        },
+      ]
+    },
+  ]
+}
+
+# Bluetooth snoop support
+#
+# feature_set_levels: minimal
+# build-types: all
+# This AIB provides packages for the Bluetooth snoop configuration which eagerly starts at device
+# boot. It is mutually exclusive with the `bluetooth_snoop_lazy` AIB.
+assembly_input_bundle("bluetooth_snoop_eager") {
+  base_packages = [ "//src/connectivity/bluetooth/tools/bt-snoop" ]
+  compiled_packages = [
+    {
+      name = "core"
+      component_shards = [
+        {
+          component_name = "core"
+          shards = rebase_path(
+                  [ "//src/connectivity/bluetooth/tools/bt-snoop/meta/bt-snoop-eager.core_shard.cml" ],
+                  root_build_dir)
+        },
+      ]
+    },
+  ]
+}
+
+assembly_input_bundle("input_group_two") {
+  kernel_cmdline = [ "kernel.render-dlog-to-crashlog=true" ]
+  base_packages = [
+    "//src/media/sounds/soundplayer",
+    "//src/session/bin/session_manager",
+  ]
+  flexible_packages = [
+    "//src/connectivity/bluetooth/profiles/bt-a2dp",
+    "//src/connectivity/bluetooth/profiles/bt-avrcp",
+    "//src/connectivity/bluetooth/profiles/bt-avrcp-target",
+    "//src/connectivity/bluetooth/profiles/bt-hfp-audio-gateway:bt-hfp-audio-gateway-default",
+    "//src/connectivity/location/emergency",
+    "//src/media/sessions:mediasession",
+  ]
+  if (current_cpu != "riscv64") {
+    flexible_packages += [ "//src/media/codec:codec_factory" ]
+  }
+  compiled_packages = [
+    {
+      name = "core"
+      component_shards = [
+        {
+          component_name = "core"
+          shards = rebase_path(
+                  [
+                    # TODO(fxbug.dev/79964): eliminate this when the core_shard above can eagerly start
+                    # A2DP when it is available at startup.
+                    # "eager_core_shard" should be used when the A2DP profile should be available from
+                    # startup.
+                    "//src/connectivity/bluetooth/profiles/bt-a2dp/meta/bt-a2dp-eager.core_shard.cml",
+                    "//src/connectivity/bluetooth/profiles/bt-avrcp/meta/bt-avrcp.core_shard.cml",
+                    "//src/connectivity/bluetooth/profiles/bt-hfp-audio-gateway/meta/bt-hfp-audio-gateway.core_shard.cml",
+                    "//src/connectivity/location/emergency/meta/emergency.core_shard.cml",
+                    "//src/media/codec/factory/meta/codec_factory.core_shard.cml",
+                    "//src/media/sessions/meta/mediasession.core_shard.cml",
+                    "//src/session/bin/session_manager/meta/session.smart.from_platform.core_shard.cml",
+                  ],
+                  root_build_dir)
+        },
+      ]
+    },
+  ]
+}
+
+########
+#
+# Diagnostics Triage Support
+
+# Triage-detect support for magma arm mali devices
+assembly_input_bundle("diagnostics_triage_detect_mali") {
+  config_data_labels = [ "//src/diagnostics/config/triage:mali-detect" ]
 }
 
 # Driver Framework V2 support
@@ -1252,7 +1838,7 @@ assembly_input_bundle("driver_framework_v2") {
 # valid build-types: all
 #
 assembly_input_bundle("starnix_support") {
-  cache_packages = [
+  flexible_packages = [
     "//src/starnix/runner:starnix_package",
     "//src/starnix/kernel:starnix_kernel_package",
   ]
@@ -1269,6 +1855,7 @@ assembly_input_bundle("starnix_support") {
       ]
     },
   ]
+  bootfs_files_labels = [ "//src/starnix/config:bootfs" ]
 }
 
 # This AIB enables testing support, and is meant to be used with either the
@@ -1282,8 +1869,6 @@ assembly_input_bundle("testing_support") {
   cache_packages = [
     # test-manager and all of its runners:
     "//src/sys/test_manager:pkg",
-    "//src/sys/test_runners/dart_wrapper:dart-aot-wrapper-runner",
-    "//src/sys/test_runners/dart_wrapper:dart-jit-wrapper-runner",
     "//src/sys/test_runners/elf:elf-test-runner",
     "//src/sys/test_runners/elf:elf-test-ambient-exec-runner",
     "//src/sys/test_runners/elf:elf-test-create-raw-processes-runner",
@@ -1294,6 +1879,7 @@ assembly_input_bundle("testing_support") {
     "//src/sys/test_runners/gunit:gunit-runner",
     "//src/sys/test_runners/inspect:inspect-test-runner",
     "//src/sys/test_runners/lib_loader_cache:lib_loader_runner_cache",
+    "//src/sys/test_runners/rust:rust-test-create-raw-processes-runner",
     "//src/sys/test_runners/rust:rust-test-next-vdso-runner",
     "//src/sys/test_runners/rust:rust-test-runner",
     "//src/sys/test_runners/starnix:starnix-test-runners",
@@ -1342,6 +1928,44 @@ assembly_input_bundle("testing_support") {
   ]
 }
 
+# Basic camera support
+#
+assembly_input_bundle("camera") {
+  flexible_packages = [
+    "//src/camera/bin/device:camera_device",
+    "//src/camera/bin/device_watcher:camera_device_watcher",
+  ]
+  compiled_packages = [
+    {
+      name = "core"
+      component_shards = [
+        {
+          component_name = "core"
+          shards = rebase_path([ "//src/camera/meta/camera.core_shard.cml" ],
+                               root_build_dir)
+        },
+      ]
+    },
+  ]
+}
+
+assembly_input_bundle("factory_data") {
+  flexible_packages = [ "//src/factory/factory_store_providers" ]
+  compiled_packages = [
+    {
+      name = "core"
+      component_shards = [
+        {
+          component_name = "core"
+          shards = rebase_path(
+                  [ "//src/factory/factory_store_providers/meta/factory_store_providers.core_shard.cml" ],
+                  root_build_dir)
+        },
+      ]
+    },
+  ]
+}
+
 # AIB containing bootfs resources needed by all fshost variants
 #
 # There are "pervasively routed" capability shards included here because there
@@ -1376,6 +2000,11 @@ assembly_input_bundle("fshost_common") {
         },
         {
           source =
+              rebase_path("//sdk/lib/inspect/use.shard.cml", root_build_dir)
+          destination = "inspect/use.shard.cml"
+        },
+        {
+          source =
               rebase_path("//sdk/lib/syslog/client.shard.cml", root_build_dir)
           destination = "syslog/client.shard.cml"
         },
@@ -1397,7 +2026,7 @@ assembly_input_bundle("fshost_common") {
           component_name = "fshost"
           shards =
               rebase_path([
-                            "//src/lib/storage/fs_management/client.shard.cml",
+                            "//src/storage/lib/fs_management/client.shard.cml",
                             "//src/storage/fshost/meta/config.cml",
                           ],
                           root_build_dir)
@@ -1429,7 +2058,7 @@ assembly_input_bundle("fshost_storage") {
   ]
   bootfs_files_labels = [
     "//src/storage/fshost:assembly_bundle_fshost_storage_common",
-    "//src/storage/bin/blobfs:bootfs",
+    "//src/storage/blobfs/bin:bootfs",
     "//src/storage/blobfs:bootfs",
   ]
 }
@@ -1454,8 +2083,7 @@ assembly_input_bundle("fshost_fxfs") {
       ]
     },
   ]
-  bootfs_files_labels =
-      [ "//src/storage/fshost:assembly_bundle_fshost_fxfs_vmex" ]
+  bootfs_files_labels = [ "//src/storage/fshost:assembly_bundle_fshost_fxfs" ]
 }
 
 # AIB containing fshost with an fvm and fxfs to hold the data.
@@ -1546,13 +2174,13 @@ assembly_input_bundle("fshost_fvm_minfs_migration") {
           shards = rebase_path([
                                  "//src/storage/fshost/meta/minfs_fshost.cml",
                                  "//src/storage/fshost/meta/fxfs_fshost.cml",
-                                 "//src/storage/fshost/meta/f2fs_fshost.cml",
                                ],
                                root_build_dir)
         },
       ]
     },
   ]
+  bootfs_files_labels = [ "//src/storage/fshost:assembly_bundle_fshost_fxfs" ]
 }
 
 # AIB containing fshost support for f2fs
@@ -1650,6 +2278,31 @@ assembly_input_bundle("omaha_client") {
   ]
 }
 
+assembly_input_bundle("omaha_client_empty_eager_config") {
+  config_data = [
+    {
+      package_name = "omaha-client"
+      label = "//src/sys/pkg/bin/omaha-client:empty_eager_package_config_eager_package_config_script"
+      files = [
+        {
+          source = "$root_build_dir/gen/src/sys/pkg/bin/omaha-client/empty_eager_package_config/omaha_client/eager_package_config.json"
+          destination = "eager_package_config.json"
+        },
+      ]
+    },
+    {
+      package_name = "pkg-resolver"
+      label = "//src/sys/pkg/bin/omaha-client:empty_eager_package_config_eager_package_config_script"
+      files = [
+        {
+          source = "$root_build_dir/gen/src/sys/pkg/bin/omaha-client/empty_eager_package_config/pkg_resolver/eager_package_config.json"
+          destination = "eager_package_config.json"
+        },
+      ]
+    },
+  ]
+}
+
 # Used on builds that do not include an update checker, i.e. neither system_update_checker nor omaha_client.
 # This is needed to expose the update protocols from `void` in #system-update.
 assembly_input_bundle("no_update_checker") {
@@ -1697,6 +2350,11 @@ assembly_input_bundle("system_update_configurator") {
   ]
 }
 
+assembly_input_bundle("pkgfs_disable_executability_restrictions") {
+  system_packages =
+      [ "//src/sys/pkg/bin/pkg-cache:disable-executability-restrictions" ]
+}
+
 # AIB to enable virtualization support.
 #
 # optional: product must specify its inclusion
@@ -1726,6 +2384,16 @@ assembly_input_bundle("virtualization_support") {
   ]
 }
 
+# AIB to enable running Fuchsia as a virtualized guest.
+#
+# optional: product must specify its inclusion
+# valid feature_set_levels: minimal
+# valid build-types: all
+#
+assembly_input_bundle("paravirtualization_support") {
+  base_packages = [ "//src/zircon/bin/vsock_service:vsock_service" ]
+}
+
 # AIB to include Netstack2 as the netstack for use by base networking.
 #
 # feature_set_levels: minimal
@@ -1748,13 +2416,14 @@ assembly_input_bundle("netstack2") {
   ]
 }
 
-# AIB to include Netstack3 as the netstack for use by base networking.
+# Netstack3 as the netstack for use by base networking.
 #
 # feature_set_levels: minimal
 # build-types: all
 #
+# To be used in conjunction with netstack3_packages or netstack3_packages_gub.
+#
 assembly_input_bundle("netstack3") {
-  base_packages = [ "//src/connectivity/network:netstack3" ]
   compiled_packages = [
     {
       name = "network"
@@ -1763,6 +2432,115 @@ assembly_input_bundle("netstack3") {
           component_name = "network"
           shards = rebase_path(
                   [ "//src/connectivity/network/meta/netstack3.shard.cml" ],
+                  root_build_dir)
+        },
+      ]
+    },
+  ]
+}
+
+# Netstack3 packages without unified binary.
+#
+# This AIB provides packages for the netstack3 configuration. It is mutually
+# exclusive with netstack3_packages_gub.
+assembly_input_bundle("netstack3_packages") {
+  base_packages = [ "//src/connectivity/network:netstack3" ]
+}
+
+# Netstack3 packages without unified binary.
+#
+# This AIB provides space-saving equivalent packages for the netstack3
+# configuration as found in netstack3_packages. It is mutually exclusive with
+# netstack3_packages.
+assembly_input_bundle("netstack3_packages_gub") {
+  base_packages = [ "//src/connectivity/network:netstack3_gub" ]
+}
+
+# Netstack-migration as the netstack for use by base networking.
+#
+# feature_set_levels: minimal
+# build-types: all
+#
+# Must be used in conjunction with netstack_migration_packages or
+# netstack_migration_packages_gub.
+assembly_input_bundle("netstack_migration") {
+  compiled_packages = [
+    {
+      name = "network"
+      component_shards = [
+        {
+          component_name = "network"
+          shards = rebase_path(
+                  [ "//src/connectivity/network/meta/netstack-migration.shard.cml" ],
+                  root_build_dir)
+        },
+      ]
+    },
+    {
+      name = "core"
+      component_shards = [
+        {
+          component_name = "core"
+          shards = rebase_path(
+                  [ "//src/connectivity/network/meta/netstack-migration.core.shard.cml" ],
+                  root_build_dir)
+        },
+      ]
+    },
+  ]
+}
+
+# Netstack migration packages without unified binary.
+#
+# This AIB provides packages for the netstack_migration configuration. It is
+# mutually exclusive with netstack_migration_packages_gub.
+assembly_input_bundle("netstack_migration_packages") {
+  base_packages = [ "//src/connectivity/network:netstack-migration" ]
+}
+
+# Netstack migration packages with unified binary.
+#
+# This AIB provides packages for the netstack_migration configuration. It is
+# mutually exclusive with netstack_migration_packages.
+assembly_input_bundle("netstack_migration_packages_gub") {
+  base_packages = [ "//src/connectivity/network:netstack-migration_gub" ]
+}
+
+# Includes network-tun functionality.
+assembly_input_bundle("network_tun") {
+  flexible_packages = [ "//src/connectivity/network/tun/network-tun" ]
+  compiled_packages = [
+    {
+      name = "core"
+      component_shards = [
+        {
+          component_name = "core"
+          shards = rebase_path(
+                  [ "//src/connectivity/network/tun/network-tun/meta/network-tun.core_shard.cml" ],
+                  root_build_dir)
+        },
+      ]
+    },
+  ]
+}
+
+# Includes thread LoWPAN functionality.
+assembly_input_bundle("thread_lowpan") {
+  base_packages = [
+    "//src/connectivity/lowpan/drivers/lowpan-ot-driver",
+    "//src/connectivity/lowpan/service:lowpanservice",
+  ]
+  compiled_packages = [
+    {
+      name = "core"
+      component_shards = [
+        {
+          component_name = "core"
+          shards = rebase_path(
+                  [
+                    "//src/connectivity/lowpan/service/meta/lowpanservice.core_shard.cml",
+                    "//src/connectivity/lowpan/drivers/lowpan-ot-driver/meta/lowpan-ot-driver.core_shard.cml",
+                  ],
                   root_build_dir)
         },
       ]
@@ -1793,6 +2571,21 @@ assembly_input_bundle("wlan_base") {
                   root_build_dir)
         },
       ]
+    },
+  ]
+}
+
+# WLAN development support
+#
+# feature_set_levels: utility, minimal
+# build-types: eng, userdebug
+#
+assembly_input_bundle("wlan_development") {
+  base_packages = [ "//src/connectivity/wlan/tools/wlantool:wlan-dev" ]
+  shell_commands = [
+    {
+      package = "wlan"
+      components = [ "wlan-dev" ]
     },
   ]
 }
@@ -1901,7 +2694,7 @@ assembly_input_bundle("wlan_wlanix") {
 # feature_set_levels: minimal
 # build-types: eng
 #
-assembly_input_bundle("audio_dev_support") {
+assembly_input_bundle("audio_development_support") {
   base_driver_packages = [
     {
       package_target = "//src/media/audio/drivers/virtual_audio"
@@ -1918,6 +2711,53 @@ assembly_input_bundle("audio_dev_support") {
           component_name = "core"
           shards = rebase_path(
                   [ "//src/media/audio/services/ffxdaemon/meta/audio_ffx_daemon.core_shard.cml" ],
+                  root_build_dir)
+        },
+      ]
+    },
+  ]
+}
+
+assembly_input_bundle("video_development_support") {
+  testonly = true
+  cache_packages = [ "//src/media/codec/examples:encode-file" ]
+  shell_commands = [
+    {
+      package = "encode-file"
+      components = [ "encode-file" ]
+    },
+  ]
+}
+
+assembly_input_bundle("audio_core") {
+  base_packages = [ "//src/media/audio/audio_core" ]
+}
+
+assembly_input_bundle("audio_core_routing") {
+  compiled_packages = [
+    {
+      name = "core"
+      component_shards = [
+        {
+          component_name = "core"
+          shards = rebase_path(
+                  [ "//src/media/audio/audio_core/meta/audio_core.core_shard.cml" ],
+                  root_build_dir)
+        },
+      ]
+    },
+  ]
+}
+
+assembly_input_bundle("audio_core_use_adc_device") {
+  compiled_packages = [
+    {
+      name = "core"
+      component_shards = [
+        {
+          component_name = "core"
+          shards = rebase_path(
+                  [ "//src/media/audio/audio_core/meta/audio_core.core_shard.use_adc_device.cml" ],
                   root_build_dir)
         },
       ]
@@ -1975,6 +2815,14 @@ assembly_input_bundle("session_manager") {
   ]
 }
 
+# Element manager support
+#
+# feature_set_levels: minimal
+# build-types: all
+assembly_input_bundle("element_manager") {
+  flexible_packages = [ "//src/session/bin/element_manager" ]
+}
+
 # UI support
 #
 # feature_set_levels: minimal
@@ -2000,14 +2848,17 @@ assembly_input_bundle("ui") {
 # feature_set_levels: minimal
 # build-types: eng
 #
-assembly_input_bundle("ui_eng") {
+icu_assembly_input_bundle("ui_eng") {
+  icu_cache_packages = [
+    "//src/ui/a11y/bin/a11y_manager:a11y-manager",
+
+    "//src/ui/bin/scene_manager:scene_manager",
+  ]
   cache_packages = [
     "//src/graphics/display/bin/coordinator-connector",
-    "//src/ui/a11y/bin/a11y_manager:a11y-manager",
     "//src/ui/bin/text:text_manager",
     "//src/ui/scenic:scenic_pkg",
     "//src/ui/bin/virtual_keyboard_manager",
-    "//src/ui/bin/scene_manager",
   ]
 }
 
@@ -2016,14 +2867,17 @@ assembly_input_bundle("ui_eng") {
 # feature_set_levels: minimal
 # build-types: user, userdebug
 #
-assembly_input_bundle("ui_user_and_userdebug") {
+icu_assembly_input_bundle("ui_user_and_userdebug") {
+  icu_base_packages = [
+    "//src/ui/a11y/bin/a11y_manager:a11y-manager",
+
+    "//src/ui/bin/scene_manager:scene_manager",
+  ]
   base_packages = [
     "//src/graphics/display/bin/coordinator-connector",
-    "//src/ui/a11y/bin/a11y_manager:a11y-manager",
     "//src/ui/bin/text:text_manager",
     "//src/ui/scenic:scenic_pkg",
     "//src/ui/bin/virtual_keyboard_manager",
-    "//src/ui/bin/scene_manager",
   ]
 }
 
@@ -2043,6 +2897,19 @@ assembly_input_bundle("ui_package_eng") {
 #
 assembly_input_bundle("ui_package_user_and_userdebug") {
   base_packages = [ "//src/ui:ui_package" ]
+}
+
+# UI support for builds wants synthetic device support
+#
+# Use PlatformUiConfig.with_synthetic_device_support to select this bundle
+# over ui_package_eng / ui_package_user_and_userdebug.
+#
+# feature_set_levels: minimal
+# build-types: eng, userdebug
+#
+assembly_input_bundle(
+    "ui_package_eng_userdebug_with_synthetic_device_support") {
+  flexible_packages = [ "//src/ui:ui_with_synthetic_device_support_package" ]
 }
 
 # Fan support
@@ -2087,6 +2954,37 @@ assembly_input_bundle("battery_manager") {
       ]
     },
   ]
+}
+
+# Sensors support
+#
+# features_set_levels: utility, minimal
+# build-types: all
+#
+assembly_input_bundle("sensors_framework") {
+  base_packages = [ "//src/sensors" ]
+  compiled_packages = [
+    {
+      name = "core"
+      component_shards = [
+        {
+          component_name = "core"
+          shards = rebase_path([ "//src/sensors/meta/sensors.core_shard.cml" ],
+                               root_build_dir)
+        },
+      ]
+    },
+  ]
+}
+
+# Brightness Manager support
+#
+# features_set_levels: minimal
+# build-types: all
+#
+assembly_input_bundle("brightness_manager") {
+  flexible_packages =
+      [ "//src/ui/bin/brightness_manager:brightness_manager_pkg" ]
 }
 
 # Example assembly input bundle for testing
@@ -2190,7 +3088,7 @@ assembly_input_bundle("emulator_support") {
 # Enabling a soft-transition, remove when complete
 # TODO(122864) Remove transitional labels
 group("third_party_sbase_for_transition") {
-  public_deps = [ "//third_party/sbase" ]
+  public_deps = [ "//third_party/sbase:sbase-pkgs" ]
 }
 
 # Assembly may select at most one bundle with `intl_services` name prefix.
@@ -2226,6 +3124,31 @@ icu_assembly_input_bundle("intl_services_small") {
                   [
                     "//src/intl/intl_services/meta/intl_small_timezones.core_shard.cml",
                     "//src/intl/intl_services/meta/intl_small.core_shard.cml",
+                  ],
+                  root_build_dir)
+        },
+      ]
+    },
+  ]
+}
+
+# Assembly may select at most one bundle with `intl_services` name prefix.
+icu_assembly_input_bundle("intl_services_small_with_timezone") {
+  icu_base_packages = [
+    "//src/intl/intl_services:pkg_small",
+    "//src/intl/time_zone_info_service:pkg",
+  ]
+
+  compiled_packages = [
+    {
+      name = "core"
+      component_shards = [
+        {
+          component_name = "core"
+          shards = rebase_path(
+                  [
+                    "//src/intl/intl_services/meta/intl_small.core_shard.cml",
+                    "//src/intl/time_zone_info_service/meta/time-zone-info-service.core_shard.cml",
                   ],
                   root_build_dir)
         },
@@ -2281,4 +3204,52 @@ assembly_input_bundle("fonts_hermetic") {
     "//src/fonts/asset_providers:server.package",
     "//src/fonts/asset_providers:provider.package",
   ]
+}
+
+# Static resources files to make available to product assembly subsystems.
+assembly_resources_directory("resources") {
+  sources = [
+    "//src/developer/memory/buckets/buckets.json",
+    "//src/sys/core/core_component_id_index.json5",
+
+    # Platform configs for the component_manager config.
+    "//src/security/policy/component_manager_policy.json5",
+    "//src/security/policy/component_manager_policy_base.json5",
+    "//src/security/policy/component_manager_policy_build_type_base.json5",
+    "//src/security/policy/component_manager_policy_eng.json5",
+    "//src/security/policy/component_manager_policy_user.json5",
+    "//src/security/policy/component_manager_policy_userdebug.json5",
+    "//src/security/policy/subsystems/component_manager_policy_starnix.json5",
+    "//src/sys/component_manager/configs/bootfs_config.json5",
+
+    # ICU resources.
+    "${icu_tzres_path}/metaZones.res",
+    "${icu_tzres_path}/timezoneTypes.res",
+    "${icu_tzres_path}/zoneinfo64.res",
+    "${root_gen_dir}/src/lib/icu/tzdata/revision.txt",
+
+    # Core shard templates.
+    "//src/connectivity/weave/meta/weavestack.core_shard.cml.template",
+    "//src/developer/forensics/flash_ts_feedback_id/meta/flash_ts_feedback_id.core_shard.cml.template",
+    "//src/media/audio/meta/multizone_leader.core_shard.cml.template",
+    "//src/media/audio/meta/multizone_leader.core_shard_eng.cml",
+  ]
+  deps = [ "//src/lib/icu/tzdata:revision" ]
+}
+
+# Enables in kernel compression of anonymous memory with some common configuration options.
+assembly_input_bundle("kernel_anonymous_memory_compression") {
+  kernel_cmdline = [
+    "kernel.compression.strategy=lz4",
+    "kernel.compression.storage-strategy=tri_page",
+    "kernel.compression.reclaim_anonymous=true",
+    "kernel.compression.reclaim_zero_forks=true",
+    "kernel.compression.at_memory_pressure=true",
+  ]
+}
+
+# Extends compression to happen eagerly as part of queue rotation, only has meaning if
+# "kernel_compression" is also included.
+assembly_input_bundle("kernel_anonymous_memory_compression_eager_lru") {
+  kernel_cmdline = [ "kernel.page-scanner.lru-action=compress_only" ]
 }

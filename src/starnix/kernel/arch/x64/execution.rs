@@ -2,12 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{
-    syscalls::{
-        decls::{Syscall, SyscallDecl},
-        SyscallArg,
-    },
-    task::CurrentTask,
+use crate::task::{CurrentTask, ThreadState};
+use starnix_syscalls::{
+    decls::{Syscall, SyscallDecl},
+    SyscallArg,
 };
 
 /// Generates CFI directives so the unwinder will be redirected to unwind the stack provided in `state`.
@@ -44,8 +42,8 @@ macro_rules! generate_cfi_directives {
                 // ".cfi_offset fs.base, 0x90",
                 // ".cfi_offset gs.base, 0x98",
 
-                // r14 could technically get clobbered between here and `execute_syscall`. We should
-                // use a method for computing `.cfi_def_cfa` that can't fail (e.g., rsp offset).
+                // r14 could technically get clobbered between here and `execute_syscall`.
+                // TODO(https://fxbug.dev/297897817): Use a more robust approach to unwind.
                 in("r14") state_addr,
                 options(nomem, preserves_flags, nostack),
             );
@@ -66,17 +64,18 @@ macro_rules! restore_cfi_directives {
 pub(crate) use generate_cfi_directives;
 pub(crate) use restore_cfi_directives;
 
-impl Syscall {
-    /// Populates the syscall parameters from the x64 registers.
-    pub fn new(syscall_decl: SyscallDecl, current_task: &CurrentTask) -> Syscall {
-        Syscall {
-            decl: syscall_decl,
-            arg0: SyscallArg::from_raw(current_task.registers.rdi),
-            arg1: SyscallArg::from_raw(current_task.registers.rsi),
-            arg2: SyscallArg::from_raw(current_task.registers.rdx),
-            arg3: SyscallArg::from_raw(current_task.registers.r10),
-            arg4: SyscallArg::from_raw(current_task.registers.r8),
-            arg5: SyscallArg::from_raw(current_task.registers.r9),
-        }
+pub fn new_syscall_from_state(syscall_decl: SyscallDecl, thread_state: &ThreadState) -> Syscall {
+    Syscall {
+        decl: syscall_decl,
+        arg0: SyscallArg::from_raw(thread_state.registers.rdi),
+        arg1: SyscallArg::from_raw(thread_state.registers.rsi),
+        arg2: SyscallArg::from_raw(thread_state.registers.rdx),
+        arg3: SyscallArg::from_raw(thread_state.registers.r10),
+        arg4: SyscallArg::from_raw(thread_state.registers.r8),
+        arg5: SyscallArg::from_raw(thread_state.registers.r9),
     }
+}
+
+pub fn new_syscall(syscall_decl: SyscallDecl, current_task: &CurrentTask) -> Syscall {
+    new_syscall_from_state(syscall_decl, &current_task.thread_state)
 }

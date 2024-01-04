@@ -15,6 +15,11 @@
     },
     capabilities: [
         {
+            directory: "debug",
+            rights: [ "rw*" ],
+            path: "/debug",
+        },
+        {
             directory: "volumes",
             rights: [ "rw*" ],
             path: "/volumes",
@@ -28,7 +33,8 @@
             protocol: [
                 "fuchsia.fs.Admin",
                 "fuchsia.fs.startup.Startup",
-                "fuchsia.fxfs.ReadBlob",
+                "fuchsia.fxfs.BlobReader",
+                "fuchsia.fxfs.Debug",
                 "fuchsia.fxfs.Volumes",
             ],
         },
@@ -44,6 +50,10 @@
     ],
     expose: [
         {
+            directory: "debug",
+            from: "self",
+        },
+        {
             directory: "volumes",
             from: "self",
         },
@@ -55,7 +65,8 @@
             protocol: [
                 "fuchsia.fs.Admin",
                 "fuchsia.fs.startup.Startup",
-                "fuchsia.fxfs.ReadBlob",
+                "fuchsia.fxfs.BlobReader",
+                "fuchsia.fxfs.Debug",
                 "fuchsia.fxfs.Volumes",
             ],
             from: "self",

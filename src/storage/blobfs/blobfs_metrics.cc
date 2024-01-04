@@ -10,7 +10,6 @@
 #include <lib/fzl/time.h>
 #include <lib/inspect/cpp/inspector.h>
 #include <lib/inspect/cpp/vmo/types.h>
-#include <lib/inspect/service/cpp/service.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/time.h>
 #include <zircon/assert.h>
@@ -19,15 +18,10 @@
 
 #include <fbl/algorithm.h>
 
-#include "src/lib/storage/vfs/cpp/service.h"
-#include "src/lib/storage/vfs/cpp/vnode.h"
+#include "src/storage/lib/vfs/cpp/service.h"
+#include "src/storage/lib/vfs/cpp/vnode.h"
 
 namespace blobfs {
-namespace {
-
-size_t TicksToMs(const zx::ticks& ticks) { return fzl::TicksToNs(ticks) / zx::msec(1); }
-
-}  // namespace
 
 BlobfsMetrics::BlobfsMetrics(bool should_record_page_in, inspect::Inspector inspector)
     : inspector_{std::move(inspector)}, should_record_page_in_(should_record_page_in) {

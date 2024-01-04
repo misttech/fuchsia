@@ -14,6 +14,22 @@ const MAX_TRANSFER_SIZE uint64 = 8192;
 /// The byte vector type used for read/write operations.
 alias Transfer = vector<uint8>:MAX_TRANSFER_SIZE;
 
+/// Denotes which hash algorithm is used to build the merkle tree for
+/// fsverity-enabled files.
+@available(added=HEAD)
+type HashAlgorithm = flexible enum : uint8 {
+    SHA256 = 1;
+    SHA512 = 2;
+};
+
+/// Set of options used to enable verity on a file.
+@available(added=HEAD)
+type VerificationOptions = table {
+    1: hash_algorithm HashAlgorithm;
+    /// `salt` is prepended to each block before it is hashed.
+    2: salt vector<uint8>:32;
+};
+
 /// Auxiliary data for the file representation of a node.
 type FileInfo = resource table {
     /// True if the file is opened in append mode.
@@ -217,6 +233,44 @@ closed protocol File {
     }) -> (resource struct {
         vmo zx.Handle:VMO;
     }) error zx.Status;
+
+    /// Pre-allocate on-disk space for this file.
+    @available(added=HEAD)
+    @selector("fuchsia.io/File.Allocate")
+    strict Allocate(resource struct {
+        offset uint64;
+        length uint64;
+
+        /// If an empty bits is passed for mode, the default behavior is used. Otherwise the
+        /// behavior is modified as described for each mode bit. If the backing filesystem doesn't
+        /// support a particular provided mode bit, or combination of mode bits, an error is
+        /// returned.
+        mode @generated_name("AllocateMode") flexible bits : uint32 {
+            KEEP_SIZE = 0x00000001;
+            UNSHARE_RANGE = 0x00000002;
+            PUNCH_HOLE = 0x00000004;
+            COLLAPSE_RANGE = 0x00000008;
+            ZERO_RANGE = 0x00000010;
+            INSERT_RANGE = 0x00000020;
+        };
+    }) -> () error zx.Status;
+
+    /// Enables verification for the file (permanently) which involves computing a merkle tree for
+    /// the file. Forces a flush prior to building the merkle tree to ensure cached data is
+    /// captured. Future reads will be verified against the computed merkle tree and writes will be
+    /// rejected. This method can take some time to complete as it depends on the size of the file.
+    /// This method can be aborted by closing the connection that this method was issued on.
+    ///
+    /// This method requires the [`Rights.UPDATE_ATTRIBUTES`] right.
+    /// Returns `ZX_ERR_NOT_SUPPORTED` if the filesystem does not support verity.
+    /// Returns `ZX_ERR_ALREADY_EXISTS` if the file was already fsverity-enabled.
+    /// Also returns any error that might arise from reading the file, or from flushing the file,
+    /// such as `ZX_ERR_IO`.
+    @selector("fuchsia.io/File.EnableVerity")
+    @available(added=HEAD)
+    strict EnableVerity(resource struct {
+        options VerificationOptions;
+    }) -> () error zx.Status;
 };
 
 closed protocol Readable {

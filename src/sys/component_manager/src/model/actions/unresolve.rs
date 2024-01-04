@@ -4,13 +4,13 @@
 
 use {
     crate::model::{
-        actions::{Action, ActionKey, ActionSet, ShutdownAction},
-        component::{ComponentInstance, InstanceState},
+        actions::{Action, ActionKey, ActionSet, ShutdownAction, ShutdownType},
+        component::{ComponentInstance, InstanceState, UnresolvedInstanceState},
         error::UnresolveActionError,
         hooks::{Event, EventPayload},
     },
     async_trait::async_trait,
-    std::sync::Arc,
+    std::{ops::DerefMut, sync::Arc},
 };
 
 /// Returns a resolved component to the discovered state. The result is that the component can be
@@ -40,7 +40,7 @@ impl Action for UnresolveAction {
 // an Unresolved event. Unresolve the component's resolved children if any.
 async fn do_unresolve(component: &Arc<ComponentInstance>) -> Result<(), UnresolveActionError> {
     // Shut down the component, preventing new starts or resolves during the UnresolveAction.
-    ActionSet::register(component.clone(), ShutdownAction::new()).await?;
+    ActionSet::register(component.clone(), ShutdownAction::new(ShutdownType::Instance)).await?;
 
     if component.lock_execution().await.runtime.is_some() {
         return Err(UnresolveActionError::InstanceRunning { moniker: component.moniker.clone() });
@@ -54,7 +54,7 @@ async fn do_unresolve(component: &Arc<ComponentInstance>) -> Result<(), Unresolv
                     moniker: component.moniker.clone(),
                 })
             }
-            InstanceState::Unresolved | InstanceState::New => return Ok(()),
+            InstanceState::Unresolved(_) | InstanceState::New => return Ok(()),
         }
     };
 
@@ -70,9 +70,10 @@ async fn do_unresolve(component: &Arc<ComponentInstance>) -> Result<(), Unresolv
     // The state may have changed during the time taken for the recursions, so recheck here.
     {
         let mut state = component.lock_state().await;
-        match &*state {
-            InstanceState::Resolved(_) => {
-                state.set(InstanceState::Unresolved);
+        match state.deref_mut() {
+            InstanceState::Resolved(resolved_state) => {
+                let dict = resolved_state.component_input_dict.clone();
+                state.set(InstanceState::Unresolved(UnresolvedInstanceState::new(dict)));
                 true
             }
             InstanceState::Destroyed => {
@@ -80,7 +81,7 @@ async fn do_unresolve(component: &Arc<ComponentInstance>) -> Result<(), Unresolv
                     moniker: component.moniker.clone(),
                 })
             }
-            InstanceState::Unresolved | InstanceState::New => return Ok(()),
+            InstanceState::Unresolved(_) | InstanceState::New => return Ok(()),
         }
     };
 
@@ -96,8 +97,8 @@ async fn do_unresolve(component: &Arc<ComponentInstance>) -> Result<(), Unresolv
 pub mod tests {
     use {
         crate::model::{
-            actions::test_utils::{is_destroyed, is_discovered, is_executing, is_resolved},
-            actions::{ActionSet, ShutdownAction, UnresolveAction},
+            actions::test_utils::{is_destroyed, is_discovered, is_resolved},
+            actions::{ActionSet, ShutdownAction, ShutdownType, UnresolveAction},
             component::{ComponentInstance, StartReason},
             error::UnresolveActionError,
             events::{registry::EventSubscription, stream::EventStream},
@@ -202,14 +203,8 @@ pub mod tests {
         event_types: Vec<EventType>,
     ) -> EventStream {
         let events: Vec<_> = event_types.into_iter().map(|e| e.into()).collect();
-        let mut event_source = test
-            .builtin_environment
-            .lock()
-            .await
-            .event_source_factory
-            .create_for_above_root()
-            .await
-            .unwrap();
+        let mut event_source =
+            test.builtin_environment.lock().await.event_source_factory.create_for_above_root();
         let event_stream = event_source
             .subscribe(
                 events
@@ -229,7 +224,8 @@ pub mod tests {
             .await
             .expect("subscribe to event stream");
         let model = test.model.clone();
-        fasync::Task::spawn(async move { model.start().await }).detach();
+        let dict = test.builtin_environment.lock().await.dict.clone();
+        fasync::Task::spawn(async move { model.start(dict).await }).detach();
         event_stream
     }
 
@@ -270,8 +266,7 @@ pub mod tests {
             let mut actions = component_a.lock_actions().await;
             actions.register_no_wait(&component_a, UnresolveAction::new())
         };
-        // The component is not resolved anymore, so the unresolve will have no effect. It will not
-        // emit an UnresolveFailed event.
+        // The component is not resolved anymore, so the unresolve will have no effect.
         nf2.await.unwrap();
         assert!(is_discovered(&component_a).await);
     }
@@ -322,11 +317,11 @@ pub mod tests {
             .start_instance(&component_b.moniker, &StartReason::Eager)
             .await
             .expect("could not start coll:b");
-        assert!(is_executing(&component_container).await);
+        assert!(component_container.is_started().await);
         assert!(is_resolved(&component_a).await);
         assert!(is_resolved(&component_b).await);
-        assert!(is_executing(&component_a).await);
-        assert!(is_executing(&component_b).await);
+        assert!(component_a.is_started().await);
+        assert!(component_b.is_started().await);
         (test, component_container, component_a, component_b)
     }
 
@@ -337,9 +332,12 @@ pub mod tests {
             start_collection(durability).await;
 
         // Stop the collection.
-        ActionSet::register(component_container.clone(), ShutdownAction::new())
-            .await
-            .expect("shutdown failed");
+        ActionSet::register(
+            component_container.clone(),
+            ShutdownAction::new(ShutdownType::Instance),
+        )
+        .await
+        .expect("shutdown failed");
         assert!(is_destroyed(&component_a).await);
         assert!(is_destroyed(&component_b).await);
         ActionSet::register(component_container.clone(), UnresolveAction::new())

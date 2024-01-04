@@ -45,9 +45,10 @@ std::pair<zx::ticks, std::vector<uint64_t>> SampleThread(const zx::unowned_proce
     return {zx::ticks(), std::vector<uint64_t>()};  // Skip this thread.
   }
 
-  if (thread_info.state != ZX_THREAD_STATE_RUNNING) {
-    // Skip blocked threads, they don't count as work...
-    return {zx::ticks(), std::vector<uint64_t>()};  // Skip this thread.
+  // Skip threads that are not actively running or blocked
+  if (!((thread_info.state == ZX_THREAD_STATE_RUNNING) ||
+        (thread_info.state & ZX_THREAD_STATE_BLOCKED))) {
+    return {zx::ticks(), std::vector<uint64_t>()};
   }
 
   zx::ticks before = zx::ticks::now();
@@ -111,6 +112,10 @@ std::pair<zx::ticks, std::vector<uint64_t>> SampleThread(const zx::unowned_proce
 }
 
 zx::result<> profiler::Sampler::AddTarget(JobTarget&& target) {
+  zx::result<> res = WatchTarget(target);
+  if (res.is_error()) {
+    return res;
+  }
   return targets_.AddJob(std::move(target));
 }
 
@@ -219,7 +224,7 @@ zx::result<> profiler::Sampler::Start() {
 
 zx::result<> profiler::Sampler::Stop() {
   sample_task_.Cancel();
-  FX_LOGS(INFO) << "Stopped! Collected " << samples_.size() << " samples";
+  FX_LOGS(INFO) << "Stopped! Collected " << inspecting_durations_.size() << " samples";
   sample_task_.Cancel();
   return zx::ok();
 }
@@ -233,10 +238,12 @@ void profiler::Sampler::CollectSamples(async_dispatcher_t* dispatcher, async::Ta
   zx::result res =
       targets_.ForEachProcess([this](cpp20::span<const zx_koid_t>, const ProcessTarget& target) {
         for (const auto& [_, thread] : target.threads) {
-          auto [time_sampling, pcs] = SampleThread(target.handle.borrow(), thread.handle.borrow(),
-                                                   target.unwinder_data->fp_unwinder);
+          unwinder::CfiUnwinder cfi_unwinder{target.unwinder_data->modules};
+          unwinder::FramePointerUnwinder fp_unwinder{&cfi_unwinder};
+          auto [time_sampling, pcs] =
+              SampleThread(target.handle.borrow(), thread.handle.borrow(), fp_unwinder);
           if (time_sampling != zx::ticks()) {
-            samples_.push_back({target.pid, thread.tid, pcs});
+            samples_[target.pid].push_back({target.pid, thread.tid, pcs});
             inspecting_durations_.push_back(time_sampling);
           }
         }

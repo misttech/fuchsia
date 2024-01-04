@@ -3,9 +3,9 @@
 # found in the LICENSE file.
 
 import("//src/graphics/examples/vkproto/common/common.gni")
-import("//src/graphics/lib/magma/gnbuild/magma.gni")
 import("//src/lib/vulkan/build/config.gni")
 import("//src/lib/vulkan/build/vulkan_targets.gni")
+import("//src/lib/vulkan/vulkan.gni")
 
 resource("override") {
   sources = [ "VkLayer_override.json" ]
@@ -52,6 +52,8 @@ vulkan_executable("bin") {
 
   include_dirs = [ "//src/graphics/examples/vkproto/common" ]
 
+  defines = [ "VULKAN_HPP_NO_EXCEPTIONS" ]
+
   if (is_fuchsia) {
     include_dirs += [ "//src/graphics/examples/vkproto/fuchsia" ]
 
@@ -65,7 +67,7 @@ vulkan_executable("bin") {
       "fuchsia/fuchsia_surface.h",
     ]
   } else {
-    defines = [ "USE_GLFW=1" ]
+    defines += [ "USE_GLFW=1" ]
 
     include_dirs += [ "//src/graphics/examples/vkproto/glfw" ]
 
@@ -78,6 +80,16 @@ vulkan_executable("bin") {
       ":spirv_copy",
       "//third_party/glfw",
     ]
+
+    if (is_linux) {
+      configs += [ ":vulkan_sdk_linux_config($host_toolchain)" ]
+    } else if (is_mac) {
+      include_dirs += [ "${vulkan_sdk}/include" ]
+
+      lib_dirs = [ "${vulkan_sdk}/lib" ]
+
+      libs = [ "vulkan" ]
+    }
   }
 
   data = [
@@ -92,18 +104,12 @@ copy("spirv_copy") {
     "common/shaders/vert.spv",
   ]
 
-  outputs = [ "$target_out_dir/{{source_file_part}}" ]
+  outputs = [ "$root_out_dir/{{source_file_part}}" ]
 }
 
-#
-# Linux / Mac host Build
-#
-group("vkproto_glfw") {
-  deps = []
-
-  # Currently vulkan build only supports Linux.
-  if (is_linux) {
-    deps += [ ":bin($host_toolchain)" ]
+group("vkproto-glfw") {
+  if (is_host) {
+    deps = [ ":bin($host_toolchain)" ]
   }
 }
 

@@ -9,18 +9,16 @@
 
 use {
     crate::{
-        builtin::{capability::BuiltinCapability, runner::BuiltinRunnerFactory},
+        builtin::runner::BuiltinRunnerFactory,
         model::resolver::{self, Resolver},
     },
+    ::routing::policy::ScopedPolicyChecker,
     ::routing::resolving::{ComponentAddress, ResolvedComponent, ResolverError},
-    ::routing::{capability_source::InternalCapability, policy::ScopedPolicyChecker},
     anyhow::Error,
     async_trait::async_trait,
-    cm_runner::{builtin::RemoteRunner, Runner, StartInfo},
     fidl::endpoints::ServerEnd,
     fidl_fuchsia_component_resolution as fresolution, fidl_fuchsia_component_runner as fcrunner,
     fuchsia_component::client as fclient,
-    futures::TryStreamExt,
     std::convert::TryInto,
     std::sync::Arc,
 };
@@ -93,7 +91,7 @@ impl Resolver for RealmBuilderResolver {
         let resolved_by = "RealmBuilderResolver".to_string();
         let resolved_url = url.unwrap();
         let context_to_resolve_children = resolution_context.map(Into::into);
-        let decl = resolver::read_and_validate_manifest(&decl.unwrap()).await?;
+        let decl = resolver::read_and_validate_manifest(&decl.unwrap())?;
         let config_values = if let Some(data) = config_values {
             Some(resolver::read_and_validate_config_values(&data)?)
         } else {
@@ -111,69 +109,23 @@ impl Resolver for RealmBuilderResolver {
     }
 }
 
-#[async_trait]
-impl BuiltinCapability for RealmBuilderResolver {
-    const NAME: &'static str = "realm_builder_resolver";
-    type Marker = fresolution::ResolverMarker;
+pub struct RealmBuilderRunnerFactory {}
 
-    async fn serve(
+impl RealmBuilderRunnerFactory {
+    pub fn new() -> Self {
+        RealmBuilderRunnerFactory {}
+    }
+}
+
+impl BuiltinRunnerFactory for RealmBuilderRunnerFactory {
+    fn get_scoped_runner(
         self: Arc<Self>,
-        mut stream: fresolution::ResolverRequestStream,
-    ) -> Result<(), Error> {
-        while let Some(request) = stream.try_next().await? {
-            match request {
-                fresolution::ResolverRequest::Resolve { component_url, responder } => {
-                    responder.send(self.resolve_async(&component_url, None).await)?;
-                }
-                fresolution::ResolverRequest::ResolveWithContext {
-                    component_url,
-                    context,
-                    responder,
-                } => {
-                    responder.send(self.resolve_async(&component_url, Some(&context)).await)?;
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn matches_routed_capability(&self, capability: &InternalCapability) -> bool {
-        let res = match capability {
-            InternalCapability::Resolver(name) if *name == Self::NAME => true,
-            _ => false,
-        };
-        res
-    }
-}
-
-pub struct RealmBuilderRunner {
-    remote_runner: RemoteRunner,
-}
-
-impl RealmBuilderRunner {
-    /// Create a new RealmBuilderRunner. This opens connections to the needed protocols
-    /// in the namespace.
-    pub fn new() -> Result<RealmBuilderRunner, Error> {
-        let runner_proxy = fclient::connect_to_protocol_at_path::<fcrunner::ComponentRunnerMarker>(
-            "/svc/fuchsia.component.runner.RealmBuilder",
-        )?;
-        Ok(RealmBuilderRunner { remote_runner: RemoteRunner::new(runner_proxy) })
-    }
-}
-
-impl BuiltinRunnerFactory for RealmBuilderRunner {
-    fn get_scoped_runner(self: Arc<Self>, _checker: ScopedPolicyChecker) -> Arc<dyn Runner> {
-        self.clone()
-    }
-}
-
-#[async_trait]
-impl Runner for RealmBuilderRunner {
-    async fn start(
-        &self,
-        start_info: StartInfo,
-        server_end: ServerEnd<fcrunner::ComponentControllerMarker>,
+        _checker: ScopedPolicyChecker,
+        server_end: ServerEnd<fcrunner::ComponentRunnerMarker>,
     ) {
-        self.remote_runner.start(start_info, server_end).await;
+        let _ = fclient::connect_channel_to_protocol_at_path(
+            server_end.into_channel(),
+            "/svc/fuchsia.component.runner.RealmBuilder",
+        );
     }
 }

@@ -16,6 +16,7 @@ const VMEX_KEY: &str = "job_policy_ambient_mark_vmo_exec";
 const STOP_EVENT_KEY: &str = "lifecycle.stop_event";
 const STOP_EVENT_VARIANTS: [&'static str; 2] = ["notify", "ignore"];
 const USE_NEXT_VDSO_KEY: &str = "use_next_vdso";
+const JOB_WITH_AVAILABLE_EXCEPTION_CHANNEL_KEY: &str = "job_with_available_exception_channel";
 
 /// Target sink for stdout and stderr output streams.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -43,6 +44,7 @@ pub struct ElfProgramConfig {
     pub create_raw_processes: bool,
     pub is_shared_process: bool,
     pub use_next_vdso: bool,
+    pub job_with_available_exception_channel: bool,
     pub stdout_sink: StreamSink,
     pub stderr_sink: StreamSink,
     pub environ: Option<Vec<String>>,
@@ -89,13 +91,17 @@ impl ElfProgramConfig {
 
         Ok(ElfProgramConfig {
             binary: runner::get_program_binary_from_dict(&program)?,
-            args: runner::get_program_args_from_dict(&program),
+            args: runner::get_program_args_from_dict(&program)?,
             notify_lifecycle_stop,
             ambient_mark_vmo_exec: runner::get_bool(program, VMEX_KEY)?,
             main_process_critical: runner::get_bool(program, CRITICAL_KEY)?,
             create_raw_processes: runner::get_bool(program, CREATE_RAW_PROCESSES_KEY)?,
             is_shared_process: runner::get_bool(program, SHARED_PROCESS_KEY)?,
             use_next_vdso: runner::get_bool(program, USE_NEXT_VDSO_KEY)?,
+            job_with_available_exception_channel: runner::get_bool(
+                program,
+                JOB_WITH_AVAILABLE_EXCEPTION_CHANNEL_KEY,
+            )?,
             stdout_sink: get_stream_sink(&program, FORWARD_STDOUT_KEY)?,
             stderr_sink: get_stream_sink(&program, FORWARD_STDERR_KEY)?,
             environ: runner::get_environ(&program)?,
@@ -127,13 +133,11 @@ fn get_stream_sink(
 mod tests {
     use {
         super::*,
-        ::routing::{
-            config::{
-                AllowlistEntryBuilder, ChildPolicyAllowlists, JobPolicyAllowlists, SecurityPolicy,
-            },
-            policy::{PolicyError, ScopedPolicyChecker},
-        },
+        ::routing::policy::{PolicyError, ScopedPolicyChecker},
         assert_matches::assert_matches,
+        cm_config::{
+            AllowlistEntryBuilder, ChildPolicyAllowlists, JobPolicyAllowlists, SecurityPolicy,
+        },
         fidl_fuchsia_data as fdata,
         lazy_static::lazy_static,
         moniker::{Moniker, MonikerBase},
@@ -164,39 +168,6 @@ mod tests {
         });
         static ref RESTRICTIVE_SECURITY_POLICY: Arc<SecurityPolicy> =
             Arc::new(SecurityPolicy::default());
-    }
-
-    macro_rules! assert_error_is_invalid_value {
-        ($result:expr, $expected_key:expr) => {
-            assert_matches!(
-                $result,
-                Err(ProgramError::Parse(StartInfoProgramError::InvalidValue(key, _, _)))
-                if key == $expected_key
-            );
-        };
-    }
-
-    macro_rules! assert_error_is_invalid_type {
-        ($result:expr, $expected_key:expr) => {
-            assert_matches!(
-                $result,
-                Err(ProgramError::Parse(StartInfoProgramError::InvalidType(key)))
-                if key == $expected_key
-            );
-        };
-    }
-
-    macro_rules! assert_error_is_disallowed_job_policy {
-        ($result:expr, $expected_policy:expr) => {
-            assert_matches!(
-                $result,
-                Err(ProgramError::Policy(PolicyError::JobPolicyDisallowed {
-                    policy,
-                    ..
-                }))
-                if policy == $expected_policy
-            );
-        };
     }
 
     #[test_case("forward_stdout_to", new_string("log"), ElfProgramConfig { stdout_sink: StreamSink::Log, ..default_valid_config()} ; "when_stdout_log")]
@@ -243,7 +214,14 @@ mod tests {
 
         let actual = ElfProgramConfig::parse_and_check(&program, &checker);
 
-        assert_error_is_disallowed_job_policy!(actual, policy);
+        assert_matches!(
+            actual,
+            Err(ProgramError::Policy(PolicyError::JobPolicyDisallowed {
+                policy: p,
+                ..
+            }))
+            if p == policy
+        );
     }
 
     #[test_case("lifecycle.stop_event", new_string("invalid") ; "for_stop_event")]
@@ -257,7 +235,11 @@ mod tests {
 
         let actual = ElfProgramConfig::parse_and_check(&program, &checker);
 
-        assert_error_is_invalid_value!(actual, key);
+        assert_matches!(
+            actual,
+            Err(ProgramError::Parse(StartInfoProgramError::InvalidValue(k, _, _)))
+            if k == key
+        );
     }
 
     #[test_case("lifecycle.stop_event", new_empty_vec() ; "for_stop_event")]
@@ -276,7 +258,11 @@ mod tests {
 
         let actual = ElfProgramConfig::parse_and_check(&program, &checker);
 
-        assert_error_is_invalid_type!(actual, key);
+        assert_matches!(
+            actual,
+            Err(ProgramError::Parse(StartInfoProgramError::InvalidType(k)))
+            if k == key
+        );
     }
 
     fn default_valid_config() -> ElfProgramConfig {

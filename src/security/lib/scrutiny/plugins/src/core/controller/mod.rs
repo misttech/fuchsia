@@ -6,6 +6,4 @@ pub mod blob;
 pub mod component;
 pub mod package;
 pub mod package_extract;
-pub mod sysmgr;
 pub mod utils;
-pub mod zbi;

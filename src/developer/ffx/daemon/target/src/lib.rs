@@ -21,8 +21,6 @@ pub(crate) const ZEDBOOT_MAX_AGE: Duration =
 pub(crate) const RETRY_DELAY: Duration = Duration::from_millis(200);
 
 pub mod fastboot;
-pub mod logger;
-pub mod manual_targets;
 mod overnet;
 pub mod target;
 pub mod target_collection;

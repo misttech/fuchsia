@@ -2,29 +2,66 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::sync::Arc;
-
-use fuchsia_zircon::{self as zx, AsHandleRef, HandleBased};
-use magma::*;
-use std::mem::ManuallyDrop;
-use zerocopy::{AsBytes, FromBytes, FromZeroes};
-
 use crate::{
-    device::{
-        magma::{
-            file::{
-                BufferInfo, ConnectionInfo, ConnectionMap, DeviceMap, MagmaBuffer, MagmaConnection,
-                MagmaDevice,
-            },
-            magma::create_drm_image,
+    device::magma::{
+        file::{
+            BufferInfo, ConnectionInfo, ConnectionMap, DeviceMap, MagmaBuffer, MagmaConnection,
+            MagmaDevice, MagmaSemaphore,
         },
-        wayland::image_file::{ImageFile, ImageInfo},
+        image_file::{ImageFile, ImageInfo},
+        magma::create_drm_image,
     },
-    fs::{Anon, FdFlags, FsNodeInfo, VmoFileObject},
     mm::{MemoryAccessor, MemoryAccessorExt},
     task::CurrentTask,
-    types::*,
+    vfs::{Anon, FdFlags, FsNodeInfo, VmoFileObject},
 };
+use fuchsia_zircon::{
+    AsHandleRef, HandleBased, {self as zx},
+};
+use magma::{
+    magma_buffer_export, magma_buffer_get_handle, magma_buffer_id_t, magma_buffer_t,
+    magma_command_descriptor, magma_connection_execute_command,
+    magma_connection_execute_immediate_commands, magma_connection_flush,
+    magma_connection_import_buffer, magma_connection_import_semaphore2,
+    magma_connection_read_notification_channel, magma_connection_t, magma_device_create_connection,
+    magma_device_import, magma_device_query, magma_device_t, magma_exec_command_buffer,
+    magma_exec_resource, magma_handle_t, magma_inline_command_buffer, magma_status_t,
+    virtio_magma_buffer_export_ctrl_t, virtio_magma_buffer_export_resp_t,
+    virtio_magma_buffer_get_handle_ctrl_t, virtio_magma_buffer_get_handle_resp_t,
+    virtio_magma_connection_execute_command_ctrl_t,
+    virtio_magma_connection_execute_immediate_commands_ctrl_t,
+    virtio_magma_connection_flush_ctrl_t, virtio_magma_connection_flush_resp_t,
+    virtio_magma_connection_read_notification_channel_ctrl_t,
+    virtio_magma_connection_read_notification_channel_resp_t,
+    virtio_magma_connection_release_ctrl_t, virtio_magma_connection_release_resp_t,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_BUFFER_EXPORT,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_BUFFER_GET_HANDLE,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_FLUSH,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_READ_NOTIFICATION_CHANNEL,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_RELEASE,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_CREATE_CONNECTION,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_IMPORT,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_RELEASE,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_VIRT_CONNECTION_CREATE_IMAGE,
+    virtio_magma_device_create_connection_ctrl, virtio_magma_device_create_connection_resp_t,
+    virtio_magma_device_import_ctrl_t, virtio_magma_device_import_resp_t,
+    virtio_magma_device_query_ctrl_t, virtio_magma_device_query_resp_t,
+    virtio_magma_device_release_ctrl_t, virtio_magma_device_release_resp_t,
+    virtio_magma_virt_connection_create_image_ctrl_t,
+    virtio_magma_virt_connection_create_image_resp_t, virtmagma_command_descriptor,
+    MAGMA_QUERY_VENDOR_ID, MAGMA_STATUS_INVALID_ARGS, MAGMA_STATUS_OK, MAGMA_VENDOR_ID_INTEL,
+    MAGMA_VENDOR_ID_MALI,
+};
+use starnix_uapi::{
+    errno,
+    errors::Errno,
+    file_mode::FileMode,
+    open_flags::OpenFlags,
+    user_address::{UserAddress, UserRef},
+    user_buffer::UserBuffer,
+};
+use std::{mem::ManuallyDrop, sync::Arc};
+use zerocopy::{AsBytes, FromBytes, FromZeros, NoCell};
 
 /// Reads a sequence of objects starting at `addr`, ensuring at least one element is in the returned
 /// Vec.
@@ -223,7 +260,7 @@ pub fn device_release(
 /// `WireDescriptor` matches the struct used by libmagma_virt to encode some fields of the magma
 /// command descriptor.
 #[repr(C)]
-#[derive(FromZeroes, FromBytes, AsBytes, Default, Debug)]
+#[derive(FromZeros, FromBytes, AsBytes, NoCell, Default, Debug)]
 struct WireDescriptor {
     resource_count: u32,
     command_buffer_count: u32,
@@ -238,13 +275,16 @@ struct WireDescriptor {
 /// data into starnix in order to be able to pass pointers to the resources, command buffers, and
 /// semaphore ids to magma.
 ///
-/// SAFETY: Makes an FFI call to populate the fields of `response`.
-pub fn execute_command(
+/// SAFETY: Makes an FFI call to magma_connection_execute_command().
+pub fn execute_command<F>(
     current_task: &CurrentTask,
     control: virtio_magma_connection_execute_command_ctrl_t,
-    response: &mut virtio_magma_connection_execute_command_resp_t,
     connection: &Arc<MagmaConnection>,
-) -> Result<(), Errno> {
+    get_semaphore: F,
+) -> Result<i32, Errno>
+where
+    F: Fn(u64) -> Result<Arc<MagmaSemaphore>, i32>,
+{
     let virtmagma_command_descriptor_addr =
         UserRef::<virtmagma_command_descriptor>::new(control.descriptor.into());
     let command_descriptor = current_task.read_object(virtmagma_command_descriptor_addr)?;
@@ -254,49 +294,86 @@ pub fn execute_command(
     let wire_descriptor: WireDescriptor =
         current_task.read_object(UserAddress::from(command_descriptor.descriptor).into())?;
 
-    // This is the command descriptor that will be populated from the virtmagma
-    // descriptor and subsequently passed to magma_execute_command.
-    let mut magma_command_descriptor = magma_command_descriptor {
-        resource_count: wire_descriptor.resource_count,
-        command_buffer_count: wire_descriptor.command_buffer_count,
-        wait_semaphore_count: wire_descriptor.wait_semaphore_count,
-        signal_semaphore_count: wire_descriptor.signal_semaphore_count,
-        flags: wire_descriptor.flags,
-        ..Default::default()
-    };
     let semaphore_count =
-        (wire_descriptor.wait_semaphore_count + wire_descriptor.signal_semaphore_count) as usize;
+        wire_descriptor.wait_semaphore_count + wire_descriptor.signal_semaphore_count;
 
-    // Read all the passed in resources, commands, and semaphore ids.
-    let mut resources: Vec<magma_exec_resource> = read_objects(
-        current_task,
-        command_descriptor.resources.into(),
-        wire_descriptor.resource_count as usize,
-    )?;
-    let mut command_buffers: Vec<magma_exec_command_buffer> = read_objects(
-        current_task,
-        command_descriptor.command_buffers.into(),
-        wire_descriptor.command_buffer_count as usize,
-    )?;
-    let mut semaphores: Vec<u64> =
-        read_objects(current_task, command_descriptor.semaphores.into(), semaphore_count)?;
+    let mut status: i32 = MAGMA_STATUS_OK;
+    let mut wait_semaphore_count: u32 = 0;
+    let mut signal_semaphore_count: u32 = 0;
+    let mut child_semaphore_ids: Vec<u64> = vec![];
 
-    // Make sure the command descriptor contains valid pointers for the resources, command buffers,
-    // and semaphore ids.
-    magma_command_descriptor.resources = &mut resources[0] as *mut magma_exec_resource;
-    magma_command_descriptor.command_buffers =
-        &mut command_buffers[0] as *mut magma_exec_command_buffer;
-    magma_command_descriptor.semaphore_ids = &mut semaphores[0] as *mut u64;
+    if semaphore_count > 0 {
+        let semaphore_ids: Vec<u64> = read_objects(
+            current_task,
+            command_descriptor.semaphores.into(),
+            semaphore_count as usize,
+        )?;
 
-    response.result_return = unsafe {
-        magma_connection_execute_command(
-            connection.handle,
-            control.context_id,
-            &mut magma_command_descriptor as *mut magma_command_descriptor,
-        ) as u64
-    };
+        for (i, id) in semaphore_ids.iter().enumerate() {
+            match get_semaphore(*id) {
+                Ok(semaphore) => {
+                    let ids_ref = &semaphore.ids;
+                    for id in ids_ref {
+                        child_semaphore_ids.push(*id);
+                    }
+                    if i < wire_descriptor.wait_semaphore_count as usize {
+                        wait_semaphore_count += ids_ref.len() as u32;
+                    } else {
+                        signal_semaphore_count += ids_ref.len() as u32;
+                    }
+                }
+                Err(s) => {
+                    status = s;
+                    break;
+                }
+            }
+        }
+    } else {
+        // So we can dereference index 0 below
+        child_semaphore_ids.push(0);
+    }
 
-    Ok(())
+    if status == MAGMA_STATUS_OK {
+        // This is the command descriptor that will be populated from the virtmagma
+        // descriptor and subsequently passed to magma_execute_command.
+        let mut magma_command_descriptor = magma_command_descriptor {
+            resource_count: wire_descriptor.resource_count,
+            command_buffer_count: wire_descriptor.command_buffer_count,
+            wait_semaphore_count,
+            signal_semaphore_count,
+            flags: wire_descriptor.flags,
+            ..Default::default()
+        };
+
+        // Read all the passed in resources, commands, and semaphore ids.
+        let mut resources: Vec<magma_exec_resource> = read_objects(
+            current_task,
+            command_descriptor.resources.into(),
+            wire_descriptor.resource_count as usize,
+        )?;
+        let mut command_buffers: Vec<magma_exec_command_buffer> = read_objects(
+            current_task,
+            command_descriptor.command_buffers.into(),
+            wire_descriptor.command_buffer_count as usize,
+        )?;
+
+        // Make sure the command descriptor contains valid pointers for the resources, command buffers,
+        // and semaphore ids.
+        magma_command_descriptor.resources = &mut resources[0] as *mut magma_exec_resource;
+        magma_command_descriptor.command_buffers =
+            &mut command_buffers[0] as *mut magma_exec_command_buffer;
+        magma_command_descriptor.semaphore_ids = &mut child_semaphore_ids[0] as *mut u64;
+
+        status = unsafe {
+            magma_connection_execute_command(
+                connection.handle,
+                control.context_id,
+                &mut magma_command_descriptor as *mut magma_command_descriptor,
+            )
+        };
+    }
+
+    Ok(status)
 }
 
 /// Executes magma immediate commands.
@@ -306,11 +383,15 @@ pub fn execute_command(
 /// semaphore ids to magma.
 ///
 /// SAFETY: Makes an FFI call to magma_execute_immediate_commands().
-pub fn execute_immediate_commands(
+pub fn execute_immediate_commands<F>(
     current_task: &CurrentTask,
     control: virtio_magma_connection_execute_immediate_commands_ctrl_t,
     connection: &Arc<MagmaConnection>,
-) -> Result<magma_status_t, Errno> {
+    get_semaphore: F,
+) -> Result<magma_status_t, Errno>
+where
+    F: Fn(u64) -> Result<Arc<MagmaSemaphore>, i32>,
+{
     let command_buffers_addr = UserAddress::from(control.command_buffers);
 
     // For virtio-magma, "command_buffers" is an array of virtmagma_command_descriptor instead of
@@ -324,6 +405,8 @@ pub fn execute_immediate_commands(
     let mut commands_vec = Vec::<Vec<u8>>::with_capacity(control.command_count as usize);
     let mut semaphore_ids_vec = Vec::<Vec<u64>>::with_capacity(control.command_count as usize);
 
+    let mut status: i32 = MAGMA_STATUS_OK;
+
     for i in 0..control.command_count as usize {
         let size = descriptors[i].command_buffer_size;
         let data = current_task.read_buffer(&UserBuffer {
@@ -335,28 +418,52 @@ pub fn execute_immediate_commands(
 
         let semaphore_count =
             (descriptors[i].semaphore_size / core::mem::size_of::<u64>() as u64) as u32;
-        commands[i].semaphore_count = semaphore_count;
 
-        let semaphore_ids = read_objects(
-            current_task,
-            UserAddress::from(descriptors[i].semaphores),
-            semaphore_count as usize,
-        )?;
-        semaphore_ids_vec.push(semaphore_ids);
+        let mut child_semaphore_ids: Vec<u64> = vec![];
+        if semaphore_count > 0 {
+            let semaphore_ids = read_objects(
+                current_task,
+                UserAddress::from(descriptors[i].semaphores),
+                semaphore_count as usize,
+            )?;
+
+            for id in semaphore_ids.iter() {
+                match get_semaphore(*id) {
+                    Ok(semaphore) => {
+                        let child_ids_ref = &semaphore.ids;
+                        for child_id in child_ids_ref {
+                            child_semaphore_ids.push(*child_id);
+                        }
+                    }
+                    Err(s) => {
+                        status = s;
+                        break;
+                    }
+                }
+            }
+        }
+        commands[i].semaphore_count = child_semaphore_ids.len() as u32;
+        semaphore_ids_vec.push(child_semaphore_ids);
     }
 
-    let status = unsafe {
-        for i in 0..control.command_count as usize {
-            commands[i].data = &mut commands_vec[i][0] as *mut u8 as *mut std::ffi::c_void;
-            commands[i].semaphore_ids = &mut semaphore_ids_vec[i][0];
-        }
-        magma_connection_execute_immediate_commands(
-            connection.handle,
-            control.context_id,
-            control.command_count,
-            &mut commands[0],
-        )
-    };
+    if status == MAGMA_STATUS_OK {
+        status = unsafe {
+            for i in 0..control.command_count as usize {
+                commands[i].data = &mut commands_vec[i][0] as *mut u8 as *mut std::ffi::c_void;
+                commands[i].semaphore_ids = if commands[i].semaphore_count == 0 {
+                    std::ptr::null_mut()
+                } else {
+                    &mut semaphore_ids_vec[i][0]
+                };
+            }
+            magma_connection_execute_immediate_commands(
+                connection.handle,
+                control.context_id,
+                control.command_count,
+                &mut commands[0],
+            )
+        };
+    }
 
     Ok(status)
 }
@@ -504,7 +611,7 @@ pub fn query(
         let vmo = unsafe { zx::Vmo::from(zx::Handle::from_raw(result_buffer_out)) };
         let vmo_size = vmo.get_size().unwrap();
         let file = Anon::new_file_extended(
-            current_task.kernel(),
+            current_task,
             Box::new(VmoFileObject::new(Arc::new(vmo))),
             OpenFlags::RDWR,
             |id| {
@@ -584,4 +691,23 @@ pub fn release_connection(
         connections.remove(&connection);
     }
     response.hdr.type_ = virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_RELEASE as u32;
+}
+
+pub fn import_semaphore2(
+    connection: &Arc<MagmaConnection>,
+    vmo: zx::Vmo,
+    flags: u64,
+) -> (i32, u64, u64) {
+    let mut semaphore = 0;
+    let mut semaphore_id = 0;
+    let status = unsafe {
+        magma_connection_import_semaphore2(
+            connection.handle,
+            vmo.into_raw(),
+            flags,
+            &mut semaphore,
+            &mut semaphore_id,
+        )
+    };
+    (status, semaphore, semaphore_id)
 }

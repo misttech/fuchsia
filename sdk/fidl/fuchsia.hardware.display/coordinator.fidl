@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 library fuchsia.hardware.display;
 
+using fuchsia.hardware.display.types;
 using fuchsia.images2;
 using fuchsia.sysmem;
 using zx;
 
-// TODO(fxbug.dev/128948): Use separate invalid ID constants for each ID type.
-
-/// Invalid id for displays, images, and events.
-const INVALID_DISP_ID DisplayIdValue = 0;
+/// Maximum number of fences supported by
+/// [`fuchsia.hardware.display/Coordinator.ApplyConfig2`].
+const APPLY_CONFIG_MAX_SIGNAL_FENCES uint64 = 32;
 
 /// Interface for accessing the display hardware.
 ///
@@ -35,7 +35,7 @@ closed protocol Coordinator {
     // or revalidate and reapply their current configuration.
     strict -> OnDisplaysChanged(struct {
         added vector<Info>:MAX;
-        removed vector<DisplayId>:MAX;
+        removed vector<fuchsia.hardware.display.types.DisplayId>:MAX;
     });
 
     /// Imports a Buffer-Collection backed image.
@@ -49,9 +49,9 @@ closed protocol Coordinator {
     /// Returns `ZX_ERR_ALREADY_EXISTS` if `image_id` was used in a successful
     /// `ImportImage()` without a corresponding `ReleaseImage()`.
     strict ImportImage(struct {
-        image_config ImageConfig;
+        image_config fuchsia.hardware.display.types.ImageConfig;
         buffer_id BufferId;
-        image_id ImageId;
+        image_id fuchsia.hardware.display.types.ImageId;
     }) -> (struct {
         res zx.Status;
     });
@@ -75,7 +75,7 @@ closed protocol Coordinator {
     // non-capture images. We should have a unified design on image reuse for
     // both capture and non-capture images.
     strict ReleaseImage(struct {
-        image_id ImageId;
+        image_id fuchsia.hardware.display.types.ImageId;
     });
 
     /// Imports an event into the driver and associates it with the given id.
@@ -110,21 +110,21 @@ closed protocol Coordinator {
     // display is removed.
     strict CreateLayer() -> (struct {
         res zx.Status;
-        layer_id LayerId;
+        layer_id fuchsia.hardware.display.types.LayerId;
     });
 
     // Destroys the given layer.
     //
     // It is illegal to destroy a layer which does not exist or which is in use.
     strict DestroyLayer(struct {
-        layer_id LayerId;
+        layer_id fuchsia.hardware.display.types.LayerId;
     });
 
     // Sets the display mode for the given display.
     //
     // It is illegal to pass a display mode which was not part of the display's Info.
     strict SetDisplayMode(struct {
-        display_id DisplayId;
+        display_id fuchsia.hardware.display.types.DisplayId;
         mode Mode;
     });
 
@@ -155,7 +155,7 @@ closed protocol Coordinator {
     // successful. If SetDisplayColorConversion() is called and then the config is discarded, then
     // the last successfully applied state is restored.
     strict SetDisplayColorConversion(struct {
-        display_id DisplayId;
+        display_id fuchsia.hardware.display.types.DisplayId;
         preoffsets array<float32, 3>;
         coefficients array<float32, 9>;
         postoffsets array<float32, 3>;
@@ -168,8 +168,8 @@ closed protocol Coordinator {
     // pending config before being added to the second display's pending config. It
     // is also illegal to pass an invalid layer id.
     strict SetDisplayLayers(struct {
-        display_id DisplayId;
-        layer_ids vector<LayerId>:MAX;
+        display_id fuchsia.hardware.display.types.DisplayId;
+        layer_ids vector<fuchsia.hardware.display.types.LayerId>:MAX;
     });
 
     // Configures the layer as a primary layer with no image and the default
@@ -181,8 +181,8 @@ closed protocol Coordinator {
     //
     // It is illegal to pass an invalid layer id.
     strict SetLayerPrimaryConfig(struct {
-        layer_id LayerId;
-        image_config ImageConfig;
+        layer_id fuchsia.hardware.display.types.LayerId;
+        image_config fuchsia.hardware.display.types.ImageConfig;
     });
 
     // Sets the layer transform, scaling, and positioning.
@@ -195,10 +195,10 @@ closed protocol Coordinator {
     // Calling this on a non-primary layer or passing an invalid transform
     // is illegal.
     strict SetLayerPrimaryPosition(struct {
-        layer_id LayerId;
-        transform Transform;
-        src_frame Frame;
-        dest_frame Frame;
+        layer_id fuchsia.hardware.display.types.LayerId;
+        transform fuchsia.hardware.display.types.Transform;
+        src_frame fuchsia.hardware.display.types.Frame;
+        dest_frame fuchsia.hardware.display.types.Frame;
     });
 
     // Sets the alpha mode of the plane.
@@ -217,8 +217,8 @@ closed protocol Coordinator {
     // invalid mode, or to pass a value of `val` which is not NaN or
     // in the range [0, 1].
     strict SetLayerPrimaryAlpha(struct {
-        layer_id LayerId;
-        mode AlphaMode;
+        layer_id fuchsia.hardware.display.types.LayerId;
+        mode fuchsia.hardware.display.types.AlphaMode;
         val float32;
     });
 
@@ -230,8 +230,8 @@ closed protocol Coordinator {
     //
     // It is illegal to call this on an invalid layer.
     strict SetLayerCursorConfig(struct {
-        layer_id LayerId;
-        image_config ImageConfig;
+        layer_id fuchsia.hardware.display.types.LayerId;
+        image_config fuchsia.hardware.display.types.ImageConfig;
     });
 
     // Updates the cursor position.
@@ -241,7 +241,7 @@ closed protocol Coordinator {
     //
     // It is illegal to call this on a non-cursor layer.
     strict SetLayerCursorPosition(struct {
-        layer_id LayerId;
+        layer_id fuchsia.hardware.display.types.LayerId;
         x int32;
         y int32;
     });
@@ -255,7 +255,7 @@ closed protocol Coordinator {
     // It is illegal to call this on an invalid layer or for the length of
     // color_bytes to mismatch the size of the supplied format.
     strict SetLayerColorConfig(struct {
-        layer_id LayerId;
+        layer_id fuchsia.hardware.display.types.LayerId;
         pixel_format fuchsia.images2.PixelFormat;
         color_bytes vector<uint8>:MAX;
     });
@@ -294,8 +294,8 @@ closed protocol Coordinator {
     // validate such a configuration). It is illegal to reuse a wait event which
     // another layer that has not been presented is waiting on.
     strict SetLayerImage(struct {
-        layer_id LayerId;
-        image_id ImageId;
+        layer_id fuchsia.hardware.display.types.LayerId;
+        image_id fuchsia.hardware.display.types.ImageId;
         wait_event_id EventId;
         signal_event_id EventId;
     });
@@ -314,8 +314,8 @@ closed protocol Coordinator {
     strict CheckConfig(struct {
         discard bool;
     }) -> (struct {
-        res ConfigResult;
-        ops vector<ClientCompositionOp>:MAX;
+        res fuchsia.hardware.display.types.ConfigResult;
+        ops vector<fuchsia.hardware.display.types.ClientCompositionOp>:MAX;
     });
 
     // Applies any pending changes to the current configuration. This will
@@ -336,7 +336,7 @@ closed protocol Coordinator {
     /// because of pending image availability or pending layer changes.
     /// If no configuration was applied before, returns `INVALID_CONFIG_STAMP_VALUE`.
     strict GetLatestAppliedConfigStamp() -> (struct {
-        stamp ConfigStamp;
+        stamp fuchsia.hardware.display.types.ConfigStamp;
     });
 
     /// Applies any pending changes to the current configuration. This will
@@ -428,9 +428,9 @@ closed protocol Coordinator {
     // OnVsync on all display clients.
     //
     strict -> OnVsync(resource struct {
-        display_id DisplayId;
+        display_id fuchsia.hardware.display.types.DisplayId;
         timestamp uint64;
-        applied_config_stamp ConfigStamp;
+        applied_config_stamp fuchsia.hardware.display.types.ConfigStamp;
         cookie uint64;
     });
 
@@ -471,7 +471,7 @@ closed protocol Coordinator {
     // optional fields.
     strict SetBufferCollectionConstraints(struct {
         buffer_collection_id BufferCollectionId;
-        config ImageConfig;
+        config fuchsia.hardware.display.types.ImageConfig;
     }) -> (struct {
         res zx.Status;
     });
@@ -488,7 +488,7 @@ closed protocol Coordinator {
     /// Returns ZX_ERR_NOT_SUPPORTED if coordinator does not support capture
     strict StartCapture(struct {
         signal_event_id EventId;
-        image_id ImageId;
+        image_id fuchsia.hardware.display.types.ImageId;
     }) -> () error zx.Status;
 
     /// Set the minimum value of rgb channels. Valid range [0 255] inclusive. Returns
@@ -525,7 +525,7 @@ closed protocol Coordinator {
     /// Returns ZX_ERR_NOT_SUPPORTED if the display driver IC doesn't support
     /// turning on/off displays.
     strict SetDisplayPower(struct {
-        display_id DisplayId;
+        display_id fuchsia.hardware.display.types.DisplayId;
         power_on bool;
     }) -> () error zx.Status;
 };

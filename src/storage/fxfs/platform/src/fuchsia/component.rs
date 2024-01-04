@@ -4,10 +4,12 @@
 
 use {
     crate::fuchsia::{
-        errors::map_to_status, memory_pressure::MemoryPressureMonitor,
+        debug::{handle_debug_request, FxfsDebug},
+        errors::map_to_status,
+        memory_pressure::MemoryPressureMonitor,
         volumes_directory::VolumesDirectory,
     },
-    anyhow::{Context, Error},
+    anyhow::{bail, Context, Error},
     async_trait::async_trait,
     fidl::{
         endpoints::{ClientEnd, DiscoverableProtocolMarker, RequestStream},
@@ -17,7 +19,9 @@ use {
     fidl_fuchsia_fs_startup::{
         CheckOptions, StartOptions, StartupMarker, StartupRequest, StartupRequestStream,
     },
-    fidl_fuchsia_fxfs::{VolumesMarker, VolumesRequest, VolumesRequestStream},
+    fidl_fuchsia_fxfs::{
+        DebugMarker, DebugRequestStream, VolumesMarker, VolumesRequest, VolumesRequestStream,
+    },
     fidl_fuchsia_hardware_block::BlockMarker,
     fidl_fuchsia_io as fio,
     fidl_fuchsia_process_lifecycle::{LifecycleRequest, LifecycleRequestStream},
@@ -25,18 +29,13 @@ use {
     fuchsia_async as fasync, fuchsia_zircon as zx,
     futures::{lock::Mutex, TryStreamExt},
     fxfs::{
-        errors::FxfsError,
-        filesystem::{
-            mkfs, Filesystem as _, FxFilesystem, FxFilesystemBuilder, OpenFxFilesystem,
-            MIN_BLOCK_SIZE,
-        },
+        filesystem::{mkfs, FxFilesystem, FxFilesystemBuilder, OpenFxFilesystem, MIN_BLOCK_SIZE},
         fsck,
         log::*,
         metrics,
         object_store::volume::root_volume,
         serialized_types::LATEST_VERSION,
     },
-    inspect_runtime::service::{TreeServerSendPreference, TreeServerSettings},
     remote_block_device::{BlockClient as _, RemoteBlockClient},
     std::ops::Deref,
     std::sync::{Arc, Weak},
@@ -154,22 +153,9 @@ impl Component {
         outgoing_dir: zx::Channel,
         lifecycle_channel: Option<zx::Channel>,
     ) -> Result<(), Error> {
-        self.outgoing_dir
-            .add_entry(
-                "diagnostics",
-                inspect_runtime::create_diagnostics_dir_with_options(
-                    fuchsia_inspect::component::inspector().clone(),
-                    TreeServerSettings {
-                        send_vmo_preference: TreeServerSendPreference::frozen_or(
-                            TreeServerSendPreference::DeepCopy,
-                        ),
-                    },
-                ),
-            )
-            .expect("unable to create diagnostics dir");
-
         let svc_dir = vfs::directory::immutable::simple();
         self.outgoing_dir.add_entry("svc", svc_dir.clone()).expect("Unable to create svc dir");
+
         let weak = Arc::downgrade(&self);
         svc_dir.add_entry(
             StartupMarker::PROTOCOL_NAME,
@@ -203,6 +189,20 @@ impl Component {
                 async move {
                     if let Some(me) = weak.upgrade() {
                         let _ = me.handle_admin_requests(requests).await;
+                    }
+                }
+            }),
+        )?;
+
+        // TODO(b/315704445): Only enable in debug builds?
+        let weak = Arc::downgrade(&self);
+        svc_dir.add_entry(
+            DebugMarker::PROTOCOL_NAME,
+            vfs::service::host(move |requests| {
+                let weak = weak.clone();
+                async move {
+                    if let Some(me) = weak.upgrade() {
+                        let _ = me.handle_debug_requests(requests).await;
                     }
                 }
             }),
@@ -261,10 +261,6 @@ impl Component {
         options: StartOptions,
     ) -> Result<(), Error> {
         info!(?options, "Received start request");
-        if !options.allow_delivery_blobs {
-            return Err(FxfsError::InvalidArgs)
-                .with_context(|| format!("Fxfs only supports delivery blobs"));
-        }
         let mut state = self.state.lock().await;
         // TODO(fxbug.dev/93066): This is not very graceful.  It would be better for the client to
         // explicitly shut down all volumes first, and make this fail if there are remaining active
@@ -306,6 +302,9 @@ impl Component {
             volumes.directory_node().clone(),
             /* overwrite: */ true,
         )?;
+
+        let debug = FxfsDebug::new(&**fs).await?;
+        self.outgoing_dir.add_entry_may_overwrite("debug", debug.root(), true)?;
 
         fs.allocator().track_statistics(&metrics::detail(), "allocator");
         fs.journal().track_statistics(&metrics::detail(), "journal");
@@ -361,7 +360,9 @@ impl Component {
         if let Some(fs_container) = fs_container {
             let _ = fs_container.close().await;
         }
-        res
+        // TODO(b/311550633): Stash ok res in inspect.
+        tracing::info!("handle_check for fs: {:?}", res?);
+        Ok(())
     }
 
     async fn handle_admin_requests(&self, mut stream: AdminRequestStream) -> Result<(), Error> {
@@ -385,6 +386,23 @@ impl Component {
                 return Ok(true);
             }
         }
+    }
+
+    /// Handles fuchsia.fxfs.Debug requests, providing live debugging internals of the running
+    /// filesystem.
+    async fn handle_debug_requests(&self, mut stream: DebugRequestStream) -> Result<(), Error> {
+        while let Some(request) = stream.try_next().await.context("Reading request")? {
+            let state = self.state.lock().await;
+            let fs = match *state {
+                State::ComponentStarted => {
+                    info!("Debug commands are not valid unless component is started.");
+                    bail!("Component not started");
+                }
+                State::Running(RunningState { ref fs, .. }) => fs.deref().deref().clone(),
+            };
+            handle_debug_request(fs, request).await?;
+        }
+        Ok(())
     }
 
     async fn shutdown(&self) {
@@ -469,7 +487,7 @@ mod tests {
         futures::{future::FutureExt, pin_mut, select},
         fxfs::{filesystem::FxFilesystem, object_store::volume::root_volume},
         ramdevice_client::RamdiskClientBuilder,
-        std::{collections::HashSet, pin::Pin},
+        std::pin::Pin,
         storage_device::block_device::BlockDevice,
         storage_device::DeviceHolder,
     };
@@ -531,7 +549,6 @@ mod tests {
                         write_compression_algorithm: CompressionAlgorithm::ZstdChunked,
                         write_compression_level: 0,
                         cache_eviction_policy_override: EvictionPolicyOverride::None,
-                        allow_delivery_blobs: true,
                     },
                 )
                 .await
@@ -648,6 +665,7 @@ mod tests {
             }
             .boxed()
         })
+        .await
         .await;
     }
 
@@ -682,20 +700,16 @@ mod tests {
                     .expect("fidl failed")
                     .expect("create failed");
 
-                assert_eq!(
-                    readdir(&volumes_dir_proxy)
-                        .await
-                        .expect("readdir failed")
-                        .iter()
-                        .map(|d| d.name.as_str())
-                        .collect::<HashSet<_>>(),
-                    HashSet::from(["default", "test"])
-                );
+                let entries = readdir(&volumes_dir_proxy).await.expect("readdir failed");
+                let mut entry_names = entries.iter().map(|d| d.name.as_str()).collect::<Vec<_>>();
+                entry_names.sort();
+                assert_eq!(entry_names, ["default", "test"]);
 
                 fs_admin_proxy.shutdown().await.expect("shutdown failed");
             }
             .boxed()
         })
+        .await
         .await;
     }
 }

@@ -16,15 +16,15 @@ source_set("common") {
   ]
   public_deps = [
     "//sdk/banjo/fuchsia.hardware.nand:fuchsia.hardware.nand_banjo_cpp",
-    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire",
-    "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.nand:fuchsia.hardware.nand_cpp_wire",
-    "//sdk/fidl/fuchsia.nand:fuchsia.nand_cpp_wire",
+    "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+    "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_cpp",
+    "//sdk/fidl/fuchsia.hardware.nand:fuchsia.hardware.nand_cpp",
+    "//sdk/fidl/fuchsia.nand:fuchsia.nand_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/driver_test_realm",
     "//sdk/lib/fdio",
-    "//src/lib/storage/ramdevice_client/cpp",
+    "//src/storage/lib/ramdevice_client/cpp",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/fzl",
@@ -56,18 +56,23 @@ test("nandpart-broker") {
 fuchsia_unittest_package("nand-broker-test") {
   deps = [
     ":nand-broker",
-    "//src/devices/board/drivers/integration-test",
     "//src/devices/bus/drivers/platform",
     "//src/devices/nand/drivers/broker:nand-broker",
     "//src/devices/nand/drivers/nand",
     "//src/devices/nand/drivers/ram-nand",
   ]
+
+  # There's expected error logs that happen due to the test not waiting for drivers to finish enumerating.
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }
 
 fuchsia_unittest_package("nandpart-broker-test") {
   deps = [
     ":nandpart-broker",
-    "//src/devices/board/drivers/integration-test",
     "//src/devices/bus/drivers/platform",
     "//src/devices/nand/drivers/broker:nand-broker",
     "//src/devices/nand/drivers/nand",
@@ -75,4 +80,11 @@ fuchsia_unittest_package("nandpart-broker-test") {
     "//src/devices/nand/drivers/ram-nand",
     "//src/devices/nand/drivers/skip-block",
   ]
+
+  # There's expected error logs that happen due to the test not waiting for drivers to finish enumerating.
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }

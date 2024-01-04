@@ -19,7 +19,7 @@ using namespace inspect::testing;
 
 using bt::testing::CommandTransaction;
 
-using TestingBase = bt::testing::ControllerTest<bt::testing::MockController>;
+using TestingBase = bt::testing::FakeDispatcherControllerTest<bt::testing::MockController>;
 
 // clang-format off
 #define COMMAND_COMPLETE_RSP(opcode)                                         \
@@ -73,9 +73,9 @@ class BrEdrDiscoveryManagerTest : public TestingBase {
     EXPECT_CMD_PACKET_OUT(test_device(), kWriteInquiryType, &kWriteInquiryTypeRsp);
 
     discovery_manager_ = std::make_unique<BrEdrDiscoveryManager>(
-        transport()->command_channel()->AsWeakPtr(), mode, &peer_cache_);
+        dispatcher(), transport()->command_channel()->AsWeakPtr(), mode, &peer_cache_);
 
-    RunLoopUntilIdle();
+    RunUntilIdle();
   }
 
   void DestroyDiscoveryManager() { discovery_manager_.reset(); }
@@ -86,7 +86,7 @@ class BrEdrDiscoveryManagerTest : public TestingBase {
   BrEdrDiscoveryManager* discovery_manager() const { return discovery_manager_.get(); }
 
  private:
-  PeerCache peer_cache_;
+  PeerCache peer_cache_{dispatcher()};
   std::unique_ptr<BrEdrDiscoveryManager> discovery_manager_;
 
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(BrEdrDiscoveryManagerTest);
@@ -146,6 +146,8 @@ const DeviceAddress kLeAliasAddress2(DeviceAddress::Type::kLEPublic,
                                      kDeviceAddress2.value());
 const DeviceAddress kDeviceAddress3(DeviceAddress::Type::kBREDR,
                                     {BD_ADDR(0x03)});
+const DeviceAddress kLeAliasAddress3(DeviceAddress::Type::kLEPublic,
+                                     kDeviceAddress3.value());
 
 const StaticByteBuffer kInquiryResult(
   hci_spec::kInquiryResultEventCode,
@@ -388,14 +390,14 @@ TEST_F(BrEdrDiscoveryManagerDeathTest, MalformedInquiryResultFromControllerIsFat
     session = std::move(cb_session);
   });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   for (auto event : {kInquiryResultIncompleteHeader.view(), kInquiryResultMissingResponses.view(),
                      kInquiryResultIncompleteResponse.view()}) {
     EXPECT_DEATH_IF_SUPPORTED(
         [=] {
           test_device()->SendCommandChannelPacket(event);
-          RunLoopUntilIdle();
+          RunUntilIdle();
         }(),
         ".*");
   }
@@ -426,7 +428,7 @@ TEST_F(BrEdrDiscoveryManagerTest, RequestDiscoveryAndDrop) {
 
   EXPECT_FALSE(discovery_manager()->discovering());
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1u, peers_found);
   EXPECT_TRUE(discovery_manager()->discovering());
@@ -435,7 +437,7 @@ TEST_F(BrEdrDiscoveryManagerTest, RequestDiscoveryAndDrop) {
 
   test_device()->SendCommandChannelPacket(kInquiryComplete);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Confirm that post-inquiry peer name request is processed correctly.
   Peer* peer = peer_cache()->FindByAddress(kDeviceAddress1);
@@ -450,13 +452,13 @@ TEST_F(BrEdrDiscoveryManagerTest, RequestDiscoveryAndDrop) {
   session = nullptr;
   test_device()->SendCommandChannelPacket(kInquiryResult);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(2u, peers_found);
   EXPECT_FALSE(discovery_manager()->discovering());
 
   test_device()->SendCommandChannelPacket(kInquiryComplete);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 }
 
 // Test: requesting a second discovery should start a session without sending
@@ -479,7 +481,7 @@ TEST_F(BrEdrDiscoveryManagerTest, MultipleRequests) {
 
   EXPECT_FALSE(discovery_manager()->discovering());
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_TRUE(session1);
   EXPECT_EQ(1u, peers_found1);
@@ -494,7 +496,7 @@ TEST_F(BrEdrDiscoveryManagerTest, MultipleRequests) {
     session2 = std::move(cb_session);
   });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_TRUE(session2);
   EXPECT_EQ(1u, peers_found1);
@@ -503,18 +505,18 @@ TEST_F(BrEdrDiscoveryManagerTest, MultipleRequests) {
 
   test_device()->SendCommandChannelPacket(kInquiryResult);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(2u, peers_found1);
   EXPECT_EQ(1u, peers_found2);
 
   session1 = nullptr;
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   test_device()->SendCommandChannelPacket(kInquiryResult);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(2u, peers_found1);
   EXPECT_EQ(2u, peers_found2);
@@ -525,7 +527,7 @@ TEST_F(BrEdrDiscoveryManagerTest, MultipleRequests) {
 
   test_device()->SendCommandChannelPacket(kInquiryResult);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(2u, peers_found1);
   EXPECT_EQ(2u, peers_found2);
@@ -534,7 +536,7 @@ TEST_F(BrEdrDiscoveryManagerTest, MultipleRequests) {
 
   test_device()->SendCommandChannelPacket(kInquiryComplete);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 }
 
 // Test: starting a session "while" the other one is stopping a session should
@@ -559,7 +561,7 @@ TEST_F(BrEdrDiscoveryManagerTest, RequestDiscoveryWhileStop) {
 
   EXPECT_FALSE(discovery_manager()->discovering());
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_TRUE(session1);
   EXPECT_EQ(1u, peers_found1);
@@ -567,7 +569,7 @@ TEST_F(BrEdrDiscoveryManagerTest, RequestDiscoveryWhileStop) {
 
   // Drop the active session.
   session1 = nullptr;
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   std::unique_ptr<BrEdrDiscoverySession> session2;
   size_t peers_found2 = 0u;
@@ -582,7 +584,7 @@ TEST_F(BrEdrDiscoveryManagerTest, RequestDiscoveryWhileStop) {
   EXPECT_TRUE(session2);
   test_device()->SendCommandChannelPacket(kInquiryResult);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1u, peers_found2);
 
@@ -592,7 +594,7 @@ TEST_F(BrEdrDiscoveryManagerTest, RequestDiscoveryWhileStop) {
   EXPECT_CMD_PACKET_OUT(test_device(), kInquiry, &kInquiryRsp, &kInquiryResult);
   test_device()->SendCommandChannelPacket(kInquiryComplete);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1u, peers_found1);
   EXPECT_EQ(2u, peers_found2);
@@ -600,7 +602,7 @@ TEST_F(BrEdrDiscoveryManagerTest, RequestDiscoveryWhileStop) {
 
   test_device()->SendCommandChannelPacket(kInquiryResult);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1u, peers_found1);
   EXPECT_EQ(3u, peers_found2);
@@ -612,7 +614,7 @@ TEST_F(BrEdrDiscoveryManagerTest, RequestDiscoveryWhileStop) {
   // are sent to the callback.
   test_device()->SendCommandChannelPacket(kInquiryResult);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1u, peers_found1);
   EXPECT_EQ(3u, peers_found2);
@@ -634,7 +636,7 @@ TEST_F(BrEdrDiscoveryManagerTest, RequestDiscoveryError) {
 
   EXPECT_FALSE(discovery_manager()->discovering());
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_FALSE(discovery_manager()->discovering());
 }
@@ -660,21 +662,21 @@ TEST_F(BrEdrDiscoveryManagerTest, ContinuingDiscoveryError) {
 
   EXPECT_FALSE(discovery_manager()->discovering());
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1u, peers_found);
   EXPECT_TRUE(discovery_manager()->discovering());
 
   test_device()->SendCommandChannelPacket(kInquiryCompleteError);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_TRUE(error_callback);
   EXPECT_FALSE(discovery_manager()->discovering());
 
   session = nullptr;
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 }
 
 // clang-format off
@@ -754,7 +756,7 @@ TEST_F(BrEdrDiscoveryManagerTest, UpdateLocalNameShortenedSuccess) {
   kNewName.append("ABCDEFGHIJKLMNOPQRSTUVW");
   discovery_manager()->UpdateLocalName(kNewName, name_cb);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Local name should not be set, callback shouldn't be called yet.
   EXPECT_NE(kNewName, discovery_manager()->local_name());
@@ -763,7 +765,7 @@ TEST_F(BrEdrDiscoveryManagerTest, UpdateLocalNameShortenedSuccess) {
   test_device()->SendCommandChannelPacket(kWriteLocalNameRsp);
   EXPECT_CMD_PACKET_OUT(test_device(), kWriteExtInquiryResponseMaxLen, );
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Still waiting on EIR response.
   // Local name should not be set, callback shouldn't be called yet.
@@ -772,7 +774,7 @@ TEST_F(BrEdrDiscoveryManagerTest, UpdateLocalNameShortenedSuccess) {
 
   test_device()->SendCommandChannelPacket(kWriteExtendedInquiryResponseRsp);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kNewName, discovery_manager()->local_name());
   EXPECT_EQ(ToResult(pw::bluetooth::emboss::StatusCode::SUCCESS), result);
@@ -795,7 +797,7 @@ TEST_F(BrEdrDiscoveryManagerTest, UpdateLocalNameSuccess) {
   const std::string kNewName = "ABC";
   discovery_manager()->UpdateLocalName(kNewName, name_cb);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Local name should not be set, callback shouldn't be called yet.
   EXPECT_NE(kNewName, discovery_manager()->local_name());
@@ -804,7 +806,7 @@ TEST_F(BrEdrDiscoveryManagerTest, UpdateLocalNameSuccess) {
   test_device()->SendCommandChannelPacket(kWriteLocalNameRsp);
   EXPECT_CMD_PACKET_OUT(test_device(), kWriteExtendedInquiryResponse, );
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Still waiting on EIR response.
   // Local name should not be set, callback shouldn't be called yet.
@@ -813,7 +815,7 @@ TEST_F(BrEdrDiscoveryManagerTest, UpdateLocalNameSuccess) {
 
   test_device()->SendCommandChannelPacket(kWriteExtendedInquiryResponseRsp);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kNewName, discovery_manager()->local_name());
   EXPECT_EQ(ToResult(pw::bluetooth::emboss::StatusCode::SUCCESS), result);
@@ -836,7 +838,7 @@ TEST_F(BrEdrDiscoveryManagerTest, UpdateLocalNameError) {
   const std::string kNewName = "ABC";
   discovery_manager()->UpdateLocalName(kNewName, name_cb);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Local name should not be set, callback shouldn't be called yet.
   EXPECT_NE(kNewName, discovery_manager()->local_name());
@@ -845,7 +847,7 @@ TEST_F(BrEdrDiscoveryManagerTest, UpdateLocalNameError) {
   // Send a response error.
   test_device()->SendCommandChannelPacket(kWriteLocalNameRspError);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // |local_name_| should not be updated, return status should be error.
   EXPECT_NE(kNewName, discovery_manager()->local_name());
@@ -870,7 +872,7 @@ TEST_F(BrEdrDiscoveryManagerTest, UpdateEIRResponseDataError) {
   const std::string kNewName = "ABC";
   discovery_manager()->UpdateLocalName(kNewName, name_cb);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Local name should not be set, callback shouldn't be called yet.
   EXPECT_NE(kNewName, discovery_manager()->local_name());
@@ -880,7 +882,7 @@ TEST_F(BrEdrDiscoveryManagerTest, UpdateEIRResponseDataError) {
   test_device()->SendCommandChannelPacket(kWriteLocalNameRsp);
   EXPECT_CMD_PACKET_OUT(test_device(), kWriteExtendedInquiryResponse, );
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Still waiting on EIR response.
   // Local name should not be set, callback shouldn't be called yet.
@@ -890,7 +892,7 @@ TEST_F(BrEdrDiscoveryManagerTest, UpdateEIRResponseDataError) {
   // kWriteExtendedInquiryResponse should fail.
   test_device()->SendCommandChannelPacket(kWriteExtendedInquiryResponseRspError);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // |local_name_| should not be updated, return status should be error.
   EXPECT_NE(kNewName, discovery_manager()->local_name());
@@ -912,7 +914,7 @@ TEST_F(BrEdrDiscoveryManagerTest, DiscoverableSet) {
 
   discovery_manager()->RequestDiscoverable(session_cb);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(0u, sessions.size());
   EXPECT_FALSE(discovery_manager()->discoverable());
@@ -921,14 +923,14 @@ TEST_F(BrEdrDiscoveryManagerTest, DiscoverableSet) {
 
   test_device()->SendCommandChannelPacket(kReadScanEnableRspNone);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Request another session while the first is pending.
   discovery_manager()->RequestDiscoverable(session_cb);
 
   test_device()->SendCommandChannelPacket(kWriteScanEnableRsp);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(2u, sessions.size());
   EXPECT_TRUE(discovery_manager()->discoverable());
@@ -943,7 +945,7 @@ TEST_F(BrEdrDiscoveryManagerTest, DiscoverableSet) {
 
   sessions.clear();
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_FALSE(discovery_manager()->discoverable());
 }
@@ -963,7 +965,7 @@ TEST_F(BrEdrDiscoveryManagerTest, DiscoverableRequestWhileStopping) {
 
   discovery_manager()->RequestDiscoverable(session_cb);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1u, sessions.size());
   EXPECT_TRUE(discovery_manager()->discoverable());
@@ -972,7 +974,7 @@ TEST_F(BrEdrDiscoveryManagerTest, DiscoverableRequestWhileStopping) {
 
   sessions.clear();
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Request a new discovery before the procedure finishes.
   // This will queue another ReadScanEnable just in case the disable write is
@@ -984,7 +986,7 @@ TEST_F(BrEdrDiscoveryManagerTest, DiscoverableRequestWhileStopping) {
 
   // This shouldn't send any WriteScanEnable because we're already in the right
   // mode (MockController will assert if we do as it's not expecting)
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1u, sessions.size());
   EXPECT_TRUE(discovery_manager()->discoverable());
@@ -993,7 +995,7 @@ TEST_F(BrEdrDiscoveryManagerTest, DiscoverableRequestWhileStopping) {
   EXPECT_CMD_PACKET_OUT(test_device(), kWriteScanEnableBoth, &kWriteScanEnableRsp);
   test_device()->SendCommandChannelPacket(kReadScanEnableRspPage);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1u, sessions.size());
   EXPECT_TRUE(discovery_manager()->discoverable());
@@ -1003,7 +1005,7 @@ TEST_F(BrEdrDiscoveryManagerTest, DiscoverableRequestWhileStopping) {
 
   sessions.clear();
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_FALSE(discovery_manager()->discoverable());
 }
@@ -1031,7 +1033,7 @@ TEST_F(BrEdrDiscoveryManagerTest, ExtendedInquiry) {
 
   EXPECT_FALSE(discovery_manager()->discovering());
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_TRUE(session1);
   EXPECT_EQ(2u, peers_found1);
@@ -1050,14 +1052,17 @@ TEST_F(BrEdrDiscoveryManagerTest, ExtendedInquiry) {
 
   test_device()->SendCommandChannelPacket(kInquiryComplete);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_FALSE(discovery_manager()->discovering());
 }
 
-TEST_F(BrEdrDiscoveryManagerTest, InquiryResultUpgradesKnownLowEnergyPeerToDualMode) {
-  Peer* peer = peer_cache()->NewPeer(kLeAliasAddress1, /*connectable=*/true);
+// Verify that receiving a inquiry response for a known LE non-connectable peer results in the
+// peer being changed to DualMode and connectable.
+TEST_F(BrEdrDiscoveryManagerTest, InquiryResultUpgradesKnownLowEnergyPeer) {
+  Peer* peer = peer_cache()->NewPeer(kLeAliasAddress1, /*connectable=*/false);
   ASSERT_TRUE(peer);
+  ASSERT_FALSE(peer->connectable());
   ASSERT_EQ(TechnologyType::kLowEnergy, peer->technology());
 
   EXPECT_CMD_PACKET_OUT(test_device(), kInquiry, &kInquiryRsp, &kInquiryResult);
@@ -1072,28 +1077,65 @@ TEST_F(BrEdrDiscoveryManagerTest, InquiryResultUpgradesKnownLowEnergyPeerToDualM
     cb_session->set_result_callback([&peers_found](auto&) { peers_found++; });
     session = std::move(cb_session);
   });
-  RunLoopUntilIdle();
+  RunUntilIdle();
   session = nullptr;
 
   EXPECT_EQ(1u, peers_found);
   ASSERT_EQ(peer, peer_cache()->FindByAddress(kDeviceAddress1));
   EXPECT_EQ(TechnologyType::kDualMode, peer->technology());
+  EXPECT_TRUE(peer->connectable());
 
   test_device()->SendCommandChannelPacket(kInquiryComplete);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 }
 
-TEST_F(BrEdrDiscoveryManagerTest, ExtendedInquiryResultUpgradesKnownLowEnergyPeerToDualMode) {
-  Peer* peer = peer_cache()->NewPeer(kLeAliasAddress2, /*connectable=*/true);
+// Verify that receiving an extended inquiry response for a known LE non-connectable peer results in
+// the peer being changed to DualMode and connectable.
+TEST_F(BrEdrDiscoveryManagerTest, ExtendedInquiryResultUpgradesKnownLowEnergyPeer) {
+  Peer* peer = peer_cache()->NewPeer(kLeAliasAddress3, /*connectable=*/false);
   ASSERT_TRUE(peer);
+  ASSERT_FALSE(peer->connectable());
   ASSERT_EQ(TechnologyType::kLowEnergy, peer->technology());
 
   NewDiscoveryManager(pw::bluetooth::emboss::InquiryMode::EXTENDED);
 
   EXPECT_CMD_PACKET_OUT(test_device(), kSetExtendedMode, &kSetExtendedModeRsp);
-  EXPECT_CMD_PACKET_OUT(test_device(), kInquiry, &kInquiryRsp, &kExtendedInquiryResult,
-                        &kRSSIInquiryResult);
+  EXPECT_CMD_PACKET_OUT(test_device(), kInquiry, &kInquiryRsp, &kExtendedInquiryResult);
+
+  std::unique_ptr<BrEdrDiscoverySession> session;
+  size_t peers_found = 0u;
+
+  discovery_manager()->RequestDiscovery([&session, &peers_found](auto status, auto cb_session) {
+    EXPECT_EQ(fit::ok(), status);
+    cb_session->set_result_callback([&peers_found](auto&) { peers_found++; });
+    session = std::move(cb_session);
+  });
+  RunUntilIdle();
+  session = nullptr;
+
+  EXPECT_EQ(1u, peers_found);
+  ASSERT_EQ(peer, peer_cache()->FindByAddress(kDeviceAddress3));
+  EXPECT_EQ(TechnologyType::kDualMode, peer->technology());
+  EXPECT_TRUE(peer->connectable());
+
+  test_device()->SendCommandChannelPacket(kInquiryComplete);
+
+  RunUntilIdle();
+}
+
+// Verify that receiving an extended inquiry response with RSSI for a known LE non-connectable peer
+// results in the peer being changed to DualMode and connectable.
+TEST_F(BrEdrDiscoveryManagerTest, RSSIInquiryResultUpgradesKnownLowEnergyPeer) {
+  Peer* peer = peer_cache()->NewPeer(kLeAliasAddress2, /*connectable=*/false);
+  ASSERT_TRUE(peer);
+  ASSERT_FALSE(peer->connectable());
+  ASSERT_EQ(TechnologyType::kLowEnergy, peer->technology());
+
+  NewDiscoveryManager(pw::bluetooth::emboss::InquiryMode::EXTENDED);
+
+  EXPECT_CMD_PACKET_OUT(test_device(), kSetExtendedMode, &kSetExtendedModeRsp);
+  EXPECT_CMD_PACKET_OUT(test_device(), kInquiry, &kInquiryRsp, &kRSSIInquiryResult);
   EXPECT_CMD_PACKET_OUT(test_device(), kRemoteNameRequest2, &kRemoteNameRequestRsp,
                         &kRemoteNameRequestComplete2);
 
@@ -1105,16 +1147,17 @@ TEST_F(BrEdrDiscoveryManagerTest, ExtendedInquiryResultUpgradesKnownLowEnergyPee
     cb_session->set_result_callback([&peers_found](auto&) { peers_found++; });
     session = std::move(cb_session);
   });
-  RunLoopUntilIdle();
+  RunUntilIdle();
   session = nullptr;
 
-  EXPECT_EQ(2u, peers_found);
+  EXPECT_EQ(1u, peers_found);
   ASSERT_EQ(peer, peer_cache()->FindByAddress(kDeviceAddress2));
   EXPECT_EQ(TechnologyType::kDualMode, peer->technology());
+  EXPECT_TRUE(peer->connectable());
 
   test_device()->SendCommandChannelPacket(kInquiryComplete);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 }
 
 #ifndef NINSPECT
@@ -1133,7 +1176,7 @@ TEST_F(BrEdrDiscoveryManagerTest, Inspect) {
   EXPECT_CMD_PACKET_OUT(test_device(), kReadScanEnable, &kReadScanEnableRspPage);
   EXPECT_CMD_PACKET_OUT(test_device(), kWriteScanEnableBoth, &kWriteScanEnableRsp);
   discovery_manager()->RequestDiscoverable(session_cb);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(discoverable_session);
 
   auto properties = inspect::ReadFromVmo(inspector.DuplicateVmo())
@@ -1148,11 +1191,11 @@ TEST_F(BrEdrDiscoveryManagerTest, Inspect) {
       {UintIs("discoverable_sessions", 0), UintIs("discoverable_sessions_count", 1),
        UintIs("last_discoverable_length_sec", 4)});
 
-  RunLoopFor(zx::sec(4));
+  RunFor(std::chrono::seconds(4));
   discoverable_session = nullptr;
   EXPECT_CMD_PACKET_OUT(test_device(), kReadScanEnable, &kReadScanEnableRspBoth);
   EXPECT_CMD_PACKET_OUT(test_device(), kWriteScanEnablePage, &kWriteScanEnableRsp);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   properties = inspect::ReadFromVmo(inspector.DuplicateVmo())
                    .take_value()
@@ -1172,7 +1215,7 @@ TEST_F(BrEdrDiscoveryManagerTest, Inspect) {
   });
 
   EXPECT_CMD_PACKET_OUT(test_device(), kInquiry, &kInquiryRsp);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(discovery_session);
 
   properties = inspect::ReadFromVmo(inspector.DuplicateVmo())
@@ -1187,11 +1230,11 @@ TEST_F(BrEdrDiscoveryManagerTest, Inspect) {
       ::testing::IsSupersetOf({UintIs("discovery_sessions", 0), UintIs("inquiry_sessions_count", 1),
                                UintIs("last_inquiry_length_sec", 7)});
 
-  RunLoopFor(zx::sec(7));
+  RunFor(std::chrono::seconds(7));
   discovery_session = nullptr;
-  RunLoopUntilIdle();
+  RunUntilIdle();
   test_device()->SendCommandChannelPacket(kInquiryComplete);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   properties = inspect::ReadFromVmo(inspector.DuplicateVmo())
                    .take_value()

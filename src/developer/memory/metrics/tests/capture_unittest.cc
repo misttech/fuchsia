@@ -8,8 +8,8 @@
 
 #include <gtest/gtest.h>
 
-#include "src/developer/memory/metrics/filters.h"
 #include "src/developer/memory/metrics/tests/test_utils.h"
+#include "zircon/syscalls/object.h"
 
 namespace memory {
 namespace test {
@@ -33,6 +33,15 @@ const static zx_info_kmem_stats_extended_t _kmem = {.total_bytes = 300,
 const static GetInfoResponse kmem_info = {
     TestUtils::kRootHandle, ZX_INFO_KMEM_STATS_EXTENDED, &_kmem, sizeof(_kmem), 1, ZX_OK};
 
+const static zx_info_kmem_stats_compression_t _kmem_compression = {};
+
+const static GetInfoResponse kmem_compression_info = {TestUtils::kRootHandle,
+                                                      ZX_INFO_KMEM_STATS_COMPRESSION,
+                                                      &_kmem_compression,
+                                                      sizeof(_kmem_compression),
+                                                      1,
+                                                      ZX_OK};
+
 const static zx_info_handle_basic_t _self = {.koid = TestUtils::kSelfKoid};
 const static GetInfoResponse self_info = {
     TestUtils::kSelfHandle, ZX_INFO_HANDLE_BASIC, &_self, sizeof(_self), 1, ZX_OK};
@@ -51,15 +60,6 @@ const char proc2_name[] = "P2";
 const static GetPropertyResponse proc2_prop = {proc2_handle, ZX_PROP_NAME, proc2_name,
                                                sizeof(proc2_name), ZX_OK};
 const static GetProcessesCallback proc2_cb = {1, proc2_handle, proc2_koid, proc2_job};
-
-// A 3rd process within the same job as P2. This process represents a Starnix kernel. If this is
-// included in the list of processes, P2 will be assumed to run under Starnix.
-const zx_koid_t proc3_koid = 30;
-const zx_handle_t proc3_handle = 300;
-const char proc3_name[] = "starnix_kernel.cm";
-const static GetPropertyResponse proc3_prop = {proc3_handle, ZX_PROP_NAME, proc3_name,
-                                               sizeof(proc3_name), ZX_OK};
-const static GetProcessesCallback proc3_cb = {1, proc3_handle, proc3_koid, proc2_job};
 
 const zx_koid_t vmo_koid = 1000;
 const uint64_t vmo_size = 10000;
@@ -99,7 +99,7 @@ TEST_F(CaptureUnitTest, KMEM) {
   Capture c;
   auto ret = TestUtils::GetCapture(&c, CaptureLevel::KMEM,
                                    {
-                                       .get_info = {self_info, kmem_info},
+                                       .get_info = {self_info, kmem_info, kmem_compression_info},
                                    });
   EXPECT_EQ(ZX_OK, ret);
   const auto& got_kmem = c.kmem();
@@ -109,10 +109,11 @@ TEST_F(CaptureUnitTest, KMEM) {
 TEST_F(CaptureUnitTest, Process) {
   // Process and VMO need to capture the same info.
   Capture c;
-  auto ret = TestUtils::GetCapture(&c, CaptureLevel::VMO,
-                                   {.get_processes = {ZX_OK, {proc_cb}},
-                                    .get_property = {proc_prop},
-                                    .get_info = {self_info, kmem_info, vmos_info, vmos_info}});
+  auto ret = TestUtils::GetCapture(
+      &c, CaptureLevel::VMO,
+      {.get_processes = {ZX_OK, {proc_cb}},
+       .get_property = {proc_prop},
+       .get_info = {self_info, kmem_info, kmem_compression_info, vmos_info, vmos_info}});
   EXPECT_EQ(ZX_OK, ret);
   EXPECT_EQ(1U, c.koid_to_process().size());
   const auto& process = c.process_for_koid(proc_koid);
@@ -128,10 +129,11 @@ TEST_F(CaptureUnitTest, Process) {
 
 TEST_F(CaptureUnitTest, VMO) {
   Capture c;
-  auto ret = TestUtils::GetCapture(&c, CaptureLevel::VMO,
-                                   {.get_processes = {ZX_OK, {proc_cb}},
-                                    .get_property = {proc_prop},
-                                    .get_info = {self_info, kmem_info, vmos_info, vmos_info}});
+  auto ret = TestUtils::GetCapture(
+      &c, CaptureLevel::VMO,
+      {.get_processes = {ZX_OK, {proc_cb}},
+       .get_property = {proc_prop},
+       .get_info = {self_info, kmem_info, kmem_compression_info, vmos_info, vmos_info}});
   EXPECT_EQ(ZX_OK, ret);
   EXPECT_EQ(1U, c.koid_to_process().size());
   const auto& process = c.process_for_koid(proc_koid);
@@ -155,6 +157,7 @@ TEST_F(CaptureUnitTest, VMODouble) {
                                            {
                                                self_info,
                                                kmem_info,
+                                               kmem_compression_info,
                                                vmos_info,
                                                vmos2_info,
                                            },
@@ -184,11 +187,11 @@ TEST_F(CaptureUnitTest, VMODouble) {
 
 TEST_F(CaptureUnitTest, VMOProcessDuplicate) {
   Capture c;
-  auto ret =
-      TestUtils::GetCapture(&c, CaptureLevel::VMO,
-                            {.get_processes = {ZX_OK, {proc_cb}},
-                             .get_property = {proc_prop},
-                             .get_info = {self_info, kmem_info, vmos_dup_info, vmos_dup_info}});
+  auto ret = TestUtils::GetCapture(
+      &c, CaptureLevel::VMO,
+      {.get_processes = {ZX_OK, {proc_cb}},
+       .get_property = {proc_prop},
+       .get_info = {self_info, kmem_info, kmem_compression_info, vmos_dup_info, vmos_dup_info}});
   EXPECT_EQ(ZX_OK, ret);
   EXPECT_EQ(1U, c.koid_to_process().size());
   const auto& process = c.process_for_koid(proc_koid);
@@ -209,7 +212,7 @@ TEST_F(CaptureUnitTest, ProcessPropBadState) {
       &c, CaptureLevel::PROCESS,
       {.get_processes = {ZX_OK, {proc_cb, proc2_cb}},
        .get_property = {{proc_handle, ZX_PROP_NAME, nullptr, 0, ZX_ERR_BAD_STATE}, proc2_prop},
-       .get_info = {self_info, kmem_info, vmos2_info, vmos2_info}});
+       .get_info = {self_info, kmem_info, kmem_compression_info, vmos2_info, vmos2_info}});
   EXPECT_EQ(ZX_OK, ret);
   EXPECT_EQ(1U, c.koid_to_process().size());
   const auto& process = c.process_for_koid(proc2_koid);
@@ -226,6 +229,7 @@ TEST_F(CaptureUnitTest, VMOCountBadState) {
        .get_property = {proc_prop, proc2_prop},
        .get_info = {self_info,
                     kmem_info,
+                    kmem_compression_info,
                     {proc_handle, ZX_INFO_PROCESS_VMOS, &_vmo, sizeof(_vmo), 1, ZX_ERR_BAD_STATE},
                     vmos2_info}});
   EXPECT_EQ(ZX_OK, ret);
@@ -250,6 +254,7 @@ TEST_F(CaptureUnitTest, VMOGetBadState) {
        .get_property = {proc_prop, proc2_prop},
        .get_info = {self_info,
                     kmem_info,
+                    kmem_compression_info,
                     {proc_handle, ZX_INFO_PROCESS_VMOS, &_vmo, sizeof(_vmo), 1, ZX_ERR_BAD_STATE},
                     vmos2_info}});
   EXPECT_EQ(ZX_OK, ret);
@@ -305,78 +310,53 @@ TEST_F(CaptureUnitTest, VMORootedPartialCommit) {
   EXPECT_EQ(75U, c.vmo_for_koid(3).committed_bytes);
 }
 
-TEST_F(CaptureUnitTest, StarnixVMO) {
+TEST_F(CaptureUnitTest, Compression) {
+  const zx_info_kmem_stats_compression_t _kmem_compression_1 = {
+      .uncompressed_storage_bytes = 500,
+      .compressed_storage_bytes = 100,
+  };
+
+  const GetInfoResponse kmem_compression_info_1 = {TestUtils::kRootHandle,
+                                                   ZX_INFO_KMEM_STATS_COMPRESSION,
+                                                   &_kmem_compression_1,
+                                                   sizeof(_kmem_compression_1),
+                                                   1,
+                                                   ZX_OK};
+
+  const static zx_info_vmo_t _vmo_compressed = {
+      .koid = vmo_koid,
+      .name = "V1",
+      .size_bytes = vmo_size,
+      .populated_bytes = 2 * vmo_size,
+  };
+  const static GetInfoResponse vmos_info_compressed = {
+      proc_handle, ZX_INFO_PROCESS_VMOS, &_vmo_compressed, sizeof(_vmo_compressed), 1, ZX_OK};
+
+  // Process and VMO need to capture the same info.
   Capture c;
-  FilterJobWithProcess filter(proc3_name);
-  auto ret = TestUtils::GetCapture(
-      &c, CaptureLevel::VMO,
-      {.get_processes = {ZX_OK, {proc_cb, proc2_cb, proc3_cb}},
-       .get_property = {proc_prop, proc2_prop, proc3_prop},
-       .get_info = {self_info,
-                    kmem_info,
-                    vmos_info,
-                    vmos2_info,
-                    {proc3_handle, ZX_INFO_PROCESS_VMOS, &_vmo2, sizeof(_vmo2), 1, ZX_OK}}},
-      &filter);
+  auto ret = TestUtils::GetCapture(&c, CaptureLevel::VMO,
+                                   {.get_processes = {ZX_OK, {proc_cb}},
+                                    .get_property = {proc_prop},
+                                    .get_info = {self_info, kmem_info, kmem_compression_info_1,
+                                                 vmos_info_compressed, vmos_info_compressed}});
   EXPECT_EQ(ZX_OK, ret);
-  EXPECT_EQ(2U, c.koid_to_process().size());
-  EXPECT_EQ(2U, c.koid_to_vmo().size());
+
+  EXPECT_EQ(_kmem_compression_1.uncompressed_storage_bytes,
+            c.kmem_compression().uncompressed_storage_bytes);
+  EXPECT_EQ(_kmem_compression_1.compressed_storage_bytes,
+            c.kmem_compression().compressed_storage_bytes);
+
+  EXPECT_EQ(1U, c.koid_to_process().size());
   const auto& process = c.process_for_koid(proc_koid);
   EXPECT_EQ(proc_koid, process.koid);
   EXPECT_STREQ(proc_name, process.name);
   EXPECT_EQ(1U, process.vmos.size());
+  EXPECT_EQ(1U, c.koid_to_vmo().size());
   EXPECT_EQ(vmo_koid, process.vmos[0]);
   const auto& vmo = c.vmo_for_koid(vmo_koid);
   EXPECT_EQ(vmo_koid, vmo.koid);
   EXPECT_STREQ(vmo_name, vmo.name);
-
-  const auto& process3 = c.process_for_koid(proc3_koid);
-  EXPECT_EQ(proc3_koid, process3.koid);
-  EXPECT_STREQ(proc3_name, process3.name);
-  EXPECT_EQ(1U, process3.vmos.size());
-  EXPECT_EQ(vmo2_koid, process3.vmos[0]);
-  const auto& vmo2 = c.vmo_for_koid(vmo2_koid);
-  EXPECT_EQ(vmo2_koid, vmo2.koid);
-  EXPECT_STREQ(vmo2_name, vmo2.name);
-}
-
-TEST_F(CaptureUnitTest, StarnixVMOIncludeStarnix) {
-  Capture c;
-  auto ret = TestUtils::GetCapture(
-      &c, CaptureLevel::VMO,
-      {.get_processes = {ZX_OK, {proc_cb, proc2_cb, proc3_cb}},
-       .get_property = {proc_prop, proc2_prop, proc3_prop},
-       .get_info = {self_info,
-                    kmem_info,
-                    vmos_info,
-                    vmos2_info,
-                    {proc3_handle, ZX_INFO_PROCESS_VMOS, &_vmo, sizeof(_vmo), 1, ZX_OK}}});
-  EXPECT_EQ(ZX_OK, ret);
-  EXPECT_EQ(3U, c.koid_to_process().size());
-  EXPECT_EQ(2U, c.koid_to_vmo().size());
-  const auto& process = c.process_for_koid(proc_koid);
-  EXPECT_EQ(proc_koid, process.koid);
-  EXPECT_STREQ(proc_name, process.name);
-  EXPECT_EQ(1U, process.vmos.size());
-  EXPECT_EQ(vmo_koid, process.vmos[0]);
-  const auto& vmo = c.vmo_for_koid(vmo_koid);
-  EXPECT_EQ(vmo_koid, vmo.koid);
-  EXPECT_STREQ(vmo_name, vmo.name);
-
-  const auto& process2 = c.process_for_koid(proc2_koid);
-  EXPECT_EQ(proc2_koid, process2.koid);
-  EXPECT_STREQ(proc2_name, process2.name);
-  EXPECT_EQ(1U, process2.vmos.size());
-  EXPECT_EQ(vmo2_koid, process2.vmos[0]);
-  const auto& vmo2 = c.vmo_for_koid(vmo2_koid);
-  EXPECT_EQ(vmo2_koid, vmo2.koid);
-  EXPECT_STREQ(vmo2_name, vmo2.name);
-
-  const auto& process3 = c.process_for_koid(proc3_koid);
-  EXPECT_EQ(proc3_koid, process3.koid);
-  EXPECT_STREQ(proc3_name, process3.name);
-  EXPECT_EQ(1U, process3.vmos.size());
-  EXPECT_EQ(vmo_koid, process3.vmos[0]);
+  EXPECT_EQ(2 * vmo_size, vmo.populated_bytes);
 }
 
 }  // namespace test

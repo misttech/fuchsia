@@ -25,8 +25,9 @@ use {
     fidl::endpoints::{create_proxy, ClientEnd},
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
     fidl_fuchsia_component_resolution::ResolverProxy,
-    fidl_fuchsia_diagnostics as fdiagnostics, fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys,
-    fidl_fuchsia_test as ftest, fidl_fuchsia_test_manager as ftest_manager,
+    fidl_fuchsia_diagnostics as fdiagnostics, fidl_fuchsia_diagnostics_host as fhost,
+    fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys, fidl_fuchsia_test as ftest,
+    fidl_fuchsia_test_manager as ftest_manager,
     ftest::Invocation,
     ftest_manager::{CaseStatus, LaunchError, SuiteEvent as FidlSuiteEvent, SuiteStatus},
     fuchsia_async::{self as fasync, TimeoutExt},
@@ -48,6 +49,7 @@ use {
     resolver::AllowedPackages,
     std::{
         collections::HashSet,
+        fmt,
         sync::{
             atomic::{AtomicU32, Ordering},
             Arc,
@@ -177,12 +179,9 @@ impl RunningSuite {
         debug!("running test suite {}", test_url);
 
         let (log_iterator, syslog) = match options.log_iterator {
-            Some(ftest_manager::LogsIteratorOption::ArchiveIterator) => {
-                let (proxy, request) = fidl::endpoints::create_endpoints();
-                (
-                    ftest_manager::LogsIterator::Archive(request),
-                    ftest_manager::Syslog::Archive(proxy),
-                )
+            Some(ftest_manager::LogsIteratorOption::SocketBatchIterator) => {
+                let (local, remote) = fuchsia_zircon::Socket::create_stream();
+                (ftest_manager::LogsIterator::Stream(local), ftest_manager::Syslog::Stream(remote))
             }
             _ => {
                 let (proxy, request) = fidl::endpoints::create_endpoints();
@@ -233,8 +232,23 @@ impl RunningSuite {
                 return;
             }
         };
+        let host_archive_accessor = match self
+            .instance
+            .root
+            .connect_to_protocol_at_exposed_dir::<fhost::ArchiveAccessorMarker>()
+        {
+            Ok(accessor) => accessor,
+            Err(e) => {
+                warn!("Error connecting to ArchiveAccessor");
+                sender
+                    .send(Err(LaunchTestError::ConnectToArchiveAccessor(e.into()).into()))
+                    .await
+                    .unwrap();
+                return;
+            }
+        };
 
-        match diagnostics::serve_syslog(archive_accessor, log_iterator) {
+        match diagnostics::serve_syslog(archive_accessor, host_archive_accessor, log_iterator) {
             Ok(diagnostics::ServeSyslogOutcome {
                 logs_iterator_task,
                 archivist_responding_task,
@@ -542,12 +556,20 @@ pub(crate) async fn enumerate_test_cases(
     Ok(invocations)
 }
 
-#[derive(Debug)]
 pub(crate) struct CaseMatcher {
     /// Patterns specifying cases to include.
     includes: Vec<glob::Pattern>,
     /// Patterns specifying cases to exclude.
     excludes: Vec<glob::Pattern>,
+}
+
+impl fmt::Debug for CaseMatcher {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CaseMatcher")
+            .field("includes", &self.includes.iter().map(|p| p.to_string()).collect::<Vec<_>>())
+            .field("excludes", &self.excludes.iter().map(|p| p.to_string()).collect::<Vec<_>>())
+            .finish()
+    }
 }
 
 impl CaseMatcher {
@@ -662,6 +684,7 @@ async fn get_realm(
     debug_data_decl.exposes.push(cm_rust::ExposeDecl::Protocol(cm_rust::ExposeProtocolDecl {
         source: cm_rust::ExposeSource::Self_,
         source_name: "fuchsia.debugdata.Publisher".parse().unwrap(),
+        source_dictionary: None,
         target: cm_rust::ExposeTarget::Parent,
         target_name: "fuchsia.debugdata.Publisher".parse().unwrap(),
         availability: cm_rust::Availability::Required,
@@ -679,6 +702,7 @@ async fn get_realm(
         cm_rust::ExposeResolverDecl {
             source: cm_rust::ExposeSource::Self_,
             source_name: HERMETIC_RESOLVER_CAPABILITY_NAME.parse().unwrap(),
+            source_dictionary: None,
             target: cm_rust::ExposeTarget::Parent,
             target_name: HERMETIC_RESOLVER_CAPABILITY_NAME.parse().unwrap(),
         },
@@ -801,6 +825,18 @@ async fn get_realm(
     wrapper_realm
         .add_route(
             Route::new()
+                .capability(Capability::protocol::<
+                    fidl_fuchsia_diagnostics_host::ArchiveAccessorMarker,
+                >())
+                .from(&archivist)
+                .to(Ref::parent())
+                .to(test_root.clone()),
+        )
+        .await?;
+
+    wrapper_realm
+        .add_route(
+            Route::new()
                 .capability(Capability::protocol::<fdiagnostics::LogSettingsMarker>())
                 .from(&archivist)
                 .to(Ref::parent()),
@@ -856,6 +892,9 @@ async fn get_realm(
             Route::new()
                 // from archivist
                 .capability(Capability::protocol::<fdiagnostics::ArchiveAccessorMarker>())
+                .capability(Capability::protocol::<
+                    fidl_fuchsia_diagnostics_host::ArchiveAccessorMarker,
+                >())
                 .capability(Capability::protocol::<fdiagnostics::LogSettingsMarker>())
                 // from test root
                 .capability(Capability::protocol::<ftest::SuiteMarker>())

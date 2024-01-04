@@ -16,13 +16,13 @@ use explicit::{PollExt as _, ResultExt as _};
 use fidl_fuchsia_hardware_network as netdev;
 use fidl_table_validation::ValidFidlTable;
 use fuchsia_async as fasync;
+use fuchsia_sync::Mutex;
 use fuchsia_zircon as zx;
 use futures::{
     future::{poll_fn, Future},
     ready,
     task::{Context, Poll},
 };
-use parking_lot::Mutex;
 
 use crate::error::{Error, Result};
 pub use buffer::Buffer;
@@ -625,7 +625,7 @@ mod tests {
     use fuchsia_async::Fifo;
     use fuchsia_zircon::{AsHandleRef as _, HandleBased as _};
     use test_case::test_case;
-    use zerocopy::{AsBytes, FromBytes};
+    use zerocopy::{AsBytes, FromBytes, NoCell};
 
     use super::{
         buffer::{
@@ -778,7 +778,7 @@ mod tests {
         (Fifo::from_fifo(handle).unwrap(), other_end)
     }
 
-    fn remove_rights<T: FromBytes + AsBytes>(
+    fn remove_rights<T: FromBytes + AsBytes + NoCell>(
         fifo: Fifo<T>,
         rights_to_remove: fuchsia_zircon::Rights,
     ) -> Fifo<T> {

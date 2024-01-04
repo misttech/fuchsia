@@ -3,19 +3,22 @@
 // found in the LICENSE file.
 
 use {
-    crate::{
-        capability_source::CapabilitySource,
-        component_instance::ComponentInstanceInterface,
-        config::{
-            AllowlistEntry, AllowlistMatcher, CapabilityAllowlistKey, CapabilityAllowlistSource,
-            DebugCapabilityKey, SecurityPolicy,
-        },
+    crate::{capability_source::CapabilitySource, component_instance::ComponentInstanceInterface},
+    cm_config::{
+        AllowlistEntry, AllowlistMatcher, CapabilityAllowlistKey, CapabilityAllowlistSource,
+        DebugCapabilityKey, SecurityPolicy,
     },
     fuchsia_zircon_status as zx,
-    moniker::{ChildNameBase, ExtendedMoniker, Moniker, MonikerBase},
+    moniker::{ExtendedMoniker, Moniker, MonikerBase},
     std::sync::Arc,
     thiserror::Error,
     tracing::{error, warn},
+};
+
+#[cfg(target_os = "fuchsia")]
+use {
+    crate::component_instance::WeakComponentInstanceInterface,
+    crate::router::{Completer, Request, Routable, Router},
 };
 
 #[cfg(feature = "serde")]
@@ -90,18 +93,15 @@ impl GlobalPolicyChecker {
                 source: CapabilityAllowlistSource::Self_,
                 capability: capability.type_name(),
             },
-            CapabilitySource::Component { capability, component }
-            | CapabilitySource::FilteredService { capability, component, .. } => {
-                CapabilityAllowlistKey {
-                    source_moniker: ExtendedMoniker::ComponentInstance(component.moniker.clone()),
-                    source_name: capability
-                        .source_name()
-                        .ok_or(PolicyError::InvalidCapabilitySource)?
-                        .clone(),
-                    source: CapabilityAllowlistSource::Self_,
-                    capability: capability.type_name(),
-                }
-            }
+            CapabilitySource::Component { capability, component } => CapabilityAllowlistKey {
+                source_moniker: ExtendedMoniker::ComponentInstance(component.moniker.clone()),
+                source_name: capability
+                    .source_name()
+                    .ok_or(PolicyError::InvalidCapabilitySource)?
+                    .clone(),
+                source: CapabilityAllowlistSource::Self_,
+                capability: capability.type_name(),
+            },
             CapabilitySource::Builtin { capability, .. } => CapabilityAllowlistKey {
                 source_moniker: ExtendedMoniker::ComponentManager,
                 source_name: capability.source_name().clone(),
@@ -112,6 +112,12 @@ impl GlobalPolicyChecker {
                 source_moniker: ExtendedMoniker::ComponentInstance(component.moniker.clone()),
                 source_name: capability.source_name().clone(),
                 source: CapabilityAllowlistSource::Framework,
+                capability: capability.type_name(),
+            },
+            CapabilitySource::Void { capability, component } => CapabilityAllowlistKey {
+                source_moniker: ExtendedMoniker::ComponentInstance(component.moniker.clone()),
+                source_name: capability.source_name().clone(),
+                source: CapabilityAllowlistSource::Void,
                 capability: capability.type_name(),
             },
             CapabilitySource::Capability { source_capability, component } => {
@@ -125,8 +131,8 @@ impl GlobalPolicyChecker {
                     capability: source_capability.type_name(),
                 }
             }
-            CapabilitySource::CollectionAggregate { capability, component, .. }
-            | CapabilitySource::OfferAggregate { capability, component, .. } => {
+            CapabilitySource::AnonymizedAggregate { capability, component, .. }
+            | CapabilitySource::FilteredAggregate { capability, component, .. } => {
                 CapabilityAllowlistKey {
                     source_moniker: ExtendedMoniker::ComponentInstance(component.moniker.clone()),
                     source_name: capability.source_name().clone(),
@@ -134,6 +140,15 @@ impl GlobalPolicyChecker {
                     capability: capability.type_name(),
                 }
             }
+            CapabilitySource::Environment { capability, .. } => CapabilityAllowlistKey {
+                source_moniker: ExtendedMoniker::ComponentManager,
+                source_name: capability
+                    .source_name()
+                    .ok_or(PolicyError::InvalidCapabilitySource)?
+                    .clone(),
+                source: CapabilityAllowlistSource::Environment,
+                capability: capability.type_name(),
+            },
         })
     }
 
@@ -168,7 +183,7 @@ impl GlobalPolicyChecker {
                 }
 
                 // Otherwise linear search for any non-exact matches.
-                if entries.iter().any(|entry| allowlist_entry_matches(entry, &target_moniker)) {
+                if entries.iter().any(|entry| entry.matches(&target_moniker)) {
                     Ok(())
                 } else {
                     warn!(
@@ -238,7 +253,7 @@ impl GlobalPolicyChecker {
             .child_policy
             .reboot_on_terminate
             .iter()
-            .any(|entry| allowlist_entry_matches(entry, &target_moniker))
+            .any(|entry| entry.matches(&target_moniker))
             .then(|| ())
             .ok_or_else(|| PolicyError::ChildPolicyDisallowed {
                 policy: "reboot_on_terminate".to_owned(),
@@ -247,77 +262,9 @@ impl GlobalPolicyChecker {
     }
 }
 
-pub(crate) fn allowlist_entry_matches(
-    allowlist_entry: &AllowlistEntry,
-    target_moniker: &Moniker,
-) -> bool {
-    let mut iter = target_moniker.path().iter();
-
-    if allowlist_entry.matchers.is_empty() && !target_moniker.is_root() {
-        // If there are no matchers in the allowlist, the moniker must be the root.
-        // Anything else will not match.
-        return false;
-    }
-
-    for matcher in &allowlist_entry.matchers {
-        let cur_child = if let Some(target_child) = iter.next() {
-            target_child
-        } else {
-            // We have more matchers, but the moniker has already ended.
-            return false;
-        };
-        match matcher {
-            AllowlistMatcher::Exact(child) => {
-                if cur_child != child {
-                    // The child does not exactly match.
-                    return false;
-                }
-            }
-            // Any child is acceptable. Continue with remaining matchers.
-            AllowlistMatcher::AnyChild => continue,
-            // Any descendant at this point is acceptable.
-            AllowlistMatcher::AnyDescendant => return true,
-            AllowlistMatcher::AnyDescendantInCollection(expected_collection) => {
-                if let Some(collection) = cur_child.collection() {
-                    if collection == expected_collection {
-                        // This child is in a collection and the name matches.
-                        // Because we allow any descendant, return true immediately.
-                        return true;
-                    } else {
-                        // This child is in a collection but the name does not match.
-                        return false;
-                    }
-                } else {
-                    // This child is not in a collection, so it does not match.
-                    return false;
-                }
-            }
-            AllowlistMatcher::AnyChildInCollection(expected_collection) => {
-                if let Some(collection) = cur_child.collection() {
-                    if collection != expected_collection {
-                        // This child is in a collection but the name does not match.
-                        return false;
-                    }
-                } else {
-                    // This child is not in a collection, so it does not match.
-                    return false;
-                }
-            }
-        }
-    }
-
-    if iter.next().is_some() {
-        // We've gone through all the matchers, but there are still children
-        // in the moniker. Descendant cases are already handled above, so this
-        // must be a failure to match.
-        false
-    } else {
-        true
-    }
-}
-
 /// Evaluates security policy relative to a specific Component (based on that Component's
 /// Moniker).
+#[derive(Clone)]
 pub struct ScopedPolicyChecker {
     /// The security policy to apply.
     policy: Arc<SecurityPolicy>,
@@ -339,7 +286,7 @@ impl ScopedPolicyChecker {
             .job_policy
             .ambient_mark_vmo_exec
             .iter()
-            .any(|entry| allowlist_entry_matches(entry, &self.scope))
+            .any(|entry| entry.matches(&self.scope))
             .then(|| ())
             .ok_or_else(|| PolicyError::JobPolicyDisallowed {
                 policy: "ambient_mark_vmo_exec".to_owned(),
@@ -352,7 +299,7 @@ impl ScopedPolicyChecker {
             .job_policy
             .main_process_critical
             .iter()
-            .any(|entry| allowlist_entry_matches(entry, &self.scope))
+            .any(|entry| entry.matches(&self.scope))
             .then(|| ())
             .ok_or_else(|| PolicyError::JobPolicyDisallowed {
                 policy: "main_process_critical".to_owned(),
@@ -365,7 +312,7 @@ impl ScopedPolicyChecker {
             .job_policy
             .create_raw_processes
             .iter()
-            .any(|entry| allowlist_entry_matches(entry, &self.scope))
+            .any(|entry| entry.matches(&self.scope))
             .then(|| ())
             .ok_or_else(|| PolicyError::JobPolicyDisallowed {
                 policy: "create_raw_processes".to_owned(),
@@ -374,99 +321,49 @@ impl ScopedPolicyChecker {
     }
 }
 
+#[cfg(target_os = "fuchsia")]
+pub struct PolicyCheckRouter<C: ComponentInstanceInterface> {
+    capability_source: CapabilitySource<C>,
+    policy_checker: GlobalPolicyChecker,
+    router: Router,
+}
+
+#[cfg(target_os = "fuchsia")]
+impl<C: ComponentInstanceInterface> PolicyCheckRouter<C> {
+    pub fn new(
+        capability_source: CapabilitySource<C>,
+        policy_checker: GlobalPolicyChecker,
+        router: Router,
+    ) -> Self {
+        PolicyCheckRouter { capability_source, policy_checker, router }
+    }
+}
+
+#[cfg(target_os = "fuchsia")]
+impl<C> Routable for PolicyCheckRouter<C>
+where
+    C: ComponentInstanceInterface + 'static,
+{
+    fn route(&self, request: Request, completer: Completer) {
+        let target: WeakComponentInstanceInterface<C> = request.target.unwrap();
+        match self.policy_checker.can_route_capability(&self.capability_source, &target.moniker) {
+            Ok(()) => self.router.route(request, completer),
+            Err(policy_error) => completer.complete(Err(policy_error.into())),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use {
         super::*,
-        crate::config::{
+        assert_matches::assert_matches,
+        cm_config::{
             AllowlistEntryBuilder, ChildPolicyAllowlists, JobPolicyAllowlists, SecurityPolicy,
         },
-        assert_matches::assert_matches,
         moniker::{ChildName, Moniker, MonikerBase},
         std::collections::HashMap,
     };
-
-    #[test]
-    fn allowlist_entry_checker() {
-        let root = Moniker::root();
-        let allowed = Moniker::try_from(vec!["foo", "bar"]).unwrap();
-        let disallowed_child_of_allowed = Moniker::try_from(vec!["foo", "bar", "baz"]).unwrap();
-        let disallowed = Moniker::try_from(vec!["baz", "fiz"]).unwrap();
-        let allowlist_exact = AllowlistEntryBuilder::new().exact_from_moniker(&allowed).build();
-        assert!(allowlist_entry_matches(&allowlist_exact, &allowed));
-        assert!(!allowlist_entry_matches(&allowlist_exact, &root));
-        assert!(!allowlist_entry_matches(&allowlist_exact, &disallowed));
-        assert!(!allowlist_entry_matches(&allowlist_exact, &disallowed_child_of_allowed));
-
-        let allowed_realm_root = Moniker::try_from(vec!["qux"]).unwrap();
-        let allowed_child_of_realm = Moniker::try_from(vec!["qux", "quux"]).unwrap();
-        let allowed_nested_child_of_realm = Moniker::try_from(vec!["qux", "quux", "foo"]).unwrap();
-        let allowlist_realm =
-            AllowlistEntryBuilder::new().exact_from_moniker(&allowed_realm_root).any_descendant();
-        assert!(!allowlist_entry_matches(&allowlist_realm, &allowed_realm_root));
-        assert!(allowlist_entry_matches(&allowlist_realm, &allowed_child_of_realm));
-        assert!(allowlist_entry_matches(&allowlist_realm, &allowed_nested_child_of_realm));
-        assert!(!allowlist_entry_matches(&allowlist_realm, &disallowed));
-        assert!(!allowlist_entry_matches(&allowlist_realm, &root));
-
-        let collection_holder = Moniker::try_from(vec!["corge"]).unwrap();
-        let collection_child = Moniker::try_from(vec!["corge", "collection:child"]).unwrap();
-        let collection_nested_child =
-            Moniker::try_from(vec!["corge", "collection:child", "inner-child"]).unwrap();
-        let non_collection_child = Moniker::try_from(vec!["corge", "grault"]).unwrap();
-        let allowlist_collection = AllowlistEntryBuilder::new()
-            .exact_from_moniker(&collection_holder)
-            .any_descendant_in_collection("collection");
-        assert!(!allowlist_entry_matches(&allowlist_collection, &collection_holder));
-        assert!(allowlist_entry_matches(&allowlist_collection, &collection_child));
-        assert!(allowlist_entry_matches(&allowlist_collection, &collection_nested_child));
-        assert!(!allowlist_entry_matches(&allowlist_collection, &non_collection_child));
-        assert!(!allowlist_entry_matches(&allowlist_collection, &disallowed));
-        assert!(!allowlist_entry_matches(&allowlist_collection, &root));
-
-        let collection_a = Moniker::try_from(vec!["foo", "bar:a", "baz", "qux"]).unwrap();
-        let collection_b = Moniker::try_from(vec!["foo", "bar:b", "baz", "qux"]).unwrap();
-        let parent_not_allowed = Moniker::try_from(vec!["foo", "bar:b", "baz"]).unwrap();
-        let collection_not_allowed = Moniker::try_from(vec!["foo", "bar:b", "baz"]).unwrap();
-        let different_collection_not_allowed =
-            Moniker::try_from(vec!["foo", "test:b", "baz", "qux"]).unwrap();
-        let allowlist_exact_in_collection = AllowlistEntryBuilder::new()
-            .exact("foo")
-            .any_child_in_collection("bar")
-            .exact("baz")
-            .exact("qux")
-            .build();
-        assert!(allowlist_entry_matches(&allowlist_exact_in_collection, &collection_a));
-        assert!(allowlist_entry_matches(&allowlist_exact_in_collection, &collection_b));
-        assert!(!allowlist_entry_matches(&allowlist_exact_in_collection, &parent_not_allowed));
-        assert!(!allowlist_entry_matches(&allowlist_exact_in_collection, &collection_not_allowed));
-        assert!(!allowlist_entry_matches(
-            &allowlist_exact_in_collection,
-            &different_collection_not_allowed
-        ));
-
-        let any_child_allowlist = AllowlistEntryBuilder::new().exact("core").any_child().build();
-        let allowed = Moniker::try_from(vec!["core", "abc"]).unwrap();
-        let disallowed_1 = Moniker::try_from(vec!["not_core", "abc"]).unwrap();
-        let disallowed_2 = Moniker::try_from(vec!["core", "abc", "def"]).unwrap();
-        assert!(allowlist_entry_matches(&any_child_allowlist, &allowed));
-        assert!(!allowlist_entry_matches(&any_child_allowlist, &disallowed_1));
-        assert!(!allowlist_entry_matches(&any_child_allowlist, &disallowed_2));
-
-        let multiwildcard_allowlist = AllowlistEntryBuilder::new()
-            .exact("core")
-            .any_child()
-            .any_child_in_collection("foo")
-            .any_descendant();
-        let allowed = Moniker::try_from(vec!["core", "abc", "foo:def", "ghi"]).unwrap();
-        let disallowed_1 = Moniker::try_from(vec!["not_core", "abc", "foo:def", "ghi"]).unwrap();
-        let disallowed_2 = Moniker::try_from(vec!["core", "abc", "not_foo:def", "ghi"]).unwrap();
-        let disallowed_3 = Moniker::try_from(vec!["core", "abc", "foo:def"]).unwrap();
-        assert!(allowlist_entry_matches(&multiwildcard_allowlist, &allowed));
-        assert!(!allowlist_entry_matches(&multiwildcard_allowlist, &disallowed_1));
-        assert!(!allowlist_entry_matches(&multiwildcard_allowlist, &disallowed_2));
-        assert!(!allowlist_entry_matches(&multiwildcard_allowlist, &disallowed_3));
-    }
 
     #[test]
     fn scoped_policy_checker_vmex() {

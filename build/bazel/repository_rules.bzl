@@ -7,8 +7,6 @@ A set of repository rules used by the Bazel workspace for the Fuchsia
 platform build.
 """
 
-load("//:build/bazel/repository_utils.bzl", "workspace_root_path")
-
 def _ninja_target_from_gn_label(gn_label):
     """Convert a GN label into an equivalent Ninja target name"""
 
@@ -117,7 +115,7 @@ bazel_inputs_repository = repository_rule(
 
 def _googletest_repository_impl(repo_ctx):
     """Create a @com_google_googletest repository that supports Fuchsia."""
-    workspace_dir = str(workspace_root_path(repo_ctx))
+    workspace_dir = str(repo_ctx.workspace_root)
 
     # IMPORTANT: keep this function in sync with the computation of
     # generated_repository_inputs['com_google_googletest'] in

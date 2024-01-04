@@ -14,40 +14,37 @@ class GcManager {
   GcManager(GcManager &&) = delete;
   GcManager &operator=(GcManager &&) = delete;
   GcManager() = delete;
-  GcManager(F2fs *fs) : fs_(fs), cur_victim_sec_(kNullSecNo) {}
+  GcManager(F2fs *fs);
 
-  zx::result<uint32_t> F2fsGc() __TA_EXCLUDES(gc_mutex_);
+  zx::result<uint32_t> Run() __TA_EXCLUDES(f2fs::GetGlobalLock());
 
   // For testing
   void DisableFgGc() { disable_gc_for_test_ = true; }
   void EnableFgGc() { disable_gc_for_test_ = false; }
 
-  void SetCurVictimSec(uint32_t secno) { cur_victim_sec_ = secno; }
-  uint32_t GetCurVictimSec() const { return cur_victim_sec_; }
-
  private:
   friend class GcTester;
-  zx::result<uint32_t> GetGcVictim(GcType gc_type, CursegType type) __TA_REQUIRES(gc_mutex_);
-  zx_status_t DoGarbageCollect(uint32_t segno, GcType gc_type) __TA_REQUIRES(gc_mutex_);
+  zx_status_t DoGarbageCollect(uint32_t segno, GcType gc_type) __TA_REQUIRES(f2fs::GetGlobalLock());
 
-  bool CheckValidMap(uint32_t segno, uint64_t offset) __TA_REQUIRES(gc_mutex_);
   zx_status_t GcNodeSegment(const SummaryBlock &sum_blk, uint32_t segno, GcType gc_type)
-      __TA_REQUIRES(gc_mutex_);
+      __TA_REQUIRES(f2fs::GetGlobalLock());
 
   // CheckDnode() returns ino of target block and start block index of the target block's dnode
   // block. It also checks the validity of summary.
-  zx::result<std::pair<nid_t, block_t>> CheckDnode(const Summary &sum, block_t blkaddr)
-      __TA_REQUIRES(gc_mutex_);
+  zx::result<std::pair<nid_t, block_t>> CheckDnode(const Summary &sum, block_t blkaddr);
   zx_status_t GcDataSegment(const SummaryBlock &sum_blk, unsigned int segno, GcType gc_type)
-      __TA_REQUIRES(gc_mutex_);
+      __TA_REQUIRES(f2fs::GetGlobalLock());
 
   F2fs *fs_ = nullptr;
-  std::mutex gc_mutex_;      // mutex for GC
-  uint32_t cur_victim_sec_;  // current victim section num
+  SuperblockInfo &superblock_info_;
+  uint32_t cur_victim_sec_ = kNullSecNo;  // current victim section num
+  std::binary_semaphore run_{1};
+  SegmentManager &segment_manager_;
 
   // For testing
   bool disable_gc_for_test_ = false;
 };
+
 }  // namespace f2fs
 
 #endif  // SRC_STORAGE_F2FS_GC_H_

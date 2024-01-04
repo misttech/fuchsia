@@ -5,16 +5,6 @@
         moniker: "bootstrap/archivist",
     },
     {
-        id: 102,
-        label: "Accessibility Manager",
-        moniker: "a11y-manager.cmx",
-    },
-    {
-        id: 103,
-        label: "Audio Core",
-        moniker: "audio_core.cmx",
-    },
-    {
         id: 104,
         label: "Driver Manager",
         moniker: "bootstrap/driver_manager",
@@ -33,11 +23,6 @@
         id: 107,
         label: "Cobalt Sys Metrics",
         moniker: "core/cobalt_system_metrics",
-    },
-    {
-        id: 108,
-        label: "App Manager",
-        moniker: "core/appmgr",
     },
     {
         id: 109,
@@ -155,59 +140,14 @@
         moniker: "core/wlanstack",
     },
     {
-        id: 133,
-        label: "DateTime Source",
-        moniker: "httpsdate_time_source.cmx",
-    },
-    {
-        id: 134,
-        label: "Reachability",
-        moniker: "reachability.cmx",
-    },
-    {
-        id: 135,
-        label: "Scenic",
-        moniker: "scenic.cmx",
-    },
-    {
-        id: 136,
-        label: "Timekeeper",
-        moniker: "timekeeper.cmx",
-    },
-    {
         id: 137,
         label: "CPU Perf Provider",
         moniker: "core/trace_manager/cpuperf_provider",
     },
     {
-        id: 138,
-        label: "Internationalization Services",
-        moniker: "intl_services.cmx",
-    },
-    {
         id: 139,
         label: "KTrace Provider",
         moniker: "core/trace_manager/ktrace_provider",
-    },
-    {
-        id: 140,
-        label: "Overnet",
-        moniker: "overnetstack.cmx",
-    },
-    {
-        id: 141,
-        label: "SSHD Host",
-        moniker: "sshd-host.cmx",
-    },
-    {
-        id: 142,
-        label: "Text Manager",
-        moniker: "text_manager.cmx",
-    },
-    {
-        id: 143,
-        label: "Trace Manager",
-        moniker: "trace_manager.cmx",
     },
     {
         id: 144,
@@ -330,11 +270,6 @@
         moniker: "core/remote-control",
     },
     {
-        id: 168,
-        label: "Diagnostics Bridge",
-        moniker: "core/remote-diagnostics-bridge",
-    },
-    {
         id: 169,
         label: "Session Manager",
         moniker: "core/session-manager",
@@ -343,16 +278,6 @@
         id: 170,
         label: "Sys Memory Connector",
         moniker: "core/sysmem_connector",
-    },
-    {
-        id: 173,
-        label: "Screen Saver",
-        moniker: "screensaver.cmx",
-    },
-    {
-        id: 174,
-        label: "Shortcut Manager",
-        moniker: "shortcut_manager.cmx",
     },
     {
         id: 175,
@@ -395,16 +320,6 @@
         moniker: "core/session-manager/session\:session/scene_manager",
     },
     {
-        id: 184,
-        label: "Base Manager",
-        moniker: "basemgr.cmx",
-    },
-    {
-        id: 185,
-        label: "BT Snoop",
-        moniker: "bt-snoop.cmx",
-    },
-    {
         id: 186,
         label: "BT A2DP",
         moniker: "core/bt-a2dp",
@@ -418,16 +333,6 @@
         id: 188,
         label: "BT HFP Audio",
         moniker: "core/bt-hfp-audio-gateway",
-    },
-    {
-        id: 189,
-        label: "Root Presenter",
-        moniker: "root_presenter.cmx",
-    },
-    {
-        id: 190,
-        label: "Camera Watcher",
-        moniker: "camera_device_watcher.cmx",
     },
     {
         id: 191,
@@ -450,11 +355,6 @@
         moniker: "bootstrap/fshost/blobfs",
     },
     {
-        id: 196,
-        label: "Camera",
-        moniker: "camera_device.cmx",
-    },
-    {
         id: 197,
         label: "BT Gap",
         moniker: "core/bluetooth-core/bt-gap",
@@ -470,39 +370,9 @@
         moniker: "core/weavestack",
     },
     {
-        id: 200,
-        label: "LoWPAN Service",
-        moniker: "lowpanservice.cmx",
-    },
-    {
-        id: 201,
-        label: "Media Session",
-        moniker: "mediasession.cmx",
-    },
-    {
         id: 202,
         label: "Stash 2",
         moniker: "core/stash2",
-    },
-    {
-        id: 203,
-        label: "Session Manager",
-        moniker: "sessionmgr.cmx",
-    },
-    {
-        id: 204,
-        label: "Factory Store Providers",
-        moniker: "factory_store_providers.cmx",
-    },
-    {
-        id: 205,
-        label: "Spinel Driver",
-        moniker: "lowpan-spinel-driver.cmx",
-    },
-    {
-        id: 206,
-        label: "TEE Manager",
-        moniker: "tee_manager.cmx",
     },
     {
         id: 207,
@@ -528,11 +398,6 @@
         id: 211,
         label: "Component Manager",
         moniker: "<component_manager>",
-    },
-    {
-        id: 212,
-        label: "Sys Manager",
-        moniker: "sysmgr.cmx",
     },
     {
         id: 213,
@@ -625,11 +490,6 @@
         moniker: "core/ui/scenic",
     },
     {
-        id: 231,
-        label: "Overnet",
-        moniker: "core/overnetstack",
-    },
-    {
         id: 232,
         label: "Shortcut Manager",
         moniker: "core/ui/shortcut_manager",
@@ -658,5 +518,100 @@
         id: 237,
         label: "Updater",
         moniker: "core/system-update/system-updater",
+    },
+    {
+        id: 238,
+        label: "Decompressor",
+        moniker: "bootstrap/fshost/blobfs/decompressor",
+    },
+    {
+        id: 239,
+        label: "Package Cache",
+        moniker: "bootstrap/pkg-cache",
+    },
+    {
+        id: 240,
+        label: "Font Server",
+        moniker: "core/font_provider/font-server",
+    },
+    {
+        id: 241,
+        label: "Primary Timesource",
+        moniker: "core/timekeeper/timesource:primary",
+    },
+    {
+        id: 242,
+        label: "Text Manager CFv2",
+        moniker: "core/ui/text_manager",
+    },
+    {
+        id: 243,
+        label: "DevFS",
+        moniker: "bootstrap/devfs",
+    },
+    {
+        id: 244,
+        label: "DevFS With Pkg",
+        moniker: "bootstrap/devfs-with-pkg",
+    },
+    {
+        id: 245,
+        label: "MinFS",
+        moniker: "bootstrap/fshost/minfs",
+    },
+    {
+        id: 246,
+        label: "TmpFS",
+        moniker: "bootstrap/fshost/tmpfs",
+    },
+    {
+        id: 247,
+        label: "Camera Device Watcher",
+        moniker: "core/camera_device_watcher",
+    },
+    {
+        id: 248,
+        label: "LoWPAN Monitor",
+        moniker: "core/lowpan-monitor",
+    },
+    {
+        id: 249,
+        label: "LoWPAN OT Driver",
+        moniker: "core/lowpan-ot-driver",
+    },
+    {
+        id: 250,
+        label: "Radar Proxy",
+        moniker: "core/radar-proxy",
+    },
+    {
+        id: 251,
+        label: "Session",
+        moniker: "core/session-manager/session:session",
+    },
+    {
+        id: 252,
+        label: "Storage Cache Manager",
+        moniker: "core/storage_cache_manager",
+    },
+    {
+        id: 253,
+        label: "SysUpdate Config",
+        moniker: "core/system-update/system-update-configurator",
+    },
+    {
+        id: 254,
+        label: "TZ Info Service",
+        moniker: "core/time-zone-info-service",
+    },
+    {
+        id: 255,
+        label: "Display Coordinator",
+        moniker: "core/ui/display-coordinator-connector",
+    },
+    {
+        id: 256,
+        label: "Virtual Keyboard",
+        moniker: "core/ui/virtual_keyboard_manager",
     },
 ]

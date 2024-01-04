@@ -2,14 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from fidl_codec import add_ir_path, method_ordinal, encode_fidl_message, decode_fidl_request
-from pstats import SortKey
 import importlib
-import os
 import unittest
-import cProfile
-import pstats
-import io
+import os
+
+from fidl_codec import decode_fidl_request
+from fidl_codec import encode_fidl_message
+from fidl_codec import method_ordinal
 
 
 class Importing(unittest.TestCase):
@@ -31,10 +30,12 @@ class Importing(unittest.TestCase):
         s = mod.Named(s="foobar")
         self.assertEqual(s.s, "foobar")
         _request = mod.FidlCodecXUnionSendAfterMigrationRequest(
-            u=mod.NowAsXUnion.variant_u8_type(5), i=10)
+            u=mod.NowAsXUnion.variant_u8_type(5), i=10
+        )
         _request2 = mod.FidlCodecTestProtocolStringRequest(s="foobar")
         _request3 = mod.FidlCodecTestProtocolNullableXUnionRequest(
-            isu=None, i=10)
+            isu=None, i=10
+        )
 
     def test_encode_union_request(self):
         mod = importlib.import_module("fidl.test_fidlcodec_examples")
@@ -44,28 +45,17 @@ class Importing(unittest.TestCase):
         (b, h) = encode_fidl_message(
             object=request,
             library="test.fidlcodec.examples",
-            type_name=
-            "test.fidlcodec.examples/FidlCodecTestProtocolNullableXUnionRequest",
+            type_name="test.fidlcodec.examples/FidlCodecTestProtocolNullableXUnionRequest",
             txid=1,
             ordinal=method_ordinal(
                 protocol="test.fidlcodec.examples/FidlCodecTestProtocol",
-                method="NullableXUnion"))
+                method="NullableXUnion",
+            ),
+        )
         msg = decode_fidl_request(bytes=b, handles=h)
         self.assertEqual(msg["isu"]["variant_tss"]["value1"], "foo")
         self.assertEqual(msg["isu"]["variant_tss"]["value2"], "bar")
         self.assertEqual(msg["i"], 10)
-
-    def test_union_repr(self):
-        mod = importlib.import_module("fidl.test_fidlcodec_examples")
-        isu = mod.IntStructXunion()
-        isu.variant_tss = isu.variant_tss_type(value1="foo", value2="bar")
-        self.assertTrue(repr(isu.variant_tss) in repr(isu))
-
-    def test_union_str(self):
-        mod = importlib.import_module("fidl.test_fidlcodec_examples")
-        isu = mod.IntStructXunion()
-        isu.variant_tss = mod.TwoStringStruct(value1="foo", value2="bar")
-        self.assertEqual(str(isu.variant_tss), str(isu))
 
     def test_import_cross_library(self):
         mod = importlib.import_module("fidl.fuchsia_controller_othertest")
@@ -77,16 +67,18 @@ class Importing(unittest.TestCase):
     def test_encode_decode_enum_message(self):
         mod = importlib.import_module("fidl.test_fidlcodec_examples")
         req = mod.FidlCodecTestProtocolDefaultEnumMessageRequest(
-            ev=mod.DefaultEnum.X)
+            ev=mod.DefaultEnum.X
+        )
         (b, h) = encode_fidl_message(
             object=req,
             library="test.fidlcodec.examples",
-            type_name=
-            "test.fidlcodec.examples/FidlCodecTestProtocolDefaultEnumMessageRequest",
+            type_name="test.fidlcodec.examples/FidlCodecTestProtocolDefaultEnumMessageRequest",
             txid=1,
             ordinal=method_ordinal(
                 protocol="test.fidlcodec.examples/FidlCodecTestProtocol",
-                method="DefaultEnumMessage"))
+                method="DefaultEnumMessage",
+            ),
+        )
         msg = decode_fidl_request(bytes=b, handles=h)
         self.assertEqual(msg["ev"], mod.DefaultEnum.X)
 
@@ -107,3 +99,10 @@ class Importing(unittest.TestCase):
         mod = importlib.import_module("fidl.test_fidlcodec_examples")
         alias = mod.HandleAlias
         self.assertTrue(issubclass(alias, int))
+
+    def test_possible_error_method(self):
+        mod = importlib.import_module("fidl.fuchsia_controller_test")
+        # Simply setting this should be enough of a test, as it informs that the type was
+        # constructed properly.
+        res = mod.ComposerThingReturnPossibleErrorResult()
+        res.err = 5

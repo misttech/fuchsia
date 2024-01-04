@@ -109,17 +109,44 @@ use core::{convert::Infallible as Never, marker::PhantomData};
 use lock_order::{impl_lock_after, relation::LockAfter};
 use net_types::ip::{Ipv4, Ipv6};
 
-pub(crate) struct IcmpSockets<I>(PhantomData<I>, Never);
+pub(crate) struct IcmpSocketsTable<I>(PhantomData<I>, Never);
+pub(crate) struct IcmpBoundMap<I>(PhantomData<I>, Never);
+
 pub(crate) struct IcmpTokenBucket<I>(PhantomData<I>, Never);
 pub(crate) struct IcmpSendTimestampReply<I>(PhantomData<I>, Never);
 
-pub(crate) struct TcpSockets<I>(PhantomData<I>, Never);
+pub(crate) struct TcpAllSocketsSet<I>(PhantomData<I>, Never);
+pub(crate) struct TcpSocketState<I>(PhantomData<I>, Never);
+pub(crate) struct TcpDemux<I>(PhantomData<I>, Never);
 pub(crate) struct TcpIsnGenerator<I>(PhantomData<I>, Never);
 
 pub(crate) struct UdpSocketsTable<I>(PhantomData<I>, Never);
 pub(crate) struct UdpBoundMap<I>(PhantomData<I>, Never);
 
 pub(crate) enum Ipv4StateNextPacketId {}
+// Provides unlocked access of IpCounters.
+pub(crate) struct IpStateCounters<I>(PhantomData<I>, Never);
+// Provides unlocked access of Ipv4Counters.
+pub(crate) enum Ipv4StateCounters {}
+// Provides unlocked access of Ipv6Counters.
+pub(crate) enum Ipv6StateCounters {}
+// Provides unlocked access of IcmpTxCounters.
+pub(crate) struct IcmpTxCounters<I>(PhantomData<I>, Never);
+// Provides unlocked access of IcmpRxCounters.
+pub(crate) struct IcmpRxCounters<I>(PhantomData<I>, Never);
+// Provides unlocked access of NdpCounters.
+pub(crate) enum NdpCounters {}
+// Provides unlocked access of TimerCounters.
+#[cfg(test)]
+pub(crate) enum TimerCounters {}
+// Provides unlocked access of DeviceCounters.
+pub(crate) enum DeviceCounters {}
+// Provides unlocked access of ArpCounters.
+pub(crate) enum ArpCounters {}
+// Provides unlocked access of UdpCounters.
+pub(crate) struct UdpCounters<I>(PhantomData<I>, Never);
+// Provides unlocked access of SlaacCounters.
+pub(crate) enum SlaacCounters {}
 
 pub(crate) struct IpDeviceConfiguration<I>(PhantomData<I>, Never);
 pub(crate) struct IpDeviceGmp<I>(PhantomData<I>, Never);
@@ -131,9 +158,10 @@ pub(crate) enum Ipv4DeviceAddressState {}
 
 pub(crate) enum Ipv6DeviceRouterSolicitations {}
 pub(crate) enum Ipv6DeviceRouteDiscovery {}
-pub(crate) enum Ipv6DeviceRetransTimeout {}
+pub(crate) enum Ipv6DeviceLearnedParams {}
 pub(crate) enum Ipv6DeviceAddressDad {}
 pub(crate) enum Ipv6DeviceAddressState {}
+pub(crate) struct NudConfig<I>(PhantomData<I>, Never);
 
 // This is not a real lock level, but it is useful for writing bounds that
 // require "before IPv4" or "before IPv6".
@@ -174,17 +202,24 @@ impl LockAfter<Unlocked> for LoopbackTxDequeue {}
 impl_lock_after!(LoopbackTxDequeue => EthernetTxDequeue);
 impl_lock_after!(EthernetTxDequeue => LoopbackRxDequeue);
 impl_lock_after!(LoopbackRxDequeue => EthernetRxDequeue);
-impl_lock_after!(EthernetRxDequeue => IcmpSockets<Ipv4>);
-impl_lock_after!(IcmpSockets<Ipv4> => IcmpTokenBucket<Ipv4>);
-impl_lock_after!(IcmpTokenBucket<Ipv4> => IcmpSockets<Ipv6>);
-impl_lock_after!(IcmpSockets<Ipv6> => IcmpTokenBucket<Ipv6>);
-impl_lock_after!(IcmpTokenBucket<Ipv6> => TcpSockets<Ipv4>);
+impl_lock_after!(EthernetRxDequeue => IcmpSocketsTable<Ipv4>);
+impl_lock_after!(IcmpSocketsTable<Ipv4> => IcmpBoundMap<Ipv4>);
+impl_lock_after!(IcmpBoundMap<Ipv4> => IcmpTokenBucket<Ipv4>);
+impl_lock_after!(IcmpTokenBucket<Ipv4> => IcmpSocketsTable<Ipv6>);
+impl_lock_after!(IcmpSocketsTable<Ipv6> => IcmpBoundMap<Ipv6>);
+impl_lock_after!(IcmpBoundMap<Ipv6> => IcmpTokenBucket<Ipv6>);
+impl_lock_after!(IcmpTokenBucket<Ipv6> => TcpAllSocketsSet<Ipv4>);
 
-// Ideally we'd have separate impls `LoopbackRxDequeue => TcpSockets<Ipv4>` and
-// for `Ipv6`, but that doesn't play well with the blanket impls. Linearize IPv4
-// and IPv6, and TCP and UDP, like for `IpState` below.
-impl_lock_after!(TcpSockets<Ipv4> => TcpSockets<Ipv6>);
-impl_lock_after!(TcpSockets<Ipv6> => UdpSocketsTable<Ipv4>);
+// Ideally we'd have separate impls `LoopbackRxDequeue =>
+// TcpAllSocketsSet<Ipv4>` and for `Ipv6`, but that doesn't play well with the
+// blanket impls. Linearize IPv4 and IPv6, and TCP and UDP, like for `IpState`
+// below.
+impl_lock_after!(TcpAllSocketsSet<Ipv4> => TcpAllSocketsSet<Ipv6>);
+impl_lock_after!(TcpAllSocketsSet<Ipv6> => TcpSocketState<Ipv4>);
+impl_lock_after!(TcpSocketState<Ipv4> => TcpSocketState<Ipv6>);
+impl_lock_after!(TcpSocketState<Ipv6> => TcpDemux<Ipv4>);
+impl_lock_after!(TcpDemux<Ipv4> => TcpDemux<Ipv6>);
+impl_lock_after!(TcpDemux<Ipv6> => UdpSocketsTable<Ipv4>);
 impl_lock_after!(UdpSocketsTable<Ipv4> => UdpSocketsTable<Ipv6>);
 impl_lock_after!(UdpSocketsTable<Ipv6> => UdpBoundMap<Ipv4>);
 impl_lock_after!(UdpBoundMap<Ipv4> => UdpBoundMap<Ipv6>);
@@ -226,8 +261,10 @@ impl_lock_after!(Ipv6DeviceAddressState => IpDeviceDefaultHopLimit<Ipv4>);
 impl_lock_after!(IpDeviceDefaultHopLimit<Ipv4> => EthernetDeviceIpState<Ipv6>);
 impl_lock_after!(EthernetDeviceIpState<Ipv6> => IpDeviceDefaultHopLimit<Ipv6>);
 impl_lock_after!(IpDeviceDefaultHopLimit<Ipv6> => Ipv6DeviceRouterSolicitations);
-impl_lock_after!(Ipv6DeviceRouterSolicitations => Ipv6DeviceRetransTimeout);
-impl_lock_after!(Ipv6DeviceRetransTimeout => EthernetDeviceDynamicState);
+impl_lock_after!(Ipv6DeviceRouterSolicitations => Ipv6DeviceLearnedParams);
+impl_lock_after!(Ipv6DeviceLearnedParams => NudConfig<Ipv4>);
+impl_lock_after!(NudConfig<Ipv4> => NudConfig<Ipv6>);
+impl_lock_after!(NudConfig<Ipv6> => EthernetDeviceDynamicState);
 impl_lock_after!(EthernetDeviceDynamicState => EthernetTxQueue);
 
 impl_lock_after!(DeviceLayerState => DeviceSockets);

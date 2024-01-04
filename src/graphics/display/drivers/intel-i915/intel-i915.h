@@ -43,6 +43,7 @@
 #include "src/graphics/display/drivers/intel-i915/registers.h"
 #include "src/graphics/display/lib/api-types-cpp/display-id.h"
 #include "src/graphics/display/lib/api-types-cpp/driver-buffer-collection-id.h"
+#include "src/graphics/display/lib/api-types-cpp/driver-image-id.h"
 
 namespace i915 {
 
@@ -97,15 +98,15 @@ class Controller : public DeviceType,
       uint64_t banjo_driver_buffer_collection_id, zx::channel collection_token);
   zx_status_t DisplayControllerImplReleaseBufferCollection(
       uint64_t banjo_driver_buffer_collection_id);
-  zx_status_t DisplayControllerImplImportImage(image_t* image,
+  zx_status_t DisplayControllerImplImportImage(const image_t* image,
                                                uint64_t banjo_driver_buffer_collection_id,
-                                               uint32_t index);
+                                               uint32_t index, uint64_t* out_image_handle);
   zx_status_t DisplayControllerImplImportImageForCapture(uint64_t banjo_driver_buffer_collection_id,
                                                          uint32_t index,
                                                          uint64_t* out_capture_handle) {
     return ZX_ERR_NOT_SUPPORTED;
   }
-  void DisplayControllerImplReleaseImage(image_t* image);
+  void DisplayControllerImplReleaseImage(uint64_t image_handle);
   config_check_result_t DisplayControllerImplCheckConfiguration(
       const display_config_t** display_configs, size_t display_count,
       client_composition_opcode_t* out_client_composition_opcodes_list,
@@ -177,10 +178,9 @@ class Controller : public DeviceType,
 
   void ResetMmioSpaceForTesting() { mmio_space_.reset(); }
 
-  zx_status_t SetAndInitSysmemForTesting(
-      fidl::WireSyncClient<fuchsia_hardware_sysmem::Sysmem> sysmem) {
+  zx_status_t SetAndInitSysmemForTesting(fidl::WireSyncClient<fuchsia_sysmem::Allocator> sysmem) {
     sysmem_ = std::move(sysmem);
-    return InitSysmemAllocatorClient();
+    return ZX_OK;
   }
 
   zx_status_t InitGttForTesting(const ddk::Pci& pci, fdf::MmioBuffer buffer, uint32_t fb_offset);
@@ -190,9 +190,11 @@ class Controller : public DeviceType,
   // GTT. Returns the Gtt region representing the image.
   const GttRegion& SetupGttImage(const image_t* image, uint32_t rotation);
 
-  // Returns the pixel format negotiated by sysmem for an imported `image`.
-  // `image` must be successfully imported and not yet released.
-  PixelFormatAndModifier GetImportedImagePixelFormat(const image_t* image) const;
+  // The pixel format negotiated by sysmem for an imported image.
+  //
+  // `image_id` must correspond to an image that was successfully imported, and
+  // was not released.
+  PixelFormatAndModifier GetImportedImagePixelFormat(display::DriverImageId image_id) const;
 
  private:
   // Perform short-running initialization of all subcomponents and instruct the DDK to publish the
@@ -249,8 +251,9 @@ class Controller : public DeviceType,
   void UpdateAllocations(
       const uint16_t min_allocs[PipeIds<registers::Platform::kKabyLake>().size()]
                                [registers::kImagePlaneCount],
-      const uint64_t display_rate[PipeIds<registers::Platform::kKabyLake>().size()]
-                                 [registers::kImagePlaneCount]) __TA_REQUIRES(display_lock_);
+      const uint64_t data_rate_bytes_per_frame[PipeIds<registers::Platform::kKabyLake>().size()]
+                                              [registers::kImagePlaneCount])
+      __TA_REQUIRES(display_lock_);
   // Reallocates the pipe buffers when a pipe comes online/goes offline. This is a
   // long-running operation, as shifting allocations between pipes requires waiting
   // for vsync.
@@ -282,10 +285,8 @@ class Controller : public DeviceType,
   bool gpu_released_ = false;
   bool display_released_ = false;
 
-  fidl::WireSyncClient<fuchsia_hardware_sysmem::Sysmem> sysmem_;
-
   // The sysmem allocator client used to bind incoming buffer collection tokens.
-  fidl::WireSyncClient<fuchsia_sysmem::Allocator> sysmem_allocator_client_;
+  fidl::WireSyncClient<fuchsia_sysmem::Allocator> sysmem_;
 
   // Imported sysmem buffer collections.
   std::unordered_map<display::DriverBufferCollectionId,
@@ -303,7 +304,7 @@ class Controller : public DeviceType,
   fbl::Vector<std::unique_ptr<GttRegionImpl>> imported_gtt_regions_ __TA_GUARDED(gtt_lock_);
 
   // Pixel formats of imported images.
-  std::unordered_map</*handle*/ uint64_t, PixelFormatAndModifier> imported_image_pixel_formats_
+  std::unordered_map<display::DriverImageId, PixelFormatAndModifier> imported_image_pixel_formats_
       __TA_GUARDED(gtt_lock_);
 
   IgdOpRegion igd_opregion_;  // Read only, no locking

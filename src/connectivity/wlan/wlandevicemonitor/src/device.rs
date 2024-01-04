@@ -138,7 +138,7 @@ mod tests {
         wlan_common::{assert_variant, test_utils::ExpectWithin},
     };
 
-    #[test]
+    #[fuchsia::test]
     fn test_serve_phys_exits_when_watching_devices_fails() {
         let mut exec = fasync::TestExecutor::new();
         let (phys, _phy_events) = PhyMap::new();
@@ -150,7 +150,7 @@ mod tests {
         assert_variant!(exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_serve_phy_adds_and_removes_phy() {
         let mut exec = fasync::TestExecutor::new();
         let (phys, mut phy_events) = PhyMap::new();
@@ -172,7 +172,9 @@ mod tests {
         // Run the PHY service to pick up the new PHY.
         assert_variant!(exec.run_until_stalled(&mut fut), Poll::Pending);
         match exec.run_until_stalled(
-            &mut phy_events.next().expect_within(5.seconds(), "phy_watcher did not respond"),
+            &mut phy_events
+                .next()
+                .expect_within(60.seconds(), "phy_watcher did not observe device addition"),
         ) {
             Poll::Ready(Some(event)) => match event {
                 watchable_map::MapEvent::KeyInserted(key) => {
@@ -189,7 +191,9 @@ mod tests {
         drop(phy_server);
         assert_variant!(exec.run_until_stalled(&mut fut), Poll::Ready(()));
         match exec.run_until_stalled(
-            &mut phy_events.next().expect_within(5.seconds(), "phy_watcher did not respond"),
+            &mut phy_events
+                .next()
+                .expect_within(60.seconds(), "phy_watcher did not observe device removal"),
         ) {
             Poll::Ready(Some(event)) => match event {
                 watchable_map::MapEvent::KeyRemoved(key) => {

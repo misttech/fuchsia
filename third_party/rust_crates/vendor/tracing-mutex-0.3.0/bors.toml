@@ -1,0 +1,6 @@
+status = [
+    'Rust project (1.70)',
+    'Rust project (stable)',
+    'Rust project (beta)',
+    'Documentation build',
+]

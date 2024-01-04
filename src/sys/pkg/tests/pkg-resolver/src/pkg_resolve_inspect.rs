@@ -5,14 +5,10 @@
 use {
     anyhow::format_err,
     assert_matches::assert_matches,
+    diagnostics_assertions::{assert_data_tree, tree_assertion, AnyProperty, PropertyAssertion},
     fidl_fuchsia_pkg_ext::RepositoryConfigBuilder,
     fidl_fuchsia_pkg_rewrite_ext::{Rule, RuleConfig},
-    fuchsia_inspect::{
-        assert_data_tree,
-        reader::Property,
-        testing::{AnyProperty, PropertyAssertion},
-        tree_assertion,
-    },
+    fuchsia_inspect::reader::Property,
     fuchsia_pkg_testing::{serve::responder, PackageBuilder, RepositoryBuilder},
     futures::FutureExt as _,
     lib::MountsBuilder,
@@ -57,7 +53,7 @@ async fn initial_inspect_state() {
                 blob_header_timeout_seconds: 30u64,
                 blob_body_timeout_seconds: 30u64,
                 blob_download_resumption_attempts_limit: 50u64,
-                blob_type: "Uncompressed",
+                blob_type: "Delivery",
                 delivery_blob_fallback: true,
                 queue: {},
             },
@@ -196,7 +192,8 @@ async fn package_and_blob_queues() {
             .unwrap(),
     );
 
-    let meta_far_blob_path = format!("/blobs/{}", pkg.hash());
+    let meta_far_delivery_size = repo.read_delivery_blob(1, pkg.hash()).unwrap().len();
+    let meta_far_blob_path = format!("/blobs/1/{}", pkg.hash());
 
     let flake_first_attempt = responder::ForPath::new(
         meta_far_blob_path.clone(),
@@ -272,7 +269,7 @@ async fn package_and_blob_queues() {
                             "2": {
                                 state: "read http body",
                                 state_ts: AnyProperty,
-                                expected_size_bytes: 12288u64,
+                                expected_size_bytes: meta_far_delivery_size as u64,
                                 bytes_written: 0u64,
                             }
                         }
@@ -284,6 +281,7 @@ async fn package_and_blob_queues() {
                     "fuchsia-pkg://original.example.com/just_meta_far": {
                         resolve_ts: AnyProperty,
                         rewritten_url: "fuchsia-pkg://rewritten.example.com/just_meta_far",
+                        gc_protection: "OpenPackageTracking",
                     }
                 }
             }

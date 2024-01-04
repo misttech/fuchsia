@@ -21,7 +21,6 @@ source_set("semantics") {
     "//sdk/fidl/fuchsia.accessibility.semantics:fuchsia.accessibility.semantics_hlcpp",
     "//sdk/fidl/fuchsia.math:fuchsia.math_hlcpp",
     "//src/ui/a11y/lib/util",
-    "//src/ui/scenic/lib/gfx",
   ]
 
   deps = [
@@ -29,6 +28,7 @@ source_set("semantics") {
     "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_hlcpp",
     "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_hlcpp",
     "//sdk/lib/fidl/cpp",
+    "//sdk/lib/inspect/component/cpp",
     "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
     "//src/lib/fsl",

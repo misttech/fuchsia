@@ -3,10 +3,12 @@
 // found in the LICENSE file.
 
 use crate::subsystems::prelude::*;
+use anyhow::Context;
+use assembly_component_id_index::ComponentIdIndexBuilder;
 use assembly_config_schema::platform_config::storage_config::StorageConfig;
+use assembly_config_schema::FileEntry;
 use assembly_images_config::{
-    BlobfsLayout, DataFilesystemFormat, DataFvmVolumeConfig, FilesystemImageMode, FvmVolumeConfig,
-    VolumeConfig,
+    BlobfsLayout, DataFilesystemFormat, DataFvmVolumeConfig, FvmVolumeConfig, VolumeConfig,
 };
 
 pub(crate) struct StorageSubsystemConfig;
@@ -22,6 +24,57 @@ impl DefineSubsystemConfiguration<StorageConfig> for StorageSubsystemConfig {
             builder.platform_bundle("empty_live_usb");
         }
 
+        // Build and add the component id index.
+        let mut index_builder = ComponentIdIndexBuilder::default();
+
+        // Find the default platform id index and add it to the builder.
+        // The "resources" directory is built and shipped alonside the platform
+        // AIBs which is how it becomes available to subsystems.
+        let core_index = context.get_resource("core_component_id_index.json5");
+        index_builder.index(core_index);
+
+        // If the product provided their own index, add it to the builder.
+        if let Some(product_index) = &storage_config.component_id_index.product_index {
+            index_builder.index(product_index);
+        }
+
+        // Fetch a custom gen directory for placing temporary files. We get this
+        // from the context, so that it can create unique gen directories for
+        // each subsystem under the top-level assembly gen directory.
+        let gendir = context.get_gendir().context("Getting gendir for storage subsystem")?;
+
+        // Set the storage security policy/configuration for zxcrypt
+        let zxcrypt_config_path = gendir.join("zxcrypt");
+
+        if context.board_info.provides_feature("fuchsia::keysafe_ta") {
+            std::fs::write(&zxcrypt_config_path, "tee")
+        } else {
+            std::fs::write(&zxcrypt_config_path, "null")
+        }
+        .context("Could not write zxcrypt configuration")?;
+
+        builder
+            .bootfs()
+            .file(FileEntry {
+                source: zxcrypt_config_path,
+                destination: "config/zxcrypt".to_string(),
+            })
+            .context("Adding zxcrypt config to bootfs")?;
+
+        // Build the component id index and add it as a bootfs file.
+        let index_path = index_builder.build(&gendir).context("Building component id index")?;
+        builder
+            .bootfs()
+            .file(FileEntry {
+                destination: "config/component_id_index".to_string(),
+                source: index_path.clone(),
+            })
+            .with_context(|| format!("Adding bootfs file {}", &index_path))?;
+
+        if storage_config.factory_data.enabled {
+            builder.platform_bundle("factory_data");
+        }
+
         if storage_config.configure_fshost {
             // Collect the arguments from the board.
             let blobfs_max_bytes =
@@ -34,8 +87,7 @@ impl DefineSubsystemConfiguration<StorageConfig> for StorageSubsystemConfig {
             let gpt_all = context.board_info.filesystems.gpt_all;
 
             // Collect the arguments from the product.
-            let ramdisk_image =
-                storage_config.filesystems.image_mode == FilesystemImageMode::Ramdisk;
+            let ramdisk_image = context.ramdisk_image;
             let no_zxcrypt = storage_config.filesystems.no_zxcrypt;
             let format_data_on_corruption = storage_config.filesystems.format_data_on_corruption.0;
             let nand = storage_config.filesystems.watch_for_nand;
@@ -45,6 +97,7 @@ impl DefineSubsystemConfiguration<StorageConfig> for StorageSubsystemConfig {
             let mut use_disk_migration = false;
             let mut data_filesystem_format_str = "fxfs";
             let mut fxfs_blob = false;
+            let mut has_data = false;
 
             // Add all the AIBs and collect some argument values.
             builder.platform_bundle("fshost_common");
@@ -64,6 +117,7 @@ impl DefineSubsystemConfiguration<StorageConfig> for StorageSubsystemConfig {
                         data_filesystem_format,
                     }) = data
                     {
+                        has_data = true;
                         match data_filesystem_format {
                             DataFilesystemFormat::Fxfs => {
                                 builder.platform_bundle("fshost_fvm_fxfs")
@@ -86,14 +140,20 @@ impl DefineSubsystemConfiguration<StorageConfig> for StorageSubsystemConfig {
                 }
             }
 
+            // Inform pkg-cache when fxfs_blob should be used.
+            builder
+                .package("pkg-cache")
+                .component("meta/pkg-cache.cm")?
+                .field("use_fxblob", fxfs_blob)?
+                .field("use_system_image", true)?;
+
             let mut fshost_config_builder = builder.bootfs().component("meta/fshost.cm")?;
             fshost_config_builder
                 .field("blobfs", true)?
-                .field("blobfs_allow_delivery_blobs", true)?
                 .field("blobfs_max_bytes", blobfs_max_bytes)?
                 .field("bootpart", true)?
                 .field("check_filesystems", true)?
-                .field("data", true)?
+                .field("data", has_data)?
                 .field("data_max_bytes", data_max_bytes)?
                 .field("disable_block_watcher", false)?
                 .field("factory", false)?

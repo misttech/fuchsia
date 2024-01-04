@@ -18,7 +18,7 @@
 
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 #include "src/ui/testing/ui_test_manager/ui_test_manager.h"
-#include "src/ui/testing/util/flatland_test_view.h"
+#include "src/ui/testing/util/test_view.h"
 
 namespace integration_tests {
 
@@ -48,7 +48,6 @@ class MagnificationPixelTest : public gtest::RealLoopFixture {
   // |testing::Test|
   void SetUp() override {
     ui_testing::UITestRealm::Config config;
-    config.use_flatland = true;
     config.use_scene_owner = true;
     config.accessibility_owner = ui_testing::UITestRealm::AccessibilityOwnerType::FAKE;
     config.ui_to_client_services = {fuchsia::ui::composition::Flatland::Name_};
@@ -62,7 +61,7 @@ class MagnificationPixelTest : public gtest::RealLoopFixture {
     test_view_access_ = std::make_shared<ui_testing::TestViewAccess>();
     component_testing::LocalComponentFactory test_view = [d = dispatcher(),
                                                           a = test_view_access_]() {
-      return std::make_unique<ui_testing::FlatlandTestView>(
+      return std::make_unique<ui_testing::TestView>(
           d, /* content = */ ui_testing::TestView::ContentType::COORDINATE_GRID, a);
     };
     realm_->AddLocalChild(kViewProvider, std::move(test_view));
@@ -125,14 +124,11 @@ TEST_F(MagnificationPixelTest, Identity) {
   RunLoopUntil([this]() {
     auto data = TakeScreenshot();
 
-    return data.GetPixelAt(data.width() / 4, data.height() / 4) == ui_testing::Screenshot::kBlack &&
-           data.GetPixelAt(data.width() / 4, 3 * data.height() / 4) ==
-               ui_testing::Screenshot::kBlue &&
-           data.GetPixelAt(3 * data.width() / 4, data.height() / 4) ==
-               ui_testing::Screenshot::kRed &&
-           data.GetPixelAt(3 * data.width() / 4, 3 * data.height() / 4) ==
-               ui_testing::Screenshot::kMagenta &&
-           data.GetPixelAt(data.width() / 2, data.height() / 2) == ui_testing::Screenshot::kGreen;
+    return data.GetPixelAt(data.width() / 4, data.height() / 4) == utils::kBlack &&
+           data.GetPixelAt(data.width() / 4, 3 * data.height() / 4) == utils::kBlue &&
+           data.GetPixelAt(3 * data.width() / 4, data.height() / 4) == utils::kRed &&
+           data.GetPixelAt(3 * data.width() / 4, 3 * data.height() / 4) == utils::kMagenta &&
+           data.GetPixelAt(data.width() / 2, data.height() / 2) == utils::kGreen;
   });
 }
 
@@ -142,14 +138,11 @@ TEST_F(MagnificationPixelTest, Center) {
   RunLoopUntil([this]() {
     auto data = TakeScreenshot();
 
-    return data.GetPixelAt(data.width() / 4, data.height() / 4) == ui_testing::Screenshot::kGreen &&
-           data.GetPixelAt(data.width() / 4, 3 * data.height() / 4) ==
-               ui_testing::Screenshot::kGreen &&
-           data.GetPixelAt(3 * data.width() / 4, data.height() / 4) ==
-               ui_testing::Screenshot::kGreen &&
-           data.GetPixelAt(3 * data.width() / 4, 3 * data.height() / 4) ==
-               ui_testing::Screenshot::kGreen &&
-           data.GetPixelAt(data.width() / 2, data.height() / 2) == ui_testing::Screenshot::kGreen;
+    return data.GetPixelAt(data.width() / 4, data.height() / 4) == utils::kGreen &&
+           data.GetPixelAt(data.width() / 4, 3 * data.height() / 4) == utils::kGreen &&
+           data.GetPixelAt(3 * data.width() / 4, data.height() / 4) == utils::kGreen &&
+           data.GetPixelAt(3 * data.width() / 4, 3 * data.height() / 4) == utils::kGreen &&
+           data.GetPixelAt(data.width() / 2, data.height() / 2) == utils::kGreen;
   });
 }
 
@@ -159,13 +152,10 @@ TEST_F(MagnificationPixelTest, RotatedUpperLeft) {
   RunLoopUntil([this]() {
     auto data = TakeScreenshot();
 
-    return data.GetPixelAt(data.width() / 4, data.height() / 4) == ui_testing::Screenshot::kBlack &&
-           data.GetPixelAt(data.width() / 4, 3 * data.height() / 4) ==
-               ui_testing::Screenshot::kBlack &&
-           data.GetPixelAt(3 * data.width() / 4, data.height() / 4) ==
-               ui_testing::Screenshot::kBlack &&
-           data.GetPixelAt(3 * data.width() / 4, 3 * data.height() / 4) ==
-               ui_testing::Screenshot::kGreen;
+    return data.GetPixelAt(data.width() / 4, data.height() / 4) == utils::kBlack &&
+           data.GetPixelAt(data.width() / 4, 3 * data.height() / 4) == utils::kBlack &&
+           data.GetPixelAt(3 * data.width() / 4, data.height() / 4) == utils::kBlack &&
+           data.GetPixelAt(3 * data.width() / 4, 3 * data.height() / 4) == utils::kGreen;
   });
 }
 

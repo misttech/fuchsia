@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
-#include "tools/fidl/fidlc/tests/error_test.h"
+#include "tools/fidl/fidlc/include/fidl/flat/types.h"
 #include "tools/fidl/fidlc/tests/test_library.h"
 
 namespace {
@@ -13,7 +13,7 @@ TEST(ErrorsTests, GoodError) {
   TestLibrary library(R"FIDL(library example;
 
 protocol Example {
-    Method() -> (struct {
+    strict Method() -> (struct {
         foo string;
     }) error int32;
 };
@@ -21,29 +21,29 @@ protocol Example {
   ASSERT_COMPILED(library);
 
   auto methods = &library.LookupProtocol("Example")->methods;
-  ASSERT_EQ(methods->size(), 1);
+  ASSERT_EQ(methods->size(), 1u);
   auto method = &methods->at(0);
   auto response = method->maybe_response.get();
-  ASSERT_NOT_NULL(response);
+  ASSERT_NE(response, nullptr);
 
   auto id = static_cast<const fidl::flat::IdentifierType*>(response->type);
   auto result_union = static_cast<const fidl::flat::Union*>(id->type_decl);
-  ASSERT_NOT_NULL(result_union);
-  ASSERT_EQ(result_union->members.size(), 2);
+  ASSERT_NE(result_union, nullptr);
+  ASSERT_EQ(result_union->members.size(), 2u);
 
   auto anonymous = result_union->name.as_anonymous();
-  ASSERT_NOT_NULL(anonymous);
+  ASSERT_NE(anonymous, nullptr);
   ASSERT_EQ(anonymous->provenance, fidl::flat::Name::Provenance::kGeneratedResultUnion);
 
   const auto& success = result_union->members.at(0);
-  ASSERT_NOT_NULL(success.maybe_used);
-  ASSERT_STREQ("response", std::string(success.maybe_used->name.data()).c_str());
+  ASSERT_NE(success.maybe_used, nullptr);
+  ASSERT_EQ("response", success.maybe_used->name.data());
 
   const fidl::flat::Union::Member& error = result_union->members.at(1);
-  ASSERT_NOT_NULL(error.maybe_used);
-  ASSERT_STREQ("err", std::string(error.maybe_used->name.data()).c_str());
+  ASSERT_NE(error.maybe_used, nullptr);
+  ASSERT_EQ("err", error.maybe_used->name.data());
 
-  ASSERT_NOT_NULL(error.maybe_used->type_ctor->type);
+  ASSERT_NE(error.maybe_used->type_ctor->type, nullptr);
   ASSERT_EQ(error.maybe_used->type_ctor->type->kind, fidl::flat::Type::Kind::kPrimitive);
   auto primitive_type =
       static_cast<const fidl::flat::PrimitiveType*>(error.maybe_used->type_ctor->type);
@@ -67,27 +67,27 @@ TEST(ErrorsTests, GoodErrorEmptyStructAsSuccess) {
 library example;
 
 protocol MyProtocol {
-  MyMethod() -> () error uint32;
+  strict MyMethod() -> () error uint32;
 };
 )FIDL");
   ASSERT_COMPILED(library);
   auto protocol = library.LookupProtocol("MyProtocol");
-  ASSERT_NOT_NULL(protocol);
-  ASSERT_EQ(protocol->methods.size(), 1);
+  ASSERT_NE(protocol, nullptr);
+  ASSERT_EQ(protocol->methods.size(), 1u);
 
   auto& method = protocol->methods[0];
   EXPECT_TRUE(method.has_request);
-  EXPECT_NULL(method.maybe_request.get());
+  EXPECT_EQ(method.maybe_request.get(), nullptr);
   ASSERT_TRUE(method.has_response && method.maybe_response.get());
 
   auto id = static_cast<const fidl::flat::IdentifierType*>(method.maybe_response->type);
   auto response = static_cast<const fidl::flat::Union*>(id->type_decl);
   EXPECT_TRUE(response->kind == fidl::flat::Decl::Kind::kUnion);
-  ASSERT_EQ(response->members.size(), 2);
+  ASSERT_EQ(response->members.size(), 2u);
 
   auto empty_struct_name = response->members[0].maybe_used->type_ctor->type->name.decl_name();
   auto empty_struct = library.LookupStruct(empty_struct_name);
-  ASSERT_NOT_NULL(empty_struct);
+  ASSERT_NE(empty_struct, nullptr);
   auto anonymous = empty_struct->name.as_anonymous();
   ASSERT_EQ(anonymous->provenance, fidl::flat::Name::Provenance::kGeneratedEmptySuccessStruct);
 }
@@ -132,15 +132,16 @@ TEST(ErrorsTests, BadErrorUnknownIdentifier) {
   TestLibrary library;
   library.AddFile("bad/fi-0052.test.fidl");
 
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrNameNotFound);
-  ASSERT_SUBSTR(library.errors()[0]->msg.c_str(), "ParsingError");
+  library.ExpectFail(fidl::ErrNameNotFound, "ParsingError", "test.bad.fi0052");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(ErrorsTests, BadErrorWrongPrimitive) {
   TestLibrary library;
   library.AddFile("bad/fi-0141.test.fidl");
 
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrInvalidErrorType);
+  library.ExpectFail(fidl::ErrInvalidErrorType);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(ErrorsTests, BadErrorMissingType) {
@@ -150,7 +151,10 @@ protocol Example {
     Method() -> (flub int32) error;
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrUnexpectedTokenOfKind);
+  library.ExpectFail(fidl::ErrUnexpectedTokenOfKind,
+                     fidl::Token::KindAndSubkind(fidl::Token::Kind::kIdentifier),
+                     fidl::Token::KindAndSubkind(fidl::Token::Kind::kRightParen));
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(ErrorsTests, BadErrorNotAType) {
@@ -160,7 +164,10 @@ protocol Example {
     Method() -> (flub int32) error "hello";
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrUnexpectedTokenOfKind);
+  library.ExpectFail(fidl::ErrUnexpectedTokenOfKind,
+                     fidl::Token::KindAndSubkind(fidl::Token::Kind::kIdentifier),
+                     fidl::Token::KindAndSubkind(fidl::Token::Kind::kRightParen));
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(ErrorsTests, BadErrorNoResponse) {
@@ -170,7 +177,10 @@ protocol Example {
     Method() -> error int32;
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrUnexpectedTokenOfKind);
+  library.ExpectFail(fidl::ErrUnexpectedTokenOfKind,
+                     fidl::Token::KindAndSubkind(fidl::Token::Subkind::kError),
+                     fidl::Token::KindAndSubkind(fidl::Token::Kind::kLeftParen));
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(ErrorsTests, BadErrorUnexpectedEndOfFile) {
@@ -179,18 +189,54 @@ library example;
 type ForgotTheSemicolon = table {}
 )FIDL");
 
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrUnexpectedTokenOfKind);
+  library.ExpectFail(fidl::ErrUnexpectedTokenOfKind,
+                     fidl::Token::KindAndSubkind(fidl::Token::Kind::kEndOfFile),
+                     fidl::Token::KindAndSubkind(fidl::Token::Kind::kSemicolon));
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(ErrorsTests, BadIncorrectIdentifier) {
   TestLibrary library;
   library.AddFile("bad/fi-0009.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrUnexpectedIdentifier);
+  library.ExpectFail(fidl::ErrUnexpectedIdentifier,
+                     fidl::Token::KindAndSubkind(fidl::Token::Subkind::kUsing),
+                     fidl::Token::KindAndSubkind(fidl::Token::Subkind::kLibrary));
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(ErrorsTests, BadErrorEmptyFile) {
   TestLibrary library("");
 
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrUnexpectedIdentifier);
+  library.ExpectFail(fidl::ErrUnexpectedIdentifier,
+                     fidl::Token::KindAndSubkind(fidl::Token::Kind::kEndOfFile),
+                     fidl::Token::KindAndSubkind(fidl::Token::Subkind::kLibrary));
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
+
+TEST(ErrorsTests, ExperimentalAllowArbitraryErrorTypes) {
+  TestLibrary library(R"FIDL(
+library example;
+protocol Example {
+    Method() -> () error table {};
+};
+)FIDL");
+  library.EnableFlag(fidl::ExperimentalFlags::Flag::kAllowArbitraryErrorTypes);
+  ASSERT_COMPILED(library);
+
+  auto result_id = static_cast<const fidl::flat::IdentifierType*>(
+      library.LookupProtocol("Example")->methods.at(0).maybe_response->type);
+  auto result_union = static_cast<const fidl::flat::Union*>(result_id->type_decl);
+  auto error_id = static_cast<const fidl::flat::IdentifierType*>(
+      result_union->members.at(1).maybe_used->type_ctor->type);
+  ASSERT_EQ(error_id->type_decl->kind, fidl::flat::Decl::Kind::kTable);
+}
+
+TEST(ErrorsTest, TransitionalAllowList) {
+  TestLibrary library;
+  library.AddFile("bad/fi-0202.test.fidl");
+  library.EnableFlag(fidl::ExperimentalFlags::Flag::kTransitionalAllowList);
+  library.ExpectFail(fidl::ErrTransitionalNotAllowed, "NewMethod");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
+}
+
 }  // namespace

@@ -7,18 +7,16 @@
 #include <lib/arch/x86/boot-cpuid.h>
 #include <lib/arch/x86/extension.h>
 #include <lib/arch/x86/system.h>
-#include <lib/page-table/types.h>
 #include <zircon/assert.h>
 
 #include <hwreg/x86msr.h>
+#include <phys/address-space.h>
 #include <phys/allocation.h>
-#include <phys/symbolize.h>
+#include <phys/main.h>
 
-#include "phys/address-space.h"
+void ArchSetUpAddressSpaceEarly(AddressSpace& aspace) {}
 
-void ArchSetUpAddressSpaceEarly() {}
-
-void ArchSetUpAddressSpaceLate() {
+void ArchSetUpAddressSpaceLate(AddressSpace& aspace) {
   ZX_ASSERT_MSG(arch::BootCpuid<arch::CpuidAmdFeatureFlagsD>().lm(),
                 "CPU does not support 64-bit mode!");
   ZX_ASSERT_MSG(arch::BootCpuid<arch::CpuidFeatureFlagsD>().pse(), "x86-64 requires PSE support!");
@@ -51,12 +49,9 @@ void ArchSetUpAddressSpaceLate() {
   // fixed .bss location based on the fixed 1 MiB load address may overlap with
   // areas that should be reserved.  So it's preferable to go directly to the
   // physical page allocator that respects explicitly reserved ranges.
-  AllocationMemoryManager manager(Allocation::GetPool());
-  ktl::optional builder = page_table::AddressSpaceBuilder::Create(manager, arch::BootCpuidIo{});
-  if (!builder.has_value()) {
-    ZX_PANIC("Failed to create an AddressSpaceBuilder.");
-  }
-  ArchSetUpIdentityAddressSpace(*builder);
+  aspace.Init();
+  aspace.SetUpIdentityMappings();
+  aspace.Install();
 
   // Now actually turn on paging.  This affects us immediately in 32-bit mode,
   // as well as being mandatory for 64-bit mode.

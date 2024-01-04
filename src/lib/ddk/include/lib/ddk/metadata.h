@@ -70,6 +70,10 @@ static_assert(DEVICE_METADATA_BOARD_PRIVATE == ZBI_TYPE_DRV_BOARD_PRIVATE, "");
 // type: fuchsia.hardware.gpt.metadata.GptInfo
 #define DEVICE_METADATA_GPT_INFO 0x49545047  // GPTI
 
+// Button Metadata
+// type: fuchsia.buttons.Metadata
+#define DEVICE_METADATA_BUTTONS 0x534E5442  // BTNS
+
 // list of buttons_button_config_t
 #define DEVICE_METADATA_BUTTONS_BUTTONS 0x424E5442  // BTNB
 
@@ -85,8 +89,14 @@ static_assert(DEVICE_METADATA_BOARD_PRIVATE == ZBI_TYPE_DRV_BOARD_PRIVATE, "");
 // type: array of gpio_pin_t
 #define DEVICE_METADATA_GPIO_PINS 0x4F495047  // GPIO
 
-// type: FIDL fuchsia.hardware.gpio.init/GpioInitMetadata
-#define DEVICE_METADATA_GPIO_INIT_STEPS 0x49495047  // GPII
+// type: FIDL fuchsia.hardware.gpioimpl/InitMetadata
+#define DEVICE_METADATA_GPIO_INIT 0x49495047  // GPII
+
+// type: FIDL fuchsia.hardware.gpioimpl/ControllerMetadata
+#define DEVICE_METADATA_GPIO_CONTROLLER 0x43495047  // GPIC
+
+// type: FIDL fuchsia.hardware.clockimpl/InitMetadata
+#define DEVICE_METADATA_CLOCK_INIT 0x494B4C43  // CLKI
 
 // type: array of power_domain_t
 #define DEVICE_METADATA_POWER_DOMAINS 0x52574F50  // POWR
@@ -139,6 +149,9 @@ static_assert(DEVICE_METADATA_BOARD_PRIVATE == ZBI_TYPE_DRV_BOARD_PRIVATE, "");
 
 // type: FIDL fuchsia.hardware.sdmmc/SdmmcMetadata
 #define DEVICE_METADATA_SDMMC 0x4D4D4453  // SDMM
+
+// type: FIDL fuchsia.hardware.adcimpl/Metadata
+#define DEVICE_METADATA_ADC 0x00434441  // ADC\0
 
 // Metadata types that have least significant byte set to lowercase 'd'
 // signify private driver data.

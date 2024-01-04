@@ -6,8 +6,8 @@
 
 namespace f2fs {
 
-StorageBuffer::StorageBuffer(Bcache *bc, size_t blocks, uint32_t block_size, std::string_view label,
-                             uint32_t allocation_unit)
+StorageBuffer::StorageBuffer(BcacheMapper *bc, size_t blocks, uint32_t block_size,
+                             std::string_view label, uint32_t allocation_unit)
     : max_blocks_(bc->Maxblk()), allocation_unit_(allocation_unit) {
   ZX_DEBUG_ASSERT(allocation_unit >= 1 && allocation_unit <= blocks);
   blocks = fbl::round_up(blocks, allocation_unit);
@@ -35,8 +35,14 @@ zx::result<size_t> StorageBuffer::ReserveWriteOperation(Page &page) {
   }
 
   auto key = free_keys_.pop_front();
+  storage::OperationType type = storage::OperationType::kWrite;
+  if (page.IsCommit()) {
+    type = storage::OperationType::kWritePreflushAndFua;
+  } else if (page.IsSync()) {
+    type = storage::OperationType::kWriteFua;
+  }
   storage::Operation op = {
-      .type = storage::OperationType::kWrite,
+      .type = type,
       .vmo_offset = key->GetKey(),
       .dev_offset = page.GetBlockAddr(),
       .length = 1,
@@ -66,7 +72,7 @@ zx::result<StorageOperations> StorageBuffer::MakeReadOperations(const std::vecto
         allocate_index = 0;
         // Wait until there is a room in |buffer_|.
         while (free_keys_.is_empty()) {
-          if (auto wait_result = cvar_.wait_for(mutex_, kWriteTimeOut);
+          if (auto wait_result = cvar_.wait_for(mutex_, std::chrono::seconds(kWriteTimeOut));
               wait_result == std::cv_status::timeout) {
             return zx::error(ZX_ERR_TIMED_OUT);
           }

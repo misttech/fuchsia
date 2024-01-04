@@ -45,7 +45,7 @@ FakeChannel::WeakPtr MockChannelTest::CreateFakeChannel(const ChannelOptions& op
   fake_chan_ = std::make_unique<FakeChannel>(options.id, options.remote_id, options.conn_handle,
                                              options.link_type,
                                              ChannelInfo::MakeBasicMode(options.mtu, options.mtu));
-  fake_chan_->SetSendCallback(fit::bind_member<&MockChannelTest::OnPacketSent>(this), nullptr);
+  fake_chan_->SetSendCallback(fit::bind_member<&MockChannelTest::OnPacketSent>(this));
   return fake_chan_->AsWeakPtr();
 }
 
@@ -68,8 +68,12 @@ void MockChannelTest::OnPacketSent(std::unique_ptr<ByteBuffer> packet) {
     auto reply = std::move(expected.replies().front());
     expected.replies().pop();
     // Post tasks to simulate real inbound packets, which are asynchronous.
-    async::PostTask(async_get_default_dispatcher(),
-                    [this, reply = std::move(reply)]() { fake_chan_->Receive(reply); });
+    heap_dispatcher().Post(
+        [this, reply = std::move(reply)](pw::async::Context /*ctx*/, pw::Status status) {
+          if (status.ok()) {
+            fake_chan_->Receive(reply);
+          }
+        });
   }
 }
 

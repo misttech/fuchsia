@@ -4,20 +4,45 @@
 
 #![allow(non_upper_case_globals)]
 
+use crate::{
+    device::magma::vulkan::{BufferCollectionTokens, Loader},
+    mm::MemoryAccessorExt,
+    task::CurrentTask,
+};
 use fidl_fuchsia_sysmem as fsysmem;
 use fidl_fuchsia_ui_composition as fuicomp;
-use fuchsia_component::client::connect_channel_to_protocol;
-use fuchsia_image_format::*;
-use fuchsia_vulkan::*;
-use fuchsia_zircon as zx;
-use magma::*;
-use vk_sys as vk;
-use zerocopy::{AsBytes, FromBytes, FromZeroes};
-
-use crate::{
-    device::wayland::vulkan::*, logging::log_warn, mm::MemoryAccessorExt, task::CurrentTask,
-    types::*,
+use fuchsia_component::client::connect_to_protocol_sync;
+use fuchsia_image_format::{
+    constraints_to_format, drm_format_to_sysmem_format, drm_format_to_vulkan_format,
+    drm_modifier_to_sysmem_modifier, get_plane_row_bytes, image_format_plane_byte_offset,
+    sysmem_modifier_to_drm_modifier, DRM_FORMAT_MOD_INVALID,
 };
+use fuchsia_vulkan::{
+    BufferCollectionConstraintsInfoFUCHSIA, ImageConstraintsInfoFUCHSIA,
+    ImageFormatConstraintsInfoFUCHSIA, SysmemColorSpaceFUCHSIA,
+    STRUCTURE_TYPE_BUFFER_COLLECTION_CONSTRAINTS_INFO_FUCHSIA,
+    STRUCTURE_TYPE_IMAGE_CONSTRAINTS_INFO_FUCHSIA,
+    STRUCTURE_TYPE_IMAGE_FORMAT_CONSTRAINTS_INFO_FUCHSIA,
+    STRUCTURE_TYPE_SYSMEM_COLOR_SPACE_FUCHSIA,
+};
+use fuchsia_zircon as zx;
+use magma::{
+    magma_handle_t, magma_image_create_info_t, magma_image_info_t, magma_poll_item__bindgen_ty_1,
+    magma_poll_item_t, magma_semaphore_t, magma_status_t, virtio_magma_ctrl_hdr_t,
+    virtio_magma_ctrl_type, virtmagma_ioctl_args_magma_command, MAGMA_COHERENCY_DOMAIN_CPU,
+    MAGMA_COHERENCY_DOMAIN_INACCESSIBLE, MAGMA_COHERENCY_DOMAIN_RAM,
+    MAGMA_IMAGE_CREATE_FLAGS_PRESENTABLE, MAGMA_IMAGE_CREATE_FLAGS_VULKAN_USAGE,
+    MAGMA_MAX_IMAGE_PLANES, MAGMA_POLL_TYPE_SEMAPHORE, MAGMA_STATUS_INTERNAL_ERROR,
+    MAGMA_STATUS_INVALID_ARGS,
+};
+use starnix_logging::log_warn;
+use starnix_uapi::{
+    errno,
+    errors::Errno,
+    user_address::{UserAddress, UserRef},
+};
+use vk_sys as vk;
+use zerocopy::{AsBytes, FromBytes, FromZeros, NoCell};
 
 /// Reads a magma command and its type from user space.
 ///
@@ -248,11 +273,7 @@ pub fn create_drm_image(
 
 /// Initializes and returns Scenic allocator proxy.
 pub fn init_scenic() -> Result<fuicomp::AllocatorSynchronousProxy, Errno> {
-    let (server_end, client_end) = zx::Channel::create();
-    connect_channel_to_protocol::<fuicomp::AllocatorMarker>(server_end)
-        .map_err(|_| errno!(ENOENT))?;
-    let composition_proxy = fuicomp::AllocatorSynchronousProxy::new(client_end);
-    Ok(composition_proxy)
+    Ok(connect_to_protocol_sync::<fuicomp::AllocatorMarker>().map_err(|_| errno!(ENOENT))?)
 }
 
 /// Allocates a shared sysmem collection.
@@ -262,10 +283,8 @@ pub fn init_scenic() -> Result<fuicomp::AllocatorSynchronousProxy, Errno> {
 pub fn init_sysmem(
     use_scenic: bool,
 ) -> Result<(BufferCollectionTokens, fsysmem::AllocatorSynchronousProxy), Errno> {
-    let (server_end, client_end) = zx::Channel::create();
-    connect_channel_to_protocol::<fsysmem::AllocatorMarker>(server_end)
-        .map_err(|_| errno!(ENOENT))?;
-    let sysmem_allocator = fsysmem::AllocatorSynchronousProxy::new(client_end);
+    let sysmem_allocator =
+        connect_to_protocol_sync::<fsysmem::AllocatorMarker>().map_err(|_| errno!(ENOENT))?;
 
     let (client, remote) =
         fidl::endpoints::create_endpoints::<fsysmem::BufferCollectionTokenMarker>();
@@ -343,7 +362,7 @@ pub fn get_image_info(
 }
 
 #[repr(C)]
-#[derive(AsBytes, FromZeroes, FromBytes, Copy, Clone, Default, Debug)]
+#[derive(AsBytes, FromZeros, FromBytes, NoCell, Copy, Clone, Default, Debug)]
 /// `StarnixPollItem` exists to be able to `AsBytes` and `FromBytes` the union that exists in
 /// `magma_poll_item_t`.
 pub struct StarnixPollItem {
@@ -351,7 +370,7 @@ pub struct StarnixPollItem {
     pub type_: u32,
     pub condition: u32,
     pub result: u32,
-    pub unused: [u8; 4usize],
+    pub unused: u32,
 }
 
 impl StarnixPollItem {
@@ -368,7 +387,7 @@ impl StarnixPollItem {
             type_: poll_item.type_,
             condition: poll_item.condition,
             result: poll_item.result,
-            unused: [0; 4],
+            unused: 0,
         }
     }
 
@@ -385,7 +404,7 @@ impl StarnixPollItem {
             type_: self.type_,
             condition: self.condition,
             result: self.result,
-            unused: 0,
+            unused: self.unused,
         }
     }
 }

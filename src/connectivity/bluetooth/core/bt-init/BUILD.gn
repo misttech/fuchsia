@@ -18,12 +18,16 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr_rust",
     "//sdk/fidl/fuchsia.bluetooth.snoop:fuchsia.bluetooth.snoop_rust",
     "//sdk/fidl/fuchsia.bluetooth.sys:fuchsia.bluetooth.sys_rust",
+    "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
     "//src/lib/fdio/rust:fdio",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-fs",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",
@@ -79,13 +83,6 @@ fuchsia_package("bt-init-testonly") {
     ":default_config_values",
     ":testonly_component",
   ]
-}
-
-# The fuchsia.bluetooth.sys.Bootstrap service is not relevant to all configurations, so products
-# that require it should include this shard to expose the protocol to the shell via bt-init.
-# TODO(fxbug.dev/1496): Delete this core shard
-core_shard("bt-bootstrap-core-shard") {
-  shard_file = "meta/bt-bootstrap.core_shard.cml"
 }
 
 core_shard("fastpair-core-shard") {

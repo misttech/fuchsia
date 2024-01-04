@@ -12,20 +12,21 @@ use {
     },
     async_trait::async_trait,
     cm_rust::{
-        CapabilityDecl, CapabilityTypeName, DirectoryDecl, EventStreamDecl, ExposeDecl,
+        CapabilityDecl, CapabilityTypeName, ConfigurationDecl, DictionaryDecl, DirectoryDecl,
+        EventStreamDecl, ExposeConfigurationDecl, ExposeDecl, ExposeDictionaryDecl,
         ExposeDirectoryDecl, ExposeProtocolDecl, ExposeResolverDecl, ExposeRunnerDecl,
-        ExposeServiceDecl, ExposeSource, OfferDecl, OfferDirectoryDecl, OfferEventStreamDecl,
-        OfferProtocolDecl, OfferResolverDecl, OfferRunnerDecl, OfferServiceDecl, OfferSource,
-        OfferStorageDecl, ProtocolDecl, RegistrationSource, ResolverDecl, RunnerDecl, ServiceDecl,
-        StorageDecl, UseDecl, UseDirectoryDecl, UseProtocolDecl, UseServiceDecl, UseSource,
-        UseStorageDecl,
+        ExposeServiceDecl, ExposeSource, NameMapping, OfferConfigurationDecl, OfferDecl,
+        OfferDictionaryDecl, OfferDirectoryDecl, OfferEventStreamDecl, OfferProtocolDecl,
+        OfferResolverDecl, OfferRunnerDecl, OfferServiceDecl, OfferSource, OfferStorageDecl,
+        ProtocolDecl, RegistrationSource, ResolverDecl, RunnerDecl, ServiceDecl, StorageDecl,
+        UseDecl, UseDirectoryDecl, UseProtocolDecl, UseServiceDecl, UseSource, UseStorageDecl,
     },
     cm_types::{Name, Path},
     derivative::Derivative,
     from_enum::FromEnum,
     futures::future::BoxFuture,
     moniker::ChildName,
-    std::{collections::HashMap, fmt, sync::Weak},
+    std::{fmt, sync::Weak},
     thiserror::Error,
 };
 
@@ -37,46 +38,92 @@ pub enum Error {
     InvalidBuiltinCapability {},
 }
 
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+pub enum AggregateMember {
+    Child(ChildName),
+    Collection(Name),
+    Parent,
+    Self_,
+}
+
+impl fmt::Display for AggregateMember {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Child(n) => {
+                write!(f, "child `{n}`")
+            }
+            Self::Collection(n) => {
+                write!(f, "collection `{n}`")
+            }
+            Self::Parent => {
+                write!(f, "parent")
+            }
+            Self::Self_ => {
+                write!(f, "self")
+            }
+        }
+    }
+}
+
 /// Describes the source of a capability, as determined by `find_capability_source`
 #[derive(Debug, Derivative)]
 #[derivative(Clone(bound = ""))]
 pub enum CapabilitySource<C: ComponentInstanceInterface> {
     /// This capability originates from the component instance for the given Realm.
     /// point.
-    Component { capability: ComponentCapability, component: WeakComponentInstanceInterface<C> },
+    Component {
+        capability: ComponentCapability,
+        component: WeakComponentInstanceInterface<C>,
+    },
     /// This capability originates from "framework". It's implemented by component manager and is
     /// scoped to the realm of the source.
-    Framework { capability: InternalCapability, component: WeakComponentInstanceInterface<C> },
+    Framework {
+        capability: InternalCapability,
+        component: WeakComponentInstanceInterface<C>,
+    },
     /// This capability originates from the parent of the root component, and is built in to
     /// component manager. `top_instance` is the instance at the top of the tree, i.e.  the
     /// instance representing component manager.
-    Builtin { capability: InternalCapability, top_instance: Weak<C::TopInstance> },
+    Builtin {
+        capability: InternalCapability,
+        top_instance: Weak<C::TopInstance>,
+    },
     /// This capability originates from the parent of the root component, and is offered from
     /// component manager's namespace. `top_instance` is the instance at the top of the tree, i.e.
     /// the instance representing component manager.
-    Namespace { capability: ComponentCapability, top_instance: Weak<C::TopInstance> },
+    Namespace {
+        capability: ComponentCapability,
+        top_instance: Weak<C::TopInstance>,
+    },
     /// This capability is provided by the framework based on some other capability.
     Capability {
         source_capability: ComponentCapability,
         component: WeakComponentInstanceInterface<C>,
     },
-    /// This capability is an aggregate of capabilities provided by components in a collection.
-    CollectionAggregate {
+    /// This capability is an aggregate of capabilities over a set of collections and static
+    /// children. The instance names in the aggregate service will be anonymized.
+    AnonymizedAggregate {
         capability: AggregateCapability,
         component: WeakComponentInstanceInterface<C>,
-        aggregate_capability_provider: Box<dyn CollectionAggregateCapabilityProvider<C>>,
-        collections: Vec<Name>,
+        aggregate_capability_provider: Box<dyn AnonymizedAggregateCapabilityProvider<C>>,
+        members: Vec<AggregateMember>,
     },
-    OfferAggregate {
+    /// This capability is an aggregate of capabilities over a set of children with filters
+    /// The instances in the aggregate service are the union of these filters.
+    FilteredAggregate {
         capability: AggregateCapability,
-        capability_provider: Box<dyn OfferAggregateCapabilityProvider<C>>,
+        capability_provider: Box<dyn FilteredAggregateCapabilityProvider<C>>,
         component: WeakComponentInstanceInterface<C>,
     },
-    FilteredService {
+    // This capability originates from "environment". It's implemented by a component instance.
+    Environment {
         capability: ComponentCapability,
         component: WeakComponentInstanceInterface<C>,
-        source_instance_filter: Vec<String>,
-        instance_name_source_to_target: HashMap<String, Vec<String>>,
+    },
+    // This capability originates from "void". This is only a valid origination for optional capabilities.
+    Void {
+        capability: InternalCapability,
+        component: WeakComponentInstanceInterface<C>,
     },
 }
 
@@ -90,9 +137,10 @@ impl<C: ComponentInstanceInterface> CapabilitySource<C> {
             Self::Builtin { capability, .. } => capability.can_be_in_namespace(),
             Self::Namespace { capability, .. } => capability.can_be_in_namespace(),
             Self::Capability { .. } => true,
-            Self::CollectionAggregate { capability, .. } => capability.can_be_in_namespace(),
-            Self::OfferAggregate { capability, .. } => capability.can_be_in_namespace(),
-            Self::FilteredService { capability, .. } => capability.can_be_in_namespace(),
+            Self::AnonymizedAggregate { capability, .. } => capability.can_be_in_namespace(),
+            Self::FilteredAggregate { capability, .. } => capability.can_be_in_namespace(),
+            Self::Environment { capability, .. } => capability.can_be_in_namespace(),
+            Self::Void { capability, .. } => capability.can_be_in_namespace(),
         }
     }
 
@@ -103,9 +151,10 @@ impl<C: ComponentInstanceInterface> CapabilitySource<C> {
             Self::Builtin { capability, .. } => Some(capability.source_name()),
             Self::Namespace { capability, .. } => capability.source_name(),
             Self::Capability { .. } => None,
-            Self::CollectionAggregate { capability, .. } => Some(capability.source_name()),
-            Self::OfferAggregate { capability, .. } => Some(capability.source_name()),
-            Self::FilteredService { capability, .. } => capability.source_name(),
+            Self::AnonymizedAggregate { capability, .. } => Some(capability.source_name()),
+            Self::FilteredAggregate { capability, .. } => Some(capability.source_name()),
+            Self::Environment { capability, .. } => capability.source_name(),
+            Self::Void { capability, .. } => Some(capability.source_name()),
         }
     }
 
@@ -116,9 +165,10 @@ impl<C: ComponentInstanceInterface> CapabilitySource<C> {
             Self::Builtin { capability, .. } => capability.type_name(),
             Self::Namespace { capability, .. } => capability.type_name(),
             Self::Capability { source_capability, .. } => source_capability.type_name(),
-            Self::CollectionAggregate { capability, .. } => capability.type_name(),
-            Self::OfferAggregate { capability, .. } => capability.type_name(),
-            Self::FilteredService { capability, .. } => capability.type_name(),
+            Self::AnonymizedAggregate { capability, .. } => capability.type_name(),
+            Self::FilteredAggregate { capability, .. } => capability.type_name(),
+            Self::Environment { capability, .. } => capability.type_name(),
+            Self::Void { capability, .. } => capability.type_name(),
         }
     }
 
@@ -127,9 +177,10 @@ impl<C: ComponentInstanceInterface> CapabilitySource<C> {
             Self::Component { component, .. }
             | Self::Framework { component, .. }
             | Self::Capability { component, .. }
-            | Self::FilteredService { component, .. }
-            | Self::CollectionAggregate { component, .. }
-            | Self::OfferAggregate { component, .. } => {
+            | Self::AnonymizedAggregate { component, .. }
+            | Self::FilteredAggregate { component, .. }
+            | Self::Void { component, .. }
+            | Self::Environment { component, .. } => {
                 WeakExtendedInstanceInterface::Component(component.clone())
             }
             Self::Builtin { top_instance, .. } | Self::Namespace { top_instance, .. } => {
@@ -145,94 +196,128 @@ impl<C: ComponentInstanceInterface> fmt::Display for CapabilitySource<C> {
             f,
             "{}",
             match self {
-                CapabilitySource::Component { capability, component } => {
+                Self::Component { capability, component } => {
                     format!("{} '{}'", capability, component.moniker)
                 }
-                CapabilitySource::Framework { capability, .. } => capability.to_string(),
-                CapabilitySource::Builtin { capability, .. } => capability.to_string(),
-                CapabilitySource::Namespace { capability, .. } => capability.to_string(),
-                CapabilitySource::OfferAggregate { capability, .. } => capability.to_string(),
-                CapabilitySource::Capability { source_capability, .. } =>
-                    format!("{}", source_capability),
-                CapabilitySource::CollectionAggregate {
-                    capability,
-                    collections,
-                    component,
-                    ..
-                } => {
+                Self::Framework { capability, .. } => capability.to_string(),
+                Self::Builtin { capability, .. } => capability.to_string(),
+                Self::Namespace { capability, .. } => capability.to_string(),
+                Self::FilteredAggregate { capability, .. } => capability.to_string(),
+                Self::Capability { source_capability, .. } => format!("{}", source_capability),
+                Self::AnonymizedAggregate { capability, members, component, .. } => {
                     format!(
-                        "{} from collections '{}' of component '{}'",
+                        "{} from component '{}' aggregated from {}",
                         capability,
-                        collections.iter().map(|c| c.as_str()).collect::<Vec<_>>().join(","),
-                        &component.moniker
+                        &component.moniker,
+                        members.iter().map(|s| format!("{s}")).collect::<Vec<_>>().join(","),
                     )
                 }
-                Self::FilteredService { capability, component, .. } => {
-                    format!("{} '{}'", capability, component.moniker)
-                }
+                Self::Environment { capability, .. } => capability.to_string(),
+                Self::Void { capability, .. } => capability.to_string(),
             }
         )
     }
 }
 
-/// A provider of a capability from an aggregation of one or more collections.
+/// An individual instance in an aggregate.
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub enum AggregateInstance {
+    Child(ChildName),
+    Parent,
+    Self_,
+}
+
+impl fmt::Display for AggregateInstance {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Child(n) => {
+                write!(f, "child `{n}`")
+            }
+            Self::Parent => {
+                write!(f, "parent")
+            }
+            Self::Self_ => {
+                write!(f, "self")
+            }
+        }
+    }
+}
+
+/// A provider of a capability from an aggregation of one or more collections and static children.
+/// The instance names in the aggregate will be anonymized.
 ///
 /// This trait type-erases the capability type, so it can be handled and hosted generically.
 #[async_trait]
-pub trait CollectionAggregateCapabilityProvider<C: ComponentInstanceInterface>:
+pub trait AnonymizedAggregateCapabilityProvider<C: ComponentInstanceInterface>:
     Send + Sync
 {
     /// Lists the instances of the capability.
     ///
     /// The instance is an opaque identifier that is only meaningful for a subsequent
     /// call to `route_instance`.
-    async fn list_instances(&self) -> Result<Vec<ChildName>, RoutingError>;
+    async fn list_instances(&self) -> Result<Vec<AggregateInstance>, RoutingError>;
 
     /// Route the given `instance` of the capability to its source.
     async fn route_instance(
         &self,
-        instance: &ChildName,
+        instance: &AggregateInstance,
     ) -> Result<CapabilitySource<C>, RoutingError>;
 
     /// Trait-object compatible clone.
-    fn clone_boxed(&self) -> Box<dyn CollectionAggregateCapabilityProvider<C>>;
+    fn clone_boxed(&self) -> Box<dyn AnonymizedAggregateCapabilityProvider<C>>;
 }
 
-impl<C: ComponentInstanceInterface> Clone for Box<dyn CollectionAggregateCapabilityProvider<C>> {
+impl<C: ComponentInstanceInterface> Clone for Box<dyn AnonymizedAggregateCapabilityProvider<C>> {
     fn clone(&self) -> Self {
         self.clone_boxed()
     }
 }
 
-impl<C> fmt::Debug for Box<dyn CollectionAggregateCapabilityProvider<C>> {
+impl<C> fmt::Debug for Box<dyn AnonymizedAggregateCapabilityProvider<C>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Box<dyn CollectionAggregateCapabilityProvider>").finish()
+        f.debug_struct("Box<dyn AnonymizedAggregateCapabilityProvider>").finish()
     }
 }
 
-/// A provider of a capability from an aggregation of zero or more offered instances of a capability.
+/// The return value of the routing future returned by
+/// `FilteredAggregateCapabilityProvider::route_instances`, which contains information about the
+/// source of the route.
+#[derive(Debug)]
+pub struct FilteredAggregateCapabilityRouteData<C>
+where
+    C: ComponentInstanceInterface,
+{
+    /// The source of the capability.
+    pub capability_source: CapabilitySource<C>,
+    /// The filter to apply to service instances, as defined by
+    /// [`fuchsia.component.decl/OfferService.renamed_instances`](https://fuchsia.dev/reference/fidl/fuchsia.component.decl#OfferService).
+    pub instance_filter: Vec<NameMapping>,
+}
+
+/// A provider of a capability from an aggregation of zero or more offered instances of a
+/// capability, with filters.
 ///
 /// This trait type-erases the capability type, so it can be handled and hosted generically.
-pub trait OfferAggregateCapabilityProvider<C: ComponentInstanceInterface>: Send + Sync {
+pub trait FilteredAggregateCapabilityProvider<C: ComponentInstanceInterface>: Send + Sync {
     /// Return a list of futures to route every instance in the aggregate to its source. Each
     /// result is paired with the list of instances to include in the source.
     fn route_instances(
         &self,
-    ) -> Vec<BoxFuture<'_, Result<(CapabilitySource<C>, Vec<String>), RoutingError>>>;
+    ) -> Vec<BoxFuture<'_, Result<FilteredAggregateCapabilityRouteData<C>, RoutingError>>>;
 
     /// Trait-object compatible clone.
-    fn clone_boxed(&self) -> Box<dyn OfferAggregateCapabilityProvider<C>>;
+    fn clone_boxed(&self) -> Box<dyn FilteredAggregateCapabilityProvider<C>>;
 }
 
-impl<C: ComponentInstanceInterface> Clone for Box<dyn OfferAggregateCapabilityProvider<C>> {
+impl<C: ComponentInstanceInterface> Clone for Box<dyn FilteredAggregateCapabilityProvider<C>> {
     fn clone(&self) -> Self {
         self.clone_boxed()
     }
 }
 
-impl<C> fmt::Debug for Box<dyn OfferAggregateCapabilityProvider<C>> {
+impl<C> fmt::Debug for Box<dyn FilteredAggregateCapabilityProvider<C>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Box<dyn OfferAggregateCapabilityProvider>").finish()
+        f.debug_struct("Box<dyn FilteredAggregateCapabilityProvider>").finish()
     }
 }
 
@@ -245,12 +330,28 @@ pub enum InternalCapability {
     Protocol(Name),
     Directory(Name),
     Runner(Name),
+    Config(Name),
     EventStream(Name),
     Resolver(Name),
     Storage(Name),
+    Dictionary(Name),
 }
 
 impl InternalCapability {
+    pub fn new(type_name: CapabilityTypeName, name: Name) -> Self {
+        match type_name {
+            CapabilityTypeName::Directory => InternalCapability::Directory(name),
+            CapabilityTypeName::EventStream => InternalCapability::Directory(name),
+            CapabilityTypeName::Protocol => InternalCapability::Protocol(name),
+            CapabilityTypeName::Resolver => InternalCapability::Resolver(name),
+            CapabilityTypeName::Runner => InternalCapability::Runner(name),
+            CapabilityTypeName::Service => InternalCapability::Service(name),
+            CapabilityTypeName::Storage => InternalCapability::Storage(name),
+            CapabilityTypeName::Dictionary => InternalCapability::Dictionary(name),
+            CapabilityTypeName::Config => InternalCapability::Config(name),
+        }
+    }
+
     /// Returns whether the given InternalCapability can be available in a component's namespace.
     pub fn can_be_in_namespace(&self) -> bool {
         matches!(
@@ -268,9 +369,11 @@ impl InternalCapability {
             InternalCapability::Protocol(_) => CapabilityTypeName::Protocol,
             InternalCapability::Directory(_) => CapabilityTypeName::Directory,
             InternalCapability::Runner(_) => CapabilityTypeName::Runner,
+            InternalCapability::Config(_) => CapabilityTypeName::Config,
             InternalCapability::EventStream(_) => CapabilityTypeName::EventStream,
             InternalCapability::Resolver(_) => CapabilityTypeName::Resolver,
             InternalCapability::Storage(_) => CapabilityTypeName::Storage,
+            InternalCapability::Dictionary(_) => CapabilityTypeName::Dictionary,
         }
     }
 
@@ -280,9 +383,11 @@ impl InternalCapability {
             InternalCapability::Protocol(name) => &name,
             InternalCapability::Directory(name) => &name,
             InternalCapability::Runner(name) => &name,
+            InternalCapability::Config(name) => &name,
             InternalCapability::EventStream(name) => &name,
             InternalCapability::Resolver(name) => &name,
             InternalCapability::Storage(name) => &name,
+            InternalCapability::Dictionary(name) => &name,
         }
     }
 
@@ -298,6 +403,22 @@ impl InternalCapability {
 impl fmt::Display for InternalCapability {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} '{}' from component manager", self.type_name(), self.source_name())
+    }
+}
+
+impl From<CapabilityDecl> for InternalCapability {
+    fn from(capability: CapabilityDecl) -> Self {
+        match capability {
+            CapabilityDecl::Service(c) => InternalCapability::Service(c.name),
+            CapabilityDecl::Protocol(c) => InternalCapability::Protocol(c.name),
+            CapabilityDecl::Directory(c) => InternalCapability::Directory(c.name),
+            CapabilityDecl::Storage(c) => InternalCapability::Storage(c.name),
+            CapabilityDecl::Runner(c) => InternalCapability::Runner(c.name),
+            CapabilityDecl::Resolver(c) => InternalCapability::Resolver(c.name),
+            CapabilityDecl::EventStream(c) => InternalCapability::EventStream(c.name),
+            CapabilityDecl::Dictionary(c) => InternalCapability::Dictionary(c.name),
+            CapabilityDecl::Config(c) => InternalCapability::Config(c.name),
+        }
     }
 }
 
@@ -343,6 +464,12 @@ impl From<StorageDecl> for InternalCapability {
     }
 }
 
+impl From<cm_rust::ConfigurationDecl> for InternalCapability {
+    fn from(config: cm_rust::ConfigurationDecl) -> Self {
+        Self::Config(config.name)
+    }
+}
+
 /// A capability being routed from a component.
 #[derive(FromEnum, Clone, Debug, PartialEq, Eq)]
 pub enum ComponentCapability {
@@ -358,6 +485,8 @@ pub enum ComponentCapability {
     Resolver(ResolverDecl),
     Service(ServiceDecl),
     EventStream(EventStreamDecl),
+    Dictionary(DictionaryDecl),
+    Config(ConfigurationDecl),
 }
 
 impl ComponentCapability {
@@ -391,6 +520,8 @@ impl ComponentCapability {
                 UseDecl::Service(_) => CapabilityTypeName::Service,
                 UseDecl::Storage(_) => CapabilityTypeName::Storage,
                 UseDecl::EventStream(_) => CapabilityTypeName::EventStream,
+                UseDecl::Runner(_) => CapabilityTypeName::Runner,
+                UseDecl::Config(_) => CapabilityTypeName::Config,
             },
             ComponentCapability::Environment(env) => match env {
                 EnvironmentCapability::Runner { .. } => CapabilityTypeName::Runner,
@@ -403,6 +534,8 @@ impl ComponentCapability {
                 ExposeDecl::Service(_) => CapabilityTypeName::Service,
                 ExposeDecl::Runner(_) => CapabilityTypeName::Runner,
                 ExposeDecl::Resolver(_) => CapabilityTypeName::Resolver,
+                ExposeDecl::Dictionary(_) => CapabilityTypeName::Dictionary,
+                ExposeDecl::Config(_) => CapabilityTypeName::Config,
             },
             ComponentCapability::Offer(offer) => match offer {
                 OfferDecl::Protocol(_) => CapabilityTypeName::Protocol,
@@ -412,14 +545,18 @@ impl ComponentCapability {
                 OfferDecl::Runner(_) => CapabilityTypeName::Runner,
                 OfferDecl::Resolver(_) => CapabilityTypeName::Resolver,
                 OfferDecl::EventStream(_) => CapabilityTypeName::EventStream,
+                OfferDecl::Dictionary(_) => CapabilityTypeName::Dictionary,
+                OfferDecl::Config(_) => CapabilityTypeName::Config,
             },
             ComponentCapability::Protocol(_) => CapabilityTypeName::Protocol,
             ComponentCapability::Directory(_) => CapabilityTypeName::Directory,
             ComponentCapability::Storage(_) => CapabilityTypeName::Storage,
             ComponentCapability::Runner(_) => CapabilityTypeName::Runner,
+            ComponentCapability::Config(_) => CapabilityTypeName::Config,
             ComponentCapability::Resolver(_) => CapabilityTypeName::Resolver,
             ComponentCapability::Service(_) => CapabilityTypeName::Service,
             ComponentCapability::EventStream(_) => CapabilityTypeName::EventStream,
+            ComponentCapability::Dictionary(_) => CapabilityTypeName::Dictionary,
         }
     }
 
@@ -443,14 +580,19 @@ impl ComponentCapability {
             ComponentCapability::Protocol(protocol) => Some(&protocol.name),
             ComponentCapability::Directory(directory) => Some(&directory.name),
             ComponentCapability::Runner(runner) => Some(&runner.name),
+            ComponentCapability::Config(config) => Some(&config.name),
             ComponentCapability::Resolver(resolver) => Some(&resolver.name),
             ComponentCapability::Service(service) => Some(&service.name),
             ComponentCapability::EventStream(event) => Some(&event.name),
+            ComponentCapability::Dictionary(dictionary) => Some(&dictionary.name),
             ComponentCapability::Use(use_) => match use_ {
                 UseDecl::Protocol(UseProtocolDecl { source_name, .. }) => Some(source_name),
                 UseDecl::Directory(UseDirectoryDecl { source_name, .. }) => Some(source_name),
                 UseDecl::Storage(UseStorageDecl { source_name, .. }) => Some(source_name),
                 UseDecl::Service(UseServiceDecl { source_name, .. }) => Some(source_name),
+                UseDecl::Config(cm_rust::UseConfigurationDecl { source_name, .. }) => {
+                    Some(source_name)
+                }
                 _ => None,
             },
             ComponentCapability::Environment(env_cap) => match env_cap {
@@ -464,6 +606,12 @@ impl ComponentCapability {
                 ExposeDecl::Runner(ExposeRunnerDecl { source_name, .. }) => Some(source_name),
                 ExposeDecl::Resolver(ExposeResolverDecl { source_name, .. }) => Some(source_name),
                 ExposeDecl::Service(ExposeServiceDecl { source_name, .. }) => Some(source_name),
+                ExposeDecl::Config(ExposeConfigurationDecl { source_name, .. }) => {
+                    Some(source_name)
+                }
+                ExposeDecl::Dictionary(ExposeDictionaryDecl { source_name, .. }) => {
+                    Some(source_name)
+                }
             },
             ComponentCapability::Offer(offer) => match offer {
                 OfferDecl::Protocol(OfferProtocolDecl { source_name, .. }) => Some(source_name),
@@ -472,9 +620,11 @@ impl ComponentCapability {
                 OfferDecl::Storage(OfferStorageDecl { source_name, .. }) => Some(source_name),
                 OfferDecl::Resolver(OfferResolverDecl { source_name, .. }) => Some(source_name),
                 OfferDecl::Service(OfferServiceDecl { source_name, .. }) => Some(source_name),
+                OfferDecl::Config(OfferConfigurationDecl { source_name, .. }) => Some(source_name),
                 OfferDecl::EventStream(OfferEventStreamDecl { source_name, .. }) => {
                     Some(source_name)
                 }
+                OfferDecl::Dictionary(OfferDictionaryDecl { source_name, .. }) => Some(source_name),
             },
         }
     }
@@ -503,6 +653,22 @@ impl ComponentCapability {
             .map(|p| format!("{}", p))
             .or_else(|| self.source_path().map(|p| format!("{}", p)))
             .unwrap_or_default()
+    }
+}
+
+impl From<CapabilityDecl> for ComponentCapability {
+    fn from(capability: CapabilityDecl) -> Self {
+        match capability {
+            CapabilityDecl::Service(c) => ComponentCapability::Service(c),
+            CapabilityDecl::Protocol(c) => ComponentCapability::Protocol(c),
+            CapabilityDecl::Directory(c) => ComponentCapability::Directory(c),
+            CapabilityDecl::Storage(c) => ComponentCapability::Storage(c),
+            CapabilityDecl::Runner(c) => ComponentCapability::Runner(c),
+            CapabilityDecl::Resolver(c) => ComponentCapability::Resolver(c),
+            CapabilityDecl::EventStream(c) => ComponentCapability::EventStream(c),
+            CapabilityDecl::Dictionary(c) => ComponentCapability::Dictionary(c),
+            CapabilityDecl::Config(c) => ComponentCapability::Config(c),
+        }
     }
 }
 

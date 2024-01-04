@@ -5,6 +5,7 @@
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_library.gni")
+import("//src/connectivity/network/unified_binary/network_unified_binary.gni")
 
 rustc_library("lib") {
   name = "dns"
@@ -13,11 +14,11 @@ rustc_library("lib") {
   deps = [
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-sync",
     "//src/lib/network/fidl_fuchsia_net_ext",
     "//src/lib/zircon/rust:fuchsia-zircon",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:parking_lot",
     "//third_party/rust_crates:trust-dns-proto",
     "//third_party/rust_crates:trust-dns-resolver",
   ]
@@ -64,13 +65,13 @@ bin_base = {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-runtime",
+    "//src/lib/fuchsia-sync",
     "//src/lib/network/fidl_fuchsia_net_ext",
     "//src/lib/zircon/rust:fuchsia-zircon",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:libc",
-    "//third_party/rust_crates:parking_lot",
     "//third_party/rust_crates:tracing",
     "//third_party/rust_crates:trust-dns-proto",
     "//third_party/rust_crates:trust-dns-resolver",
@@ -80,6 +81,7 @@ bin_base = {
   test_deps = [
     "//src/connectivity/lib/net-declare",
     "//src/lib/const-unwrap",
+    "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:itertools",
     "//third_party/rust_crates:test-case",
@@ -90,13 +92,12 @@ bin_base = {
   non_rust_deps = []
 }
 
-rustc_binary("bin") {
+network_unified_binary("bin") {
   edition = "2021"
   forward_variables_from(bin_base, "*")
 
   name = "dns_resolver"
   with_unit_tests = true
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
 }
 
 rustc_binary("bin_with_fake_time") {
@@ -114,15 +115,15 @@ fuchsia_unittest_package("dns-resolver-tests") {
   deps = [ ":bin_test" ]
 }
 
-fuchsia_component("component") {
+network_unified_binary_regular_and_gub_components("component") {
   component_name = "dns_resolver"
   manifest = "meta/dns_resolver.cml"
-  deps = [ ":bin" ]
+  gub_deps = [ ":bin" ]
 }
 
-fuchsia_package("package") {
+network_unified_binary_regular_and_gub_packages("package") {
   package_name = "dns-resolver"
-  deps = [ ":component" ]
+  gub_deps = [ ":component" ]
   visibility = [ "//bundles/assembly/*" ]
 }
 

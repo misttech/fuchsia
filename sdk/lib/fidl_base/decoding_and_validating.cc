@@ -82,13 +82,13 @@ zx_status_t DecodeProcessHandle(const fidl_handle_t* handle, zx_obj_type_t obj_t
 }
 
 void ConvertEnvelopeToDecodedRepresentation(const void* bytes_base_ptr,
-                                            fidl_envelope_v2_t envelope_copy,
-                                            const fidl_envelope_v2_t* envelope_ptr) {
+                                            fidl_envelope_t envelope_copy,
+                                            const fidl_envelope_t* envelope_ptr) {
   // No conversion is needed for v2 validate.
 }
 void ConvertEnvelopeToDecodedRepresentation(const void* bytes_base_ptr,
-                                            fidl_envelope_v2_t envelope_copy,
-                                            fidl_envelope_v2_t* envelope_ptr) {
+                                            fidl_envelope_t envelope_copy,
+                                            fidl_envelope_t* envelope_ptr) {
   if ((envelope_copy.flags & FIDL_ENVELOPE_FLAGS_INLINING_MASK) != 0) {
     fidl_envelope_v2_unknown_data_t unknown_data_envelope = {
         .num_handles = envelope_copy.num_handles,
@@ -158,7 +158,6 @@ class FidlDecoder final : public BaseVisitor<WireFormatVersion, Byte> {
 
   Status VisitPointer(Position ptr_position, PointeeType pointee_type,
                       ObjectPointerPointer object_ptr_ptr, uint32_t inline_size,
-                      FidlMemcpyCompatibility pointee_memcpy_compatibility,
                       Position* out_position) {
     if (unlikely(pointee_type != PointeeType::kEnvelope &&
                  reinterpret_cast<uintptr_t>(*object_ptr_ptr) != FIDL_ALLOC_PRESENT)) {

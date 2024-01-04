@@ -9,22 +9,26 @@ use {
     assert_matches::assert_matches,
     fuchsia_merkle::MerkleTree,
     fuchsia_pkg_testing::{
-        serve::{responder, Domain, HttpResponder},
+        serve::{responder, HttpResponder},
         Package, PackageBuilder, RepositoryBuilder,
     },
     lib::{
         extra_blob_contents, make_pkg_with_extra_blobs, TestEnvBuilder, EMPTY_REPO_PATH,
         FILE_SIZE_LARGE_ENOUGH_TO_TRIGGER_HYPER_BATCHING,
     },
-    std::{net::Ipv4Addr, sync::Arc},
+    std::sync::Arc,
 };
+
+// TODO(b/308158482): re-enable when ring works on riscv64
+#[cfg(not(target_arch = "riscv64"))]
+use {fuchsia_pkg_testing::serve::Domain, std::net::Ipv4Addr};
 
 async fn verify_resolve_fails_then_succeeds<H: HttpResponder>(
     pkg: Package,
     responder: H,
     failure_error: fidl_fuchsia_pkg::ResolveError,
 ) {
-    let env = TestEnvBuilder::new().build().await;
+    let env = TestEnvBuilder::new().delivery_blob_fallback(false).build().await;
 
     let repo = Arc::new(
         RepositoryBuilder::from_template_dir(EMPTY_REPO_PATH)
@@ -62,7 +66,7 @@ async fn verify_resolve_fails_then_succeeds<H: HttpResponder>(
 #[fuchsia::test]
 async fn second_resolve_succeeds_when_far_404() {
     let pkg = make_pkg_with_extra_blobs("second_resolve_succeeds_when_far_404", 1).await;
-    let path_to_override = format!("/blobs/{}", pkg.hash());
+    let path_to_override = format!("/blobs/1/{}", pkg.hash());
 
     verify_resolve_fails_then_succeeds(
         pkg,
@@ -76,7 +80,7 @@ async fn second_resolve_succeeds_when_far_404() {
 async fn second_resolve_succeeds_when_blob_404() {
     let pkg = make_pkg_with_extra_blobs("second_resolve_succeeds_when_blob_404", 1).await;
     let path_to_override = format!(
-        "/blobs/{}",
+        "/blobs/1/{}",
         MerkleTree::from_reader(
             extra_blob_contents("second_resolve_succeeds_when_blob_404", 0).as_slice()
         )
@@ -102,7 +106,7 @@ async fn second_resolve_succeeds_when_far_errors_mid_download() {
         .build()
         .await
         .unwrap();
-    let path_to_override = format!("/blobs/{}", pkg.hash());
+    let path_to_override = format!("/blobs/1/{}", pkg.hash());
 
     verify_resolve_fails_then_succeeds(
         pkg,
@@ -121,7 +125,7 @@ async fn second_resolve_succeeds_when_blob_errors_mid_download() {
         .await
         .unwrap();
     let path_to_override = format!(
-        "/blobs/{}",
+        "/blobs/1/{}",
         MerkleTree::from_reader(blob.as_slice()).expect("merkle slice").root()
     );
 
@@ -143,7 +147,7 @@ async fn second_resolve_succeeds_disconnect_before_far_complete() {
         .build()
         .await
         .unwrap();
-    let path_to_override = format!("/blobs/{}", pkg.hash());
+    let path_to_override = format!("/blobs/1/{}", pkg.hash());
 
     verify_resolve_fails_then_succeeds(
         pkg,
@@ -162,7 +166,7 @@ async fn second_resolve_succeeds_disconnect_before_blob_complete() {
         .await
         .unwrap();
     let path_to_override = format!(
-        "/blobs/{}",
+        "/blobs/1/{}",
         MerkleTree::from_reader(blob.as_slice()).expect("merkle slice").root()
     );
 
@@ -177,7 +181,7 @@ async fn second_resolve_succeeds_disconnect_before_blob_complete() {
 #[fuchsia::test]
 async fn second_resolve_succeeds_when_far_corrupted() {
     let pkg = make_pkg_with_extra_blobs("second_resolve_succeeds_when_far_corrupted", 1).await;
-    let path_to_override = format!("/blobs/{}", pkg.hash());
+    let path_to_override = format!("/blobs/1/{}", pkg.hash());
 
     verify_resolve_fails_then_succeeds(
         pkg,
@@ -192,7 +196,7 @@ async fn second_resolve_succeeds_when_blob_corrupted() {
     let pkg = make_pkg_with_extra_blobs("second_resolve_succeeds_when_blob_corrupted", 1).await;
     let blob = extra_blob_contents("second_resolve_succeeds_when_blob_corrupted", 0);
     let path_to_override = format!(
-        "/blobs/{}",
+        "/blobs/1/{}",
         MerkleTree::from_reader(blob.as_slice()).expect("merkle slice").root()
     );
 
@@ -248,6 +252,8 @@ async fn second_resolve_succeeds_when_tuf_metadata_update_fails() {
 // on its hyper clients, so the way this change would sneak in is if the hyper client is changed
 // to use ALPN to prefer http2. The blob server used in this test has ALPN configured to prefer
 // http2.
+// TODO(b/308158482): re-enable when ring works on riscv64.
+#[cfg(not(target_arch = "riscv64"))]
 #[fuchsia::test]
 async fn blob_timeout_causes_new_tcp_connection() {
     let pkg = PackageBuilder::new("blob_timeout_causes_new_tcp_connection").build().await.unwrap();

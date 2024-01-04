@@ -38,11 +38,6 @@ ScenicRealmBuilder::ScenicRealmBuilder(RealmBuilderArgs args)
 }
 
 ScenicRealmBuilder& ScenicRealmBuilder::Init(RealmBuilderArgs args) {
-  // Load default config for Scenic, and override its "i_can_haz_flatland" flag.
-  realm_builder_.InitMutableConfigFromPackage(kScenic);
-  realm_builder_.SetConfigValue(kScenic, "i_can_haz_flatland",
-                                ConfigValue::Bool(args.use_flatland));
-
   // Only fuchsia.media.ProfileProvider is not already included by scenic_only.cml.
   realm_builder_.AddRoute(Route{.capabilities =
                                     {
@@ -66,6 +61,19 @@ ScenicRealmBuilder& ScenicRealmBuilder::Init(RealmBuilderArgs args) {
     realm_builder_.AddRoute(Route{.capabilities = {Protocol{fuchsia::ui::scenic::Scenic::Name_}},
                                   .source = ChildRef{kScenic},
                                   .targets = {ChildRef{config.name}}});
+  }
+
+  realm_builder_.InitMutableConfigFromPackage(kScenic);
+
+  // Configure the renderer type for Scenic.
+  if (args.renderer_type_config.has_value()) {
+    realm_builder_.SetConfigValue(kScenic, "renderer",
+                                  ConfigValue(args.renderer_type_config.value()));
+  }
+
+  if (args.display_rotation.has_value()) {
+    realm_builder_.SetConfigValue(kScenic, "display_rotation",
+                                  ConfigValue::Uint64(args.display_rotation.value()));
   }
 
   return *this;

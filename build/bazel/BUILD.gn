@@ -7,8 +7,10 @@ import("//build/bazel/bazel_inputs.gni")
 import("//build/bazel/bazel_workspace.gni")
 import("//build/bazel/legacy_ninja_build_outputs.gni")
 import("//build/images/vbmeta.gni")
+import("//build/info/info.gni")
 import("//build/product.gni")
 import("//build/toolchain/rbe.gni")
+import("//src/connectivity/policy/netcfg/delegated_network_provisioning.gni")
 
 assert(
     current_toolchain == default_toolchain,
@@ -78,14 +80,17 @@ action("generate_main_workspace") {
     "//prebuilt/third_party/bazel/${host_os}-${host_cpu}/bazel",
 
     # The script expands these templates
-    "//build/bazel/templates/template.WORKSPACE.bazel",
     "//build/bazel/templates/template.bazel.sh",
     "//build/bazel/templates/template.bazelrc",
-    "//build/bazel/templates/template.fuchsia_build_config.bzl",
+    "//build/bazel/templates/template.remote_services.bazelrc",
     "//build/bazel/templates/template.platform_mappings",
 
     # The script reads this configuration file
     "//build/bazel/config/main_workspace_top_dir",
+
+    # The script imports these python files
+    "//build/bazel/scripts/check_ninja_build_plan.py",
+    "//build/bazel/scripts/compute_content_hash.py",
 
     # The script reads RBE configs
     rewrapper_config_file,
@@ -93,7 +98,7 @@ action("generate_main_workspace") {
   ]
 
   # This dependency is needed to properly populate the @fuchsia_sdk repository.
-  deps = [ "//build/bazel/bazel_sdk:idk.exported" ]
+  deps = [ "//build/bazel/bazel_sdk:idk" ]
 
   # This dependency is needed to properly populate the @internal_sdk repository
   # used experimentally to migrate non-SDK GN targets to Bazel
@@ -118,6 +123,7 @@ action("generate_main_workspace") {
     "${bazel_main_top_dir}/workspace/generated_repository_hashes/fuchsia_sdk.hash",
     "${bazel_main_top_dir}/workspace/generated_repository_hashes/internal_sdk.hash",
     "${bazel_main_top_dir}/workspace/generated_repository_hashes/prebuilt_clang.hash",
+    "${bazel_main_top_dir}/workspace/generated_repository_hashes/prebuilt_python.hash",
 
     # LINT.ThenChange(scripts/update-workspace.py)
   ]
@@ -197,6 +203,17 @@ generated_file(_build_args_bzl_target) {
   } else {
     contents += [ "authorized_ssh_keys_label = None" ]
   }
+
+  # Pass the delegated_network_provisioning GN arg to bazel.
+  if (delegated_network_provisioning) {
+    contents += [ "delegated_network_provisioning = True" ]
+  } else {
+    contents += [ "delegated_network_provisioning = False" ]
+  }
+
+  # Pass the product name to Bazel.
+  contents += [ "build_info_product = \"${build_info_product}\"" ]
+
   outputs = [ _build_args_bzl_output ]
 }
 

@@ -171,7 +171,7 @@ impl Filesystem {
         Ok(root)
     }
 
-    fn volume(&mut self, volume_name: &str) -> Option<&mut ServingVolume> {
+    pub fn volume(&mut self, volume_name: &str) -> Option<&mut ServingVolume> {
         match self {
             Filesystem::ServingMultiVolume(_, fs, _) => fs.volume_mut(&volume_name),
             Filesystem::ServingVolumeInFxblob(..) => unreachable!(),
@@ -312,8 +312,6 @@ impl FshostEnvironment {
 
         // Set the max partition size for data
         self.apply_data_partition_limits(device).await;
-
-        tracing::info!(path = device.path(), format = format.as_str(), "Formatting");
 
         let filesystem = match format {
             DiskFormat::Fxfs => {
@@ -499,7 +497,11 @@ impl FshostEnvironment {
 
         let mut format: DiskFormat = if self.config.use_disk_migration {
             let format = device.content_format().await?;
-            tracing::info!(format = format.as_str(), "launching detected format");
+            tracing::info!(
+                format = format.as_str(),
+                "Using detected disk format to potentially \
+                migrate data"
+            );
             format
         } else {
             match self.config.data_filesystem_format.as_str().into() {
@@ -594,10 +596,9 @@ impl Environment for FshostEnvironment {
             recursive_wait_and_open::<VolumeManagerMarker>(&fvm_dir, "/fvm")
                 .await
                 .context("failed to connect to the VolumeManager")?;
-        // Call VolumeManager::GetInfo in order to ensure all partition entries are visible.
-        // TODO(https://fxbug.dev/126961): Right now, we rely on get_info() completing to ensure
-        // that fvm child partitions are visible in devfs. This should be revised when DF supports
-        // another way of safely enumerating child partitions.
+
+        // **NOTE**: We must call VolumeManager::GetInfo() to ensure all partitions are visible when
+        // we enumerate them below. See https://fxbug.dev/126961 for more information.
         zx::ok(fvm_volume_manager_proxy.get_info().await.context("transport error on get_info")?.0)
             .context("get_info failed")?;
 
@@ -749,7 +750,9 @@ impl Environment for FshostEnvironment {
             .launcher
             .reset_fvm_partition(fvm_topo_path, &mut *self.matcher_lock.lock().await)
             .await
-            .context("reset fvm")?;
+            .with_context(|| {
+                format!("Failed to reset non-blob FVM partitions on {}", fvm_topo_path)
+            })?;
         let device = device.as_mut();
 
         // Default to minfs if we don't match expected filesystems.
@@ -920,7 +923,6 @@ impl FilesystemLauncher {
         Blobfs {
             write_compression_algorithm: self.boot_args.blobfs_write_compression_algorithm(),
             cache_eviction_policy_override: self.boot_args.blobfs_eviction_policy(),
-            allow_delivery_blobs: self.config.blobfs_allow_delivery_blobs,
             ..Default::default()
         }
     }
@@ -1001,19 +1003,29 @@ impl FilesystemLauncher {
             match format {
                 DiskFormat::Fxfs => {
                     let mut serving_multi_vol_fs = fs.serve_multi_volume().await?;
-                    let (crypt_service, volume_name, _) =
-                        fxfs::unlock_data_volume(&mut serving_multi_vol_fs, &self.config).await?;
-                    Ok(Filesystem::ServingMultiVolume(
-                        crypt_service,
-                        serving_multi_vol_fs,
-                        volume_name,
-                    ))
+                    match fxfs::unlock_data_volume(&mut serving_multi_vol_fs, &self.config).await? {
+                        Some((crypt_service, volume_name, _)) => {
+                            Ok(ServeFilesystemStatus::Serving(Filesystem::ServingMultiVolume(
+                                crypt_service,
+                                serving_multi_vol_fs,
+                                volume_name,
+                            )))
+                        }
+                        // If unlocking returns none, the keybag got deleted by something.
+                        None => {
+                            tracing::warn!(
+                                "keybag not found. Perhaps the keys were shredded? \
+                                Reformatting the data volume."
+                            );
+                            Ok(ServeFilesystemStatus::FormatRequired)
+                        }
+                    }
                 }
-                _ => Ok(Filesystem::Serving(fs.serve().await?)),
+                _ => Ok(ServeFilesystemStatus::Serving(Filesystem::Serving(fs.serve().await?))),
             }
         };
         match serve_fut.await {
-            Ok(fs) => Ok(ServeFilesystemStatus::Serving(fs)),
+            Ok(fs) => Ok(fs),
             Err(error) => {
                 self.report_corruption(format, &error);
                 if self.config.format_data_on_corruption {
@@ -1044,21 +1056,28 @@ impl FilesystemLauncher {
             connect_to_protocol_at_path::<VolumeManagerMarker>(&fvm_topo_path)
                 .context("Failed to connect to the fvm VolumeManagerProxy")?;
 
+        // **NOTE**: We must call VolumeManager::GetInfo() to ensure all partitions are visible when
+        // we enumerate them below. See https://fxbug.dev/126961 for more information.
+        zx::ok(fvm_volume_manager_proxy.get_info().await.context("transport error on get_info")?.0)
+            .context("get_info failed")?;
+
         let dir_entries = fuchsia_fs::directory::readdir(&fvm_directory_proxy).await?;
         for entry in dir_entries {
             // Destroy all fvm partitions aside from blobfs
             if !entry.name.contains("blobfs") && !entry.name.contains("device") {
-                let entry_path = format!("{fvm_topo_path}/{}/block", entry.name);
-                let entry_volume_proxy =
-                    connect_to_protocol_at_path::<VolumeMarker>(&entry_path)
-                        .context("Failed to connect to the partition VolumeProxy")?;
-                ignore_paths.insert(entry_path.to_string());
+                let entry_volume_proxy = recursive_wait_and_open::<VolumeMarker>(
+                    &fvm_directory_proxy,
+                    &format!("{}/block", entry.name),
+                )
+                .await
+                .with_context(|| format!("Failed to open partition {}", entry.name))?;
+                ignore_paths.insert(format!("{fvm_topo_path}/{}/block", entry.name));
                 let status = entry_volume_proxy
                     .destroy()
                     .await
-                    .context("Failed to destroy the data partition")?;
+                    .with_context(|| format!("Failed to destroy partition {}", entry.name))?;
                 zx::Status::ok(status).context("destroy() returned an error")?;
-                tracing::info!(topological_path = %entry_path, "Destroyed partition");
+                tracing::info!(partition = %entry.name, "Destroyed partition");
             }
         }
 
@@ -1130,8 +1149,15 @@ impl FilesystemLauncher {
             Ok(self.format_data_in_fxblob(serving_multi_vol_fs).await?)
         } else {
             match fxfs::unlock_data_volume(serving_multi_vol_fs, &self.config).await {
-                Ok((crypt_service, volume_name, _)) => {
+                Ok(Some((crypt_service, volume_name, _))) => {
                     Ok(Filesystem::ServingVolumeInFxblob(Some(crypt_service), volume_name))
+                }
+                Ok(None) => {
+                    tracing::warn!(
+                        "could not find keybag. Perhaps the keys were shredded? \
+                        Reformatting the data and unencrypted volumes."
+                    );
+                    self.format_data_in_fxblob(serving_multi_vol_fs).await
                 }
                 Err(error) => {
                     self.report_corruption(DiskFormat::Fxfs, &error);
@@ -1166,14 +1192,13 @@ impl FilesystemLauncher {
                 serving_multi_vol_fs
                     .remove_volume(&volume.name)
                     .await
-                    .context(format!("failed to remove volume: {:?}", volume.name))?;
+                    .with_context(|| format!("failed to remove volume: {:?}", volume.name))?;
             }
         }
 
-        let (crypt_service, volume_name, _) =
-            fxfs::init_data_volume(serving_multi_vol_fs, &self.config)
-                .await
-                .context("initializing data volume encryption")?;
+        let (crypt_service, volume_name, _) = fxfs::init_data_volume(serving_multi_vol_fs)
+            .await
+            .context("initializing data volume encryption")?;
         let filesystem = Filesystem::ServingVolumeInFxblob(Some(crypt_service), volume_name);
 
         Ok(filesystem)
@@ -1194,7 +1219,7 @@ impl FilesystemLauncher {
         mut fs: fs_management::filesystem::Filesystem,
     ) -> Result<Filesystem, Error> {
         let format = fs.config().disk_format();
-        tracing::info!(?format, "Formatting");
+        tracing::info!(path = device.path(), format = format.as_str(), "Formatting");
         match format {
             DiskFormat::Fxfs => {
                 let target_bytes = self.config.data_max_bytes;
@@ -1234,13 +1259,14 @@ impl FilesystemLauncher {
         }
 
         fs.format().await.context("formatting data partition")?;
+
+        tracing::info!(path = device.path(), format = format.as_str(), "Serving");
         let filesystem = if let DiskFormat::Fxfs = format {
             let mut serving_multi_vol_fs =
                 fs.serve_multi_volume().await.context("serving multi volume data partition")?;
-            let (crypt_service, volume_name, _) =
-                fxfs::init_data_volume(&mut serving_multi_vol_fs, &self.config)
-                    .await
-                    .context("initializing data volume encryption")?;
+            let (crypt_service, volume_name, _) = fxfs::init_data_volume(&mut serving_multi_vol_fs)
+                .await
+                .context("initializing data volume encryption")?;
             Filesystem::ServingMultiVolume(crypt_service, serving_multi_vol_fs, volume_name)
         } else {
             Filesystem::Serving(fs.serve().await.context("serving single volume data partition")?)

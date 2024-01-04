@@ -43,8 +43,8 @@ class BrEdrDiscoverableSession;
 class BrEdrDiscoveryManager final {
  public:
   // |peer_cache| MUST out-live this BrEdrDiscoveryManager.
-  BrEdrDiscoveryManager(hci::CommandChannel::WeakPtr cmd, pw::bluetooth::emboss::InquiryMode mode,
-                        PeerCache* peer_cache);
+  BrEdrDiscoveryManager(pw::async::Dispatcher& pw_dispatcher, hci::CommandChannel::WeakPtr cmd,
+                        pw::bluetooth::emboss::InquiryMode mode, PeerCache* peer_cache);
 
   ~BrEdrDiscoveryManager();
 
@@ -92,10 +92,12 @@ class BrEdrDiscoveryManager final {
   hci::CommandChannel::EventCallbackResult InquiryResult(const hci::EmbossEventPacket& event);
 
   // Used to receive Inquiry Results.
-  hci::CommandChannel::EventCallbackResult InquiryResultWithRSSI(const hci::EventPacket& event);
+  hci::CommandChannel::EventCallbackResult InquiryResultWithRssi(
+      const hci::EmbossEventPacket& event);
 
   // Used to receive Inquiry Results.
-  hci::CommandChannel::EventCallbackResult ExtendedInquiryResult(const hci::EventPacket& event);
+  hci::CommandChannel::EventCallbackResult ExtendedInquiryResult(
+      const hci::EmbossEventPacket& event);
 
   // Creates and stores a new session object and returns it.
   std::unique_ptr<BrEdrDiscoverySession> AddDiscoverySession();
@@ -149,18 +151,18 @@ class BrEdrDiscoveryManager final {
     inspect::UintProperty inquiry_sessions_count;
     inspect::UintProperty last_inquiry_length_sec;
 
-    std::optional<zx_time_t> discoverable_started_time;
-    std::optional<zx_time_t> inquiry_started_time;
+    std::optional<pw::chrono::SystemClock::time_point> discoverable_started_time;
+    std::optional<pw::chrono::SystemClock::time_point> inquiry_started_time;
 
     void Initialize(inspect::Node node);
     void Update(size_t discoverable_count, size_t pending_discoverable_count,
-                size_t discovery_count, zx_time_t now);
+                size_t discovery_count, pw::chrono::SystemClock::time_point now);
   };
 
   InspectProperties inspect_properties_;
 
   // The dispatcher that we use for invoking callbacks asynchronously.
-  async_dispatcher_t* dispatcher_;
+  pw::async::Dispatcher& dispatcher_;
 
   // Peer cache to use.
   // We hold a raw pointer is because it must out-live us.

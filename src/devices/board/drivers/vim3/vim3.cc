@@ -73,21 +73,6 @@ int Vim3::Thread() {
     init_txn_->Reply(ZX_ERR_INTERNAL);
     return status;
   }
-  if ((status = GpioInit()) != ZX_OK) {
-    zxlogf(ERROR, "GpioInit() failed: %d", status);
-    init_txn_->Reply(ZX_ERR_INTERNAL);
-    return status;
-  }
-  if ((status = RegistersInit()) != ZX_OK) {
-    zxlogf(ERROR, "RegistersInit() failed: %d", status);
-    init_txn_->Reply(ZX_ERR_INTERNAL);
-    return status;
-  }
-  if ((status = ClkInit()) != ZX_OK) {
-    zxlogf(ERROR, "ClkInit() failed: %d", status);
-    init_txn_->Reply(ZX_ERR_INTERNAL);
-    return status;
-  }
   if ((status = I2cInit()) != ZX_OK) {
     zxlogf(ERROR, "I2cInit() failed: %d", status);
     init_txn_->Reply(ZX_ERR_INTERNAL);
@@ -113,6 +98,47 @@ int Vim3::Thread() {
     init_txn_->Reply(ZX_ERR_INTERNAL);
     return status;
   }
+  if ((status = UsbInit()) != ZX_OK) {
+    zxlogf(ERROR, "UsbInit() failed: %d", status);
+    init_txn_->Reply(ZX_ERR_INTERNAL);
+    return status;
+  }
+  if ((status = PowerInit()) != ZX_OK) {
+    zxlogf(ERROR, "PowerInit() failed: %d", status);
+    init_txn_->Reply(ZX_ERR_INTERNAL);
+    return status;
+  }
+  if ((status = AudioInit()) != ZX_OK) {
+    zxlogf(ERROR, "AudioInit() failed: %d", status);
+    init_txn_->Reply(ZX_ERR_INTERNAL);
+    return status;
+  }
+  if ((status = BluetoothInit()) != ZX_OK) {
+    zxlogf(ERROR, "BluetoothInit() failed: %d", status);
+    init_txn_->Reply(ZX_ERR_INTERNAL);
+    return status;
+  }
+  // ClkInit() must be called after other subsystems that bind to clock have had a chance to add
+  // their init steps.
+  if ((status = ClkInit()) != ZX_OK) {
+    zxlogf(ERROR, "ClkInit() failed: %d", status);
+    init_txn_->Reply(ZX_ERR_INTERNAL);
+    return status;
+  }
+  clock_init_steps_.clear();
+
+  // GpioInit() must be called after other subsystems that bind to GPIO have had a chance to add
+  // their init steps.
+  if ((status = GpioInit()) != ZX_OK) {
+    zxlogf(ERROR, "GpioInit() failed: %d", status);
+    init_txn_->Reply(ZX_ERR_INTERNAL);
+    return status;
+  }
+  if ((status = RegistersInit()) != ZX_OK) {
+    zxlogf(ERROR, "RegistersInit() failed: %d", status);
+    init_txn_->Reply(ZX_ERR_INTERNAL);
+    return status;
+  }
   if ((status = MaliInit()) != ZX_OK) {
     zxlogf(ERROR, "MaliInit() failed: %d\n", status);
   }
@@ -121,10 +147,15 @@ int Vim3::Thread() {
     init_txn_->Reply(ZX_ERR_INTERNAL);
     return status;
   }
-  if ((status = UsbInit()) != ZX_OK) {
-    zxlogf(ERROR, "UsbInit() failed: %d", status);
-    init_txn_->Reply(ZX_ERR_INTERNAL);
-    return status;
+  if (auto result = AdcInit(); result.is_error()) {
+    zxlogf(ERROR, "AdcInit() failed: %s", result.status_string());
+    init_txn_->Reply(result.error_value());
+    return result.error_value();
+  }
+  if (auto result = ButtonsInit(); result.is_error()) {
+    zxlogf(ERROR, "ButtonsInit() failed: %s", result.status_string());
+    init_txn_->Reply(result.error_value());
+    return result.error_value();
   }
   if ((status = CanvasInit()) != ZX_OK) {
     zxlogf(ERROR, "CanvasInit() failed: %d", status);
@@ -133,11 +164,6 @@ int Vim3::Thread() {
   }
   if ((status = DsiInit()) != ZX_OK) {
     zxlogf(ERROR, "DsiInit() failed: %d", status);
-    init_txn_->Reply(ZX_ERR_INTERNAL);
-    return status;
-  }
-  if ((status = HdmiInit()) != ZX_OK) {
-    zxlogf(ERROR, "HdmiInit() failed: %d", status);
     init_txn_->Reply(ZX_ERR_INTERNAL);
     return status;
   }
@@ -161,11 +187,6 @@ int Vim3::Thread() {
     init_txn_->Reply(ZX_ERR_INTERNAL);
     return status;
   }
-  if ((status = PowerInit()) != ZX_OK) {
-    zxlogf(ERROR, "PowerInit() failed: %d", status);
-    init_txn_->Reply(ZX_ERR_INTERNAL);
-    return status;
-  }
   if ((status = CpuInit()) != ZX_OK) {
     zxlogf(ERROR, "CpuInit() failed: %d", status);
     init_txn_->Reply(ZX_ERR_INTERNAL);
@@ -181,17 +202,8 @@ int Vim3::Thread() {
     init_txn_->Reply(ZX_ERR_INTERNAL);
     return status;
   }
-  if ((status = AudioInit()) != ZX_OK) {
-    zxlogf(ERROR, "AudioInit() failed: %d", status);
-    init_txn_->Reply(ZX_ERR_INTERNAL);
-    return status;
-  }
 
-  if ((status = BluetoothInit()) != ZX_OK) {
-    zxlogf(ERROR, "BluetoothInit() failed: %d", status);
-    init_txn_->Reply(ZX_ERR_INTERNAL);
-    return status;
-  }
+  ZX_ASSERT_MSG(clock_init_steps_.empty(), "Clock init steps added but not applied");
 
   init_txn_->Reply(status);
   return ZX_OK;

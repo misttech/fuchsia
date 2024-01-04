@@ -31,7 +31,12 @@
             from: "self",
         },
         {
-            protocol: "fuchsia.fxfs.ReadBlob",
+            protocol: "fuchsia.fxfs.BlobReader",
+            from: "void",
+            availability: "optional",
+        },
+        {
+            protocol: "fuchsia.fxfs.BlobCreator",
             from: "void",
             availability: "optional",
         },

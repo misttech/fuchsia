@@ -38,7 +38,6 @@ required_ffx_plugins = [
 # to being "dual mode" subtools.
 included_ffx_plugins = [
   "//src/connectivity/network/net-cli/ffx:ffx_net",
-  "//src/developer/ffx/plugins/debug:ffx_debug_plugin",
 
   # This is deliberately not included in the dual mode set as a policy decision
   # to keep doctor with the main binary. We might re-evaluate that but for now
@@ -51,37 +50,27 @@ included_ffx_plugins = [
 # is false, and in tools/BUILD.gn if it's true (with the suffix of
 # `_tool_host_tool` appended)
 dual_mode_plugins = [
-  "//src/connectivity/network/testing/network-test-realm/ffx:ffx_net_test_realm",
   "//src/developer/ffx/plugins/agis:ffx_agis",
   "//src/developer/ffx/plugins/assembly:ffx_assembly",
-  "//src/developer/ffx/plugins/audio:ffx_audio",
   "//src/developer/ffx/plugins/component:ffx_component",
-  "//src/developer/ffx/plugins/coverage:ffx_coverage",
+  "//src/developer/ffx/plugins/debug:ffx_debug_plugin",
   "//src/developer/ffx/plugins/driver:ffx_driver",
   "//src/developer/ffx/plugins/efi:ffx_efi",
   "//src/developer/ffx/plugins/emulator:ffx_emulator",
   "//src/developer/ffx/plugins/fuzz:ffx_fuzz",
   "//src/developer/ffx/plugins/inspect:ffx_inspect",
   "//src/developer/ffx/plugins/log:ffx_log",
-  "//src/developer/ffx/plugins/overnet:ffx_overnet_plugin",
   "//src/developer/ffx/plugins/package:ffx_package",
-  "//src/developer/ffx/plugins/power:ffx_power",
   "//src/developer/ffx/plugins/process:ffx_process",
   "//src/developer/ffx/plugins/product:ffx_product",
-  "//src/developer/ffx/plugins/product_bundle:ffx_product_bundle",
   "//src/developer/ffx/plugins/profile:ffx_profile",
   "//src/developer/ffx/plugins/repository:ffx_repository",
-  "//src/developer/ffx/plugins/scrutiny:ffx_scrutiny",
   "//src/developer/ffx/plugins/sdk:ffx_sdk",
-  "//src/developer/ffx/plugins/self-test:ffx_selftest",
   "//src/developer/ffx/plugins/session:ffx_session",
   "//src/developer/ffx/plugins/setui:ffx_setui",
   "//src/developer/ffx/plugins/test:ffx_test",
   "//src/developer/ffx/plugins/trace:ffx_trace",
-  "//src/developer/ffx/plugins/triage:ffx_triage",
   "//src/developer/ffx/plugins/wlan:ffx_wlan",
-  "//src/storage/ffx:ffx_storage",
-  "//src/virtualization/ffx:ffx_guest",
 ]
 
 # The full set of plugins you'd expect in a 'large', fully integrated ffx
@@ -93,7 +82,6 @@ dual_mode_defaults = [
   "//src/developer/ffx/plugins/emulator/data/config.json",
   "//src/developer/ffx/plugins/log/data/config.json",
   "//src/developer/ffx/plugins/product/data/config.json",
-  "//src/developer/ffx/plugins/product_bundle/data/config.json",
   "//src/developer/ffx/plugins/repository/data/config.json",
   "//src/developer/ffx/plugins/sdk/data/config.json",
   "//src/developer/ffx/plugins/test/data/config.json",

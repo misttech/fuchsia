@@ -1,0 +1,411 @@
+#!/usr/bin/env fuchsia-vendored-python
+# Copyright 2023 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+"""Fuchsia base test class."""
+
+import enum
+import logging
+import os
+from typing import Dict, List
+
+from honeydew import custom_types, transports
+from honeydew.interfaces.device_classes import fuchsia_device
+from honeydew.interfaces.auxiliary_devices import power_switch
+from honeydew.auxiliary_devices import power_switch_dmc
+from mobly import base_test, signals, test_runner
+from mobly_controller import fuchsia_device as fuchsia_device_mobly_controller
+
+_LOGGER: logging.Logger = logging.getLogger(__name__)
+
+
+class SnapshotOn(enum.Enum):
+    """How often we need to collect the snapshot"""
+
+    # Once per test class.
+    TEARDOWN_CLASS = enum.auto()
+    # Once per test class on failure only.
+    TEARDOWN_CLASS_ON_FAIL = enum.auto()
+    # Once per test case.
+    TEARDOWN_TEST = enum.auto()
+    # Once per test case on failure only.
+    ON_FAIL = enum.auto()
+
+
+class FuchsiaBaseTest(base_test.BaseTestClass):
+    """Fuchsia base test class.
+
+    Attributes:
+        fuchsia_devices: List of FuchsiaDevice objects.
+        test_case_path: Directory pointing to a specific test case artifacts.
+        snapshot_on: `snapshot_on` test param value converted into SnapshotOn
+            Enum.
+
+    Required Mobly Test Params:
+        snapshot_on (str): One of "teardown_class", "teardown_class_on_fail",
+            "teardown_test", "on_fail".
+            Default value is "teardown_class_on_fail".
+    """
+
+    def setup_class(self) -> None:
+        """setup_class is called once before running tests.
+
+        It does the following things:
+            * Reads user params passed to the test
+            * Instantiates all fuchsia devices into self.fuchsia_devices
+        """
+        self._any_test_failed: bool = False
+        self._process_user_params()
+
+        self.fuchsia_devices: List[
+            fuchsia_device.FuchsiaDevice
+        ] = self.register_controller(fuchsia_device_mobly_controller)
+
+    def setup_test(self) -> None:
+        """setup_test is called once before running each test.
+
+        It does the following things:
+            * Stores the current test case path into self.test_case_path
+            * Logs a info message onto device that test case has started.
+        """
+        self._devices_not_healthy: bool = False
+
+        self.test_case_path: str = (
+            f"{self.log_path}/{self.current_test_info.name}"
+        )
+        os.mkdir(self.test_case_path)
+        self._log_message_to_devices(
+            message=f"Started executing '{self.current_test_info.name}' "
+            f"Lacewing test case...",
+            level=custom_types.LEVEL.INFO,
+        )
+
+    def teardown_test(self) -> None:
+        """teardown_test is called once after running each test.
+
+        It does the following things:
+            * Takes snapshot of all the fuchsia devices and stores it under
+              test case directory if `snapshot_on` test param is set to
+              "teardown_test"
+            * Logs a info message onto device that test case has ended.
+        """
+        self._health_check_and_recover()
+
+        if self.snapshot_on == SnapshotOn.TEARDOWN_TEST:
+            self._collect_snapshot(directory=self.test_case_path)
+        self._log_message_to_devices(
+            message=f"Finished executing '{self.current_test_info.name}' "
+            f"Lacewing test case...",
+            level=custom_types.LEVEL.INFO,
+        )
+        if len(os.listdir(self.test_case_path)) == 0:
+            os.rmdir(self.test_case_path)
+
+        if self._devices_not_healthy:
+            message: str = (
+                "One or more FuchsiaDevice's health check failed in "
+                "teardown_test. So failing the test case..."
+            )
+            _LOGGER.warning(message)
+            raise signals.TestFailure(message)
+
+    def teardown_class(self) -> None:
+        """teardown_class is called once after running all tests.
+
+        It does the following things:
+            * Takes snapshot of all the fuchsia devices and stores it under
+              "<log_path>/teardown_class<_on_fail>" directory if `snapshot_on`
+              test param is set to "teardown_class" or "teardown_class_on_fail".
+        """
+        if self.snapshot_on == SnapshotOn.TEARDOWN_CLASS:
+            self._teardown_class_artifacts: str = (
+                f"{self.log_path}/teardown_class"
+            )
+            self._collect_snapshot(directory=self._teardown_class_artifacts)
+        elif (
+            self.snapshot_on == SnapshotOn.TEARDOWN_CLASS_ON_FAIL
+            and self._any_test_failed
+        ):
+            self._teardown_class_artifacts: str = (
+                f"{self.log_path}/teardown_class_on_fail"
+            )
+            self._collect_snapshot(directory=self._teardown_class_artifacts)
+
+    def on_fail(self, _) -> None:
+        """on_fail is called once when a test case fails.
+
+        It does the following things:
+            * Takes snapshot of all the fuchsia devices and stores it under
+              test case directory if `snapshot_on` test param is set to
+              "on_fail"
+        """
+        self._any_test_failed = True
+        if self.snapshot_on == SnapshotOn.ON_FAIL:
+            self._collect_snapshot(directory=self.test_case_path)
+
+    def _collect_snapshot(self, directory: str) -> None:
+        """Collects snapshots for all the FuchsiaDevice objects and stores them
+        in the directory specified.
+
+        Args:
+            directory: Absolute path on the host where snapshot file need to be
+                saved.
+        """
+        if not hasattr(self, "fuchsia_devices"):
+            return
+
+        _LOGGER.info(
+            "Collecting snapshots of all the FuchsiaDevice objects in '%s'...",
+            self.snapshot_on.name,
+        )
+        for fx_device in self.fuchsia_devices:
+            try:
+                fx_device.snapshot(directory=directory)
+            except Exception as err:  # pylint: disable=broad-except
+                _LOGGER.exception(
+                    "Unable to take snapshot of %s. Failed with error: %s",
+                    fx_device.device_name,
+                    err,
+                )
+
+    def _get_controller_configs(
+        self, controller_type: str
+    ) -> List[Dict[str, str]]:
+        """Return testbed config associated with a specific Mobly Controller.
+
+        Args:
+            controller_type: Controller type that is included in mobly testbed.
+                Ex: 'FuchsiaDevice', 'AndroidDevice' etc
+
+        Returns:
+            Config specified in the testbed file that is associated with
+            controller type provided.
+
+        Example:
+            ```
+            TestBeds:
+            - Name: Testbed-One-X64
+                Controllers:
+                  FuchsiaDevice:
+                    - name: fuchsia-54b2-038b-6e90
+                      ssh_private_key: ~/.ssh/fuchsia_ed25519
+                      transport: default
+            ```
+
+            For above specified testbed file, calling
+            ```
+            get_controller_configs(controller_type="FuchsiaDevice")
+            ```
+            will return
+            ```
+            [
+                {
+                    'name': 'fuchsia-54b2-038b-6e90',
+                    'ssh_private_key': '~/.ssh/fuchsia_ed25519',
+                    'transport': 'default'
+                }
+            ]
+            ```
+        """
+        for (
+            controller_name,
+            controller_configs,
+        ) in self.controller_configs.items():
+            if controller_name == controller_type:
+                return controller_configs
+        return []
+
+    def _get_device_config(
+        self, controller_type: str, identifier_key: str, identifier_value: str
+    ) -> Dict[str, str]:
+        """Return testbed config associated with a specific device of a
+        particular mobly controller type.
+
+        Args:
+            controller_type: Controller type that is included in mobly testbed.
+                Ex: 'FuchsiaDevice', 'AndroidDevice' etc
+            identifier_key: Key to identify the specific device.
+                Ex: 'name', 'nodename' etc
+            identifier_value: Value to match from list of devices.
+                Ex: 'fuchsia-emulator' etc
+
+        Returns:
+            Config specified in the testbed file that is associated with
+            controller type provided.
+
+        Example:
+            ```
+            TestBeds:
+            - Name: Testbed-One-X64
+                Controllers:
+                  FuchsiaDevice:
+                    - name: fuchsia-54b2-038b-6e90
+                      ssh_private_key: ~/.ssh/fuchsia_ed25519
+                      transport: default
+            ```
+
+            For above specified testbed file, calling
+            ```
+                get_testbed_config(
+                    controller_type="FuchsiaDevice",
+                    identifier_key="name",
+                    identifier_value="fuchsia-emulator")
+            ```
+            will return
+            ```
+            {
+                'name': 'fuchsia-54b2-038b-6e90',
+                'ssh_private_key': '~/.ssh/fuchsia_ed25519',
+                'transport': 'default'
+            }
+            ```
+        """
+        for controller_config in self._get_controller_configs(controller_type):
+            if controller_config[identifier_key] == identifier_value:
+                _LOGGER.info(
+                    "Device configuration associated with %s is %s",
+                    identifier_value,
+                    controller_config,
+                )
+                return controller_config
+        return {}
+
+    def _health_check_and_recover(self) -> None:
+        """Ensure all FuchsiaDevice objects are healthy and if unhealthy perform
+        a power_cycle in an attempt to recover.
+
+        If health check failed for any device then fail the test case even if we
+        are able to recover the device successfully.
+
+        If the recovery fails, then abort the test class.
+        """
+        _LOGGER.info(
+            "Performing health checks on all the FuchsiaDevice objects..."
+        )
+
+        for fx_device in self.fuchsia_devices:
+            try:
+                fx_device.health_check()
+            except Exception as err:  # pylint: disable=broad-except
+                self._devices_not_healthy = True
+                _LOGGER.warning(
+                    "Health check on %s failed with error '%s', will try to "
+                    "recover the device",
+                    fx_device.device_name,
+                    err,
+                )
+                self._recover_device(fx_device)
+
+        _LOGGER.info(
+            "Successfully performed health checks and/or recoveries on all the "
+            "FuchsiaDevice objects..."
+        )
+
+    def _recover_device(self, fx_device: fuchsia_device.FuchsiaDevice) -> None:
+        """Try to recover the fuchsia device by power cycling it if the test has
+        access to DMC.
+
+        Args:
+            fx_device: FuchsiaDevice object
+        """
+        try:
+            dmc_power_switch: power_switch_dmc.PowerSwitchDmc = (
+                power_switch_dmc.PowerSwitchDmc(
+                    device_name=fx_device.device_name
+                )
+            )
+            fx_device.power_cycle(power_switch=dmc_power_switch, outlet=None)
+        except power_switch_dmc.PowerSwitchDmcError as err:
+            _LOGGER.warning(
+                "Unable to power cycle %s as test does not have access to DMC. "
+                "Aborting the test class...",
+                fx_device.device_name,
+            )
+            raise signals.TestAbortClass(
+                f"{fx_device.device_name} is unhealthy and unable to recover it"
+            ) from err
+        except power_switch.PowerSwitchError as err:
+            _LOGGER.warning(
+                "Power cycling %s failed with error '%s'. "
+                "Aborting the test class...",
+                fx_device.device_name,
+                err,
+            )
+            raise signals.TestAbortClass(
+                f"{fx_device.device_name} is unhealthy and failed to recover it"
+            ) from err
+
+    def _is_fuchsia_controller_based_device(
+        self, fx_device: fuchsia_device.FuchsiaDevice
+    ) -> bool:
+        """Checks the testbed config and returns if the device is using
+        Fuchsia-Controller based transport.
+
+        Args:
+            fx_device: FuchsiaDevice object
+
+        Returns:
+            True if transport is set to Fuchsia-Controller, else False
+        """
+        device_config: Dict[str, str] = self._get_device_config(
+            controller_type="FuchsiaDevice",
+            identifier_key="name",
+            identifier_value=fx_device.device_name,
+        )
+
+        if (
+            device_config["transport"]
+            in transports.FUCHSIA_CONTROLLER_TRANSPORTS
+        ):
+            return True
+
+        return False
+
+    def _log_message_to_devices(
+        self, message: str, level: custom_types.LEVEL
+    ) -> None:
+        """Log message in all the Fuchsia devices.
+
+        Args:
+            message: Message that need to logged.
+            level: Log message level.
+        """
+        for fx_device in self.fuchsia_devices:
+            try:
+                fx_device.log_message_to_device(message, level)
+            except Exception as err:  # pylint: disable=broad-except
+                _LOGGER.exception(
+                    "Unable to log message '%s' on '%s'. Failed with error: %s",
+                    message,
+                    fx_device.device_name,
+                    err,
+                )
+
+    def _process_user_params(self) -> None:
+        """Reads, processes and stores the test params used by this module."""
+        _LOGGER.info(
+            "user_params associated with the test: %s", self.user_params
+        )
+
+        try:
+            snapshot_on: str = self.user_params.get(
+                "snapshot_on", SnapshotOn.TEARDOWN_CLASS_ON_FAIL.name
+            ).upper()
+            self.snapshot_on: SnapshotOn = SnapshotOn[snapshot_on]
+        except KeyError as err:
+            _LOGGER.warning(
+                "Invalid value %s passed in 'snapshot_on' test param. "
+                "Valid values for this test param are: '%s', '%s', '%s','%s'. "
+                "Proceeding with default value: '%s'",
+                err,
+                SnapshotOn.TEARDOWN_CLASS.name,
+                SnapshotOn.TEARDOWN_CLASS_ON_FAIL.name,
+                SnapshotOn.TEARDOWN_TEST.name,
+                SnapshotOn.ON_FAIL.name,
+                SnapshotOn.TEARDOWN_CLASS_ON_FAIL.name,
+            )
+            self.snapshot_on = SnapshotOn.TEARDOWN_CLASS_ON_FAIL
+
+
+if __name__ == "__main__":
+    test_runner.main()

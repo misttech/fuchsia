@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <fcntl.h>
+#include <fidl/fuchsia.hardware.sysmem/cpp/fidl.h>
 #include <fidl/fuchsia.sysinfo/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>
@@ -75,7 +76,7 @@ zx_status_t verify_connectivity_v1(fidl::WireSyncClient<fuchsia_sysmem::Allocato
 zx::result<fidl::WireSyncClient<fuchsia_sysmem::Allocator>> connect_to_sysmem_driver_v1() {
   fbl::unique_fd sysmem_dir(open(SYSMEM_CLASS_PATH, O_RDONLY));
 
-  zx::result<fidl::ClientEnd<fuchsia_sysmem2::DriverConnector>> client_end;
+  zx::result<fidl::ClientEnd<fuchsia_hardware_sysmem::DriverConnector>> client_end;
   zx_status_t status = fdio_watch_directory(
       sysmem_dir.get(),
       [](int dirfd, int event, const char* fn, void* cookie) {
@@ -86,8 +87,9 @@ zx::result<fidl::WireSyncClient<fuchsia_sysmem::Allocator>> connect_to_sysmem_dr
           return ZX_OK;
         }
         fdio_cpp::UnownedFdioCaller caller(dirfd);
-        *reinterpret_cast<zx::result<fidl::ClientEnd<fuchsia_sysmem2::DriverConnector>>*>(cookie) =
-            component::ConnectAt<fuchsia_sysmem2::DriverConnector>(caller.directory(), fn);
+        *reinterpret_cast<zx::result<fidl::ClientEnd<fuchsia_hardware_sysmem::DriverConnector>>*>(
+            cookie) =
+            component::ConnectAt<fuchsia_hardware_sysmem::DriverConnector>(caller.directory(), fn);
         return ZX_ERR_STOP;
       },
       ZX_TIME_INFINITE, &client_end);
@@ -2555,6 +2557,52 @@ TEST(Sysmem, RequiredSizeV1) {
   EXPECT_LE(1024 * 512 * 3 / 2, vmo_size);
 }
 
+// min_bytes_per_row should account for the bytes_per_row_divisor.
+TEST(Sysmem, BytesPerRowMinRowV1) {
+  auto collection = make_single_participant_collection_v1();
+
+  fuchsia_sysmem::wire::BufferCollectionConstraints constraints;
+  constraints.usage.cpu =
+      fuchsia_sysmem::wire::kCpuUsageReadOften | fuchsia_sysmem::wire::kCpuUsageWriteOften;
+  constraints.min_buffer_count_for_camping = 1;
+  constraints.has_buffer_memory_constraints = false;
+  constraints.image_format_constraints_count = 1;
+  fuchsia_sysmem::wire::ImageFormatConstraints& image_constraints =
+      constraints.image_format_constraints[0];
+  image_constraints.pixel_format.type = fuchsia_sysmem::wire::PixelFormatType::kR8G8B8A8;
+  image_constraints.color_spaces_count = 1;
+  image_constraints.color_space[0] = fuchsia_sysmem::wire::ColorSpace{
+      .type = fuchsia_sysmem::wire::ColorSpaceType::kSrgb,
+  };
+  image_constraints.min_coded_width = 254;
+  image_constraints.max_coded_width = std::numeric_limits<uint32_t>::max();
+  image_constraints.min_coded_height = 256;
+  image_constraints.max_coded_height = std::numeric_limits<uint32_t>::max();
+  image_constraints.min_bytes_per_row = 256;
+  image_constraints.max_bytes_per_row = std::numeric_limits<uint32_t>::max();
+  image_constraints.max_coded_width_times_coded_height = std::numeric_limits<uint32_t>::max();
+  image_constraints.layers = 1;
+  image_constraints.coded_width_divisor = 1;
+  image_constraints.coded_height_divisor = 1;
+  constexpr uint32_t kBytesPerRowDivisor = 64;
+  image_constraints.bytes_per_row_divisor = kBytesPerRowDivisor;
+  image_constraints.start_offset_divisor = 1;
+  image_constraints.display_width_divisor = 1;
+  image_constraints.display_height_divisor = 1;
+  image_constraints.required_max_coded_width = 512;
+  image_constraints.required_max_coded_height = 1024;
+
+  ASSERT_OK(collection->SetConstraints(true, std::move(constraints)));
+
+  auto allocate_result = collection->WaitForBuffersAllocated();
+  ASSERT_OK(allocate_result);
+  ASSERT_OK(allocate_result.value().status);
+
+  auto& out_constraints = allocate_result->buffer_collection_info.settings.image_format_constraints;
+  EXPECT_EQ(out_constraints.min_bytes_per_row % kBytesPerRowDivisor, 0, "%u",
+            out_constraints.min_bytes_per_row);
+}
+
 TEST(Sysmem, CpuUsageAndNoBufferMemoryConstraintsV1) {
   auto allocator_1 = connect_to_sysmem_driver_v1();
   ASSERT_OK(allocator_1);
@@ -3066,65 +3114,13 @@ TEST(Sysmem, CloseTokenV1) {
   EXPECT_OK(token_2->Sync());
 }
 
-// Sysmem may start with the amlogic secure heaps not ready, so retrying creating memory until
-// everything works.
-// TODO(fxbug.dev/132085): Remove this once sysmem handles this case better.
-void WaitForAmlogicSecureHeap() {
-  // Booting the system to the state where it will have a heap available shouldn't take more that 15
-  // seconds.
-  auto deadline = zx::deadline_after(zx::sec(20));
-
-  while (zx::clock::get_monotonic() < deadline) {
-    auto collection = make_single_participant_collection_v1();
-
-    fuchsia_sysmem::wire::BufferCollectionConstraints constraints;
-    constraints.usage.video = fuchsia_sysmem::wire::kVideoUsageHwDecoder;
-    constexpr uint32_t kBufferCount = 4;
-    constraints.min_buffer_count_for_camping = kBufferCount;
-    constraints.has_buffer_memory_constraints = true;
-    constexpr uint32_t kBufferSizeBytes = 64 * 1024;
-    constraints.buffer_memory_constraints = fuchsia_sysmem::wire::BufferMemoryConstraints{
-        .min_size_bytes = kBufferSizeBytes,
-        .max_size_bytes = 128 * 1024,
-        .physically_contiguous_required = true,
-        .secure_required = true,
-        .ram_domain_supported = false,
-        .cpu_domain_supported = false,
-        .inaccessible_domain_supported = true,
-        .heap_permitted_count = 1,
-        .heap_permitted = {fuchsia_sysmem::wire::HeapType::kAmlogicSecure},
-    };
-    ZX_DEBUG_ASSERT(constraints.image_format_constraints_count == 0);
-
-    ASSERT_OK(collection->SetConstraints(true, std::move(constraints)));
-
-    auto allocate_result = collection->WaitForBuffersAllocated();
-    if (allocate_result.ok() && allocate_result.value().status == ZX_OK) {
-      return;
-    }
-    printf("No amlogic secure heap available, retrying.\n");
-    zx::nanosleep(zx::deadline_after(zx::sec(1)));
-  }
-  fprintf(stderr, "Waiting for amlogic secure heap timed out, continuing test anyway.\n");
-}
-
 TEST(Sysmem, HeapAmlogicSecureV1) {
   if (!is_board_with_amlogic_secure()) {
     return;
   }
-  WaitForAmlogicSecureHeap();
 
   for (uint32_t i = 0; i < 64; ++i) {
-    bool need_aux = (i % 4 == 0);
-    bool allow_aux = (i % 2 == 0);
     auto collection = make_single_participant_collection_v1();
-
-    if (need_aux) {
-      fuchsia_sysmem::wire::BufferCollectionConstraintsAuxBuffers aux_constraints;
-      aux_constraints.need_clear_aux_buffers_for_secure = true;
-      aux_constraints.allow_clear_aux_buffers_for_secure = true;
-      ASSERT_OK(collection->SetConstraintsAuxBuffers(std::move(aux_constraints)));
-    }
 
     fuchsia_sysmem::wire::BufferCollectionConstraints constraints;
     constraints.usage.video = fuchsia_sysmem::wire::kVideoUsageHwDecoder;
@@ -3163,17 +3159,6 @@ TEST(Sysmem, HeapAmlogicSecureV1) {
               fuchsia_sysmem::wire::HeapType::kAmlogicSecure);
     EXPECT_EQ(buffer_collection_info->settings.has_image_format_constraints, false);
 
-    fuchsia_sysmem::wire::BufferCollectionInfo2 aux_buffer_collection_info;
-    if (need_aux || allow_aux) {
-      auto aux_result = collection->GetAuxBuffers();
-      ASSERT_OK(aux_result);
-      ASSERT_OK(aux_result.value().status);
-
-      EXPECT_EQ(aux_result.value().buffer_collection_info_aux_buffers.buffer_count,
-                buffer_collection_info->buffer_count);
-      aux_buffer_collection_info = std::move(aux_result.value().buffer_collection_info_aux_buffers);
-    }
-
     for (uint32_t i = 0; i < 64; ++i) {
       if (i < kBufferCount) {
         EXPECT_NE(buffer_collection_info->buffers[i].vmo.get(), ZX_HANDLE_INVALID);
@@ -3181,22 +3166,8 @@ TEST(Sysmem, HeapAmlogicSecureV1) {
         auto status = zx_vmo_get_size(buffer_collection_info->buffers[i].vmo.get(), &size_bytes);
         ASSERT_EQ(status, ZX_OK);
         EXPECT_EQ(size_bytes, kBufferSizeBytes);
-        if (need_aux) {
-          EXPECT_NE(aux_buffer_collection_info.buffers[i].vmo, ZX_HANDLE_INVALID);
-          uint64_t aux_size_bytes = 0;
-          status =
-              zx_vmo_get_size(aux_buffer_collection_info.buffers[i].vmo.get(), &aux_size_bytes);
-          ASSERT_EQ(status, ZX_OK);
-          EXPECT_EQ(aux_size_bytes, kBufferSizeBytes);
-        } else if (allow_aux) {
-          // This is how v1 indicates that aux buffers weren't allocated.
-          EXPECT_EQ(aux_buffer_collection_info.buffers[i].vmo.get(), ZX_HANDLE_INVALID);
-        }
       } else {
         EXPECT_EQ(buffer_collection_info->buffers[i].vmo.get(), ZX_HANDLE_INVALID);
-        if (need_aux) {
-          EXPECT_EQ(aux_buffer_collection_info.buffers[i].vmo.get(), ZX_HANDLE_INVALID);
-        }
       }
     }
 
@@ -3205,19 +3176,6 @@ TEST(Sysmem, HeapAmlogicSecureV1) {
     SecureVmoReadTester tester(std::move(the_vmo));
     ASSERT_DEATH(([&] { tester.AttemptReadFromSecure(); }));
     ASSERT_FALSE(tester.IsReadFromSecureAThing());
-
-    if (need_aux) {
-      zx::vmo aux_vmo = std::move(aux_buffer_collection_info.buffers[0].vmo);
-      aux_buffer_collection_info.buffers[0].vmo = zx::vmo();
-      SecureVmoReadTester aux_tester(std::move(aux_vmo));
-      // This shouldn't crash for the aux VMO.
-      aux_tester.AttemptReadFromSecure(/*expect_read_success=*/true);
-      // Read from aux VMO using REE (rich execution environment, in contrast to the TEE (trusted
-      // execution environment)) CPU should work.  In actual usage, only the non-encrypted parts of
-      // the data will be present in the VMO, and the encrypted parts will be all 0xFF.  The point
-      // of the aux VMO is to allow reading and parsing the non-encrypted parts using REE CPU.
-      ASSERT_TRUE(aux_tester.IsReadFromSecureAThing());
-    }
   }
 }
 
@@ -3225,7 +3183,6 @@ TEST(Sysmem, HeapAmlogicSecureMiniStressV1) {
   if (!is_board_with_amlogic_secure()) {
     return;
   }
-  WaitForAmlogicSecureHeap();
 
   // 256 64 KiB chunks, and well below protected_memory_size, even accounting for fragmentation.
   const uint32_t kBlockSize = 64 * 1024;
@@ -3369,16 +3326,7 @@ TEST(Sysmem, HeapAmlogicSecureMiniStressV1) {
   }
 
   for (uint32_t i = 0; i < 64; ++i) {
-    bool need_aux = (i % 4 == 0);
-    bool allow_aux = (i % 2 == 0);
     auto collection = make_single_participant_collection_v1();
-
-    if (need_aux) {
-      fuchsia_sysmem::wire::BufferCollectionConstraintsAuxBuffers aux_constraints;
-      aux_constraints.need_clear_aux_buffers_for_secure = true;
-      aux_constraints.allow_clear_aux_buffers_for_secure = true;
-      ASSERT_OK(collection->SetConstraintsAuxBuffers(std::move(aux_constraints)));
-    }
 
     fuchsia_sysmem::wire::BufferCollectionConstraints constraints;
     constraints.usage.video = fuchsia_sysmem::wire::kVideoUsageHwDecoder;
@@ -3417,17 +3365,6 @@ TEST(Sysmem, HeapAmlogicSecureMiniStressV1) {
               fuchsia_sysmem::wire::HeapType::kAmlogicSecure);
     EXPECT_EQ(buffer_collection_info->settings.has_image_format_constraints, false);
 
-    fuchsia_sysmem::wire::BufferCollectionInfo2 aux_buffer_collection_info;
-    if (need_aux || allow_aux) {
-      auto aux_result = collection->GetAuxBuffers();
-      ASSERT_OK(aux_result);
-      ASSERT_OK(aux_result.value().status);
-
-      EXPECT_EQ(aux_result.value().buffer_collection_info_aux_buffers.buffer_count,
-                buffer_collection_info->buffer_count);
-      aux_buffer_collection_info = std::move(aux_result.value().buffer_collection_info_aux_buffers);
-    }
-
     for (uint32_t i = 0; i < 64; ++i) {
       if (i < kBufferCount) {
         EXPECT_NE(buffer_collection_info->buffers[i].vmo.get(), ZX_HANDLE_INVALID);
@@ -3435,22 +3372,8 @@ TEST(Sysmem, HeapAmlogicSecureMiniStressV1) {
         auto status = zx_vmo_get_size(buffer_collection_info->buffers[i].vmo.get(), &size_bytes);
         ASSERT_EQ(status, ZX_OK);
         EXPECT_EQ(size_bytes, kBufferSizeBytes);
-        if (need_aux) {
-          EXPECT_NE(aux_buffer_collection_info.buffers[i].vmo, ZX_HANDLE_INVALID);
-          uint64_t aux_size_bytes = 0;
-          status =
-              zx_vmo_get_size(aux_buffer_collection_info.buffers[i].vmo.get(), &aux_size_bytes);
-          ASSERT_EQ(status, ZX_OK);
-          EXPECT_EQ(aux_size_bytes, kBufferSizeBytes);
-        } else if (allow_aux) {
-          // This is how v1 indicates that aux buffers weren't allocated.
-          EXPECT_EQ(aux_buffer_collection_info.buffers[i].vmo.get(), ZX_HANDLE_INVALID);
-        }
       } else {
         EXPECT_EQ(buffer_collection_info->buffers[i].vmo.get(), ZX_HANDLE_INVALID);
-        if (need_aux) {
-          EXPECT_EQ(aux_buffer_collection_info.buffers[i].vmo.get(), ZX_HANDLE_INVALID);
-        }
       }
     }
 
@@ -3459,19 +3382,6 @@ TEST(Sysmem, HeapAmlogicSecureMiniStressV1) {
     SecureVmoReadTester tester(std::move(the_vmo));
     ASSERT_DEATH(([&] { tester.AttemptReadFromSecure(); }));
     ASSERT_FALSE(tester.IsReadFromSecureAThing());
-
-    if (need_aux) {
-      zx::vmo aux_vmo = std::move(aux_buffer_collection_info.buffers[0].vmo);
-      aux_buffer_collection_info.buffers[0].vmo = zx::vmo();
-      SecureVmoReadTester aux_tester(std::move(aux_vmo));
-      // This shouldn't crash for the aux VMO.
-      aux_tester.AttemptReadFromSecure(/*expect_read_success=*/true);
-      // Read from aux VMO using REE (rich execution environment, in contrast to the TEE (trusted
-      // execution environment)) CPU should work.  In actual usage, only the non-encrypted parts of
-      // the data will be present in the VMO, and the encrypted parts will be all 0xFF.  The point
-      // of the aux VMO is to allow reading and parsing the non-encrypted parts using REE CPU.
-      ASSERT_TRUE(aux_tester.IsReadFromSecureAThing());
-    }
   }
 }
 
@@ -3479,7 +3389,6 @@ TEST(Sysmem, HeapAmlogicSecureOnlySupportsInaccessibleV1) {
   if (!is_board_with_amlogic_secure()) {
     return;
   }
-  WaitForAmlogicSecureHeap();
 
   fuchsia_sysmem::wire::CoherencyDomain domains[] = {
       fuchsia_sysmem::wire::CoherencyDomain::kCpu,
@@ -3542,7 +3451,6 @@ TEST(Sysmem, HeapAmlogicSecureVdecV1) {
   if (!is_board_with_amlogic_secure_vdec()) {
     return;
   }
-  WaitForAmlogicSecureHeap();
 
   for (uint32_t i = 0; i < 64; ++i) {
     auto collection = make_single_participant_collection_v1();
@@ -5535,6 +5443,84 @@ TEST(Sysmem, ColorSpaceDoNotCare_UnconstrainedColorSpaceRemovesPixelFormatV1) {
       // the color space completely unconstrained.  By design, sysmem doesn't arbitrarily select a
       // color space when the color space is completely unconstrained (at least for now).
       ASSERT_TRUE(!wait_result1.ok() || wait_result1->status != ZX_OK);
+    }
+  }
+}
+
+TEST(Sysmem, DuplicateSyncRightsAttenuationMaskZeroFails) {
+  auto parent = create_initial_token_v1();
+  std::vector<zx_rights_t> rights_masks{0, 0};
+  fidl::Arena arena;
+  auto duplicate_sync_result = parent->DuplicateSync(fidl::VectorView(arena, rights_masks));
+  ASSERT_FALSE(duplicate_sync_result.ok());
+}
+
+TEST(Sysmem, BufferCollectionTokenGroupCreateChildZeroAttenuationMaskFails) {
+  auto parent = create_initial_token_v1();
+  auto group = create_group_under_token_v1(parent);
+  auto child_endpoints =
+      std::move(fidl::CreateEndpoints<fuchsia_sysmem::BufferCollectionToken>().value());
+  fidl::Arena arena;
+  auto request = fuchsia_sysmem::wire::BufferCollectionTokenGroupCreateChildRequest::Builder(arena)
+                     .rights_attenuation_mask(0)
+                     .token_request(std::move(child_endpoints.server))
+                     .Build();
+  auto create_child_result = group->CreateChild(std::move(request));
+  // one-way, so no failure yet
+  ASSERT_TRUE(create_child_result.ok());
+  // We shouldn't have to wait anywhere near this long, but to avoid flakes we
+  // won't fail the test until it's very clear that sysmem hasn't failed the
+  // buffer collection despite zero attenuation mask.
+  constexpr zx::duration kWaitDuration = zx::sec(10);
+  const zx::time start_wait = zx::clock::get_monotonic();
+  while (true) {
+    // give up after kWaitDuration
+    ASSERT_TRUE(zx::clock::get_monotonic() < start_wait + kWaitDuration);
+    if (parent->Sync().ok()) {
+      // failure due to Close before AllChildrenPresent takes effect async; try again
+      zx::nanosleep(zx::deadline_after(zx::msec(10)));
+      continue;
+    } else {
+      // expected failure seen - pass
+      break;
+    }
+  }
+}
+
+TEST(Sysmem, BufferCollectionTokenGroupCreateChildrenZeroAttenuationMaskFails) {
+  auto parent = create_initial_token_v1();
+  auto group = create_group_under_token_v1(parent);
+  std::vector<zx_rights_t> rights_masks{0, 0};
+  fidl::Arena arena;
+  auto create_sync_result = group->CreateChildrenSync(fidl::VectorView(arena, rights_masks));
+  ASSERT_FALSE(create_sync_result.ok());
+}
+
+TEST(Sysmem, BufferCollectionTokenGroupCloseBeforeAllChildrenPresentFails) {
+  auto parent = create_initial_token_v1();
+  auto group = create_group_under_token_v1(parent);
+  auto child1 = create_token_under_group_v1(group);
+
+  // sending Close before AllChildrenPresent expected to cause buffer collection failure
+  auto close_result = group->Close();
+  // one-way message; no visible error yet
+  ASSERT_TRUE(close_result.ok());
+
+  // We shouldn't have to wait anywhere near this long, but to avoid flakes we
+  // won't fail the test until it's very clear that sysmem hasn't failed the
+  // buffer collection despite Close before AllChildrenPresent.
+  constexpr zx::duration kWaitDuration = zx::sec(10);
+  const zx::time start_wait = zx::clock::get_monotonic();
+  while (true) {
+    // give up after kWaitDuration
+    ASSERT_TRUE(zx::clock::get_monotonic() < start_wait + kWaitDuration);
+    if (parent->Sync().ok()) {
+      // failure due to Close before AllChildrenPresent takes effect async; try again
+      zx::nanosleep(zx::deadline_after(zx::msec(10)));
+      continue;
+    } else {
+      // expected failure seen - pass
+      break;
     }
   }
 }

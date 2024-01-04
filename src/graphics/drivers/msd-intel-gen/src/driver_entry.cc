@@ -7,6 +7,10 @@
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/device.h>
 #include <lib/ddk/driver.h>
+#include <lib/magma/platform/zircon/zircon_platform_status.h>
+#include <lib/magma/util/dlog.h>
+#include <lib/magma_service/msd_defs.h>
+#include <lib/magma_service/sys_driver/dfv1/magma_device_impl.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/resource.h>
 #include <stdint.h>
@@ -24,11 +28,7 @@
 #include <ddktl/fidl.h>
 #include <ddktl/protocol/empty-protocol.h>
 
-#include "magma_util/dlog.h"
-#include "msd_defs.h"
 #include "msd_intel_pci_device.h"
-#include "src/graphics/lib/magma/src/magma_util/platform/zircon/zircon_platform_status.h"
-#include "src/graphics/lib/magma/src/sys_driver/dfv1/magma_device_impl.h"
 
 #if MAGMA_TEST_DRIVER
 zx_status_t magma_indriver_test(magma::PlatformPciDevice* platform_device);
@@ -117,7 +117,7 @@ zx_status_t IntelDevice::Init() {
 
 static zx_status_t sysdrv_bind(void* ctx, zx_device_t* parent) {
   DLOG("sysdrv_bind start zx_device %p", parent);
-  magma::PlatformBusMapper::SetInfoResource(zx::unowned_resource(get_root_resource(parent)));
+  magma::PlatformBusMapper::SetInfoResource(zx::unowned_resource(get_info_resource(parent)));
 
   auto gpu = std::make_unique<IntelDevice>(parent);
   if (!gpu)

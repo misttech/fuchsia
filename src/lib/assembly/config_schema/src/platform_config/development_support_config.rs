@@ -21,4 +21,14 @@ pub struct DevelopmentSupportConfig {
     /// Path to a file containing CA certs that are trusted roots for signed ssh
     /// keys that are authorized to connect to the device.
     pub authorized_ssh_ca_certs_path: Option<Utf8PathBuf>,
+
+    /// Whether to include sl4f.
+    #[serde(default)]
+    pub include_sl4f: bool,
+
+    /// Include the bin/clock program on the target to get the monotonic time
+    /// from the device. TODO(b/309452964): Remove once e2e tests use:
+    ///   `ffx target get-time`
+    #[serde(default)]
+    pub include_bin_clock: bool,
 }

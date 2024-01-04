@@ -4,7 +4,10 @@
 
 //! Common types for dealing with ip table entries.
 
-use core::fmt::{Debug, Display, Formatter};
+use core::{
+    fmt::{Debug, Display, Formatter},
+    hash::Hash,
+};
 
 use net_types::{
     ip::{GenericOverIp, Ip, IpAddress, Ipv4Addr, Ipv6Addr, Subnet, SubnetEither},
@@ -12,7 +15,7 @@ use net_types::{
 };
 
 /// The priority of a forwarding entry. Lower metrics are preferred.
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub struct RawMetric(pub u32);
 
 impl Display for RawMetric {
@@ -34,9 +37,6 @@ impl From<RawMetric> for u64 {
     }
 }
 
-/// The default interface routing metric.
-pub const DEFAULT_INTERFACE_METRIC: RawMetric = RawMetric(100);
-
 /// The metric for an [`AddableEntry`].
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub enum AddableMetric {
@@ -47,36 +47,38 @@ pub enum AddableMetric {
     ExplicitMetric(RawMetric),
 }
 
+impl From<Metric> for AddableMetric {
+    fn from(metric: Metric) -> AddableMetric {
+        match metric {
+            Metric::MetricTracksInterface(_) => AddableMetric::MetricTracksInterface,
+            Metric::ExplicitMetric(metric) => AddableMetric::ExplicitMetric(metric),
+        }
+    }
+}
+
 /// `AddableEntry` is a routing entry that may be used to add a new entry to the
 /// forwarding table.
 ///
 /// See [`Entry`] for the type used to represent a route in the forwarding
 /// table.
-///
-/// `AddableEntry` guarantees that at least one of the egress device or
-/// gateway is set.
 #[derive(Debug, Copy, Clone, Eq, GenericOverIp, PartialEq, Hash)]
+#[generic_over_ip(A, IpAddress)]
 pub struct AddableEntry<A: IpAddress, D> {
-    subnet: Subnet<A>,
-    device: Option<D>,
-    gateway: Option<SpecifiedAddr<A>>,
-    metric: AddableMetric,
-}
-
-// A mirror image of `AddableEntry` whose fields are public, allowing the entry
-// to be decomposed into its constituent parts.
-pub(super) struct DecomposedAddableEntry<A: IpAddress, D> {
-    pub(super) subnet: Subnet<A>,
-    pub(super) device: Option<D>,
-    pub(super) gateway: Option<SpecifiedAddr<A>>,
-    pub(super) metric: AddableMetric,
+    /// The destination subnet.
+    pub subnet: Subnet<A>,
+    /// The outgoing interface.
+    pub device: D,
+    /// Next hop.
+    pub gateway: Option<SpecifiedAddr<A>>,
+    /// Route metric.
+    pub metric: AddableMetric,
 }
 
 impl<D, A: IpAddress> AddableEntry<A, D> {
     /// Creates a new [`AddableEntry`] with a specified gateway.
     pub fn with_gateway(
         subnet: Subnet<A>,
-        device: Option<D>,
+        device: D,
         gateway: SpecifiedAddr<A>,
         metric: AddableMetric,
     ) -> Self {
@@ -85,19 +87,44 @@ impl<D, A: IpAddress> AddableEntry<A, D> {
 
     /// Creates a new [`AddableEntry`] with a specified device.
     pub fn without_gateway(subnet: Subnet<A>, device: D, metric: AddableMetric) -> Self {
-        Self { subnet, device: Some(device), gateway: None, metric }
+        Self { subnet, device, gateway: None, metric }
     }
 
-    /// Convert the [`AddableEntry`] into a [`DecomposedAddableEntry`].
-    pub(super) fn decompose(self) -> DecomposedAddableEntry<A, D> {
-        let AddableEntry { subnet, device, gateway, metric } = self;
-        DecomposedAddableEntry { subnet, device, gateway, metric }
+    /// Converts the `AddableEntry` to an `Entry`.
+    pub fn resolve_metric(self, device_metric: RawMetric) -> Entry<A, D> {
+        let Self { subnet, device, gateway, metric } = self;
+        let metric = match metric {
+            AddableMetric::MetricTracksInterface => Metric::MetricTracksInterface(device_metric),
+            AddableMetric::ExplicitMetric(metric) => Metric::ExplicitMetric(metric),
+        };
+        Entry { subnet, device, gateway, metric }
+    }
+
+    /// Maps the device ID held by this `AddableEntry`.
+    pub fn map_device_id<D2>(self, f: impl FnOnce(D) -> D2) -> AddableEntry<A, D2> {
+        let Self { subnet, device, gateway, metric } = self;
+        AddableEntry { subnet, device: f(device), gateway, metric }
+    }
+
+    /// Fallibly maps the device ID held by this `AddableEntry`.
+    pub fn try_map_device_id<D2, E>(
+        self,
+        f: impl FnOnce(D) -> Result<D2, E>,
+    ) -> Result<AddableEntry<A, D2>, E> {
+        let Self { subnet, device, gateway, metric } = self;
+        Ok(AddableEntry { subnet, device: f(device)?, gateway, metric })
+    }
+
+    /// Sets the generation on an entry.
+    pub fn with_generation(self, generation: Generation) -> AddableEntryAndGeneration<A, D> {
+        AddableEntryAndGeneration { entry: self, generation }
     }
 }
 
 /// An IPv4 forwarding entry or an IPv6 forwarding entry.
 #[allow(missing_docs)]
 #[derive(Debug, Copy, Clone, Eq, GenericOverIp, PartialEq, Hash)]
+#[generic_over_ip()]
 pub enum AddableEntryEither<D> {
     V4(AddableEntry<Ipv4Addr, D>),
     V6(AddableEntry<Ipv6Addr, D>),
@@ -121,6 +148,31 @@ impl<D> AddableEntryEither<D> {
 impl<A: IpAddress, D> From<AddableEntry<A, D>> for AddableEntryEither<D> {
     fn from(entry: AddableEntry<A, D>) -> AddableEntryEither<D> {
         A::Version::map_ip(entry, AddableEntryEither::V4, AddableEntryEither::V6)
+    }
+}
+
+/// A routing table entry together with the generation it was created in.
+#[derive(Debug, Copy, Clone, GenericOverIp)]
+#[generic_over_ip(A, IpAddress)]
+pub struct AddableEntryAndGeneration<A: IpAddress, D> {
+    /// The entry.
+    pub entry: AddableEntry<A, D>,
+    /// The generation in which it was created.
+    pub generation: Generation,
+}
+
+/// Wraps a callback to upgrade a "stored" entry to a "live" entry.
+#[derive(GenericOverIp)]
+#[generic_over_ip(A, IpAddress)]
+pub struct EntryUpgrader<'a, A: IpAddress, DeviceId, WeakDeviceId>(
+    pub  &'a mut dyn FnMut(
+        AddableEntryAndGeneration<A, WeakDeviceId>,
+    ) -> Option<EntryAndGeneration<A, DeviceId>>,
+);
+
+impl<A: IpAddress, D> From<Entry<A, D>> for AddableEntry<A, D> {
+    fn from(Entry { subnet, device, gateway, metric }: Entry<A, D>) -> Self {
+        Self { subnet: subnet, device: device, gateway: gateway, metric: metric.into() }
     }
 }
 
@@ -148,16 +200,68 @@ impl Metric {
 ///
 /// `Entry` is a `Subnet` with an egress device and optional gateway.
 #[derive(Debug, Copy, Clone, Eq, GenericOverIp, PartialEq, Hash)]
+#[generic_over_ip(A, IpAddress)]
 pub struct Entry<A: IpAddress, D> {
     /// The matching subnet.
     pub subnet: Subnet<A>,
     /// The destination device.
     pub device: D,
     /// An optional gateway if the subnet is not on link.
-    // TODO (https://fxbug.dev/123288): Restrict `gateway` to `UnicastAddr`.
+    // TODO(https://fxbug.dev/123288): Restrict `gateway` to `UnicastAddr`.
     pub gateway: Option<SpecifiedAddr<A>>,
     /// The metric of the entry.
     pub metric: Metric,
+}
+
+/// A forwarding entry with the generation it was created in.
+#[derive(Debug, Copy, Clone, GenericOverIp, PartialEq, Eq)]
+#[generic_over_ip(A, IpAddress)]
+pub struct EntryAndGeneration<A: IpAddress, D> {
+    /// The entry.
+    pub entry: Entry<A, D>,
+    /// The generation.
+    pub generation: Generation,
+}
+
+impl<A: IpAddress, D: Debug> Display for EntryAndGeneration<A, D> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), core::fmt::Error> {
+        let EntryAndGeneration { entry, generation: Generation(generation) } = self;
+        write!(f, "{} (generation = {})", entry, generation)
+    }
+}
+
+/// Used to compare routes for how early they were added to the table.
+///
+/// If two routes have the same prefix length and metric, and are both on-link
+/// or are both-off-link, then the route with the earlier generation will be
+/// preferred.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Generation(u64);
+
+impl Generation {
+    /// Returns the initial generation.
+    pub fn initial() -> Self {
+        Self(0)
+    }
+
+    /// Returns the next generation.
+    pub fn next(&self) -> Generation {
+        let Self(n) = self;
+        Generation(n + 1)
+    }
+}
+
+impl<A: IpAddress, D> Entry<A, D> {
+    /// Maps the device ID held by this `Entry`.
+    pub fn map_device_id<D2>(self, f: impl FnOnce(D) -> D2) -> Entry<A, D2> {
+        let Self { subnet, device, gateway, metric } = self;
+        Entry { subnet, device: f(device), gateway, metric }
+    }
+
+    /// Sets the generation on an entry.
+    pub fn with_generation(self, generation: Generation) -> EntryAndGeneration<A, D> {
+        EntryAndGeneration { entry: self, generation }
+    }
 }
 
 impl<A: IpAddress, D: Debug> Display for Entry<A, D> {
@@ -175,6 +279,7 @@ impl<A: IpAddress, D: Debug> Display for Entry<A, D> {
 /// An IPv4 forwarding entry or an IPv6 forwarding entry.
 #[allow(missing_docs)]
 #[derive(Debug, Copy, Clone, Eq, GenericOverIp, PartialEq)]
+#[generic_over_ip()]
 pub enum EntryEither<D> {
     V4(Entry<Ipv4Addr, D>),
     V6(Entry<Ipv6Addr, D>),
@@ -183,8 +288,64 @@ pub enum EntryEither<D> {
 impl<A: IpAddress, D> From<Entry<A, D>> for EntryEither<D> {
     fn from(entry: Entry<A, D>) -> EntryEither<D> {
         #[derive(GenericOverIp)]
+        #[generic_over_ip(I, Ip)]
         struct EntryHolder<I: Ip, D>(Entry<I::Addr, D>);
         A::Version::map_ip(entry, EntryEither::V4, EntryEither::V6)
+    }
+}
+
+/// `OrderedLocality` provides an implementation of `core::cmp::PartialOrd` for
+/// a route's "locality".
+// Define an enum, so that `OnLink` routes are sorted before `OffLink` routes.
+// See https://doc.rust-lang.org/core/cmp/trait.PartialOrd.html#derivable for
+// more details.
+#[derive(PartialEq, PartialOrd, Eq, Ord)]
+pub(crate) enum OrderedLocality {
+    // The route does not have a gateway.
+    OnLink,
+    // The route does have a gateway.
+    OffLink,
+}
+
+// `OrderedRoute` provides an implementation of `core::cmp::PartialOrd`
+// for routes. Note that the fields are consulted in the order they are
+// declared. For more details, see
+// https://doc.rust-lang.org/core/cmp/trait.PartialOrd.html#derivable.
+#[derive(PartialEq, PartialOrd, Eq, Ord)]
+pub(crate) struct OrderedEntry<'a, A: IpAddress, D> {
+    // Order longer prefixes before shorter prefixes.
+    prefix_len: core::cmp::Reverse<u8>,
+    // Order lower metrics before larger metrics.
+    metric: u32,
+    // Order `OnLink` routes before `OffLink` routes.
+    locality: OrderedLocality,
+    // Earlier-added routes should come before later ones.
+    generation: Generation,
+    // To provide a consistent ordering, tiebreak using the remaining fields
+    // of the entry.
+    subnet_addr: A,
+    device: &'a D,
+    // Note that while this appears to duplicate the ordering provided by
+    // `locality`, it's important that we sort above on presence of the gateway
+    // and not on the actual address of the gateway. The latter is only used
+    // for tiebreaking at the end to provide a total order. Duplicating it this
+    // way allows us to avoid writing a manual `PartialOrd` impl.
+    gateway: Option<SpecifiedAddr<A>>,
+}
+
+impl<'a, A: IpAddress, D> From<&'a EntryAndGeneration<A, D>> for OrderedEntry<'a, A, D> {
+    fn from(entry: &'a EntryAndGeneration<A, D>) -> OrderedEntry<'a, A, D> {
+        let EntryAndGeneration { entry: Entry { subnet, device, gateway, metric }, generation } =
+            entry;
+        OrderedEntry {
+            prefix_len: core::cmp::Reverse(subnet.prefix()),
+            metric: metric.value().into(),
+            locality: gateway.map_or(OrderedLocality::OnLink, |_gateway| OrderedLocality::OffLink),
+            generation: *generation,
+            subnet_addr: subnet.network(),
+            device: &device,
+            gateway: *gateway,
+        }
     }
 }
 
@@ -201,6 +362,7 @@ pub enum NextHop<A> {
 
 /// The resolved route to a destination IP address.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, GenericOverIp)]
+#[generic_over_ip(I, Ip)]
 pub struct ResolvedRoute<I: Ip, D> {
     /// The source address to use when forwarding packets towards the
     /// destination.

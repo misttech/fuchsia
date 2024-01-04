@@ -9,22 +9,23 @@
 
 use {
     anyhow::{anyhow, Context as _},
-    fidl_fuchsia_hardware_network as fhardware_network, fidl_fuchsia_net as fnet,
-    fidl_fuchsia_net_debug as fnet_debug, fidl_fuchsia_net_interfaces as fnet_interfaces,
+    fidl_fuchsia_hardware_network as fhardware_network, fidl_fuchsia_net_debug as fnet_debug,
+    fidl_fuchsia_net_interfaces as fnet_interfaces,
     fidl_fuchsia_net_interfaces_ext::{self as fnet_interfaces_ext, Update as _},
-    fidl_fuchsia_net_name as fnet_name, fidl_fuchsia_net_neighbor as fnet_neighbor,
-    fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_ext as fnet_routes_ext,
+    fidl_fuchsia_net_neighbor as fnet_neighbor, fidl_fuchsia_net_routes as fnet_routes,
+    fidl_fuchsia_net_routes_ext as fnet_routes_ext,
     fuchsia_async::{self as fasync},
     fuchsia_inspect::{health::Reporter, Inspector},
     fuchsia_zircon as zx,
-    futures::{channel::mpsc, future::FusedFuture, pin_mut, prelude::*, select},
+    futures::{channel::mpsc, pin_mut, prelude::*, select},
     named_timer::NamedTimeoutExt,
     reachability_core::{
+        dig::Dig,
         ping::Ping,
         route_table::RouteTable,
         telemetry::{self, TelemetryEvent, TelemetrySender},
         watchdog, InterfaceView, Monitor, NeighborCache, NetworkCheckAction, NetworkCheckCookie,
-        NetworkChecker, NetworkCheckerOutcome, PortType, FIDL_TIMEOUT_ID,
+        NetworkCheckResult, NetworkChecker, NetworkCheckerOutcome, PortType, FIDL_TIMEOUT_ID,
     },
     reachability_handler::ReachabilityHandler,
     std::collections::{HashMap, HashSet},
@@ -33,13 +34,7 @@ use {
 
 const REPORT_PERIOD: zx::Duration = zx::Duration::from_seconds(60);
 const PROBE_PERIOD: zx::Duration = zx::Duration::from_seconds(60);
-// Gstatic has a TTL of 300 seconds, therefore, we will perform a lookup every
-// 300 seconds since we won't get any better indication of DNS function.
-// TODO(fxbug.dev/121010): Dynamically query TTL based on the domain's DNS record
-const DNS_PROBE_PERIOD: zx::Duration = zx::Duration::from_seconds(300);
-const DNS_FIDL_TIMEOUT: zx::Duration = zx::Duration::from_seconds(90);
 const FIDL_TIMEOUT: zx::Duration = zx::Duration::from_seconds(90);
-const DNS_DOMAIN: &str = "www.gstatic.com";
 
 struct SystemDispatcher;
 
@@ -121,39 +116,28 @@ impl watchdog::DeviceDiagnosticsProvider for DeviceDiagnosticsProvider {
 
 type Watchdog = watchdog::Watchdog<SystemDispatcher>;
 
-async fn dns_lookup(
-    name_lookup: &fnet_name::LookupProxy,
-) -> Result<fnet_name::LookupResult, anyhow::Error> {
-    name_lookup
-        .lookup_ip(
-            DNS_DOMAIN,
-            &fnet_name::LookupIpOptions {
-                ipv4_lookup: Some(true),
-                ipv6_lookup: Some(true),
-                ..Default::default()
-            },
-        )
-        .map_err(|e: fidl::Error| anyhow!("lookup_ip call failed: {:?}", e))
-        .on_timeout_named(&FIDL_TIMEOUT_ID, DNS_FIDL_TIMEOUT, || {
-            Err(anyhow!("lookup_ip timed out after {} seconds", DNS_FIDL_TIMEOUT.into_seconds()))
-        })
-        .await
-        .map_err(|e: anyhow::Error| anyhow!("{:?}", e))?
-        .map_err(|e: fnet_name::LookupError| anyhow!("lookup failed: {:?}", e))
-}
-
 async fn handle_network_check_message<'a>(
-    ping_futures: &mut futures::stream::FuturesUnordered<
-        futures::future::BoxFuture<'a, (NetworkCheckCookie, bool)>,
+    netcheck_futures: &mut futures::stream::FuturesUnordered<
+        futures::future::BoxFuture<'a, (NetworkCheckCookie, NetworkCheckResult)>,
     >,
     msg: Option<(NetworkCheckAction, NetworkCheckCookie)>,
 ) {
     let (action, cookie) = msg.expect("network check receiver unexpectedly closed");
     match action {
-        NetworkCheckAction::Ping { interface_name, addr } => {
-            ping_futures.push(Box::pin(async move {
-                let success = reachability_core::ping::Pinger.ping(&interface_name, addr).await;
-                (cookie, success)
+        NetworkCheckAction::Ping(parameters) => {
+            netcheck_futures.push(Box::pin(async move {
+                let success = reachability_core::ping::Pinger
+                    .ping(&parameters.interface_name, parameters.addr)
+                    .await;
+                (cookie, NetworkCheckResult::Ping { parameters, success })
+            }));
+        }
+        NetworkCheckAction::ResolveDns(parameters) => {
+            netcheck_futures.push(Box::pin(async move {
+                let ips = reachability_core::dig::Digger::new()
+                    .dig(&parameters.interface_name, &parameters.domain)
+                    .await;
+                (cookie, NetworkCheckResult::ResolveDns { parameters, ips })
             }));
         }
     }
@@ -167,7 +151,6 @@ pub struct EventLoop {
     interface_properties: HashMap<u64, fnet_interfaces_ext::PropertiesAndState<()>>,
     neighbor_cache: NeighborCache,
     routes: RouteTable,
-    latest_dns_addresses: Vec<fnet::IpAddress>,
     telemetry_sender: Option<TelemetrySender>,
     network_check_receiver: mpsc::UnboundedReceiver<(NetworkCheckAction, NetworkCheckCookie)>,
     inspector: &'static Inspector,
@@ -189,7 +172,6 @@ impl EventLoop {
             interface_properties: Default::default(),
             neighbor_cache: Default::default(),
             routes: Default::default(),
-            latest_dns_addresses: Vec::new(),
             telemetry_sender: None,
             network_check_receiver,
             inspector,
@@ -262,10 +244,6 @@ impl EventLoop {
             .fuse()
         };
 
-        let name_lookup = connect_to_protocol::<fnet_name::LookupMarker>()
-            .context("failed to connect to Lookup")?;
-        let dns_lookup_fut = dns_lookup(&name_lookup).fuse();
-
         let ipv4_route_event_stream = {
             let state_v4 = connect_to_protocol::<fnet_routes::StateV4Marker>()
                 .context("failed to connect to fuchsia.net.routes/StateV4")?;
@@ -282,16 +260,13 @@ impl EventLoop {
         };
 
         let mut probe_futures = futures::stream::FuturesUnordered::new();
-        let mut ping_futures = futures::stream::FuturesUnordered::new();
+        let mut netcheck_futures = futures::stream::FuturesUnordered::new();
         let report_stream = fasync::Interval::new(REPORT_PERIOD).fuse();
-        let dns_interval_timer = fasync::Interval::new(DNS_PROBE_PERIOD).fuse();
 
         pin_mut!(
             if_watcher_stream,
             report_stream,
             neigh_watcher_stream,
-            dns_lookup_fut,
-            dns_interval_timer,
             ipv4_route_event_stream,
             ipv6_route_event_stream,
             telemetry_fut,
@@ -315,7 +290,6 @@ impl EventLoop {
 
         fuchsia_inspect::component::health().set_ok();
 
-        // TODO(https://fxbug.dev/124258): Create helper functions for select! branches
         loop {
             select! {
                 if_watcher_res = if_watcher_stream.try_next() => {
@@ -324,18 +298,21 @@ impl EventLoop {
                     }
                 },
                 neigh_res = neigh_watcher_stream.try_next() => {
-                    let event = neigh_res.context("neighbor stream error")?
-                                         .context("neighbor stream ended")?;
+                    let event = neigh_res
+                        .unwrap_or_else(|err| exit_with_fidl_error(err))
+                        .ok_or(anyhow!("neighbor event stream ended"))?;
                     self.neighbor_cache.process_neighbor_event(event);
                 }
                 route_v4_res = ipv4_route_event_stream.try_next() => {
-                    let event = route_v4_res.context("ipv4 route event stream error")?
-                    .context("ipv4 route event stream ended")?;
+                    let event = route_v4_res
+                        .unwrap_or_else(|err| exit_with_route_watch_error(err))
+                        .ok_or(anyhow!("ipv4 route event stream ended"))?;
                     self.handle_route_watcher_event(event);
                 }
                 route_v6_res = ipv6_route_event_stream.try_next() => {
-                    let event = route_v6_res.context("ipv6 route event stream error")?
-                    .context("ipv6 route event stream ended")?;
+                    let event = route_v6_res
+                        .unwrap_or_else(|err| exit_with_route_watch_error(err))
+                        .ok_or(anyhow!("ipv6 route event stream ended"))?;
                     self.handle_route_watcher_event(event);
                 }
                 report = report_stream.next() => {
@@ -366,21 +343,10 @@ impl EventLoop {
                     }
                 },
                 msg = self.network_check_receiver.next() => {
-                    handle_network_check_message(&mut ping_futures, msg).await;
+                    handle_network_check_message(&mut netcheck_futures, msg).await;
                 },
-                ping_res = ping_futures.select_next_some() => {
-                    self.handle_ping_response(ping_res).await;
-                },
-                () = dns_interval_timer.select_next_some() => {
-                    if dns_lookup_fut.is_terminated() {
-                        dns_lookup_fut.set(dns_lookup(&name_lookup).fuse());
-                    }
-                },
-                // If the DNS lookup errors or if there are no IpAddresses returned, DNS is
-                // inactive. In the future, another condition of DNS inactivity will be if the
-                // returned list of IpAddresses do not fall into the expected IP ranges.
-                dns_res = dns_lookup_fut => {
-                    self.update_dns_state(dns_res).await;
+                netcheck_res = netcheck_futures.select_next_some() => {
+                    self.handle_netcheck_response(netcheck_res).await;
                 },
                 () = telemetry_fut => {
                     error!("unexpectedly stopped serving telemetry");
@@ -393,32 +359,25 @@ impl EventLoop {
         &mut self,
         if_watcher_res: Result<Option<fidl_fuchsia_net_interfaces::Event>, fidl::Error>,
     ) -> Result<Option<u64>, anyhow::Error> {
-        match if_watcher_res {
-            Ok(Some(event)) => {
-                let discovered_id = self
-                    .handle_interface_watcher_event(event)
-                    .await
-                    .context("failed to handle interface watcher event")?;
-                if let Some(id) = discovered_id {
-                    if let Some(telemetry_sender) = &self.telemetry_sender {
-                        let has_default_ipv4_route = self
-                            .interface_properties
-                            .values()
-                            .any(|p| p.properties.has_default_ipv4_route);
-                        let has_default_ipv6_route = self
-                            .interface_properties
-                            .values()
-                            .any(|p| p.properties.has_default_ipv6_route);
-                        telemetry_sender.send(TelemetryEvent::NetworkConfig {
-                            has_default_ipv4_route,
-                            has_default_ipv6_route,
-                        });
-                    }
-                    return Ok(Some(id));
-                }
+        let event = if_watcher_res
+            .unwrap_or_else(|err| exit_with_fidl_error(err))
+            .ok_or(anyhow!("interface watcher stream unexpectedly ended"))?;
+        let discovered_id = self
+            .handle_interface_watcher_event(event)
+            .await
+            .context("failed to handle interface watcher event")?;
+        if let Some(id) = discovered_id {
+            if let Some(telemetry_sender) = &self.telemetry_sender {
+                let has_default_ipv4_route =
+                    self.interface_properties.values().any(|p| p.properties.has_default_ipv4_route);
+                let has_default_ipv6_route =
+                    self.interface_properties.values().any(|p| p.properties.has_default_ipv6_route);
+                telemetry_sender.send(TelemetryEvent::NetworkConfig {
+                    has_default_ipv4_route,
+                    has_default_ipv6_route,
+                });
             }
-            Ok(None) => return Err(anyhow!("interface watcher stream unexpectedly ended")),
-            Err(e) => return Err(anyhow!("interface watcher stream error: {}", e)),
+            return Ok(Some(id));
         }
         Ok(None)
     }
@@ -605,70 +564,63 @@ impl EventLoop {
             .await;
     }
 
-    // TODO(fxbug.dev/125657): handle_ping_response and handle_network_check_message are missing
+    // TODO(fxbug.dev/125657): handle_netcheck_response and handle_network_check_message are missing
     // tests because they reply on NetworkCheckCookie, which cannot be created in the event loop.
-    async fn handle_ping_response(&mut self, ping_res: (NetworkCheckCookie, bool)) {
-        let (cookie, success) = ping_res;
-        match self.monitor.resume(cookie, success) {
+    async fn handle_netcheck_response(
+        &mut self,
+        (cookie, result): (NetworkCheckCookie, NetworkCheckResult),
+    ) {
+        match self.monitor.resume(cookie, result) {
             Ok(NetworkCheckerOutcome::MustResume) => {}
             Ok(NetworkCheckerOutcome::Complete) => {
-                let (system_internet, system_gateway) = {
+                let (system_internet, system_gateway, system_dns) = {
                     let monitor_state = self.monitor.state();
-                    (monitor_state.system_has_internet(), monitor_state.system_has_gateway())
+                    (
+                        monitor_state.system_has_internet(),
+                        monitor_state.system_has_gateway(),
+                        monitor_state.system_has_active_dns(),
+                    )
                 };
 
                 self.handler
                     .update_state(|state| {
                         state.internet_available = system_internet;
                         state.gateway_reachable = system_gateway;
+                        state.dns_active = system_dns;
                     })
                     .await;
             }
             Err(e) => error!("resume network check error: {:?}", e),
         }
     }
+}
 
-    async fn update_dns_state(&mut self, dns_res: Result<fnet_name::LookupResult, anyhow::Error>) {
-        match dns_res {
-            Ok(lookup_result) => {
-                let addresses = match lookup_result.addresses {
-                    Some(addrs) => addrs,
-                    None => Vec::new(),
-                };
+/// If we can't reach netstack via fidl, log an error and exit.
+//
+// TODO(fxbug.dev/119295): add a test that works as intended.
+fn exit_with_fidl_error(cause: fidl::Error) -> ! {
+    error!(%cause, "exiting due to fidl error");
+    std::process::exit(1);
+}
 
-                if addresses.len() == 0 {
-                    debug!("DNS lookup result unexpectedly had 0 addresses");
-                }
-
-                self.latest_dns_addresses = addresses;
-            }
-            Err(e) => {
-                debug!("lookup_ip error: {:?}", e);
-                self.latest_dns_addresses = Vec::new();
-            }
-        }
-        let dns_active = !self.latest_dns_addresses.is_empty();
-        self.handler
-            .update_state(|state| {
-                state.dns_active = dns_active;
-            })
-            .await;
-        if let Some(telemetry_sender) = &self.telemetry_sender {
-            telemetry_sender.send(TelemetryEvent::DnsProbe { dns_active });
-        }
-    }
+/// If we can't get route events from netstack, log an error and exit.
+//
+// TODO(fxbug.dev/119295): add a test that works as intended.
+fn exit_with_route_watch_error(cause: fnet_routes_ext::WatchError) -> ! {
+    error!(%cause, "exiting due to route watch error");
+    std::process::exit(1);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
+    #[allow(unused)]
+    use assert_matches::assert_matches as _;
     use fidl_fuchsia_net::{IpAddress, Ipv4Address, Ipv6Address, Subnet};
     use fidl_fuchsia_net_interfaces::{
         Address, AddressAssignmentState, Event, PreferredLifetimeInfo, Properties,
     };
-    use futures::task::Poll;
-    use net_declare::{fidl_ip, std_ip_v4, std_ip_v6};
+    use net_declare::{std_ip_v4, std_ip_v6};
 
     fn create_eventloop() -> EventLoop {
         let handler = ReachabilityHandler::new();
@@ -686,9 +638,6 @@ mod tests {
         let mut event_loop = create_eventloop();
 
         let event_res = Ok(None);
-        assert!(event_loop.handle_interface_watcher_result(event_res).await.is_err());
-
-        let event_res = Err(fidl::Error::Invalid);
         assert!(event_loop.handle_interface_watcher_result(event_res).await.is_err());
     }
 
@@ -778,134 +727,5 @@ mod tests {
             event_loop.handle_interface_watcher_result(event_res).await.unwrap_or_default(),
             Some(54321)
         );
-    }
-
-    #[fuchsia::test]
-    fn test_dns_lookup_valid_response() {
-        let mut exec = fasync::TestExecutor::new();
-
-        let (proxy, mut server_stream) =
-            fidl::endpoints::create_proxy_and_stream::<fnet_name::LookupMarker>()
-                .expect("failed to create LookupMarker");
-        let dns_lookup_fut = dns_lookup(&proxy);
-        pin_mut!(dns_lookup_fut);
-        assert_matches!(exec.run_until_stalled(&mut dns_lookup_fut), Poll::Pending);
-
-        let mut server_end_fut = server_stream.try_next();
-        let _ = assert_matches!(exec.run_until_stalled(&mut server_end_fut),
-            Poll::Ready(Ok(Some(fnet_name::LookupRequest::LookupIp { responder, hostname, .. }))) => {
-                if DNS_DOMAIN == hostname {
-                    responder.send(Ok(&fnet_name::LookupResult {
-                        addresses: Some(vec![fidl_ip!("1.2.3.1")]), ..Default::default()
-                    }))
-                } else {
-                    responder.send(Err(fnet_name::LookupError::NotFound))
-                }
-            }
-        );
-
-        assert_matches!(exec.run_until_stalled(&mut server_end_fut), Poll::Pending);
-        assert_matches!(exec.run_until_stalled(&mut dns_lookup_fut), Poll::Ready(Ok(_)));
-    }
-
-    #[fuchsia::test]
-    fn test_dns_lookup_net_name_error() {
-        let mut exec = fasync::TestExecutor::new();
-
-        let (proxy, mut server_stream) =
-            fidl::endpoints::create_proxy_and_stream::<fnet_name::LookupMarker>()
-                .expect("failed to create LookupMarker");
-        let dns_lookup_fut = dns_lookup(&proxy);
-        pin_mut!(dns_lookup_fut);
-        assert_matches!(exec.run_until_stalled(&mut dns_lookup_fut), Poll::Pending);
-
-        let mut server_end_fut = server_stream.try_next();
-        let _ = assert_matches!(exec.run_until_stalled(&mut server_end_fut),
-            Poll::Ready(Ok(Some(fnet_name::LookupRequest::LookupIp { responder, .. }))) => {
-                // Send a not found error regardless of the hostname
-                responder.send(Err(fnet_name::LookupError::NotFound))
-            }
-        );
-
-        assert_matches!(exec.run_until_stalled(&mut server_end_fut), Poll::Pending);
-        assert_matches!(
-            exec.run_until_stalled(&mut dns_lookup_fut),
-            Poll::Ready(Err(anyhow::Error { .. }))
-        );
-    }
-
-    #[fuchsia::test]
-    fn test_dns_lookup_timed_out() {
-        let mut exec = fasync::TestExecutor::new_with_fake_time();
-        exec.set_fake_time(fasync::Time::from_nanos(0));
-
-        let (proxy, mut server_stream) =
-            fidl::endpoints::create_proxy_and_stream::<fnet_name::LookupMarker>()
-                .expect("failed to create LookupMarker");
-        let dns_lookup_fut = dns_lookup(&proxy);
-        pin_mut!(dns_lookup_fut);
-        assert_matches!(exec.run_until_stalled(&mut dns_lookup_fut), Poll::Pending);
-
-        let mut server_end_fut = server_stream.try_next();
-        assert_matches!(exec.run_until_stalled(&mut server_end_fut), Poll::Ready { .. });
-
-        exec.set_fake_time(fasync::Time::after(FIDL_TIMEOUT));
-        assert!(exec.wake_expired_timers());
-
-        assert_matches!(
-            exec.run_until_stalled(&mut dns_lookup_fut),
-            Poll::Ready(Err(anyhow::Error { .. }))
-        );
-    }
-
-    #[fuchsia::test]
-    fn test_dns_lookup_fidl_error() {
-        let mut exec = fasync::TestExecutor::new_with_fake_time();
-
-        let (proxy, _) = fidl::endpoints::create_proxy::<fnet_name::LookupMarker>()
-            .expect("failed to create LookupMarker");
-        let dns_lookup_fut = dns_lookup(&proxy);
-        pin_mut!(dns_lookup_fut);
-
-        assert_matches!(
-            exec.run_until_stalled(&mut dns_lookup_fut),
-            Poll::Ready(Err(anyhow::Error { .. }))
-        );
-    }
-
-    #[fuchsia::test]
-    async fn test_update_dns_state_ipv4() {
-        let mut event_loop = create_eventloop();
-        let lookup_res = fnet_name::LookupResult {
-            addresses: Some(vec![fidl_ip!("192.0.2.1")]),
-            ..Default::default()
-        };
-
-        event_loop.update_dns_state(Ok(lookup_res)).await;
-        assert_eq!(event_loop.latest_dns_addresses, vec![fidl_ip!("192.0.2.1")]);
-    }
-
-    #[fuchsia::test]
-    async fn test_update_dns_state_ipv6() {
-        let mut event_loop = create_eventloop();
-
-        let lookup_res = fnet_name::LookupResult {
-            addresses: Some(vec![fidl_ip!("2001:db8::1")]),
-            ..Default::default()
-        };
-        event_loop.update_dns_state(Ok(lookup_res)).await;
-        assert_eq!(event_loop.latest_dns_addresses, vec![fidl_ip!("2001:db8::1")]);
-    }
-
-    #[fuchsia::test]
-    async fn test_update_dns_state_error_and_empty() {
-        let mut event_loop = create_eventloop();
-
-        let lookup_res = fnet_name::LookupResult { addresses: Some(vec![]), ..Default::default() };
-        event_loop.update_dns_state(Ok(lookup_res)).await;
-        assert_eq!(event_loop.latest_dns_addresses, vec![]);
-
-        event_loop.update_dns_state(Err(anyhow!("lookup_ip err"))).await;
-        assert!(event_loop.latest_dns_addresses.is_empty());
     }
 }

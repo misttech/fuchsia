@@ -1,0 +1,65 @@
+# Copyright 2023 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/components.gni")
+import("//build/rust/rustc_binary.gni")
+import("//src/starnix/kernel/starnix.gni")
+import("//src/starnix/tests/build/starnix_linux_test_executable.gni")
+
+group("self_profile") {
+  testonly = true
+
+  deps = []
+
+  # These tests assert on the relative timing of operations which are difficult to predict outside
+  # of non-instrumented release builds. Losing coverage there is acceptable because profiling data
+  # is not likely to be relevant in those contexts.
+  if (!is_debug && !is_asan) {
+    deps += [ ":starnix_self_profile_test" ]
+  }
+}
+
+rustc_binary("bin") {
+  testonly = true
+  edition = "2021"
+  output_name = "starnix_self_profile_test"
+
+  sources = [ "src/main.rs" ]
+
+  deps = [
+    "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+    "//src/lib/diagnostics/inspect/contrib/self_profiles_report",
+    "//src/lib/diagnostics/reader/rust",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-component",
+    "//src/sys/lib/component-events",
+  ]
+}
+
+starnix_linux_test_executable("linux_pipe_writer") {
+  sources = [ "src/pipe_writer.cc" ]
+}
+
+fuchsia_component("pipe_writer") {
+  testonly = true
+  manifest = "meta/pipe_writer.cml"
+  deps = [ ":linux_pipe_writer" ]
+}
+
+fuchsia_test_component("integration_test") {
+  manifest = "meta/integration_test.cml"
+  deps = [
+    ":bin",
+    ":pipe_writer",
+  ]
+  test_type = "system"
+}
+
+fuchsia_test_package("starnix_self_profile_test") {
+  test_components = [ ":integration_test" ]
+  subpackages = [
+    "//src/starnix/kernel:starnix_kernel_package",
+    "//src/starnix/containers/debian:debian_package",
+  ]
+}

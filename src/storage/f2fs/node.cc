@@ -8,9 +8,95 @@
 
 namespace f2fs {
 
-NodeManager::NodeManager(F2fs *fs) : fs_(fs), superblock_info_(&fs_->GetSuperblockInfo()) {}
+bool IsSameDnode(NodePath &path, uint32_t node_offset) {
+  if (node_offset == kInvalidNodeOffset) {
+    return false;
+  }
+  return path.node_offset[path.depth] == node_offset;
+}
 
-NodeManager::NodeManager(SuperblockInfo *sbi) : superblock_info_(sbi) {}
+size_t GetOfsInDnode(NodePath &path) { return path.offset_in_node[path.depth]; }
+
+// The maximum depth is four.
+// Offset[0] indicates inode offset.
+zx::result<NodePath> GetNodePath(VnodeF2fs &vnode, pgoff_t block) {
+  const pgoff_t direct_index = vnode.GetAddrsPerInode();
+  const pgoff_t direct_blks = kAddrsPerBlock;
+  const pgoff_t dptrs_per_blk = kNidsPerBlock;
+  const pgoff_t indirect_blks =
+      safemath::CheckMul(safemath::checked_cast<pgoff_t>(kAddrsPerBlock), kNidsPerBlock)
+          .ValueOrDie();
+  const pgoff_t dindirect_blks = indirect_blks * kNidsPerBlock;
+  NodePath path;
+  size_t &level = path.depth;
+  auto &offset = path.offset_in_node;
+  auto &noffset = path.node_offset;
+  size_t n = 0;
+  path.ino = vnode.Ino();
+
+  noffset[0] = 0;
+  if (block < direct_index) {
+    offset[n++] = static_cast<int>(block);
+    level = 0;
+    return zx::ok(path);
+  }
+  block -= direct_index;
+  if (block < direct_blks) {
+    offset[n++] = kNodeDir1Block;
+    noffset[n] = 1;
+    offset[n++] = static_cast<int>(block);
+    level = 1;
+    return zx::ok(path);
+  }
+  block -= direct_blks;
+  if (block < direct_blks) {
+    offset[n++] = kNodeDir2Block;
+    noffset[n] = 2;
+    offset[n++] = static_cast<int>(block);
+    level = 1;
+    return zx::ok(path);
+  }
+  block -= direct_blks;
+  if (block < indirect_blks) {
+    offset[n++] = kNodeInd1Block;
+    noffset[n] = 3;
+    offset[n++] = static_cast<int>(block / direct_blks);
+    noffset[n] = 4 + offset[n - 1];
+    offset[n++] = safemath::checked_cast<int32_t>(
+        safemath::CheckMod<pgoff_t>(block, direct_blks).ValueOrDie());
+    level = 2;
+    return zx::ok(path);
+  }
+  block -= indirect_blks;
+  if (block < indirect_blks) {
+    offset[n++] = kNodeInd2Block;
+    noffset[n] = 4 + dptrs_per_blk;
+    offset[n++] = safemath::checked_cast<int32_t>(block / direct_blks);
+    noffset[n] = 5 + dptrs_per_blk + offset[n - 1];
+    offset[n++] = safemath::checked_cast<int32_t>(
+        safemath::CheckMod<pgoff_t>(block, direct_blks).ValueOrDie());
+    level = 2;
+    return zx::ok(path);
+  }
+  block -= indirect_blks;
+  if (block < dindirect_blks) {
+    offset[n++] = kNodeDIndBlock;
+    noffset[n] = 5 + (dptrs_per_blk * 2);
+    offset[n++] = static_cast<int>(block / indirect_blks);
+    noffset[n] = 6 + (dptrs_per_blk * 2) + offset[n - 1] * (dptrs_per_blk + 1);
+    offset[n++] = safemath::checked_cast<int32_t>((block / direct_blks) % dptrs_per_blk);
+    noffset[n] = 7 + (dptrs_per_blk * 2) + offset[n - 2] * (dptrs_per_blk + 1) + offset[n - 1];
+    offset[n++] = safemath::checked_cast<int32_t>(
+        safemath::CheckMod<pgoff_t>(block, direct_blks).ValueOrDie());
+    level = 3;
+    return zx::ok(path);
+  }
+  return zx::error(ZX_ERR_NOT_FOUND);
+}
+
+NodeManager::NodeManager(F2fs *fs) : fs_(fs), superblock_info_(fs_->GetSuperblockInfo()) {}
+
+NodeManager::NodeManager(SuperblockInfo *sbi) : superblock_info_(*sbi) {}
 
 void NodeManager::SetNatCacheDirty(NatEntry &ne) {
   ZX_ASSERT(clean_nat_list_.erase(ne) != nullptr);
@@ -28,35 +114,6 @@ void NodeManager::NodeInfoFromRawNat(NodeInfo &ni, RawNatEntry &raw_ne) {
   ni.version = raw_ne.version;
 }
 
-bool NodeManager::IncValidNodeCount(VnodeF2fs *vnode, uint32_t count, bool isInode) {
-  block_t valid_block_count;
-  uint32_t valid_node_count;
-
-  std::lock_guard stat_lock(GetSuperblockInfo().GetStatLock());
-
-  valid_block_count = GetSuperblockInfo().GetTotalValidBlockCount() + static_cast<block_t>(count);
-  GetSuperblockInfo().SetAllocValidBlockCount(GetSuperblockInfo().GetAllocValidBlockCount() +
-                                              static_cast<block_t>(count));
-  valid_node_count = GetSuperblockInfo().GetTotalValidNodeCount() + count;
-
-  if (valid_block_count > GetSuperblockInfo().GetUserBlockCount()) {
-    return false;
-  }
-
-  if (valid_node_count > GetSuperblockInfo().GetTotalNodeCount()) {
-    return false;
-  }
-
-  if (vnode && !isInode) {
-    vnode->IncBlocks(count);
-  }
-
-  GetSuperblockInfo().SetTotalValidNodeCount(valid_node_count);
-  GetSuperblockInfo().SetTotalValidBlockCount(valid_block_count);
-
-  return true;
-}
-
 zx::result<nid_t> NodeManager::GetNextFreeNid() {
   fs::SharedLock free_nid_lock(free_nid_tree_lock_);
   if (free_nid_tree_.empty()) {
@@ -66,8 +123,8 @@ zx::result<nid_t> NodeManager::GetNextFreeNid() {
 }
 
 void NodeManager::GetNatBitmap(void *out) {
-  std::memcpy(out, nat_bitmap_.get(), nat_bitmap_size_);
-  std::memcpy(nat_prev_bitmap_.get(), nat_bitmap_.get(), nat_bitmap_size_);
+  CloneBits(out, nat_bitmap_, 0, GetBitSize(nat_bitmap_size_));
+  CloneBits(nat_prev_bitmap_, nat_bitmap_, 0, GetBitSize(nat_bitmap_size_));
 }
 
 pgoff_t NodeManager::CurrentNatAddr(nid_t start) {
@@ -76,14 +133,14 @@ pgoff_t NodeManager::CurrentNatAddr(nid_t start) {
   pgoff_t seg_off;
 
   block_off = NatBlockOffset(start);
-  seg_off = block_off >> GetSuperblockInfo().GetLogBlocksPerSeg();
+  seg_off = block_off >> superblock_info_.GetLogBlocksPerSeg();
 
-  block_addr = static_cast<pgoff_t>(
-      nat_blkaddr_ + (seg_off << GetSuperblockInfo().GetLogBlocksPerSeg() << 1) +
-      (block_off & ((1 << GetSuperblockInfo().GetLogBlocksPerSeg()) - 1)));
+  block_addr =
+      static_cast<pgoff_t>(nat_blkaddr_ + (seg_off << superblock_info_.GetLogBlocksPerSeg() << 1) +
+                           (block_off & ((1 << superblock_info_.GetLogBlocksPerSeg()) - 1)));
 
-  if (TestValidBitmap(block_off, nat_bitmap_.get()))
-    block_addr += GetSuperblockInfo().GetBlocksPerSeg();
+  if (nat_bitmap_.GetOne(ToMsbFirst(block_off)))
+    block_addr += superblock_info_.GetBlocksPerSeg();
 
   return block_addr;
 }
@@ -93,16 +150,15 @@ bool NodeManager::IsUpdatedNatPage(nid_t start) {
 
   block_off = NatBlockOffset(start);
 
-  return (TestValidBitmap(block_off, nat_bitmap_.get()) ^
-          TestValidBitmap(block_off, nat_prev_bitmap_.get()));
+  return nat_bitmap_.GetOne(ToMsbFirst(block_off)) ^ nat_prev_bitmap_.GetOne(ToMsbFirst(block_off));
 }
 
 pgoff_t NodeManager::NextNatAddr(pgoff_t block_addr) {
   block_addr -= nat_blkaddr_;
-  if ((block_addr >> GetSuperblockInfo().GetLogBlocksPerSeg()) % 2)
-    block_addr -= GetSuperblockInfo().GetBlocksPerSeg();
+  if ((block_addr >> superblock_info_.GetLogBlocksPerSeg()) % 2)
+    block_addr -= superblock_info_.GetBlocksPerSeg();
   else
-    block_addr += GetSuperblockInfo().GetBlocksPerSeg();
+    block_addr += superblock_info_.GetBlocksPerSeg();
 
   return block_addr + nat_blkaddr_;
 }
@@ -110,30 +166,10 @@ pgoff_t NodeManager::NextNatAddr(pgoff_t block_addr) {
 void NodeManager::SetToNextNat(nid_t start_nid) {
   pgoff_t block_off = NatBlockOffset(start_nid);
 
-  if (TestValidBitmap(block_off, nat_bitmap_.get()))
-    ClearValidBitmap(block_off, nat_bitmap_.get());
+  if (nat_bitmap_.GetOne(ToMsbFirst(block_off)))
+    nat_bitmap_.ClearOne(ToMsbFirst(block_off));
   else
-    SetValidBitmap(block_off, nat_bitmap_.get());
-}
-
-// Coldness identification:
-//  - Mark cold files in InodeInfo
-//  - Mark cold node blocks in their node footer
-//  - Mark cold data pages in page cache
-bool NodeManager::IsColdFile(VnodeF2fs &vnode) { return (vnode.IsAdviseSet(FAdvise::kCold) != 0); }
-
-void NodeManager::DecValidNodeCount(VnodeF2fs *vnode, uint32_t count, bool isInode) {
-  std::lock_guard stat_lock(GetSuperblockInfo().GetStatLock());
-
-  ZX_ASSERT(!(GetSuperblockInfo().GetTotalValidBlockCount() < count));
-  ZX_ASSERT(!(GetSuperblockInfo().GetTotalValidNodeCount() < count));
-
-  if (!isInode) {
-    vnode->DecBlocks(count);
-  }
-  GetSuperblockInfo().SetTotalValidNodeCount(GetSuperblockInfo().GetTotalValidNodeCount() - count);
-  GetSuperblockInfo().SetTotalValidBlockCount(GetSuperblockInfo().GetTotalValidBlockCount() -
-                                              count);
+    nat_bitmap_.SetOne(ToMsbFirst(block_off));
 }
 
 void NodeManager::GetCurrentNatPage(nid_t nid, LockedPage *out) {
@@ -273,7 +309,7 @@ void NodeManager::SetNodeAddr(NodeInfo &ni, block_t new_blkaddr) {
       entry->ClearCheckpointed();
     }
 
-    // sanity check
+    // validity check
     ZX_ASSERT(!(entry->GetBlockAddress() != ni.blk_addr));
     ZX_ASSERT(!(entry->GetBlockAddress() == kNullAddr && new_blkaddr == kNullAddr));
     ZX_ASSERT(!(entry->GetBlockAddress() == kNewAddr && new_blkaddr == kNewAddr));
@@ -282,8 +318,7 @@ void NodeManager::SetNodeAddr(NodeInfo &ni, block_t new_blkaddr) {
 
     // increament version no as node is removed
     if (entry->GetBlockAddress() != kNewAddr && new_blkaddr == kNullAddr) {
-      uint8_t version = entry->GetVersion();
-      entry->SetVersion(IncNodeVersion(version));
+      entry->SetVersion(entry->GetVersion() + 1);
     }
 
     // change address
@@ -308,15 +343,10 @@ int NodeManager::TryToFreeNats(int nr_shrink) {
 
 // This function returns always success
 void NodeManager::GetNodeInfo(nid_t nid, NodeInfo &out) {
-  CursegInfo *curseg = fs_->GetSegmentManager().CURSEG_I(CursegType::kCursegHotData);
-  SummaryBlock *sum = curseg->sum_blk.get<SummaryBlock>();
   nid_t start_nid = StartNid(nid);
-  NatBlock *nat_blk;
   RawNatEntry ne;
   int i;
-
   out.nid = nid;
-
   {
     // Check nat cache
     fs::SharedLock nat_lock(nat_tree_lock_);
@@ -329,20 +359,20 @@ void NodeManager::GetNodeInfo(nid_t nid, NodeInfo &out) {
     }
   }
 
-  {
+  fs_->GetSegmentManager().GetSummaryBlock(CursegType::kCursegHotData, [&](SummaryBlock &sum) {
     // Check current segment summary
-    std::lock_guard curseg_lock(curseg->curseg_mutex);
     i = LookupJournalInCursum(sum, JournalType::kNatJournal, nid, 0);
     if (i >= 0) {
       ne = NatInJournal(sum, i);
       NodeInfoFromRawNat(out, ne);
     }
-  }
+    return ZX_OK;
+  });
   if (i < 0) {
     LockedPage page;
     // Fill NodeInfo from nat page
     GetCurrentNatPage(start_nid, &page);
-    nat_blk = page->GetAddress<NatBlock>();
+    NatBlock *nat_blk = page->GetAddress<NatBlock>();
     ne = nat_blk->entries[nid - start_nid];
 
     NodeInfoFromRawNat(out, ne);
@@ -350,670 +380,210 @@ void NodeManager::GetNodeInfo(nid_t nid, NodeInfo &out) {
   CacheNatEntry(nid, ne);
 }
 
-// The maximum depth is four.
-// Offset[0] will have raw inode offset.
-zx::result<int32_t> NodeManager::GetNodePath(VnodeF2fs &vnode, pgoff_t block, int32_t (&offset)[4],
-                                             uint32_t (&noffset)[4]) {
-  const pgoff_t direct_index = vnode.GetAddrsPerInode();
-  const pgoff_t direct_blks = kAddrsPerBlock;
-  const pgoff_t dptrs_per_blk = kNidsPerBlock;
-  const pgoff_t indirect_blks =
-      safemath::CheckMul(safemath::checked_cast<pgoff_t>(kAddrsPerBlock), kNidsPerBlock)
-          .ValueOrDie();
-  const pgoff_t dindirect_blks = indirect_blks * kNidsPerBlock;
-  int32_t n = 0;
-  int32_t level = 0;
+zx::result<LockedPage> NodeManager::FindLockedDnodePage(NodePath &path) {
+  const size_t level = path.depth;
+  const size_t(&offset)[kMaxNodeBlockLevel] = path.offset_in_node;
+  LockedPage node_page;
+  if (zx_status_t err = GetNodePage(path.ino, &node_page); err != ZX_OK) {
+    return zx::error(err);
+  }
 
-  noffset[0] = 0;
-  do {
-    if (block < direct_index) {
-      offset[n++] = static_cast<int>(block);
-      level = 0;
-      break;
+  for (size_t i = 0; i < level; ++i) {
+    auto page_or = GetNextNodePage(node_page, offset[i]);
+    if (page_or.is_error()) {
+      return page_or.take_error();
     }
-    block -= direct_index;
-    if (block < direct_blks) {
-      offset[n++] = kNodeDir1Block;
-      noffset[n] = 1;
-      offset[n++] = static_cast<int>(block);
-      level = 1;
-      break;
-    }
-    block -= direct_blks;
-    if (block < direct_blks) {
-      offset[n++] = kNodeDir2Block;
-      noffset[n] = 2;
-      offset[n++] = static_cast<int>(block);
-      level = 1;
-      break;
-    }
-    block -= direct_blks;
-    if (block < indirect_blks) {
-      offset[n++] = kNodeInd1Block;
-      noffset[n] = 3;
-      offset[n++] = static_cast<int>(block / direct_blks);
-      noffset[n] = 4 + offset[n - 1];
-      offset[n++] = safemath::checked_cast<int32_t>(
-          safemath::CheckMod<pgoff_t>(block, direct_blks).ValueOrDie());
-      level = 2;
-      break;
-    }
-    block -= indirect_blks;
-    if (block < indirect_blks) {
-      offset[n++] = kNodeInd2Block;
-      noffset[n] = 4 + dptrs_per_blk;
-      offset[n++] = safemath::checked_cast<int32_t>(block / direct_blks);
-      noffset[n] = 5 + dptrs_per_blk + offset[n - 1];
-      offset[n++] = safemath::checked_cast<int32_t>(
-          safemath::CheckMod<pgoff_t>(block, direct_blks).ValueOrDie());
-      level = 2;
-      break;
-    }
-    block -= indirect_blks;
-    if (block < dindirect_blks) {
-      offset[n++] = kNodeDIndBlock;
-      noffset[n] = 5 + (dptrs_per_blk * 2);
-      offset[n++] = static_cast<int>(block / indirect_blks);
-      noffset[n] = 6 + (dptrs_per_blk * 2) + offset[n - 1] * (dptrs_per_blk + 1);
-      offset[n++] = safemath::checked_cast<int32_t>((block / direct_blks) % dptrs_per_blk);
-      noffset[n] = 7 + (dptrs_per_blk * 2) + offset[n - 2] * (dptrs_per_blk + 1) + offset[n - 1];
-      offset[n++] = safemath::checked_cast<int32_t>(
-          safemath::CheckMod<pgoff_t>(block, direct_blks).ValueOrDie());
-      level = 3;
-      break;
-    } else {
-      return zx::error(ZX_ERR_NOT_FOUND);
-    }
-  } while (false);
-  return zx::ok(level);
+    node_page = std::move(*page_or);
+  }
+  return zx::ok(std::move(node_page));
 }
 
-zx::result<bool> NodeManager::IsSameDnode(VnodeF2fs &vnode, pgoff_t index, uint32_t node_offset) {
-  int32_t offset[4];
-  uint32_t noffset[4];
+zx::result<LockedPage> NodeManager::GetLockedDnodePage(NodePath &node_path, bool is_dir) {
+  size_t level = node_path.depth;
+  const size_t(&offset)[kMaxNodeBlockLevel] = node_path.offset_in_node;
+  const size_t(&noffset)[kMaxNodeBlockLevel] = node_path.node_offset;
 
-  if (node_offset == kInvalidNodeOffset) {
-    return zx::ok(false);
+  LockedPage node_page;
+  if (zx_status_t err = GetNodePage(node_path.ino, &node_page); err != ZX_OK) {
+    return zx::error(err);
   }
 
-  auto level_or = GetNodePath(vnode, index, offset, noffset);
-  if (level_or.is_error()) {
-    return level_or.take_error();
-  }
-  return zx::ok(noffset[level_or.value()] == node_offset);
-}
-
-zx::result<std::vector<block_t>> NodeManager::GetDataBlockAddresses(
-    VnodeF2fs &vnode, const std::vector<pgoff_t> &indices, bool read_only) {
-  std::vector<block_t> data_block_addresses(indices.size());
-  uint32_t prev_node_offset = kInvalidNodeOffset;
-  LockedPage dnode_page;
-
-  for (uint32_t iter = 0; iter < indices.size(); ++iter) {
-    auto is_same_or = IsSameDnode(vnode, indices[iter], prev_node_offset);
-    if (is_same_or.is_error()) {
-      return is_same_or.take_error();
+  std::vector<nid_t> new_nids;
+  auto truncate_nodes = fit::defer([&] {
+    for (const nid_t nid : new_nids) {
+      TruncateNode(nid);
     }
-
-    if (!is_same_or.value()) {
-      dnode_page.reset();
-      if (read_only) {
-        if (zx_status_t err = FindLockedDnodePage(vnode, indices[iter], &dnode_page);
-            err != ZX_OK) {
-          if (err == ZX_ERR_NOT_FOUND) {
-            prev_node_offset = kInvalidNodeOffset;
-            data_block_addresses[iter] = kNullAddr;
-            continue;
-          }
-          return zx::error(err);
-        }
-      } else {
-        if (zx_status_t err = GetLockedDnodePage(vnode, indices[iter], &dnode_page); err != ZX_OK) {
-          return zx::error(err);
-        }
-      }
-      prev_node_offset = dnode_page.GetPage<NodePage>().OfsOfNode();
-    }
-    ZX_DEBUG_ASSERT(dnode_page != nullptr);
-
-    uint32_t ofs_in_dnode;
-    if (auto result = GetOfsInDnode(vnode, indices[iter]); result.is_error()) {
-      return result.take_error();
-    } else {
-      ofs_in_dnode = result.value();
-    }
-
-    block_t data_blkaddr = dnode_page.GetPage<NodePage>().GetBlockAddr(ofs_in_dnode);
-
-    if (!read_only && data_blkaddr == kNullAddr) {
-      if (zx_status_t err = vnode.ReserveNewBlock(dnode_page.GetPage<NodePage>(), ofs_in_dnode);
-          err != ZX_OK) {
-        return zx::error(err);
-      }
-      data_blkaddr = kNewAddr;
-    }
-
-    data_block_addresses[iter] = data_blkaddr;
-  }
-  return zx::ok(std::move(data_block_addresses));
-}
-
-zx_status_t NodeManager::FindLockedDnodePage(VnodeF2fs &vnode, pgoff_t index, LockedPage *out) {
-  int32_t offset[4];
-  uint32_t noffset[4];
-
-  auto node_path = GetNodePath(vnode, index, offset, noffset);
-  if (node_path.is_error()) {
-    return node_path.error_value();
-  }
-
-  auto level = *node_path;
-
-  nid_t nid = vnode.Ino();
-
-  for (auto i = 0; i <= level; ++i) {
-    LockedPage node_page;
-    if (zx_status_t err = GetNodePage(nid, &node_page); err != ZX_OK) {
-      return err;
-    }
-
-    if (i < level) {
-      NodePage &node = node_page.GetPage<NodePage>();
-      nid = node.GetNid(offset[i]);
-      ReadaheadNodePages(node, offset[i]);
-    } else {
-      *out = std::move(node_page);
-    }
-  }
-  return ZX_OK;
-}
-
-zx_status_t NodeManager::GetLockedDnodePage(VnodeF2fs &vnode, pgoff_t index, LockedPage *out) {
-  int32_t offset[4];
-  uint32_t noffset[4];
-
-  auto node_path = GetNodePath(vnode, index, offset, noffset);
-  if (node_path.is_error()) {
-    return node_path.error_value();
-  }
-
-  auto level = *node_path;
-
-  nid_t nid = vnode.Ino();
-  LockedPage parent;
-  for (auto i = 0; i <= level; ++i) {
-    LockedPage node_page;
-    if (!nid && i > 0) {
+  });
+  LockedPage parent = std::move(node_page);
+  for (size_t i = 0; i < level; ++i) {
+    nid_t nid = parent.GetPage<NodePage>().GetNid(offset[i]);
+    if (!nid) {
       // alloc new node
-      if (AllocNid(nid).is_error()) {
-        return ZX_ERR_NO_SPACE;
+      auto nid_or = AllocNid();
+      if (nid_or.is_error()) {
+        return zx::error(ZX_ERR_NO_SPACE);
       }
-
-      if (zx_status_t err = NewNodePage(vnode, nid, noffset[i], &node_page); err != ZX_OK) {
+      nid = *nid_or;
+      auto page_or = NewNodePage(node_path.ino, nid, is_dir, noffset[i + 1]);
+      if (page_or.is_error()) {
         AddFreeNid(nid);
-        return err;
+        return page_or.take_error();
       }
-
-      parent.GetPage<NodePage>().SetNid(offset[i - 1], nid);
+      new_nids.push_back(nid);
+      node_page = std::move(*page_or);
+      parent.GetPage<NodePage>().SetNid(offset[i], nid);
       parent.SetDirty();
+      ++node_path.num_new_nodes;
     } else {
-      if (zx_status_t err = GetNodePage(nid, &node_page); err != ZX_OK) {
-        return err;
+      auto page_or = GetNextNodePage(parent, offset[i]);
+      if (page_or.is_error()) {
+        return page_or.take_error();
       }
+      node_page = std::move(*page_or);
     }
-
-    if (i < level) {
-      NodePage &node = node_page.GetPage<NodePage>();
-      nid = node.GetNid(offset[i]);
-      ReadaheadNodePages(node, offset[i]);
-      parent = std::move(node_page);
-    } else {
-      *out = std::move(node_page);
-    }
+    parent = std::move(node_page);
   }
-  return ZX_OK;
+  truncate_nodes.cancel();
+  return zx::ok(std::move(parent));
 }
 
-zx::result<uint32_t> NodeManager::GetOfsInDnode(VnodeF2fs &vnode, pgoff_t index) {
-  int32_t offset[4];
-  uint32_t noffset[4];
-
-  auto node_path = GetNodePath(vnode, index, offset, noffset);
-  if (node_path.is_error()) {
-    return zx::error(node_path.error_value());
-  }
-
-  return zx::ok(offset[*node_path]);
-}
-
-void NodeManager::TruncateNode(VnodeF2fs &vnode, nid_t nid, NodePage &node_page) {
+void NodeManager::TruncateNode(nid_t nid) {
   NodeInfo ni;
   GetNodeInfo(nid, ni);
   ZX_ASSERT(ni.blk_addr != kNullAddr);
 
-  if (ni.blk_addr != kNullAddr) {
+  if (ni.blk_addr != kNullAddr && ni.blk_addr != kNewAddr) {
     fs_->GetSegmentManager().InvalidateBlocks(ni.blk_addr);
   }
-
   // Deallocate node address
-  DecValidNodeCount(&vnode, 1, nid == vnode.Ino());
+  superblock_info_.DecValidNodeCount(1);
   SetNodeAddr(ni, kNullAddr);
-
-  if (nid == vnode.Ino()) {
-    fs_->GetSuperblockInfo().RemoveVnodeFromVnodeSet(InoType::kOrphanIno, nid);
-    fs_->DecValidInodeCount();
-  } else {
-    vnode.SetDirty();
-  }
-
-  node_page.Invalidate();
-  GetSuperblockInfo().SetDirty();
+  superblock_info_.SetDirty();
 }
 
-zx::result<uint32_t> NodeManager::TruncateDnode(VnodeF2fs &vnode, nid_t nid) {
-  LockedPage page;
-
-  if (nid == 0) {
-    return zx::ok(1);
-  }
-
-  // get direct node
-  if (auto err = fs_->GetNodeManager().GetNodePage(nid, &page); err != ZX_OK) {
-    // It is already invalid.
-    if (err == ZX_ERR_NOT_FOUND) {
-      return zx::ok(1);
-    }
-    return zx::error(err);
-  }
-
-  vnode.TruncateDataBlocks(page.GetPage<NodePage>());
-  TruncateNode(vnode, nid, page.GetPage<NodePage>());
-  return zx::ok(1);
-}
-
-zx::result<uint32_t> NodeManager::TruncateNodes(VnodeF2fs &vnode, nid_t start_nid, uint32_t nofs,
-                                                int32_t ofs, int32_t depth) {
-  ZX_DEBUG_ASSERT(depth == 2 || depth == 3);
-  if (unlikely(depth < 2 || depth > 3)) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
-  }
-
-  constexpr uint32_t kInvalidatedNids = kNidsPerBlock + 1;
-  if (start_nid == 0) {
-    return zx::ok(kInvalidatedNids);
-  }
-
-  LockedPage page;
-  if (auto ret = fs_->GetNodeManager().GetNodePage(start_nid, &page); ret != ZX_OK) {
-    if (ret == ZX_ERR_NOT_FOUND) {
-      if (depth == 2) {
-        return zx::ok(kInvalidatedNids);
-      } else {
-        return zx::ok(kInvalidatedNids * kNidsPerBlock + 1);
-      }
-    }
-    return zx::error(ret);
-  }
-
-  uint32_t child_nofs = 0, freed = 0;
-  nid_t child_nid;
-  IndirectNode &indirect_node = page->GetAddress<Node>()->in;
-  if (depth < 3) {
-    for (auto i = ofs; i < kNidsPerBlock; ++i, ++freed) {
-      child_nid = LeToCpu(indirect_node.nid[i]);
-      if (child_nid == 0) {
-        continue;
-      }
-      if (auto ret = TruncateDnode(vnode, child_nid); ret.is_error()) {
-        return ret;
-      }
-      ZX_ASSERT(!page.GetPage<NodePage>().IsInode());
-      page.GetPage<NodePage>().SetNid(i, 0);
-      page.SetDirty();
-    }
-  } else {
-    child_nofs = nofs + ofs * kInvalidatedNids + 1;
-    for (auto i = ofs; i < kNidsPerBlock; ++i) {
-      child_nid = LeToCpu(indirect_node.nid[i]);
-      auto freed_or = TruncateNodes(vnode, child_nid, child_nofs, 0, depth - 1);
-      if (freed_or.is_error()) {
-        return freed_or.take_error();
-      } else {
-        ZX_DEBUG_ASSERT(*freed_or == kInvalidatedNids);
-        ZX_ASSERT(!page.GetPage<NodePage>().IsInode());
-        page.GetPage<NodePage>().SetNid(i, 0);
-        page.SetDirty();
-      }
-      child_nofs += kInvalidatedNids;
-      freed += kInvalidatedNids;
-    }
-  }
-
-  if (!ofs) {
-    TruncateNode(vnode, start_nid, page.GetPage<NodePage>());
-    ++freed;
-  }
-  return zx::ok(freed);
-}
-
-zx_status_t NodeManager::TruncatePartialNodes(VnodeF2fs &vnode, const Inode &ri,
-                                              const int32_t (&offset)[4], int32_t depth) {
-  LockedPage pages[2];
-  nid_t nid[3];
-  auto idx = depth - 2;
-
-  if (nid[0] = LeToCpu(ri.i_nid[offset[0] - kNodeDir1Block]); !nid[0]) {
-    return ZX_OK;
-  }
-
-  // get indirect nodes in the path
-  for (auto i = 0; i < idx + 1; ++i) {
-    if (auto ret = fs_->GetNodeManager().GetNodePage(nid[i], &pages[i]); ret != ZX_OK) {
-      return ret;
-    }
-    nid[i + 1] = pages[i].GetPage<NodePage>().GetNid(offset[i + 1]);
-  }
-
-  // free direct nodes linked to a partial indirect node
-  for (auto i = offset[idx + 1]; i < kNidsPerBlock; ++i) {
-    nid_t child_nid = pages[idx].GetPage<NodePage>().GetNid(i);
-    if (!child_nid) {
-      continue;
-    }
-    if (auto ret = TruncateDnode(vnode, child_nid); ret.is_error()) {
-      return ret.error_value();
-    }
-    ZX_ASSERT(!pages[idx].GetPage<NodePage>().IsInode());
-    pages[idx].GetPage<NodePage>().SetNid(i, 0);
-    pages[idx].SetDirty();
-  }
-
-  if (offset[idx + 1] == 0) {
-    TruncateNode(vnode, nid[idx], pages[idx].GetPage<NodePage>());
-  }
-  return ZX_OK;
-}
-
-// All the block addresses of data and nodes should be nullified.
-zx_status_t NodeManager::TruncateInodeBlocks(VnodeF2fs &vnode, pgoff_t from) {
-  uint32_t node_offset, node_offsets[kMaxNodeBlockLevel] = {0};
-  int32_t offsets_in_node[kMaxNodeBlockLevel] = {0};
-  auto node_path = GetNodePath(vnode, from, offsets_in_node, node_offsets);
-  if (node_path.is_error()) {
-    return node_path.error_value();
-  }
-
-  LockedPage locked_ipage;
-  if (zx_status_t ret = GetNodePage(vnode.Ino(), &locked_ipage); ret != ZX_OK) {
-    return ret;
-  }
-  locked_ipage->WaitOnWriteback();
-
-  auto level = *node_path;
-  Inode &inode = locked_ipage->GetAddress<Node>()->i;
-  switch (level) {
-    case 0:
-      node_offset = 1;
-      break;
-    case 1:
-      node_offset = node_offsets[1];
-      break;
-    case 2:
-      node_offset = node_offsets[1];
-      if (!offsets_in_node[1]) {
-        break;
-      }
-      if (zx_status_t ret = TruncatePartialNodes(vnode, inode, offsets_in_node, level);
-          ret != ZX_OK && ret != ZX_ERR_NOT_FOUND) {
-        return ret;
-      }
-      ++offsets_in_node[level - 2];
-      offsets_in_node[level - 1] = 0;
-      node_offset += 1 + kNidsPerBlock;
-      break;
-    case 3:
-      node_offset = 5 + 2 * kNidsPerBlock;
-      if (!offsets_in_node[2]) {
-        break;
-      }
-      if (zx_status_t ret = TruncatePartialNodes(vnode, inode, offsets_in_node, level);
-          ret != ZX_OK && ret != ZX_ERR_NOT_FOUND) {
-        return ret;
-      }
-      ++offsets_in_node[level - 2];
-      offsets_in_node[level - 1] = 0;
-      break;
-    default:
-      ZX_ASSERT(0);
-  }
-
-  bool run = true;
-  while (run) {
-    zx::result<uint32_t> freed_or;
-    nid_t nid = LeToCpu(inode.i_nid[offsets_in_node[0] - kNodeDir1Block]);
-    switch (offsets_in_node[0]) {
-      case kNodeDir1Block:
-      case kNodeDir2Block:
-        freed_or = TruncateDnode(vnode, nid);
-        break;
-
-      case kNodeInd1Block:
-      case kNodeInd2Block:
-        freed_or = TruncateNodes(vnode, nid, node_offset, offsets_in_node[1], 2);
-        break;
-
-      case kNodeDIndBlock:
-        freed_or = TruncateNodes(vnode, nid, node_offset, offsets_in_node[1], 3);
-        run = false;
-        break;
-
-      default:
-        ZX_ASSERT(0);
-    }
-    if (freed_or.is_error()) {
-      ZX_DEBUG_ASSERT(freed_or.error_value() != ZX_ERR_NOT_FOUND);
-      return freed_or.error_value();
-    }
-    if (offsets_in_node[1] == 0) {
-      inode.i_nid[offsets_in_node[0] - kNodeDir1Block] = 0;
-      locked_ipage.SetDirty();
-    }
-    offsets_in_node[1] = 0;
-    ++offsets_in_node[0];
-    node_offset += *freed_or;
-  }
-  return ZX_OK;
-}
-
-zx_status_t NodeManager::RemoveInodePage(VnodeF2fs *vnode) {
-  LockedPage ipage;
-  nid_t ino = vnode->Ino();
-  zx_status_t err = 0;
-
-  err = GetNodePage(ino, &ipage);
-  if (err) {
-    return err;
-  }
-
-  if (nid_t nid = vnode->GetXattrNid(); nid > 0) {
-    LockedPage node_page;
-    if (auto err = GetNodePage(nid, &node_page); err != ZX_OK) {
-      return err;
-    }
-
-    vnode->ClearXattrNid();
-    TruncateNode(*vnode, nid, node_page.GetPage<NodePage>());
-  }
-
-  ZX_ASSERT(vnode->GetBlocks() == 0);
-
-  TruncateNode(*vnode, ino, ipage.GetPage<NodePage>());
-  return ZX_OK;
-}
-
-zx::result<LockedPage> NodeManager::NewInodePage(VnodeF2fs &new_vnode) {
-  LockedPage page;
-
-  // allocate inode page for new inode
-  if (zx_status_t ret = NewNodePage(new_vnode, new_vnode.Ino(), 0, &page); ret != ZX_OK) {
-    return zx::error(ret);
-  }
-  return zx::ok(std::move(page));
-}
-
-zx_status_t NodeManager::NewNodePage(VnodeF2fs &vnode, nid_t nid, uint32_t ofs, LockedPage *out) {
+zx::result<LockedPage> NodeManager::NewNodePage(nid_t ino, nid_t nid, bool is_dir, size_t ofs) {
   NodeInfo old_ni, new_ni;
-
-  if (vnode.TestFlag(InodeInfoFlag::kNoAlloc)) {
-    return ZX_ERR_ACCESS_DENIED;
-  }
-
   LockedPage page;
   if (zx_status_t ret = fs_->GetNodeVnode().GrabCachePage(nid, &page); ret != ZX_OK) {
-    return ZX_ERR_NO_MEMORY;
+    return zx::error(ZX_ERR_NO_MEMORY);
   }
 
   GetNodeInfo(nid, old_ni);
 
   page->SetUptodate();
   page.Zero();
-  page.GetPage<NodePage>().FillNodeFooter(nid, vnode.Ino(), ofs);
+  page.GetPage<NodePage>().FillNodeFooter(nid, ino, ofs);
 
   // Reinitialize old_ni with new node page
   ZX_ASSERT(old_ni.blk_addr == kNullAddr);
   new_ni = old_ni;
-  new_ni.ino = vnode.Ino();
+  new_ni.ino = ino;
 
-  if (!IncValidNodeCount(&vnode, 1, !ofs)) {
+  if (!superblock_info_.IncValidNodeCount(1)) {
     page->ClearUptodate();
     fs_->GetInspectTree().OnOutOfSpace();
-    return ZX_ERR_NO_SPACE;
+    return zx::error(ZX_ERR_NO_SPACE);
+  }
+  if (ino == nid) {
+    superblock_info_.IncValidInodeCount();
   }
   SetNodeAddr(new_ni, kNewAddr);
-
-  vnode.SetDirty();
-
   page.SetDirty();
-  page.GetPage<NodePage>().SetColdNode(vnode.IsDir());
-  if (ofs == 0)
-    fs_->IncValidInodeCount();
+  page.GetPage<NodePage>().SetColdNode(is_dir);
 
-  *out = std::move(page);
-  return ZX_OK;
-}
-
-zx::result<LockedPage> NodeManager::ReadNodePage(LockedPage page, nid_t nid, int type) {
-  NodeInfo ni;
-  GetNodeInfo(nid, ni);
-  if (ni.blk_addr == kNullAddr) {
-    return zx::error(ZX_ERR_NOT_FOUND);
-  }
-  if (page->IsUptodate()) {
-    return zx::ok(std::move(page));
-  }
-
-  auto status = fs_->MakeReadOperation(page, ni.blk_addr, PageType::kNode);
-  if (status.is_error()) {
-    return status.take_error();
-  }
   return zx::ok(std::move(page));
 }
 
 zx_status_t NodeManager::GetNodePage(nid_t nid, LockedPage *out) {
+  NodeInfo ni;
+  GetNodeInfo(nid, ni);
+  if (ni.blk_addr == kNullAddr) {
+    return ZX_ERR_NOT_FOUND;
+  }
   LockedPage page;
   if (zx_status_t ret = fs_->GetNodeVnode().GrabCachePage(nid, &page); ret != ZX_OK) {
     return ret;
   }
-
-  auto page_or = ReadNodePage(std::move(page), nid, kReadSync);
-  if (page_or.is_error()) {
-    return page_or.status_value();
+  if (page->IsUptodate() || ni.blk_addr == kNewAddr) {
+    page->SetUptodate();
+    *out = std::move(page);
+    return ZX_OK;
   }
 
-  ZX_DEBUG_ASSERT(nid == (*page_or).GetPage<NodePage>().NidOfNode());
+  auto status = fs_->MakeReadOperation(page, ni.blk_addr, PageType::kNode);
+  if (status.is_error()) {
+    return status.error_value();
+  }
+
+  ZX_DEBUG_ASSERT(nid == page.GetPage<NodePage>().NidOfNode());
 #if 0  // porting needed
   // mark_page_accessed(page);
 #endif
-  *out = std::move(*page_or);
+  *out = std::move(page);
   return ZX_OK;
 }
 
-void NodeManager::ReadaheadNodePages(NodePage &parent, size_t start) {
-  {
-    LockedPage page;
-    nid_t nid = parent.GetNid(start);
-    if (zx_status_t ret = fs_->GetNodeVnode().GrabCachePage(nid, &page); ret != ZX_OK) {
-      ZX_ASSERT_MSG(0, "failed to get a node page. nid: %u", nid);
-      return;
-    }
-    if (page->IsUptodate()) {
-      return;
-    }
-  }
-  uint32_t max_offset = 0;
+zx::result<LockedPage> NodeManager::GetNextNodePage(LockedPage &node_page, size_t start) {
+  NodePage &parent = node_page.GetPage<NodePage>();
+  size_t max_offset = kNidsPerBlock;
   if (parent.IsInode()) {
     max_offset = kNodeDir1Block + kNidsPerInode;
-  } else {
-    max_offset = kNidsPerBlock;
   }
-  std::vector<LockedPage> pages;
-  std::vector<block_t> addrs;
-  pages.reserve(kDefaultReadaheadSize);
-  addrs.reserve(kDefaultReadaheadSize);
-  size_t num_nids = 0;
-  for (; start < max_offset && num_nids < kDefaultReadaheadSize; ++start) {
-    nid_t nid = parent.GetNid(start);
+  std::vector<nid_t> nids;
+  for (size_t i = start; i < max_offset && nids.size() < kDefaultReadaheadSize; ++i) {
+    nid_t nid = parent.GetNid(i);
     if (!nid) {
+      if (i == start) {
+        return zx::error(ZX_ERR_NOT_FOUND);
+      }
       continue;
     }
+    nids.push_back(nid);
+  }
+  ZX_DEBUG_ASSERT(nids.size());
+
+  std::vector<LockedPage> pages;
+  std::vector<block_t> addrs;
+  pages.reserve(nids.size());
+  addrs.reserve(nids.size());
+
+  nid_t target_nid = nids[0];
+  for (nid_t nid : nids) {
     LockedPage page;
-    zx_status_t ret = fs_->GetNodeVnode().GrabCachePage(nid, &page);
-    ZX_ASSERT_MSG(ret == ZX_OK, "failed to get a node page. %s", zx_status_get_string(ret));
-    // If |page| is not uptodate, retrieve its block addr to populate cache.
-    if (!page->IsUptodate()) {
-      NodeInfo ni;
-      GetNodeInfo(nid, ni);
-      addrs.push_back(ni.blk_addr);
-      pages.push_back(std::move(page));
-      ++num_nids;
+    ZX_ASSERT(nid);
+    NodeInfo ni;
+    GetNodeInfo(nid, ni);
+    if (ni.blk_addr == kNullAddr) {
+      if (nid == target_nid) {
+        return zx::error(ZX_ERR_NOT_FOUND);
+      }
+      continue;
     }
+
+    if (zx_status_t ret = fs_->GetNodeVnode().GrabCachePage(nid, &page); ret != ZX_OK) {
+      return zx::error(ret);
+    }
+    if (page->IsUptodate() || ni.blk_addr == kNewAddr) {
+      page->SetUptodate();
+      if (nid == target_nid) {
+        return zx::ok(std::move(page));
+      }
+      continue;
+    }
+
+    addrs.push_back(ni.blk_addr);
+    pages.push_back(std::move(page));
   }
-  if (num_nids) {
-    auto ret = fs_->MakeReadOperations(pages, addrs, PageType::kNode);
-    ZX_ASSERT_MSG(ret.is_ok(), "failed to read-ahead node pages. %s", ret.status_string());
+  ZX_DEBUG_ASSERT(addrs.size());
+
+  if (auto ret = fs_->MakeReadOperations(pages, addrs, PageType::kNode); ret.is_error()) {
+    FX_LOGS(ERROR) << "failed to read node pages. " << ret.status_string();
+    return ret.take_error();
   }
+  return zx::ok(std::move(pages[0]));
 }
 
-pgoff_t NodeManager::FlushDirtyNodePages(WritebackOperation &operation) {
-  if (superblock_info_->GetPageCount(CountType::kDirtyNodes) == 0 && !operation.bReleasePages) {
-    return 0;
-  }
-  if (zx_status_t status = fs_->GetVCache().ForDirtyVnodesIf(
-          [](fbl::RefPtr<VnodeF2fs> &vnode) {
-            if (!vnode->IsValid()) {
-              ZX_ASSERT(vnode->ClearDirty());
-              return ZX_ERR_NEXT;
-            }
-            vnode->UpdateInodePage();
-            ZX_ASSERT(vnode->ClearDirty());
-            return ZX_OK;
-          },
-          [](fbl::RefPtr<VnodeF2fs> &vnode) {
-            if (vnode->GetDirtyPageCount()) {
-              return ZX_ERR_NEXT;
-            }
-            return ZX_OK;
-          });
-      status != ZX_OK) {
-    FX_LOGS(ERROR) << "Failed to flush dirty vnodes ";
-    return 0;
-  }
-  return fs_->GetNodeVnode().Writeback(operation);
-}
-
-pgoff_t NodeManager::FsyncNodePages(VnodeF2fs &vnode) {
-  nid_t ino = vnode.Ino();
-
+pgoff_t NodeManager::FsyncNodePages(nid_t ino) {
   WritebackOperation op;
   op.bSync = true;
   op.if_page = [ino](fbl::RefPtr<Page> page) {
@@ -1024,7 +594,7 @@ pgoff_t NodeManager::FsyncNodePages(VnodeF2fs &vnode) {
     }
     return ZX_ERR_NEXT;
   };
-  op.node_page_cb = [ino, this](fbl::RefPtr<Page> page, bool is_last_dnode) {
+  op.page_cb = [ino, this](fbl::RefPtr<Page> page, bool is_last_dnode) {
     auto node_page = fbl::RefPtr<NodePage>::Downcast(std::move(page));
     node_page->SetFsyncMark(false);
     if (node_page->IsInode()) {
@@ -1032,35 +602,11 @@ pgoff_t NodeManager::FsyncNodePages(VnodeF2fs &vnode) {
     }
     if (is_last_dnode) {
       node_page->SetFsyncMark(true);
+      node_page->SetSync();
     }
     return ZX_OK;
   };
-
   return fs_->GetNodeVnode().Writeback(op);
-}
-
-zx::result<block_t> NodeManager::GetBlockAddrForDirtyNodePage(LockedPage &page, bool is_reclaim) {
-  page->WaitOnWriteback();
-  block_t new_addr = kNullAddr;
-  if (page->ClearDirtyForIo()) {
-    page->SetWriteback();
-    // get old block addr of this node page
-    nid_t nid = page.GetPage<NodePage>().NidOfNode();
-    ZX_DEBUG_ASSERT(page->GetIndex() == nid);
-
-    NodeInfo ni;
-    GetNodeInfo(nid, ni);
-    // This page is already truncated
-    if (ni.blk_addr == kNullAddr) {
-      return zx::error(ZX_ERR_NOT_FOUND);
-    }
-
-    auto addr_or = fs_->GetSegmentManager().GetBlockAddrForNodePage(page, nid, ni.blk_addr);
-    ZX_ASSERT(addr_or.is_ok());
-    new_addr = *addr_or;
-    SetNodeAddr(ni, new_addr);
-  }
-  return zx::ok(new_addr);
 }
 
 #if 0  // porting needed
@@ -1169,11 +715,8 @@ void NodeManager::BuildFreeNids() {
     next_scan_nid_ = nid;
   }
 
-  {
-    // find free nids from current sum_pages
-    CursegInfo *curseg = fs_->GetSegmentManager().CURSEG_I(CursegType::kCursegHotData);
-    std::lock_guard curseg_lock(curseg->curseg_mutex);
-    SummaryBlock *sum = curseg->sum_blk.get<SummaryBlock>();
+  // find free nids from current sum_pages
+  fs_->GetSegmentManager().GetSummaryBlock(CursegType::kCursegHotData, [&](SummaryBlock &sum) {
     for (int i = 0; i < NatsInCursum(sum); ++i) {
       block_t addr = LeToCpu(NatInJournal(sum, i).block_addr);
       nid_t nid = LeToCpu(NidInJournal(sum, i));
@@ -1183,7 +726,8 @@ void NodeManager::BuildFreeNids() {
         RemoveFreeNid(nid);
       }
     }
-  }
+    return ZX_OK;
+  });
 
   // remove the free nids from current allocated nids
   std::lock_guard lock(free_nid_tree_lock_);
@@ -1199,7 +743,7 @@ void NodeManager::BuildFreeNids() {
 // If this function returns success, caller can obtain a new nid
 // from second parameter of this function.
 // The returned nid could be used ino as well as nid when inode is created.
-zx::result<> NodeManager::AllocNid(nid_t &out) {
+zx::result<nid_t> NodeManager::AllocNid() {
   do {
     if (!GetFreeNidCount()) {
       // scan NAT in order to build free nid tree
@@ -1217,9 +761,9 @@ zx::result<> NodeManager::AllocNid(nid_t &out) {
   std::lock_guard lock(free_nid_tree_lock_);
   ZX_ASSERT(!free_nid_tree_.empty());
   auto free_nid = free_nid_tree_.begin();
-  out = *free_nid;
+  nid_t nid = *free_nid;
   free_nid_tree_.erase(free_nid);
-  return zx::ok();
+  return zx::ok(nid);
 }
 
 zx_status_t NodeManager::RecoverInodePage(NodePage &page) {
@@ -1250,76 +794,58 @@ zx_status_t NodeManager::RecoverInodePage(NodePage &page) {
   new_node_info = old_node_info;
   new_node_info.ino = ino;
 
-  ZX_ASSERT(IncValidNodeCount(nullptr, 1, true));
+  ZX_ASSERT(superblock_info_.IncValidNodeCount(1));
   SetNodeAddr(new_node_info, kNewAddr);
-  fs_->IncValidInodeCount();
+  superblock_info_.IncValidInodeCount();
   ipage.SetDirty();
   return ZX_OK;
 }
 
-zx_status_t NodeManager::RestoreNodeSummary(uint32_t segno, SummaryBlock &sum) {
-  uint32_t last_offset = GetSuperblockInfo().GetBlocksPerSeg();
-  block_t addr = fs_->GetSegmentManager().StartBlock(segno);
-  Summary *sum_entry = &sum.entries[0];
-
-  for (uint32_t i = 0; i < last_offset; ++i, ++sum_entry, ++addr) {
-    LockedPage page;
-    if (zx_status_t ret = fs_->GetMetaPage(addr, &page); ret != ZX_OK) {
-      return ret;
-    }
-
-    sum_entry->nid = page->GetAddress<Node>()->footer.nid;
-    sum_entry->version = 0;
-    sum_entry->ofs_in_node = 0;
-  }
-  return ZX_OK;
-}
-
 bool NodeManager::FlushNatsInJournal() {
-  CursegInfo *curseg = fs_->GetSegmentManager().CURSEG_I(CursegType::kCursegHotData);
-  SummaryBlock *sum = curseg->sum_blk.get<SummaryBlock>();
   int i;
-
-  std::lock_guard curseg_lock(curseg->curseg_mutex);
-
-  {
-    fs::SharedLock nat_lock(nat_tree_lock_);
-    size_t dirty_nat_cnt = dirty_nat_list_.size_slow();
-    if ((NatsInCursum(sum) + dirty_nat_cnt) <= kNatJournalEntries) {
-      return false;
-    }
-  }
-
-  for (i = 0; i < NatsInCursum(sum); ++i) {
-    NatEntry *cache_entry = nullptr;
-    RawNatEntry raw_entry = NatInJournal(sum, i);
-    nid_t nid = LeToCpu(NidInJournal(sum, i));
-
-    while (!cache_entry) {
-      std::lock_guard nat_lock(nat_tree_lock_);
-      cache_entry = LookupNatCache(nid);
-      if (cache_entry) {
-        SetNatCacheDirty(*cache_entry);
-      } else {
-        cache_entry = GrabNatEntry(nid);
-        if (!cache_entry) {
-          continue;
+  zx_status_t status =
+      fs_->GetSegmentManager().SetSummaryBlock(CursegType::kCursegHotData, [&](SummaryBlock &sum) {
+        {
+          fs::SharedLock nat_lock(nat_tree_lock_);
+          size_t dirty_nat_cnt = dirty_nat_list_.size_slow();
+          if ((NatsInCursum(sum) + dirty_nat_cnt) <= kNatJournalEntries) {
+            return ZX_ERR_OUT_OF_RANGE;
+          }
         }
-        cache_entry->SetBlockAddress(LeToCpu(raw_entry.block_addr));
-        cache_entry->SetIno(LeToCpu(raw_entry.ino));
-        cache_entry->SetVersion(raw_entry.version);
-        SetNatCacheDirty(*cache_entry);
-      }
-    }
+
+        for (i = 0; i < NatsInCursum(sum); ++i) {
+          NatEntry *cache_entry = nullptr;
+          RawNatEntry raw_entry = NatInJournal(sum, i);
+          nid_t nid = LeToCpu(NidInJournal(sum, i));
+
+          while (!cache_entry) {
+            std::lock_guard nat_lock(nat_tree_lock_);
+            cache_entry = LookupNatCache(nid);
+            if (cache_entry) {
+              SetNatCacheDirty(*cache_entry);
+            } else {
+              cache_entry = GrabNatEntry(nid);
+              if (!cache_entry) {
+                continue;
+              }
+              cache_entry->SetBlockAddress(LeToCpu(raw_entry.block_addr));
+              cache_entry->SetIno(LeToCpu(raw_entry.ino));
+              cache_entry->SetVersion(raw_entry.version);
+              SetNatCacheDirty(*cache_entry);
+            }
+          }
+        }
+        UpdateNatsInCursum(sum, -i);
+        return ZX_OK;
+      });
+  if (status != ZX_OK) {
+    return false;
   }
-  UpdateNatsInCursum(sum, -i);
   return true;
 }
 
 // This function is called during the checkpointing process.
 zx_status_t NodeManager::FlushNatEntries() {
-  CursegInfo *curseg = fs_->GetSegmentManager().CURSEG_I(CursegType::kCursegHotData);
-  SummaryBlock *sum = curseg->sum_blk.get<SummaryBlock>();
   LockedPage page;
   NatBlock *nat_blk = nullptr;
   nid_t start_nid = 0, end_nid = 0;
@@ -1330,81 +856,86 @@ zx_status_t NodeManager::FlushNatEntries() {
 #if 0  // porting needed
   //	if (!flushed)
 #endif
-  std::lock_guard curseg_lock(curseg->curseg_mutex);
 
   // 1) flush dirty nat caches
-  {
-    std::lock_guard nat_lock(nat_tree_lock_);
-    for (auto iter = dirty_nat_list_.begin(); iter != dirty_nat_list_.end();) {
-      nid_t nid;
-      RawNatEntry raw_ne;
-      int offset = -1;
-      [[maybe_unused]] block_t old_blkaddr, new_blkaddr;
+  zx_status_t status =
+      fs_->GetSegmentManager().SetSummaryBlock(CursegType::kCursegHotData, [&](SummaryBlock &sum) {
+        std::lock_guard nat_lock(nat_tree_lock_);
+        for (auto iter = dirty_nat_list_.begin(); iter != dirty_nat_list_.end();) {
+          nid_t nid;
+          RawNatEntry raw_ne;
+          int offset = -1;
+          [[maybe_unused]] block_t old_blkaddr, new_blkaddr;
 
-      // During each iteration, |iter| can be removed from |dirty_nat_list_|.
-      // Therefore, make a copy of |iter| and move to the next element before futher operations.
-      NatEntry *cache_entry = iter.CopyPointer();
-      ++iter;
+          // During each iteration, |iter| can be removed from |dirty_nat_list_|.
+          // Therefore, make a copy of |iter| and move to the next element before futher operations.
+          NatEntry *cache_entry = iter.CopyPointer();
+          ++iter;
 
-      nid = cache_entry->GetNid();
+          nid = cache_entry->GetNid();
 
-      if (cache_entry->GetBlockAddress() == kNewAddr)
-        continue;
+          if (cache_entry->GetBlockAddress() == kNewAddr)
+            continue;
 
-      if (!flushed) {
-        // if there is room for nat enries in curseg->sumpage
-        offset = LookupJournalInCursum(sum, JournalType::kNatJournal, nid, 1);
-      }
-
-      if (offset >= 0) {  // flush to journal
-        raw_ne = NatInJournal(sum, offset);
-        old_blkaddr = LeToCpu(raw_ne.block_addr);
-      } else {  // flush to NAT block
-        if (!page || (start_nid > nid || nid > end_nid)) {
-          if (page) {
-            page.SetDirty();
-            page.reset();
+          if (!flushed) {
+            // if there is room for nat enries in curseg->sumpage
+            offset = LookupJournalInCursum(sum, JournalType::kNatJournal, nid, 1);
           }
-          start_nid = StartNid(nid);
-          end_nid = start_nid + kNatEntryPerBlock - 1;
 
-          // get nat block with dirty flag, increased reference
-          // count, mapped and lock
-          auto page_or = GetNextNatPage(start_nid);
-          if (page_or.is_error()) {
-            return page_or.error_value();
+          if (offset >= 0) {  // flush to journal
+            raw_ne = NatInJournal(sum, offset);
+            old_blkaddr = LeToCpu(raw_ne.block_addr);
+          } else {  // flush to NAT block
+            if (!page || (start_nid > nid || nid > end_nid)) {
+              if (page) {
+                page.SetDirty();
+                page.reset();
+              }
+              start_nid = StartNid(nid);
+              end_nid = start_nid + kNatEntryPerBlock - 1;
+
+              // get nat block with dirty flag, increased reference
+              // count, mapped and lock
+              auto page_or = GetNextNatPage(start_nid);
+              if (page_or.is_error()) {
+                return page_or.error_value();
+              }
+              page = std::move(*page_or);
+              nat_blk = page->GetAddress<NatBlock>();
+            }
+
+            ZX_ASSERT(nat_blk);
+            raw_ne = nat_blk->entries[nid - start_nid];
+            old_blkaddr = LeToCpu(raw_ne.block_addr);
           }
-          page = std::move(*page_or);
-          nat_blk = page->GetAddress<NatBlock>();
+
+          new_blkaddr = cache_entry->GetBlockAddress();
+
+          raw_ne.ino = CpuToLe(cache_entry->GetIno());
+          raw_ne.block_addr = CpuToLe(new_blkaddr);
+          raw_ne.version = cache_entry->GetVersion();
+
+          if (offset < 0) {
+            nat_blk->entries[nid - start_nid] = raw_ne;
+          } else {
+            SetNatInJournal(sum, offset, raw_ne);
+            SetNidInJournal(sum, offset, CpuToLe(nid));
+          }
+
+          if (cache_entry->GetBlockAddress() == kNullAddr) {
+            DelFromNatCache(*cache_entry);
+            // We can reuse this freed nid at this point
+            AddFreeNid(nid);
+          } else {
+            ClearNatCacheDirty(*cache_entry);
+            cache_entry->SetCheckpointed();
+          }
         }
+        return ZX_OK;
+      });
 
-        ZX_ASSERT(nat_blk);
-        raw_ne = nat_blk->entries[nid - start_nid];
-        old_blkaddr = LeToCpu(raw_ne.block_addr);
-      }
-
-      new_blkaddr = cache_entry->GetBlockAddress();
-
-      raw_ne.ino = CpuToLe(cache_entry->GetIno());
-      raw_ne.block_addr = CpuToLe(new_blkaddr);
-      raw_ne.version = cache_entry->GetVersion();
-
-      if (offset < 0) {
-        nat_blk->entries[nid - start_nid] = raw_ne;
-      } else {
-        SetNatInJournal(sum, offset, raw_ne);
-        SetNidInJournal(sum, offset, CpuToLe(nid));
-      }
-
-      if (cache_entry->GetBlockAddress() == kNullAddr) {
-        DelFromNatCache(*cache_entry);
-        // We can reuse this freed nid at this point
-        AddFreeNid(nid);
-      } else {
-        ClearNatCacheDirty(*cache_entry);
-        cache_entry->SetCheckpointed();
-      }
-    }
+  if (status != ZX_OK) {
+    return status;
   }
 
   // Write out last modified NAT block
@@ -1419,33 +950,29 @@ zx_status_t NodeManager::FlushNatEntries() {
 }
 
 zx_status_t NodeManager::InitNodeManager() {
-  const Superblock &sb_raw = GetSuperblockInfo().GetRawSuperblock();
-  uint8_t *version_bitmap;
-  uint32_t nat_segs, nat_blocks;
+  const Superblock &sb = superblock_info_.GetSuperblock();
 
-  nat_blkaddr_ = LeToCpu(sb_raw.nat_blkaddr);
   // segment_count_nat includes pair segment so divide to 2
-  nat_segs = LeToCpu(sb_raw.segment_count_nat) >> 1;
-  nat_blocks = nat_segs << LeToCpu(sb_raw.log_blocks_per_seg);
+  uint32_t nat_segs = LeToCpu(sb.segment_count_nat) >> 1;
+  uint32_t nat_blocks = nat_segs << LeToCpu(sb.log_blocks_per_seg);
+  nat_blkaddr_ = LeToCpu(sb.nat_blkaddr);
   max_nid_ = kNatEntryPerBlock * nat_blocks;
   {
     std::lock_guard lock(build_lock_);
-    next_scan_nid_ = LeToCpu(GetSuperblockInfo().GetCheckpoint().next_free_nid);
+    next_scan_nid_ = LeToCpu(superblock_info_.GetCheckpoint().next_free_nid);
   }
 
-  nat_bitmap_size_ = GetSuperblockInfo().BitmapSize(MetaBitmap::kNatBitmap);
-  nat_bitmap_ = std::make_unique<uint8_t[]>(nat_bitmap_size_);
-  memset(nat_bitmap_.get(), 0, nat_bitmap_size_);
-  nat_prev_bitmap_ = std::make_unique<uint8_t[]>(nat_bitmap_size_);
-  memset(nat_prev_bitmap_.get(), 0, nat_bitmap_size_);
+  nat_bitmap_size_ = superblock_info_.GetNatBitmapSize();
+  nat_bitmap_.Reset(GetBitSize(nat_bitmap_size_));
+  nat_prev_bitmap_.Reset(GetBitSize(nat_bitmap_size_));
 
-  version_bitmap = static_cast<uint8_t *>(GetSuperblockInfo().BitmapPtr(MetaBitmap::kNatBitmap));
+  uint8_t *version_bitmap = superblock_info_.GetNatBitmap();
   if (!version_bitmap)
     return ZX_ERR_INVALID_ARGS;
 
   // copy version bitmap
-  std::memcpy(nat_bitmap_.get(), version_bitmap, nat_bitmap_size_);
-  std::memcpy(nat_prev_bitmap_.get(), nat_bitmap_.get(), nat_bitmap_size_);
+  CloneBits(nat_bitmap_, version_bitmap, 0, GetBitSize(nat_bitmap_size_));
+  CloneBits(nat_prev_bitmap_, version_bitmap, 0, GetBitSize(nat_bitmap_size_));
   return ZX_OK;
 }
 
@@ -1458,7 +985,7 @@ zx_status_t NodeManager::BuildNodeManager() {
   return ZX_OK;
 }
 
-void NodeManager::DestroyNodeManager() {
+NodeManager::~NodeManager() {
   NatEntry *natvec[kNatvecSize];
   uint32_t found;
 
@@ -1482,11 +1009,6 @@ void NodeManager::DestroyNodeManager() {
     ZX_ASSERT(dirty_nat_list_.is_empty());
     ZX_ASSERT(nat_cache_.is_empty());
   }
-
-  nat_bitmap_.reset();
-  nat_prev_bitmap_.reset();
 }
-
-SuperblockInfo &NodeManager::GetSuperblockInfo() { return *superblock_info_; }
 
 }  // namespace f2fs

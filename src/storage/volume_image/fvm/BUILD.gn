@@ -184,8 +184,8 @@ test("fvm_sparse_image_reader_test") {
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",
     "//src/lib/fxl/test:gtest_main",
-    "//src/lib/storage/block_client/cpp",
-    "//src/lib/storage/fs_management",
+    "//src/storage/lib/block_client/cpp",
+    "//src/storage/lib/fs_management",
     "//src/storage/testing:storage_driver_test_support",
     "//src/storage/volume_image/ftl:ftl-image",
     "//src/storage/volume_image/utils:fd-io",
@@ -212,8 +212,8 @@ fuchsia_test_package("fvm-sparse-image-reader-tests") {
   }
   test_components = [ ":fvm-sparse-image-reader-tests-component" ]
   deps = [
-    "//src/storage/bin/blobfs:component",
-    "//src/storage/bin/minfs:minfs-component",
+    "//src/storage/blobfs/bin:component",
+    "//src/storage/minfs/bin:minfs-component",
   ]
 }
 

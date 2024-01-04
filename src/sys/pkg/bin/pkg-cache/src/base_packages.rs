@@ -3,71 +3,145 @@
 // found in the LICENSE file.
 
 use {
+    anyhow::anyhow,
     anyhow::Context as _,
     fuchsia_inspect as finspect,
     fuchsia_merkle::Hash,
-    fuchsia_pkg::PackagePath,
-    futures::{future::BoxFuture, FutureExt as _, StreamExt as _, TryStreamExt as _},
+    futures::{future::BoxFuture, FutureExt as _, StreamExt as _},
     std::{
         collections::{HashMap, HashSet},
         sync::Arc,
     },
+    tracing::warn,
 };
 
-/// The system_image package, the packages in the static packages manifest, and the transitive
-/// closure of their subpackages, or none if the system does not have a system_image package.
+/// A forest of packages and the blobs they require (including subpackages).
 #[derive(Debug)]
-pub struct BasePackages {
-    /// The meta.fars of the base packages (including subpackages).
-    base_packages: HashSet<Hash>,
-    /// The meta.fars and content blobs of the base packages (including subpackages).
-    /// Equivalently, the contents of `base_packages` plus the content blobs.
-    base_blobs: HashSet<Hash>,
-    /// The paths and hashes of the root base packages (i.e. not including subpackages).
-    root_paths_and_hashes: Vec<(PackagePath, Hash)>,
+pub struct FrozenIndex<Marker> {
+    /// The meta.fars of the packages (including subpackages).
+    packages: HashSet<Hash>,
+    /// The meta.fars and content blobs of the packages (including subpackages).
+    /// Equivalently, the contents of `packages` plus their corresponding content blobs.
+    blobs: HashSet<Hash>,
+    /// The package urls and hashes of the root packages (i.e. not including subpackages).
+    root_package_urls_and_hashes: HashMap<fuchsia_url::UnpinnedAbsolutePackageUrl, Hash>,
+
+    phantom: std::marker::PhantomData<Marker>,
 }
 
-impl BasePackages {
+/// Marker type for BasePackages.
+#[derive(Debug)]
+pub struct Base;
+/// The system_image package, the packages in the static packages manifest, and the transitive
+/// closure of their subpackages, or none if the system does not have a system_image package.
+pub type BasePackages = FrozenIndex<Base>;
+
+/// Marker type for CachePackages.
+#[derive(Debug)]
+pub struct Cache;
+/// The packages in the cache packages manifest and the transitive closure of their subpackages,
+/// or none if the system does not have a cache packages manifest.
+/// To avoid breaking the system because of a failure in a non-critical package, packages and blobs
+/// are loaded best-effort from blobfs. Packages with missing meta.fars or missing subpackage
+/// meta.fars will be dropped from the index, resulting in:
+///   * is_package returning false for the package
+///   * list_blobs not returning any of the package's blobs (unless the blobs happen to be
+///     referenced by another package)
+/// root_package_urls_and_hashes will still return the URLs and hashes of dropped packages.
+pub type CachePackages = FrozenIndex<Cache>;
+
+#[derive(Debug, Clone, Copy)]
+enum OnPackageLoadError {
+    Fail,
+    Log,
+}
+
+impl FrozenIndex<Base> {
     pub async fn new(
         blobfs: &blobfs::Client,
         system_image: &system_image::SystemImage,
     ) -> Result<Self, anyhow::Error> {
-        let root_paths_and_hashes = system_image
+        let base_repo = fuchsia_url::RepositoryUrl::parse_host("fuchsia.com".into())
+            .expect("valid repository hostname");
+        let root_package_urls_and_hashes = system_image
             .static_packages()
             .await
-            .context("failed to load static packages from system image")?
+            .context("failed to determine static packages")?
             .into_contents()
-            .chain(std::iter::once((
-                system_image::SystemImage::package_path(),
-                *system_image.hash(),
-            )))
-            .collect::<Vec<_>>();
+            .chain([(system_image::SystemImage::package_path(), *system_image.hash())])
+            .map(|(path, hash)| {
+                let (name, variant) = path.into_name_and_variant();
+                // TODO(fxbug.dev/53911) Remove variant checks when variant concept is deleted.
+                if !variant.is_zero() {
+                    panic!("base package variants must be zero: {name} {variant}");
+                }
+                (fuchsia_url::UnpinnedAbsolutePackageUrl::new(base_repo.clone(), name, None), hash)
+            })
+            .collect::<HashMap<_, _>>();
+        Self::from_urls(blobfs, root_package_urls_and_hashes, OnPackageLoadError::Fail).await
+    }
+}
 
-        let (base_packages, base_blobs) =
-            Self::load_base_blobs(blobfs, root_paths_and_hashes.iter().map(|(_, h)| *h))
-                .await
-                .context("Error determining base blobs")?;
-        Ok(Self { base_packages, base_blobs, root_paths_and_hashes })
+impl FrozenIndex<Cache> {
+    pub async fn new(
+        blobfs: &blobfs::Client,
+        cache_packages: &system_image::CachePackages,
+    ) -> Result<Self, anyhow::Error> {
+        let root_package_urls_and_hashes =
+            cache_packages.contents().cloned().map(|url| (url.into_unpinned_and_hash())).collect();
+        Self::from_urls(blobfs, root_package_urls_and_hashes, OnPackageLoadError::Log).await
+    }
+}
+
+impl<Marker: Send + Sync + 'static> FrozenIndex<Marker> {
+    /// Create a `FrozenIndex` from a mapping of root package URLs to their hashes.
+    /// Determines the content and subpackage blobs by reading the meta.fars from `blobfs`.
+    async fn from_urls(
+        blobfs: &blobfs::Client,
+        root_package_urls_and_hashes: HashMap<fuchsia_url::UnpinnedAbsolutePackageUrl, Hash>,
+        on_package_load_error: OnPackageLoadError,
+    ) -> Result<Self, anyhow::Error> {
+        let (packages, blobs) = Self::load_packages_and_blobs(
+            blobfs,
+            root_package_urls_and_hashes.iter().map(|(_, h)| *h),
+            on_package_load_error,
+        )
+        .await
+        .context("Error determining blobs")?;
+        Ok(Self {
+            packages,
+            blobs,
+            root_package_urls_and_hashes,
+            phantom: std::marker::PhantomData,
+        })
     }
 
-    /// Returns the base packages and base blobs (including the transitive closure of subpackages).
-    async fn load_base_blobs(
+    /// Takes `root_packages`, the hashes of the root packages.
+    /// Returns the hashes of all packages including subpackages and the hashes of all blobs
+    /// including subpackages.
+    async fn load_packages_and_blobs(
         blobfs: &blobfs::Client,
-        root_base_packages: impl Iterator<Item = Hash>,
+        root_packages: impl Iterator<Item = Hash>,
+        on_package_load_error: OnPackageLoadError,
     ) -> Result<(HashSet<Hash>, HashSet<Hash>), anyhow::Error> {
         let memoized_packages = async_lock::RwLock::new(HashMap::new());
         let mut futures = futures::stream::iter(
-            root_base_packages.map(|p| Self::package_blobs(blobfs, p, &memoized_packages)),
+            root_packages.map(|p| Self::package_blobs(blobfs, p, &memoized_packages)),
         )
         .buffer_unordered(1000);
 
-        let mut base_blobs = HashSet::new();
-        while let Some(p) = futures.try_next().await? {
-            base_blobs.extend(p);
+        let mut blobs = HashSet::new();
+        while let Some(res) = futures.next().await {
+            use OnPackageLoadError::*;
+            match (res, on_package_load_error) {
+                (Ok(p), _) => blobs.extend(p),
+                (Err(e), Fail) => Err(e)?,
+                (Err(e), Log) => warn!("failed to load cache package: {:#}", anyhow!(e)),
+            }
         }
         drop(futures);
 
-        Ok((memoized_packages.into_inner().into_keys().collect(), base_blobs))
+        Ok((memoized_packages.into_inner().into_keys().collect(), blobs))
     }
 
     // Returns all blobs of `package`: the meta.far, the content blobs, and the transitive
@@ -85,36 +159,40 @@ impl BasePackages {
                 crate::required_blobs::ErrorStrategy::PropagateFailure,
             )
             .await
-            .with_context(|| format!("determining required blobs for base package {package}"))?,
+            .with_context(|| format!("determining required blobs for package {package}"))?,
         ))
     }
 
-    /// Create an empty `BasePackages`, i.e. a `BasePackages` that does not have any packages (and
+    /// Create an empty `FrozenIndex`, i.e. a `FrozenIndex` that does not have any packages (and
     /// therefore does not have any blobs). Useful for when there is no system_image package.
     pub fn empty() -> Self {
         Self {
-            base_packages: HashSet::new(),
-            base_blobs: HashSet::new(),
-            root_paths_and_hashes: Vec::new(),
+            packages: HashSet::new(),
+            blobs: HashSet::new(),
+            root_package_urls_and_hashes: HashMap::new(),
+            phantom: std::marker::PhantomData,
         }
     }
 
-    /// The meta.fars and content blobs of the base packages (including subpackages).
+    /// The meta.fars and content blobs of the packages (including subpackages).
     pub fn list_blobs(&self) -> &HashSet<Hash> {
-        &self.base_blobs
+        &self.blobs
     }
 
-    /// Returns `true` iff `pkg` is the hash of a base package (including subpackages).
-    pub fn is_base_package(&self, pkg: Hash) -> bool {
-        self.base_packages.contains(&pkg)
+    /// Returns `true` iff `pkg` is the hash of a package (including subpackages).
+    pub fn is_package(&self, pkg: Hash) -> bool {
+        self.packages.contains(&pkg)
     }
 
-    /// Iterator over the root (i.e not including subpackages) base package paths and hashes.
-    pub fn root_paths_and_hashes(&self) -> impl ExactSizeIterator<Item = &(PackagePath, Hash)> {
-        self.root_paths_and_hashes.iter()
+    /// Hashmap mapping the root (i.e not including subpackages) package urls to hashes.
+    pub fn root_package_urls_and_hashes(
+        &self,
+    ) -> &HashMap<fuchsia_url::UnpinnedAbsolutePackageUrl, Hash> {
+        &self.root_package_urls_and_hashes
     }
 
     /// Returns a callback to be given to `finspect::Node::record_lazy_child`.
+    /// Records the URLs and hashes the FrozenIndex was initialized with.
     pub fn record_lazy_inspect(
         self: &Arc<Self>,
     ) -> impl Fn() -> BoxFuture<'static, Result<finspect::Inspector, anyhow::Error>>
@@ -128,7 +206,7 @@ impl BasePackages {
                 let inspector = finspect::Inspector::default();
                 if let Some(this) = this.upgrade() {
                     let root = inspector.root();
-                    let () = this.root_paths_and_hashes.iter().for_each(|(path, hash)| {
+                    let () = this.root_package_urls_and_hashes.iter().for_each(|(path, hash)| {
                         // Packages are encoded as nodes instead of string properties because the
                         // privacy allowlist prefers to wildcard nodes instead of properties.
                         root.record_child(path.to_string(), |n| {
@@ -143,16 +221,19 @@ impl BasePackages {
     }
 
     /// Test-only constructor to allow testing with this type without constructing a blobfs.
-    /// base_packages isn't populated, so is_base_package will always return false.
+    /// `packages` isn't populated, so `is_package` will always return false.
     #[cfg(test)]
     pub(crate) fn new_test_only(
-        base_blobs: HashSet<Hash>,
-        root_paths_and_hashes: impl IntoIterator<Item = (PackagePath, Hash)>,
+        blobs: HashSet<Hash>,
+        root_package_urls_and_hashes: impl IntoIterator<
+            Item = (fuchsia_url::UnpinnedAbsolutePackageUrl, Hash),
+        >,
     ) -> Self {
         Self {
-            base_packages: HashSet::new(),
-            base_blobs,
-            root_paths_and_hashes: root_paths_and_hashes.into_iter().collect(),
+            packages: HashSet::new(),
+            blobs,
+            root_package_urls_and_hashes: root_package_urls_and_hashes.into_iter().collect(),
+            phantom: std::marker::PhantomData,
         }
     }
 }
@@ -160,7 +241,10 @@ impl BasePackages {
 #[cfg(test)]
 mod tests {
     use {
-        super::*, fuchsia_inspect::assert_data_tree, fuchsia_pkg_testing::PackageBuilder,
+        super::*,
+        assert_matches::assert_matches,
+        diagnostics_assertions::assert_data_tree,
+        fuchsia_pkg_testing::{PackageBuilder, SystemImageBuilder},
         std::iter::FromIterator as _,
     };
 
@@ -174,7 +258,7 @@ mod tests {
         async fn new_with_subpackages(
             static_packages: &[&fuchsia_pkg_testing::Package],
             subpackages: &[&fuchsia_pkg_testing::Package],
-        ) -> (Self, BasePackages) {
+        ) -> (Self, FrozenIndex<Base>) {
             let blobfs = blobfs_ramdisk::BlobfsRamdisk::start().await.unwrap();
             let blobfs_client = blobfs.client();
 
@@ -190,7 +274,7 @@ mod tests {
 
             let inspector = finspect::Inspector::default();
 
-            let base_packages = BasePackages::new(
+            let base_packages = FrozenIndex::<Base>::new(
                 &blobfs_client,
                 &system_image::SystemImage::from_root_dir(
                     package_directory::RootDir::new(blobfs_client.clone(), *system_image.hash())
@@ -204,7 +288,9 @@ mod tests {
             (Self { _blobfs: blobfs, system_image, inspector }, base_packages)
         }
 
-        async fn new(static_packages: &[&fuchsia_pkg_testing::Package]) -> (Self, BasePackages) {
+        async fn new(
+            static_packages: &[&fuchsia_pkg_testing::Package],
+        ) -> (Self, FrozenIndex<Base>) {
             Self::new_with_subpackages(static_packages, &[]).await
         }
     }
@@ -288,10 +374,10 @@ mod tests {
         // Note base-subpackage is not present.
         assert_data_tree!(env.inspector, root: {
             "base-packages": {
-                "a-base-package/0": {
+                "fuchsia-pkg://fuchsia.com/a-base-package": {
                     "hash": a_base_package.hash().to_string(),
                 },
-                "system_image/0": {
+                "fuchsia-pkg://fuchsia.com/system_image": {
                     "hash": env.system_image.hash().to_string(),
                 }
             }
@@ -310,12 +396,16 @@ mod tests {
 
         assert_eq!(
             base_packages
-                .root_paths_and_hashes()
+                .root_package_urls_and_hashes()
+                .iter()
                 .map(|(p, h)| (p.clone(), *h))
                 .collect::<HashSet<_>>(),
             HashSet::from_iter([
-                ("system_image/0".parse().unwrap(), *env.system_image.hash()),
-                ("a-base-package/0".parse().unwrap(), a_base_package_hash),
+                (
+                    "fuchsia-pkg://fuchsia.com/system_image".parse().unwrap(),
+                    *env.system_image.hash()
+                ),
+                ("fuchsia-pkg://fuchsia.com/a-base-package".parse().unwrap(), a_base_package_hash),
             ])
         );
     }
@@ -326,10 +416,14 @@ mod tests {
 
         assert_eq!(
             base_packages
-                .root_paths_and_hashes()
+                .root_package_urls_and_hashes()
+                .iter()
                 .map(|(p, h)| (p.clone(), *h))
                 .collect::<HashSet<_>>(),
-            HashSet::from_iter([("system_image/0".parse().unwrap(), *env.system_image.hash()),])
+            HashSet::from_iter([(
+                "fuchsia-pkg://fuchsia.com/system_image".parse().unwrap(),
+                *env.system_image.hash()
+            ),])
         );
     }
 
@@ -341,8 +435,8 @@ mod tests {
         not_system_image[0] = !not_system_image[0];
         let not_system_image = Hash::from(not_system_image);
 
-        assert!(base_packages.is_base_package(system_image));
-        assert!(!base_packages.is_base_package(not_system_image));
+        assert!(base_packages.is_package(system_image));
+        assert!(!base_packages.is_package(not_system_image));
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -356,20 +450,18 @@ mod tests {
         let (_env, base_packages) =
             TestEnv::new_with_subpackages(&[&superpackage], &[&subpackage]).await;
 
-        assert!(base_packages.is_base_package(*subpackage.hash()));
+        assert!(base_packages.is_package(*subpackage.hash()));
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
-    async fn base_packages_fails_when_loading_fails() {
+    async fn base_packages_fails_when_reading_manifest_fails() {
         let blobfs = blobfs_ramdisk::BlobfsRamdisk::start().await.unwrap();
         let blobfs_client = blobfs.client();
         // system_image package has no data/static_packages file
         let system_image = PackageBuilder::new("system_image").build().await.unwrap();
         system_image.write_to_blobfs(&blobfs).await;
 
-        let inspector = finspect::Inspector::default();
-
-        let base_packages_res = BasePackages::new(
+        let base_packages_res = FrozenIndex::<Base>::new(
             &blobfs_client,
             &system_image::SystemImage::from_root_dir(
                 package_directory::RootDir::new(blobfs_client.clone(), *system_image.hash())
@@ -379,7 +471,83 @@ mod tests {
         )
         .await;
 
-        assert!(base_packages_res.is_err());
-        assert_data_tree!(inspector, root: {});
+        assert_matches!(base_packages_res, Err(_))
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn base_packages_fails_when_reading_package_fails() {
+        let blobfs = blobfs_ramdisk::BlobfsRamdisk::start().await.unwrap();
+        let blobfs_client = blobfs.client();
+        let present = PackageBuilder::new("present")
+            .add_resource_at("present-blob", &b"present-blob-contents"[..])
+            .build()
+            .await
+            .unwrap();
+        let absent = PackageBuilder::new("absent")
+            .add_resource_at("absent-blob", &b"absent-blob-contents"[..])
+            .build()
+            .await
+            .unwrap();
+        let system_image =
+            SystemImageBuilder::new().static_packages(&[&present, &absent]).build().await;
+        system_image.write_to_blobfs(&blobfs).await;
+        present.write_to_blobfs(&blobfs).await;
+
+        assert_matches!(
+            FrozenIndex::<Base>::new(
+                &blobfs_client,
+                &system_image::SystemImage::from_root_dir(
+                    package_directory::RootDir::new(blobfs_client.clone(), *system_image.hash())
+                        .await
+                        .unwrap(),
+                ),
+            )
+            .await,
+            Err(_)
+        );
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn cache_packages_ignores_failed_package_load() {
+        let blobfs = blobfs_ramdisk::BlobfsRamdisk::start().await.unwrap();
+        let blobfs_client = blobfs.client();
+        let present = PackageBuilder::new("present")
+            .add_resource_at("present-blob", &b"present-blob-contents"[..])
+            .build()
+            .await
+            .unwrap();
+        let absent = PackageBuilder::new("absent")
+            .add_resource_at("absent-blob", &b"absent-blob-contents"[..])
+            .build()
+            .await
+            .unwrap();
+        let system_image =
+            SystemImageBuilder::new().cache_packages(&[&present, &absent]).build().await;
+        system_image.write_to_blobfs(&blobfs).await;
+        present.write_to_blobfs(&blobfs).await;
+
+        let cache_packages = FrozenIndex::<Cache>::new(
+            &blobfs_client,
+            &system_image::SystemImage::from_root_dir(
+                package_directory::RootDir::new(blobfs_client.clone(), *system_image.hash())
+                    .await
+                    .unwrap(),
+            )
+            .cache_packages()
+            .await
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(cache_packages.packages, HashSet::from([*present.hash()]));
+        assert_eq!(cache_packages.blobs, HashSet::from_iter(present.list_blobs().unwrap()));
+        assert_eq!(
+            cache_packages.root_package_urls_and_hashes(),
+            &HashMap::from_iter([
+                ("fuchsia-pkg://fuchsia.com/present/0".parse().unwrap(), *present.hash()),
+                ("fuchsia-pkg://fuchsia.com/absent/0".parse().unwrap(), *absent.hash())
+            ])
+        );
     }
 }

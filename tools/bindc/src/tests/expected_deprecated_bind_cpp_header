@@ -100,6 +100,8 @@ static const std::string I2C_DID = "fuchsia.BIND_I2C_DID";
 
 static const std::string GPIO_PIN = "fuchsia.BIND_GPIO_PIN";
 
+static const std::string GPIO_CONTROLLER = "fuchsia.BIND_GPIO_CONTROLLER";
+
 static const std::string POWER_DOMAIN = "fuchsia.BIND_POWER_DOMAIN";
 
 static const std::string POWER_DOMAIN_COMPOSITE = "fuchsia.BIND_POWER_DOMAIN_COMPOSITE";
@@ -115,8 +117,6 @@ static const std::string PWM_ID = "fuchsia.BIND_PWM_ID";
 static const std::string INIT_STEP = "fuchsia.BIND_INIT_STEP";
 
 static const std::string CODEC_INSTANCE = "fuchsia.BIND_CODEC_INSTANCE";
-
-static const std::string REGISTER_ID = "fuchsia.BIND_REGISTER_ID";
 
 static const std::string POWER_SENSOR_DOMAIN = "fuchsia.BIND_POWER_SENSOR_DOMAIN";
 

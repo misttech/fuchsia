@@ -44,12 +44,12 @@ static constexpr uint64_t kRefreshRateHz = 30;
 
 static constexpr auto kVSyncInterval = zx::usec(1000000 / kRefreshRateHz);
 
-fuchsia_sysmem2::wire::HeapProperties GetHeapProperties(fidl::AnyArena& arena) {
-  fuchsia_sysmem2::wire::CoherencyDomainSupport coherency_domain_support(arena);
+fuchsia_hardware_sysmem::wire::HeapProperties GetHeapProperties(fidl::AnyArena& arena) {
+  fuchsia_hardware_sysmem::wire::CoherencyDomainSupport coherency_domain_support(arena);
   coherency_domain_support.set_cpu_supported(false)
       .set_ram_supported(true)
       .set_inaccessible_supported(false);
-  fuchsia_sysmem2::wire::HeapProperties heap_properties(arena);
+  fuchsia_hardware_sysmem::wire::HeapProperties heap_properties(arena);
   heap_properties.set_coherency_domain_support(arena, std::move(coherency_domain_support))
       .set_need_clear(false);
   return heap_properties;
@@ -99,7 +99,7 @@ void SimpleDisplay::DisplayControllerImplSetDisplayControllerInterface(
   args.pixel_format_list = &pixel_format;
   args.pixel_format_count = 1;
 
-  intf_.OnDisplaysChanged(&args, 1, nullptr, 0, nullptr, 0, nullptr);
+  intf_.OnDisplaysChanged(&args, 1, nullptr, 0);
 }
 
 zx_status_t SimpleDisplay::DisplayControllerImplImportBufferCollection(
@@ -111,18 +111,21 @@ zx_status_t SimpleDisplay::DisplayControllerImplImportBufferCollection(
     return ZX_ERR_ALREADY_EXISTS;
   }
 
-  ZX_DEBUG_ASSERT_MSG(sysmem_allocator_client_.is_valid(), "sysmem allocator is not initialized");
+  ZX_DEBUG_ASSERT_MSG(sysmem_.is_valid(), "sysmem allocator is not initialized");
 
-  auto endpoints = fidl::CreateEndpoints<fuchsia_sysmem::BufferCollection>();
+  auto endpoints = fidl::CreateEndpoints<fuchsia_sysmem2::BufferCollection>();
   if (!endpoints.is_ok()) {
     zxlogf(ERROR, "Cannot create sysmem BufferCollection endpoints: %s", endpoints.status_string());
     return ZX_ERR_INTERNAL;
   }
   auto& [collection_client_endpoint, collection_server_endpoint] = endpoints.value();
 
-  auto bind_result = sysmem_allocator_client_->BindSharedCollection(
-      fidl::ClientEnd<fuchsia_sysmem::BufferCollectionToken>(std::move(collection_token)),
-      std::move(collection_server_endpoint));
+  fidl::Arena arena;
+  fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest bind_request(arena);
+  bind_request.set_token(
+      fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(std::move(collection_token)));
+  bind_request.set_buffer_collection_request(std::move(collection_server_endpoint));
+  auto bind_result = sysmem_->BindSharedCollection(std::move(bind_request));
   if (!bind_result.ok()) {
     zxlogf(ERROR, "Cannot complete FIDL call BindSharedCollection: %s",
            bind_result.status_string());
@@ -151,7 +154,8 @@ zx_status_t SimpleDisplay::DisplayControllerImplReleaseBufferCollection(
 }
 
 zx_status_t SimpleDisplay::DisplayControllerImplImportImage(
-    image_t* image, uint64_t banjo_driver_buffer_collection_id, uint32_t index) {
+    const image_t* image, uint64_t banjo_driver_buffer_collection_id, uint32_t index,
+    uint64_t* out_image_handle) {
   const display::DriverBufferCollectionId driver_buffer_collection_id =
       display::ToDriverBufferCollectionId(banjo_driver_buffer_collection_id);
   const auto it = buffer_collections_.find(driver_buffer_collection_id);
@@ -160,9 +164,9 @@ zx_status_t SimpleDisplay::DisplayControllerImplImportImage(
            driver_buffer_collection_id.value());
     return ZX_ERR_NOT_FOUND;
   }
-  const fidl::WireSyncClient<fuchsia_sysmem::BufferCollection>& collection = it->second;
+  const fidl::WireSyncClient<fuchsia_sysmem2::BufferCollection>& collection = it->second;
 
-  fidl::WireResult check_result = collection->CheckBuffersAllocated();
+  fidl::WireResult check_result = collection->CheckAllBuffersAllocated();
   // TODO(fxbug.dev/121691): The sysmem FIDL error logging patterns are
   // inconsistent across drivers. The FIDL error handling and logging should be
   // unified.
@@ -172,14 +176,14 @@ zx_status_t SimpleDisplay::DisplayControllerImplImportImage(
     return check_result.status();
   }
   const auto& check_response = check_result.value();
-  if (check_response.status == ZX_ERR_UNAVAILABLE) {
-    return ZX_ERR_SHOULD_WAIT;
-  }
-  if (check_response.status != ZX_OK) {
-    return check_response.status;
+  if (check_response.is_error()) {
+    if (check_response.error_value() == ZX_ERR_UNAVAILABLE) {
+      return ZX_ERR_SHOULD_WAIT;
+    }
+    return check_response.error_value();
   }
 
-  fidl::WireResult wait_result = collection->WaitForBuffersAllocated();
+  fidl::WireResult wait_result = collection->WaitForAllBuffersAllocated();
   // TODO(fxbug.dev/121691): The sysmem FIDL error logging patterns are
   // inconsistent across drivers. The FIDL error handling and logging should be
   // unified.
@@ -189,13 +193,13 @@ zx_status_t SimpleDisplay::DisplayControllerImplImportImage(
     return wait_result.status();
   }
   auto& wait_response = wait_result.value();
-  if (wait_response.status != ZX_OK) {
-    return wait_response.status;
+  if (wait_response.is_error()) {
+    return wait_response.error_value();
   }
-  fuchsia_sysmem::wire::BufferCollectionInfo2& collection_info =
-      wait_response.buffer_collection_info;
+  fuchsia_sysmem2::wire::BufferCollectionInfo& collection_info =
+      wait_response->buffer_collection_info();
 
-  if (!collection_info.settings.has_image_format_constraints) {
+  if (!collection_info.settings().has_image_format_constraints()) {
     zxlogf(ERROR, "no image format constraints");
     return ZX_ERR_INVALID_ARGS;
   }
@@ -205,34 +209,51 @@ zx_status_t SimpleDisplay::DisplayControllerImplImportImage(
     return ZX_ERR_OUT_OF_RANGE;
   }
 
-  auto sysmem2_collection_format = sysmem::V2CopyFromV1PixelFormatType(
-      collection_info.settings.image_format_constraints.pixel_format.type);
+  auto sysmem2_collection_format =
+      collection_info.settings().image_format_constraints().pixel_format();
   if (sysmem2_collection_format != format_) {
     zxlogf(ERROR, "Image format from sysmem (%u) doesn't match expected format (%u)",
            static_cast<uint32_t>(sysmem2_collection_format), static_cast<uint32_t>(format_));
     return ZX_ERR_INVALID_ARGS;
   }
 
-  zx::vmo vmo = std::move(collection_info.buffers[0].vmo);
+  // We only need the VMO temporarily to get the BufferKey. The BufferCollection client_end in
+  // buffer_collections_ is not SetWeakOk (and therefore is known to be strong at this point), so
+  // it's not necessary to keep this VMO for the buffer to remain alive.
+  zx::vmo vmo = std::move(collection_info.buffers()[0].vmo());
 
-  zx_info_handle_basic_t import_info;
-  size_t actual, avail;
-  zx_status_t status =
-      vmo.get_info(ZX_INFO_HANDLE_BASIC, &import_info, sizeof(import_info), &actual, &avail);
-  if (status != ZX_OK) {
-    return status;
+  fidl::Arena arena;
+  auto vmo_info_result =
+      sysmem_->GetVmoInfo(fuchsia_sysmem2::wire::AllocatorGetVmoInfoRequest::Builder(arena)
+                              .vmo(std::move(vmo))
+                              .Build());
+  if (!vmo_info_result.ok()) {
+    return vmo_info_result.error().status();
   }
-  if (import_info.koid != framebuffer_koid_) {
+  if (!vmo_info_result->is_ok()) {
+    return vmo_info_result->error_value();
+  }
+  auto& vmo_info = vmo_info_result->value();
+  BufferKey buffer_key(vmo_info->buffer_collection_id(), vmo_info->buffer_index());
+
+  bool key_matched;
+  {
+    fbl::AutoLock lock(&framebuffer_key_mtx_);
+    key_matched = framebuffer_key_.has_value() && (*framebuffer_key_ == buffer_key);
+  }
+  if (!key_matched) {
     return ZX_ERR_INVALID_ARGS;
   }
+
   if (image->width != width_ || image->height != height_) {
     return ZX_ERR_INVALID_ARGS;
   }
-  image->handle = kImageHandle;
+
+  *out_image_handle = kImageHandle;
   return ZX_OK;
 }
 
-void SimpleDisplay::DisplayControllerImplReleaseImage(image_t* image) {
+void SimpleDisplay::DisplayControllerImplReleaseImage(uint64_t image_handle) {
   // noop
 }
 
@@ -297,13 +318,14 @@ void SimpleDisplay::DisplayControllerImplApplyConfiguration(
 }
 
 zx_status_t SimpleDisplay::DisplayControllerImplGetSysmemConnection(zx::channel connection) {
-  auto result =
-      sysmem_->ConnectServer(fidl::ServerEnd<fuchsia_sysmem::Allocator>(std::move(connection)));
-  if (!result.ok()) {
-    zxlogf(ERROR, "could not connect to sysmem: %s", result.status_string());
-    return result.status();
+  // DdkConnectFragmentFidlProtocol<fuchsia_hardware_sysmem::Service::AllocatorV2> can't be used
+  // here becuase it wants to create the endpoints, but in this case we have the server_end only.
+  using ServiceMember = fuchsia_hardware_sysmem::Service::AllocatorV2;
+  auto status = device_connect_fragment_fidl_protocol(parent_, "sysmem", ServiceMember::ServiceName,
+                                                      ServiceMember::Name, connection.release());
+  if (status != ZX_OK) {
+    return status;
   }
-
   return ZX_OK;
 }
 
@@ -317,41 +339,39 @@ zx_status_t SimpleDisplay::DisplayControllerImplSetBufferCollectionConstraints(
            driver_buffer_collection_id.value());
     return ZX_ERR_NOT_FOUND;
   }
-  const fidl::WireSyncClient<fuchsia_sysmem::BufferCollection>& collection = it->second;
+  const fidl::WireSyncClient<fuchsia_sysmem2::BufferCollection>& collection = it->second;
 
-  fuchsia_sysmem::wire::BufferCollectionConstraints constraints = {};
-  constraints.usage.display = fuchsia_sysmem::wire::kDisplayUsageLayer;
-  constraints.has_buffer_memory_constraints = true;
-  fuchsia_sysmem::wire::BufferMemoryConstraints& buffer_constraints =
-      constraints.buffer_memory_constraints;
-  buffer_constraints.min_size_bytes = 0;
   const uint32_t bytes_per_pixel =
       ImageFormatStrideBytesPerWidthPixel(PixelFormatAndModifier(format_, kFormatModifier));
   uint32_t bytes_per_row = stride_ * bytes_per_pixel;
-  buffer_constraints.max_size_bytes = height_ * bytes_per_row;
-  buffer_constraints.physically_contiguous_required = false;
-  buffer_constraints.secure_required = false;
-  buffer_constraints.ram_domain_supported = true;
-  buffer_constraints.cpu_domain_supported = true;
-  buffer_constraints.heap_permitted_count = 1;
-  buffer_constraints.heap_permitted[0] = fuchsia_sysmem::wire::HeapType::kFramebuffer;
-  constraints.image_format_constraints_count = 1;
-  fuchsia_sysmem::wire::ImageFormatConstraints& image_constraints =
-      constraints.image_format_constraints[0];
-  image_constraints.pixel_format.type = sysmem::V1CopyFromV2PixelFormatType(format_);
-  image_constraints.pixel_format.has_format_modifier = true;
-  image_constraints.pixel_format.format_modifier.value = kFormatModifier;
-  image_constraints.color_spaces_count = 1;
-  image_constraints.color_space[0].type = fuchsia_sysmem::wire::ColorSpaceType::kSrgb;
-  image_constraints.min_coded_width = width_;
-  image_constraints.max_coded_width = width_;
-  image_constraints.min_coded_height = height_;
-  image_constraints.max_coded_height = height_;
-  image_constraints.min_bytes_per_row = bytes_per_row;
-  image_constraints.max_bytes_per_row = bytes_per_row;
-  constraints.image_format_constraints_count = 1;
 
-  auto result = collection->SetConstraints(true, constraints);
+  fidl::Arena arena;
+  auto constraints = fuchsia_sysmem2::wire::BufferCollectionConstraints::Builder(arena);
+  auto buffer_usage = fuchsia_sysmem2::wire::BufferUsage::Builder(arena);
+  buffer_usage.display(fuchsia_sysmem2::wire::kDisplayUsageLayer);
+  constraints.usage(buffer_usage.Build());
+  auto buffer_constraints = fuchsia_sysmem2::wire::BufferMemoryConstraints::Builder(arena);
+  buffer_constraints.min_size_bytes(0);
+  buffer_constraints.max_size_bytes(height_ * bytes_per_row);
+  buffer_constraints.physically_contiguous_required(false);
+  buffer_constraints.secure_required(false);
+  buffer_constraints.ram_domain_supported(true);
+  buffer_constraints.cpu_domain_supported(true);
+  buffer_constraints.heap_permitted(std::array{fuchsia_sysmem2::wire::HeapType::kFramebuffer});
+  constraints.buffer_memory_constraints(buffer_constraints.Build());
+  auto image_constraints = fuchsia_sysmem2::wire::ImageFormatConstraints::Builder(arena);
+  image_constraints.pixel_format(format_);
+  image_constraints.pixel_format_modifier(kFormatModifier);
+  image_constraints.color_spaces(std::array{fuchsia_images2::ColorSpace::kSrgb});
+  image_constraints.min_size({width_, height_});
+  image_constraints.max_size({width_, height_});
+  image_constraints.min_bytes_per_row(bytes_per_row);
+  image_constraints.max_bytes_per_row(bytes_per_row);
+  constraints.image_format_constraints(std::array{image_constraints.Build()});
+
+  auto set_request = fuchsia_sysmem2::wire::BufferCollectionSetConstraintsRequest::Builder(arena);
+  set_request.constraints(constraints.Build());
+  auto result = collection->SetConstraints(set_request.Build());
 
   if (!result.ok()) {
     zxlogf(ERROR, "failed to set constraints, %s", result.FormatDescription().c_str());
@@ -369,48 +389,52 @@ void SimpleDisplay::DdkRelease() { delete this; }
 
 void SimpleDisplay::AllocateVmo(AllocateVmoRequestView request,
                                 AllocateVmoCompleter::Sync& completer) {
+  BufferKey buffer_key(request->buffer_collection_id, request->buffer_index);
+
   zx_info_handle_count handle_count;
-  size_t actual, avail;
-  zx_status_t status = framebuffer_mmio_.get_vmo()->get_info(ZX_INFO_HANDLE_COUNT, &handle_count,
-                                                             sizeof(handle_count), &actual, &avail);
+  zx_status_t status = framebuffer_mmio_.get_vmo()->get_info(
+      ZX_INFO_HANDLE_COUNT, &handle_count, sizeof(handle_count), nullptr, nullptr);
   if (status != ZX_OK) {
-    completer.Reply(status, zx::vmo{});
+    completer.ReplyError(status);
     return;
   }
   if (handle_count.handle_count != 1) {
-    completer.Reply(ZX_ERR_NO_RESOURCES, zx::vmo{});
+    completer.ReplyError(ZX_ERR_NO_RESOURCES);
     return;
   }
   zx::vmo vmo;
   status = framebuffer_mmio_.get_vmo()->duplicate(ZX_RIGHT_SAME_RIGHTS, &vmo);
   if (status != ZX_OK) {
-    completer.Reply(status, zx::vmo{});
-  } else {
-    completer.Reply(ZX_OK, std::move(vmo));
+    completer.ReplyError(status);
   }
-}
 
-void SimpleDisplay::CreateResource(CreateResourceRequestView request,
-                                   CreateResourceCompleter::Sync& completer) {
-  zx_info_handle_basic_t framebuffer_info;
-  size_t actual, avail;
-  zx_status_t status = request->vmo.get_info(ZX_INFO_HANDLE_BASIC, &framebuffer_info,
-                                             sizeof(framebuffer_info), &actual, &avail);
-  if (status != ZX_OK) {
-    completer.Reply(status, 0);
+  bool had_framebuffer_key;
+  {
+    fbl::AutoLock lock(&framebuffer_key_mtx_);
+    had_framebuffer_key = framebuffer_key_.has_value();
+    if (!had_framebuffer_key) {
+      framebuffer_key_ = buffer_key;
+    }
+  }
+  if (had_framebuffer_key) {
+    completer.ReplyError(ZX_ERR_NO_RESOURCES);
     return;
   }
-  zx_koid_t expect = ZX_KOID_INVALID;
-  if (!framebuffer_koid_.compare_exchange_strong(expect, framebuffer_info.koid)) {
-    completer.Reply(ZX_ERR_NO_RESOURCES, 0);
-    return;
-  }
-  completer.Reply(ZX_OK, 0);
+
+  completer.ReplySuccess(std::move(vmo));
 }
 
-void SimpleDisplay::DestroyResource(DestroyResourceRequestView request,
-                                    DestroyResourceCompleter::Sync& completer) {
-  framebuffer_koid_ = ZX_KOID_INVALID;
+void SimpleDisplay::DeleteVmo(DeleteVmoRequestView request, DeleteVmoCompleter::Sync& completer) {
+  {
+    fbl::AutoLock lock(&framebuffer_key_mtx_);
+    framebuffer_key_.reset();
+  }
+
+  // Semantics of DeleteVmo are to recycle all resources tied to the sysmem allocation before
+  // replying, so we close the VMO handle here before replying. Even if it shares an object and
+  // pages with a VMO handle we're not closing, this helps clarify wrt semantics of DeleteVmo.
+  request->vmo.reset();
+
   completer.Reply();
 }
 
@@ -423,9 +447,9 @@ zx_status_t SimpleDisplay::Bind(const char* name, std::unique_ptr<SimpleDisplay>
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  auto result =
-      sysmem_->RegisterHeap(static_cast<uint64_t>(fuchsia_sysmem2::wire::HeapType::kFramebuffer),
-                            fidl::ClientEnd<fuchsia_sysmem2::Heap>(std::move(heap_connection)));
+  auto result = hardware_sysmem_->RegisterHeap(
+      static_cast<uint64_t>(fuchsia_sysmem2::wire::HeapType::kFramebuffer),
+      fidl::ClientEnd<fuchsia_hardware_sysmem::Heap>(std::move(heap_connection)));
   if (!result.ok()) {
     printf("%s: failed to register sysmem heap: %s\n", name, result.status_string());
     return result.status();
@@ -438,16 +462,17 @@ zx_status_t SimpleDisplay::Bind(const char* name, std::unique_ptr<SimpleDisplay>
 
   // Start heap server.
   auto arena = std::make_unique<fidl::Arena<512>>();
-  fuchsia_sysmem2::wire::HeapProperties heap_properties = GetHeapProperties(*arena.get());
+  fuchsia_hardware_sysmem::wire::HeapProperties heap_properties = GetHeapProperties(*arena.get());
   async::PostTask(
       loop_.dispatcher(),
-      [server_end = fidl::ServerEnd<fuchsia_sysmem2::Heap>(std::move(heap_request)),
+      [server_end = fidl::ServerEnd<fuchsia_hardware_sysmem::Heap>(std::move(heap_request)),
        arena = std::move(arena), heap_properties = std::move(heap_properties), this]() mutable {
-        auto binding = fidl::BindServer(loop_.dispatcher(), std::move(server_end), this,
-                                        [](SimpleDisplay* self, fidl::UnbindInfo info,
-                                           fidl::ServerEnd<fuchsia_sysmem2::Heap> server_end) {
-                                          OnHeapServerClose(info, server_end.TakeChannel());
-                                        });
+        auto binding =
+            fidl::BindServer(loop_.dispatcher(), std::move(server_end), this,
+                             [](SimpleDisplay* self, fidl::UnbindInfo info,
+                                fidl::ServerEnd<fuchsia_hardware_sysmem::Heap> server_end) {
+                               OnHeapServerClose(info, server_end.TakeChannel());
+                             });
         auto result = fidl::WireSendEvent(binding)->OnRegister(std::move(heap_properties));
         if (!result.ok()) {
           zxlogf(ERROR, "OnRegister() failed: %s", result.FormatDescription().c_str());
@@ -467,40 +492,15 @@ zx_status_t SimpleDisplay::Bind(const char* name, std::unique_ptr<SimpleDisplay>
   return ZX_OK;
 }
 
-zx_status_t SimpleDisplay::InitSysmemAllocatorClient() {
-  auto endpoints = fidl::CreateEndpoints<fuchsia_sysmem::Allocator>();
-  if (!endpoints.is_ok()) {
-    zxlogf(ERROR, "Cannot create sysmem allocator endpoints: %s", endpoints.status_string());
-    return endpoints.status_value();
-  }
-  auto& [client, server] = endpoints.value();
-  auto connect_result = sysmem_->ConnectServer(std::move(server));
-  if (!connect_result.ok()) {
-    zxlogf(ERROR, "Cannot connect to sysmem Allocator protocol: %s",
-           connect_result.status_string());
-    return connect_result.status();
-  }
-  sysmem_allocator_client_ = fidl::WireSyncClient(std::move(client));
-
-  zx_koid_t current_process_koid = GetCurrentProcessKoid();
-  std::string debug_name = "simple-display[" + std::to_string(current_process_koid) + "]";
-  auto set_debug_status = sysmem_allocator_client_->SetDebugClientInfo(
-      fidl::StringView::FromExternal(debug_name), current_process_koid);
-  if (!set_debug_status.ok()) {
-    zxlogf(ERROR, "Cannot set sysmem allocator debug info: %s", set_debug_status.status_string());
-  }
-
-  return ZX_OK;
-}
-
 SimpleDisplay::SimpleDisplay(zx_device_t* parent,
-                             fidl::WireSyncClient<fuchsia_hardware_sysmem::Sysmem> sysmem,
+                             fidl::WireSyncClient<fuchsia_hardware_sysmem::Sysmem> hardware_sysmem,
+                             fidl::WireSyncClient<fuchsia_sysmem2::Allocator> sysmem,
                              fdf::MmioBuffer framebuffer_mmio, uint32_t width, uint32_t height,
                              uint32_t stride, fuchsia_images2::wire::PixelFormat format)
     : DeviceType(parent),
+      hardware_sysmem_(std::move(hardware_sysmem)),
       sysmem_(std::move(sysmem)),
       loop_(&kAsyncLoopConfigNoAttachToCurrentThread),
-      framebuffer_koid_(ZX_KOID_INVALID),
       has_image_(false),
       framebuffer_mmio_(std::move(framebuffer_mmio)),
       width_(width),
@@ -514,9 +514,17 @@ SimpleDisplay::SimpleDisplay(zx_device_t* parent,
   loop_.StartThread("simple-display");
 
   if (sysmem_) {
-    zx_status_t status = InitSysmemAllocatorClient();
-    ZX_ASSERT_MSG(status == ZX_OK, "Failed to initialize sysmem Allocator: %s",
-                  zx_status_get_string(status));
+    zx_koid_t current_process_koid = GetCurrentProcessKoid();
+    std::string debug_name = "simple-display[" + std::to_string(current_process_koid) + "]";
+    fidl::Arena arena;
+    auto set_debug_request =
+        fuchsia_sysmem2::wire::AllocatorSetDebugClientInfoRequest::Builder(arena);
+    set_debug_request.name(debug_name);
+    set_debug_request.id(current_process_koid);
+    auto set_debug_status = sysmem_->SetDebugClientInfo(set_debug_request.Build());
+    if (!set_debug_status.ok()) {
+      zxlogf(ERROR, "Cannot set sysmem allocator debug info: %s", set_debug_status.status_string());
+    }
   }
 }
 
@@ -528,17 +536,15 @@ void SimpleDisplay::OnPeriodicVSync() {
     intf_.OnDisplayVsync(banjo_display_id, next_vsync_time_.get(), &banjo_config_stamp);
   }
   next_vsync_time_ += kVSyncInterval;
-  async::PostTaskForTime(
-      loop_.dispatcher(), [this]() { OnPeriodicVSync(); }, next_vsync_time_);
+  async::PostTaskForTime(loop_.dispatcher(), [this]() { OnPeriodicVSync(); }, next_vsync_time_);
 }
 
 zx_status_t bind_simple_pci_display_bootloader(zx_device_t* dev, const char* name, uint32_t bar,
                                                bool use_fidl) {
   zbi_pixel_format_t format;
   uint32_t width, height, stride;
-  // Please do not use get_root_resource() in new code. See fxbug.dev/31358.
   zx_status_t status =
-      zx_framebuffer_get_info(get_root_resource(dev), &format, &width, &height, &stride);
+      zx_framebuffer_get_info(get_framebuffer_resource(dev), &format, &width, &height, &stride);
   if (status != ZX_OK) {
     printf("%s: failed to get bootloader dimensions: %d\n", name, status);
     return ZX_ERR_NOT_SUPPORTED;
@@ -570,15 +576,24 @@ zx_status_t bind_simple_pci_display(zx_device_t* dev, const char* name, uint32_t
   // the fragment name here must be the same as both the simple-display
   // composite fragment defined in this directory and the PCI sysmem
   // fragment defined elsewhere.
-  zx::result client =
+  zx::result hardware_sysmem_result =
       ddk::Device<void>::DdkConnectFragmentFidlProtocol<fuchsia_hardware_sysmem::Service::Sysmem>(
           dev, "sysmem");
-  if (client.is_error()) {
-    zxlogf(ERROR, "%s: could not get SYSMEM protocol: %s", name, client.status_string());
-    return client.status_value();
+  if (hardware_sysmem_result.is_error()) {
+    zxlogf(ERROR, "%s: could not get SYSMEM protocol: %s", name,
+           hardware_sysmem_result.status_string());
+    return hardware_sysmem_result.status_value();
   }
+  fidl::WireSyncClient hardware_sysmem{std::move(*hardware_sysmem_result)};
 
-  fidl::WireSyncClient sysmem{std::move(*client)};
+  zx::result sysmem_result = ddk::Device<void>::DdkConnectFragmentFidlProtocol<
+      fuchsia_hardware_sysmem::Service::AllocatorV2>(dev, "sysmem");
+  if (sysmem_result.is_error()) {
+    zxlogf(ERROR, "%s: could not get fuchsia.sysmem2.Allocator protocol: %s", name,
+           sysmem_result.status_string());
+    return sysmem_result.status_value();
+  }
+  fidl::WireSyncClient sysmem(std::move(*sysmem_result));
 
   std::optional<fdf::MmioBuffer> framebuffer_mmio;
   // map framebuffer window
@@ -589,8 +604,9 @@ zx_status_t bind_simple_pci_display(zx_device_t* dev, const char* name, uint32_t
   }
 
   fbl::AllocChecker ac;
-  std::unique_ptr<SimpleDisplay> display(new (&ac) SimpleDisplay(
-      dev, std::move(sysmem), std::move(*framebuffer_mmio), width, height, stride, format));
+  std::unique_ptr<SimpleDisplay> display(
+      new (&ac) SimpleDisplay(dev, std::move(hardware_sysmem), std::move(sysmem),
+                              std::move(*framebuffer_mmio), width, height, stride, format));
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }
@@ -613,15 +629,24 @@ zx_status_t bind_simple_fidl_pci_display(zx_device_t* dev, const char* name, uin
 
   // For important information about the fragment name, see the note in bind_simple_pci_display
   // above.
-  zx::result sysmem_client =
+  zx::result hardware_sysmem_result =
       ddk::Device<void>::DdkConnectFragmentFidlProtocol<fuchsia_hardware_sysmem::Service::Sysmem>(
           dev, "sysmem");
-  if (sysmem_client.is_error()) {
-    zxlogf(ERROR, "%s: could not get SYSMEM protocol: %s", name, sysmem_client.status_string());
-    return sysmem_client.status_value();
+  if (hardware_sysmem_result.is_error()) {
+    zxlogf(ERROR, "%s: could not get SYSMEM protocol: %s", name,
+           hardware_sysmem_result.status_string());
+    return hardware_sysmem_result.status_value();
   }
+  fidl::WireSyncClient hardware_sysmem{std::move(*hardware_sysmem_result)};
 
-  fidl::WireSyncClient sysmem{std::move(*sysmem_client)};
+  zx::result sysmem_result = ddk::Device<void>::DdkConnectFragmentFidlProtocol<
+      fuchsia_hardware_sysmem::Service::AllocatorV2>(dev, "sysmem");
+  if (sysmem_result.is_error()) {
+    zxlogf(ERROR, "%s: could not get fuchsia.sysmem2.Allocator protocol: %s", name,
+           sysmem_result.status_string());
+    return sysmem_result.status_value();
+  }
+  fidl::WireSyncClient sysmem(std::move(*sysmem_result));
 
   fidl::WireResult<fuchsia_hardware_pci::Device::GetBar> bar_result = pci->GetBar(bar);
   if (!bar_result.ok()) {
@@ -649,8 +674,8 @@ zx_status_t bind_simple_fidl_pci_display(zx_device_t* dev, const char* name, uin
     return mmio.status_value();
   }
 
-  auto display = std::make_unique<SimpleDisplay>(dev, std::move(sysmem), std::move(*mmio), width,
-                                                 height, stride, format);
+  auto display = std::make_unique<SimpleDisplay>(dev, std::move(hardware_sysmem), std::move(sysmem),
+                                                 std::move(*mmio), width, height, stride, format);
 
   return display->Bind(name, &display);
 }

@@ -21,7 +21,6 @@
 #include <vm/arch_vm_aspace.h>
 #include <vm/pmm.h>
 
-constexpr uint16_t MMU_X86_UNUSED_VPID = 0;
 constexpr uint16_t MMU_X86_UNUSED_PCID = 0;
 
 // Implementation of page tables used by x86-64 CPUs.
@@ -29,6 +28,9 @@ class X86PageTableMmu final : public X86PageTableBase {
  public:
   using X86PageTableBase::Destroy;
   using X86PageTableBase::Init;
+  using X86PageTableBase::InitRestricted;
+  using X86PageTableBase::InitShared;
+  using X86PageTableBase::InitUnified;
 
   // Initialize the kernel page table, assigning the given context to it.
   // This X86PageTable will be special in that its mappings will all have
@@ -53,7 +55,7 @@ class X86PageTableMmu final : public X86PageTableBase {
   IntermediatePtFlags intermediate_flags() final;
   PtFlags terminal_flags(PageTableLevel level, uint flags) final;
   PtFlags split_flags(PageTableLevel level, PtFlags flags) final;
-  void TlbInvalidate(PendingTlbInvalidation* pending) final;
+  void TlbInvalidate(const PendingTlbInvalidation* pending) final;
   uint pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level) final;
   bool needs_cache_flushes() final { return false; }
 
@@ -76,7 +78,7 @@ class X86PageTableEpt final : public X86PageTableBase {
   IntermediatePtFlags intermediate_flags() final;
   PtFlags terminal_flags(PageTableLevel level, uint flags) final;
   PtFlags split_flags(PageTableLevel level, PtFlags flags) final;
-  void TlbInvalidate(PendingTlbInvalidation* pending) final;
+  void TlbInvalidate(const PendingTlbInvalidation* pending) final;
   uint pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level) final;
   bool needs_cache_flushes() final { return false; }
 };
@@ -89,6 +91,10 @@ class X86ArchVmAspace final : public ArchVmAspaceInterface {
   using ArchVmAspaceInterface::page_alloc_fn_t;
 
   zx_status_t Init() override;
+  zx_status_t InitRestricted() override;
+  zx_status_t InitShared() override;
+  zx_status_t InitUnified(ArchVmAspaceInterface& shared,
+                          ArchVmAspaceInterface& restricted) override;
 
   void DisableUpdates() final {
     // This method is no-op on x86 as the feature is only needed on arm64.  See fxbug.dev/79118.
@@ -118,8 +124,6 @@ class X86ArchVmAspace final : public ArchVmAspaceInterface {
   bool ActiveSinceLastCheck(bool clear) override;
 
   paddr_t arch_table_phys() const override { return pt_->phys(); }
-  uint16_t arch_vpid() const { return vpid_; }
-  void arch_set_vpid(uint16_t vpid) { vpid_ = vpid; }
   paddr_t pt_phys() const { return pt_->phys(); }
   size_t pt_pages() const { return pt_->pages(); }
   uint16_t pcid() const { return pcid_; }
@@ -148,6 +152,9 @@ class X86ArchVmAspace final : public ArchVmAspaceInterface {
   // Test the vaddr against the address space's range.
   bool IsValidVaddr(vaddr_t vaddr) const { return (vaddr >= base_ && vaddr <= base_ + size_ - 1); }
 
+  // Helper method to allocate a PCID for this ArchVmAspace.
+  zx_status_t AllocatePCID();
+
   // Helper method to mark this aspace active.
   // This exists for clarity of call sites so that the comment explaining why this is done can be in
   // one location.
@@ -156,6 +163,8 @@ class X86ArchVmAspace final : public ArchVmAspaceInterface {
     // equivalent to if it had been active on a CPU, since it may now have active/dirty information.
     active_since_last_check_.store(true, ktl::memory_order_relaxed);
   }
+
+  bool IsUnified() const { return pt_->IsUnified(); }
 
   fbl::Canary<fbl::magic("VAAS")> canary_;
   IoBitmap io_bitmap_;
@@ -172,9 +181,6 @@ class X86ArchVmAspace final : public ArchVmAspaceInterface {
   // This will be either a normal page table or an EPT, depending on whether
   // flags_ includes ARCH_ASPACE_FLAG_GUEST.
   X86PageTableBase* pt_;
-
-  // If this address space has an associated VPID.
-  uint16_t vpid_ = MMU_X86_UNUSED_VPID;
 
   // PCID assigned to the aspace. Defaults to unused if PCIDs are not being used.
   uint16_t pcid_ = MMU_X86_UNUSED_PCID;

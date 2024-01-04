@@ -16,9 +16,9 @@
 #include <bind/fuchsia/amlogic/platform/t931/cpp/bind.h>
 #include <bind/fuchsia/ams/platform/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/pwm/cpp/bind.h>
+#include <bind/fuchsia/gpio/cpp/bind.h>
 #include <bind/fuchsia/i2c/cpp/bind.h>
+#include <bind/fuchsia/pwm/cpp/bind.h>
 #include <ddk/metadata/lights.h>
 #include <ddktl/metadata/light-sensor.h>
 #include <soc/aml-t931/t931-pwm.h>
@@ -64,15 +64,13 @@ zx_status_t Sherlock::LightInit() {
 
   const auto kGpioLightInterruptRules = std::vector{
       fdf::MakeAcceptBindRule(bind_fuchsia::FIDL_PROTOCOL,
-                              bind_fuchsia_hardware_gpio::BIND_FIDL_PROTOCOL_SERVICE),
+                              bind_fuchsia_gpio::BIND_FIDL_PROTOCOL_SERVICE),
       fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
                               bind_fuchsia_amlogic_platform_t931::GPIOAO_PIN_ID_PIN_5),
   };
   const auto kGpioLightInterruptProperties = std::vector{
-      fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL,
-                        bind_fuchsia_hardware_gpio::BIND_FIDL_PROTOCOL_SERVICE),
-      fdf::MakeProperty(bind_fuchsia_hardware_gpio::FUNCTION,
-                        bind_fuchsia_hardware_gpio::FUNCTION_LIGHT_INTERRUPT),
+      fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL, bind_fuchsia_gpio::BIND_FIDL_PROTOCOL_SERVICE),
+      fdf::MakeProperty(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_LIGHT_INTERRUPT),
   };
 
   auto kTcs3400LightParents = std::vector{
@@ -141,78 +139,69 @@ zx_status_t Sherlock::LightInit() {
   light_dev.metadata() = light_metadata;
 
   // Enable the Amber LED so it will be controlled by PWM.
-  zx_status_t status = gpio_impl_.SetAltFunction(GPIO_AMBER_LED, 3);  // Set as GPIO.
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "%s: Configure mute LED GPIO failed %d", __func__, status);
-  }
-  status = gpio_impl_.ConfigOut(GPIO_AMBER_LED, 1);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "%s: Configure mute LED GPIO on failed %d", __func__, status);
-  }
+  gpio_init_steps_.push_back({GPIO_AMBER_LED, GpioSetAltFunction(3)});  // Set as GPIO.
+  gpio_init_steps_.push_back({GPIO_AMBER_LED, GpioConfigOut(1)});
+
   // Enable the Green LED so it will be controlled by PWM.
-  status = gpio_impl_.SetAltFunction(GPIO_GREEN_LED, 4);  // Set as PWM.
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "%s: Configure mute LED GPIO failed %d", __func__, status);
-  }
-  status = gpio_impl_.ConfigOut(GPIO_GREEN_LED, 1);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "%s: Configure mute LED GPIO on failed %d", __func__, status);
-  }
+  gpio_init_steps_.push_back({GPIO_GREEN_LED, GpioSetAltFunction(4)});  // Set as PWM.
+  gpio_init_steps_.push_back({GPIO_GREEN_LED, GpioConfigOut(1)});
 
   auto amber_led_gpio_bind_rules = std::vector{
       fdf::MakeAcceptBindRule(bind_fuchsia::FIDL_PROTOCOL,
-                              bind_fuchsia_hardware_gpio::BIND_FIDL_PROTOCOL_SERVICE),
+                              bind_fuchsia_gpio::BIND_FIDL_PROTOCOL_SERVICE),
       fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
                               bind_fuchsia_amlogic_platform_t931::GPIOAO_PIN_ID_PIN_11),
   };
 
   auto amber_led_gpio_properties = std::vector{
-      fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL,
-                        bind_fuchsia_hardware_gpio::BIND_FIDL_PROTOCOL_SERVICE),
-      fdf::MakeProperty(bind_fuchsia_hardware_gpio::FUNCTION,
-                        bind_fuchsia_hardware_gpio::FUNCTION_GPIO_AMBER_LED),
+      fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL, bind_fuchsia_gpio::BIND_FIDL_PROTOCOL_SERVICE),
+      fdf::MakeProperty(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_GPIO_AMBER_LED),
   };
 
   auto amber_led_pwm_bind_rules = std::vector{
       fdf::MakeAcceptBindRule(bind_fuchsia::FIDL_PROTOCOL,
-                              bind_fuchsia_hardware_pwm::BIND_FIDL_PROTOCOL_DEVICE),
+                              bind_fuchsia_pwm::BIND_FIDL_PROTOCOL_DEVICE),
       fdf::MakeAcceptBindRule(bind_fuchsia::PWM_ID,
                               bind_fuchsia_amlogic_platform_t931::BIND_PWM_ID_PWM_AO_A),
   };
 
   auto amber_led_pwm_properties = std::vector{
-      fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL,
-                        bind_fuchsia_hardware_pwm::BIND_FIDL_PROTOCOL_DEVICE),
-      fdf::MakeProperty(bind_fuchsia_hardware_pwm::PWM_ID_FUNCTION,
-                        bind_fuchsia_hardware_pwm::PWM_ID_FUNCTION_AMBER_LED),
+      fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL, bind_fuchsia_pwm::BIND_FIDL_PROTOCOL_DEVICE),
+      fdf::MakeProperty(bind_fuchsia_pwm::PWM_ID_FUNCTION,
+                        bind_fuchsia_pwm::PWM_ID_FUNCTION_AMBER_LED),
   };
 
   auto green_led_gpio_bind_rules = std::vector{
       fdf::MakeAcceptBindRule(bind_fuchsia::FIDL_PROTOCOL,
-                              bind_fuchsia_hardware_gpio::BIND_FIDL_PROTOCOL_SERVICE),
+                              bind_fuchsia_gpio::BIND_FIDL_PROTOCOL_SERVICE),
       fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
                               bind_fuchsia_amlogic_platform_t931::GPIOH_PIN_ID_PIN_5),
   };
 
   auto green_led_gpio_properties = std::vector{
-      fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL,
-                        bind_fuchsia_hardware_gpio::BIND_FIDL_PROTOCOL_SERVICE),
-      fdf::MakeProperty(bind_fuchsia_hardware_gpio::FUNCTION,
-                        bind_fuchsia_hardware_gpio::FUNCTION_GPIO_GREEN_LED),
+      fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL, bind_fuchsia_gpio::BIND_FIDL_PROTOCOL_SERVICE),
+      fdf::MakeProperty(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_GPIO_GREEN_LED),
   };
 
   auto green_led_pwm_bind_rules = std::vector{
       fdf::MakeAcceptBindRule(bind_fuchsia::FIDL_PROTOCOL,
-                              bind_fuchsia_hardware_pwm::BIND_FIDL_PROTOCOL_DEVICE),
+                              bind_fuchsia_pwm::BIND_FIDL_PROTOCOL_DEVICE),
       fdf::MakeAcceptBindRule(bind_fuchsia::PWM_ID,
                               bind_fuchsia_amlogic_platform_t931::BIND_PWM_ID_PWM_F),
   };
 
   auto green_led_pwm_properties = std::vector{
-      fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL,
-                        bind_fuchsia_hardware_pwm::BIND_FIDL_PROTOCOL_DEVICE),
-      fdf::MakeProperty(bind_fuchsia_hardware_pwm::PWM_ID_FUNCTION,
-                        bind_fuchsia_hardware_pwm::PWM_ID_FUNCTION_GREEN_LED),
+      fdf::MakeProperty(bind_fuchsia::FIDL_PROTOCOL, bind_fuchsia_pwm::BIND_FIDL_PROTOCOL_DEVICE),
+      fdf::MakeProperty(bind_fuchsia_pwm::PWM_ID_FUNCTION,
+                        bind_fuchsia_pwm::PWM_ID_FUNCTION_GREEN_LED),
+  };
+
+  auto gpio_init_bind_rules = std::vector{
+      fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+  };
+
+  auto gpio_init_properties = std::vector{
+      fdf::MakeProperty(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
   };
 
   auto parents = std::vector{
@@ -231,6 +220,10 @@ zx_status_t Sherlock::LightInit() {
       fuchsia_driver_framework::ParentSpec{{
           .bind_rules = green_led_pwm_bind_rules,
           .properties = green_led_pwm_properties,
+      }},
+      fuchsia_driver_framework::ParentSpec{{
+          .bind_rules = gpio_init_bind_rules,
+          .properties = gpio_init_properties,
       }},
   };
 

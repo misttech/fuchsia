@@ -10,10 +10,7 @@ import("//build/test.gni")
 driver_bind_rules("i8042_bind") {
   rules = "i8042.bind"
   tests = "bind_tests.json"
-  deps = [
-    "//src/devices/bind/fuchsia.acpi",
-    "//src/devices/bind/fuchsia.driver.framework",
-  ]
+  deps = [ "//src/devices/bind/fuchsia.acpi" ]
 }
 
 group("tests") {
@@ -25,17 +22,17 @@ group("tests") {
 }
 
 common_deps = [
-  "//sdk/fidl/fuchsia.hardware.input:fuchsia.hardware.input_cpp_wire",
-  "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp_wire",
+  "//sdk/fidl/fuchsia.hardware.input:fuchsia.hardware.input_cpp",
+  "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
   "//sdk/lib/input_report_reader",
   "//src/devices/lib/driver",
   "//src/devices/lib/driver:driver_runtime",
   "//src/lib/ddk",
   "//src/lib/ddktl",
+  "//src/ui/input/lib/hid",
   "//zircon/system/ulib/async-loop:async-loop-cpp",
   "//zircon/system/ulib/async-loop:async-loop-default",
   "//zircon/system/ulib/fbl",
-  "//zircon/system/ulib/hid",
   "//zircon/system/ulib/hwreg",
   "//zircon/system/ulib/zircon-internal",
 ]
@@ -64,6 +61,11 @@ fuchsia_driver_component("pc-ps2") {
   ]
   info = "pc-ps2-info.json"
   manifest = "meta/pc-ps2.cml"
+}
+
+fuchsia_driver_package("package") {
+  package_name = "pc-ps2"
+  driver_components = [ ":pc-ps2" ]
 }
 
 test("pc-ps2-tests-bin") {

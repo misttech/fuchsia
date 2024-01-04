@@ -29,11 +29,8 @@
 #include <zircon/types.h>
 
 #include <algorithm>
-#include <cinttypes>
-#include <cmath>
 #include <cstdlib>
 #include <cstring>
-#include <future>
 #include <iterator>
 #include <limits>
 #include <memory>
@@ -66,7 +63,9 @@
 #include "src/graphics/display/drivers/intel-i915/tiling.h"
 #include "src/graphics/display/lib/api-types-cpp/config-stamp.h"
 #include "src/graphics/display/lib/api-types-cpp/display-id.h"
+#include "src/graphics/display/lib/api-types-cpp/display-timing.h"
 #include "src/graphics/display/lib/api-types-cpp/driver-buffer-collection-id.h"
+#include "src/graphics/display/lib/api-types-cpp/driver-image-id.h"
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
@@ -168,9 +167,8 @@ struct FramebufferInfo {
 // See fxbug.dev/77501.
 zx::result<FramebufferInfo> GetFramebufferInfo(zx_device_t* parent) {
   FramebufferInfo info;
-  // Please do not use get_root_resource() in new code. See fxbug.dev/31358.
-  zx_status_t status = zx_framebuffer_get_info(get_root_resource(parent), &info.format, &info.width,
-                                               &info.height, &info.stride);
+  zx_status_t status = zx_framebuffer_get_info(get_framebuffer_resource(parent), &info.format,
+                                               &info.width, &info.height, &info.stride);
   if (status != ZX_OK) {
     return zx::error(status);
   }
@@ -413,8 +411,7 @@ bool Controller::BringUpDisplayEngine(bool resume) {
   constexpr uint16_t kSequencerData = 0x3c5;
   constexpr uint8_t kClockingModeIdx = 1;
   constexpr uint8_t kClockingModeScreenOff = (1 << 5);
-  // Please do not use get_root_resource() in new code. See fxbug.dev/31358.
-  zx_status_t status = zx_ioports_request(get_root_resource(parent()), kSequencerIdx, 2);
+  zx_status_t status = zx_ioports_request(get_ioport_resource(parent()), kSequencerIdx, 2);
   if (status != ZX_OK) {
     zxlogf(ERROR, "Failed to map vga ports");
     return false;
@@ -813,9 +810,7 @@ zx_status_t Controller::AddDisplay(std::unique_ptr<DisplayDevice> display) {
 
 void Controller::CallOnDisplaysChanged(cpp20::span<DisplayDevice*> added,
                                        cpp20::span<const display::DisplayId> removed) {
-  size_t added_actual;
   added_display_args_t added_args[std::max(static_cast<size_t>(1), added.size())];
-  added_display_info_t added_info[std::max(static_cast<size_t>(1), added.size())];
   for (unsigned i = 0; i < added.size(); i++) {
     added_args[i].display_id = display::ToBanjoDisplayId(added[i]->id());
     added_args[i].edid_present = true;
@@ -830,17 +825,11 @@ void Controller::CallOnDisplaysChanged(cpp20::span<DisplayDevice*> added,
   for (unsigned i = 0; i < removed.size(); i++) {
     banjo_removed_display_ids[i] = display::ToBanjoDisplayId(removed[i]);
   }
-  dc_intf_.OnDisplaysChanged(added_args, added.size(), banjo_removed_display_ids, removed.size(),
-                             added_info, added.size(), &added_actual);
-  if (added.size() != added_actual) {
-    zxlogf(WARNING, "%lu displays could not be added", added.size() - added_actual);
-  }
-  for (unsigned i = 0; i < added_actual; i++) {
-    if (added[i]->type() == DisplayDevice::Type::kHdmi) {
-      added[i]->set_type(added_info[i].is_hdmi_out ? DisplayDevice::Type::kHdmi
-                                                   : DisplayDevice::Type::kDvi);
-    }
-  }
+  dc_intf_.OnDisplaysChanged(added_args, added.size(), banjo_removed_display_ids, removed.size());
+
+  // TODO(b/317914671): After the display coordinator provides display metadata
+  // to the drivers, each display's type should potentially be adjusted from
+  // HDMI to DVI, based on EDID information.
 }
 
 // DisplayControllerImpl methods
@@ -903,7 +892,7 @@ zx_status_t Controller::DisplayControllerImplImportBufferCollection(
     return ZX_ERR_ALREADY_EXISTS;
   }
 
-  ZX_DEBUG_ASSERT_MSG(sysmem_allocator_client_.is_valid(), "sysmem allocator is not initialized");
+  ZX_DEBUG_ASSERT_MSG(sysmem_.is_valid(), "sysmem allocator is not initialized");
 
   auto endpoints = fidl::CreateEndpoints<fuchsia_sysmem::BufferCollection>();
   if (!endpoints.is_ok()) {
@@ -912,7 +901,7 @@ zx_status_t Controller::DisplayControllerImplImportBufferCollection(
   }
   auto& [collection_client_endpoint, collection_server_endpoint] = endpoints.value();
 
-  auto bind_result = sysmem_allocator_client_->BindSharedCollection(
+  auto bind_result = sysmem_->BindSharedCollection(
       fidl::ClientEnd<fuchsia_sysmem::BufferCollectionToken>(std::move(collection_token)),
       std::move(collection_server_endpoint));
   if (!bind_result.ok()) {
@@ -939,9 +928,10 @@ zx_status_t Controller::DisplayControllerImplReleaseBufferCollection(
   return ZX_OK;
 }
 
-zx_status_t Controller::DisplayControllerImplImportImage(image_t* image,
+zx_status_t Controller::DisplayControllerImplImportImage(const image_t* image,
                                                          uint64_t banjo_driver_buffer_collection_id,
-                                                         uint32_t index) {
+                                                         uint32_t index,
+                                                         uint64_t* out_image_handle) {
   display::DriverBufferCollectionId driver_buffer_collection_id =
       display::ToDriverBufferCollectionId(banjo_driver_buffer_collection_id);
   const auto it = buffer_collections_.find(driver_buffer_collection_id);
@@ -1082,23 +1072,27 @@ zx_status_t Controller::DisplayControllerImplImportImage(image_t* image,
   }
 
   gtt_region->set_bytes_per_row(format.value().bytes_per_row);
-  image->handle = gtt_region->base();
+  const display::DriverImageId image_id(gtt_region->base());
   imported_images_.push_back(std::move(gtt_region));
 
   ZX_DEBUG_ASSERT_MSG(
-      imported_image_pixel_formats_.find(image->handle) == imported_image_pixel_formats_.end(),
-      "Image handle (%lu) exists in imported image pixel formats map", image->handle);
+      imported_image_pixel_formats_.find(image_id) == imported_image_pixel_formats_.end(),
+      "Image ID %" PRIu64 " exists in imported image pixel formats map", image_id.value());
   imported_image_pixel_formats_.emplace(
-      image->handle, sysmem::V2CopyFromV1PixelFormat(format.value().pixel_format));
+      image_id, sysmem::V2CopyFromV1PixelFormat(format.value().pixel_format));
 
+  *out_image_handle = display::ToBanjoDriverImageId(image_id);
   return ZX_OK;
 }
 
-void Controller::DisplayControllerImplReleaseImage(image_t* image) {
+void Controller::DisplayControllerImplReleaseImage(uint64_t image_handle) {
+  const uint64_t gtt_region_base = image_handle;
+  const display::DriverImageId image_id(gtt_region_base);
+
   fbl::AutoLock lock(&gtt_lock_);
-  imported_image_pixel_formats_.erase(image->handle);
+  imported_image_pixel_formats_.erase(image_id);
   for (unsigned i = 0; i < imported_images_.size(); i++) {
-    if (imported_images_[i]->base() == image->handle) {
+    if (imported_images_[i]->base() == gtt_region_base) {
       imported_images_[i]->ClearRegion();
       imported_images_.erase(i);
       return;
@@ -1106,13 +1100,14 @@ void Controller::DisplayControllerImplReleaseImage(image_t* image) {
   }
 }
 
-PixelFormatAndModifier Controller::GetImportedImagePixelFormat(const image_t* image) const {
+PixelFormatAndModifier Controller::GetImportedImagePixelFormat(
+    display::DriverImageId image_id) const {
   fbl::AutoLock lock(&gtt_lock_);
-  auto it = imported_image_pixel_formats_.find(image->handle);
+  auto it = imported_image_pixel_formats_.find(image_id);
   if (it != imported_image_pixel_formats_.end()) {
     return it->second;
   }
-  ZX_ASSERT_MSG(false, "imported image (handle %lu) not found", image->handle);
+  ZX_ASSERT_MSG(false, "Imported image ID %" PRIu64 " not found", image_id.value());
 }
 
 const std::unique_ptr<GttRegionImpl>& Controller::GetGttRegionImpl(uint64_t handle) {
@@ -1210,9 +1205,10 @@ bool Controller::CalculateMinimumAllocations(
         // need to populate the image_t.handle of pending layers first so that
         // the image of primary layer can be correctly resolved.
         constexpr int bytes_per_pixel = 4;
-        if (primary->image.handle != 0) {
+        const display::DriverImageId primary_image_id(primary->image.handle);
+        if (primary_image_id != display::kInvalidDriverImageId) {
           ZX_DEBUG_ASSERT(bytes_per_pixel == ImageFormatStrideBytesPerWidthPixel(
-                                                 GetImportedImagePixelFormat(&primary->image)));
+                                                 GetImportedImagePixelFormat(primary_image_id)));
         }
 
         if (primary->transform_mode == FRAME_TRANSFORM_IDENTITY ||
@@ -1246,17 +1242,17 @@ bool Controller::CalculateMinimumAllocations(
 void Controller::UpdateAllocations(
     const uint16_t min_allocs[PipeIds<registers::Platform::kKabyLake>().size()]
                              [registers::kImagePlaneCount],
-    const uint64_t data_rate[PipeIds<registers::Platform::kKabyLake>().size()]
-                            [registers::kImagePlaneCount]) {
+    const uint64_t data_rate_bytes_per_frame[PipeIds<registers::Platform::kKabyLake>().size()]
+                                            [registers::kImagePlaneCount]) {
   uint16_t allocs[PipeIds<registers::Platform::kKabyLake>().size()][registers::kImagePlaneCount];
 
   for (unsigned pipe_num = 0; pipe_num < PipeIds<registers::Platform::kKabyLake>().size();
        pipe_num++) {
-    uint64_t total_data_rate = 0;
+    uint64_t total_data_rate_bytes_per_frame = 0;
     for (unsigned plane_num = 0; plane_num < registers::kImagePlaneCount; plane_num++) {
-      total_data_rate += data_rate[pipe_num][plane_num];
+      total_data_rate_bytes_per_frame += data_rate_bytes_per_frame[pipe_num][plane_num];
     }
-    if (total_data_rate == 0) {
+    if (total_data_rate_bytes_per_frame == 0) {
       for (unsigned plane_num = 0; plane_num < registers::kImagePlaneCount; plane_num++) {
         allocs[pipe_num][plane_num] = 0;
       }
@@ -1275,8 +1271,9 @@ void Controller::UpdateAllocations(
           continue;
         }
 
-        double blocks = buffers_per_pipe * static_cast<double>(data_rate[pipe_num][plane_num]) /
-                        static_cast<double>(total_data_rate);
+        double blocks = buffers_per_pipe *
+                        static_cast<double>(data_rate_bytes_per_frame[pipe_num][plane_num]) /
+                        static_cast<double>(total_data_rate_bytes_per_frame);
         allocs[pipe_num][plane_num] = static_cast<uint16_t>(blocks);
       }
 
@@ -1287,7 +1284,7 @@ void Controller::UpdateAllocations(
           done = false;
           allocs[pipe_num][plane_num] = min_allocs[pipe_num][plane_num];
           forced_alloc[plane_num] = true;
-          total_data_rate -= data_rate[pipe_num][plane_num];
+          total_data_rate_bytes_per_frame -= data_rate_bytes_per_frame[pipe_num][plane_num];
           buffers_per_pipe -= allocs[pipe_num][plane_num];
         }
       }
@@ -1362,13 +1359,14 @@ void Controller::ReallocatePlaneBuffers(cpp20::span<const display_config_t*> ban
   }
 
   // Calculate the data rates and store the minimum allocations
-  uint64_t data_rate[PipeIds<registers::Platform::kKabyLake>().size()][registers::kImagePlaneCount];
+  uint64_t data_rate_bytes_per_frame[PipeIds<registers::Platform::kKabyLake>().size()]
+                                    [registers::kImagePlaneCount];
   for (Pipe* pipe : *pipe_manager_) {
     PipeId pipe_id = pipe->pipe_id();
     for (unsigned plane_num = 0; plane_num < registers::kImagePlaneCount; plane_num++) {
       const layer_t* layer;
       if (!GetPlaneLayer(pipe, plane_num, banjo_display_configs, &layer)) {
-        data_rate[pipe_id][plane_num] = 0;
+        data_rate_bytes_per_frame[pipe_id][plane_num] = 0;
       } else if (layer->type == LAYER_TYPE_PRIMARY) {
         const primary_layer_t* primary = &layer->cfg.primary;
 
@@ -1384,14 +1382,16 @@ void Controller::ReallocatePlaneBuffers(cpp20::span<const display_config_t*> ban
         constexpr int bytes_per_pixel = 4;
         // Plane buffers are recalculated only on valid configurations. So all
         // images must be valid.
-        ZX_DEBUG_ASSERT(primary->image.handle != 0);
+        const display::DriverImageId primary_image_id(primary->image.handle);
+        ZX_DEBUG_ASSERT(primary_image_id != display::kInvalidDriverImageId);
         ZX_DEBUG_ASSERT(bytes_per_pixel == ImageFormatStrideBytesPerWidthPixel(
-                                               GetImportedImagePixelFormat(&primary->image)));
+                                               GetImportedImagePixelFormat(primary_image_id)));
 
-        data_rate[pipe_id][plane_num] = uint64_t{scaled_width} * scaled_height * bytes_per_pixel;
+        data_rate_bytes_per_frame[pipe_id][plane_num] =
+            uint64_t{scaled_width} * scaled_height * bytes_per_pixel;
       } else if (layer->type == LAYER_TYPE_CURSOR) {
         // Use a tiny data rate so the cursor gets the minimum number of buffers
-        data_rate[pipe_id][plane_num] = 1;
+        data_rate_bytes_per_frame[pipe_id][plane_num] = 1;
       } else {
         // Other layers don't use pipe/planes, so GetPlaneLayer should have returned false
         ZX_ASSERT(false);
@@ -1432,7 +1432,7 @@ void Controller::ReallocatePlaneBuffers(cpp20::span<const display_config_t*> ban
   }
 
   // It's not necessary to flush the buffer changes since the pipe allocs didn't change
-  UpdateAllocations(min_allocs, data_rate);
+  UpdateAllocations(min_allocs, data_rate_bytes_per_frame);
 
   if (reallocate_pipes) {
     DoPipeBufferReallocation(active_allocation);
@@ -1518,9 +1518,13 @@ bool Controller::CheckDisplayLimits(
                                            banjo_display_config->layer_count);
     client_composition_opcodes_offset += banjo_display_config->layer_count;
 
+    const display::DisplayTiming display_timing =
+        display::ToDisplayTiming(banjo_display_config->mode);
     // The intel display controller doesn't support these flags
-    if (banjo_display_config->mode.flags &
-        (MODE_FLAG_ALTERNATING_VBLANK | MODE_FLAG_DOUBLE_CLOCKED)) {
+    if (display_timing.vblank_alternates) {
+      return false;
+    }
+    if (display_timing.pixel_repetition > 0) {
       return false;
     }
 
@@ -1533,38 +1537,37 @@ bool Controller::CheckDisplayLimits(
     // Pipes don't support height of more than 4096. They support a width of up to
     // 2^14 - 1. However, planes don't support a width of more than 8192 and we need
     // to always be able to accept a single plane, fullscreen configuration.
-    if (banjo_display_config->mode.v_addressable > 4096 ||
-        banjo_display_config->mode.h_addressable > 8192) {
+    if (display_timing.vertical_active_lines > 4096 || display_timing.horizontal_active_px > 8192) {
       return false;
     }
 
-    uint64_t max_pipe_pixel_rate;
-    auto cd_freq = registers::CdClockCtl::Get().ReadFrom(mmio_space()).cd_freq_decimal();
+    int64_t max_pipe_pixel_rate_hz;
+    auto cd_freq_khz = registers::CdClockCtl::Get().ReadFrom(mmio_space()).cd_freq_decimal();
 
-    if (cd_freq == registers::CdClockCtl::FreqDecimal(307200)) {
-      max_pipe_pixel_rate = 307200000;
-    } else if (cd_freq == registers::CdClockCtl::FreqDecimal(308570)) {
-      max_pipe_pixel_rate = 308570000;
-    } else if (cd_freq == registers::CdClockCtl::FreqDecimal(337500)) {
-      max_pipe_pixel_rate = 337500000;
-    } else if (cd_freq == registers::CdClockCtl::FreqDecimal(432000)) {
-      max_pipe_pixel_rate = 432000000;
-    } else if (cd_freq == registers::CdClockCtl::FreqDecimal(450000)) {
-      max_pipe_pixel_rate = 450000000;
-    } else if (cd_freq == registers::CdClockCtl::FreqDecimal(540000)) {
-      max_pipe_pixel_rate = 540000000;
-    } else if (cd_freq == registers::CdClockCtl::FreqDecimal(617140)) {
-      max_pipe_pixel_rate = 617140000;
-    } else if (cd_freq == registers::CdClockCtl::FreqDecimal(675000)) {
-      max_pipe_pixel_rate = 675000000;
+    if (cd_freq_khz == registers::CdClockCtl::FreqDecimal(307'200)) {
+      max_pipe_pixel_rate_hz = 307'200'000;
+    } else if (cd_freq_khz == registers::CdClockCtl::FreqDecimal(308'570)) {
+      max_pipe_pixel_rate_hz = 308'570'000;
+    } else if (cd_freq_khz == registers::CdClockCtl::FreqDecimal(337'500)) {
+      max_pipe_pixel_rate_hz = 337'500'000;
+    } else if (cd_freq_khz == registers::CdClockCtl::FreqDecimal(432'000)) {
+      max_pipe_pixel_rate_hz = 432'000'000;
+    } else if (cd_freq_khz == registers::CdClockCtl::FreqDecimal(450'000)) {
+      max_pipe_pixel_rate_hz = 450'000'000;
+    } else if (cd_freq_khz == registers::CdClockCtl::FreqDecimal(540'000)) {
+      max_pipe_pixel_rate_hz = 540'000'000;
+    } else if (cd_freq_khz == registers::CdClockCtl::FreqDecimal(617'140)) {
+      max_pipe_pixel_rate_hz = 617'140'000;
+    } else if (cd_freq_khz == registers::CdClockCtl::FreqDecimal(675'000)) {
+      max_pipe_pixel_rate_hz = 675'000'000;
     } else {
       ZX_ASSERT(false);
     }
 
     // Either the pipe pixel rate or the link pixel rate can't support a simple
     // configuration at this display resolution.
-    if (max_pipe_pixel_rate < banjo_display_config->mode.pixel_clock_10khz * 10000 ||
-        !display->CheckPixelRate(banjo_display_config->mode.pixel_clock_10khz * 10000)) {
+    const int64_t pixel_clock_hz = banjo_display_config->mode.pixel_clock_khz * int64_t{1'000};
+    if (max_pipe_pixel_rate_hz < pixel_clock_hz || !display->CheckPixelRate(pixel_clock_hz)) {
       return false;
     }
 
@@ -1585,9 +1588,9 @@ bool Controller::CheckDisplayLimits(
       min_plane_ratio = std::min(plane_ratio, min_plane_ratio);
     }
 
-    max_pipe_pixel_rate =
-        static_cast<uint64_t>(min_plane_ratio * static_cast<double>(max_pipe_pixel_rate));
-    if (max_pipe_pixel_rate < banjo_display_config->mode.pixel_clock_10khz * 10000) {
+    max_pipe_pixel_rate_hz =
+        static_cast<int64_t>(min_plane_ratio * static_cast<double>(max_pipe_pixel_rate_hz));
+    if (max_pipe_pixel_rate_hz < pixel_clock_hz) {
       for (unsigned j = 0; j < banjo_display_config->layer_count; j++) {
         if (banjo_display_config->layer_list[j]->type != LAYER_TYPE_PRIMARY) {
           continue;
@@ -1963,13 +1966,14 @@ void Controller::DisplayControllerImplApplyConfiguration(
 }
 
 zx_status_t Controller::DisplayControllerImplGetSysmemConnection(zx::channel connection) {
-  auto result =
-      sysmem_->ConnectServer(fidl::ServerEnd<fuchsia_sysmem::Allocator>(std::move(connection)));
-  if (!result.ok()) {
-    zxlogf(ERROR, "Could not connect to sysmem: %s", result.status_string());
-    return result.status();
+  // We can't use DdkConnectFragmentFidlProtocol here because it wants to create the endpoints but
+  // we only have the server_end here.
+  using ServiceMember = fuchsia_hardware_sysmem::Service::AllocatorV1;
+  zx_status_t status = device_connect_fragment_fidl_protocol(
+      parent_, "sysmem", ServiceMember::ServiceName, ServiceMember::Name, connection.release());
+  if (status != ZX_OK) {
+    return status;
   }
-
   return ZX_OK;
 }
 
@@ -2330,49 +2334,23 @@ void Controller::DdkResume(ddk::ResumeTxn txn) {
   txn.Reply(ZX_OK, DEV_POWER_STATE_D0, txn.requested_state());
 }
 
-zx_status_t Controller::InitSysmemAllocatorClient() {
-  auto endpoints = fidl::CreateEndpoints<fuchsia_sysmem::Allocator>();
-  if (!endpoints.is_ok()) {
-    zxlogf(ERROR, "Cannot create sysmem allocator endpoints: %s", endpoints.status_string());
-    return endpoints.status_value();
-  }
-  auto& [client, server] = endpoints.value();
-  auto connect_result = sysmem_->ConnectServer(std::move(server));
-  if (!connect_result.ok()) {
-    zxlogf(ERROR, "Cannot connect to sysmem Allocator protocol: %s",
-           connect_result.status_string());
-    return connect_result.status();
-  }
-  sysmem_allocator_client_ = fidl::WireSyncClient(std::move(client));
-
-  std::string debug_name = fxl::StringPrintf("intel-i915[%lu]", fsl::GetCurrentProcessKoid());
-  auto set_debug_status = sysmem_allocator_client_->SetDebugClientInfo(
-      fidl::StringView::FromExternal(debug_name), fsl::GetCurrentProcessKoid());
-  if (!set_debug_status.ok()) {
-    zxlogf(ERROR, "Cannot set sysmem allocator debug info: %s", set_debug_status.status_string());
-    return set_debug_status.status();
-  }
-
-  return ZX_OK;
-}
-
 zx_status_t Controller::Init() {
   zxlogf(TRACE, "Binding to display controller");
 
   zx::result client =
-      DdkConnectFragmentFidlProtocol<fuchsia_hardware_sysmem::Service::Sysmem>("sysmem");
+      DdkConnectFragmentFidlProtocol<fuchsia_hardware_sysmem::Service::AllocatorV1>("sysmem");
   if (client.is_error()) {
     zxlogf(ERROR, "could not get SYSMEM protocol: %s", client.status_string());
     return client.status_value();
   }
-
   sysmem_.Bind(std::move(*client));
 
-  zxlogf(TRACE, "Initializing sysmem allocator");
-  zx_status_t status = InitSysmemAllocatorClient();
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Cannot initialize sysmem allocator: %s", zx_status_get_string(status));
-    return status;
+  std::string debug_name = fxl::StringPrintf("intel-i915[%lu]", fsl::GetCurrentProcessKoid());
+  auto set_debug_status = sysmem_->SetDebugClientInfo(fidl::StringView::FromExternal(debug_name),
+                                                      fsl::GetCurrentProcessKoid());
+  if (!set_debug_status.ok()) {
+    zxlogf(ERROR, "Cannot set sysmem allocator debug info: %s", set_debug_status.status_string());
+    return set_debug_status.status();
   }
 
   pci_ = ddk::Pci(parent(), "pci");
@@ -2384,7 +2362,7 @@ zx_status_t Controller::Init() {
   pci_.ReadConfig16(fuchsia_hardware_pci::Config::kDeviceId, &device_id_);
   zxlogf(TRACE, "Device id %x", device_id_);
 
-  status = igd_opregion_.Init(parent(), pci_);
+  zx_status_t status = igd_opregion_.Init(parent(), pci_);
   if (status != ZX_OK) {
     if (status != ZX_ERR_NOT_SUPPORTED) {
       zxlogf(ERROR, "VBT initializaton failed: %s", zx_status_get_string(status));

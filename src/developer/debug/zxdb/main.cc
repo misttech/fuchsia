@@ -2,27 +2,40 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fcntl.h>
 #include <lib/cmdline/args_parser.h>
 #include <lib/fit/defer.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include <cstdlib>
 #include <memory>
 
+#include "src/developer/debug/debug_agent/posix/eintr_wrapper.h"
+#include "src/developer/debug/ipc/protocol.h"
+#include "src/developer/debug/shared/buffered_bidi_pipe.h"
 #include "src/developer/debug/shared/logging/logging.h"
 #include "src/developer/debug/shared/message_loop_poll.h"
 #include "src/developer/debug/zxdb/client/session.h"
 #include "src/developer/debug/zxdb/client/setting_schema_definition.h"
 #include "src/developer/debug/zxdb/common/curl.h"
-#include "src/developer/debug/zxdb/common/version.h"
 #include "src/developer/debug/zxdb/console/analytics.h"
 #include "src/developer/debug/zxdb/console/command_line_options.h"
 #include "src/developer/debug/zxdb/console/command_sequence.h"
 #include "src/developer/debug/zxdb/console/console_impl.h"
 #include "src/developer/debug/zxdb/console/console_noninteractive.h"
+#include "src/developer/debug/zxdb/console/fd_streamer.h"
 #include "src/developer/debug/zxdb/console/output_buffer.h"
 #include "src/developer/debug/zxdb/console/verbs.h"
 #include "src/developer/debug/zxdb/debug_adapter/server.h"
+#include "src/developer/debug/zxdb/local_agent.h"
 #include "src/lib/fxl/strings/string_printf.h"
+
+#if defined(__linux__) && defined(__x86_64__)
+// Indicates that we can support the local built-in debug agent on this platform.
+#define SUPPORTS_LOCAL_AGENT
+#endif
 
 namespace zxdb {
 
@@ -95,9 +108,6 @@ void SetupCommandLineOptions(const CommandLineOptions& options, Session* session
 int ConsoleMain(int argc, const char* argv[]) {
   using ::analytics::core_dev_tools::EarlyProcessAnalyticsOptions;
 
-  Curl::GlobalInit();
-  auto deferred_cleanup_curl = fit::defer(Curl::GlobalCleanup);
-  auto deferred_cleanup_analytics = fit::defer(Analytics::CleanUp);
   CommandLineOptions options;
   std::vector<std::string> params;
   cmdline::Status status = ParseCommandLine(argc, argv, &options, &params);
@@ -107,13 +117,50 @@ int ConsoleMain(int argc, const char* argv[]) {
   }
 
   if (options.requested_version) {
-    printf("Version: %s\n", kBuildVersion);
+    printf("Version: %d\n", debug_ipc::kCurrentProtocolVersion);
     return 0;
   }
+
+  Curl::GlobalInit();
+  auto deferred_cleanup_curl = fit::defer(Curl::GlobalCleanup);
+  auto deferred_cleanup_analytics = fit::defer(Analytics::CleanUp);
 
   if (EarlyProcessAnalyticsOptions<Analytics>(options.analytics, options.analytics_show)) {
     return 0;
   }
+
+#ifdef SUPPORTS_LOCAL_AGENT
+  // Handle a local connection to the built-in debug agent when supported. We want to fork as early
+  // as possible to avoid accumulating state that isn't relevant to the debug_agent process
+  // (especially message loops which will conflict). To accommodate early returns later in this
+  // function, we set up a deferred callback which kills the agent on return. This is removed
+  // when we "commit" the connection at which point the client sents IPC messages to manage the
+  // agent lifetime.
+  //
+  // To prevent a zombie, every process should wait on the PID for every subprocess it forks.
+  std::optional<LocalAgentResult> local_agent;
+  fit::deferred_callback cleanup_local_agent;
+  if (options.local) {
+    local_agent = ForkLocalAgent();
+    if (local_agent->status == LocalAgentResult::kSuccess) {
+      cleanup_local_agent = fit::defer_callback([pid = local_agent->agent_pid]() {
+        // The early returns in the code below will leave the forked agent running and the wait
+        // will hang, so kill it before waiting. This also catches mistakes if we forget to
+        // exit the agent via IPC once things are running normally.
+        if (kill(pid, SIGKILL) == 0) {
+          waitpid(pid, 0, 0);
+        }
+      });
+    } else {
+      return local_agent->exit_code;
+    }
+  }
+#else  // No local agent
+  if (options.local) {
+    fprintf(stderr, "No local debugging supported on this platform.");
+    return 1;
+  }
+#endif
 
   std::vector<std::string> actions;
   Err err = SetupActions(options, &actions);
@@ -133,20 +180,48 @@ int ConsoleMain(int argc, const char* argv[]) {
   // message loop as not-current.
   int ret_code = 0;
   {
-    Session session;
+    // Hold ownership of any local pipe in our scope to ensure it gets cleaned up before the
+    // message loop exits (it will attach to the loop when its Start() function is called and
+    // will disconnect from the loop in its destructor).
+    std::unique_ptr<debug::BufferedBidiPipe> local_pipe;
 
-    Analytics::Init(session, options.analytics);
-    Analytics::IfEnabledSendInvokeEvent(&session);
+    std::unique_ptr<Session> session;
+    if (options.local) {
+#ifdef SUPPORTS_LOCAL_AGENT
+      // The local debug_agent will have been started above.
+      local_pipe = std::move(local_agent->pipe);
+      session = std::make_unique<Session>(&local_pipe->stream());
+
+      local_pipe->set_data_available_callback([&session]() { session->OnStreamReadable(); });
+      if (!local_pipe->Start()) {
+        fprintf(stderr, "Failed to connect to the pipe.");
+        return 1;
+      }
+
+      // If a binary is supplied on the command line, set it as the default target's process name.
+      if (!params.empty()) {
+        auto targets = session->system().GetTargets();
+        FX_CHECK(!targets.empty());  // Should always have a default target.
+        targets[0]->SetArgs(params);
+      }
+#endif  // SUPPORTS_LOCAL_AGENT
+    } else {
+      // Normal remote connections don't start with a connected session.
+      session = std::make_unique<Session>();
+    }
+
+    Analytics::Init(*session, options.analytics);
+    Analytics::IfEnabledSendInvokeEvent(session.get());
 
     debug::SetLogCategories({debug::LogCategory::kAll});
-    SetupCommandLineOptions(options, &session);
+    SetupCommandLineOptions(options, session.get());
 
     std::unique_ptr<Console> console;
     std::unique_ptr<DebugAdapterServer> debug_adapter;
 
     if (options.enable_debug_adapter) {
       int port = options.debug_adapter_port;
-      console = std::make_unique<ConsoleNoninteractive>(&session);
+      console = std::make_unique<ConsoleNoninteractive>(session.get());
       debug_adapter = std::make_unique<DebugAdapterServer>(console->get(), port);
       err = debug_adapter->Init();
       if (err.has_error()) {
@@ -155,7 +230,18 @@ int ConsoleMain(int argc, const char* argv[]) {
         return EXIT_FAILURE;
       }
     } else {
-      console = std::make_unique<ConsoleImpl>(&session);
+      console = std::make_unique<ConsoleImpl>(session.get());
+    }
+
+    std::vector<std::unique_ptr<debug::BufferedFD>> file_streamers;
+    for (auto& path : options.stream_files) {
+      fbl::unique_fd fd(HANDLE_EINTR(open(path.c_str(), O_RDONLY | O_NONBLOCK)));
+      if (!fd.is_valid()) {
+        LOGS(Error) << "Failed to open file for streaming: " << path;
+        loop.Cleanup();
+        return EXIT_FAILURE;
+      }
+      file_streamers.emplace_back(StreamFDToConsole(std::move(fd)));
     }
 
     // Run the actions and then initialize the console to enter interactive mode. Errors in
@@ -168,6 +254,14 @@ int ConsoleMain(int argc, const char* argv[]) {
             loop.QuitNow();
           } else {
             InitConsole(*console);
+
+            // The console is now ready for interactive input.
+            if (options.signal_when_ready) {
+              int rv = kill(options.signal_when_ready, SIGUSR1);
+              if (rv != 0) {
+                LOGS(Error) << "Failed to send SIGUSR1: " << strerror(errno);
+              }
+            }
           }
         }));
 

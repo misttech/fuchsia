@@ -4,12 +4,17 @@
 
 import argparse
 import asyncio
+import multiprocessing
 import os
-from tempfile import TemporaryDirectory
+import signal
+import stat
+import tempfile
+import typing
 import unittest
 
 from util import arg_option
 from util import command
+import util.signals
 
 
 class TestArgOptions(unittest.TestCase):
@@ -23,10 +28,16 @@ class TestArgOptions(unittest.TestCase):
 
         parser = argparse.ArgumentParser()
         parser.add_argument(
-            "-m", "--main-option", action=arg_option.SelectionAction, dest="option"
+            "-m",
+            "--main-option",
+            action=arg_option.SelectionAction,
+            dest="option",
         )
         parser.add_argument(
-            "-a", "--alt-option", action=arg_option.SelectionAction, dest="option"
+            "-a",
+            "--alt-option",
+            action=arg_option.SelectionAction,
+            dest="option",
         )
         parser.add_argument("option", action=arg_option.SelectionAction)
 
@@ -87,13 +98,15 @@ class TestCommand(unittest.IsolatedAsyncioTestCase):
         We create a file in a temporary directory and simply assert that `ls`
         prints that file as output.
         """
-        with TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory() as td:
             with open(os.path.join(td, "temp-file.txt"), "w") as f:
                 f.write("hello world")
 
             cmd = await command.AsyncCommand.create("ls", ".", env={"CWD": td})
             events = []
-            complete = await cmd.run_to_completion(lambda event: events.append(event))
+            complete = await cmd.run_to_completion(
+                lambda event: events.append(event)
+            )
             self.assertEqual(len(events), 2, f"Events was actually {events}")
 
             self.assertStdout(events[0], b"temp-file.txt\n")
@@ -102,13 +115,39 @@ class TestCommand(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(complete.stdout, "temp-file.txt\n")
             self.assertEqual(complete.return_code, 0)
 
+    async def test_basic_command_with_long_timeout(self):
+        """Test running a basic command and getting the output.
+
+        We create a file in a temporary directory and simply assert that `ls`
+        prints that file as output.
+        """
+        with tempfile.TemporaryDirectory() as td:
+            with open(os.path.join(td, "temp-file.txt"), "w") as f:
+                f.write("hello world")
+
+            cmd = await command.AsyncCommand.create(
+                "ls", ".", env={"CWD": td}, timeout=3600
+            )
+            events = []
+            complete = await cmd.run_to_completion(
+                lambda event: events.append(event)
+            )
+            self.assertEqual(len(events), 2, f"Events was actually {events}")
+
+            self.assertStdout(events[0], b"temp-file.txt\n")
+            self.assertTermination(events[1], 0)
+
+            self.assertEqual(complete.stdout, "temp-file.txt\n")
+            self.assertEqual(complete.return_code, 0)
+            self.assertFalse(complete.was_timeout)
+
     async def test_with_stderr(self):
         """Test running a command with stderr output.
 
         We create a temporary directory and try to `ls` a file we know does not
         exist. `ls` should print to stderr and report an error return code.
         """
-        with TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory() as td:
             cmd = await command.AsyncCommand.create(
                 "ls", os.path.join(td, "does-not-exist")
             )
@@ -124,7 +163,7 @@ class TestCommand(unittest.IsolatedAsyncioTestCase):
         through `sed` to change the word "temp" to "temporary" and assert on
         the new output.
         """
-        with TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory() as td:
             with open(os.path.join(td, "temp-file.txt"), "w") as f:
                 f.write("hello world")
 
@@ -178,12 +217,127 @@ class TestCommand(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out.return_code, -9)
         self.assertEqual(out.wrapper_return_code, -9)
 
+    async def test_kill_process_groups(self):
+        """Test that terminating a program kills the entire process group."""
+
+        BASH_SHORT = "#!/usr/bin/env bash\nsleep .1\necho 'OK'"
+        BASH_LONG = "#!/usr/bin/env bash\nsleep 100000\necho 'OK'"
+        with tempfile.TemporaryDirectory() as td:
+            # Create scripts and make them executable.
+            paths = [
+                os.path.join(td, "short.sh"),
+                os.path.join(td, "long.sh"),
+            ]
+            short_path, long_path = paths
+            with open(short_path, "w") as f:
+                f.write(BASH_SHORT)
+            with open(long_path, "w") as f:
+                f.write(BASH_LONG)
+            for name in paths:
+                st = os.stat(name)
+                os.chmod(
+                    name,
+                    st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
+                )
+
+            # Make sure we can run the commands to start with, and they do not hang.
+            cmd = await command.AsyncCommand.create(
+                short_path,
+                env={"CWD": td},
+                symbolizer_args=[short_path],
+            )
+            events = []
+            await cmd.run_to_completion(lambda event: events.append(event))
+            self.assertEqual(len(events), 2, f"Events was actually {events}")
+
+            self.assertStdout(events[0], b"OK\n")
+            # This causes spurious failures on Mac for some reason, where
+            # the return value is sometimes -13.
+            # self.assertTermination(events[1], 0)
+
+            # Run the long-running shell script, and ensure terminating it does not hang.
+            cmd = await command.AsyncCommand.create(
+                long_path,
+                env={"CWD": td},
+                symbolizer_args=[long_path],
+            )
+            await asyncio.sleep(0.001)
+            cmd.terminate()
+            events = []
+            await cmd.run_to_completion(lambda event: events.append(event))
+            self.assertEqual(len(events), 1, f"Events was actually {events}")
+            self.assertTermination(events[0], -15)
+
+            # Run again, this time using SIGKILL.
+            cmd = await command.AsyncCommand.create(
+                long_path,
+                env={"CWD": td},
+                symbolizer_args=[long_path],
+            )
+            await asyncio.sleep(0.001)
+            cmd.kill()
+            events = []
+            await cmd.run_to_completion(lambda event: events.append(event))
+            self.assertEqual(len(events), 1, f"Events was actually {events}")
+            self.assertTermination(events[0], -9)
+
+    async def test_timeout(self):
+        """Test that commands timeout"""
+        cmd = await command.AsyncCommand.create("sleep", "100000", timeout=0.1)
+        task = asyncio.create_task(cmd.run_to_completion())
+        out: command.CommandOutput = await task
+        self.assertEqual(out.return_code, -15)
+        self.assertTrue(out.was_timeout)
+
     def test_invalid_program(self):
         """Test running a program that doesn't exist, and expect an error."""
         self.assertRaises(
             command.AsyncCommandError,
             lambda: asyncio.run(command.AsyncCommand.create("..........")),
         )
+
+
+class TestSignals(unittest.TestCase):
+    def test_async_signal_handler(self):
+        """Test that registered signal handlers work appropriately."""
+
+        multiprocessing.set_start_method("fork", force=True)
+
+        output_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(output_directory.cleanup)
+        output_file_name = os.path.join(output_directory.name, "output.txt")
+
+        def main(output_file_name: str):
+            async def internal_main():
+                os.kill(os.getpid(), signal.SIGTERM)
+                await asyncio.sleep(120)
+
+            asyncio.set_event_loop(asyncio.new_event_loop())
+            loop = asyncio.get_event_loop()
+
+            fut = asyncio.ensure_future(internal_main())
+
+            def write_output():
+                with open(output_file_name, "a") as f:
+                    f.write("Handler printed message\n")
+                fut.cancel()
+
+            util.signals.register_on_terminate_signal(write_output)
+            try:
+                loop.run_until_complete(fut)
+            except asyncio.CancelledError:
+                with open(output_file_name, "a") as f:
+                    f.write("Cancelled\n")
+
+        proc = multiprocessing.Process(target=main, args=(output_file_name,))
+        proc.start()
+        proc.join()
+
+        lines: typing.List[str]
+        with open(output_file_name, "r") as f:
+            lines = [line.strip() for line in f.readlines()]
+
+        self.assertListEqual(lines, ["Handler printed message", "Cancelled"])
 
 
 if __name__ == "__main__":

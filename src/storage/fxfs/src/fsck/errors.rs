@@ -109,7 +109,6 @@ impl<V: std::fmt::Debug> From<&V> for Value {
 #[derive(Clone, Debug, PartialEq)]
 pub enum FsckWarning {
     ExtentForMissingAttribute(u64, u64, u64),
-    ExtentForDirectory(u64, u64),
     ExtentForNonexistentObject(u64, u64),
     GraveyardRecordForAbsentObject(u64, u64),
     InvalidObjectIdInStore(u64, Key, Value),
@@ -117,6 +116,8 @@ pub enum FsckWarning {
     OrphanedAttribute(u64, u64, u64),
     OrphanedObject(u64, u64),
     OrphanedKeys(u64, u64),
+    OrphanedExtendedAttribute(u64, u64, u64),
+    OrphanedExtendedAttributeRecord(u64, u64),
     ProjectUsageInconsistent(u64, u64, (i64, i64), (i64, i64)),
 }
 
@@ -127,12 +128,6 @@ impl FsckWarning {
                 format!(
                     "Found an extent in store {} for missing attribute {} on object {}",
                     store_id, attr_id, object_id
-                )
-            }
-            FsckWarning::ExtentForDirectory(store_id, object_id) => {
-                format!(
-                    "Found an extent in store {} for a directory object {}",
-                    store_id, object_id
                 )
             }
             FsckWarning::ExtentForNonexistentObject(store_id, object_id) => {
@@ -166,6 +161,19 @@ impl FsckWarning {
             FsckWarning::OrphanedKeys(store_id, object_id) => {
                 format!("Orphaned keys for object {} were found in store {}", object_id, store_id)
             }
+            FsckWarning::OrphanedExtendedAttribute(store_id, object_id, attribute_id) => {
+                format!(
+                    "Orphaned extended attribute for object {} was found in store {} with \
+                    attribute id {}",
+                    object_id, store_id, attribute_id,
+                )
+            }
+            FsckWarning::OrphanedExtendedAttributeRecord(store_id, object_id) => {
+                format!(
+                    "Orphaned extended attribute record for object {} was found in store {}",
+                    object_id, store_id
+                )
+            }
             FsckWarning::ProjectUsageInconsistent(store_id, project_id, stored, used) => {
                 format!(
                     "Project id {} in store {} expected usage ({}, {}) found ({}, {})",
@@ -179,9 +187,6 @@ impl FsckWarning {
         match self {
             FsckWarning::ExtentForMissingAttribute(store_id, oid, attr_id) => {
                 warn!(store_id, oid, attr_id, "Found an extent for a missing attribute");
-            }
-            FsckWarning::ExtentForDirectory(store_id, oid) => {
-                warn!(store_id, oid, "Extent for a directory object");
             }
             FsckWarning::ExtentForNonexistentObject(store_id, oid) => {
                 warn!(store_id, oid, "Extent for missing object");
@@ -204,6 +209,12 @@ impl FsckWarning {
             FsckWarning::OrphanedKeys(store_id, oid) => {
                 warn!(oid, store_id, "Orphaned keys");
             }
+            FsckWarning::OrphanedExtendedAttribute(store_id, oid, attribute_id) => {
+                warn!(oid, store_id, attribute_id, "Orphaned extended attribute");
+            }
+            FsckWarning::OrphanedExtendedAttributeRecord(store_id, oid) => {
+                warn!(oid, store_id, "Orphaned extended attribute record");
+            }
             FsckWarning::ProjectUsageInconsistent(store_id, project_id, stored, used) => {
                 warn!(project_id, store_id, ?stored, ?used, "Project Inconsistent");
             }
@@ -217,7 +228,6 @@ pub enum FsckError {
     AllocatedSizeMismatch(u64, u64, u64, u64),
     AllocationForNonexistentOwner(Allocation),
     AllocationMismatch(Allocation, Allocation),
-    AttributeNotOnFile(u64, u64),
     ConflictingTypeForLink(u64, u64, Value, Value),
     ExtentExceedsLength(u64, u64, u64, u64, Value),
     ExtraAllocations(Vec<Allocation>),
@@ -230,6 +240,7 @@ pub enum FsckError {
     MisalignedAllocation(Allocation),
     MisalignedExtent(u64, u64, Range<u64>, u64),
     MissingAllocation(Allocation),
+    MissingAttributeForExtendedAttribute(u64, u64, u64),
     MissingDataAttribute(u64, u64),
     MissingObjectInfo(u64, u64),
     MultipleLinksToDirectory(u64, u64),
@@ -249,6 +260,8 @@ pub enum FsckError {
     MissingKey(u64, u64, u64),
     DuplicateKey(u64, u64, u64),
     ZombieFile(u64, u64, Vec<u64>),
+    InconsistentVerifiedFile(u64, u64, bool),
+    NonFileMarkedAsVerified(u64, u64),
 }
 
 impl FsckError {
@@ -271,9 +284,6 @@ impl FsckError {
             }
             FsckError::AllocationMismatch(observed, stored) => {
                 format!("Observed allocation {:?} but allocator has {:?}", observed, stored)
-            }
-            FsckError::AttributeNotOnFile(store_id, object_id) => {
-                format!("Object {} in store {} has unexpected attributes", object_id, store_id)
             }
             FsckError::ConflictingTypeForLink(store_id, object_id, expected, actual) => {
                 format!(
@@ -328,6 +338,13 @@ impl FsckError {
             }
             FsckError::MissingAllocation(allocation) => {
                 format!("Observed {:?} but didn't find record in allocator", allocation)
+            }
+            FsckError::MissingAttributeForExtendedAttribute(store_id, oid, attribute_id) => {
+                format!(
+                    "Object {} in store {} has an extended attribute stored in a nonexistent \
+                    attribute {}",
+                    store_id, oid, attribute_id
+                )
             }
             FsckError::MissingDataAttribute(store_id, oid) => {
                 format!("File {} in store {} didn't have the default data attribute", store_id, oid)
@@ -410,6 +427,27 @@ impl FsckError {
                     store_id, object_id, parent_object_ids
                 )
             }
+            FsckError::InconsistentVerifiedFile(store_id, object_id, is_verified) => {
+                if *is_verified {
+                    format!(
+                        "Object {} in store {} is marked as fsverity-enabled but is missing a merkle
+                            attribute",
+                        store_id, object_id
+                    )
+                } else {
+                    format!(
+                        "Object {} in store {} is not marked as fsverity-enabled but a merkle
+                            attribute is present",
+                        store_id, object_id
+                    )
+                }
+            }
+            FsckError::NonFileMarkedAsVerified(store_id, object_id) => {
+                format!(
+                    "Object {} in store {} is marked as verified but is not a file",
+                    store_id, object_id
+                )
+            }
         }
     }
 
@@ -426,9 +464,6 @@ impl FsckError {
             }
             FsckError::AllocationMismatch(observed, stored) => {
                 error!(?observed, ?stored, "Unexpected allocation");
-            }
-            FsckError::AttributeNotOnFile(store_id, oid) => {
-                error!(store_id, oid, "Attribute on unexpected type");
             }
             FsckError::ConflictingTypeForLink(store_id, oid, expected, actual) => {
                 error!(store_id, oid, ?expected, ?actual, "Bad link");
@@ -468,6 +503,9 @@ impl FsckError {
             }
             FsckError::MissingAllocation(allocation) => {
                 error!(?allocation, "Missing allocation");
+            }
+            FsckError::MissingAttributeForExtendedAttribute(store_id, oid, attribute_id) => {
+                error!(store_id, oid, attribute_id, "Missing attribute for extended attribute");
             }
             FsckError::MissingDataAttribute(store_id, oid) => {
                 error!(store_id, oid, "Missing default attribute");
@@ -529,6 +567,12 @@ impl FsckError {
             FsckError::ZombieFile(store_id, oid, parent_oids) => {
                 error!(store_id, oid, ?parent_oids, "Links exist to file in graveyard")
             }
+            FsckError::InconsistentVerifiedFile(store_id, oid, is_verified) => {
+                error!(store_id, oid, ?is_verified, "Verified file inconsistency")
+            }
+            FsckError::NonFileMarkedAsVerified(store_id, oid) => {
+                error!(store_id, oid, "Non-file marked as verified")
+            }
         }
     }
 }
@@ -540,7 +584,6 @@ pub enum FsckFatal {
     MalformedStore(u64),
     MisOrderedLayerFile(u64, u64),
     MisOrderedObjectStore(u64),
-    MissingLayerFile(u64, u64),
     OverlappingKeysInLayerFile(u64, u64, Key, Key),
 }
 
@@ -564,12 +607,6 @@ impl FsckFatal {
             }
             FsckFatal::MisOrderedObjectStore(store_id) => {
                 format!("Store/allocator {} contains out-of-order or duplicate records", store_id)
-            }
-            FsckFatal::MissingLayerFile(store_id, layer_file_id) => {
-                format!(
-                    "Object store {} requires layer file {} which is missing",
-                    store_id, layer_file_id
-                )
             }
             FsckFatal::OverlappingKeysInLayerFile(store_id, layer_file_id, key1, key2) => {
                 format!(
@@ -601,10 +638,6 @@ impl FsckFatal {
                     oid = store_id,
                     "Store/allocator contains out-of-order or duplicate records"
                 );
-            }
-            FsckFatal::MissingLayerFile(store_id, layer_file_id) => {
-                // This can be for stores or the allocator.
-                error!(oid = store_id, layer_file_id, "Missing layer file");
             }
             FsckFatal::OverlappingKeysInLayerFile(store_id, layer_file_id, key1, key2) => {
                 // This can be for stores or the allocator.

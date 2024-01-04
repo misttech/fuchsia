@@ -31,15 +31,10 @@ static_assert(offsetof(fidl_vector_t, data) == 8u, "fidl_vector_t layout");
 static_assert(sizeof(fidl_vector_t) == 16u, "fidl_vector_t layout");
 
 static_assert(offsetof(fidl_envelope_t, num_bytes) == 0u, "fidl_envelope_t layout");
+static_assert(offsetof(fidl_envelope_t, inline_value) == 0u, "fidl_envelope_t layout");
 static_assert(offsetof(fidl_envelope_t, num_handles) == 4u, "fidl_envelope_t layout");
-static_assert(offsetof(fidl_envelope_t, data) == 8u, "fidl_envelope_t layout");
-static_assert(sizeof(fidl_envelope_t) == 16u, "fidl_envelope_t layout");
-
-static_assert(offsetof(fidl_envelope_v2_t, num_bytes) == 0u, "fidl_envelope_v2_t layout");
-static_assert(offsetof(fidl_envelope_v2_t, inline_value) == 0u, "fidl_envelope_v2_t layout");
-static_assert(offsetof(fidl_envelope_v2_t, num_handles) == 4u, "fidl_envelope_v2_t layout");
-static_assert(offsetof(fidl_envelope_v2_t, flags) == 6u, "fidl_envelope_v2_t layout");
-static_assert(sizeof(fidl_envelope_v2_t) == 8u, "fidl_envelope_v2_t layout");
+static_assert(offsetof(fidl_envelope_t, flags) == 6u, "fidl_envelope_t layout");
+static_assert(sizeof(fidl_envelope_t) == 8u, "fidl_envelope_t layout");
 
 static_assert(ZX_HANDLE_INVALID == FIDL_HANDLE_ABSENT, "invalid handle equals absence marker");
 
@@ -82,7 +77,7 @@ constexpr uint32_t TypeSize(const fidl_type_t* type) {
     case kFidlTypeTable:
       return sizeof(fidl_vector_t);
     case kFidlTypeXUnion:
-      return sizeof(fidl_xunion_v2_t);
+      return sizeof(fidl_union_t);
     case kFidlTypeString:
       return sizeof(fidl_string_t);
     case kFidlTypeArray:
@@ -420,8 +415,7 @@ Result Walker<VisitorImpl, WireFormatVersion>::WalkStructPointer(
   Position obj_position;
   auto status =
       visitor_->VisitPointer(position, VisitorImpl::PointeeType::kOther, PtrTo<Ptr<void>>(position),
-                             coded_struct_pointer->struct_type->size_v2,
-                             kFidlMemcpyCompatibility_CannotMemcpy, &obj_position);
+                             coded_struct_pointer->struct_type->size_v2, &obj_position);
   FIDL_STATUS_GUARD(status);
   return WalkStruct(coded_struct_pointer->struct_type, obj_position, inner_depth);
 }
@@ -433,7 +427,7 @@ Result Walker<VisitorImpl, WireFormatVersion>::WalkEnvelope(Position envelope_po
                                                             bool is_resource) {
   auto envelope = PtrTo<EnvelopeType>(envelope_position);
   auto envelope_copy = *envelope;
-  auto v2_envelope = PtrTo<const fidl_envelope_v2_t>(envelope_position);
+  auto v2_envelope = PtrTo<const fidl_envelope_t>(envelope_position);
 
   EnvelopeCheckpoint checkpoint = visitor_->EnterEnvelope();
 
@@ -511,8 +505,7 @@ Result Walker<VisitorImpl, WireFormatVersion>::WalkEnvelope(Position envelope_po
     uint32_t num_bytes = payload_type != nullptr ? type_size : v2_envelope->num_bytes;
     Position obj_position;
     auto status = visitor_->VisitPointer(envelope_position, VisitorImpl::PointeeType::kEnvelope,
-                                         PtrTo<void*>(envelope_position), num_bytes,
-                                         kFidlMemcpyCompatibility_CannotMemcpy, &obj_position);
+                                         PtrTo<void*>(envelope_position), num_bytes, &obj_position);
     FIDL_STATUS_GUARD(status);
 
     if (likely(payload_type != nullptr)) {
@@ -534,7 +527,7 @@ template <typename VisitorImpl, FidlWireFormatVersion WireFormatVersion>
 Result Walker<VisitorImpl, WireFormatVersion>::WalkTable(
     const FidlCodedTable* coded_table, Walker<VisitorImpl, WireFormatVersion>::Position position,
     OutOfLineDepth depth) {
-  uint32_t envelope_size = sizeof(fidl_envelope_v2_t);
+  uint32_t envelope_size = sizeof(fidl_envelope_t);
   auto envelope_vector_ptr = PtrTo<fidl_vector_t>(position);
   if (envelope_vector_ptr->data == nullptr) {
     if (unlikely(envelope_vector_ptr->count != 0)) {
@@ -556,9 +549,8 @@ Result Walker<VisitorImpl, WireFormatVersion>::WalkTable(
   OutOfLineDepth envelope_vector_depth = INCREASE_DEPTH(depth);
   FIDL_DEPTH_GUARD(envelope_vector_depth);
   Position envelope_vector_position;
-  auto status = visitor_->VisitPointer(
-      position, VisitorImpl::PointeeType::kOther, &envelope_vector_ptr->data, size,
-      kFidlMemcpyCompatibility_CannotMemcpy, &envelope_vector_position);
+  auto status = visitor_->VisitPointer(position, VisitorImpl::PointeeType::kOther,
+                                       &envelope_vector_ptr->data, size, &envelope_vector_position);
   FIDL_STATUS_GUARD(status);
 
   const FidlTableField* next_field = coded_table->fields;
@@ -583,8 +575,8 @@ template <typename VisitorImpl, FidlWireFormatVersion WireFormatVersion>
 Result Walker<VisitorImpl, WireFormatVersion>::WalkXUnion(
     const FidlCodedXUnion* coded_xunion, Walker<VisitorImpl, WireFormatVersion>::Position position,
     OutOfLineDepth depth) {
-  auto xunion = PtrTo<fidl_xunion_v2_t>(position);
-  const auto envelope_pos = position + offsetof(fidl_xunion_v2_t, envelope);
+  auto xunion = PtrTo<fidl_union_t>(position);
+  const auto envelope_pos = position + offsetof(fidl_union_t, envelope);
   auto envelope_ptr = &xunion->envelope;
 
   // Validate zero-ordinal invariants
@@ -667,7 +659,7 @@ Result Walker<VisitorImpl, WireFormatVersion>::WalkString(
   status = visitor_->VisitPointer(
       position, VisitorImpl::PointeeType::kString,
       &reinterpret_cast<Ptr<void>&>(const_cast<Ptr<char>&>(string_ptr->data)),
-      static_cast<uint32_t>(size), kFidlMemcpyCompatibility_CanMemcpy, &array_position);
+      static_cast<uint32_t>(size), &array_position);
   FIDL_STATUS_GUARD(status);
   return Result::kContinue;
 }
@@ -725,9 +717,8 @@ Result Walker<VisitorImpl, WireFormatVersion>::WalkVector(
   OutOfLineDepth array_depth = INCREASE_DEPTH(depth);
   FIDL_DEPTH_GUARD(array_depth);
   Position array_position;
-  status =
-      visitor_->VisitPointer(position, VisitorImpl::PointeeType::kVector, &vector_ptr->data, size,
-                             coded_vector->element_memcpy_compatibility, &array_position);
+  status = visitor_->VisitPointer(position, VisitorImpl::PointeeType::kVector, &vector_ptr->data,
+                                  size, &array_position);
   FIDL_STATUS_GUARD(status);
 
   uint32_t stride = coded_vector->element_size_v2;
@@ -787,7 +778,7 @@ zx_status_t PrimaryObjectSize(const fidl_type_t* type, uint32_t buffer_size,
   } else if (likely(type->type_tag() == kFidlTypeTable)) {
     primary_size = sizeof(fidl_table_t);
   } else if (likely(type->type_tag() == kFidlTypeXUnion)) {
-    primary_size = sizeof(fidl_xunion_v2_t);
+    primary_size = sizeof(fidl_union_t);
   } else {
     set_error("Message must be a struct, table, or union");
     return ZX_ERR_INVALID_ARGS;

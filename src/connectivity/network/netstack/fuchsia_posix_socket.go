@@ -1068,6 +1068,22 @@ func (ep *endpointWithMutators) DropIpMembership(_ fidl.Context, membership sock
 	return socket.BaseNetworkSocketDropIpMembershipResultWithResponse(socket.BaseNetworkSocketDropIpMembershipResponse{}), nil
 }
 
+func (ep *endpointWithMutators) SetIpTransparent(_ fidl.Context, _ bool) (socket.BaseNetworkSocketSetIpTransparentResult, error) {
+	return socket.BaseNetworkSocketSetIpTransparentResultWithErr(posix.ErrnoEnoprotoopt), nil
+}
+
+func (ep *endpoint) GetIpTransparent(_ fidl.Context) (socket.BaseNetworkSocketGetIpTransparentResult, error) {
+	return socket.BaseNetworkSocketGetIpTransparentResultWithErr(posix.ErrnoEnoprotoopt), nil
+}
+
+func (ep *endpointWithMutators) SetIpReceiveOriginalDestinationAddress(_ fidl.Context, _ bool) (socket.BaseNetworkSocketSetIpReceiveOriginalDestinationAddressResult, error) {
+	return socket.BaseNetworkSocketSetIpReceiveOriginalDestinationAddressResultWithErr(posix.ErrnoEnoprotoopt), nil
+}
+
+func (ep *endpoint) GetIpReceiveOriginalDestinationAddress(_ fidl.Context) (socket.BaseNetworkSocketGetIpReceiveOriginalDestinationAddressResult, error) {
+	return socket.BaseNetworkSocketGetIpReceiveOriginalDestinationAddressResultWithErr(posix.ErrnoEnoprotoopt), nil
+}
+
 func (ep *endpointWithMutators) AddIpv6Membership(_ fidl.Context, membership socket.Ipv6MulticastMembership) (socket.BaseNetworkSocketAddIpv6MembershipResult, error) {
 	ep.ep.sockOptStats.AddIpv6Membership.Add(1)
 	opt := tcpip.AddMembershipOption{
@@ -1138,6 +1154,10 @@ func (ep *endpoint) GetIpv6ReceivePacketInfo(fidl.Context) (socket.BaseNetworkSo
 	ep.sockOptStats.GetIpv6ReceivePacketInfo.Add(1)
 	value := ep.ep.SocketOptions().GetIPv6ReceivePacketInfo()
 	return socket.BaseNetworkSocketGetIpv6ReceivePacketInfoResultWithResponse(socket.BaseNetworkSocketGetIpv6ReceivePacketInfoResponse{Value: value}), nil
+}
+
+func (ep *endpoint) GetOriginalDestination(_ fidl.Context) (socket.BaseNetworkSocketGetOriginalDestinationResult, error) {
+	return socket.BaseNetworkSocketGetOriginalDestinationResultWithErr(posix.ErrnoEnoprotoopt), nil
 }
 
 func (ep *endpoint) setIpReceiveTypeOfService(value bool) {
@@ -2608,6 +2628,14 @@ func (s *datagramSocketImpl) DropIpMembership(ctx fidl.Context, membership socke
 	})
 }
 
+func (s *datagramSocketImpl) SetIpTransparent(_ fidl.Context, _ bool) (socket.BaseNetworkSocketSetIpTransparentResult, error) {
+	return socket.BaseNetworkSocketSetIpTransparentResultWithErr(posix.ErrnoEopnotsupp), nil
+}
+
+func (s *datagramSocketImpl) SetIpReceiveOriginalDestinationAddress(_ fidl.Context, _ bool) (socket.BaseNetworkSocketSetIpReceiveOriginalDestinationAddressResult, error) {
+	return socket.BaseNetworkSocketSetIpReceiveOriginalDestinationAddressResultWithErr(posix.ErrnoEopnotsupp), nil
+}
+
 func (s *datagramSocketImpl) AddIpv6Membership(ctx fidl.Context, membership socket.Ipv6MulticastMembership) (socket.BaseNetworkSocketAddIpv6MembershipResult, error) {
 	// TODO(https://fxbug.dev/109784): Audit cache flushes after Fast UDP launches.
 	// TODO(https://fxbug.dev/95986): Test synchronous semantics wrt packet sends.
@@ -2862,7 +2890,7 @@ func (s *datagramSocketImpl) Close(fidl.Context) (unknown.CloseableCloseResult, 
 }
 
 func (*datagramSocketImpl) Query(fidl.Context) ([]uint8, error) {
-	return []byte(socket.DatagramSocketProtocolName), nil
+	return []byte(socket.DatagramSocketProtocolName_), nil
 }
 
 func (s *datagramSocketImpl) Describe(fidl.Context) (socket.DatagramSocketDescribeResponse, error) {
@@ -2951,7 +2979,7 @@ func (s *datagramSocketImpl) SendMsgPreflight(_ fidl.Context, req socket.Datagra
 
 	// The Netstack's destinationCache tracks the state of the route table and is invalidated
 	// whenever the route table is modified.
-	// TODO (https://fxbug.dev/100895): Implement per-route caching invalidation.
+	// TODO(https://fxbug.dev/100895): Implement per-route caching invalidation.
 	var nsEventPair zx.Handle
 	if status := zx.Sys_handle_duplicate(s.ns.destinationCacheMu.destinationCache.peer, zx.RightsBasic, &nsEventPair); status != zx.ErrOk {
 		return socket.DatagramSocketSendMsgPreflightResult{}, &zx.Error{Status: status, Text: "zx.EventPair"}
@@ -3026,7 +3054,7 @@ type synchronousDatagramSocketImpl struct {
 var _ socket.SynchronousDatagramSocketWithCtx = (*synchronousDatagramSocketImpl)(nil)
 
 func (*synchronousDatagramSocketImpl) Query(fidl.Context) ([]byte, error) {
-	return []byte(socket.SynchronousDatagramSocketProtocolName), nil
+	return []byte(socket.SynchronousDatagramSocketProtocolName_), nil
 }
 
 func (s *synchronousDatagramSocketImpl) Describe(fidl.Context) (socket.SynchronousDatagramSocketDescribeResponse, error) {
@@ -3574,7 +3602,7 @@ func (s *streamSocketImpl) Clone2(ctx fidl.Context, object unknown.CloneableWith
 }
 
 func (*streamSocketImpl) Query(fidl.Context) ([]uint8, error) {
-	return []byte(socket.StreamSocketProtocolName), nil
+	return []byte(socket.StreamSocketProtocolName_), nil
 }
 
 func (s *streamSocketImpl) Describe(fidl.Context) (socket.StreamSocketDescribeResponse, error) {
@@ -4341,7 +4369,7 @@ type rawSocketImpl struct {
 var _ rawsocket.SocketWithCtx = (*rawSocketImpl)(nil)
 
 func (*rawSocketImpl) Query(fidl.Context) ([]byte, error) {
-	return []byte(rawsocket.SocketProtocolName), nil
+	return []byte(rawsocket.SocketProtocolName_), nil
 }
 
 func (s *rawSocketImpl) Describe(fidl.Context) (rawsocket.SocketDescribeResponse, error) {
@@ -4674,7 +4702,7 @@ type packetSocketImpl struct {
 }
 
 func (*packetSocketImpl) Query(fidl.Context) ([]uint8, error) {
-	return []byte(packetsocket.SocketProtocolName), nil
+	return []byte(packetsocket.SocketProtocolName_), nil
 }
 
 func (s *packetSocketImpl) Describe(fidl.Context) (packetsocket.SocketDescribeResponse, error) {

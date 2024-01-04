@@ -28,7 +28,8 @@ pub enum RoamReason {
 }
 
 /// Aggregated information about the current BSS's connection quality, used for evaluation.
-#[derive(Clone, Debug)]
+#[cfg_attr(test, derive(Debug, PartialEq))]
+#[derive(Clone)]
 pub struct BssQualityData {
     pub signal_data: SignalData,
     pub channel: types::WlanChan,
@@ -142,10 +143,13 @@ mod test {
                 generate_random_scanned_candidate,
             },
         },
+        diagnostics_assertions::{
+            assert_data_tree, AnyBoolProperty, AnyNumericProperty, AnyProperty, AnyStringProperty,
+        },
         fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_internal as fidl_internal,
-        fuchsia_async as fasync,
-        fuchsia_inspect::{self as inspect, assert_data_tree},
+        fuchsia_async as fasync, fuchsia_inspect as inspect,
         futures::channel::mpsc,
+        ieee80211_testutils::{BSSID_REGEX, SSID_REGEX},
         rand::Rng,
         wlan_common::{assert_variant, channel, random_fidl_bss_description},
     };
@@ -393,27 +397,40 @@ mod test {
         assert_data_tree!(test_values.inspector, root: {
             bss_select_test: {
                 "0": {
-                    "@time": inspect::testing::AnyProperty,
+                    "@time": AnyNumericProperty,
                     "candidates": {
                         "0": contains {
-                            score: inspect::testing::AnyProperty,
+                            score: AnyNumericProperty,
+                            bssid: &*BSSID_REGEX,
+                            ssid: &*SSID_REGEX,
+                            rssi: AnyNumericProperty,
+                            security_type_saved: AnyStringProperty,
+                            security_type_scanned: AnyStringProperty,
+                            channel: {
+                                cbw: AnyProperty,
+                                primary: AnyNumericProperty,
+                                secondary80: AnyNumericProperty,
+                            },
+                            compatible: AnyBoolProperty,
+                            recent_failure_count: AnyNumericProperty,
+                            saved_network_has_ever_connected: AnyBoolProperty,
                         },
                         "1": contains {
-                            score: inspect::testing::AnyProperty,
+                            score: AnyProperty,
                         },
                         "2": contains {
-                            score: inspect::testing::AnyProperty,
+                            score: AnyProperty,
                         },
                     },
                     "selected": {
-                        ssid_hash: candidates[2].hasher.hash_ssid(&candidates[2].network.ssid),
-                        bssid_hash: candidates[2].hasher.hash_mac_addr(&candidates[2].bss.bssid.0),
+                        ssid: candidates[2].network.ssid.to_string(),
+                        bssid: candidates[2].bss.bssid.to_string(),
                         rssi: i64::from(candidates[2].bss.rssi),
                         score: i64::from(scoring_functions::score_bss_scanned_candidate(candidates[2].clone())),
                         security_type_saved: candidates[2].saved_security_type_to_string(),
                         security_type_scanned: format!("{}", wlan_common::bss::Protection::from(candidates[2].security_type_detailed)),
                         channel: {
-                            cbw: inspect::testing::AnyProperty,
+                            cbw: AnyProperty,
                             primary: u64::from(fidl_channel.primary),
                             secondary80: u64::from(fidl_channel.secondary80),
                         },
@@ -444,7 +461,7 @@ mod test {
         assert_data_tree!(test_values.inspector, root: {
             bss_select_test: {
                 "0": {
-                    "@time": inspect::testing::AnyProperty,
+                    "@time": AnyProperty,
                     "candidates": {},
                 }
             },

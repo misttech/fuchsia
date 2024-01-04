@@ -30,7 +30,6 @@ group("tools") {
     "network/bundles:tools",
     "network/mdns/bundles:utils",
     "network/net-cli",
-    "overnet/tools",
     "wlan:tools",
   ]
 }
@@ -47,6 +46,7 @@ group("tests_no_e2e") {
     "lowpan:tests",
     "network:tests",
     "overnet:tests_no_e2e",
+    "policy:tests",
     "ppp:tests",
     "telephony:tests",
     "weave:tests",

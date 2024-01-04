@@ -30,6 +30,9 @@ fuchsia.storage: ReadSequentialWarm/8192/f2fs
 fuchsia.storage: ReadSequentialWarm/8192/fxfs
 fuchsia.storage: ReadSequentialWarm/8192/memfs
 fuchsia.storage: ReadSequentialWarm/8192/minfs
+fuchsia.storage: ReadSparseCold/8192/f2fs
+fuchsia.storage: ReadSparseCold/8192/fxfs
+fuchsia.storage: ReadSparseCold/8192/minfs
 fuchsia.storage: StatPath/f2fs
 fuchsia.storage: StatPath/fxfs
 fuchsia.storage: StatPath/memfs
@@ -55,6 +58,14 @@ fuchsia.storage: WriteRandomWarm/8192/memfs
 fuchsia.storage: WriteRandomWarm/8192/minfs
 fuchsia.storage: WriteRealisticBlobs/blobfs
 fuchsia.storage: WriteRealisticBlobs/fxblob
+fuchsia.storage: OpenAndGetVmoMetaFileCold/blobfs-pkgdir
+fuchsia.storage: OpenAndGetVmoMetaFileWarm/blobfs-pkgdir
+fuchsia.storage: OpenAndGetVmoMetaFileCold/fxblob-pkgdir
+fuchsia.storage: OpenAndGetVmoMetaFileWarm/fxblob-pkgdir
+fuchsia.storage: OpenAndGetVmoContentBlobCold/blobfs-pkgdir
+fuchsia.storage: OpenAndGetVmoContentBlobWarm/blobfs-pkgdir
+fuchsia.storage: OpenAndGetVmoContentBlobCold/fxblob-pkgdir
+fuchsia.storage: OpenAndGetVmoContentBlobWarm/fxblob-pkgdir
 fuchsia.storage: WriteSequentialCold/8192/f2fs
 fuchsia.storage: WriteSequentialCold/8192/fxfs
 fuchsia.storage: WriteSequentialCold/8192/memfs

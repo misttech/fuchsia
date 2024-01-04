@@ -3,15 +3,20 @@
 // found in the LICENSE file.
 
 pub mod arguments;
+pub mod builtin_resolver;
+pub mod builtin_runner;
 pub mod capability;
 pub mod cpu_resource;
 pub mod crash_introspect;
 pub mod debug_resource;
 pub mod energy_info_resource;
 pub mod factory_items;
+pub mod framebuffer_resource;
 pub mod fuchsia_boot_resolver;
 pub mod hypervisor_resource;
 pub mod info_resource;
+pub mod iommu_resource;
+#[cfg(target_arch = "x86_64")]
 pub mod ioport_resource;
 pub mod irq_resource;
 pub mod items;
@@ -20,11 +25,12 @@ pub mod log;
 pub mod mexec_resource;
 pub mod mmio_resource;
 pub mod power_resource;
-pub mod process_launcher;
+pub mod profile_resource;
 pub mod realm_builder;
 pub mod root_job;
 pub mod root_resource;
 pub mod runner;
+#[cfg(target_arch = "aarch64")]
 pub mod smc_resource;
 pub mod svc_stash_provider;
 pub mod system_controller;

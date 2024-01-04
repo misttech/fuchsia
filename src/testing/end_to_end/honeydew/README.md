@@ -80,6 +80,9 @@ as all of the in-tree code is developed using `fuchsia-vendored-python`
 # upgrade the `pip` module
 (fuchsia_python_venv)~/fuchsia$ python -m pip install --upgrade pip
 
+# Set FIDL_IR_PATH inorder to successfully imoport Fuchsia-Controller
+(fuchsia_python_venv)~/fuchsia$ export FIDL_IR_PATH="$(fx get-build-dir)/fidling/gen/ir_root"
+
 # install honeydew
 (fuchsia_python_venv)~/fuchsia$ cd $FUCHSIA_DIR/src/testing/end_to_end/honeydew
 (fuchsia_python_venv)~/fuchsia/src/testing/end_to_end/honeydew$ python -m pip install --editable ".[test,guidelines]"
@@ -237,6 +240,8 @@ INFO:honeydew.device_classes.fuchsia_device_base:Snapshot file has been saved @ 
 ### Access the affordances
 * [Bluetooth affordance](markdowns/bluetooth.md)
 * [Tracing affordance](markdowns/tracing.md)
+* [Wlan policy affordance](markdowns/wlan_policy.md)
+* [Wlan affordance](marksdown/wlan.md)
 
 ### Access the transports
 * [Fastboot transport]
@@ -251,6 +256,12 @@ INFO:honeydew.device_classes.fuchsia_device_base:Snapshot file has been saved @ 
 **Running** `cd $FUCHSIA_DIR && sh $FUCHSIA_DIR/src/testing/end_to_end/honeydew/scripts/conformance.sh`
 **will automatically ensure you have followed the guidelines. Run this script**
 **and fix any errors it suggests.**
+
+Once the script has completed successfully, it will print output similar to the
+following:
+```shell
+INFO: Honeydew code has passed all of the conformance steps
+```
 
 **These guidelines need to be run at the least on the following patchsets:**
 1. Initial patchset just before adding reviewers
@@ -294,8 +305,8 @@ follow the below instructions every time HoneyDew code is changed.
     ```shell
     (fuchsia_python_venv)~/fuchsia$ isort $FUCHSIA_DIR/src/testing/end_to_end/honeydew/
     ```
-* Ensure code is formatted using [yapf]
-    * `fx format-code` underneath uses [yapf] for formatting the python code.
+* Ensure code is formatted using [black]
+    * `fx format-code` underneath uses [black] for formatting the python code.
     * Run below command to format the code
     ```shell
     (fuchsia_python_venv)~/fuchsia$ fx format-code
@@ -489,7 +500,7 @@ CL author/contributor (or) CL reviewer/approver:
 
 [mypy]: https://mypy.readthedocs.io/en/stable/
 
-[yapf]: https://github.com/google/yapf
+[black]: https://github.com/psf/black
 
 [vscode IDE]: https://code.visualstudio.com/docs/python/python-tutorial
 

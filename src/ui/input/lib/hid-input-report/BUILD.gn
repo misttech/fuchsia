@@ -17,11 +17,11 @@ source_set("hid-input-report") {
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.input:fuchsia.input_hlcpp",
-    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp_wire",
+    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
     "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_hlcpp",
+    "//src/ui/input/lib/hid",
+    "//src/ui/input/lib/hid-parser",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/hid",
-    "//zircon/system/ulib/hid-parser",
   ]
 
   # TODO(https://fxbug.dev/58162): delete the below and fix compiler warnings
@@ -50,13 +50,13 @@ test("lib-hid-input-report-test") {
 
   deps = [
     "//sdk/fidl/fuchsia.input:fuchsia.input_hlcpp",
-    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp_wire",
+    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
     "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_hlcpp",
     "//src/lib/ddk",
     "//src/lib/ddk:ddk-metadata-headers",
+    "//src/ui/input/lib/hid",
+    "//src/ui/input/lib/hid-parser",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/hid",
-    "//zircon/system/ulib/hid-parser",
     "//zircon/system/ulib/zxtest",
   ]
 

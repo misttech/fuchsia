@@ -4,6 +4,8 @@
 
 #include "src/developer/forensics/utils/utc_clock_ready_watcher.h"
 
+#include <fuchsia/time/cpp/fidl.h>
+
 #include <memory>
 
 #include <gtest/gtest.h>
@@ -29,11 +31,12 @@ class UtcClockReadyWatcherTest : public UnitTestFixture {
   }
 
  protected:
-  void StartClock(const zx::time start_time = zx::time(kTime.get())) {
+  void SignalLoggingQualityClock() {
     if (const zx_status_t status =
-            clock_handle_.update(zx::clock::update_args().set_value(start_time));
+            clock_handle_.signal(/*clear_mask=*/0,
+                                 /*set_mask=*/fuchsia::time::SIGNAL_UTC_CLOCK_LOGGING_QUALITY);
         status != ZX_OK) {
-      FX_PLOGS(FATAL, status) << "Failed to start clock";
+      FX_PLOGS(FATAL, status) << "Failed to achieve logging quality clock";
     }
   }
 
@@ -43,37 +46,63 @@ class UtcClockReadyWatcherTest : public UnitTestFixture {
   std::unique_ptr<UtcClockReadyWatcher> utc_clock_ready_watcher_;
 };
 
-TEST_F(UtcClockReadyWatcherTest, Check_ClockStarts) {
-  bool clock_started{false};
+TEST_F(UtcClockReadyWatcherTest, Check_LoggingQualityClock) {
+  bool logging_quality_clock{false};
 
-  utc_clock_ready_watcher_->OnClockReady([&] { clock_started = true; });
-  ASSERT_FALSE(clock_started);
+  utc_clock_ready_watcher_->OnClockReady([&] { logging_quality_clock = true; });
+  ASSERT_FALSE(logging_quality_clock);
 
-  StartClock();
+  SignalLoggingQualityClock();
   RunLoopUntilIdle();
 
-  ASSERT_TRUE(clock_started);
+  ASSERT_TRUE(logging_quality_clock);
 }
 
-TEST_F(UtcClockReadyWatcherTest, Check_ClockStartedPreviously) {
-  bool clock_started{false};
-  StartClock();
+TEST_F(UtcClockReadyWatcherTest, Check_ClockPreviouslyLoggingQuality) {
+  bool logging_quality_clock{false};
+  SignalLoggingQualityClock();
   RunLoopUntilIdle();
 
-  utc_clock_ready_watcher_->OnClockReady([&] { clock_started = true; });
-  ASSERT_TRUE(clock_started);
+  utc_clock_ready_watcher_->OnClockReady([&] { logging_quality_clock = true; });
+  ASSERT_TRUE(logging_quality_clock);
 }
 
-TEST_F(UtcClockReadyWatcherTest, Check_ClockNeverStarts) {
-  bool clock_started{false};
+TEST_F(UtcClockReadyWatcherTest, Check_ClockNeverLoggingQuality) {
+  bool logging_quality_clock{false};
 
-  utc_clock_ready_watcher_->OnClockReady([&] { clock_started = true; });
-  ASSERT_FALSE(clock_started);
+  utc_clock_ready_watcher_->OnClockReady([&] { logging_quality_clock = true; });
+  ASSERT_FALSE(logging_quality_clock);
 
   for (size_t i = 0; i < 100; ++i) {
     RunLoopFor(zx::hour(23));
-    EXPECT_FALSE(clock_started);
+    EXPECT_FALSE(logging_quality_clock);
   }
+}
+
+TEST_F(UtcClockReadyWatcherTest, Check_NotReadyOnClockStart) {
+  bool clock_started{false};
+
+  utc_clock_ready_watcher_->OnClockReady([&] { clock_started = true; });
+  ASSERT_FALSE(clock_started);
+
+  ASSERT_EQ(clock_handle_.update(zx::clock::update_args().set_value(zx::time(kTime.get()))), ZX_OK);
+  RunLoopUntilIdle();
+
+  EXPECT_FALSE(clock_started);
+}
+
+TEST_F(UtcClockReadyWatcherTest, Check_NotReadyOnClockSynchronized) {
+  bool clock_synced{false};
+
+  utc_clock_ready_watcher_->OnClockReady([&] { clock_synced = true; });
+  ASSERT_FALSE(clock_synced);
+
+  ASSERT_EQ(clock_handle_.signal(
+                /*clear_mask=*/0, /*set_mask=*/fuchsia::time::SIGNAL_UTC_CLOCK_SYNCHRONIZED),
+            ZX_OK);
+  RunLoopUntilIdle();
+
+  EXPECT_FALSE(clock_synced);
 }
 
 }  // namespace

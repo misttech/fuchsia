@@ -7,13 +7,13 @@
 #include <fidl/fuchsia.hardware.input/cpp/wire.h>
 #include <fidl/fuchsia.hardware.input/cpp/wire_types.h>
 #include <lib/ddk/driver.h>
+#include <lib/hid/boot.h>
 #include <zircon/syscalls.h>
 
 #include <map>
 #include <sstream>
 
 #include <ddktl/device.h>
-#include <hid/boot.h>
 
 #include "src/ui/input/drivers/pc-ps2/commands.h"
 #include "src/ui/input/drivers/pc-ps2/controller.h"
@@ -134,8 +134,7 @@ zx_status_t I8042Device::Bind() {
 
 #ifndef PS2_TEST
   // Map interrupt. We should get this from ACPI eventually.
-  // Please do not use get_root_resource() in new code. See fxbug.dev/31358.
-  zx_status_t status = zx::interrupt::create(*zx::unowned_resource(get_root_resource(parent())),
+  zx_status_t status = zx::interrupt::create(*zx::unowned_resource(get_irq_resource(parent())),
                                              kPortInfo[port_].irq, ZX_INTERRUPT_REMAP_IRQ, &irq_);
   if (status != ZX_OK) {
     return status;
@@ -156,9 +155,13 @@ zx_status_t I8042Device::Bind() {
   return ZX_OK;
 }
 
+void I8042Device::DdkSuspend(ddk::SuspendTxn txn) {
+  Shutdown();
+  txn.Reply(ZX_OK, txn.requested_state());
+}
+
 void I8042Device::DdkUnbind(ddk::UnbindTxn txn) {
-  irq_handler_.Cancel();
-  irq_.destroy();
+  Shutdown();
   txn.Reply();
 }
 
@@ -353,6 +356,11 @@ void I8042Device::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq,
   } while (retry);
 
   irq_.ack();
+}
+
+void I8042Device::Shutdown() {
+  irq_handler_.Cancel();
+  irq_.destroy();
 }
 
 void I8042Device::ProcessScancode(zx::time timestamp, uint8_t code) {

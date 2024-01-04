@@ -47,12 +47,14 @@ class NetDeviceDriverTest : public ::testing::Test {
       port_impl_.SetMac(mac_impl_.proto());
     }
     port_impl_.SetStatus(
-        {.mtu = 2048, .flags = static_cast<uint32_t>(netdev::wire::StatusFlags::kOnline)});
+        {.flags = static_cast<uint32_t>(netdev::wire::StatusFlags::kOnline), .mtu = 2048});
     if (zx_status_t status = NetworkDevice::Create(nullptr, parent_.get(), loop_.dispatcher());
         status != ZX_OK) {
       return status;
     }
-    port_impl_.AddPort(kPortId, device_impl_.client());
+    if (zx_status_t status = port_impl_.AddPort(kPortId, device_impl_.client()); status != ZX_OK) {
+      return status;
+    }
     return ZX_OK;
   }
 

@@ -5,16 +5,32 @@
 package testsharder
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"go.fuchsia.dev/fuchsia/tools/build"
+	"go.fuchsia.dev/fuchsia/tools/lib/ffxutil"
+	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 )
+
+// for testability
+type ffxInterface interface {
+	Run(context.Context, ...string) error
+	GetPBArtifacts(context.Context, string, string) ([]string, error)
+	Stop() error
+}
+
+var getFFX = func(ctx context.Context, ffxPath, outputsDir string) (ffxInterface, error) {
+	return ffxutil.NewFFXInstance(ctx, ffxPath, "", []string{}, "", "", outputsDir)
+}
 
 // AddImageDeps selects and adds the subset of images needed by a shard to
 // that shard's list of dependencies.
-func AddImageDeps(s *Shard, buildDir string, images []build.Image, pave bool) error {
+func AddImageDeps(ctx context.Context, s *Shard, buildDir string, images []build.Image, pave bool, pbPath, ffxPath string) error {
 	// Host-test only shards do not require any image deps because they are not running
 	// against a Fuchsia target.
 	if s.Env.Dimensions.DeviceType() == "" {
@@ -27,6 +43,12 @@ func AddImageDeps(s *Shard, buildDir string, images []build.Image, pave bool) er
 		s.AddDeps(imageDeps)
 		return nil
 	}
+
+	// TODO(fxbug.dev/133725): Remove these images when product bundles are used as soon
+	// as ffx emu and flash are enabled by default. Otherwise we need to provide
+	// images from both images.json and product_bundles.json since either can be used
+	// depending on what ffx experiment level is being run and whether the device that's
+	// being targeted is idling in fastboot or not.
 	for _, image := range images {
 		if isUsedForTesting(s, image, pave) {
 			if _, err := os.Stat(filepath.Join(buildDir, image.Path)); err != nil {
@@ -38,6 +60,57 @@ func AddImageDeps(s *Shard, buildDir string, images []build.Image, pave bool) er
 			}
 		}
 	}
+
+	// Add product bundle related artifacts.
+	if pbPath != "" {
+		imageDeps = append(imageDeps, "product_bundles.json")
+
+		tmp, err := os.MkdirTemp("", "wt")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(tmp)
+
+		ffxOutputsDir := filepath.Join(tmp, "ffx_outputs")
+		ffx, err := getFFX(ctx, ffxPath, ffxOutputsDir)
+		if err != nil {
+			return err
+		}
+		if ffx == nil {
+			return fmt.Errorf("failed to initialize an ffx instance")
+		}
+		defer func() {
+			if err := ffx.Stop(); err != nil {
+				logger.Debugf(ctx, "failed to stop ffx: %s", err)
+			}
+		}()
+
+		if err := ffx.Run(ctx, "config", "set", "daemon.autostart", "false", "-l", "global"); err != nil {
+			return err
+		}
+		artifactsGroup := "flash"
+		if s.Env.TargetsEmulator() {
+			artifactsGroup = "emu"
+		}
+		artifacts, err := ffx.GetPBArtifacts(ctx, filepath.Join(buildDir, pbPath), artifactsGroup)
+		if err != nil {
+			return err
+		}
+		for _, a := range artifacts {
+			imageDeps = append(imageDeps, filepath.Join(pbPath, a))
+		}
+		bootloaderArtifacts, err := ffx.GetPBArtifacts(ctx, filepath.Join(buildDir, pbPath), "bootloader")
+		if err != nil {
+			return err
+		}
+		for _, a := range bootloaderArtifacts {
+			parts := strings.SplitN(a, ":", 2)
+			if parts[0] == "firmware_fat" {
+				imageDeps = append(imageDeps, filepath.Join(pbPath, parts[1]))
+			}
+		}
+	}
+
 	s.AddDeps(imageDeps)
 	return nil
 }

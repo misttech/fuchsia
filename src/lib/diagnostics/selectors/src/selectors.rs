@@ -13,6 +13,9 @@ use fidl_fuchsia_diagnostics::{
     SelectorArgument, Severity, StringSelector, StringSelectorUnknown, SubtreeSelector,
     TreeSelector,
 };
+use moniker::{
+    ChildName, ExtendedMoniker, Moniker, MonikerBase, EXTENDED_MONIKER_COMPONENT_MANAGER_STR,
+};
 use std::borrow::{Borrow, Cow};
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -160,7 +163,8 @@ pub fn parse_log_interest_selector(selector: &str) -> Result<LogInterestSelector
         return Err(format_err!(
             concat!(
                 "Missing <log-level> in selector. Expecting: '{}#<log-level>', ",
-                "such as #DEBUG or #INFO."),
+                "such as #DEBUG or #INFO."
+            ),
             selector
         ));
     };
@@ -181,7 +185,8 @@ pub fn parse_log_interest_selector(selector: &str) -> Result<LogInterestSelector
         return Err(format_err!(
             concat!(
                 "Invalid <log-level> in selector '{}'. Expecting: a min log level ",
-                "such as #DEBUG or #INFO."),
+                "such as #DEBUG or #INFO."
+            ),
             selector
         ));
     };
@@ -657,11 +662,220 @@ impl<'a> TokenBuilder<'a> {
     }
 }
 
+pub trait SelectorExt {
+    fn match_against_selectors<'a, S>(
+        &self,
+        selectors: &'a [S],
+    ) -> Result<Vec<&'a Selector>, anyhow::Error>
+    where
+        S: Borrow<Selector>;
+
+    fn match_against_component_selectors<'a, S>(
+        &self,
+        selectors: &'a [S],
+    ) -> Result<Vec<&'a ComponentSelector>, anyhow::Error>
+    where
+        S: Borrow<ComponentSelector>;
+
+    fn into_component_selector(self) -> ComponentSelector;
+
+    fn matches_selector(&self, selector: &Selector) -> Result<bool, anyhow::Error>;
+
+    fn matches_component_selector(
+        &self,
+        selector: &ComponentSelector,
+    ) -> Result<bool, anyhow::Error>;
+
+    fn sanitized(&self) -> String;
+}
+
+impl SelectorExt for ExtendedMoniker {
+    fn match_against_selectors<'a, S>(
+        &self,
+        selectors: &'a [S],
+    ) -> Result<Vec<&'a Selector>, anyhow::Error>
+    where
+        S: Borrow<Selector>,
+    {
+        match self {
+            ExtendedMoniker::ComponentManager => match_component_moniker_against_selectors(
+                &[EXTENDED_MONIKER_COMPONENT_MANAGER_STR],
+                selectors,
+            ),
+            ExtendedMoniker::ComponentInstance(moniker) => {
+                moniker.match_against_selectors(selectors)
+            }
+        }
+    }
+
+    fn match_against_component_selectors<'a, S>(
+        &self,
+        selectors: &'a [S],
+    ) -> Result<Vec<&'a ComponentSelector>, anyhow::Error>
+    where
+        S: Borrow<ComponentSelector>,
+    {
+        match self {
+            ExtendedMoniker::ComponentManager => match_moniker_against_component_selectors(
+                &[EXTENDED_MONIKER_COMPONENT_MANAGER_STR],
+                selectors,
+            ),
+            ExtendedMoniker::ComponentInstance(moniker) => {
+                moniker.match_against_component_selectors(selectors)
+            }
+        }
+    }
+
+    fn matches_selector(&self, selector: &Selector) -> Result<bool, anyhow::Error> {
+        match self {
+            ExtendedMoniker::ComponentManager => match_component_moniker_against_selector(
+                &[EXTENDED_MONIKER_COMPONENT_MANAGER_STR],
+                selector,
+            ),
+            ExtendedMoniker::ComponentInstance(moniker) => moniker.matches_selector(selector),
+        }
+    }
+
+    fn matches_component_selector(
+        &self,
+        selector: &ComponentSelector,
+    ) -> Result<bool, anyhow::Error> {
+        match self {
+            ExtendedMoniker::ComponentManager => match_moniker_against_component_selector(
+                [EXTENDED_MONIKER_COMPONENT_MANAGER_STR].into_iter(),
+                selector,
+            ),
+            ExtendedMoniker::ComponentInstance(moniker) => {
+                moniker.matches_component_selector(selector)
+            }
+        }
+    }
+
+    fn sanitized(&self) -> String {
+        match self {
+            ExtendedMoniker::ComponentManager => EXTENDED_MONIKER_COMPONENT_MANAGER_STR.to_string(),
+            ExtendedMoniker::ComponentInstance(moniker) => moniker.sanitized(),
+        }
+    }
+
+    fn into_component_selector(self) -> ComponentSelector {
+        ComponentSelector {
+            moniker_segments: Some(
+                match self {
+                    ExtendedMoniker::ComponentManager => {
+                        vec![EXTENDED_MONIKER_COMPONENT_MANAGER_STR.into()]
+                    }
+                    ExtendedMoniker::ComponentInstance(moniker) => {
+                        moniker.path().iter().map(|value| value.to_string()).collect()
+                    }
+                }
+                .into_iter()
+                .map(|value| StringSelector::ExactMatch(value))
+                .collect(),
+            ),
+            ..Default::default()
+        }
+    }
+}
+
+impl SelectorExt for Moniker {
+    fn match_against_selectors<'a, S>(
+        &self,
+        selectors: &'a [S],
+    ) -> Result<Vec<&'a Selector>, anyhow::Error>
+    where
+        S: Borrow<Selector>,
+    {
+        let s = SegmentIterator::from(self).collect::<Vec<_>>();
+        match_component_moniker_against_selectors(&s, selectors)
+    }
+
+    fn match_against_component_selectors<'a, S>(
+        &self,
+        selectors: &'a [S],
+    ) -> Result<Vec<&'a ComponentSelector>, anyhow::Error>
+    where
+        S: Borrow<ComponentSelector>,
+    {
+        let s = SegmentIterator::from(self).collect::<Vec<_>>();
+        match_moniker_against_component_selectors(&s, selectors)
+    }
+
+    fn matches_selector(&self, selector: &Selector) -> Result<bool, anyhow::Error> {
+        let s = SegmentIterator::from(self).collect::<Vec<_>>();
+        match_component_moniker_against_selector(&s, selector)
+    }
+
+    fn matches_component_selector(
+        &self,
+        selector: &ComponentSelector,
+    ) -> Result<bool, anyhow::Error> {
+        let s = SegmentIterator::from(self).collect::<Vec<_>>();
+        match_moniker_against_component_selector(s.into_iter(), selector)
+    }
+
+    fn sanitized(&self) -> String {
+        SegmentIterator::from(self)
+            .map(|s| sanitize_string_for_selectors(&s).into_owned())
+            .collect::<Vec<String>>()
+            .join("/")
+    }
+
+    fn into_component_selector(self) -> ComponentSelector {
+        ComponentSelector {
+            moniker_segments: Some(
+                self.path()
+                    .into_iter()
+                    .map(|value| StringSelector::ExactMatch(value.to_string()))
+                    .collect(),
+            ),
+            ..Default::default()
+        }
+    }
+}
+
+enum SegmentIterator<'a> {
+    Iter { path: &'a [ChildName], current_index: usize },
+    Root(bool),
+}
+
+impl<'a> From<&'a Moniker> for SegmentIterator<'a> {
+    fn from(moniker: &'a Moniker) -> Self {
+        let path = moniker.path();
+        if path.len() == 0 {
+            return SegmentIterator::Root(false);
+        }
+        SegmentIterator::Iter { path: path.as_slice(), current_index: 0 }
+    }
+}
+
+impl Iterator for SegmentIterator<'_> {
+    type Item = String;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Iter { path, current_index } => {
+                let Some(segment) = path.get(*current_index) else {
+                    return None;
+                };
+                let result = segment.to_string();
+                *self = Self::Iter { path, current_index: *current_index + 1 };
+                Some(result)
+            }
+            Self::Root(true) => None,
+            Self::Root(done) => {
+                *done = true;
+                Some("<root>".to_string())
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs::File;
     use std::io::prelude::*;
+    use std::str::FromStr;
     use tempfile::TempDir;
 
     #[fuchsia::test]
@@ -732,17 +946,17 @@ a:b:c
         // Note: We provide the full selector syntax but this test is only validating it
         // against the provided moniker
         let passing_test_cases = vec![
-            (r#"echo.cmx:*:*"#, vec!["echo.cmx"]),
-            (r#"*/echo.cmx:*:*"#, vec!["abc", "echo.cmx"]),
-            (r#"ab*/echo.cmx:*:*"#, vec!["abc", "echo.cmx"]),
-            (r#"ab*/echo.cmx:*:*"#, vec!["abcde", "echo.cmx"]),
-            (r#"*/ab*/echo.cmx:*:*"#, vec!["123", "abcde", "echo.cmx"]),
-            (r#"echo.cmx*:*:*"#, vec!["echo.cmx"]),
-            (r#"a/echo*.cmx:*:*"#, vec!["a", "echo1.cmx"]),
-            (r#"a/echo*.cmx:*:*"#, vec!["a", "echo.cmx"]),
-            (r#"ab*/echo.cmx:*:*"#, vec!["ab", "echo.cmx"]),
-            (r#"a/**:*:*"#, vec!["a", "echo.cmx"]),
-            (r#"a/**:*:*"#, vec!["a", "b", "echo.cmx"]),
+            (r#"echo:*:*"#, vec!["echo"]),
+            (r#"*/echo:*:*"#, vec!["abc", "echo"]),
+            (r#"ab*/echo:*:*"#, vec!["abc", "echo"]),
+            (r#"ab*/echo:*:*"#, vec!["abcde", "echo"]),
+            (r#"*/ab*/echo:*:*"#, vec!["123", "abcde", "echo"]),
+            (r#"echo*:*:*"#, vec!["echo"]),
+            (r#"a/echo*:*:*"#, vec!["a", "echo1"]),
+            (r#"a/echo*:*:*"#, vec!["a", "echo"]),
+            (r#"ab*/echo:*:*"#, vec!["ab", "echo"]),
+            (r#"a/**:*:*"#, vec!["a", "echo"]),
+            (r#"a/**:*:*"#, vec!["a", "b", "echo"]),
         ];
 
         for (selector, moniker) in passing_test_cases {
@@ -758,10 +972,10 @@ a:b:c
         // Note: We provide the full selector syntax but this test is only validating it
         // against the provided moniker
         let failing_test_cases = vec![
-            (r#"*:*:*"#, vec!["a", "echo.cmx"]),
-            (r#"*/echo.cmx:*:*"#, vec!["123", "abc", "echo.cmx"]),
-            (r#"a/**:*:*"#, vec!["b", "echo.cmx"]),
-            (r#"e/**:*:*"#, vec!["echo.cmx"]),
+            (r#"*:*:*"#, vec!["a", "echo"]),
+            (r#"*/echo:*:*"#, vec!["123", "abc", "echo"]),
+            (r#"a/**:*:*"#, vec!["b", "echo"]),
+            (r#"e/**:*:*"#, vec!["echo"]),
         ];
 
         for (selector, moniker) in failing_test_cases {
@@ -777,8 +991,8 @@ a:b:c
 
     #[fuchsia::test]
     fn multiple_component_selectors_match_test() {
-        let selectors = vec![r#"*/echo.cmx"#, r#"ab*/echo.cmx"#, r#"abc/m*"#];
-        let moniker = vec!["abc".to_string(), "echo.cmx".to_string()];
+        let selectors = vec![r#"*/echo"#, r#"ab*/echo"#, r#"abc/m*"#];
+        let moniker = vec!["abc".to_string(), "echo".to_string()];
 
         let component_selectors = selectors
             .into_iter()
@@ -908,8 +1122,6 @@ a:b:c
         assert!(!match_string(&StringSelector::StringPattern("foo\\".into()), "foo\\"));
         assert!(!match_string(&StringSelector::StringPattern("bar*foo".into()), "barxfoox"));
         assert!(!match_string(&StringSelector::StringPattern("m*".into()), "echo.csx"));
-        assert!(!match_string(&StringSelector::StringPattern("mx*".into()), "echo.cmx"));
-        assert!(!match_string(&StringSelector::StringPattern("m*x*".into()), "echo.cmx"));
         assert!(!match_string(&StringSelector::StringPattern("*foo*".into()), "xbary"));
         assert!(!match_string(
             &StringSelector::StringPattern("foo*bar*baz*qux".into()),
@@ -939,6 +1151,28 @@ a:b:c
         assert!(parse_log_interest_selector("anything////#FATAL").is_err());
         assert!(parse_log_interest_selector("core/network").is_err());
         assert!(parse_log_interest_selector("core/network#FAKE").is_err());
+    }
+
+    #[test]
+    fn test_moniker_to_selector() {
+        assert_eq!(
+            Moniker::from_str("a/b/c").unwrap().into_component_selector(),
+            parse_component_selector::<VerboseError>("a/b/c").unwrap()
+        );
+        assert_eq!(
+            ExtendedMoniker::ComponentManager.into_component_selector(),
+            parse_component_selector::<VerboseError>("<component_manager>").unwrap()
+        );
+        assert_eq!(
+            ExtendedMoniker::ComponentInstance(Moniker::from_str("a/b/c").unwrap())
+                .into_component_selector(),
+            parse_component_selector::<VerboseError>("a/b/c").unwrap()
+        );
+        assert_eq!(
+            ExtendedMoniker::ComponentInstance(Moniker::from_str("a/coll:id/c").unwrap())
+                .into_component_selector(),
+            parse_component_selector::<VerboseError>("a/coll\\:id/c").unwrap()
+        );
     }
 
     #[test]

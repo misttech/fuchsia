@@ -23,18 +23,21 @@
 #include <fbl/ref_ptr.h>
 #include <fbl/string_printf.h>
 
-#include "allocation_result.h"
-#include "device.h"
-#include "logging.h"
-#include "node_properties.h"
-#include "utils.h"
-#include "versions.h"
+#include "src/devices/sysmem/drivers/sysmem/allocation_result.h"
+#include "src/devices/sysmem/drivers/sysmem/device.h"
+#include "src/devices/sysmem/drivers/sysmem/indent.h"
+#include "src/devices/sysmem/drivers/sysmem/logging.h"
+#include "src/devices/sysmem/drivers/sysmem/node_properties.h"
+#include "src/devices/sysmem/drivers/sysmem/utils.h"
+#include "src/devices/sysmem/drivers/sysmem/versions.h"
 
 namespace sysmem_driver {
 
 class BufferCollectionToken;
 class BufferCollectionTokenGroup;
 class BufferCollection;
+class LogicalBuffer;
+class LogicalBufferCollection;
 class MemoryAllocator;
 class Node;
 
@@ -42,6 +45,173 @@ class Node;
 // at a particular point in time.
 struct ConstraintInfoSnapshot {
   inspect::Node inspect_node;
+};
+
+// Each TrackedParentVmo keeps the LogicalBufferCollection alive as long as there are child VMOs
+// outstanding (no revoking of child VMOs for now).
+//
+// This tracking is for the benefit of MemoryAllocator sub-classes that need
+// a Delete() call, such as to clean up a slab allocation and/or to inform
+// an external allocator of delete.
+class TrackedParentVmo {
+ public:
+  using DoDelete = fit::callback<void(TrackedParentVmo* parent)>;
+  // The do_delete callback will be invoked upon the sooner of (A) the client code causing
+  // ~TrackedParentVmo, or (B) ZX_VMO_ZERO_CHILDREN occurring async after StartWait() is called.
+  //
+  // Each TrackedParentVmo associated with a LogicalBufferCollection keeps the
+  // LogicalBufferCollection alive. Once a (child) VMO has been given out by sysmem, the only
+  // mechanism to delete TrackedParentVmo is ZX_VMO_ZERO_CHILDREN.
+  TrackedParentVmo(fbl::RefPtr<LogicalBufferCollection> logical_buffer, zx::vmo vmo,
+                   uint32_t buffer_index, DoDelete do_delete);
+  ~TrackedParentVmo();
+
+  // This should only be called after client code has created a child VMO, and will begin the wait
+  // for ZX_VMO_ZERO_CHILDREN.
+  zx_status_t StartWait(async_dispatcher_t* dispatcher);
+
+  // Cancel the wait.
+  zx_status_t CancelWait();
+
+  zx::vmo TakeVmo();
+  [[nodiscard]] const zx::vmo& vmo() const;
+
+  void set_child_koid(zx_koid_t koid) {
+    ZX_DEBUG_ASSERT(!child_koid_.has_value());
+    child_koid_ = koid;
+  }
+  [[nodiscard]] std::optional<zx_koid_t> child_koid() const { return child_koid_; }
+
+  void set_client_debug_info(ClientDebugInfo client_debug_info) {
+    client_debug_info_ = client_debug_info;
+  }
+  [[nodiscard]] ClientDebugInfo* get_client_debug_info() {
+    return client_debug_info_.has_value() ? &*client_debug_info_ : nullptr;
+  }
+
+  uint32_t buffer_index() { return buffer_index_; }
+
+  // no copy, no move (async::WaitMethod isn't anyway, but just to be clear about it)
+  TrackedParentVmo(const TrackedParentVmo&) = delete;
+  TrackedParentVmo& operator=(const TrackedParentVmo&) = delete;
+  TrackedParentVmo(TrackedParentVmo&&) = delete;
+  TrackedParentVmo& operator=(TrackedParentVmo&&) = delete;
+
+ private:
+  void OnZeroChildren(async_dispatcher_t* dispatcher, async::WaitBase* wait, zx_status_t status,
+                      const zx_packet_signal_t* signal);
+  fbl::RefPtr<LogicalBufferCollection> buffer_collection_;
+  zx::vmo vmo_;
+  const uint32_t buffer_index_ = 0x80000000;
+
+  // For TrackedParentVmo(s) which are direct parents of sysmem-provided VMO(s), the child VMO's
+  // koid is retained here for calling Device::RemoveVmoKoid later, since GetVmoInfo by definition
+  // only asks about VMOs that have handles open (a handle is passed into GetVmoInfo which ensures
+  // this).
+  std::optional<zx_koid_t> child_koid_;
+
+  // A TrackedParentVmo can outlast a Node, so own a copy here.
+  std::optional<ClientDebugInfo> client_debug_info_;
+
+  DoDelete do_delete_;
+
+  async::WaitMethod<TrackedParentVmo, &TrackedParentVmo::OnZeroChildren> zero_children_wait_;
+
+  // Only for asserts:
+  bool waiting_ = {};
+};
+
+// This is all the per-VMO info and mechanism except for
+// LogicalBufferCollection::allocation_result_info_, which we keep in sync with the set of
+// LogicalBuffer(s) in LogicalBufferCollection::buffers_.
+//
+// This is always held in a std::unique_ptr<> instead of move-only because TrackedParentVmo
+// do_delete callbacks within need to capture a non-moving LogicalBuffer. We use std::unique_ptr<>
+// rather than shared_ptr<> or fbl::RefPtr<> because we need to ensure we can just delete all the
+// buffers in buffers_ if LogicalBufferCollection::Allocate() fails to allocate a later buffer.
+class LogicalBuffer {
+ public:
+  static fit::result<zx_status_t, std::unique_ptr<LogicalBuffer>> Create(
+      fbl::RefPtr<LogicalBufferCollection> logical_buffer_collection, uint32_t buffer_index,
+      zx::vmo parent_vmo);
+  fit::result<zx_status_t, std::optional<zx::vmo>> CreateWeakVmo(
+      const ClientDebugInfo& client_debug_info);
+
+  LogicalBufferCollection& logical_buffer_collection();
+  uint32_t buffer_index();
+
+  // Client code should take this VMO before moving LogicalBuffer from stack to heap.
+  zx::vmo TakeStrongChildVmo();
+
+  fit::result<zx_status_t, zx::eventpair> DupCloseWeakAsapClientEnd();
+
+  // move-only
+  LogicalBuffer(const LogicalBuffer& to_copy) = delete;
+  LogicalBuffer& operator=(const LogicalBuffer& to_copy) = delete;
+  LogicalBuffer(LogicalBuffer&& to_move) = default;
+  LogicalBuffer& operator=(LogicalBuffer&& to_move) = default;
+
+ private:
+  friend class LogicalBufferCollection;
+
+  LogicalBuffer(fbl::RefPtr<LogicalBufferCollection> logical_buffer_collection,
+                uint32_t buffer_index, zx::vmo parent_vmo);
+  // true iff construction was successful
+  bool is_ok();
+  // requires !is_ok(); returns the failure status
+  zx_status_t error();
+
+  void ComplainLoudlyAboutStillExistingWeakVmoHandles();
+
+  fbl::RefPtr<LogicalBufferCollection> logical_buffer_collection_;
+  uint32_t buffer_index_;
+
+  // This is the allocator-provided VMO (parent-most VMO tracked by sysmem; the allocator itself
+  // may keep a parent VMO of this VMO, but that further parent is not known to sysmem).
+  //
+  // When this sees ZX_VMO_ZERO_CHILDREN, we can tell the allocator to free the allocator's VMO and
+  // reclaim the space. This also deletes parent_vmo_ and LogicalBuffer.
+  std::unique_ptr<TrackedParentVmo> parent_vmo_;
+
+  // This is a child VMO of parent_vmo_, and has as children all sysmem strong VMOs associated with
+  // this LogicalBuffer.
+  //
+  // When this sees ZX_VMO_ZERO_CHILDREN, we can ask clients to close any remaining weak VMOs by
+  // closing the server end of close_weak_asap, and we set a timer to complain loudly if the
+  // LogicalBuffer still exists after a while, since this would essentially count as a client
+  // leaking a VMO. This also deletes strong_parent_vmo_.
+  std::unique_ptr<TrackedParentVmo> strong_parent_vmo_;
+
+  // These are parents of each weak VMO that was sent to a client (separate parent for each sent
+  // weak VMO).
+  //
+  // This map exists to keep each TrackedParentVmo alive until all its child VMOs are gone, and to
+  // have a way to complain about specific sent child weak VMOs that still haven't closed a while
+  // after all strong VMOs of a buffer_index have closed.
+  //
+  // The TrackedParentVmo's vmo has its name set based on client debug info.
+  std::unordered_map<TrackedParentVmo*, std::unique_ptr<TrackedParentVmo>> weak_parent_vmos_;
+
+  struct CloseWeakAsap {
+    zx::eventpair server_end;
+    zx::eventpair client_end;
+  };
+  // ~close_weak_asap_ will signal clients via ZX_EVENTPAIR_PEER_CLOSED. This gets deleted when
+  // ~strong_parent_vmo_.
+  std::optional<CloseWeakAsap> close_weak_asap_;
+  bool close_weak_asap_created_ = false;
+  // If there were any outstanding weak VMOs when *close_weak_asap_ was deleted, this is when
+  // close_weak_asap_ was deleted, signalling clients via ZX_EVENTPAIR_PEER_CLOSED. If there were
+  // no outstanding weak VMOs when close_weak_asap_ was deleted, we don't add tallies to
+  // weak_vmo_histograms because we want the histograms to only include logical buffer collections
+  // that had any weak VMOs that needed to be closed; this is to avoid a bunch of tallies for
+  // strong-only collections adding a bunch of tally counts in low duration histogram buckets.
+  std::optional<zx::time> close_weak_asap_time_;
+
+  // Set to a failing status if LogicalBuffer::LogicalBuffer() failed.
+  zx_status_t error_ = ZX_OK;
+
+  zx::vmo strong_child_vmo_;
 };
 
 // TODO(dustingreen): MaybeAllocate() should sweep all related incoming channels for ZX_PEER_CLOSED
@@ -54,8 +224,10 @@ class LogicalBufferCollection : public fbl::RefCounted<LogicalBufferCollection> 
 
   ~LogicalBufferCollection();
 
-  static void CreateV1(TokenServerEndV1 buffer_collection_token_request, Device* parent_device);
-  static void CreateV2(TokenServerEndV2 buffer_collection_token_request, Device* parent_device);
+  static void CreateV1(TokenServerEndV1 buffer_collection_token_request, Device* parent_device,
+                       const ClientDebugInfo* client_debug_info);
+  static void CreateV2(TokenServerEndV2 buffer_collection_token_request, Device* parent_device,
+                       const ClientDebugInfo* client_debug_info);
 
   // |parent_device| the Device* that the calling allocator is part of.  The
   // tokens_by_koid_ for each Device is separate.  If somehow two clients were
@@ -107,7 +279,9 @@ class LogicalBufferCollection : public fbl::RefCounted<LogicalBufferCollection> 
   void AttachLifetimeTracking(zx::eventpair server_end, uint32_t buffers_remaining);
   void SweepLifetimeTracking();
 
-  void OnNodeReady();
+  // Calling this extra times (including after allocation complete) isn't harmful from a correctness
+  // point of view.
+  void OnDependencyReady();
 
   void SetName(uint32_t priority, std::string name);
   void SetDebugTimeoutLogDeadline(int64_t deadline);
@@ -156,12 +330,21 @@ class LogicalBufferCollection : public fbl::RefCounted<LogicalBufferCollection> 
 
   bool is_verbose_logging() const { return is_verbose_logging_; }
 
+  uint64_t buffer_collection_id() const { return buffer_collection_id_; }
+
   static fit::result<zx_status_t, BufferCollectionToken*> CommonConvertToken(
       Device* parent_device, zx::channel buffer_collection_token,
       const ClientDebugInfo* client_debug_info, const char* fidl_message_name);
 
+  fit::result<zx_status_t, std::optional<zx::vmo>> CreateWeakVmo(
+      uint32_t buffer_index, const ClientDebugInfo& client_debug_info);
+  fit::result<zx_status_t, std::optional<zx::eventpair>> DupCloseWeakAsapClientEnd(
+      uint32_t buffer_index);
+
  private:
+  friend class LogicalBuffer;
   friend class NodeProperties;
+  friend class TrackedParentVmo;
 
   enum class CheckSanitizeStage { kInitial, kNotAggregated, kAggregated };
 
@@ -289,6 +472,7 @@ class LogicalBufferCollection : public fbl::RefCounted<LogicalBufferCollection> 
                                             fuchsia_sysmem2::BufferMemoryConstraints& constraints);
 
   bool CheckSanitizeImageFormatConstraints(CheckSanitizeStage stage,
+                                           const fuchsia_sysmem2::BufferUsage& buffer_usage,
                                            fuchsia_sysmem2::ImageFormatConstraints& constraints);
 
   bool AccumulateConstraintBufferCollection(fuchsia_sysmem2::BufferCollectionConstraints* acc,
@@ -483,11 +667,23 @@ class LogicalBufferCollection : public fbl::RefCounted<LogicalBufferCollection> 
   struct DiffPrinter<zx::vmo, void> {
     static void PrintDiff(const LogicalBufferCollection& buffer_collection,
                           const std::string& field_name, const zx::vmo& o, const zx::vmo& n) {
-      // We don't expect to call the zx::vmo variant since !has_vmo() and !has_aux_vmo(), but if we
+      // We don't expect to call the zx::vmo variant since !has_vmo(), but if we do get here,
+      // complain + print the values regardless of what the values are or whether they differ.
+      buffer_collection.LogError(FROM_HERE,
+                                 "Why did we call zx::vmo PrintDiff? --- o%s: %u n%s: %u",
+                                 field_name.c_str(), o.get(), field_name.c_str(), n.get());
+    }
+  };
+  template <>
+  struct DiffPrinter<zx::eventpair, void> {
+    static void PrintDiff(const LogicalBufferCollection& buffer_collection,
+                          const std::string& field_name, const zx::eventpair& o,
+                          const zx::eventpair& n) {
+      // We don't expect to call the zx::eventpair variant since !has_close_weak_asap(), but if we
       // do get here, complain + print the values regardless of what the values are or whether they
       // differ.
       buffer_collection.LogError(FROM_HERE,
-                                 "Why did we call zx::vmo PrintDiff? --- o%s: %u n%s: %u",
+                                 "Why did we call zx::eventpair PrintDiff? --- o%s: %u n%s: %u",
                                  field_name.c_str(), o.get(), field_name.c_str(), n.get());
     }
   };
@@ -552,7 +748,7 @@ class LogicalBufferCollection : public fbl::RefCounted<LogicalBufferCollection> 
                                                  const fuchsia_sysmem2::VmoBuffer& n) const {
     PRINT_DIFF(vmo);
     PRINT_DIFF(vmo_usable_start);
-    PRINT_DIFF(aux_vmo);
+    PRINT_DIFF(close_weak_asap);
   }
 
   template <>
@@ -572,14 +768,22 @@ class LogicalBufferCollection : public fbl::RefCounted<LogicalBufferCollection> 
 
   void LogConstraints(Location location, NodeProperties* node_properties,
                       const fuchsia_sysmem2::BufferCollectionConstraints& constraints) const;
-  void LogPrunedSubTree(NodeProperties* subtree);
-  void LogNodeConstraints(std::vector<NodeProperties*> nodes);
+  void LogBufferCollectionInfo(IndentTracker& indent_tracker,
+                               const fuchsia_sysmem2::BufferCollectionInfo& bci) const;
+  void LogPixelFormatAndModifier(
+      IndentTracker& indent_tracker, NodeProperties* node_properties,
+      const fuchsia_sysmem2::PixelFormatAndModifier& pixel_format_and_modifier) const;
+  void LogImageFormatConstraints(IndentTracker& indent_tracker, NodeProperties* node_properties,
+                                 const fuchsia_sysmem2::ImageFormatConstraints& ifc) const;
+  void LogPrunedSubTree(NodeProperties* subtree) const;
+  void LogNodeConstraints(std::vector<NodeProperties*> nodes) const;
 
   // subtree must remain alive >= returned filter
   fit::function<NodeFilterResult(const NodeProperties&)> PrunedSubtreeFilter(
       NodeProperties& subtree, fit::function<bool(const NodeProperties&)> visit_keep) const;
 
-  static fbl::RefPtr<LogicalBufferCollection> CommonCreate(Device* parent_device);
+  static fbl::RefPtr<LogicalBufferCollection> CommonCreate(
+      Device* parent_device, const ClientDebugInfo* client_debug_info);
 
   bool CommonCreateBufferCollectionTokenStage1(fbl::RefPtr<LogicalBufferCollection> self,
                                                NodeProperties* new_node_properties,
@@ -587,6 +791,21 @@ class LogicalBufferCollection : public fbl::RefCounted<LogicalBufferCollection> 
                                                BufferCollectionToken** out_token);
 
   void HandleTokenFailure(BufferCollectionToken& token, zx_status_t status);
+
+  void IncStrongNodeTally();
+  void DecStrongNodeTally();
+  void CheckForZeroStrongNodes();
+
+  void IncStrongParentVmoCount();
+  void DecStrongParentVmoCount();
+  void CheckForZeroStrongParentVmoCount();
+
+  void CreateParentVmoInspect(zx_koid_t parent_vmo_koid);
+
+  void ClearBuffers();
+
+  bool FlattenPixelFormatAndModifiers(const fuchsia_sysmem2::BufferUsage& buffer_usage,
+                                      fuchsia_sysmem2::BufferCollectionConstraints& constraints);
 
   Device* parent_device_ = nullptr;
 
@@ -636,59 +855,23 @@ class LogicalBufferCollection : public fbl::RefCounted<LogicalBufferCollection> 
   inspect::UintProperty vmo_count_property_;
   inspect::ValueList vmo_properties_;
 
-  // We keep LogicalBufferCollection alive as long as there are child VMOs
-  // outstanding (no revoking of child VMOs for now).
-  //
-  // This tracking is for the benefit of MemoryAllocator sub-classes that need
-  // a Delete() call, such as to clean up a slab allocation and/or to inform
-  // an external allocator of delete.
-  class TrackedParentVmo {
-   public:
-    using DoDelete = fit::callback<void(TrackedParentVmo* parent)>;
-    // The do_delete callback will be invoked upon the sooner of (A) the client
-    // code causing ~ParentVmo, or (B) ZX_VMO_ZERO_CHILDREN occurring async
-    // after StartWait() is called.
-    TrackedParentVmo(fbl::RefPtr<LogicalBufferCollection> buffer_collection, zx::vmo vmo,
-                     DoDelete do_delete);
-    ~TrackedParentVmo();
-
-    // This should only be called after client code has created a child VMO, and
-    // will begin the wait for ZX_VMO_ZERO_CHILDREN.
-    zx_status_t StartWait(async_dispatcher_t* dispatcher);
-
-    // Cancel the wait. This should only be used by LogicalBufferCollection
-    zx_status_t CancelWait();
-
-    zx::vmo TakeVmo();
-    [[nodiscard]] const zx::vmo& vmo() const;
-
-    void set_child_koid(zx_koid_t koid) { child_koid_ = koid; }
-
-    TrackedParentVmo(const TrackedParentVmo&) = delete;
-    TrackedParentVmo(TrackedParentVmo&&) = delete;
-    TrackedParentVmo& operator=(const TrackedParentVmo&) = delete;
-    TrackedParentVmo& operator=(TrackedParentVmo&&) = delete;
-
-   private:
-    void OnZeroChildren(async_dispatcher_t* dispatcher, async::WaitBase* wait, zx_status_t status,
-                        const zx_packet_signal_t* signal);
-    fbl::RefPtr<LogicalBufferCollection> buffer_collection_;
-    zx::vmo vmo_;
-    zx_koid_t child_koid_{};
-    DoDelete do_delete_;
-    async::WaitMethod<TrackedParentVmo, &TrackedParentVmo::OnZeroChildren> zero_children_wait_;
-    // Only for asserts:
-    bool waiting_ = {};
-  };
+  // This does not actually need to be a koid, but for now we do get the value from a koid, so we
+  // want the initial value at the start of the constructor to be the invalid koid value, until we
+  // set this to a real koid value that's unique to "this".
+  uint64_t buffer_collection_id_ = ZX_KOID_INVALID;
 
   // From buffers_remaining to server_end.
   std::multimap<uint32_t, zx::eventpair> lifetime_tracking_;
 
+  // The key is buffer_index. In the success case, removing a single item from this map is performed
+  // by TrackedParentVmo::do_delete. Because do_delete also runs when we want to just clear buffers_
+  // in an error path, when we clear buffers_ we move it out, clear it, then delete the moved-out
+  // items. This way we don't try to mutate buffers_ during buffers_.clear().
+  std::unordered_map<uint32_t, std::unique_ptr<LogicalBuffer>> buffers_;
+
   // It's nice for members containing timers to be last for destruction order purposes, but the
   // destructor also explicitly cancels timers to avoid any brittle-ness from members potentially
-  // added after these.
-  using ParentVmoMap = std::map<zx_handle_t, std::unique_ptr<TrackedParentVmo>>;
-  ParentVmoMap parent_vmos_;
+  // added below creation_timer_ (so this doesn't actually need to be last).
   async::TaskMethod<LogicalBufferCollection, &LogicalBufferCollection::CreationTimedOut>
       creation_timer_{this};
 
@@ -700,6 +883,16 @@ class LogicalBufferCollection : public fbl::RefCounted<LogicalBufferCollection> 
   std::unordered_map<zx_koid_t, NodeProperties*> node_properties_by_node_ref_keep_koid_;
 
   bool done_with_group_child_selection_ = false;
+
+  // This can become true before initial allocation if waiting on secure allocators at least once
+  // is/was necessary. Once this becomes true it stays true, even after this collection is no longer
+  // currently waiting on secure allocators.
+  //
+  // This field helps avoid creation of extra child inspect nodes when the wait is over.
+  bool waiting_for_secure_allocators_ready_ = false;
+
+  uint32_t strong_node_count_ = 0;
+  uint32_t strong_parent_vmo_count_ = 0;
 };
 
 }  // namespace sysmem_driver

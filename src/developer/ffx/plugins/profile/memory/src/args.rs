@@ -2,10 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use {argh::FromArgs, ffx_core::ffx_command, ffx_profile_memory_sub_command::SubCommand};
+use {
+    argh::{ArgsInfo, FromArgs},
+    ffx_core::ffx_command,
+    ffx_profile_memory_sub_command::SubCommand,
+};
 
 #[ffx_command()]
-#[derive(FromArgs, Debug, PartialEq)]
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "memory", description = "Query memory related information")]
 pub struct MemoryCommand {
     #[argh(subcommand)]
@@ -16,12 +20,6 @@ pub struct MemoryCommand {
         description = "outputs the json returned by memory_monitor. For debug purposes only, no garantee is made on the stability of the output of this command."
     )]
     pub debug_json: bool,
-
-    #[argh(
-        switch,
-        description = "includes in the output all Starnix processes. Including Starnix processes makes the command much slower. Default: false (only include the Starnix kernel)."
-    )]
-    pub include_starnix_processes: bool,
 
     #[argh(option, description = "filters by process koids. Repeatable flag.")]
     pub process_koids: Vec<u64>,

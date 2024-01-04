@@ -380,6 +380,44 @@ func TestExecute(t *testing.T) {
 			},
 		},
 		{
+			name: "run all tests if empty affected tests",
+			flags: testsharderFlags{
+				skipUnaffected: true,
+			},
+			testSpecs: []build.TestSpec{
+				fuchsiaTestSpec("affected-hermetic-test"),
+				fuchsiaTestSpec("unaffected-hermetic-test"),
+				fuchsiaTestSpec("affected-nonhermetic-test"),
+				fuchsiaTestSpec("unaffected-nonhermetic-test"),
+			},
+			testList: []build.TestListEntry{
+				testListEntry("affected-hermetic-test", true),
+				testListEntry("unaffected-hermetic-test", true),
+				testListEntry("affected-nonhermetic-test", false),
+				testListEntry("unaffected-nonhermetic-test", false),
+			},
+			affectedTests: []string{""},
+		},
+		{
+			name: "run all tests if no affected and affected only",
+			flags: testsharderFlags{
+				affectedOnly:   true,
+				skipUnaffected: true,
+			},
+			testSpecs: []build.TestSpec{
+				fuchsiaTestSpec("affected-hermetic-test"),
+				fuchsiaTestSpec("unaffected-hermetic-test"),
+				fuchsiaTestSpec("affected-nonhermetic-test"),
+				fuchsiaTestSpec("unaffected-nonhermetic-test"),
+			},
+			testList: []build.TestListEntry{
+				testListEntry("affected-hermetic-test", true),
+				testListEntry("unaffected-hermetic-test", true),
+				testListEntry("affected-nonhermetic-test", false),
+				testListEntry("unaffected-nonhermetic-test", false),
+			},
+		},
+		{
 			name: "multiply unaffected hermetic tests",
 			flags: testsharderFlags{
 				skipUnaffected: true,
@@ -551,6 +589,7 @@ type fakeModules struct {
 	testList            string
 	testDurations       []build.TestDuration
 	packageRepositories []build.PackageRepo
+	productBundles      []build.ProductBundle
 }
 
 func (m *fakeModules) Platforms() []build.DimensionSet {
@@ -593,6 +632,16 @@ func (m *fakeModules) TestListLocation() []string               { return []strin
 func (m *fakeModules) TestSpecs() []build.TestSpec              { return m.testSpecs }
 func (m *fakeModules) TestDurations() []build.TestDuration      { return m.testDurations }
 func (m *fakeModules) PackageRepositories() []build.PackageRepo { return m.packageRepositories }
+func (m *fakeModules) ProductBundles() []build.ProductBundle    { return m.productBundles }
+func (m *fakeModules) Tools() build.Tools {
+	return build.Tools{
+		{
+			Name: "ffx",
+			Path: "host_x64/ffx",
+			OS:   "linux",
+			CPU:  "x64",
+		}}
+}
 
 func packageURL(basename string) string {
 	return fmt.Sprintf("fuchsia-pkg://fuchsia.com/%s#meta/%s.cm", basename, basename)

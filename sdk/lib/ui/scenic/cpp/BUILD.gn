@@ -14,15 +14,6 @@ sdk_source_set("cpp") {
   public_configs = [ "//sdk/config" ]
 
   sources = [
-    "commands.cc",
-    "commands.h",
-    "commands_sizing.cc",
-    "commands_sizing.h",
-    "id.h",
-    "resources.cc",
-    "resources.h",
-    "session.cc",
-    "session.h",
     "view_creation_tokens.cc",
     "view_creation_tokens.h",
     "view_identity.cc",
@@ -36,7 +27,6 @@ sdk_source_set("cpp") {
   public_deps = [
     "//sdk/fidl/fuchsia.images:fuchsia.images_hlcpp",
     "//sdk/fidl/fuchsia.ui.gfx:fuchsia.ui.gfx_hlcpp",
-    "//sdk/fidl/fuchsia.ui.scenic:fuchsia.ui.scenic_hlcpp",
     "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_hlcpp",
     "//sdk/lib/fidl/cpp",
     "//sdk/lib/fit",
@@ -44,61 +34,5 @@ sdk_source_set("cpp") {
     "//sdk/lib/stdcompat",
     "//zircon/system/ulib/syslog",
     "//zircon/system/ulib/zx",
-  ]
-
-  non_sdk_deps = [ ":gen_command_sizing" ]
-}
-
-compiled_action("gen_command_sizing") {
-  tool = "//tools/fidl/measure-tape/src:measure-tape"
-
-  check_file = "$target_out_dir/scenic-measure-tape.checked"
-  outputs = [ "$check_file" ]
-
-  args = [
-    "--json",
-    rebase_path(
-        "$root_build_dir/fidling/gen/sdk/fidl/fuchsia.images/fuchsia.images.fidl.json",
-        root_build_dir),
-    "--json",
-    rebase_path(
-        "$root_build_dir/fidling/gen/sdk/fidl/fuchsia.ui.composition/fuchsia.ui.composition.fidl.json",
-        root_build_dir),
-    "--json",
-    rebase_path(
-        "$root_build_dir/fidling/gen/sdk/fidl/fuchsia.ui.gfx/fuchsia.ui.gfx.fidl.json",
-        root_build_dir),
-    "--json",
-    rebase_path(
-        "$root_build_dir/fidling/gen/sdk/fidl/fuchsia.ui.input/fuchsia.ui.input.fidl.json",
-        root_build_dir),
-    "--json",
-    rebase_path(
-        "$root_build_dir/fidling/gen/sdk/fidl/fuchsia.ui.scenic/fuchsia.ui.scenic.fidl.json",
-        root_build_dir),
-    "--json",
-    rebase_path(
-        "$root_build_dir/fidling/gen/sdk/fidl/fuchsia.ui.views/fuchsia.ui.views.fidl.json",
-        root_build_dir),
-    "--target-binding",
-    "hlcpp",
-    "--target-types",
-    "fuchsia.ui.scenic/Command",
-    "--out-h",
-    rebase_path("commands_sizing.h", root_build_dir),
-    "--h-include-path",
-    "lib/ui/scenic/cpp/commands_sizing.h",
-    "--out-cc",
-    rebase_path("commands_sizing.cc", root_build_dir),
-    "--only-check-to-file",
-    rebase_path("$check_file", root_build_dir),
-  ]
-
-  public_deps = [
-    "//sdk/fidl/fuchsia.images:fuchsia.images_hlcpp",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//sdk/fidl/fuchsia.ui.gfx:fuchsia.ui.gfx_hlcpp",
-    "//sdk/fidl/fuchsia.ui.scenic:fuchsia.ui.scenic_hlcpp",
-    "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_hlcpp",
   ]
 }

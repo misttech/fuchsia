@@ -8,6 +8,7 @@
 #include "lib/syslog/cpp/macros.h"
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/arch.h"
+#include "src/developer/debug/shared/platform.h"
 #include "src/developer/debug/shared/register_info.h"
 #include "src/developer/debug/shared/serialization.h"
 #include "src/developer/debug/shared/status.h"
@@ -32,10 +33,10 @@ namespace debug_ipc {
 //   - More complex logic could be implemented by checking the protocol version before sending.
 //
 // NOTE: Before you want to bump the kCurrentProtocolVersion, please make sure that
-// CURRENT_SUPPORTED_API_LEVEL is equal to FUCHSIA_API_LEVEL specified in platform_version.json.
+// CURRENT_SUPPORTED_API_LEVEL is equal to FUCHSIA_API_LEVEL specified in version_history.json.
 // If not, continue reading the comments below.
 
-constexpr uint32_t kCurrentProtocolVersion = 56;
+constexpr uint32_t kCurrentProtocolVersion = 59;
 
 // How to decide kMinimumProtocolVersion
 // -------------------------------------
@@ -58,10 +59,10 @@ constexpr uint32_t kCurrentProtocolVersion = 56;
 //   - INITIAL_VERSION_FOR_API_LEVEL_CURRENT = kCurrentProtocolVersion
 //   - CURRENT_SUPPORTED_API_LEVEL = FUCHSIA_API_LEVEL
 
-#define INITIAL_VERSION_FOR_API_LEVEL_MINUS_2 55
-#define INITIAL_VERSION_FOR_API_LEVEL_MINUS_1 55
-#define INITIAL_VERSION_FOR_API_LEVEL_CURRENT 55
-#define CURRENT_SUPPORTED_API_LEVEL 13
+#define INITIAL_VERSION_FOR_API_LEVEL_MINUS_2 56
+#define INITIAL_VERSION_FOR_API_LEVEL_MINUS_1 56
+#define INITIAL_VERSION_FOR_API_LEVEL_CURRENT 58
+#define CURRENT_SUPPORTED_API_LEVEL 16
 
 #if !defined(FUCHSIA_API_LEVEL)
 // This is a workaround when using this library in the @internal_sdk, as the SDK
@@ -220,17 +221,20 @@ struct HelloReply {
   uint32_t version = 0;
   debug::Arch arch = debug::Arch::kUnknown;
   uint64_t page_size = 0;
+  debug::Platform platform = debug::Platform::kUnknown;
 
-  void Serialize(Serializer& ser, uint32_t ver) { ser | signature | version | arch | page_size; }
+  // Danger: The HelloReply is special because it is used to set up the rest of the IPC
+  // communication.
+  //
+  // It will get deserialized with |ver| = 0 to extract the |signature| and |version| member, and
+  // then it will get deserialized again with the correct version to get everything else.
+  void Serialize(Serializer& ser, uint32_t ver) {
+    ser | signature | version | arch | page_size;
+    if (ver >= 58) {
+      ser | platform;
+    }
+  }
 };
-
-enum class InferiorType : uint32_t {
-  kBinary,
-  kComponent,
-  kTest,
-  kLast,
-};
-const char* InferiorTypeToString(InferiorType);
 
 // Status ------------------------------------------------------------------------------------------
 //
@@ -239,6 +243,7 @@ const char* InferiorTypeToString(InferiorType);
 struct StatusRequest {
   void Serialize(Serializer& ser, uint32_t ver) {}
 };
+
 struct StatusReply {
   // All the processes that the debug agent is currently attached.
   std::vector<ProcessRecord> processes;
@@ -248,7 +253,18 @@ struct StatusReply {
   // wait for a debugger, it is said that those processes are in "limbo".
   std::vector<ProcessRecord> limbo;
 
-  void Serialize(Serializer& ser, uint32_t ver) { ser | processes | limbo; }
+  // All the breakpoints (pending or active, hardware or software) registered with the Agent.
+  std::vector<BreakpointSettings> breakpoints;
+
+  // All the installed filters.
+  std::vector<Filter> filters;
+
+  void Serialize(Serializer& ser, uint32_t ver) {
+    ser | processes | limbo;
+    if (ver >= 59) {
+      ser | breakpoints | filters;
+    }
+  }
 };
 
 struct KillRequest {
@@ -277,11 +293,30 @@ struct AttachReply {
   debug::Status status;  // Result of attaching.
   std::string name;
 
-  // The component information if the task is a process and the process is running in a component.
-  std::optional<ComponentInfo> component;
+  // The component information if the process is running in a component. There could be many
+  // components for a single process. An empty vector means there was no component associated with
+  // the process. Order of components is not guaranteed.
+  std::vector<ComponentInfo> components;
 
   void Serialize(Serializer& ser, uint32_t ver) {
-    ser | timestamp | koid | status | name | component;
+    ser | timestamp | koid | status | name;
+    if (ver < 57) {
+      // The component information if the task is a process and the process is running in a
+      // component.
+      std::optional<ComponentInfo> component = std::nullopt;
+      if (!components.empty()) {
+        component = components[0];
+      }
+      components.clear();
+
+      ser | component;
+
+      if (component) {
+        components = {*component};
+      }
+    } else {
+      ser | components;
+    }
   }
 };
 
@@ -585,22 +620,10 @@ struct WriteRegistersReply {
 // Run -------------------------------------------------------------------------
 
 struct RunBinaryRequest {
-#if INITIAL_VERSION_FOR_API_LEVEL_MINUS_2 < 56
-  // TODO: remove inferior_type field after kMinimumProtocolVersion >= 56
-  InferiorType inferior_type = InferiorType::kBinary;
-#endif
-
   // argv[0] is the app to launch.
   std::vector<std::string> argv;
 
-  void Serialize(Serializer& ser, uint32_t ver) {
-    if (ver < 56) {
-      ser | inferior_type;
-    } else {
-      FX_CHECK(inferior_type == InferiorType::kBinary);
-    }
-    ser | argv;
-  }
+  void Serialize(Serializer& ser, uint32_t ver) { ser | argv; }
 };
 struct RunBinaryReply {
   uint64_t timestamp = kTimestampDefault;
@@ -663,11 +686,29 @@ struct NotifyProcessStarting {
   uint64_t koid = 0;
   std::string name;
 
-  // The component information if the process is running in a component.
-  std::optional<ComponentInfo> component;
+  // The component information if the process is running in a component. There could be many
+  // components for a single process. An empty vector means there was no component associated with
+  // the process. Order of components is not guaranteed.
+  std::vector<ComponentInfo> components;
 
   void Serialize(Serializer& ser, uint32_t ver) {
-    ser | timestamp | type | koid | name | component;
+    ser | timestamp | type | koid | name;
+    if (ver < 57) {
+      // The component information if the process is running in a component.
+      std::optional<ComponentInfo> component = std::nullopt;
+      if (!components.empty()) {
+        component = components[0];
+      }
+      components.clear();
+
+      ser | component;
+
+      if (component) {
+        components = {*component};
+      }
+    } else {
+      ser | components;
+    }
   }
 };
 

@@ -29,9 +29,11 @@ typedef uint32_t zx_object_info_topic_t;
 #define ZX_INFO_THREAD_EXCEPTION_REPORT_V1  __ZX_INFO_TOPIC(11u, 0) // zx_exception_report_t[1]
 #define ZX_INFO_THREAD_EXCEPTION_REPORT     __ZX_INFO_TOPIC(11u, 1) // zx_exception_report_t[1]
 #define ZX_INFO_TASK_STATS                  ((zx_object_info_topic_t) 12u) // zx_info_task_stats_t[1]
-#define ZX_INFO_PROCESS_MAPS                ((zx_object_info_topic_t) 13u) // zx_info_maps_t[n]
+#define ZX_INFO_PROCESS_MAPS_V1             __ZX_INFO_TOPIC(13u, 0)        // zx_info_maps_t[n]
+#define ZX_INFO_PROCESS_MAPS                __ZX_INFO_TOPIC(13u, 1)        // zx_info_maps_t[n]
 #define ZX_INFO_PROCESS_VMOS_V1             __ZX_INFO_TOPIC(14u, 0)        // zx_info_vmo_t[n]
-#define ZX_INFO_PROCESS_VMOS                __ZX_INFO_TOPIC(14u, 1)        // zx_info_vmo_t[n]
+#define ZX_INFO_PROCESS_VMOS_V2             __ZX_INFO_TOPIC(14u, 1)        // zx_info_vmo_t[n]
+#define ZX_INFO_PROCESS_VMOS                __ZX_INFO_TOPIC(14u, 2)        // zx_info_vmo_t[n]
 #define ZX_INFO_THREAD_STATS                ((zx_object_info_topic_t) 15u) // zx_info_thread_stats_t[1]
 #define ZX_INFO_CPU_STATS                   ((zx_object_info_topic_t) 16u) // zx_info_cpu_stats_t[n]
 #define ZX_INFO_KMEM_STATS                  ((zx_object_info_topic_t) 17u) // zx_info_kmem_stats_t[1]
@@ -41,7 +43,8 @@ typedef uint32_t zx_object_info_topic_t;
 #define ZX_INFO_PROCESS_HANDLE_STATS        ((zx_object_info_topic_t) 21u) // zx_info_process_handle_stats_t[1]
 #define ZX_INFO_SOCKET                      ((zx_object_info_topic_t) 22u) // zx_info_socket_t[1]
 #define ZX_INFO_VMO_V1                      __ZX_INFO_TOPIC(23u, 0)        // zx_info_vmo_t[1]
-#define ZX_INFO_VMO                         __ZX_INFO_TOPIC(23u, 1)        // zx_info_vmo_t[1]
+#define ZX_INFO_VMO_V2                      __ZX_INFO_TOPIC(23u, 1)        // zx_info_vmo_t[1]
+#define ZX_INFO_VMO                         __ZX_INFO_TOPIC(23u, 2)        // zx_info_vmo_t[1]
 #define ZX_INFO_JOB                         ((zx_object_info_topic_t) 24u) // zx_info_job_t[1]
 #define ZX_INFO_TIMER                       ((zx_object_info_topic_t) 25u) // zx_info_timer_t[1]
 #define ZX_INFO_STREAM                      ((zx_object_info_topic_t) 26u) // zx_info_stream_t[1]
@@ -52,6 +55,9 @@ typedef uint32_t zx_object_info_topic_t;
 #define ZX_INFO_TASK_RUNTIME                __ZX_INFO_TOPIC(30u, 1)        // zx_info_task_runtime_t[1]
 #define ZX_INFO_KMEM_STATS_EXTENDED         ((zx_object_info_topic_t) 31u) // zx_info_kmem_stats_extended_t[1]
 #define ZX_INFO_VCPU                        ((zx_object_info_topic_t) 32u) // zx_info_vcpu_t[1]
+#define ZX_INFO_KMEM_STATS_COMPRESSION      ((zx_object_info_topic_t) 33u) // zx_info_kmem_stats_compression_t[1]
+#define ZX_INFO_IOB                         ((zx_object_info_topic_t) 34u) // zx_info_iob_t[1]
+#define ZX_INFO_IOB_REGIONS                 ((zx_object_info_topic_t) 35u) // zx_iob_region_info_t[n]
 
 // Return codes set when a task is killed.
 #define ZX_TASK_RETCODE_SYSCALL_KILL            ((int64_t) -1024)   // via zx_task_kill().
@@ -358,14 +364,27 @@ typedef struct zx_info_maps_mapping {
     // Bitwise OR of ZX_VM_PERM_{READ,WRITE,EXECUTE} values.
     zx_vm_option_t mmu_flags;
     uint8_t padding1[4];
-    // koid of the mapped VMO.
+    // koid of the mapped VMO or IOB region.
     zx_koid_t vmo_koid;
-    // Offset into the above VMO.
+    // Offset into the above VMO or IOB region.
     uint64_t vmo_offset;
-    // The number of PAGE_SIZE pages in the mapped region of the VMO
-    // that are backed by physical memory.
+    // The number of PAGE_SIZE pages in the mapped region of the VMO or
+    // IOB region that are backed by physical memory.
     size_t committed_pages;
+    // The number of PAGE_SIZE pages of content that have been populated and are
+    // being tracked in the mapped region of the VMO or IOB region. This can be
+    // greater than |committed_pages| where pages might be compressed or otherwise
+    // tracked in a way that does not correlate directly to being committed.
+    size_t populated_pages;
 } zx_info_maps_mapping_t;
+
+typedef struct zx_info_maps_mapping_v1 {
+    zx_vm_option_t mmu_flags;
+    uint8_t padding1[4];
+    zx_koid_t vmo_koid;
+    uint64_t vmo_offset;
+    size_t committed_pages;
+} zx_info_maps_mapping_v1_t;
 
 // Types of entries represented by zx_info_maps_t.
 // Can't use zx_obj_type_t because not all of these are
@@ -397,6 +416,18 @@ typedef struct zx_info_maps {
         // No additional fields for other types.
     } u;
 } zx_info_maps_t;
+
+typedef struct zx_info_maps_v1 {
+    char name[ZX_MAX_NAME_LEN];
+    zx_vaddr_t base;
+    size_t size;
+    size_t depth;
+    zx_info_maps_type_t type;
+    uint8_t padding1[4];
+    union {
+        zx_info_maps_mapping_v1_t mapping;
+    } u;
+} zx_info_maps_v1_t;
 
 
 // Values and types used by ZX_INFO_PROCESS_VMOS.
@@ -445,6 +476,10 @@ typedef struct zx_info_maps {
 // The VMO is immutable and has been since creation.
 #define ZX_INFO_VMO_IMMUTABLE               (1u<<8)
 
+// When reading a list of VMOs pointed to by a process, indicates that the
+// process has a handle an IOB containing the vmo, which isn't necessarily mapped.
+#define ZX_INFO_VMO_VIA_IOB_HANDLE          (1u<<9)
+
 // Describes a VMO. For mapping information, see |zx_info_maps_t|.
 typedef struct zx_info_vmo {
     // The koid of this VMO.
@@ -457,11 +492,11 @@ typedef struct zx_info_vmo {
     // would consume if mapped.
     uint64_t size_bytes;
 
-    // If this VMO is a clone, the koid of its parent. Otherwise, zero.
-    // See |flags| for the type of clone.
+    // If this VMO is a child, the koid of its parent. Otherwise, zero.
+    // See |flags| for the type of child.
     zx_koid_t parent_koid;
 
-    // The number of clones of this VMO, if any.
+    // The number of children of this VMO, if any.
     size_t num_children;
 
     // The number of times this VMO is currently mapped into VMARs.
@@ -486,6 +521,10 @@ typedef struct zx_info_vmo {
     uint64_t committed_bytes;
 
     // If |flags & ZX_INFO_VMO_VIA_HANDLE|, the handle rights.
+    //
+    // If |flags & ZX_INFO_VMO_VIA_IOB_HANDLE|, the effective combined
+    // handle rights for the IOB region and containing IOB.
+    //
     // Undefined otherwise.
     zx_rights_t handle_rights;
 
@@ -500,7 +539,31 @@ typedef struct zx_info_vmo {
     // performed actions on this VMO that would have caused |committed_bytes| to
     // report a different value.
     uint64_t committed_change_events;
+
+    // If |ZX_INFO_VMO_TYPE(flags) == ZX_INFO_VMO_TYPE_PAGED|, the amount of
+    // content that has been populated and is being tracked by this vmo. This
+    // can be greater than |committed_bytes| where content might be compressed
+    // or otherwise tracked in a way that does not correlate directly to being
+    // committed.
+    uint64_t populated_bytes;
 } zx_info_vmo_t;
+
+typedef struct zx_info_vmo_v2 {
+    zx_koid_t koid;
+    char name[ZX_MAX_NAME_LEN];
+    uint64_t size_bytes;
+    zx_koid_t parent_koid;
+    size_t num_children;
+    size_t num_mappings;
+    size_t share_count;
+    uint32_t flags;
+    uint8_t padding1[4];
+    uint64_t committed_bytes;
+    zx_rights_t handle_rights;
+    uint32_t cache_policy;
+    uint64_t metadata_bytes;
+    uint64_t committed_change_events;
+} zx_info_vmo_v2_t;
 
 typedef struct zx_info_vmo_v1 {
     zx_koid_t koid;
@@ -737,6 +800,75 @@ typedef struct zx_info_kmem_stats_extended {
     uint64_t vmo_reclaim_disabled_bytes;
 } zx_info_kmem_stats_extended_t;
 
+typedef struct zx_info_kmem_stats_compression {
+    // Size in bytes of the content that is currently being compressed and stored.
+    uint64_t uncompressed_storage_bytes;
+
+    // Size in bytes of all memory, including metadata, fragmentation and other
+    // overheads, of the compressed memory area. Note that due to base book
+    // keeping overhead this could be non-zero, even when
+    // |uncompressed_content_bytes| is zero.
+    uint64_t compressed_storage_bytes;
+
+    // Size in bytes of any fragmentation in the compressed memory area.
+    uint64_t compressed_fragmentation_bytes;
+
+    // Total amount of CPU time spent on compression across all threads.
+    // Compression may happen in parallel and so this can be larger than
+    // wall clock time.
+    zx_duration_t compression_time;
+
+    // Total amount of time decompression has spent on a CPU across all threads.
+    // Decompression may happen in parallel and so this can increase faster than
+    // wall clock time.
+    zx_duration_t decompression_time;
+
+    // Total number of times compression has been done on a page, regardless of
+    // whether the compressed result was ultimately retained.
+    uint64_t total_page_compression_attempts;
+
+    // How many of the total compression attempts were considered failed and
+    // were not stored. An example reason for failure would be a page not being
+    // compressed sufficiently to be considered worth storing.
+    uint64_t failed_page_compression_attempts;
+
+    // Number of times pages have been decompressed.
+    uint64_t total_page_decompressions;
+
+    // Number of times a page was removed from storage without needing to be
+    // decompressed. An example that would cause this is a VMO being destroyed.
+    uint64_t compressed_page_evictions;
+
+    // How many pages compressed due to the page being inactive, but without
+    // there being memory pressure.
+    uint64_t eager_page_compressions;
+
+    // How many pages compressed due to general memory pressure. This excludes pages
+    // compressed due to critical memory pressure.
+    uint64_t memory_pressure_page_compressions;
+
+    // How many pages compressed due to attempting to avoid OOM or near OOM
+    // scenarios.
+    uint64_t critical_memory_page_compressions;
+
+    // The nanoseconds in the base unit of time for
+    // |pages_decompressed_within_log_time|.
+    uint64_t pages_decompressed_unit_ns;
+
+    // How long pages spent compressed before being decompressed, grouped in log
+    // buckets. Pages that got evicted, and hence were not decompressed, are not
+    // counted here. Buckets are in |pages_decompressed_unit_ns| and round up
+    // such that:
+    // 0: Pages decompressed in <1 unit
+    // 1: Pages decompressed between 1 and 2 units
+    // 2: Pages decompressed between 2 and 4 units
+    // ...
+    // 7: Pages decompressed between 64 and 128 units
+    // How many pages are held compressed for longer than 128 units can be
+    // inferred by subtracting from |total_page_decompressions|.
+    uint64_t pages_decompressed_within_log_time[8];
+} zx_info_kmem_stats_compression_t;
+
 typedef struct zx_info_resource {
     // The resource kind; resource object kinds are detailed in the resource.md
     uint32_t kind;
@@ -770,6 +902,22 @@ typedef struct zx_info_vcpu {
 #define ZX_INFO_VCPU_FLAG_KICKED            ((uint32_t) (1u<<0))
 
 #define ZX_INFO_CPU_STATS_FLAG_ONLINE       (1u<<0)
+
+typedef struct zx_info_iob {
+  // The value of the *options* parameter passed to `zx_iob_create`.
+  uint64_t options;
+  // The number of regions in the IOB.
+  uint32_t region_count;
+  uint8_t padding1[4];
+} zx_info_iob_t;
+
+typedef struct zx_iob_region_info {
+  // The region description, with potentially swapped access bits.
+  zx_iob_region_t region;
+
+  /// The koid of the underlying memory object.
+  zx_koid_t koid;
+} zx_iob_region_info_t;
 
 // Object properties.
 

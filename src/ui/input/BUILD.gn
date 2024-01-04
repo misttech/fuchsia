@@ -9,8 +9,8 @@ group("input") {
 group("drivers") {
   testonly = true
   deps = [
+    "drivers/adc-buttons",
     "drivers/ctaphid",
-    "drivers/cypress",
     "drivers/focaltech",
     "drivers/focaltech:focaltech-sherlock",
     "drivers/goldfish_sensor:sensor_driver",

@@ -11,6 +11,7 @@
         "//src/lib/vulkan/vulkan_test_realm.shard.cml",
         "//src/media/testing/drm_test_realm.shard.cml",
         "//src/sys/component_manager/tests/capability_provider_vfs_compliance/vfs_compliance_test_realm.shard.cml",
+        "//src/sys/testing/meta/chromium_test_realm.shard.cml",
 
         // Optional: Include optional runners.
         "//src/sys/testing/meta/runners/fuzz-test-runner.shard.cml",
@@ -77,6 +78,10 @@
                 {
                     runner: "rust_test_runner",
                     from: "#rust_test_runner",
+                },
+                {
+                    runner: "rust_test_create_raw_processes_runner",
+                    from: "#rust_test_create_raw_processes_runner",
                 },
                 {
                     runner: "rust_test_next_vdso_runner",

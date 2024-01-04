@@ -13,8 +13,8 @@
 #include "fuchsia/bluetooth/gatt/cpp/fidl.h"
 #include "fuchsia/bluetooth/le/cpp/fidl.h"
 #include "lib/fidl/cpp/interface_request.h"
+#include "src/connectivity/bluetooth/core/bt-host/fidl/fake_adapter_test_fixture.h"
 #include "src/connectivity/bluetooth/core/bt-host/fidl/helpers.h"
-#include "src/connectivity/bluetooth/core/bt-host/gap/fake_adapter_test_fixture.h"
 #include "src/connectivity/bluetooth/core/bt-host/sm/types.h"
 #include "src/connectivity/bluetooth/core/bt-host/testing/fake_controller.h"
 #include "src/connectivity/bluetooth/core/bt-host/testing/fake_peer.h"
@@ -116,14 +116,14 @@ class LowEnergyCentralServerTest : public TestingBase {
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(LowEnergyCentralServerTest);
 };
 
-class LowEnergyCentralServerTestFakeAdapter : public bt::gap::testing::FakeAdapterTestFixture {
+class LowEnergyCentralServerTestFakeAdapter : public bt::fidl::testing::FakeAdapterTestFixture {
  public:
   void SetUp() override {
-    bt::gap::testing::FakeAdapterTestFixture::SetUp();
+    bt::fidl::testing::FakeAdapterTestFixture::SetUp();
 
     // Create a LowEnergyCentralServer and bind it to a local client.
     fidl::InterfaceHandle<fble::Central> handle;
-    gatt_ = std::make_unique<bt::gatt::testing::FakeLayer>();
+    gatt_ = std::make_unique<bt::gatt::testing::FakeLayer>(pw_dispatcher());
     server_ = std::make_unique<LowEnergyCentralServer>(adapter()->AsWeakPtr(), handle.NewRequest(),
                                                        gatt_->GetWeakPtr());
     proxy_.Bind(std::move(handle));
@@ -147,7 +147,7 @@ TEST_F(LowEnergyCentralServerTest, ConnectDefaultResultsBondableConnectionRef) {
   auto* const peer = adapter()->peer_cache()->NewPeer(kTestAddr, /*connectable=*/true);
   ASSERT_TRUE(peer);
 
-  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kTestAddr, pw_dispatcher()));
 
   fble::ConnectionOptions options;
 
@@ -178,7 +178,7 @@ TEST_F(LowEnergyCentralServerTest, ConnectBondableResultsBondableConnectionRef) 
   auto* const peer = adapter()->peer_cache()->NewPeer(kTestAddr, /*connectable=*/true);
   ASSERT_TRUE(peer);
 
-  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kTestAddr, pw_dispatcher()));
 
   fble::ConnectionOptions options;
   options.set_bondable_mode(true);
@@ -210,7 +210,7 @@ TEST_F(LowEnergyCentralServerTest, ConnectNonBondableResultsNonBondableConnectio
   auto* const peer = adapter()->peer_cache()->NewPeer(kTestAddr, /*connectable=*/true);
   ASSERT_TRUE(peer);
 
-  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kTestAddr, pw_dispatcher()));
 
   fble::ConnectionOptions options;
   options.set_bondable_mode(false);
@@ -251,7 +251,7 @@ TEST_F(LowEnergyCentralServerTest, FailedConnectionCleanedUp) {
   auto* const peer = adapter()->peer_cache()->NewPeer(kTestAddr, /*connectable=*/true);
   ASSERT_TRUE(peer);
 
-  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kTestAddr, pw_dispatcher()));
 
   fble::ConnectionOptions options;
 
@@ -279,7 +279,7 @@ TEST_F(LowEnergyCentralServerTest, FailedConnectionCleanedUp) {
 
 TEST_F(LowEnergyCentralServerTest, ConnectPeripheralAlreadyConnectedInLecm) {
   auto* const peer = adapter()->peer_cache()->NewPeer(kTestAddr, /*connectable=*/true);
-  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kTestAddr, pw_dispatcher()));
 
   std::unique_ptr<bt::gap::LowEnergyConnectionHandle> le_conn;
   adapter()->le()->Connect(
@@ -338,8 +338,8 @@ TEST_F(LowEnergyCentralServerTest, DisconnectPeripheralClosesCorrectGattHandle) 
   auto* const peer1 = adapter()->peer_cache()->NewPeer(kAddr1, /*connectable=*/true);
   auto* const peer2 = adapter()->peer_cache()->NewPeer(kAddr2, /*connectable=*/true);
 
-  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kAddr1));
-  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kAddr2));
+  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kAddr1, pw_dispatcher()));
+  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kAddr2, pw_dispatcher()));
 
   // Establish two connections.
   fidl::InterfaceHandle<fgatt::Client> handle1, handle2;
@@ -369,8 +369,8 @@ TEST_F(LowEnergyCentralServerTest, PeerDisconnectClosesCorrectHandle) {
   auto* const peer1 = adapter()->peer_cache()->NewPeer(kAddr1, /*connectable=*/true);
   auto* const peer2 = adapter()->peer_cache()->NewPeer(kAddr2, /*connectable=*/true);
 
-  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kAddr1));
-  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kAddr2));
+  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kAddr1, pw_dispatcher()));
+  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kAddr2, pw_dispatcher()));
 
   // Establish two connections.
   fidl::InterfaceHandle<fgatt::Client> handle1, handle2;
@@ -400,8 +400,8 @@ TEST_F(LowEnergyCentralServerTest, ClosingCentralHandleClosesAssociatedGattClien
   auto* const peer1 = adapter()->peer_cache()->NewPeer(kAddr1, /*connectable=*/true);
   auto* const peer2 = adapter()->peer_cache()->NewPeer(kAddr2, /*connectable=*/true);
 
-  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kAddr1));
-  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kAddr2));
+  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kAddr1, pw_dispatcher()));
+  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kAddr2, pw_dispatcher()));
 
   // Establish two connections.
   fidl::InterfaceHandle<fgatt::Client> handle1, handle2;
@@ -793,7 +793,7 @@ TEST_F(LowEnergyCentralServerTest, ScanResultWatcherMeasureTape) {
   adv_data.CalculateBlockSize();
   bt::DynamicByteBuffer adv_buffer(adv_data.CalculateBlockSize());
   adv_data.WriteBlock(&adv_buffer, std::nullopt);
-  peer_0->MutLe().SetAdvertisingData(/*rssi=*/0, adv_buffer, zx::time());
+  peer_0->MutLe().SetAdvertisingData(/*rssi=*/0, adv_buffer, pw::chrono::SystemClock::time_point());
 
   const size_t kMaxPeersPerChannel = MaxPeersPerScanResultWatcherChannel(*peer_0);
 
@@ -808,7 +808,7 @@ TEST_F(LowEnergyCentralServerTest, ScanResultWatcherMeasureTape) {
                           {static_cast<uint8_t>(i), 0, 0, 0, 0, 0}),
         /*connectable=*/false);
     ASSERT_TRUE(peer);
-    peer->MutLe().SetAdvertisingData(/*rssi=*/0, adv_buffer, zx::time());
+    peer->MutLe().SetAdvertisingData(/*rssi=*/0, adv_buffer, pw::chrono::SystemClock::time_point());
   }
 
   fidl::InterfaceHandle<fble::ScanResultWatcher> result_watcher_handle;
@@ -860,7 +860,7 @@ TEST_F(LowEnergyCentralServerTest, ScanResultsMatchPeerFromAnyFilter) {
   const auto kAdvData0 = bt::StaticByteBuffer(0x02,  // Length
                                               0x09,  // AD type: Complete Local Name
                                               '0');
-  peer_0->MutLe().SetAdvertisingData(kRssi, kAdvData0, zx::time());
+  peer_0->MutLe().SetAdvertisingData(kRssi, kAdvData0, pw::chrono::SystemClock::time_point());
   // Peer that matches filter_1
   bt::gap::Peer* peer_1 = adapter()->peer_cache()->NewPeer(
       bt::DeviceAddress(bt::DeviceAddress::Type::kLEPublic, {2, 0, 0, 0, 0, 0}),
@@ -869,7 +869,7 @@ TEST_F(LowEnergyCentralServerTest, ScanResultsMatchPeerFromAnyFilter) {
   const auto kAdvData1 = bt::StaticByteBuffer(0x02,  // Length
                                               0x09,  // AD type: Complete Local Name
                                               '1');
-  peer_1->MutLe().SetAdvertisingData(kRssi, kAdvData1, zx::time());
+  peer_1->MutLe().SetAdvertisingData(kRssi, kAdvData1, pw::chrono::SystemClock::time_point());
 
   fble::ScanOptions options;
   fble::Filter filter_0;
@@ -961,7 +961,8 @@ TEST_F(LowEnergyCentralServerTest, ScanFailsToStart) {
 
 TEST_F(LowEnergyCentralServerTest, ScanSessionErrorCancelsScan) {
   zx::duration kTestScanPeriod = zx::sec(1);
-  adapter()->le()->set_scan_period_for_testing(kTestScanPeriod);
+  pw::chrono::SystemClock::duration kPwTestScanPeriod = std::chrono::seconds(1);
+  adapter()->le()->set_scan_period_for_testing(kPwTestScanPeriod);
   std::vector<bool> scan_states;
   test_device()->set_scan_state_callback([&](bool enabled) {
     scan_states.push_back(enabled);
@@ -1015,7 +1016,7 @@ TEST_F(LowEnergyCentralServerTest,
 TEST_F(LowEnergyCentralServerTest, ConnectToAlreadyConnectedPeerFails) {
   auto* const peer = adapter()->peer_cache()->NewPeer(kTestAddr, /*connectable=*/true);
   ASSERT_TRUE(peer);
-  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kTestAddr, pw_dispatcher()));
 
   fble::ConnectionPtr conn_client_0;
   std::optional<zx_status_t> epitaph_0;
@@ -1043,7 +1044,7 @@ TEST_F(LowEnergyCentralServerTest, ConnectToPeerWithRequestPending) {
   auto* const peer = adapter()->peer_cache()->NewPeer(kTestAddr, /*connectable=*/true);
   ASSERT_TRUE(peer);
 
-  auto fake_peer = std::make_unique<bt::testing::FakePeer>(kTestAddr);
+  auto fake_peer = std::make_unique<bt::testing::FakePeer>(kTestAddr, pw_dispatcher());
   fake_peer->force_pending_connect();
   test_device()->AddPeer(std::move(fake_peer));
 
@@ -1072,7 +1073,7 @@ TEST_F(LowEnergyCentralServerTest, ConnectToPeerWithRequestPending) {
 TEST_F(LowEnergyCentralServerTest, ConnectToPeerAlreadyConnectedInLowEnergyConnectionManager) {
   auto* const peer = adapter()->peer_cache()->NewPeer(kTestAddr, /*connectable=*/true);
   ASSERT_TRUE(peer);
-  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kTestAddr));
+  test_device()->AddPeer(std::make_unique<bt::testing::FakePeer>(kTestAddr, pw_dispatcher()));
 
   std::unique_ptr<bt::gap::LowEnergyConnectionHandle> le_conn;
   adapter()->le()->Connect(
@@ -1102,7 +1103,7 @@ TEST_F(LowEnergyCentralServerTest, ConnectThenPeerDisconnectThenReconnect) {
   const fuchsia::bluetooth::PeerId kFidlPeerId{peer->identifier().value()};
 
   std::unique_ptr<bt::testing::FakePeer> fake_peer =
-      std::make_unique<bt::testing::FakePeer>(kTestAddr);
+      std::make_unique<bt::testing::FakePeer>(kTestAddr, pw_dispatcher());
   test_device()->AddPeer(std::move(fake_peer));
 
   fble::ConnectionPtr conn_client_0;
@@ -1131,7 +1132,7 @@ TEST_F(LowEnergyCentralServerTest, ConnectThenPeerDisconnectThenReconnect) {
 TEST_F(LowEnergyCentralServerTest, ConnectFailsDueToPeerNotConnectableThenConnectSuceeds) {
   bt::gap::Peer* peer = adapter()->peer_cache()->NewPeer(kTestAddr, /*connectable=*/false);
   ASSERT_TRUE(peer);
-  auto fake_peer = std::make_unique<bt::testing::FakePeer>(kTestAddr);
+  auto fake_peer = std::make_unique<bt::testing::FakePeer>(kTestAddr, pw_dispatcher());
   test_device()->AddPeer(std::move(fake_peer));
 
   fble::ConnectionPtr conn_client_0;

@@ -1,4 +1,4 @@
-# Copyright 2018 The Fuchsia Authors. All rights reserved.
+#G Copyright 2018 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -40,9 +40,7 @@ executable("cpuperf_integration_tests_bin") {
       "arm64/arm64_tests.h",
       "arm64/tally.cc",
     ]
-  }
-
-  if (current_cpu == "x64") {
+  } else if (current_cpu == "x64") {
     sources += [
       "intel/fixed_counters.cc",
       "intel/intel_tests.cc",
@@ -54,11 +52,13 @@ executable("cpuperf_integration_tests_bin") {
       "intel/user_flag.cc",
       "intel/value_records.cc",
     ]
+  } else {
+    sources += [ "unsupported_arch_tests.cc" ]
   }
 
   deps = [
     "//sdk/lib/fdio",
-    "//src/lib/fxl",
+    "//src/lib/fxl:fxl_cli",
     "//src/lib/fxl/test:test_settings",
     "//src/performance/cpuperf:session_result_spec",
     "//src/performance/cpuperf:session_spec",
@@ -87,14 +87,14 @@ fuchsia_unittest_package("cpuperf_integration_tests") {
     ":cpuperf_resources",
     "//src/performance/cpuperf:bin",
   ]
+  subpackages = [ "//src/performance/cpu-trace" ]
   test_type = "system"
 }
 
 resource("cpuperf_resources") {
   if (current_cpu == "arm64") {
     sources = [ "arm64/tally.cpspec" ]
-  }
-  if (current_cpu == "x64") {
+  } else if (current_cpu == "x64") {
     sources = [
       "gen_printer_test_data.cpspec",
       "intel/fixed_counters.cpspec",
@@ -105,6 +105,8 @@ resource("cpuperf_resources") {
       "intel/user_flag.cpspec",
       "intel/value_records.cpspec",
     ]
+  } else {
+    sources = []
   }
   outputs = [ "data/{{source_file_part}}" ]
 }

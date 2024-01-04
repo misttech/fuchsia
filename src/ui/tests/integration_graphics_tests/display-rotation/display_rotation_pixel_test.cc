@@ -16,34 +16,12 @@
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 #include "src/ui/testing/ui_test_manager/ui_test_manager.h"
 #include "src/ui/testing/ui_test_realm/ui_test_realm.h"
-#include "src/ui/testing/util/flatland_test_view.h"
-#include "src/ui/testing/util/gfx_test_view.h"
+#include "src/ui/testing/util/test_view.h"
 
 namespace integration_tests {
 namespace {
 
 constexpr auto kViewProvider = "view-provider";
-
-std::vector<ui_testing::UITestRealm::Config> UIConfigurationsToTest(
-    std::vector<int> display_rotations) {
-  std::vector<ui_testing::UITestRealm::Config> configs;
-
-  // Flatland x scene manager
-  {
-    ui_testing::UITestRealm::Config config;
-    config.use_flatland = true;
-    config.use_scene_owner = true;
-    config.accessibility_owner = ui_testing::UITestRealm::AccessibilityOwnerType::FAKE;
-    config.device_pixel_ratio = ui_testing::kDefaultDevicePixelRatio;
-    config.ui_to_client_services = {fuchsia::ui::composition::Flatland::Name_,
-                                    fuchsia::ui::composition::Allocator::Name_};
-    for (const auto rotation : display_rotations) {
-      config.display_rotation = rotation;
-      configs.push_back(config);
-    }
-  }
-  return configs;
-}
 
 }  // namespace
 
@@ -57,40 +35,38 @@ using component_testing::Route;
 // 'config/data/display_rotation' correctly.
 class DisplayRotationPixelTestBase : public gtest::RealLoopFixture {
  protected:
-  explicit DisplayRotationPixelTestBase(ui_testing::UITestRealm::Config config)
-      : config_(std::move(config)) {}
+  explicit DisplayRotationPixelTestBase(int display_rotation)
+      : display_rotation_(display_rotation) {}
 
   // |testing::Test|
   void SetUp() override {
-    ui_test_manager_.emplace(config_);
+    ui_testing::UITestRealm::Config config;
+    config.use_scene_owner = true;
+    config.accessibility_owner = ui_testing::UITestRealm::AccessibilityOwnerType::FAKE;
+    config.device_pixel_ratio = ui_testing::kDefaultDevicePixelRatio;
+    config.ui_to_client_services = {fuchsia::ui::composition::Flatland::Name_,
+                                    fuchsia::ui::composition::Allocator::Name_};
+    config.display_rotation = display_rotation_;
+    ui_test_manager_.emplace(config);
 
     // Build realm.
     FX_LOGS(INFO) << "Building realm";
     realm_ = ui_test_manager_->AddSubrealm();
 
+    // Add a test view provider.
     test_view_access_ = std::make_shared<ui_testing::TestViewAccess>();
-
-    component_testing::LocalComponentFactory test_view;
-    // Add a test view provider. Make either a gfx test view or flatland test view depending
-    // on the config parameters.
-    if (config_.use_flatland) {
-      test_view = [d = dispatcher(), a = test_view_access_]() {
-        return std::make_unique<ui_testing::FlatlandTestView>(
-            d, /* content = */ ui_testing::TestView::ContentType::COORDINATE_GRID, a);
-      };
-    } else {
-      test_view = [d = dispatcher(), a = test_view_access_]() {
-        return std::make_unique<ui_testing::GfxTestView>(
-            d, /* content = */ ui_testing::TestView::ContentType::COORDINATE_GRID, a);
-      };
-    }
+    component_testing::LocalComponentFactory test_view = [d = dispatcher(),
+                                                          a = test_view_access_]() {
+      return std::make_unique<ui_testing::TestView>(
+          d, /* content = */ ui_testing::TestView::ContentType::COORDINATE_GRID, a);
+    };
 
     realm_->AddLocalChild(kViewProvider, std::move(test_view));
     realm_->AddRoute(Route{.capabilities = {Protocol{fuchsia::ui::app::ViewProvider::Name_}},
                            .source = ChildRef{kViewProvider},
                            .targets = {ParentRef()}});
 
-    for (const auto& protocol : config_.ui_to_client_services) {
+    for (const auto& protocol : config.ui_to_client_services) {
       realm_->AddRoute(Route{.capabilities = {Protocol{protocol}},
                              .source = ParentRef(),
                              .targets = {ChildRef{kViewProvider}}});
@@ -126,25 +102,25 @@ class DisplayRotationPixelTestBase : public gtest::RealLoopFixture {
   static void AssertScreenshot(const ui_testing::Screenshot& screenshot, uint64_t width,
                                uint64_t height) {
     // Check pixel content at all four corners.
-    EXPECT_EQ(screenshot.GetPixelAt(0, 0), ui_testing::Screenshot::kBlack);  // Top left
+    EXPECT_EQ(screenshot.GetPixelAt(0, 0), utils::kBlack);  // Top left
     EXPECT_EQ(screenshot.GetPixelAt(0, screenshot.height() - 1),
-              ui_testing::Screenshot::kBlue);  // Bottom left
+              utils::kBlue);  // Bottom left
     EXPECT_EQ(screenshot.GetPixelAt(screenshot.width() - 1, 0),
-              ui_testing::Screenshot::kRed);  // Top right
+              utils::kRed);  // Top right
     EXPECT_EQ(screenshot.GetPixelAt(screenshot.width() - 1, screenshot.height() - 1),
-              ui_testing::Screenshot::kMagenta);  // Bottom right
+              utils::kMagenta);  // Bottom right
 
     // Check pixel content at center of each rectangle.
     EXPECT_EQ(screenshot.GetPixelAt(screenshot.width() / 4, screenshot.height() / 4),
-              ui_testing::Screenshot::kBlack);  // Top left
+              utils::kBlack);  // Top left
     EXPECT_EQ(screenshot.GetPixelAt(screenshot.width() / 4, (3 * screenshot.height()) / 4),
-              ui_testing::Screenshot::kBlue);  // Bottom left
+              utils::kBlue);  // Bottom left
     EXPECT_EQ(screenshot.GetPixelAt((3 * screenshot.width()) / 4, screenshot.height() / 4),
-              ui_testing::Screenshot::kRed);  // Top right
+              utils::kRed);  // Top right
     EXPECT_EQ(screenshot.GetPixelAt((3 * screenshot.width()) / 4, (3 * screenshot.height()) / 4),
-              ui_testing::Screenshot::kMagenta);  // Bottom right
+              utils::kMagenta);  // Bottom right
     EXPECT_EQ(screenshot.GetPixelAt(screenshot.width() / 2, screenshot.height() / 2),
-              ui_testing::Screenshot::kGreen);  // Center
+              utils::kGreen);  // Center
 
     // Width and height of the rectangle in the center is |width|/4 and
     // |height|/4.
@@ -161,11 +137,11 @@ class DisplayRotationPixelTestBase : public gtest::RealLoopFixture {
 
     auto histogram = screenshot.Histogram();
 
-    EXPECT_EQ(histogram[ui_testing::Screenshot::kBlack], expected_black_pixels);
-    EXPECT_EQ(histogram[ui_testing::Screenshot::kBlue], expected_blue_pixels);
-    EXPECT_EQ(histogram[ui_testing::Screenshot::kRed], expected_red_pixels);
-    EXPECT_EQ(histogram[ui_testing::Screenshot::kMagenta], expected_magenta_pixels);
-    EXPECT_EQ(histogram[ui_testing::Screenshot::kGreen], expected_green_pixels);
+    EXPECT_EQ(histogram[utils::kBlack], expected_black_pixels);
+    EXPECT_EQ(histogram[utils::kBlue], expected_blue_pixels);
+    EXPECT_EQ(histogram[utils::kRed], expected_red_pixels);
+    EXPECT_EQ(histogram[utils::kMagenta], expected_magenta_pixels);
+    EXPECT_EQ(histogram[utils::kGreen], expected_green_pixels);
   }
 
   float ClientViewScaleFactor() { return ui_test_manager_->ClientViewScaleFactor(); }
@@ -175,26 +151,23 @@ class DisplayRotationPixelTestBase : public gtest::RealLoopFixture {
   std::shared_ptr<ui_testing::TestViewAccess> test_view_access_;
 
  private:
-  ui_testing::UITestRealm::Config config_;
+  int display_rotation_;
   std::optional<ui_testing::UITestManager> ui_test_manager_;
   std::unique_ptr<sys::ServiceDirectory> realm_exposed_services_;
   std::optional<Realm> realm_;
 };
 
 class LandscapeModeTest : public DisplayRotationPixelTestBase,
-                          public ::testing::WithParamInterface<ui_testing::UITestRealm::Config> {
- public:
-  // The display is said to be in landscape mode when it is oriented horizontally i.e rotated by 0
-  // or 180 degrees.
-  static std::vector<int> GetDisplayRotation() { return {0, 180}; }
-
+                          public ::testing::WithParamInterface<int> {
  protected:
   LandscapeModeTest() : DisplayRotationPixelTestBase(GetParam()) {}
 };
 
-INSTANTIATE_TEST_SUITE_P(
-    DisplayRotationPixelTestWithParams, LandscapeModeTest,
-    ::testing::ValuesIn(UIConfigurationsToTest(LandscapeModeTest::GetDisplayRotation())));
+INSTANTIATE_TEST_SUITE_P(DisplayRotationPixelTestWithParams, LandscapeModeTest,
+                         // The display is said to be in landscape mode when it
+                         // is oriented horizontally i.e rotated by 0 or 180
+                         // degrees.
+                         ::testing::Values(0, 180));
 
 // This test leverage the coordinate test view to ensure that display rotation is working
 // properly.
@@ -230,19 +203,16 @@ TEST_P(LandscapeModeTest, ValidContentTest) {
 }
 
 class PortraitModeTest : public DisplayRotationPixelTestBase,
-                         public ::testing::WithParamInterface<ui_testing::UITestRealm::Config> {
- public:
-  // The display is said to be in portrait mode when it is oriented vertically i.e rotated by 90 or
-  // 270 degrees.
-  static std::vector<int> GetDisplayRotation() { return {90, 270}; }
-
+                         public ::testing::WithParamInterface<int> {
  protected:
   PortraitModeTest() : DisplayRotationPixelTestBase(GetParam()) {}
 };
 
-INSTANTIATE_TEST_SUITE_P(
-    DisplayRotationPixelTestWithParams, PortraitModeTest,
-    ::testing::ValuesIn(UIConfigurationsToTest(PortraitModeTest::GetDisplayRotation())));
+INSTANTIATE_TEST_SUITE_P(DisplayRotationPixelTestWithParams, PortraitModeTest,
+                         // The display is said to be in portrait mode when it
+                         // is oriented vertically i.e rotated by 90 or 270
+                         // degrees.
+                         ::testing::Values(90, 270));
 
 // This test leverage the coordinate test view to ensure that display rotation is working
 // properly.

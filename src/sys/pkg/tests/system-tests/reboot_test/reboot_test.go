@@ -153,8 +153,13 @@ func doTestReboot(
 		return fmt.Errorf("unable to get repository: %w", err)
 	}
 
+	updatePackage, err := repo.OpenUpdatePackage(ctx, "update/0")
+	if err != nil {
+		return fmt.Errorf("error opening update/0: %w", err)
+	}
+
 	// Install version N on the device if it is not already on that version.
-	expectedSystemImageMerkle, err := repo.LookupUpdateSystemImageMerkle(ctx)
+	expectedSystemImage, err := updatePackage.OpenSystemImagePackage(ctx)
 	if err != nil {
 		return fmt.Errorf("error extracting expected system image merkle: %w", err)
 	}
@@ -168,7 +173,7 @@ func doTestReboot(
 		ctx,
 		device,
 		*rpcClient,
-		expectedSystemImageMerkle,
+		expectedSystemImage,
 		expectedConfig,
 		false,
 	); err != nil {
@@ -195,7 +200,7 @@ func doTestReboot(
 		ctx,
 		device,
 		*rpcClient,
-		expectedSystemImageMerkle,
+		expectedSystemImage,
 		expectedConfig,
 		false,
 	); err != nil {
@@ -244,13 +249,19 @@ func initializeDevice(
 		return nil, fmt.Errorf("failed to run before-init-script: %w", err)
 	}
 
-	expectedSystemImageMerkle, err := repo.LookupUpdateSystemImageMerkle(ctx)
+	updatePackage, err := repo.OpenUpdatePackage(ctx, "update/0")
+	if err != nil {
+		return nil, fmt.Errorf("error opening update/0: %w", err)
+	}
+
+	// Install version N on the device if it is not already on that version.
+	expectedSystemImage, err := updatePackage.OpenSystemImagePackage(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error extracting expected system image merkle: %w", err)
 	}
 
 	// Only provision if the device is not running the expected version.
-	upToDate, err := check.IsDeviceUpToDate(ctx, device, expectedSystemImageMerkle)
+	upToDate, err := check.IsDeviceUpToDate(ctx, device, expectedSystemImage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if up to date during initialization: %w", err)
 	}
@@ -288,7 +299,7 @@ func initializeDevice(
 		ctx,
 		device,
 		rpcClient,
-		expectedSystemImageMerkle,
+		expectedSystemImage,
 		expectedConfig,
 		false,
 	); err != nil {

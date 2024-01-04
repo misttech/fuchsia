@@ -21,6 +21,7 @@ class TestExecutionEnvironment(unittest.TestCase):
 
         open(os.path.join(out_dir, "tests.json"), "a").close()
         open(os.path.join(out_dir, "test-list.json"), "a").close()
+        open(os.path.join(out_dir, "package-repositories.json"), "a").close()
 
     def test_process_environment(self):
         """Test that we can load and use an environment."""
@@ -39,7 +40,9 @@ class TestExecutionEnvironment(unittest.TestCase):
                 self.assertTrue(
                     env.log_file and env.log_file.startswith(out_dir), str(env)
                 )
-                self.assertTrue(env.log_file and "fxtest" in env.log_file, str(env))
+                self.assertTrue(
+                    env.log_file and "fxtest" in env.log_file, str(env)
+                )
                 self.assertEqual(
                     env.test_json_file, os.path.join(out_dir, "tests.json")
                 )

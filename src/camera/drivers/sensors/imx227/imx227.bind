@@ -4,15 +4,15 @@
 
 composite imx227_sensor;
 
-using fuchsia.hardware.clock;
-using fuchsia.hardware.gpio;
+using fuchsia.clock;
+using fuchsia.gpio;
 using fuchsia.i2c;
-using fuchsia.mipicsi;
+using fuchsia.camera;
 using fuchsia.platform;
 using fuchsia.sony.platform;
 
 primary node "mipicsi" {
-  fuchsia.BIND_PROTOCOL == fuchsia.mipicsi.BIND_PROTOCOL.DEVICE;
+  fuchsia.BIND_PROTOCOL == fuchsia.camera.BIND_PROTOCOL.MIPICSI;
 }
 
 node "pdev" {
@@ -27,21 +27,25 @@ node "i2c" {
 }
 
 node "gpio-reset" {
-  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.hardware.gpio.BIND_FIDL_PROTOCOL.SERVICE;
-  fuchsia.hardware.gpio.FUNCTION == fuchsia.hardware.gpio.FUNCTION.CAM_RESET;
+  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.gpio.BIND_FIDL_PROTOCOL.SERVICE;
+  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.CAM_RESET;
 }
 
 node "gpio-vana" {
-  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.hardware.gpio.BIND_FIDL_PROTOCOL.SERVICE;
-  fuchsia.hardware.gpio.FUNCTION == fuchsia.hardware.gpio.FUNCTION.VANA_ENABLE;
+  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.gpio.BIND_FIDL_PROTOCOL.SERVICE;
+  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.VANA_ENABLE;
 }
 
 node "gpio-vdig" {
-  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.hardware.gpio.BIND_FIDL_PROTOCOL.SERVICE;
-  fuchsia.hardware.gpio.FUNCTION == fuchsia.hardware.gpio.FUNCTION.VDIG_ENABLE;
+  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.gpio.BIND_FIDL_PROTOCOL.SERVICE;
+  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.VDIG_ENABLE;
 }
 
 node "clock-sensor" {
-  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.hardware.clock.BIND_FIDL_PROTOCOL.SERVICE;
-  fuchsia.hardware.clock.FUNCTION == fuchsia.hardware.clock.FUNCTION.CAMERA_SENSOR;
+  fuchsia.BIND_FIDL_PROTOCOL == fuchsia.clock.BIND_FIDL_PROTOCOL.SERVICE;
+  fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.CAMERA_SENSOR;
+}
+
+node "gpio-init" {
+  fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }

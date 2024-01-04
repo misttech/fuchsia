@@ -2,15 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::task::{IntervalTimerHandle, ThreadGroupReadGuard, WaitQueue, WaiterRef};
 use starnix_sync::InterruptibleEvent;
-use std::{collections::VecDeque, sync::Arc};
-use zerocopy::{AsBytes, FromBytes, FromZeroes};
-
-use crate::{
-    lock::RwLock,
-    task::{WaitQueue, WaiterRef},
-    types::*,
+use starnix_sync::RwLock;
+use starnix_uapi::{
+    __sifields__bindgen_ty_2, __sifields__bindgen_ty_4, __sifields__bindgen_ty_7, c_int, c_uint,
+    error,
+    errors::Errno,
+    pid_t, sigaction_t, sigaltstack_t, sigevent, siginfo_t,
+    signals::{SigSet, Signal, UncheckedSignal, UNBLOCKABLE_SIGNALS},
+    sigval_t, uapi, uid_t,
+    union::struct_with_union_into_bytes,
+    user_address::UserAddress,
+    SIGEV_NONE, SIGEV_SIGNAL, SIGEV_THREAD, SIGEV_THREAD_ID, SIG_DFL, SIG_IGN, SI_KERNEL,
+    SI_MAX_SIZE,
 };
+use std::{collections::VecDeque, convert::TryFrom, sync::Arc};
+use zerocopy::{AsBytes, FromBytes, FromZeros, NoCell};
 
 /// `SignalActions` contains a `sigaction_t` for each valid signal.
 #[derive(Debug)]
@@ -91,13 +99,7 @@ impl RunState {
     pub fn wake(&self) {
         match self {
             RunState::Running => (),
-            RunState::Waiter(waiter) => {
-                waiter.access(|waiter| {
-                    if let Some(waiter) = waiter {
-                        waiter.interrupt()
-                    }
-                });
-            }
+            RunState::Waiter(waiter) => waiter.interrupt(),
             RunState::Event(event) => event.interrupt(),
         }
     }
@@ -127,7 +129,9 @@ pub struct SignalState {
     pub run_state: RunState,
 
     /// The signal mask of the task.
-    // See https://man7.org/linux/man-pages/man2/rt_sigprocmask.2.html
+    ///
+    /// It is the set of signals whose delivery is currently blocked for the caller.
+    /// See https://man7.org/linux/man-pages/man7/signal.7.html
     mask: SigSet,
 
     /// The signal mask that should be restored by the signal handling machinery, after dequeuing
@@ -154,7 +158,7 @@ impl SignalState {
     /// Sets the signal mask of the state, and returns the old signal mask.
     pub fn set_mask(&mut self, signal_mask: SigSet) -> SigSet {
         let old_mask = self.mask;
-        self.mask = signal_mask.with_sigset_removed(UNBLOCKABLE_SIGNALS);
+        self.mask = signal_mask & !UNBLOCKABLE_SIGNALS;
         old_mask
     }
 
@@ -165,7 +169,7 @@ impl SignalState {
     pub fn set_temporary_mask(&mut self, signal_mask: SigSet) {
         assert!(self.saved_mask.is_none());
         self.saved_mask = Some(self.mask);
-        self.mask = signal_mask.with_sigset_removed(UNBLOCKABLE_SIGNALS);
+        self.mask = signal_mask & !UNBLOCKABLE_SIGNALS;
     }
 
     /// Restores the signal mask to what it was before the previous call to `set_temporary_mask`.
@@ -181,11 +185,26 @@ impl SignalState {
         self.mask
     }
 
+    pub fn saved_mask(&self) -> Option<SigSet> {
+        self.saved_mask
+    }
+
     pub fn enqueue(&mut self, siginfo: SignalInfo) {
         if siginfo.signal.is_real_time() || !self.has_queued(siginfo.signal) {
             self.queue.push_back(siginfo);
             self.signal_wait.notify_all();
         }
+    }
+
+    /// Used by ptrace to provide a replacement for the signal that might have been
+    /// delivered when the task entered signal-delivery-stop.
+    pub fn jump_queue(&mut self, siginfo: SignalInfo) {
+        self.queue.push_front(siginfo);
+        self.signal_wait.notify_all();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.queue.is_empty()
     }
 
     /// Finds the next queued signal where the given function returns true, removes it from the
@@ -219,13 +238,17 @@ impl SignalState {
         self.iter_queued_by_number(signal).next().is_some()
     }
 
+    pub fn num_queued(&self) -> usize {
+        self.queue.len()
+    }
+
     #[cfg(test)]
     pub fn queued_count(&self, signal: Signal) -> usize {
         self.iter_queued_by_number(signal).count()
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, AsBytes, FromZeroes, FromBytes)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, AsBytes, FromZeros, FromBytes, NoCell)]
 #[repr(C)]
 pub struct SignalInfoHeader {
     pub signo: u32,
@@ -247,24 +270,24 @@ pub struct SignalInfo {
 
 impl SignalInfo {
     pub fn default(signal: Signal) -> Self {
-        Self::new(signal, SI_KERNEL, SignalDetail::default())
+        Self::new(signal, SI_KERNEL as i32, SignalDetail::default())
     }
 
-    pub fn new(signal: Signal, code: u32, detail: SignalDetail) -> Self {
-        Self { signal, errno: 0, code: code as i32, detail, force: false }
+    pub fn new(signal: Signal, code: i32, detail: SignalDetail) -> Self {
+        Self { signal, errno: 0, code, detail, force: false }
     }
 
     // TODO(tbodt): Add a bound requiring siginfo_t to be FromBytes. This will help ensure the
     // Linux side won't get an invalid siginfo_t.
     pub fn as_siginfo_bytes(&self) -> [u8; std::mem::size_of::<siginfo_t>()] {
         macro_rules! make_siginfo {
-            ($self:ident $(, $sifield:ident, $value:expr)?) => {
+            ($self:ident $(, $( $sifield:ident ).*, $value:expr)?) => {
                 struct_with_union_into_bytes!(siginfo_t {
                     __bindgen_anon_1.__bindgen_anon_1.si_signo: $self.signal.number() as i32,
                     __bindgen_anon_1.__bindgen_anon_1.si_errno: $self.errno,
                     __bindgen_anon_1.__bindgen_anon_1.si_code: $self.code,
                     $(
-                        __bindgen_anon_1.__bindgen_anon_1._sifields.$sifield: $value,
+                        __bindgen_anon_1.__bindgen_anon_1._sifields.$( $sifield ).*: $value,
                     )?
                 })
             };
@@ -272,7 +295,7 @@ impl SignalInfo {
 
         match self.detail {
             SignalDetail::None => make_siginfo!(self),
-            SignalDetail::SigChld { pid, uid, status } => make_siginfo!(
+            SignalDetail::SIGCHLD { pid, uid, status } => make_siginfo!(
                 self,
                 _sigchld,
                 __sifields__bindgen_ty_4 {
@@ -282,7 +305,10 @@ impl SignalInfo {
                     ..Default::default()
                 }
             ),
-            SignalDetail::SigSys { call_addr, syscall, arch } => make_siginfo!(
+            SignalDetail::SigFault { addr } => {
+                make_siginfo!(self, _sigfault._addr, linux_uapi::uaddr { addr })
+            }
+            SignalDetail::SIGSYS { call_addr, syscall, arch } => make_siginfo!(
                 self,
                 _sigsys,
                 __sifields__bindgen_ty_7 {
@@ -291,6 +317,24 @@ impl SignalInfo {
                     _arch: arch as c_uint,
                 }
             ),
+            SignalDetail::Timer { ref timer } => {
+                let sigval: uapi::sigval = if timer.signal_event.notify == SignalEventNotify::None {
+                    Default::default()
+                } else {
+                    timer.signal_event.value.into()
+                };
+
+                make_siginfo!(
+                    self,
+                    _timer,
+                    __sifields__bindgen_ty_2 {
+                        _tid: timer.timer_id,
+                        _overrun: timer.overrun_cur(),
+                        _sigval: sigval,
+                        ..Default::default()
+                    }
+                )
+            }
             SignalDetail::Raw { data } => {
                 let header = SignalInfoHeader {
                     signo: self.signal.number(),
@@ -310,9 +354,30 @@ impl SignalInfo {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SignalDetail {
     None,
-    SigChld { pid: pid_t, uid: uid_t, status: i32 },
-    SigSys { call_addr: UserAddress, syscall: i32, arch: u32 },
-    Raw { data: [u8; SI_MAX_SIZE as usize - SI_HEADER_SIZE] },
+    SIGCHLD {
+        pid: pid_t,
+        uid: uid_t,
+        status: i32,
+    },
+    SigFault {
+        addr: u64,
+    },
+    SIGSYS {
+        call_addr: UserAddress,
+        syscall: i32,
+        arch: u32,
+    },
+    /// POSIX timer
+    Timer {
+        /// Timer where the signal comes from.
+        ///
+        /// Required fields in `uapi::siginfo_t` should be enquired from the timer only when needed.
+        /// Because `overrun` counts might change when the signal is waiting in the queue.
+        timer: IntervalTimerHandle,
+    },
+    Raw {
+        data: [u8; SI_MAX_SIZE as usize - SI_HEADER_SIZE],
+    },
 }
 
 impl Default for SignalDetail {
@@ -321,9 +386,115 @@ impl Default for SignalDetail {
     }
 }
 
+#[derive(Debug)]
+pub struct SignalEvent {
+    pub value: SignalEventValue,
+    pub signo: Option<Signal>,
+    pub notify: SignalEventNotify,
+}
+
+impl SignalEvent {
+    pub fn new(value: SignalEventValue, signo: Signal, notify: SignalEventNotify) -> Self {
+        Self { value, signo: Some(signo), notify }
+    }
+
+    pub fn none() -> Self {
+        Self { value: Default::default(), signo: None, notify: SignalEventNotify::None }
+    }
+
+    pub fn is_valid(&self, thread_group: &ThreadGroupReadGuard<'_>) -> bool {
+        if self.notify != SignalEventNotify::None && self.signo.is_none() {
+            return false;
+        }
+
+        if let SignalEventNotify::ThreadId(tid) = self.notify {
+            if !thread_group.contains_task(tid) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+}
+
+impl TryFrom<sigevent> for SignalEvent {
+    type Error = Errno;
+
+    fn try_from(value: sigevent) -> Result<Self, Self::Error> {
+        // SAFETY: _sigev_un was created with FromBytes so it's safe to access any variant
+        // because all variants must be valid with all bit patterns.
+        let notify = match value.sigev_notify as u32 {
+            SIGEV_SIGNAL => SignalEventNotify::Signal,
+            SIGEV_NONE => SignalEventNotify::None,
+            SIGEV_THREAD => unsafe {
+                SignalEventNotify::Thread {
+                    function: value._sigev_un._sigev_thread._function.into(),
+                    attribute: value._sigev_un._sigev_thread._attribute.into(),
+                }
+            },
+            SIGEV_THREAD_ID => SignalEventNotify::ThreadId(unsafe { value._sigev_un._tid }),
+            _ => return error!(EINVAL),
+        };
+
+        Ok(match notify {
+            SignalEventNotify::None => SignalEvent::none(),
+            _ => SignalEvent::new(
+                value.sigev_value.into(),
+                UncheckedSignal::new(value.sigev_signo as u64).try_into()?,
+                notify,
+            ),
+        })
+    }
+}
+
+#[derive(Debug, PartialEq)]
+/// Specifies how notification is to be performed.
+pub enum SignalEventNotify {
+    /// Notify the process by sending the signal specified in `SignalInfo::Signal`.
+    Signal,
+    /// Don't do anything when the event occurs.
+    None,
+    /// Notify the process by invoking the `function` as if it were the start function of
+    /// a new thread.
+    Thread { function: UserAddress, attribute: UserAddress },
+    /// Similar to `SignalNotify::Signal`, but the signal is targeted at the thread ID.
+    ThreadId(pid_t),
+}
+
+impl From<SignalEventNotify> for i32 {
+    fn from(value: SignalEventNotify) -> Self {
+        match value {
+            SignalEventNotify::Signal => SIGEV_SIGNAL as i32,
+            SignalEventNotify::None => SIGEV_NONE as i32,
+            SignalEventNotify::Thread { .. } => SIGEV_THREAD as i32,
+            SignalEventNotify::ThreadId(_) => SIGEV_THREAD_ID as i32,
+        }
+    }
+}
+
+/// Data passed with signal event notification.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub struct SignalEventValue(pub u64);
+
+impl From<sigval_t> for SignalEventValue {
+    fn from(value: sigval_t) -> Self {
+        SignalEventValue(unsafe { value._bindgen_opaque_blob })
+    }
+}
+
+impl From<SignalEventValue> for sigval_t {
+    fn from(value: SignalEventValue) -> Self {
+        Self { _bindgen_opaque_blob: value.0 }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
+    use starnix_uapi::{
+        signals::{SIGCHLD, SIGPWR},
+        CLD_EXITED,
+    };
     use std::convert::TryFrom;
 
     #[::fuchsia::test]
@@ -351,8 +522,8 @@ mod test {
         assert_eq!(
             &SignalInfo::new(
                 SIGCHLD,
-                CLD_EXITED,
-                SignalDetail::SigChld { pid: 123, uid: 456, status: 2 }
+                CLD_EXITED as i32,
+                SignalDetail::SIGCHLD { pid: 123, uid: 456, status: 2 }
             )
             .as_siginfo_bytes(),
             sigchld_bytes.as_slice()

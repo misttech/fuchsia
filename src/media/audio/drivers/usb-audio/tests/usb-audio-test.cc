@@ -7,6 +7,7 @@
 #include <lib/async-loop/default.h>
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
+#include <lib/inspect/testing/cpp/zxtest/inspect.h>
 
 #include <iterator>
 #include <memory>
@@ -14,7 +15,6 @@
 #include <vector>
 
 #include <ddktl/device.h>
-#include <sdk/lib/inspect/testing/cpp/zxtest/inspect.h>
 #include <usb/request-cpp.h>
 #include <zxtest/zxtest.h>
 
@@ -338,7 +338,7 @@ TEST_F(UsbAudioTest, GetStreamProperties) {
   auto result = stream_client->GetProperties();
   ASSERT_OK(result.status());
 
-  ASSERT_EQ(result.value().properties.clock_domain(), 0);
+  ASSERT_EQ(result.value().properties.clock_domain(), audio_fidl::wire::kClockDomainMonotonic);
   ASSERT_EQ(result.value().properties.min_gain_db(), -37.);
   ASSERT_EQ(result.value().properties.max_gain_db(), 0.);
   ASSERT_EQ(result.value().properties.gain_step_db(), 1.);
@@ -724,7 +724,6 @@ TEST_F(UsbAudioTest, DISABLED_RingBufferPropertiesAndStartOk) {
 
   auto result = fidl::WireCall<audio_fidl::RingBuffer>(local)->GetProperties();
   ASSERT_OK(result.status());
-  ASSERT_EQ(result.value().properties.external_delay(), 0);
   // We don't know what the reported driver_transfer_bytes (the minimum required lead time)
   // is going to be as it will depend on hardware details, but we do know that
   // it will need to be greater than 0.
@@ -955,7 +954,6 @@ TEST_F(UsbAudioTest, Unplug) {
 
   auto result = fidl::WireCall<audio_fidl::RingBuffer>(local)->GetProperties();
   ASSERT_OK(result.status());
-  ASSERT_EQ(result.value().properties.external_delay(), 0);
   // We don't know what the reported driver_transfer_bytes (the minimum required lead time)
   // is going to be as it will depend on hardware details, but we do know that
   // it will need to be greater than 0.

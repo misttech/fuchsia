@@ -458,7 +458,7 @@ struct NaturalCodingTraits<fidl::Box<T>, Constraint,
 template <typename T, typename Constraint>
 struct NaturalCodingTraits<fidl::Box<T>, Constraint,
                            typename std::enable_if<IsUnion<T>::value>::type> {
-  static constexpr size_t inline_size_v2 = sizeof(fidl_xunion_v2_t);
+  static constexpr size_t inline_size_v2 = sizeof(fidl_union_t);
   static constexpr bool is_memcpy_compatible = false;
 
   static void Encode(NaturalEncoder* encoder, fidl::Box<T>* value, size_t offset,
@@ -474,7 +474,7 @@ struct NaturalCodingTraits<fidl::Box<T>, Constraint,
 
   static void Decode(NaturalDecoder* decoder, fidl::Box<T>* value, size_t offset,
                      size_t recursion_depth) {
-    fidl_xunion_v2_t* u = decoder->template GetPtr<fidl_xunion_v2_t>(offset);
+    fidl_union_t* u = decoder->template GetPtr<fidl_union_t>(offset);
     if (u->tag == 0) {
       if (likely(FidlIsZeroEnvelope(&u->envelope))) {
         *value = nullptr;
@@ -684,9 +684,9 @@ constexpr NaturalTopLevelDecodeFn MakeNaturalTopLevelDecodeFn() {
 // must ensure that |value| points to an instance of default constructed natural type that
 // matches the one decoded by |decode_fn|.
 // This is the top-level function to call to perform decoding using coding traits.
-fidl::Status NaturalDecode(::fidl::WireFormatMetadata metadata, bool contains_envelope,
-                           size_t inline_size, NaturalTopLevelDecodeFn decode_fn,
-                           ::fidl::EncodedMessage& message, void* value);
+fidl::Status NaturalDecode(::fidl::WireFormatMetadata metadata, size_t inline_size,
+                           NaturalTopLevelDecodeFn decode_fn, ::fidl::EncodedMessage& message,
+                           void* value);
 
 }  // namespace fidl::internal
 

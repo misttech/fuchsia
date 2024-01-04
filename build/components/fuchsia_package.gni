@@ -188,10 +188,16 @@ template("fuchsia_package") {
       package_manifest = "$package_out_dir/package_manifest.json"
     }
 
+    main_target_deps = []
+
     # Generate the "meta/package" file
     meta_package_target = "${target_name}_meta_package"
     generate_meta_package(meta_package_target) {
-      forward_variables_from(invoker, [ "testonly" ])
+      forward_variables_from(invoker,
+                             [
+                               "applicable_licenses",
+                               "testonly",
+                             ])
       visibility = [ ":*" ]
       package_name = package_name
     }
@@ -274,11 +280,12 @@ template("fuchsia_package") {
                  ])
     }
 
-    # Generate package manifest
+    # Generate package .fini manifest
     package_manifest_target = "${target_name}_manifest"
     fini_manifest(package_manifest_target) {
       forward_variables_from(invoker,
                              [
+                               "applicable_licenses",
                                "deps",
                                "testonly",
                              ])
@@ -301,7 +308,11 @@ template("fuchsia_package") {
     if (verify_elf) {
       package_manifest_verify_target = "${target_name}.verify"
       verify_manifest_elf_binaries(package_manifest_verify_target) {
-        forward_variables_from(invoker, [ "testonly" ])
+        forward_variables_from(invoker,
+                               [
+                                 "applicable_licenses",
+                                 "testonly",
+                               ])
         manifest = _files.fini_manifest
         check_unstripped_files = true
         deps = [ ":$package_manifest_target" ]
@@ -309,17 +320,22 @@ template("fuchsia_package") {
     }
 
     _package_build_target = "${target_name}.pkg"
-    _validate_structured_config = false
+    _validate_structured_config = true
     if (defined(invoker.validate_structured_config)) {
       _validate_structured_config = invoker.validate_structured_config
     }
     if (_validate_structured_config) {
       _validate_config_target = "${target_name}.validate_config"
       validate_packaged_config(_validate_config_target) {
-        forward_variables_from(invoker, [ "testonly" ])
+        forward_variables_from(invoker,
+                               [
+                                 "applicable_licenses",
+                                 "testonly",
+                               ])
         package_manifest = _files.package_manifest
         deps = [ ":$_package_build_target" ]
       }
+      main_target_deps += [ ":$_validate_config_target" ]
     }
 
     _is_driver_package =
@@ -331,10 +347,13 @@ template("fuchsia_package") {
       _is_system_package = invoker.is_system_package
     }
 
-    # Build package
+    _package_target_name = target_name
+
+    # Build package (Generates package_manifest.json).
     package_tool_package_build(_package_build_target) {
       forward_variables_from(invoker,
                              [
+                               "applicable_licenses",
                                "data_deps",
                                "deps",
                                "testonly",
@@ -382,6 +401,7 @@ template("fuchsia_package") {
           },
         ]
         system_image_package_barrier = []
+        component_id_index_barrier = []
 
         system_image_extra_package_manifest_barrier = []
         test_component_manifest_barrier = []
@@ -404,7 +424,12 @@ template("fuchsia_package") {
       # this package_tool_package_build target is visible to the top-level
       # package.
       if (defined(visibility)) {
-        visibility += [ ":${invoker.target_name}" ]
+        visibility += [ ":${_package_target_name}" ]
+        if (_validate_structured_config) {
+          visibility += [ ":${_validate_config_target}" ]
+        }
+      } else {
+        not_needed([ "_package_target_name" ])
       }
 
       if (_is_shell_package) {
@@ -419,11 +444,7 @@ template("fuchsia_package") {
                                "visibility",
                              ])
       public_deps = [ ":$_package_build_target" ]
-      deps = []
-      if (_validate_structured_config) {
-        deps += [ ":$_validate_config_target" ]
-      }
-
+      deps = main_target_deps
       if (_is_driver_package) {
         metadata = {
           # Allow exclusion of driver packages by assembly

@@ -35,11 +35,18 @@
             protocol: "fuchsia.component.Realm",
             from: "framework",
         },
+        {
+            protocol: "fuchsia.settings.Privacy",
+            availability: "optional",
+        },
     ],
     offer: [
         {
             protocol: [
+                "fuchsia.buildinfo.Provider",
+                "fuchsia.diagnostics.ArchiveAccessor",
                 "fuchsia.hardware.power.statecontrol.Admin",
+                "fuchsia.kernel.CpuResource",
                 "fuchsia.kernel.Stats",
                 "fuchsia.kernel.VmexResource",
                 "fuchsia.logger.LogSink",
@@ -52,6 +59,8 @@
                 "fuchsia.posix.socket.packet.Provider",
                 "fuchsia.posix.socket.Provider",
                 "fuchsia.posix.socket.raw.Provider",
+                "fuchsia.scheduler.ProfileProvider",
+                "fuchsia.sysinfo.SysInfo",
                 "fuchsia.sysmem.Allocator",
                 "fuchsia.sysmem2.Allocator",
                 "fuchsia.tracing.provider.Registry",
@@ -68,6 +77,7 @@
                 "fuchsia.ui.composition.Flatland",
                 "fuchsia.ui.display.singleton.Info",
                 "fuchsia.ui.input3.Keyboard",
+                "fuchsia.ui.policy.DeviceListenerRegistry",
                 "fuchsia.ui.scenic.Scenic",
                 "fuchsia.wlan.wlanix.Wlanix",
             ],
@@ -104,4 +114,8 @@
             ],
         },
     ],
+    config: {
+        // Sets the platform's data collection bit.
+        enable_data_collection: { type: "bool" },
+    },
 }

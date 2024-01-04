@@ -593,6 +593,9 @@ impl Drop for RealmInstance {
     /// To ensure local components are shutdown in an orderly manner (i.e. after their dependent
     /// clients) upon `drop`, keep the local_component_runner_task alive in an async task until the
     /// destroy_waiter synchronously destroys the realm.
+    ///
+    /// Remember that you *must* keep a life reference to a `RealmInstance` to ensure that your
+    /// realm stays running.
     fn drop(&mut self) {
         if !self.root.destroy_waiter_taken() {
             let destroy_waiter = self.root.take_destroy_waiter();
@@ -606,6 +609,9 @@ impl Drop for RealmInstance {
             })
             .detach();
         }
+        // Check if this is what you wanted. If you expected the realm to live longer than it did,
+        // you must keep a live reference to it.
+        debug!("RealmInstance is now shut down - the realm will be destroyed.");
     }
 }
 
@@ -877,8 +883,9 @@ impl RealmBuilder {
     /// build the created realm under an instance of component manager, use
     /// `build_in_nested_component_manager()`.
     ///
-    /// Note that any routes with a source of `parent` in the root realm will need to also be used
-    /// in component manager's manifest and listed as a namespace capability in its config.
+    /// Note that any routes with a source of `parent` in the root realm will need to also be `use`d
+    /// in component manager's manifest and listed in `namespace_capabilities` in the config file
+    /// passed to `component_manager`'s `--config` arg.
     ///
     /// Note that any routes with a target of `parent` from the root realm will result in exposing
     /// the capability to component manager, which is rather useless by itself. Component manager
@@ -957,7 +964,6 @@ impl RealmBuilder {
                 Route::new()
                     .capability(Capability::protocol_by_name("fuchsia.sys2.RealmQuery"))
                     .capability(Capability::protocol_by_name("fuchsia.sys2.LifecycleController"))
-                    .capability(Capability::protocol_by_name("fuchsia.sys2.EventSource"))
                     .capability(Capability::protocol_by_name("fuchsia.component.EventStream"))
                     .from(Ref::child("component_manager"))
                     .to(Ref::parent()),
@@ -970,8 +976,9 @@ impl RealmBuilder {
     /// components in the realm). This component manager _must_ be referenced by a fragment-only
     /// URL.
     ///
-    /// Note that any routes with a source of `parent` in the root realm will need to also be used
-    /// in component manager's manifest and listed as a namespace capability in its config.
+    /// Note that any routes with a source of `parent` in the root realm will need to also be `use`d
+    /// in component manager's manifest and listed in `namespace_capabilities` in the config file
+    /// passed to `component_manager`'s `--config` arg.
     ///
     /// Note that any routes with a target of `parent` from the root realm will result in exposing
     /// the capability to component manager, which is rather useless by itself. Component manager
@@ -2112,6 +2119,10 @@ impl ScopedInstance {
         Ok(ExecutionController::new(execution_proxy))
     }
 
+    pub fn controller(&self) -> &fcomponent::ControllerProxy {
+        &self.controller_proxy
+    }
+
     /// Connect to exposed fuchsia.component.Binder protocol of instance, thus
     /// triggering it to start.
     /// Note: This will only work if the component exposes this protocol in its
@@ -2295,13 +2306,10 @@ mod tests {
         futures::{channel::mpsc, future::pending, FutureExt, SinkExt, StreamExt, TryStreamExt},
     };
 
-    // To ensure that the exppected value of any new member is explicitly
+    // To ensure that the expected value of any new member is explicitly
     // specified, avoid using `..Default::default()`. To do this, we must work
     // around fidlgen_rust's mechanism for ensuring that adding FIDL `table`
-    // fields does not break source. We do this by initializing
-    // the hidden `__non_exhaustive` member, which is marked deprecated and thus
-    // requires this lint check attribute..
-    #[allow(deprecated)]
+    // fields does not break source.
     #[fuchsia::test]
     fn child_options_to_fidl() {
         let options: ftest::ChildOptions = ChildOptions::new().into();
@@ -2321,7 +2329,7 @@ mod tests {
                 environment: None,
                 on_terminate: Some(fdecl::OnTerminate::None),
                 config_overrides: None,
-                __non_exhaustive: ()
+                __source_breaking: fidl::marker::SourceBreaking,
             },
         );
         let options: ftest::ChildOptions = ChildOptions::new().eager().into();
@@ -2332,7 +2340,7 @@ mod tests {
                 environment: None,
                 on_terminate: Some(fdecl::OnTerminate::None),
                 config_overrides: None,
-                __non_exhaustive: ()
+                __source_breaking: fidl::marker::SourceBreaking,
             },
         );
         let options: ftest::ChildOptions = ChildOptions::new().environment("test_env").into();
@@ -2343,7 +2351,7 @@ mod tests {
                 environment: Some("test_env".to_string()),
                 on_terminate: Some(fdecl::OnTerminate::None),
                 config_overrides: None,
-                __non_exhaustive: ()
+                __source_breaking: fidl::marker::SourceBreaking,
             },
         );
         let options: ftest::ChildOptions = ChildOptions::new().reboot_on_terminate().into();
@@ -2354,7 +2362,7 @@ mod tests {
                 environment: None,
                 on_terminate: Some(fdecl::OnTerminate::Reboot),
                 config_overrides: None,
-                __non_exhaustive: ()
+                __source_breaking: fidl::marker::SourceBreaking,
             },
         );
 
@@ -2380,7 +2388,7 @@ mod tests {
                 environment: None,
                 on_terminate: Some(fdecl::OnTerminate::None),
                 config_overrides: Some(config_overrides),
-                __non_exhaustive: ()
+                __source_breaking: fidl::marker::SourceBreaking,
             },
         );
     }

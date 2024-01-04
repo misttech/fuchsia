@@ -5,18 +5,19 @@
 #include "src/graphics/display/drivers/amlogic-display/clock.h"
 
 #include <lib/ddk/debug.h>
+#include <lib/mmio/mmio-buffer.h>
 #include <zircon/status.h>
 
 #include <fbl/alloc_checker.h>
 
+#include "src/graphics/display/drivers/amlogic-display/board-resources.h"
 #include "src/graphics/display/drivers/amlogic-display/clock-regs.h"
+#include "src/graphics/display/drivers/amlogic-display/common.h"
+#include "src/graphics/display/drivers/amlogic-display/hhi-regs.h"
 
 namespace amlogic_display {
 
 namespace {
-constexpr uint8_t kMaxPllLockAttempt = 3;
-constexpr uint8_t kStv2Sel = 5;
-constexpr uint8_t kStv1Sel = 4;
 constexpr uint32_t kKHZ = 1000;
 
 void DumpPllCfg(const PllConfig& pll_cfg) {
@@ -73,12 +74,6 @@ void DumpDisplaySettings(const display_setting_t& settings) {
 
 }  // namespace
 
-#define READ32_HHI_REG(a) hhi_mmio_->Read32(a)
-#define WRITE32_HHI_REG(a, v) hhi_mmio_->Write32(v, a)
-
-#define READ32_VPU_REG(a) vpu_mmio_->Read32(a)
-#define WRITE32_VPU_REG(a, v) vpu_mmio_->Write32(v, a)
-
 // static
 LcdTiming Clock::CalculateLcdTiming(const display_setting_t& d) {
   LcdTiming out;
@@ -110,29 +105,38 @@ LcdTiming Clock::CalculateLcdTiming(const display_setting_t& d) {
   return out;
 }
 
-zx_status_t Clock::PllLockWait() {
+zx::result<> Clock::WaitForHdmiPllToLock() {
   uint32_t pll_lock;
 
+  constexpr int kMaxPllLockAttempt = 3;
   for (int lock_attempts = 0; lock_attempts < kMaxPllLockAttempt; lock_attempts++) {
     zxlogf(TRACE, "Waiting for PLL Lock: (%d/3).", lock_attempts + 1);
+
+    // The configurations used in retries are from Amlogic-provided code which
+    // is undocumented.
     if (lock_attempts == 1) {
-      SET_BIT32(HHI, HHI_HDMI_PLL_CNTL3, 1, 31, 1);
+      hhi_mmio_->Write32(
+          SetFieldValue32(hhi_mmio_->Read32(HHI_HDMI_PLL_CNTL3), /*field_begin_bit=*/31,
+                          /*field_size_bits=*/1, /*field_value=*/1),
+          HHI_HDMI_PLL_CNTL3);
     } else if (lock_attempts == 2) {
-      WRITE32_REG(HHI, HHI_HDMI_PLL_CNTL6, 0x55540000);  // more magic
+      hhi_mmio_->Write32(0x55540000, HHI_HDMI_PLL_CNTL6);  // more magic
     }
+
     int retries = 1000;
-    while ((pll_lock = GET_BIT32(HHI, HHI_HDMI_PLL_CNTL0, LCD_PLL_LOCK_HPLL_G12A, 1)) != 1 &&
+    while ((pll_lock = GetFieldValue32(hhi_mmio_->Read32(HHI_HDMI_PLL_CNTL0),
+                                       /*field_begin_bit=*/LCD_PLL_LOCK_HPLL_G12A,
+                                       /*field_size_bits=*/1)) != 1 &&
            retries--) {
       zx_nanosleep(zx_deadline_after(ZX_USEC(50)));
     }
     if (pll_lock) {
-      return ZX_OK;
+      return zx::ok();
     }
   }
 
-  // We got here, which means we never locked!
-  zxlogf(ERROR, "PLL not locked! exiting");
-  return ZX_ERR_UNAVAILABLE;
+  zxlogf(ERROR, "Failed to lock HDMI PLL after %d attempts.", kMaxPllLockAttempt);
+  return zx::error(ZX_ERR_UNAVAILABLE);
 }
 
 // static
@@ -228,7 +232,7 @@ void Clock::Disable() {
   if (!clock_enabled_) {
     return;
   }
-  WRITE32_REG(VPU, ENCL_VIDEO_EN, 0);
+  vpu_mmio_->Write32(0, ENCL_VIDEO_EN);
 
   VideoClockOutputControl::Get()
       .ReadFrom(&*hhi_mmio_)
@@ -245,13 +249,16 @@ void Clock::Disable() {
   VideoClock2Control::Get().ReadFrom(&*hhi_mmio_).set_clock_enabled(false).WriteTo(&*hhi_mmio_);
 
   // disable pll
-  SET_BIT32(HHI, HHI_HDMI_PLL_CNTL0, 0, LCD_PLL_EN_HPLL_G12A, 1);
+  hhi_mmio_->Write32(SetFieldValue32(hhi_mmio_->Read32(HHI_HDMI_PLL_CNTL0),
+                                     /*field_begin_bit=*/LCD_PLL_EN_HPLL_G12A,
+                                     /*field_size_bits=*/1, /*field_value=*/0),
+                     HHI_HDMI_PLL_CNTL0);
   clock_enabled_ = false;
 }
 
-zx_status_t Clock::Enable(const display_setting_t& d) {
+zx::result<> Clock::Enable(const display_setting_t& d) {
   if (clock_enabled_) {
-    return ZX_OK;
+    return zx::ok();
   }
 
   // Populate internal LCD timing structure based on predefined tables
@@ -274,27 +281,33 @@ zx_status_t Clock::Enable(const display_setting_t& d) {
             (pll_cfg->pll_od1_sel << LCD_PLL_OD1_HPLL_G12A) |
             (pll_cfg->pll_od2_sel << LCD_PLL_OD2_HPLL_G12A) |
             (pll_cfg->pll_od3_sel << LCD_PLL_OD3_HPLL_G12A) | (useFrac ? (1 << 27) : (0 << 27)));
-  WRITE32_REG(HHI, HHI_HDMI_PLL_CNTL0, regVal);
+  hhi_mmio_->Write32(regVal, HHI_HDMI_PLL_CNTL0);
 
-  WRITE32_REG(HHI, HHI_HDMI_PLL_CNTL1, pll_cfg->pll_frac);
-  WRITE32_REG(HHI, HHI_HDMI_PLL_CNTL2, 0x00);
+  hhi_mmio_->Write32(pll_cfg->pll_frac, HHI_HDMI_PLL_CNTL1);
+  hhi_mmio_->Write32(0x00, HHI_HDMI_PLL_CNTL2);
   // Magic numbers from U-Boot.
-  WRITE32_REG(HHI, HHI_HDMI_PLL_CNTL3, useFrac ? 0x6a285c00 : 0x48681c00);
-  WRITE32_REG(HHI, HHI_HDMI_PLL_CNTL4, useFrac ? 0x65771290 : 0x33771290);
-  WRITE32_REG(HHI, HHI_HDMI_PLL_CNTL5, 0x39272000);
-  WRITE32_REG(HHI, HHI_HDMI_PLL_CNTL6, useFrac ? 0x56540000 : 0x56540000);
+  hhi_mmio_->Write32(useFrac ? 0x6a285c00 : 0x48681c00, HHI_HDMI_PLL_CNTL3);
+  hhi_mmio_->Write32(useFrac ? 0x65771290 : 0x33771290, HHI_HDMI_PLL_CNTL4);
+  hhi_mmio_->Write32(0x39272000, HHI_HDMI_PLL_CNTL5);
+  hhi_mmio_->Write32(useFrac ? 0x56540000 : 0x56540000, HHI_HDMI_PLL_CNTL6);
 
   // reset dpll
-  SET_BIT32(HHI, HHI_HDMI_PLL_CNTL0, 1, LCD_PLL_RST_HPLL_G12A, 1);
+  hhi_mmio_->Write32(SetFieldValue32(hhi_mmio_->Read32(HHI_HDMI_PLL_CNTL0),
+                                     /*field_begin_bit=*/LCD_PLL_RST_HPLL_G12A,
+                                     /*field_size_bits=*/1, /*field_value=*/1),
+                     HHI_HDMI_PLL_CNTL0);
   zx_nanosleep(zx_deadline_after(ZX_USEC(100)));
   // release from reset
-  SET_BIT32(HHI, HHI_HDMI_PLL_CNTL0, 0, LCD_PLL_RST_HPLL_G12A, 1);
+  hhi_mmio_->Write32(SetFieldValue32(hhi_mmio_->Read32(HHI_HDMI_PLL_CNTL0),
+                                     /*field_begin_bit=*/LCD_PLL_RST_HPLL_G12A,
+                                     /*field_size_bits=*/1, /*field_value=*/0),
+                     HHI_HDMI_PLL_CNTL0);
 
   zx_nanosleep(zx_deadline_after(ZX_USEC(50)));
-  zx_status_t status = PllLockWait();
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "hpll lock failed");
-    return status;
+  zx::result<> wait_for_pll_lock_result = WaitForHdmiPllToLock();
+  if (!wait_for_pll_lock_result.is_ok()) {
+    zxlogf(ERROR, "Failed to lock HDMI PLL: %s", wait_for_pll_lock_result.status_string());
+    return wait_for_pll_lock_result.take_error();
   }
 
   // Disable Video Clock mux 2 since we are changing its input selection.
@@ -302,13 +315,21 @@ zx_status_t Clock::Enable(const display_setting_t& d) {
   zx_nanosleep(zx_deadline_after(ZX_USEC(5)));
 
   // Disable the div output clock
-  SET_BIT32(HHI, HHI_VID_PLL_CLK_DIV, 0, 19, 1);
-  SET_BIT32(HHI, HHI_VID_PLL_CLK_DIV, 0, 15, 1);
+  hhi_mmio_->Write32(SetFieldValue32(hhi_mmio_->Read32(HHI_VID_PLL_CLK_DIV), /*field_begin_bit=*/19,
+                                     /*field_size_bits=*/1, /*field_value=*/0),
+                     HHI_VID_PLL_CLK_DIV);
+  hhi_mmio_->Write32(SetFieldValue32(hhi_mmio_->Read32(HHI_VID_PLL_CLK_DIV), /*field_begin_bit=*/15,
+                                     /*field_size_bits=*/1, /*field_value=*/0),
+                     HHI_VID_PLL_CLK_DIV);
 
-  SET_BIT32(HHI, HHI_VID_PLL_CLK_DIV, 1, 18, 1);  // Undocumented register bit
+  hhi_mmio_->Write32(SetFieldValue32(hhi_mmio_->Read32(HHI_VID_PLL_CLK_DIV), /*field_begin_bit=*/18,
+                                     /*field_size_bits=*/1, /*field_value=*/1),
+                     HHI_VID_PLL_CLK_DIV);  // Undocumented register bit
 
   // Enable the final output clock
-  SET_BIT32(HHI, HHI_VID_PLL_CLK_DIV, 1, 19, 1);  // Undocumented register bit
+  hhi_mmio_->Write32(SetFieldValue32(hhi_mmio_->Read32(HHI_VID_PLL_CLK_DIV), /*field_begin_bit=*/19,
+                                     /*field_size_bits=*/1, /*field_value=*/1),
+                     HHI_VID_PLL_CLK_DIV);  // Undocumented register bit
 
   // Enable DSI measure clocks.
   VideoInputMeasureClockControl::Get()
@@ -373,98 +394,67 @@ zx_status_t Clock::Enable(const display_setting_t& d) {
 
   zx_nanosleep(zx_deadline_after(ZX_MSEC(10)));
 
-  WRITE32_REG(VPU, ENCL_VIDEO_EN, 0);
+  vpu_mmio_->Write32(0, ENCL_VIDEO_EN);
 
   // connect both VIUs (Video Input Units) to LCD LVDS Encoders
-  WRITE32_REG(VPU, VPU_VIU_VENC_MUX_CTRL, (0 << 0) | (0 << 2));  // TODO(payamm): macros
+  VideoInputUnitEncoderMuxControl::Get()
+      .ReadFrom(&*vpu_mmio_)
+      .set_vsync_shared_by_viu_blocks(false)
+      .set_viu1_encoder_selection(VideoInputUnitEncoderMuxControl::Encoder::kLcd)
+      .set_viu2_encoder_selection(VideoInputUnitEncoderMuxControl::Encoder::kLcd)
+      .WriteTo(&*vpu_mmio_);
 
   // Undocumented registers below
-  WRITE32_REG(VPU, ENCL_VIDEO_MODE, 0x8000);      // bit[15] shadown en
-  WRITE32_REG(VPU, ENCL_VIDEO_MODE_ADV, 0x0418);  // Sampling rate: 1
+  vpu_mmio_->Write32(0x8000, ENCL_VIDEO_MODE);      // bit[15] shadown en
+  vpu_mmio_->Write32(0x0418, ENCL_VIDEO_MODE_ADV);  // Sampling rate: 1
 
   // bypass filter -- Undocumented registers
-  WRITE32_REG(VPU, ENCL_VIDEO_FILT_CTRL, 0x1000);
-  WRITE32_REG(VPU, ENCL_VIDEO_MAX_PXCNT, d.h_period - 1);
-  WRITE32_REG(VPU, ENCL_VIDEO_MAX_LNCNT, d.v_period - 1);
-  WRITE32_REG(VPU, ENCL_VIDEO_HAVON_BEGIN, lcd_timing_.vid_pixel_on);
-  WRITE32_REG(VPU, ENCL_VIDEO_HAVON_END, d.h_active - 1 + lcd_timing_.vid_pixel_on);
-  WRITE32_REG(VPU, ENCL_VIDEO_VAVON_BLINE, lcd_timing_.vid_line_on);
-  WRITE32_REG(VPU, ENCL_VIDEO_VAVON_ELINE, d.v_active - 1 + lcd_timing_.vid_line_on);
-  WRITE32_REG(VPU, ENCL_VIDEO_HSO_BEGIN, lcd_timing_.hs_hs_addr);
-  WRITE32_REG(VPU, ENCL_VIDEO_HSO_END, lcd_timing_.hs_he_addr);
-  WRITE32_REG(VPU, ENCL_VIDEO_VSO_BEGIN, lcd_timing_.vs_hs_addr);
-  WRITE32_REG(VPU, ENCL_VIDEO_VSO_END, lcd_timing_.vs_he_addr);
-  WRITE32_REG(VPU, ENCL_VIDEO_VSO_BLINE, lcd_timing_.vs_vs_addr);
-  WRITE32_REG(VPU, ENCL_VIDEO_VSO_ELINE, lcd_timing_.vs_ve_addr);
-  WRITE32_REG(VPU, ENCL_VIDEO_RGBIN_CTRL, 3);
-  WRITE32_REG(VPU, ENCL_VIDEO_EN, 1);
+  vpu_mmio_->Write32(0x1000, ENCL_VIDEO_FILT_CTRL);
+  vpu_mmio_->Write32(d.h_period - 1, ENCL_VIDEO_MAX_PXCNT);
+  vpu_mmio_->Write32(d.v_period - 1, ENCL_VIDEO_MAX_LNCNT);
+  vpu_mmio_->Write32(lcd_timing_.vid_pixel_on, ENCL_VIDEO_HAVON_BEGIN);
+  vpu_mmio_->Write32(d.h_active - 1 + lcd_timing_.vid_pixel_on, ENCL_VIDEO_HAVON_END);
+  vpu_mmio_->Write32(lcd_timing_.vid_line_on, ENCL_VIDEO_VAVON_BLINE);
+  vpu_mmio_->Write32(d.v_active - 1 + lcd_timing_.vid_line_on, ENCL_VIDEO_VAVON_ELINE);
+  vpu_mmio_->Write32(lcd_timing_.hs_hs_addr, ENCL_VIDEO_HSO_BEGIN);
+  vpu_mmio_->Write32(lcd_timing_.hs_he_addr, ENCL_VIDEO_HSO_END);
+  vpu_mmio_->Write32(lcd_timing_.vs_hs_addr, ENCL_VIDEO_VSO_BEGIN);
+  vpu_mmio_->Write32(lcd_timing_.vs_he_addr, ENCL_VIDEO_VSO_END);
+  vpu_mmio_->Write32(lcd_timing_.vs_vs_addr, ENCL_VIDEO_VSO_BLINE);
+  vpu_mmio_->Write32(lcd_timing_.vs_ve_addr, ENCL_VIDEO_VSO_ELINE);
+  vpu_mmio_->Write32(3, ENCL_VIDEO_RGBIN_CTRL);
+  vpu_mmio_->Write32(1, ENCL_VIDEO_EN);
 
-  WRITE32_REG(VPU, L_RGB_BASE_ADDR, 0);
-  WRITE32_REG(VPU, L_RGB_COEFF_ADDR, 0x400);
-  WRITE32_REG(VPU, L_DITH_CNTL_ADDR, 0x400);
-
-  // DE signal for TTL m8,m8m2
-  WRITE32_REG(VPU, L_OEH_HS_ADDR, lcd_timing_.de_hs_addr);
-  WRITE32_REG(VPU, L_OEH_HE_ADDR, lcd_timing_.de_he_addr);
-  WRITE32_REG(VPU, L_OEH_VS_ADDR, lcd_timing_.de_vs_addr);
-  WRITE32_REG(VPU, L_OEH_VE_ADDR, lcd_timing_.de_ve_addr);
-  // DE signal for TTL m8b
-  WRITE32_REG(VPU, L_OEV1_HS_ADDR, lcd_timing_.de_hs_addr);
-  WRITE32_REG(VPU, L_OEV1_HE_ADDR, lcd_timing_.de_he_addr);
-  WRITE32_REG(VPU, L_OEV1_VS_ADDR, lcd_timing_.de_vs_addr);
-  WRITE32_REG(VPU, L_OEV1_VE_ADDR, lcd_timing_.de_ve_addr);
-
-  // Hsync signal for TTL m8,m8m2
-  if (d.hsync_pol == 0) {
-    WRITE32_REG(VPU, L_STH1_HS_ADDR, lcd_timing_.hs_he_addr);
-    WRITE32_REG(VPU, L_STH1_HE_ADDR, lcd_timing_.hs_hs_addr);
-  } else {
-    WRITE32_REG(VPU, L_STH1_HS_ADDR, lcd_timing_.hs_hs_addr);
-    WRITE32_REG(VPU, L_STH1_HE_ADDR, lcd_timing_.hs_he_addr);
-  }
-  WRITE32_REG(VPU, L_STH1_VS_ADDR, lcd_timing_.hs_vs_addr);
-  WRITE32_REG(VPU, L_STH1_VE_ADDR, lcd_timing_.hs_ve_addr);
-
-  // Vsync signal for TTL m8,m8m2
-  WRITE32_REG(VPU, L_STV1_HS_ADDR, lcd_timing_.vs_hs_addr);
-  WRITE32_REG(VPU, L_STV1_HE_ADDR, lcd_timing_.vs_he_addr);
-  if (d.vsync_pol == 0) {
-    WRITE32_REG(VPU, L_STV1_VS_ADDR, lcd_timing_.vs_ve_addr);
-    WRITE32_REG(VPU, L_STV1_VE_ADDR, lcd_timing_.vs_vs_addr);
-  } else {
-    WRITE32_REG(VPU, L_STV1_VS_ADDR, lcd_timing_.vs_vs_addr);
-    WRITE32_REG(VPU, L_STV1_VE_ADDR, lcd_timing_.vs_ve_addr);
-  }
+  vpu_mmio_->Write32(0, L_RGB_BASE_ADDR);
+  vpu_mmio_->Write32(0x400, L_RGB_COEFF_ADDR);
+  vpu_mmio_->Write32(0x400, L_DITH_CNTL_ADDR);
 
   // DE signal
-  WRITE32_REG(VPU, L_DE_HS_ADDR, lcd_timing_.de_hs_addr);
-  WRITE32_REG(VPU, L_DE_HE_ADDR, lcd_timing_.de_he_addr);
-  WRITE32_REG(VPU, L_DE_VS_ADDR, lcd_timing_.de_vs_addr);
-  WRITE32_REG(VPU, L_DE_VE_ADDR, lcd_timing_.de_ve_addr);
+  vpu_mmio_->Write32(lcd_timing_.de_hs_addr, L_DE_HS_ADDR);
+  vpu_mmio_->Write32(lcd_timing_.de_he_addr, L_DE_HE_ADDR);
+  vpu_mmio_->Write32(lcd_timing_.de_vs_addr, L_DE_VS_ADDR);
+  vpu_mmio_->Write32(lcd_timing_.de_ve_addr, L_DE_VE_ADDR);
 
   // Hsync signal
-  WRITE32_REG(VPU, L_HSYNC_HS_ADDR, lcd_timing_.hs_hs_addr);
-  WRITE32_REG(VPU, L_HSYNC_HE_ADDR, lcd_timing_.hs_he_addr);
-  WRITE32_REG(VPU, L_HSYNC_VS_ADDR, lcd_timing_.hs_vs_addr);
-  WRITE32_REG(VPU, L_HSYNC_VE_ADDR, lcd_timing_.hs_ve_addr);
+  vpu_mmio_->Write32(lcd_timing_.hs_hs_addr, L_HSYNC_HS_ADDR);
+  vpu_mmio_->Write32(lcd_timing_.hs_he_addr, L_HSYNC_HE_ADDR);
+  vpu_mmio_->Write32(lcd_timing_.hs_vs_addr, L_HSYNC_VS_ADDR);
+  vpu_mmio_->Write32(lcd_timing_.hs_ve_addr, L_HSYNC_VE_ADDR);
 
   // Vsync signal
-  WRITE32_REG(VPU, L_VSYNC_HS_ADDR, lcd_timing_.vs_hs_addr);
-  WRITE32_REG(VPU, L_VSYNC_HE_ADDR, lcd_timing_.vs_he_addr);
-  WRITE32_REG(VPU, L_VSYNC_VS_ADDR, lcd_timing_.vs_vs_addr);
-  WRITE32_REG(VPU, L_VSYNC_VE_ADDR, lcd_timing_.vs_ve_addr);
+  vpu_mmio_->Write32(lcd_timing_.vs_hs_addr, L_VSYNC_HS_ADDR);
+  vpu_mmio_->Write32(lcd_timing_.vs_he_addr, L_VSYNC_HE_ADDR);
+  vpu_mmio_->Write32(lcd_timing_.vs_vs_addr, L_VSYNC_VS_ADDR);
+  vpu_mmio_->Write32(lcd_timing_.vs_ve_addr, L_VSYNC_VE_ADDR);
 
-  WRITE32_REG(VPU, L_INV_CNT_ADDR, 0);
-  WRITE32_REG(VPU, L_TCON_MISC_SEL_ADDR, ((1 << kStv1Sel) | (1 << kStv2Sel)));
-
-  WRITE32_REG(VPU, VPP_MISC, READ32_REG(VPU, VPP_MISC) & ~(VPP_OUT_SATURATE));
+  vpu_mmio_->Write32(vpu_mmio_->Read32(VPP_MISC) & ~(VPP_OUT_SATURATE), VPP_MISC);
 
   // Ready to be used
   clock_enabled_ = true;
-  return ZX_OK;
+  return zx::ok();
 }
 
-void Clock::SetVideoOn(bool on) { WRITE32_REG(VPU, ENCL_VIDEO_EN, on); }
+void Clock::SetVideoOn(bool on) { vpu_mmio_->Write32(on, ENCL_VIDEO_EN); }
 
 // static
 zx::result<std::unique_ptr<Clock>> Clock::Create(ddk::PDevFidl& pdev, bool already_enabled) {
@@ -475,18 +465,18 @@ zx::result<std::unique_ptr<Clock>> Clock::Create(ddk::PDevFidl& pdev, bool alrea
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 
-  // Map VPU and HHI registers
-  zx_status_t status = pdev.MapMmio(MMIO_VPU, &(self->vpu_mmio_));
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Clock: Could not map VPU mmio: %s", zx_status_get_string(status));
-    return zx::error(status);
+  zx::result<fdf::MmioBuffer> vpu_mmio_result = MapMmio(MmioResourceIndex::kVpu, pdev);
+  if (vpu_mmio_result.is_error()) {
+    return vpu_mmio_result.take_error();
   }
+  self->vpu_mmio_ = std::move(vpu_mmio_result).value();
 
-  status = pdev.MapMmio(MMIO_HHI, &(self->hhi_mmio_));
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Clock: Could not map HHI mmio: %s", zx_status_get_string(status));
-    return zx::error(status);
+  zx::result<fdf::MmioBuffer> hhi_mmio_result = MapMmio(MmioResourceIndex::kHhi, pdev);
+  if (hhi_mmio_result.is_error()) {
+    return hhi_mmio_result.take_error();
   }
+  self->hhi_mmio_ = std::move(hhi_mmio_result).value();
+
   self->clock_enabled_ = already_enabled;
 
   return zx::ok(std::move(self));

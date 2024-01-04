@@ -151,10 +151,9 @@ zx_status_t PagerDispatcher::RangeOp(uint32_t op, fbl::RefPtr<VmObject> vmo, uin
   }
 }
 
-zx_status_t PagerDispatcher::QueryDirtyRanges(VmAspace* current_aspace, fbl::RefPtr<VmObject> vmo,
-                                              uint64_t offset, uint64_t length,
-                                              user_out_ptr<void> buffer, size_t buffer_size,
-                                              user_out_ptr<size_t> actual,
+zx_status_t PagerDispatcher::QueryDirtyRanges(fbl::RefPtr<VmObject> vmo, uint64_t offset,
+                                              uint64_t length, user_out_ptr<void> buffer,
+                                              size_t buffer_size, user_out_ptr<size_t> actual,
                                               user_out_ptr<size_t> avail) {
   // State captured by |copy_to_buffer| below.
   struct CopyToBufferInfo {
@@ -190,14 +189,19 @@ zx_status_t PagerDispatcher::QueryDirtyRanges(VmAspace* current_aspace, fbl::Ref
   // Enumeration function that will be invoked on each dirty range found.
   VmObject::DirtyRangeEnumerateFunction copy_to_buffer =
       [&info](uint64_t range_offset, uint64_t range_len, bool range_is_zero) {
+        auto buffer_full = [&info]() {
+          return (info.index + 1) * sizeof(zx_vmo_dirty_range_t) > info.buffer_size;
+        };
         // No more space in the buffer.
-        if ((info.index + 1) * sizeof(zx_vmo_dirty_range_t) > info.buffer_size) {
+        if (buffer_full()) {
           // If we were not asked to compute the total, we can end termination early as there is
-          // nothing more to copy out.
+          // nothing more to copy out. Although we would have terminated at the bottom of this loop
+          // if out of space, this could be our first iteration and so this check is still needed.
           if (!info.compute_total) {
+            DEBUG_ASSERT(info.index == 0);
             return ZX_ERR_STOP;
           }
-          // If there is no more space in the |buffer|, only update the total without trying to copy
+          // As there is no more space in the |buffer|, only update the total without trying to copy
           // out any more ranges.
           ++info.total;
           return ZX_ERR_NEXT;
@@ -228,9 +232,16 @@ zx_status_t PagerDispatcher::QueryDirtyRanges(VmAspace* current_aspace, fbl::Ref
           return ZX_ERR_SHOULD_WAIT;
         }
         // We were able to successfully copy out this dirty range. Advance the index and continue
-        // with the enumeration.
+        // with the enumeration if we need to consider more ranges.
         ++info.index;
         ++info.total;
+        if (!info.compute_total && buffer_full()) {
+          // No need to compute the total and the buffer is full, so can cease considering
+          // additional ranges. This is equivalent to the start the loop, but by doing it here we
+          // save the need to calculate the next range before noticing the buffer is full and
+          // terminating.
+          return ZX_ERR_STOP;
+        }
         return ZX_ERR_NEXT;
       };
 
@@ -243,7 +254,7 @@ zx_status_t PagerDispatcher::QueryDirtyRanges(VmAspace* current_aspace, fbl::Ref
     // captured. Resolve the fault and then attempt the enumeration again.
     if (status == ZX_ERR_SHOULD_WAIT) {
       DEBUG_ASSERT(info.captured_fault_info);
-      zx_status_t fault_status = current_aspace->SoftFault(info.pf_va, info.pf_flags);
+      zx_status_t fault_status = Thread::Current::SoftFault(info.pf_va, info.pf_flags);
       if (fault_status != ZX_OK) {
         return ZX_ERR_INVALID_ARGS;
       }
@@ -273,9 +284,8 @@ zx_status_t PagerDispatcher::QueryDirtyRanges(VmAspace* current_aspace, fbl::Ref
   return status;
 }
 
-zx_status_t PagerDispatcher::QueryPagerVmoStats(VmAspace* current_aspace, fbl::RefPtr<VmObject> vmo,
-                                                uint32_t options, user_out_ptr<void> buffer,
-                                                size_t buffer_size) {
+zx_status_t PagerDispatcher::QueryPagerVmoStats(fbl::RefPtr<VmObject> vmo, uint32_t options,
+                                                user_out_ptr<void> buffer, size_t buffer_size) {
   if (buffer_size < sizeof(zx_pager_vmo_stats_t)) {
     return ZX_ERR_BUFFER_TOO_SMALL;
   }
@@ -300,7 +310,7 @@ zx_status_t PagerDispatcher::QueryPagerVmoStats(VmAspace* current_aspace, fbl::R
     }
     DEBUG_ASSERT(copy_result.fault_info.has_value());
     zx_status_t fault_status =
-        current_aspace->SoftFault(copy_result.fault_info->pf_va, copy_result.fault_info->pf_flags);
+        Thread::Current::SoftFault(copy_result.fault_info->pf_va, copy_result.fault_info->pf_flags);
     if (fault_status != ZX_OK) {
       return ZX_ERR_INVALID_ARGS;
     }

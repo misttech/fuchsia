@@ -8,14 +8,10 @@ import("//tools/fidl/fidlc/testdata/info.gni")
 
 source_set("fidl") {
   sources = [
-    "lib/coded_types_generator.cc",
-    "lib/compiled_transformer.cc",
     "lib/diagnostic_types.cc",
     "lib/diagnostics_json.cc",
     "lib/experimental_flags.cc",
     "lib/findings_json.cc",
-    "lib/fixables.cc",
-    "lib/fixes.cc",
     "lib/flat/attribute_schema.cc",
     "lib/flat/attributes.cc",
     "lib/flat/availability_step.cc",
@@ -42,20 +38,15 @@ source_set("fidl") {
     "lib/linting_tree_callbacks.cc",
     "lib/names.cc",
     "lib/ordinals.cc",
-    "lib/parsed_transformer.cc",
     "lib/parser.cc",
     "lib/raw_ast.cc",
     "lib/reporter.cc",
     "lib/source_file.cc",
     "lib/source_manager.cc",
-    "lib/source_map_generator.cc",
     "lib/source_span.cc",
     "lib/span_sequence.cc",
     "lib/span_sequence_tree_visitor.cc",
-    "lib/tables_generator.cc",
     "lib/template_string.cc",
-    "lib/token_list.cc",
-    "lib/transformer.cc",
     "lib/tree_visitor.cc",
     "lib/type_shape.cc",
     "lib/utils.cc",
@@ -72,7 +63,6 @@ source_set("fidl") {
   deps += [ "//third_party/boringssl" ]
 
   visibility = [
-    ":fidl-fix",
     ":fidl-format",
     ":fidl-lint",
     ":fidlc",
@@ -113,23 +103,6 @@ if (is_host) {
     deps = [ ":fidl" ]
   }
 
-  source_set("fidl-fix-cli") {
-    sources = [ "fix/command_line_options.cc" ]
-    deps = [
-      "//src/lib/fxl",
-      "//third_party/re2",
-      "//zircon/system/ulib/cmdline",
-    ]
-  }
-
-  executable("fidl-fix") {
-    sources = [ "fix/main.cc" ]
-    deps = [
-      ":fidl",
-      ":fidl-fix-cli",
-    ]
-  }
-
   executable("fidl-lint") {
     sources = [
       "linter/command_line_options.cc",
@@ -151,6 +124,11 @@ if (is_host) {
   }
 }
 
+install_host_tools("fidl-lint.host") {
+  deps = [ ":fidl-lint" ]
+  outputs = [ "fidl-lint" ]
+}
+
 golden_files("fidlc_golden_tests") {
   testonly = true
   deps = []
@@ -165,10 +143,6 @@ golden_files("fidlc_golden_tests") {
       {
         golden = "goldens/${info.name}.index.json.golden"
         candidate = "${info.fidl_gen_dir}/${info.target_name}.fidl.index.json"
-      },
-      {
-        golden = "goldens/${info.name}.tables.c.golden"
-        candidate = "${info.fidl_gen_dir}/${info.target_name}/c/${info.target_name}.fidl.tables.c"
       },
     ]
   }

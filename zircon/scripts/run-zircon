@@ -33,9 +33,10 @@ function HELP {
     echo "                       <host_drv> should be one of (alsa, oss, pa, wav, none)"
     echo "--ahci=<disk image>  : run with disk image file as raw ahci drive"
     echo "--debugger           : Enable gdb stub and wait for connection"
+    echo "--dry-run            : do everything but start qemu"
     echo "--gic=<version>      : use GIC 2, 3, or max supported. default is max"
     echo "--no-serial          : Disable writing out to the guest's serial port"
-    echo "-S <device>          : output serial port to a QEMU character device"
+    echo "-S <device>          : output serial port to a QEMU character device. Default is stdio."
     echo "-M <device>          : output QEMU monitor console to a QEMU character device"
     echo "--uefi               : Boot QEMU through UEFI. With this setting, one of -t or -D must be"
     echo "                       supplied: if -t is supplied, then that value is assumed to be a"
@@ -88,6 +89,7 @@ DEBUGGER=0
 DISKFILE=
 DISKTYPE=
 DISKFMT="raw"
+DRY_RUN=0
 GIC=max
 GRAPHICS=0
 DO_HVF=
@@ -100,7 +102,7 @@ UPSCRIPT=no
 VNC=
 VIRTIO=1
 SERIAL=1
-SERIAL_DEV=
+SERIAL_DEV="stdio"
 MONITOR_DEV=
 SMP=$SMP_DEFAULT
 CMDLINE=""
@@ -260,6 +262,7 @@ while getopts "a:c:D:gHI:km:nNq:s:t::u:Vz:S:M:h-:" FLAG; do
             debugger) DEBUGGER=1;;
             disktype=*) DISKTYPE=${OPTARG#*=};;
             diskfmt=*) DISKFMT=${OPTARG#*=};;
+            dry-run) DRY_RUN=1;;
             gic=*) GIC=${OPTARG#*=};;
             no-serial) SERIAL=0;;
             vnc=*) VNC=${OPTARG#*=};;
@@ -312,9 +315,7 @@ fi
 # Fall back to disk type defaults if left unspecified with a provided emulated
 # disk file.
 if [[ -n "$DISKFILE" ]] && [[ -z "$DISKTYPE" ]]; then
-  if (( $UEFI_DISK_BOOT )); then
-    DISKTYPE="usb"
-  elif (( $VIRTIO )); then
+  if (( $VIRTIO )); then
     DISKTYPE="virtio"
   else
     DISKTYPE="ahci"
@@ -376,35 +377,39 @@ fi
 # Always use virtio as the rng source
 ARGS+=" -device virtio-rng-pci"
 
-if [[ -n "$SERIAL_DEV" ]]; then
-  ARGS+=" -serial $SERIAL_DEV"
-fi
-
 if [[ -n "$MONITOR_DEV" ]]; then
   ARGS+=" -monitor $MONITOR_DEV"
 fi
 
-if (( !$GRAPHICS  )); then
-    ARGS+=" -nographic -vga none"
+ADD_SERIAL_ARG=1
+if (( !$GRAPHICS )); then
+  ARGS+=" -nographic -vga none"
+
+  # -nographic implies -serial stdio and will complain if you
+  # try to set anything else pointing at stdio.
+  if [[ "$SERIAL_DEV" == "stdio" ]]; then
+    ADD_SERIAL_ARG=0
+  fi
 else
-    if [[ -z "$SERIAL" ]]; then
-      ARGS+=" -serial stdio"
-    fi
-    if [[ "$ARCH" == "x64" && $VIRTIO == 0 ]]; then
-        # Enable Bochs VBE device, which Zircon has a device for
-        ARGS+=" -vga std"
-    else
-        # use the virtio gpu for display
-        ARGS+=" -vga none"
-        ARGS+=" -device virtio-gpu-pci"
-    fi
+  if [[ "$ARCH" == "x64" && $VIRTIO == 0 ]]; then
+    # Enable Bochs VBE device, which Zircon has a device for
+    ARGS+=" -vga std"
+  else
+    # use the virtio gpu for display
+    ARGS+=" -vga none"
+    ARGS+=" -device virtio-gpu-pci"
+  fi
+fi
+
+if (( $SERIAL && $ADD_SERIAL_ARG )); then
+  ARGS+=" -serial $SERIAL_DEV"
 fi
 
 for ahcifile in ${AHCI[@]}; do
-    ARGS+=" -drive file=${ahcifile},format=raw,if=none,id=ahcidisk${AHCI_NUM}"
-    ARGS+=" -device ich9-ahci,id=ahci${AHCI_NUM}"
-    ARGS+=" -device ide-hd,drive=ahcidisk${AHCI_NUM},bus=ahci.${AHCI_NUM}"
-    AHCI_NUM=$((AHCI_NUM + 1))
+  ARGS+=" -drive file=${ahcifile},format=raw,if=none,id=ahcidisk${AHCI_NUM}"
+  ARGS+=" -device ich9-ahci,id=ahci${AHCI_NUM}"
+  ARGS+=" -device ide-hd,drive=ahcidisk${AHCI_NUM},bus=ahci.${AHCI_NUM}"
+  AHCI_NUM=$((AHCI_NUM + 1))
 done
 
 if (( !$NET )); then
@@ -522,13 +527,7 @@ case $ARCH in
           GIC=host
         elif (( $DO_HVF )); then
           ARGS+=" -machine accel=hvf"
-          if [[ $HOST_ARCH == "arm64" ]]; then
-            # M1s only support 36 bits of physical address space.
-            ARGS+=",highmem=off"
-          fi
           ARGS+=" -cpu host"
-          # at the moment GICv3 appears to not pass through HVF properly
-          GIC=2
         else
           # Ask for all of the features TCG emulates
           ARGS+=" -machine virtualization=true -cpu max"
@@ -548,7 +547,7 @@ case $ARCH in
         ;;
     riscv64)
         QEMU=${QEMUDIR}qemu-system-riscv64
-        ARGS+=" -cpu rv64"
+        ARGS+=" -cpu rv64,svpbmt=true,v=true,vext_spec=v1.0"
         ARGS+=" -machine virt"
         ARGS+=" -object rng-random,filename=/dev/urandom,id=rng0"
         ARGS+=" -device virtio-rng-device,rng=rng0"
@@ -558,7 +557,8 @@ case $ARCH in
         ;;
     x64)
         QEMU=${QEMUDIR}qemu-system-x86_64
-        ARGS+=" -machine q35"
+        # The kernel only supports the v2.1 (32-bit) SMBIOS entry point.
+        ARGS+=" -machine q35,smbios-entry-point-type=32"
         ARGS+=" -device isa-debug-exit,iobase=0xf4,iosize=0x04"
 
         # Override the SeaBIOS serial port to keep it from outputting
@@ -594,13 +594,20 @@ CMDLINE+="kernel.halt-on-panic=true "
 CMDLINE+=$OPT_CMDLINE
 
 cd /
-set -x
+
+# If dry run is set, simply echo all commands run from here on out.
+if (( $DRY_RUN )); then
+  RUN_CMD="echo"
+else
+  RUN_CMD="exec"
+  set -x
+fi
 
 # TODO(joshuaseaton): this and other command-line building logic above can be
 # tidied up in having $ARGS be an array.
 if (( $UEFI_DISK_BOOT )); then
-    exec $QEMU $ARGS "$@"
+  $RUN_CMD $QEMU $ARGS "$@"
 else
-    echo "CMDLINE: $CMDLINE"
-    exec $QEMU $ARGS -append "$CMDLINE" "$@"
+  echo "CMDLINE: $CMDLINE"
+  $RUN_CMD $QEMU $ARGS -append "$CMDLINE" "$@"
 fi

@@ -1,0 +1,34 @@
+# Copyright 2023 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/rust/rustc_binary.gni")
+
+rustc_binary("network_unified_binary") {
+  edition = "2021"
+
+  deps = [
+    "//src/connectivity/network/dhcpv4/client/bindings:dhcp_client_gub_lib",
+    "//src/connectivity/network/dhcpv4/server:bin_gub_lib",
+    "//src/connectivity/network/dhcpv6/client:dhcpv6_client_gub_lib",
+    "//src/connectivity/network/dns:bin_gub_lib",
+    "//src/connectivity/network/http-client:http_client_gub_lib",
+    "//src/connectivity/network/netstack-proxy:bin_gub_lib",
+    "//src/connectivity/network/netstack3:bin_gub_lib",
+    "//src/connectivity/network/reachability:bin_gub_lib",
+    "//src/connectivity/network/stack-migration:bin_gub_lib",
+    "//src/connectivity/policy/netcfg:bin-basic_gub_lib",
+  ]
+
+  sources = [ "src/main.rs" ]
+  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+
+  if (!is_debug) {
+    # Allow cross-crate optimization since each binary that is unified here is a
+    # different crate.
+    configs += [ "//build/config/rust:lto_thin" ]
+
+    # Dynamic linking libstd is incompatible with LTO.
+    configs -= [ "//build/config/fuchsia:dynamic_rust_standard_library" ]
+  }
+}

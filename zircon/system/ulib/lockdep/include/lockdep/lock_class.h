@@ -2,21 +2,38 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#pragma once
+#ifndef LOCKDEP_LOCK_CLASS_H_
+#define LOCKDEP_LOCK_CLASS_H_
 
+#include <lib/fxt/interned_string.h>
 #include <zircon/compiler.h>
 
 #include <type_traits>
 #include <utility>
 
+#include <fbl/macros.h>
 #include <fbl/type_info.h>
 #include <lockdep/common.h>
 #include <lockdep/global_reference.h>
 #include <lockdep/lock_class_state.h>
+#include <lockdep/lock_name_helper.h>
 #include <lockdep/lock_traits.h>
 #include <lockdep/thread_lock_state.h>
 
 namespace lockdep {
+
+// A fbl helper which can be used to test to see if an object's definition includes a method of the
+// form:
+//
+// ```
+// void SetLockClassId(LockClassId id)
+// ```
+//
+// Used by the Lock's state wrappers to inform an underlying lock implementation
+// of its class ID via a set method when supported.
+//
+DECLARE_HAS_MEMBER_FN_WITH_SIGNATURE(has_set_lock_class_id, SetLockClassId,
+                                     void (C::*)(LockClassId));
 
 // Looks up a lock traits type using ADL to perform cross-namespace matching.
 // This alias works in concert with the macro LOCK_DEP_TRAITS(type, flags) to
@@ -39,63 +56,61 @@ struct LockTraits<T, std::void_t<LookupLockTraits<T>>> {
   static constexpr LockFlags Flags = LookupLockTraits<T>::Flags;
 };
 
-// Singleton type that represents a lock class. Each template instantiation
-// represents an independent, unique lock class. This type maintains a global
-// dependency set that tracks which other lock classes have been observed
-// being held prior to acquisitions of this lock class. This type is only used
-// when lock validation is enabled, otherwise DummyLockClass takes its place.
+// Forward declarations.
 template <typename Class, typename LockType, size_t Index, LockFlags Flags>
-class LockClass {
- public:
-  // Returns the unique lock class id for this lock class.
-  static constexpr LockClassId Id() { return lock_class_state_.id(); }
+class LockClass;
 
-  // Returns the LockClassState instance for this lock class.
-  static LockClassState* GetLockClassState() { return &lock_class_state_; }
+namespace internal {
+
+// Generates the global storage for runtime validation state and/or lock
+// metadata, depending on the compile-time configuration.
+template <bool Enabled, typename Class, typename LockType, size_t Index, LockFlags Flags>
+class LockClassStateStorage {
+ public:
+  static constexpr LockClassId id() { return lock_class_state_.id(); }
 
  private:
-  LockClass() = default;
-  ~LockClass() = default;
-  LockClass(const LockClass&) = delete;
-  void operator=(const LockClass&) = delete;
-
   // Returns the name of this lock class.
-  constexpr static const char* GetName() { return fbl::TypeInfo<LockClass>::Name(); }
+  constexpr static const char* GetName() { return internal::LockNameHelper<Class, Index>::Name(); }
 
-  // Lock free dependency set that tracks which lock classes have been observed
-  // being held prior to acquisitions of this lock class.
-  static LockDependencySet dependency_set_;
+  // Select whether to generate full validation state or only metadata.
+  using LockClassStateType =
+      IfLockValidationEnabled<ValidatorLockClassState, MetadataLockClassState>;
+
+  // The name of this lock class is deduced from its template parameters, and the interned structure
+  // storage is a member of the templated class, the LockClassState will simply hold a pointer back
+  // to this storage..
+  static inline fxt::InternedString interned_name_ FXT_INTERNED_STRING_SECTION{GetName()};
 
   // This static member serves a dual role:
-  //  1. Stores the id, name, and pointer to dependency set for this lock class.
+  //  1. It generates storage for the lock class metadata and validation state.
   //  2. The address of this member serves as the unique id for this lock class.
-  static LockClassState lock_class_state_;
+  inline static LockClassStateType lock_class_state_{
+      interned_name_, static_cast<LockFlags>(LockTraits<LockType>::Flags | Flags)};
 };
 
-// Initializes the value of the lock class state with the id, typeid name, and
-// dependency set of the lock class. This results in a global initializer that
-// performs trivial assignment.
+// Empty storage case that does not generate runtime validation or metadata
+// storage when both are disabled at compile-time.
 template <typename Class, typename LockType, size_t Index, LockFlags Flags>
-LockClassState LockClass<Class, LockType, Index, Flags>::lock_class_state_ = {
-    LockClass<Class, LockType, Index, Flags>::GetName(),
-    &LockClass<Class, LockType, Index, Flags>::dependency_set_,
-    static_cast<LockFlags>(LockTraits<LockType>::Flags | Flags)};
-
-// The storage for this static member is allocated as zeroed memory.
-template <typename Class, typename LockType, size_t Index, LockFlags Flags>
-LockDependencySet LockClass<Class, LockType, Index, Flags>::dependency_set_;
-
-// Dummy type used in place of LockClass when validation is disabled. This type
-// does not create static dependency tracking structures that LockClass does.
-struct DummyLockClass {
-  static constexpr LockClassId Id() { return kInvalidLockClassId; }
+class LockClassStateStorage<false, Class, LockType, Index, Flags> {
+ public:
+  static constexpr LockClassId id() { return kInvalidLockClassId; }
 };
 
-// Alias that selects LockClass<Class, LockType, Index, Flags> when validation
-// is enabled or DummyLockClass when validation is disabled.
+}  // namespace internal
+
+// Singleton type representing a lock class. Each unique template instantiation
+// represents an independent, unique lock class. This type generates global lock
+// metadata and runtime validation state structures when these respective
+// features are enabled.
 template <typename Class, typename LockType, size_t Index, LockFlags Flags>
-using ConditionalLockClass =
-    IfLockValidationEnabled<LockClass<Class, LockType, Index, Flags>, DummyLockClass>;
+class LockClass : public internal::LockClassStateStorage<kLockMetadataAvailable, Class, LockType,
+                                                         Index, Flags> {};
+
+// Utility to normalize the LockClass type by removing global references from
+// the LockType.
+template <typename Class, typename LockType, size_t Index, LockFlags Flags>
+using NormalizedLockClass = LockClass<Class, RemoveGlobalReference<LockType>, Index, Flags>;
 
 // Base lock wrapper type that provides the essential interface required by
 // Guard<LockType, Option> to perform locking and validation. This type wraps
@@ -189,7 +204,8 @@ class __TA_CAPABILITY("mutex") Lock {
   // Initializes the Lock instance with the given LockClassId and passes any
   // additional arguments to the underlying lock constructor.
   template <typename... Args>
-  constexpr Lock(LockClassId id, Args&&... args) : state_{id, std::forward<Args>(args)...} {}
+  explicit constexpr Lock(LockClassId id, Args&&... args)
+      : state_{id, std::forward<Args>(args)...} {}
 
  private:
   template <typename, typename, typename>
@@ -197,11 +213,15 @@ class __TA_CAPABILITY("mutex") Lock {
   template <size_t, typename, typename>
   friend class GuardMultiple;
 
-  // State type when lock validation is enabled.
-  struct ValidatedState {
+  // State type when lock validation or metadata is enabled.
+  struct AvailableState {
     template <typename... Args>
-    explicit ValidatedState(LockClassId id, Args&&... args)
-        : id_{id}, lock_(std::forward<Args>(args)...) {}
+    explicit AvailableState(LockClassId id, Args&&... args)
+        : id_{id}, lock_(std::forward<Args>(args)...) {
+      if constexpr (has_set_lock_class_id_v<LockType>) {
+        lock_.SetLockClassId(id);
+      }
+    }
 
     LockClassId id() const { return id_; }
 
@@ -209,19 +229,23 @@ class __TA_CAPABILITY("mutex") Lock {
     LockType lock_;
   };
 
-  // State type when validation is disabled.
-  struct UnvalidatedState {
+  // State type when validation and metadata is disabled.
+  struct UnavailableState {
     template <typename... Args>
-    explicit UnvalidatedState(LockClassId id, Args&&... args)
-        : lock_(std::forward<Args>(args)...) {}
+    explicit UnavailableState(LockClassId id, Args&&... args) : lock_(std::forward<Args>(args)...) {
+      if constexpr (has_set_lock_class_id_v<LockType>) {
+        lock_.SetLockClassId(id);
+      }
+    }
 
     constexpr LockClassId id() const { return kInvalidLockClassId; }
 
     LockType lock_;
   };
 
-  // Selects which state type to use based on whether validation is enabled.
-  using State = IfLockValidationEnabled<ValidatedState, UnvalidatedState>;
+  // Selects which state type to use based on whether metadata or validation is
+  // enabled.
+  using State = IfLockMetadataAvailable<AvailableState, UnavailableState>;
 
   // State instance holding the underlying lock and, when validation is enabled,
   // the lock class id.
@@ -253,7 +277,19 @@ class __TA_CAPABILITY("mutex") Lock<GlobalReference<LockType, Reference>> {
   LockClassId id() const { return id_.value(); }
 
  protected:
-  constexpr Lock(LockClassId id) : id_{id} {}
+  explicit constexpr Lock(LockClassId id) : id_{id} {
+    // Do not interact with the lock at this point in time (not even to try to
+    // set its lock class ID).  This specialized version of |Lock| does not
+    // encapsulate the actual lock, it only holds a reference to it.
+    // Additionally, this wrapper is used in situations where the lock in
+    // question is almost certainly a global lock.
+    //
+    // So, we have a global ctor race.  We do not know who is going to be
+    // constructed first, the lock we hold a reference to, or the wrapper (aka,
+    // |this|).  Attempting to interact with the lock via reference at this
+    // point runs the risk of interacting with an object before it has been
+    // constructed, which is clearly no good.
+  }
 
  private:
   template <typename, typename, typename>
@@ -265,12 +301,12 @@ class __TA_CAPABILITY("mutex") Lock<GlobalReference<LockType, Reference>> {
     LockClassId value_;
     LockClassId value() const { return value_; }
   };
-  struct Dummy {
-    constexpr Dummy(LockClassId) {}
+  struct Disabled {
+    constexpr Disabled(LockClassId) {}
     LockClassId constexpr value() const { return kInvalidLockClassId; }
   };
 
-  using IdValue = IfLockValidationEnabled<Value, Dummy>;
+  using IdValue = IfLockMetadataAvailable<Value, Disabled>;
 
   // Stores the lock class id of this lock when validation is enabled.
   IdValue id_;
@@ -301,13 +337,13 @@ class LockDep : public Lock<LockType_> {
   using Base = LockDep;
 
   // Alias of the lock class that this wrapper represents.
-  using LockClass = ConditionalLockClass<Class, RemoveGlobalReference<LockType>, Index, Flags>;
+  using LockClass = NormalizedLockClass<Class, LockType, Index, Flags>;
 
   // Constructor that initializes the underlying lock with the additional
   // arguments.
   template <typename... Args>
   constexpr LockDep(Args&&... args)
-      : Lock<LockType>{LockClass::Id(), std::forward<Args>(args)...} {}
+      : Lock<LockType>(LockClass::id(), std::forward<Args>(args)...) {}
 };
 
 // Singleton version of the lock wrapper above. This type is appropriate for
@@ -320,7 +356,7 @@ class SingletonLockDep : public Lock<LockType_> {
   using LockType = LockType_;
 
   // Alias of the lock class that this wrapper represents.
-  using LockClass = ConditionalLockClass<Class, RemoveGlobalReference<LockType>, 0, Flags>;
+  using LockClass = NormalizedLockClass<Class, LockType, 0, Flags>;
 
   // Returns a pointer to the singleton object.
   static Class* Get() { return &global_lock_; }
@@ -330,10 +366,12 @@ class SingletonLockDep : public Lock<LockType_> {
   // additional arguments are pass to the underlying lock.
   template <typename... Args>
   constexpr SingletonLockDep(Args&&... args)
-      : Lock<LockType>{LockClass::Id(), std::forward<Args>(args)...} {}
+      : Lock<LockType>(LockClass::id(), std::forward<Args>(args)...) {}
 
  private:
   inline static Class global_lock_;
 };
 
 }  // namespace lockdep
+
+#endif  // LOCKDEP_LOCK_CLASS_H_

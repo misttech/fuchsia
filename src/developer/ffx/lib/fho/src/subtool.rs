@@ -2,27 +2,26 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use argh::{CommandInfo, FromArgs, SubCommand, SubCommands};
+use argh::{ArgsInfo, CommandInfo, FromArgs, SubCommand, SubCommands};
 use async_trait::async_trait;
 use ffx_command::{
     Error, FfxCommandLine, FfxContext, MetricsSession, Result, ToolRunner, ToolSuite,
 };
 use ffx_config::environment::ExecutableKind;
 use ffx_config::EnvironmentContext;
-use ffx_core::Injector;
 use ffx_daemon_proxy::{DaemonVersionCheck, Injection};
 use std::os::unix::process::ExitStatusExt;
 use std::process::ExitStatus;
 use std::sync::Arc;
 use std::{fs::File, path::PathBuf};
 
-use crate::{FhoToolMetadata, TryFromEnv};
+use crate::{FhoEnvironment, FhoToolMetadata, TryFromEnv};
 
 /// The main trait for defining an ffx tool. This is not intended to be implemented directly
 /// by the user, but instead derived via `#[derive(FfxTool)]`.
 #[async_trait(?Send)]
 pub trait FfxTool: FfxMain + Sized {
-    type Command: FromArgs + SubCommand;
+    type Command: FromArgs + SubCommand + ArgsInfo;
 
     fn forces_stdout_log(&self) -> bool;
     fn supports_machine_output(&self) -> bool;
@@ -84,7 +83,6 @@ struct FhoTool<M: FfxTool> {
     env: FhoEnvironment,
     redacted_args: Vec<String>,
     main: M,
-    _hoist_cache_dir: tempfile::TempDir,
 }
 
 struct MetadataRunner {
@@ -116,13 +114,6 @@ impl ToolRunner for MetadataRunner {
     }
 }
 
-#[derive(Clone)]
-pub struct FhoEnvironment {
-    pub ffx: FfxCommandLine,
-    pub context: EnvironmentContext,
-    pub injector: Arc<dyn Injector>,
-}
-
 #[async_trait(?Send)]
 impl<T: FfxTool> ToolRunner for FhoTool<T> {
     fn forces_stdout_log(&self) -> bool {
@@ -144,21 +135,12 @@ impl<T: FfxTool> FhoTool<T> {
         tool: T::Command,
     ) -> Result<Box<Self>> {
         let is_machine_output = ffx.global.machine.is_some();
-        let cache_path = context.get_cache_path()?;
-        let hoist_cache_dir = std::fs::create_dir_all(&cache_path)
-            .and_then(|_| tempfile::tempdir_in(&cache_path))
-            .with_user_message(|| format!(
-                "Could not create hoist cache root in {}. Do you have permission to write to its parent?",
-                cache_path.display()
-            ))?;
         let build_info = context.build_info();
         let injector = Injection::initialize_overnet(
             context.clone(),
-            hoist_cache_dir.path(),
             None,
             DaemonVersionCheck::SameVersionInfo(build_info),
             ffx.global.machine,
-            ffx.global.target().await?,
         )
         .await?;
         let redacted_args = ffx.redact_subcmd(&tool);
@@ -171,7 +153,7 @@ impl<T: FfxTool> FhoTool<T> {
             )));
         }
 
-        let found = FhoTool { env, redacted_args, main, _hoist_cache_dir: hoist_cache_dir };
+        let found = FhoTool { env, redacted_args, main };
         Ok(Box::new(found))
     }
 }
@@ -185,6 +167,10 @@ impl<M: FfxTool> ToolSuite for FhoSuite<M> {
 
     fn global_command_list() -> &'static [&'static argh::CommandInfo] {
         FhoHandler::<M>::COMMANDS
+    }
+
+    async fn get_args_info(&self) -> Result<ffx_command::CliArgsInfo> {
+        Ok(M::Command::get_args_info().into())
     }
 
     async fn try_from_args(

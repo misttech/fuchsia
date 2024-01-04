@@ -79,6 +79,13 @@ py_binary(
 )
 
 py_binary(
+    name = "run_ffx",
+    srcs = ["run_ffx.py"],
+    python_version = "PY3",
+    deps = [":fuchsia_task_lib"],
+)
+
+py_binary(
     name = "register_debug_symbols",
     srcs = ["register_debug_symbols.py"],
     python_version = "PY3",
@@ -124,13 +131,6 @@ py_binary(
 )
 
 py_binary(
-    name = "detect_target",
-    srcs = ["detect_target.py"],
-    python_version = "PY3",
-    deps = [":fuchsia_task_lib"],
-)
-
-py_binary(
     name = "json_comparator",
     srcs = ["json_comparator.py"],
     python_version = "PY3",
@@ -167,5 +167,11 @@ py_binary(
 py_binary(
     name = "elf_sizes",
     srcs = ["elf_sizes.py"],
+    python_version = "PY3",
+)
+
+py_binary(
+    name = "ensure_build_config",
+    srcs = ["ensure_build_config.py"],
     python_version = "PY3",
 )

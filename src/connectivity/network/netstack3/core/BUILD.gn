@@ -9,46 +9,48 @@ import("//build/rust/rustc_library.gni")
 import("//build/rust/rustc_test.gni")
 
 lib_sources = [
-  "src/algorithm/mod.rs",
+  "src/algorithm.rs",
   "src/algorithm/port_alloc.rs",
   "src/benchmarks.rs",
   "src/context.rs",
   "src/convert.rs",
-  "src/data_structures/id_map.rs",
-  "src/data_structures/id_map_collection.rs",
-  "src/data_structures/mod.rs",
+  "src/counters.rs",
+  "src/data_structures.rs",
   "src/data_structures/ref_counted_hash_map.rs",
   "src/data_structures/socketmap.rs",
   "src/data_structures/token_bucket.rs",
   "src/device/arp.rs",
+  "src/device/base.rs",
+  "src/device/config.rs",
   "src/device/ethernet.rs",
+  "src/device/id.rs",
+  "src/device/integration.rs",
   "src/device/link.rs",
   "src/device/loopback.rs",
-  "src/device/mod.rs",
   "src/device/ndp.rs",
+  "src/device/queue.rs",
   "src/device/queue/fifo.rs",
-  "src/device/queue/mod.rs",
   "src/device/queue/rx.rs",
   "src/device/queue/tx.rs",
   "src/device/socket.rs",
   "src/device/state.rs",
   "src/error.rs",
+  "src/ip/base.rs",
+  "src/ip/device.rs",
   "src/ip/device/dad.rs",
   "src/ip/device/integration.rs",
-  "src/ip/device/mod.rs",
   "src/ip/device/nud.rs",
   "src/ip/device/route_discovery.rs",
   "src/ip/device/router_solicitation.rs",
   "src/ip/device/slaac.rs",
   "src/ip/device/state.rs",
   "src/ip/forwarding.rs",
+  "src/ip/gmp.rs",
   "src/ip/gmp/igmp.rs",
   "src/ip/gmp/mld.rs",
-  "src/ip/gmp/mod.rs",
   "src/ip/icmp.rs",
   "src/ip/integration.rs",
   "src/ip/ipv6.rs",
-  "src/ip/mod.rs",
   "src/ip/path_mtu.rs",
   "src/ip/reassembly.rs",
   "src/ip/socket.rs",
@@ -57,48 +59,55 @@ lib_sources = [
   "src/lock_ordering.rs",
   "src/macros.rs",
   "src/socket/address.rs",
+  "src/socket/base.rs",
   "src/socket/datagram.rs",
-  "src/socket/mod.rs",
-  "src/sync.rs",
+  "src/state.rs",
   "src/testutil.rs",
+  "src/time.rs",
   "src/trace.rs",
+  "src/transport.rs",
   "src/transport/integration.rs",
-  "src/transport/mod.rs",
+  "src/transport/tcp.rs",
   "src/transport/tcp/buffer.rs",
+  "src/transport/tcp/congestion.rs",
   "src/transport/tcp/congestion/cubic.rs",
-  "src/transport/tcp/congestion/mod.rs",
-  "src/transport/tcp/mod.rs",
   "src/transport/tcp/rtt.rs",
   "src/transport/tcp/segment.rs",
   "src/transport/tcp/seqnum.rs",
+  "src/transport/tcp/socket.rs",
+  "src/transport/tcp/socket/accept_queue.rs",
   "src/transport/tcp/socket/demux.rs",
-  "src/transport/tcp/socket/icmp.rs",
   "src/transport/tcp/socket/isn.rs",
-  "src/transport/tcp/socket/mod.rs",
   "src/transport/tcp/state.rs",
   "src/transport/udp.rs",
+  "src/uninstantiable.rs",
+  "src/work_queue.rs",
 ]
 
 lib_deps = [
   # TODO(https://github.com/rust-lang-nursery/portability-wg/issues/11):
   # remove this module.
-  "fakealloc",
+  "//src/lib/fakealloc",
 
   # TODO(https://github.com/rust-lang/rust/issues/62502): remove this module.
   "fakestd",
   "lock-order",
+  "macros:netstack3-macros",
   "//src/connectivity/lib/net-types",
   "//src/connectivity/lib/packet-formats",
   "//src/connectivity/network/lib/explicit",
   "//src/connectivity/network/lib/todo_unused",
   "//src/lib/const-unwrap",
   "//src/lib/cstr",
-  "//src/lib/mundane",
+  "//src/lib/dense-map",
   "//src/lib/network/packet",
+  "//src/lib/replace-with",
   "//third_party/rust_crates:assert_matches",
   "//third_party/rust_crates:derivative",
   "//third_party/rust_crates:either",
+  "//third_party/rust_crates:hmac",
   "//third_party/rust_crates:rand",
+  "//third_party/rust_crates:sha2",
   "//third_party/rust_crates:siphasher",
   "//third_party/rust_crates:smallvec",
   "//third_party/rust_crates:thiserror",
@@ -107,9 +116,9 @@ lib_deps = [
 ]
 
 lib_test_deps = [
-  "proptest-support",
   "//src/connectivity/lib/ip-test-macro",
   "//src/connectivity/lib/net-declare",
+  "//src/lib/proptest-support",
   "//third_party/rust_crates:assert_matches",
   "//third_party/rust_crates:itertools",
   "//third_party/rust_crates:proptest",
@@ -144,12 +153,12 @@ rustc_library("netstack3-core-instrumented") {
   edition = "2021"
   with_unit_tests = true
 
-  # TODO(https://fxbug.dev/129383): re-enable RBE unconditionally once the cause
-  # for the failure to build in coverage mode is determined.
-  if (is_coverage) {
+  # TODO(https://fxbug.dev/136837): Split up large tests.
+  # Compiling the tests OOMs on RBE with these variants.
+  if (is_coverage || is_hwasan || is_fuzzer || target_cpu == "arm64") {
     test_disable_rbe = true
 
-    # This is known to take over 17GB memory locally.
+    # This is known to take over 17GB memory locally for coverage.
     pool = "//build/config:highmem($default_toolchain)"
   }
 
@@ -294,6 +303,7 @@ group("tests") {
     ":netstack3-core-instrumented_test($host_toolchain)",
     ":netstack3-core-test-package",
     "lock-order:tests",
+    "macros:tests",
     "sync:tests",
     "tests($host_toolchain)",
   ]

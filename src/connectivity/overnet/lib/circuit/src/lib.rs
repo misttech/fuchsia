@@ -3,17 +3,16 @@
 // found in the LICENSE file.
 
 use fuchsia_async::Timer;
-use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
+use futures::channel::mpsc::Sender;
 use futures::channel::oneshot;
-use futures::future::Either;
-use futures::lock::Mutex;
+use futures::future::{poll_fn, Either};
 use futures::stream::StreamExt as _;
 use futures::FutureExt;
-use quic as _;
-use quiche as _;
+use futures::SinkExt as _;
 use std::collections::HashMap;
 use std::future::Future;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, Mutex, Weak};
+use std::task::Poll;
 use std::time::Duration;
 
 pub const CIRCUIT_VERSION: u8 = 0;
@@ -41,8 +40,7 @@ use crate::protocol::ProtocolMessage;
 /// quality values for hops to that peer (see `header::NodeState::Online`).
 struct PeerMap {
     /// The actual map of peers itself.
-    peers:
-        HashMap<EncodableString, Vec<(UnboundedSender<(stream::Reader, stream::Writer)>, Quality)>>,
+    peers: HashMap<EncodableString, Vec<(Sender<(stream::Reader, stream::Writer)>, Quality)>>,
     /// This value increments once every time the peer map changes. Consequently, we can track
     /// changes in this number to determine when a routing refresh is necessary.
     generation: usize,
@@ -96,10 +94,8 @@ impl PeerMap {
     /// Get the list of peers mutably, and signal the routing task that we have modified it.
     fn peers(
         &mut self,
-    ) -> &mut HashMap<
-        EncodableString,
-        Vec<(UnboundedSender<(stream::Reader, stream::Writer)>, Quality)>,
-    > {
+    ) -> &mut HashMap<EncodableString, Vec<(Sender<(stream::Reader, stream::Writer)>, Quality)>>
+    {
         self.increment_generation();
         &mut self.peers
     }
@@ -122,11 +118,7 @@ impl PeerMap {
 
     /// Adds a control channel to `control_channels` and sends an initial route update for that
     /// channel.
-    async fn add_control_channel(
-        &mut self,
-        channel: stream::Writer,
-        quality: Quality,
-    ) -> Result<()> {
+    fn add_control_channel(&mut self, channel: stream::Writer, quality: Quality) -> Result<()> {
         let routes = self.condense_routes();
 
         for (node, &route_quality) in &routes {
@@ -161,10 +153,10 @@ pub struct Node {
 
     /// If another node establishes a connection to this node, we will notify the user by way of
     /// this sender.
-    incoming_stream_sender: UnboundedSender<(stream::Reader, stream::Writer, String)>,
+    incoming_stream_sender: Sender<(stream::Reader, stream::Writer, String)>,
 
     /// If a new peer becomes available we will send its name through this sender to notify the user.
-    new_peer_sender: UnboundedSender<String>,
+    new_peer_sender: Sender<String>,
 }
 
 impl Node {
@@ -178,8 +170,8 @@ impl Node {
     pub fn new(
         node_id: &str,
         protocol: &str,
-        new_peer_sender: UnboundedSender<String>,
-        incoming_stream_sender: UnboundedSender<(stream::Reader, stream::Writer, String)>,
+        new_peer_sender: Sender<String>,
+        incoming_stream_sender: Sender<(stream::Reader, stream::Writer, String)>,
     ) -> Result<Node> {
         let node_id = node_id.to_owned().try_into()?;
         let protocol = protocol.to_owned().try_into()?;
@@ -200,8 +192,8 @@ impl Node {
         node_id: &str,
         protocol: &str,
         interval: Duration,
-        new_peer_sender: UnboundedSender<String>,
-        incoming_stream_sender: UnboundedSender<(stream::Reader, stream::Writer, String)>,
+        new_peer_sender: Sender<String>,
+        incoming_stream_sender: Sender<(stream::Reader, stream::Writer, String)>,
     ) -> Result<(Node, impl Future<Output = ()> + Send)> {
         let mut node = Self::new(node_id, protocol, new_peer_sender, incoming_stream_sender)?;
         node.has_router = true;
@@ -221,7 +213,9 @@ impl Node {
     ) -> Result<()> {
         if self.node_id == node_id {
             self.incoming_stream_sender
-                .unbounded_send((connection_reader, connection_writer, node_id.to_owned()))
+                .clone()
+                .send((connection_reader, connection_writer, node_id.to_owned()))
+                .await
                 .map_err(|_| Error::NoSuchPeer(node_id.to_owned()))?;
         } else {
             let node_id: EncodableString = node_id.to_owned().try_into()?;
@@ -244,10 +238,10 @@ impl Node {
 
     /// Test function to copy all routes toward one node as routes to another node.
     #[cfg(test)]
-    pub async fn route_via(&self, to: &str, via: &str) {
+    pub fn route_via(&self, to: &str, via: &str) {
         let to = EncodableString::try_from(to.to_owned()).unwrap();
         let via = EncodableString::try_from(via.to_owned()).unwrap();
-        let mut peers = self.peers.lock().await;
+        let mut peers = self.peers.lock().unwrap();
         let new_list = peers.peers.get(&via).unwrap().clone();
         peers.peers.insert(to, new_list);
     }
@@ -278,12 +272,10 @@ impl Node {
     pub fn link_node(
         &self,
         control_stream: Option<(stream::Reader, stream::Writer)>,
-        new_stream_sender: UnboundedSender<(stream::Reader, stream::Writer)>,
-        mut new_stream_receiver: UnboundedReceiver<(
-            stream::Reader,
-            stream::Writer,
-            oneshot::Sender<Result<()>>,
-        )>,
+        new_stream_sender: Sender<(stream::Reader, stream::Writer)>,
+        mut new_stream_receiver: impl futures::Stream<Item = (stream::Reader, stream::Writer, oneshot::Sender<Result<()>>)>
+            + Unpin
+            + Send,
         quality: Quality,
     ) -> impl Future<Output = Result<()>> + Send {
         let has_router = self.has_router;
@@ -331,9 +323,8 @@ impl Node {
             if has_router {
                 peers
                     .lock()
-                    .await
+                    .unwrap()
                     .add_control_channel(control_writer, quality)
-                    .await
                     .expect("We just created this channel!");
             } else {
                 // No router means no further routing messages. Just let 'er go.
@@ -367,7 +358,7 @@ impl Node {
             };
 
             {
-                let mut peers = peers.lock().await;
+                let mut peers = peers.lock().unwrap();
                 let peers = peers.peers();
                 for peer_list in peers.values_mut() {
                     peer_list.retain(|x| !x.0.same_receiver(&new_stream_sender));
@@ -387,13 +378,13 @@ impl Node {
     fn handle_control_stream(
         &self,
         control_reader: oneshot::Receiver<stream::Reader>,
-        new_stream_sender: UnboundedSender<(stream::Reader, stream::Writer)>,
+        new_stream_sender: Sender<(stream::Reader, stream::Writer)>,
         quality: Quality,
     ) -> impl Future<Output = Result<()>> + Send {
         let peers = Arc::clone(&self.peers);
         let new_stream_sender = new_stream_sender.clone();
         let node_id = self.node_id.clone();
-        let new_peer_sender = self.new_peer_sender.clone();
+        let mut new_peer_sender = self.new_peer_sender.clone();
 
         async move {
             let control_reader = control_reader.await.map_err(|_| {
@@ -410,19 +401,23 @@ impl Node {
                         }
 
                         let quality = path_quality.combine(quality);
-                        let mut peers = peers.lock().await;
-                        let peers = peers.peers();
                         let peer_string = peer.to_string();
-                        let peer_list = peers.entry(peer).or_insert_with(Vec::new);
-                        if peer_list.is_empty() {
-                            let _ = new_peer_sender.unbounded_send(peer_string);
+                        let should_send = {
+                            let mut peers = peers.lock().unwrap();
+                            let peers = peers.peers();
+                            let peer_list = peers.entry(peer).or_insert_with(Vec::new);
+                            let should_send = peer_list.is_empty();
+                            peer_list.retain(|x| !x.0.same_receiver(&new_stream_sender));
+                            peer_list.push((new_stream_sender.clone(), quality));
+                            peer_list.sort_by_key(|x| x.1);
+                            should_send
+                        };
+                        if should_send {
+                            let _ = new_peer_sender.send(peer_string).await;
                         }
-                        peer_list.retain(|x| !x.0.same_receiver(&new_stream_sender));
-                        peer_list.push((new_stream_sender.clone(), quality));
-                        peer_list.sort_by_key(|x| x.1);
                     }
                     NodeState::Offline(peer) => {
-                        let mut peers = peers.lock().await;
+                        let mut peers = peers.lock().unwrap();
                         let peers = peers.peers();
                         let peer_list = peers.get_mut(&peer);
 
@@ -448,13 +443,15 @@ impl Node {
     fn handle_new_streams(
         &self,
         new_stream_receiver_receiver: oneshot::Receiver<
-            UnboundedReceiver<(stream::Reader, stream::Writer, oneshot::Sender<Result<()>>)>,
+            impl futures::Stream<
+                    Item = (stream::Reader, stream::Writer, oneshot::Sender<Result<()>>),
+                > + Unpin,
         >,
-        new_stream_sender: UnboundedSender<(stream::Reader, stream::Writer)>,
+        new_stream_sender: Sender<(stream::Reader, stream::Writer)>,
     ) -> impl Future<Output = ()> {
         let peers = Arc::clone(&self.peers);
-        let incoming_stream_sender = self.incoming_stream_sender.clone();
-        let new_peer_sender = self.new_peer_sender.clone();
+        let mut incoming_stream_sender = self.incoming_stream_sender.clone();
+        let mut new_peer_sender = self.new_peer_sender.clone();
         let node_id = self.node_id.clone();
 
         async move {
@@ -491,20 +488,27 @@ impl Node {
                             connect_to_peer(Arc::clone(&peers), reader, writer, &dest).await?;
                         } else {
                             let src = reader.read_protocol_message::<EncodableString>().await?;
-                            {
-                                let mut peers = peers.lock().await;
+                            let send_new_peer = {
+                                let mut peers = peers.lock().unwrap();
                                 let peer_list =
                                     peers.peers.entry(src.clone()).or_insert_with(Vec::new);
                                 if !peer_list.iter().any(|x| x.0.same_receiver(&new_stream_sender))
                                 {
                                     peer_list.push((new_stream_sender.clone(), Quality::UNKNOWN));
-                                    let _ = new_peer_sender.unbounded_send(src.to_string());
                                     peers.increment_generation();
+                                    true
+                                } else {
+                                    false
                                 }
+                            };
+
+                            if send_new_peer {
+                                let _ = new_peer_sender.send(src.to_string()).await;
                             }
 
                             incoming_stream_sender
-                                .unbounded_send((reader, writer, src.to_string()))
+                                .send((reader, writer, src.to_string()))
+                                .await
                                 .map_err(|_| {
                                     Error::ConnectionClosed(Some(
                                         "Incoming stream dispatcher disappeared".to_owned(),
@@ -520,51 +524,78 @@ impl Node {
     }
 }
 
-/// Given the reader and writer for an incoming connection, forward that connection to another node.
+/// Given the reader and writer for an incoming connection, forward that
+/// connection to another node.
 async fn connect_to_peer(
     peers: Arc<Mutex<PeerMap>>,
     peer_reader: stream::Reader,
     peer_writer: stream::Writer,
     node_id: &EncodableString,
 ) -> Result<()> {
-    let mut peers_lock = peers.lock().await;
-    let peers = &mut peers_lock.peers;
-
-    // For each peer we have a list of channels to which we can send our reader and writer, each
-    // representing a connection which will become the next link in the circuit. The list is sorted
-    // by connection quality, getting worse toward the end of the list, so we want to send our
-    // reader and writer to the first one we can.
-    let peer_list = peers.get_mut(node_id).ok_or_else(|| Error::NoSuchPeer(node_id.to_string()))?;
-
     let mut peer_channels = Some((peer_reader, peer_writer));
-    let mut changed = false;
 
-    // Go through each potential connection and send to the first one which will handle the
-    // connection. We may discover the first few we try have hung up and gone away, so we'll delete
-    // those from the list and try the next one.
-    peer_list.retain_mut(|x| {
-        if let Some((peer_reader, peer_writer)) = peer_channels.take() {
-            match x.0.unbounded_send((peer_reader, peer_writer)) {
-                Ok(()) => true,
-                Err(e) => {
-                    changed = true;
-                    peer_channels = Some(e.into_inner());
-                    false
+    poll_fn(|ctx| {
+        let mut peers = peers.lock().unwrap();
+
+        // For each peer we have a list of channels to which we can send our
+        // reader and writer, each representing a connection which will become
+        // the next link in the circuit. The list is sorted by connection
+        // quality, getting worse toward the end of the list, so we want to send
+        // our reader and writer to the first one we can.
+        let Some(peer_list) = peers.peers.get_mut(node_id) else {
+            return Poll::Ready(());
+        };
+
+        let mut changed = false;
+        let mut ret = Poll::Ready(());
+
+        // Go through each potential connection and send to the first one which
+        // will handle the connection. We may discover the first few we try have
+        // hung up and gone away, so we'll delete those from the list and try
+        // the next one.
+        //
+        // If the channel used to send to the fastest available connection is
+        // full, we pause and retry when it is ready. We *could* continue down
+        // the list to find another connection, but we don't; we assume waiting
+        // for a faster connection to be serviceable locally nets better
+        // performance in the long run than sending on a slower connection that
+        // can be serviced right away.
+        peer_list.retain_mut(|x| {
+            if peer_channels.is_some() && ret.is_ready() {
+                match x.0.poll_ready(ctx) {
+                    Poll::Ready(Ok(())) => {
+                        x.0.start_send(peer_channels.take().unwrap())
+                            .expect("Should be guaranteed to succeed!");
+                        true
+                    }
+                    Poll::Ready(Err(_)) => {
+                        changed = true;
+                        false
+                    }
+                    Poll::Pending => {
+                        ret = Poll::Pending;
+                        true
+                    }
                 }
+            } else {
+                true
             }
-        } else {
-            true
+        });
+
+        // If this is true, we cleared out some stale connections from the
+        // routing table. Send a routing update to update our neighbors about
+        // how this might affect connectivity.
+        if changed {
+            peers.increment_generation();
         }
-    });
 
-    // If this is true, we cleared out some stale connections from the routing table. Send a routing
-    // update to update our neighbors about how this might affect connectivity.
-    if changed {
-        peers_lock.increment_generation();
-    }
+        ret
+    })
+    .await;
 
-    // Our iteration above should have taken channels and sent them along to the connection that
-    // will handle them. If they're still here we didn't find a channel.
+    // Our iteration above should have taken channels and sent them along to the
+    // connection that will handle them. If they're still here we didn't find a
+    // channel.
     if peer_channels.is_none() {
         Ok(())
     } else {
@@ -572,8 +603,8 @@ async fn connect_to_peer(
     }
 }
 
-/// Given an old and a new condensed routing table, create a serialized list of `NodeState`s which
-/// will update a node on what has changed between them.
+/// Given an old and a new condensed routing table, create a serialized list of
+/// `NodeState`s which will update a node on what has changed between them.
 fn route_updates(
     old_routes: &HashMap<EncodableString, Quality>,
     new_routes: &HashMap<EncodableString, Quality>,
@@ -613,7 +644,7 @@ async fn router(peers: Weak<Mutex<PeerMap>>, interval: Duration) {
             } else {
                 return;
             };
-            let mut peers = peers.lock().await;
+            let mut peers = peers.lock().unwrap();
 
             if peers.generation <= generation {
                 let (sender, receiver) = oneshot::channel();

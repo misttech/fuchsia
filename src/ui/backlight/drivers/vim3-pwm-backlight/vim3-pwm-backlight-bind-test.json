@@ -6,8 +6,8 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.hardware.pwm.BIND_FIDL_PROTOCOL.DEVICE",
-                    "fuchsia.hardware.pwm.PWM_ID_FUNCTION": "fuchsia.hardware.pwm.PWM_ID_FUNCTION.LCD_BRIGHTNESS"
+                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.pwm.BIND_FIDL_PROTOCOL.DEVICE",
+                    "fuchsia.pwm.PWM_ID_FUNCTION": "fuchsia.pwm.PWM_ID_FUNCTION.LCD_BRIGHTNESS"
                 }
             },
             {
@@ -15,15 +15,15 @@
                 "expected": "abort",
                 "device": {
                     "fuchsia.BIND_PROTOCOL": "fuchsia.i2c.BIND_PROTOCOL.DEVICE",
-                    "fuchsia.hardware.pwm.PWM_ID_FUNCTION": "fuchsia.hardware.pwm.PWM_ID_FUNCTION.LCD_BRIGHTNESS"
+                    "fuchsia.pwm.PWM_ID_FUNCTION": "fuchsia.pwm.PWM_ID_FUNCTION.LCD_BRIGHTNESS"
                 }
             },
             {
                 "name": "id function",
                 "expected": "abort",
                 "device": {
-                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.hardware.pwm.BIND_FIDL_PROTOCOL.DEVICE",
-                    "fuchsia.hardware.pwm.PWM_ID_FUNCTION": "fuchsia.hardware.pwm.PWM_ID_FUNCTION.CORE_POWER_BIG_CLUSTER"
+                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.pwm.BIND_FIDL_PROTOCOL.DEVICE",
+                    "fuchsia.pwm.PWM_ID_FUNCTION": "fuchsia.pwm.PWM_ID_FUNCTION.CORE_POWER_BIG_CLUSTER"
                 }
             }
         ]
@@ -35,8 +35,8 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.hardware.gpio.BIND_FIDL_PROTOCOL.SERVICE",
-                    "fuchsia.hardware.gpio.FUNCTION": "fuchsia.hardware.gpio.FUNCTION.LCD_BACKLIGHT_ENABLE"
+                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.gpio.BIND_FIDL_PROTOCOL.SERVICE",
+                    "fuchsia.gpio.FUNCTION": "fuchsia.gpio.FUNCTION.LCD_BACKLIGHT_ENABLE"
                 }
             },
             {
@@ -44,15 +44,15 @@
                 "expected": "abort",
                 "device": {
                     "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.i2c.BIND_FIDL_PROTOCOL.SERVICE",
-                    "fuchsia.hardware.gpio.FUNCTION": "fuchsia.hardware.gpio.FUNCTION.LCD_BACKLIGHT_ENABLE"
+                    "fuchsia.gpio.FUNCTION": "fuchsia.gpio.FUNCTION.LCD_BACKLIGHT_ENABLE"
                 }
             },
             {
                 "name": "function",
                 "expected": "abort",
                 "device": {
-                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.hardware.gpio.BIND_FIDL_PROTOCOL.SERVICE",
-                    "fuchsia.hardware.gpio.FUNCTION": "fuchsia.hardware.gpio.FUNCTION.LCD_RESET"
+                    "fuchsia.BIND_FIDL_PROTOCOL": "fuchsia.gpio.BIND_FIDL_PROTOCOL.SERVICE",
+                    "fuchsia.gpio.FUNCTION": "fuchsia.gpio.FUNCTION.LCD_RESET"
                 }
             }
         ]

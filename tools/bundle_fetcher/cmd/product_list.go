@@ -11,7 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
+	"path"
 	"strings"
 
 	"go.fuchsia.dev/fuchsia/tools/build"
@@ -20,6 +20,23 @@ import (
 
 	"github.com/google/subcommands"
 )
+
+type Configuration struct {
+	// Board is the board name. e.g. "x64", "vim3".
+	Board string `json:"board"`
+
+	// Product is the product name. e.g. "minimal", "core".
+	Product string `json:"product"`
+}
+
+// BuildInfo represent the build info build-api.
+type BuildInfo struct {
+	// Conguration is the array of product/board dictionary.
+	Configurations []Configuration `json:"configurations"`
+
+	// A unique version of this build.
+	Version string `json:"version"`
+}
 
 // A portion of the JSON file, the pieces needed below.
 type productBundleMetadataV2 struct {
@@ -37,6 +54,8 @@ type productListCmd struct {
 const (
 	buildsDirName          = "builds"
 	buildApiDirName        = "build_api"
+	buildInfoJSONName      = "build_info.json"
+	productBundlesDirName  = "product_bundles"
 	productBundlesJSONName = "product_bundles.json"
 	transferJSONName       = "transfer.json"
 )
@@ -111,23 +130,36 @@ func (cmd *productListCmd) executeWithSink(ctx context.Context, sink bundler.Dat
 	buildIDsList := strings.Split(cmd.buildIDs, ",")
 	for _, buildID := range buildIDsList {
 		buildID = strings.TrimSpace(buildID)
-		productBundlePath := filepath.Join(buildsDirName, buildID, buildApiDirName, productBundlesJSONName)
+		productBundlePath := path.Join(buildsDirName, buildID, buildApiDirName, productBundlesJSONName)
 		logger.Debugf(ctx, "Build %s contains the product bundles in path %s", buildID, productBundlePath)
 		productBundles, err := getProductListFromJSON(ctx, sink, productBundlePath)
 		if err != nil {
 			return fmt.Errorf("unable to read product bundle metdadata for build_id %s: %s %w", buildID, productBundlePath, err)
 		}
+
+		buildInfoPath := path.Join(buildsDirName, buildID, buildApiDirName, buildInfoJSONName)
+		productName, err := getProductNameFromJSON(ctx, sink, buildInfoPath)
+		if err != nil {
+			return fmt.Errorf("unable to read build info for build_id %s: %s %w", buildID, buildInfoPath, err)
+		}
+
+		transferManifestUrl := getTransferManifestPath(ctx, cmd.gcsBucket, buildsDirName, buildID, productName)
+
 		for _, productBundle := range *productBundles {
+			// Only include "main" product bundle of each build
+			if productBundle.Name != productName {
+				continue
+			}
 			productEntry := build.ProductBundle{
 				// Entries for Label and TransferManifestPath are not needed.
 				Name:                productBundle.Name,
 				ProductVersion:      productBundle.ProductVersion,
-				TransferManifestUrl: fmt.Sprintf("gs://%s/%s/%s/%s", cmd.gcsBucket, buildsDirName, buildID, transferJSONName),
+				TransferManifestUrl: transferManifestUrl,
 			}
 			productList = append(productList, productEntry)
 		}
 	}
-	outputFilePath := filepath.Join(cmd.outDir, cmd.outputProductListFileName)
+	outputFilePath := path.Join(cmd.outDir, cmd.outputProductListFileName)
 	logger.Debugf(ctx, "writing final product list file to: %s", outputFilePath)
 	f, err := os.Create(outputFilePath)
 	if err != nil {
@@ -145,7 +177,14 @@ func (cmd *productListCmd) executeWithSink(ctx context.Context, sink bundler.Dat
 	return errs
 }
 
-// Readh the product_bundles.json from GCS and returns them as a
+// getTransferManifestPath will build the transfer manifest path. This path will
+// be builds/<buildid>/product_bundles/<product_name>/transfer.json.
+func getTransferManifestPath(ctx context.Context, gcsBucket, buildsDirName, buildID, productName string) string {
+	transferManifestPath := path.Join(buildsDirName, buildID, productBundlesDirName, productName, transferJSONName)
+	return fmt.Sprintf("gs://%s/%s", gcsBucket, transferManifestPath)
+}
+
+// Read the product_bundles.json from GCS and returns them as a
 // ProductBundlesManifest list.
 func getProductListFromJSON(ctx context.Context, sink bundler.DataSink, productListJSONPath string) (*build.ProductBundlesManifest, error) {
 	data, err := sink.ReadFromGCS(ctx, productListJSONPath)
@@ -170,4 +209,19 @@ func getProductListFromJSON(ctx context.Context, sink bundler.DataSink, productL
 		}
 	}
 	return listData, nil
+}
+
+// Read the build_info.json from GCS and returns produt.board string.
+func getProductNameFromJSON(ctx context.Context, sink bundler.DataSink, buildInfoJSONPath string) (string, error) {
+	data, err := sink.ReadFromGCS(ctx, buildInfoJSONPath)
+	if err != nil {
+		return "", err
+	}
+	var buildInfo BuildInfo
+	err = json.Unmarshal(data, &buildInfo)
+	if err != nil {
+		return "", err
+	}
+	config := buildInfo.Configurations[0]
+	return fmt.Sprintf("%s.%s", config.Product, config.Board), nil
 }

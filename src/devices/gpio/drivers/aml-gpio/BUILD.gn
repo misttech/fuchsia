@@ -34,9 +34,8 @@ fuchsia_driver("aml-gpio-driver") {
   sources = [ "aml-gpio.cc" ]
   deps = [
     ":aml-gpio-bind",
-    "//sdk/banjo/fuchsia.hardware.gpio:fuchsia.hardware.gpio_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.gpioimpl:fuchsia.hardware.gpioimpl_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp_driver",
+    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
     "//src/devices/bus/lib/device-protocol-pdev",
     "//src/devices/lib/amlogic",
     "//src/devices/lib/driver",
@@ -58,6 +57,11 @@ fuchsia_driver_component("aml-gpio") {
   manifest = "meta/aml-gpio.cml"
 }
 
+fuchsia_driver_package("package") {
+  package_name = "aml-gpio"
+  driver_components = [ ":aml-gpio" ]
+}
+
 test("aml-gpio-test-bin") {
   output_name = "aml-gpio-test"
   sources = [
@@ -66,9 +70,8 @@ test("aml-gpio-test-bin") {
   ]
   deps = [
     ":aml-gpio-bind",
-    "//sdk/banjo/fuchsia.hardware.gpio:fuchsia.hardware.gpio_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.gpioimpl:fuchsia.hardware.gpioimpl_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp_driver",
+    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
     "//sdk/lib/async_patterns/testing/cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//src/devices/bus/lib/device-protocol-pdev",

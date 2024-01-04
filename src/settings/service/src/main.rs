@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Error};
-use fidl_fuchsia_metrics::MetricEventLoggerFactoryMarker;
 use fidl_fuchsia_stash::StoreMarker;
 use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
@@ -41,11 +40,12 @@ lazy_static! {
 #[fuchsia::main(logging_tags = ["setui-service"])]
 fn main() -> Result<(), Error> {
     let executor = fasync::LocalExecutor::new();
-
     tracing::info!("Starting setui-service...");
 
     // Serve stats about inspect in a lazy node.
     let inspector = component::inspector();
+    let _inspect_server_task =
+        inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default());
     let node = inspect::stats::Node::new(inspector, inspector.root());
     inspector.root().record(node.take());
 
@@ -97,11 +97,7 @@ fn main() -> Result<(), Error> {
     // result of the startup. Since main is a synchronous function, we cannot
     // block here and therefore continue without waiting for the result.
 
-    // Initialize inspect.
-    let mut fs = ServiceFs::new();
-    if let Err(e) = inspect_runtime::serve(component::inspector(), &mut fs) {
-        tracing::warn!("Unable to serve inspect runtime: {:?}", e);
-    }
+    let fs = ServiceFs::new();
 
     EnvironmentBuilder::new(Arc::new(storage_factory))
         .configuration(configuration)
@@ -111,9 +107,6 @@ fn main() -> Result<(), Error> {
         )
         .storage_dir(storage_dir)
         .store_proxy(store_proxy)
-        .metric_event_logger_factory_proxy(
-            connect_to_protocol::<MetricEventLoggerFactoryMarker>().ok(),
-        )
         .spawn(executor, fs)
         .context("Failed to spawn environment for setui")
 }

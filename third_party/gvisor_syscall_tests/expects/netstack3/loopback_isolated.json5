@@ -15,17 +15,25 @@
         {
             type: "skip",
             matchers: [
+                // TODO(https://fxbug.dev/21198): Netstack3 does not support
+                // dual-stack TCP sockets yet.
+                "All/SocketInetLoopbackIsolatedTest.TCPActiveCloseTimeWaitTest/ListenV6Any_ConnectV4Any",
                 "All/SocketInetLoopbackIsolatedTest.TCPConnectionReuseAddrConflicts/ListenV6Any_ConnectV4Any",
                 "All/SocketInetLoopbackIsolatedTest.TCPConnectionReuseAddrConflicts/ListenV6Any_ConnectV4Loopback",
+                "All/SocketInetLoopbackIsolatedTest.TCPLinger2TimeoutAfterClose/ListenV6Any_ConnectV4Any",
+                "All/SocketInetLoopbackIsolatedTest.TCPPassiveCloseNoTimeWaitReuseTest/ListenV6Any_ConnectV4Any",
+
+                // TODO(https://fxbug.dev/132600): Deflake and unskip.
+                "All/SocketInetLoopbackIsolatedTest.TCPLinger2TimeoutAfterClose/*",
             ],
         },
         {
             type: "expect_failure",
             matchers: [
                 "AllFamilies/SocketMultiProtocolInetLoopbackIsolatedTest.BindToDeviceReusePort/TCP",
-                "AllFamilies/SocketMultiProtocolInetLoopbackIsolatedTest.BindToDeviceReusePort/UDP",
 
-                // Netstack3 does not support dual-stack TCP sockets yet.
+                // TODO(https://fxbug.dev/21198): Netstack3 does not support
+                // dual-stack TCP sockets yet.
                 "All/SocketInetLoopbackIsolatedTest.*/ListenV4Any_ConnectV4MappedAny",
                 "All/SocketInetLoopbackIsolatedTest.*/ListenV4Any_ConnectV4MappedLoopback",
                 "All/SocketInetLoopbackIsolatedTest.*/ListenV4Loopback_ConnectV4MappedLoopback",
@@ -36,10 +44,17 @@
                 "All/SocketInetLoopbackIsolatedTest.*/ListenV4MappedLoopback_ConnectV4Any",
                 "All/SocketInetLoopbackIsolatedTest.*/ListenV4MappedLoopback_ConnectV4Loopback",
                 "All/SocketInetLoopbackIsolatedTest.*/ListenV4MappedLoopback_ConnectV4MappedLoopback",
-                "All/SocketInetLoopbackIsolatedTest.*/ListenV6Any_ConnectV4Any",
-                "All/SocketInetLoopbackIsolatedTest.*/ListenV6Any_ConnectV4Loopback",
                 "All/SocketInetLoopbackIsolatedTest.*/ListenV6Any_ConnectV4MappedAny",
                 "All/SocketInetLoopbackIsolatedTest.*/ListenV6Any_ConnectV4MappedLoopback",
+                "All/SocketInetLoopbackIsolatedTest.TCPActiveCloseTimeWaitReuseTest/ListenV6Any_ConnectV4Any",
+                "All/SocketInetLoopbackIsolatedTest.TCPPassiveCloseNoTimeWaitTest/ListenV6Any_ConnectV4Any",
+                "All/SocketInetLoopbackIsolatedTest.TCPFinWait2Test/ListenV6Any_ConnectV4Any",
+                "All/SocketInetLoopbackIsolatedTest.TCPActiveCloseTimeWaitTest/ListenV6Any_ConnectV4Loopback",
+                "All/SocketInetLoopbackIsolatedTest.TCPActiveCloseTimeWaitReuseTest/ListenV6Any_ConnectV4Loopback",
+                "All/SocketInetLoopbackIsolatedTest.TCPPassiveCloseNoTimeWaitTest/ListenV6Any_ConnectV4Loopback",
+                "All/SocketInetLoopbackIsolatedTest.TCPPassiveCloseNoTimeWaitReuseTest/ListenV6Any_ConnectV4Loopback",
+                "All/SocketInetLoopbackIsolatedTest.TCPFinWait2Test/ListenV6Any_ConnectV4Loopback",
+                "All/SocketInetLoopbackIsolatedTest.TCPLinger2TimeoutAfterClose/ListenV6Any_ConnectV4Loopback",
 
                 // Netstack3 does not have complete support for multicast sockets.
                 "AllFamilies/SocketMultiProtocolInetLoopbackIsolatedTest.V4EphemeralPortReservedReuseAddr/UDP",

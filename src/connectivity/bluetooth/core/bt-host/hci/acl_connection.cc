@@ -89,8 +89,8 @@ CommandChannel::EventCallbackResult AclConnection::OnEncryptionChangeEvent(
   }
 
   Result<> result = event.ToResult();
-  pw::bluetooth::emboss::EncryptionStatus encryption_status = params.encryption_enabled().Read();
-  bool encryption_enabled = encryption_status != pw::bluetooth::emboss::EncryptionStatus::OFF;
+  encryption_status_ = params.encryption_enabled().Read();
+  bool encryption_enabled = encryption_status_ != pw::bluetooth::emboss::EncryptionStatus::OFF;
 
   bt_log(DEBUG, "hci", "encryption change (%s) %s", encryption_enabled ? "enabled" : "disabled",
          bt_str(result));
@@ -98,7 +98,7 @@ CommandChannel::EventCallbackResult AclConnection::OnEncryptionChangeEvent(
   // If peer and local Secure Connections support are present, the pairing logic needs to verify
   // that the status received in the Encryption Changed event is for AES encryption.
   if (use_secure_connections_ &&
-      encryption_status != pw::bluetooth::emboss::EncryptionStatus::ON_WITH_AES_FOR_BREDR) {
+      encryption_status_ != pw::bluetooth::emboss::EncryptionStatus::ON_WITH_AES_FOR_BREDR) {
     bt_log(DEBUG, "hci", "BR/EDR Secure Connection must use AES encryption. Closing connection...");
     HandleEncryptionStatus(fit::error(Error(HostError::kInsufficientSecurity)),
                            /*key_refreshed=*/false);
@@ -112,16 +112,9 @@ CommandChannel::EventCallbackResult AclConnection::OnEncryptionChangeEvent(
 }
 
 CommandChannel::EventCallbackResult AclConnection::OnEncryptionKeyRefreshCompleteEvent(
-    const EventPacket& event) {
-  BT_ASSERT(event.event_code() == hci_spec::kEncryptionKeyRefreshCompleteEventCode);
-
-  if (event.view().payload_size() != sizeof(hci_spec::EncryptionKeyRefreshCompleteEventParams)) {
-    bt_log(WARN, "hci", "malformed encryption key refresh complete event");
-    return CommandChannel::EventCallbackResult::kContinue;
-  }
-
-  const auto& params = event.params<hci_spec::EncryptionKeyRefreshCompleteEventParams>();
-  hci_spec::ConnectionHandle handle = le16toh(params.connection_handle);
+    const EmbossEventPacket& event) {
+  const auto params = event.view<pw::bluetooth::emboss::EncryptionKeyRefreshCompleteEventView>();
+  const hci_spec::ConnectionHandle handle = params.connection_handle().Read();
 
   // Silently ignore this event as it isn't meant for this connection.
   if (handle != this->handle()) {

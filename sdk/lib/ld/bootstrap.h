@@ -20,6 +20,44 @@
 
 namespace ld {
 
+// TODO(fxbug.dev/130542): After LlvmProfdata:UseCounters, functions will load
+// the new value of __llvm_profile_counter_bias and use it. However, functions
+// already in progress will use a cached value from before it changed. This
+// means they'll still be pointing into the data segment and updating the old
+// counters there. So they'd crash with write faults if it were protected.
+// There may be a way to work around this by having uninstrumented functions
+// call instrumented functions such that the tail return path of any frame live
+// across the transition is uninstrumented. Note that each function will
+// resample even if that function is inlined into a caller that itself will
+// still be using the stale pointer. However, in the long run we expect to move
+// from the relocatable-counters design to a new design where the counters are
+// in a separate "bss-like" location that we arrange to be in a separate VMO
+// created by the program loader. If we do that, then this issue won't arise,
+// so we might not get around to making protecting the data compatible with
+// profdata instrumentation before it's moot.
+inline constexpr bool kProtectData = !HAVE_LLVM_PROFDATA;
+
+struct BootstrapModule {
+  abi::Abi<>::Module& module;
+  cpp20::span<const elfldltl::Elf<>::Dyn> dyn;
+};
+
+inline BootstrapModule FinishBootstrapModule(abi::Abi<>::Module& module,
+                                             cpp20::span<const elfldltl::Elf<>::Dyn> dyn,
+                                             size_t vaddr_start, size_t vaddr_size, size_t bias,
+                                             cpp20::span<const elfldltl::Elf<>::Phdr> phdrs,
+                                             const elfldltl::ElfNote& build_id) {
+  module.link_map.addr = bias;
+  module.link_map.ld = dyn.data();
+  module.vaddr_start = vaddr_start;
+  module.vaddr_end = vaddr_start + vaddr_size;
+  module.phdrs = phdrs;
+  module.soname = module.symbols.soname();
+  module.link_map.name = module.soname.str().data();
+  module.build_id = build_id.desc;
+  return {module, dyn};
+}
+
 // This fills out all the fields of a Module except the linked-list pointers.
 // The Module describes the vDSO, which is already fully loaded according to
 // its PT_LOAD segments, relocated and initialized in place as we find it.  The
@@ -34,12 +72,31 @@ namespace ld {
 // properly page-aligned.  In that case, CompleteVdsoModule (below) should be
 // called once the page size is known.
 template <class Diagnostics>
-inline abi::Abi<>::Module BootstrapVdsoModule(Diagnostics&& diag, const void* vdso_base,
-                                              size_t page_size = 1) {
+inline BootstrapModule BootstrapVdsoModule(Diagnostics&& diag, const void* vdso_base,
+                                           size_t page_size = 1) {
   using Ehdr = elfldltl::Elf<>::Ehdr;
   using Phdr = elfldltl::Elf<>::Phdr;
   using Dyn = elfldltl::Elf<>::Dyn;
   using size_type = elfldltl::Elf<>::size_type;
+
+  // We want this object to be in bss to reduce the amount of data pages which need COW. In general
+  // the only data/bss we want should be part of `_ld_abi`, but the vdso module will always be in
+  // the `_ld_abi` list so it is safe to keep this object in .bss. It will be protected to read only
+  // later. The explicit .bss section attribute ensures this object is zero initialized, we will get
+  // an assembler error otherwise. We also rely on this when only initializing some of the members
+  // of `vdso`.
+  [[gnu::section(".bss.vdso_module")]] __CONSTINIT static abi::Abi<>::Module vdso{
+      elfldltl::kLinkerZeroInitialized};
+  vdso.InitLinkerZeroInitialized();
+
+#ifndef __Fuchsia__
+  if (!vdso_base) [[unlikely]] {
+    // If there is no vDSO, then there will just be empty symbols to link
+    // against and no references can resolve to any vDSO-defined symbols.
+    // This will on1y ever be true on Posix, never on Fuchsia.
+    return {vdso, {}};
+  }
+#endif
 
   elfldltl::DirectMemory memory(
       {
@@ -62,21 +119,11 @@ inline abi::Abi<>::Module BootstrapVdsoModule(Diagnostics&& diag, const void* vd
                                        elfldltl::ObserveBuildIdNote(build_id)));
 
   const cpp20::span dyn = *memory.ReadArray<Dyn>(dyn_phdr->vaddr, dyn_phdr->memsz);
+  elfldltl::DecodeDynamic(diag, memory, dyn, elfldltl::DynamicSymbolInfoObserver(vdso.symbols));
 
   const size_type bias = reinterpret_cast<uintptr_t>(vdso_base) - vaddr_start;
-  abi::Abi<>::Module vdso = {
-      .link_map = {.addr{bias}, .ld{dyn.data()}},
-      .vaddr_start = vaddr_start,
-      .vaddr_end = vaddr_start + vaddr_size,
-      .phdrs = phdrs,
-      .build_id = build_id->desc,  // The vDSO always has a build ID.
-  };
 
-  elfldltl::DecodeDynamic(diag, memory, dyn, elfldltl::DynamicSymbolInfoObserver(vdso.symbols));
-  vdso.soname = vdso.symbols.soname();
-  vdso.link_map.name = vdso.soname.str().data();
-
-  return vdso;
+  return FinishBootstrapModule(vdso, dyn, vaddr_start, vaddr_size, bias, phdrs, *build_id);
 }
 
 // This bootstraps this dynamic linker itself, doing its own dynamic linking
@@ -90,32 +137,41 @@ inline abi::Abi<>::Module BootstrapVdsoModule(Diagnostics&& diag, const void* vd
 // Module's vaddr_start and vaddr_end are not properly page-aligned until
 // CompleteBootstrapModule (below) is called.
 template <class Diagnostics>
-inline abi::Abi<>::Module BootstrapSelfModule(Diagnostics&& diag, const abi::Abi<>::Module& vdso) {
+inline BootstrapModule BootstrapSelfModule(Diagnostics&& diag, const abi::Abi<>::Module& vdso) {
+  using Phdr = elfldltl::Elf<>::Phdr;
+  using Dyn = elfldltl::Elf<>::Dyn;
+
   auto memory = elfldltl::Self<>::Memory();
   const cpp20::span phdrs = elfldltl::Self<>::Phdrs();
 
   std::optional<elfldltl::ElfNote> build_id;
-  elfldltl::DecodePhdrs(diag, phdrs,
+  std::optional<Phdr> dyn_phdr;
+  elfldltl::DecodePhdrs(diag, phdrs, elfldltl::PhdrDynamicObserver<elfldltl::Elf<>>(dyn_phdr),
                         elfldltl::PhdrMemoryNoteObserver(elfldltl::Elf<>{}, memory,
                                                          elfldltl::ObserveBuildIdNote(build_id)));
 
   const uintptr_t bias = elfldltl::Self<>::LoadBias();
   const uintptr_t start = memory.base() + bias;
-  const cpp20::span dyn = elfldltl::Self<>::Dynamic();
-  abi::Abi<>::Module self = {
-      .link_map = {.addr{bias}, .ld{dyn.data()}},
-      .vaddr_start = start,
-      .vaddr_end = start + memory.image().size(),
-      .phdrs = phdrs,
-      .symbols = elfldltl::LinkStaticPieWithVdso(elfldltl::Self<>(), diag, vdso.symbols,
-                                                 vdso.link_map.addr),
-  };
+  cpp20::span dyn = elfldltl::Self<>::Dynamic();
 
-  self.soname = self.symbols.soname();
-  self.link_map.name = self.soname.str().data();
-  self.build_id = build_id->desc;
+  // We want this object to be in bss to reduce the amount of data pages which need COW. In general
+  // the only data/bss we want should be part of `_ld_abi`, but the self module will always be in
+  // the `_ld_abi` list so it is safe to keep this object in .bss. It will be protected to read only
+  // later. The explicit .bss section attribute ensures this object is zero initialized, we will get
+  // an assembler error otherwise. We also rely on this when only initializing some of the members
+  // of `self`.
+  [[gnu::section(".bss.self_module")]] __CONSTINIT static abi::Abi<>::Module self{
+      elfldltl::kLinkerZeroInitialized};
+  // Note, this call could be elided because it only sets `symbols` which will be immediately
+  // replaced. In case this function changes to do more we should keep the call. The compiler should
+  // be smart enough to figure out this is a dead store.
+  self.InitLinkerZeroInitialized();
 
-  return self;
+  self.symbols =
+      elfldltl::LinkStaticPieWithVdso(elfldltl::Self<>(), diag, vdso.symbols, vdso.link_map.addr);
+
+  dyn = dyn.subspan(0, dyn_phdr->memsz / sizeof(Dyn));
+  return FinishBootstrapModule(self, dyn, start, memory.image().size(), bias, phdrs, *build_id);
 }
 
 inline void CompleteBootstrapModule(abi::Abi<>::Module& module, size_t page_size) {

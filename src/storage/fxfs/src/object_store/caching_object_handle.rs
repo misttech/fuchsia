@@ -3,1139 +3,462 @@
 // found in the LICENSE file.
 
 use {
-    crate::{
-        debug_assert_not_too_long,
-        errors::FxfsError,
-        log::*,
-        object_handle::{
-            GetProperties, ObjectHandle, ObjectProperties, ReadObjectHandle, WriteObjectHandle,
-        },
-        object_store::{
-            allocator::{self, Allocator},
-            object_record::{AttributeKey, Timestamp},
-            transaction::{LockKey, Options, TRANSACTION_METADATA_MAX_AMOUNT},
-            writeback_cache::{FlushableMetadata, StorageReservation, WritebackCache},
-            AssocObj, DataObjectHandle, HandleOwner, Mutation, ObjectKey, ObjectStore, ObjectValue,
-            TrimMode, TrimResult,
-        },
-        round::{how_many, round_up},
-    },
-    anyhow::{anyhow, Context, Error},
+    crate::object_handle::{ObjectHandle, ReadObjectHandle},
+    anyhow::Error,
     async_trait::async_trait,
-    std::sync::Arc,
-    storage_device::buffer::{Buffer, BufferRef, MutableBufferRef},
+    event_listener::{Event, EventListener},
+    std::{cell::UnsafeCell, sync::RwLock, vec::Vec},
+    storage_device::buffer::{BufferFuture, MutableBufferRef},
 };
 
-pub use crate::object_store::writeback_cache::CACHE_READ_AHEAD_SIZE;
+const CHUNK_SIZE: usize = 128 * 1024;
 
-/// How much data each sync transaction in a given flush will cover.
-const FLUSH_BATCH_SIZE: u64 = 524_288;
-
-pub struct CachingObjectHandle<S: HandleOwner> {
-    handle: DataObjectHandle<S>,
-    cache: WritebackCache<S::Buffer>,
+fn block_aligned_size(source: &impl ReadObjectHandle) -> usize {
+    let block_size = source.block_size() as usize;
+    let source_size = source.get_size() as usize;
+    source_size.checked_next_multiple_of(block_size).unwrap()
 }
 
-impl<S: HandleOwner> CachingObjectHandle<S> {
-    pub fn new(handle: DataObjectHandle<S>) -> Self {
-        let size = handle.get_size();
-        let buffer = handle.owner().create_data_buffer(handle.object_id(), size);
-        Self { handle, cache: WritebackCache::new(buffer) }
-    }
+/// An `ObjectHandle` that caches the data that it reads in from a `ReadObjectHandle`.
+pub struct CachingObjectHandle<S> {
+    source: S,
 
-    pub fn owner(&self) -> &Arc<S> {
-        self.handle.owner()
-    }
+    // TODO(fxbug.dev/294080669): Add a way to purge chunks that haven't been recently used when
+    // under memory pressure.
+    buffer: UnsafeCell<Vec<u8>>,
 
-    pub fn store(&self) -> &ObjectStore {
-        self.handle.store()
-    }
+    chunk_states: RwLock<Vec<ChunkState>>,
 
-    pub fn data_buffer(&self) -> &S::Buffer {
-        &self.cache.data_buffer()
-    }
+    // Reads that are waiting on another read to load a chunk will wait on this event. There's only
+    // 1 event for all chunks so a read may receive a notification for a different chunk than the
+    // one it's waiting for and need to re-wait. It's rare for multiple chunks to be loading at once
+    // and even rarer for a read to be waiting on a chunk to be loaded while another chunk is also
+    // loading.
+    event: Event,
+}
 
-    pub fn uncached_handle(&self) -> &DataObjectHandle<S> {
-        &self.handle
-    }
+// SAFETY: Only `buffer` isn't Sync. Access to `buffer` is synchronized with `chunk_states`.
+unsafe impl<S> Sync for CachingObjectHandle<S> {}
 
-    pub async fn read_cached(&self, offset: u64, buf: &mut [u8]) -> Result<usize, Error> {
-        self.cache.read(offset, buf, &self.handle).await
-    }
+impl<S: ReadObjectHandle> CachingObjectHandle<S> {
+    pub fn new(source: S) -> Self {
+        let block_size = source.block_size() as usize;
+        assert!(CHUNK_SIZE % block_size == 0);
+        let aligned_size = block_aligned_size(&source);
+        let chunk_count = aligned_size.div_ceil(CHUNK_SIZE);
 
-    pub async fn read_uncached(
-        &self,
-        range: std::ops::Range<u64>,
-    ) -> Result<(Buffer<'_>, usize), Error> {
-        let mut buffer = self.allocate_buffer((range.end - range.start) as usize);
-        let read = self.handle.read(range.start, buffer.as_mut()).await?;
-        buffer.as_mut_slice()[read..].fill(0);
-        Ok((buffer, read))
-    }
-
-    pub fn uncached_size(&self) -> u64 {
-        self.handle.get_size()
-    }
-
-    /// Returns the number of bytes successfully written.
-    pub async fn write_or_append_cached(
-        &self,
-        offset: Option<u64>,
-        buf: &[u8],
-    ) -> Result<u64, Error> {
-        let fs = self.store().filesystem();
-        let _locks = fs
-            .transaction_lock(&[LockKey::cached_write(
-                self.store().store_object_id,
-                self.handle.object_id(),
-                self.handle.attribute_id(),
-            )])
-            .await;
-        let extends_file = if let Some(offset) = &offset {
-            if *offset + buf.len() as u64 > self.cache.content_size() {
-                true
-            } else {
-                false
-            }
-        } else {
-            true
-        };
-
-        if self.cache.dirty_bytes() >= FLUSH_BATCH_SIZE {
-            self.flush_impl(/* take_lock: */ false).await?;
-        } else if extends_file {
-            self.flush_metadata().await?;
+        Self {
+            source,
+            buffer: UnsafeCell::new(vec![0; aligned_size]),
+            chunk_states: RwLock::new(vec![ChunkState::Missing; chunk_count]),
+            event: Event::new(),
         }
-
-        let time = Timestamp::now().into();
-        let len = buf.len();
-        self.cache
-            .write_or_append(
-                offset,
-                buf,
-                self.handle.block_size().into(),
-                self,
-                Some(time),
-                &self.handle,
-            )
-            .await?;
-        Ok(len as u64)
     }
 
-    async fn flush_impl(&self, take_lock: bool) -> Result<(), Error> {
-        let bs = self.block_size() as u64;
-        let store = self.store();
-        let fs = store.filesystem();
-        let store_id = store.store_object_id;
-        let reservation = store.allocator().reserve_at_most(Some(store_id), 0);
-
-        // Whilst we are calling take_flushable we need to guard against changes to the cache so
-        // that we can grab a snapshot, so we take the cached_write lock and then we can drop it
-        // after take_flushable returns.
-        let cached_write_lock = if take_lock {
-            Some(
-                fs.transaction_lock(&[LockKey::cached_write(
-                    store_id,
-                    self.handle.object_id(),
-                    self.handle.attribute_id(),
-                )])
-                .await,
-            )
-        } else {
-            None
-        };
-
-        // We must flush metadata first here in case the file shrank since we don't do anything
-        // to handle shrinking a file below.
-        self.flush_metadata().await?;
-
-        // We use the transaction lock here to make sure that flush calls are correctly sequenced,
-        // i.e. that we commit transactions in the same order to which take_flushable was executed.
-        // The order in which locks, flushable and transaction are dropped is important.  The
-        // transaction must be dropped first so that it returns any reservations.  flushable is next
-        // which relies on the reservations being returned.  flushable must be dropped before the
-        // locks since we need to stop take_flushable from being called.
-        let locks = fs
-            .transaction_lock(&[LockKey::object_attribute(
-                store_id,
-                self.handle.object_id(),
-                self.handle.attribute_id(),
-            )])
-            .await;
-
-        let old_size = self.handle.get_size();
-
-        let mut flushable = self.cache.take_flushable(
-            bs,
-            self.handle.get_size(),
-            |size| self.allocate_buffer(size),
-            self,
-            &reservation,
-        );
-
-        if flushable.data.is_none() && flushable.metadata.is_none() {
-            return Ok(());
+    /// Reads in the required data from `source` and caches it. A slice into the cached data is
+    /// returned. The slice will be shorter than `length` when reading beyond the end of `source`.
+    pub async fn read(&self, offset: usize, length: usize) -> Result<&[u8], Error> {
+        let source_size = self.source.get_size() as usize;
+        if offset >= source_size {
+            return Ok(&[]);
         }
+        let read_end = std::cmp::min(offset + length, source_size);
+        let first_chunk = offset / CHUNK_SIZE;
+        let last_chunk = read_end.div_ceil(CHUNK_SIZE);
 
-        std::mem::drop(cached_write_lock);
-
-        if matches!(flushable.metadata, Some(FlushableMetadata { content_size: Some(_), .. })) {
-            // Before proceeding, we must make sure the result of any previous trim has completed
-            // because otherwise there's the potential for us to reveal old extents.
-            let mut transaction = fs
-                .clone()
-                .new_transaction(
-                    &[LockKey::object(store_id, self.handle.object_id())],
-                    Options {
-                        borrow_metadata_space: true,
-                        ..self.handle.default_transaction_options()
-                    },
-                )
-                .await?;
-            while matches!(
-                store
-                    .trim_some(
-                        &mut transaction,
-                        self.handle.object_id(),
-                        self.handle.attribute_id(),
-                        TrimMode::FromOffset(old_size)
-                    )
-                    .await?,
-                TrimResult::Incomplete
-            ) {
-                transaction.commit_and_continue().await?;
-            }
-            transaction.commit().await?;
+        for chunk in first_chunk..last_chunk {
+            self.load_chunk(chunk).await?;
         }
-
-        let mut transaction = fs
-            .clone()
-            .new_transaction(
-                &[LockKey::object(store_id, self.handle.object_id())],
-                Options {
-                    // If there is no data then the reservation won't have any space for the
-                    // transaction. Since it should only be for file size or metadata changes,
-                    // we should be able to borrow metadata space.
-                    borrow_metadata_space: flushable.data.is_none(),
-                    allocator_reservation: Some(&reservation),
-                    ..self.handle.default_transaction_options()
-                },
-            )
-            .await?;
-
-        if self.handle.trace() {
-            info!(store_id, oid = self.handle.object_id(), ?flushable);
-        }
-
-        if let Some(metadata) = flushable.metadata.as_ref() {
-            if let Some(content_size) = metadata.content_size {
-                transaction.add_with_object(
-                    store_id,
-                    Mutation::replace_or_insert_object(
-                        ObjectKey::attribute(
-                            self.handle.object_id(),
-                            self.handle.attribute_id(),
-                            AttributeKey::Attribute,
-                        ),
-                        ObjectValue::attribute(content_size),
-                    ),
-                    AssocObj::Borrowed(&self.handle),
-                );
-                self.handle
-                    .write_timestamps(
-                        &mut transaction,
-                        metadata.creation_time.map(|t| t.into()),
-                        metadata.modification_time.map(|t| t.into()),
-                    )
-                    .await?;
-            }
-        }
-
-        if let Some(data) = flushable.data.as_mut() {
-            self.handle
-                .multi_write(
-                    &mut transaction,
-                    self.handle.attribute_id(),
-                    &data.ranges,
-                    data.buffer.as_mut(),
-                )
-                .await?;
-        }
-
-        debug_assert_not_too_long!(locks.commit_prepare());
-        transaction
-            .commit_with_callback(|_| {
-                self.cache.complete_flush(flushable);
-            })
-            .await
-            .context("Failed to commit transaction")?;
-
-        Ok(())
+        // SAFETY: All of the relevant chunks were loaded above which means that they are present
+        // and won't be modified again.
+        Ok(unsafe { &(&*self.buffer.get())[offset..read_end] })
     }
 
-    // Tries to flush metadata.  It is important that this is done *before* any operation that
-    // increases the size of the file because otherwise there are races that can cause reads to
-    // return the wrong data. Consider the following scenario:
-    //
-    //   1. File is 10,000 bytes.
-    //   2. File is shrunk to 200 bytes.
-    //   3. File grows back to 10,000 bytes.
-    //
-    // If a read takes place after #3, it is important that the bytes between 200 and 10,000 are
-    // zeroed.  If metadata is not flushed between 2 & 3, then the read will be fulfilled as if it
-    // occurs prior to 2.
-    async fn flush_metadata(&self) -> Result<(), Error> {
-        let flushable = self.cache.take_flushable_metadata(self.handle.get_size());
-        if let Some(metadata) = flushable.metadata.as_ref() {
-            let mut transaction = self
-                .handle
-                .new_transaction_with_options(Options {
-                    borrow_metadata_space: true,
-                    ..Default::default()
-                })
-                .await?;
-            let mut needs_trim = false;
-            if let Some(size) = metadata.content_size {
-                needs_trim = self.handle.shrink(&mut transaction, size).await?.0;
-            }
-            self.handle
-                .write_timestamps(
-                    &mut transaction,
-                    metadata.creation_time.map(|t| t.into()),
-                    metadata.modification_time.map(|t| t.into()),
-                )
-                .await?;
-            if needs_trim {
-                transaction.commit_and_continue().await?;
-                let store = self.store();
-                while matches!(
-                    store
-                        .trim_some(
-                            &mut transaction,
-                            self.handle.object_id(),
-                            self.handle.attribute_id(),
-                            TrimMode::FromOffset(metadata.content_size.unwrap())
-                        )
-                        .await?,
-                    TrimResult::Incomplete
-                ) {
-                    transaction.commit_and_continue().await?;
+    async fn load_chunk(&self, chunk_num: usize) -> Result<(), Error> {
+        enum Action {
+            Wait(EventListener),
+            Load,
+        }
+        loop {
+            let action = {
+                let chunk_states = self.chunk_states.read().unwrap();
+                match chunk_states[chunk_num] {
+                    ChunkState::Missing => Action::Load,
+                    ChunkState::Present => {
+                        return Ok(());
+                    }
+                    ChunkState::Pending => Action::Wait(self.event.listen()),
+                }
+            };
+            match action {
+                Action::Wait(listener) => listener.await,
+                Action::Load => {
+                    {
+                        let mut chunk_states = self.chunk_states.write().unwrap();
+                        if chunk_states[chunk_num] != ChunkState::Missing {
+                            // If the state changed between dropping the read lock and acquiring the
+                            // write lock then go back to the start.
+                            continue;
+                        }
+                        chunk_states[chunk_num] = ChunkState::Pending;
+                    }
+                    // If this future is dropped or reading fails then put the chunk back into the
+                    // `Missing` state.
+                    let drop_guard = scopeguard::guard((), |_| {
+                        {
+                            let mut chunk_states = self.chunk_states.write().unwrap();
+                            debug_assert!(chunk_states[chunk_num] == ChunkState::Pending);
+                            chunk_states[chunk_num] = ChunkState::Missing;
+                        }
+                        self.event.notify(usize::MAX);
+                    });
+
+                    let read_start = chunk_num * CHUNK_SIZE;
+                    let read_end =
+                        std::cmp::min(read_start + CHUNK_SIZE, block_aligned_size(&self.source));
+                    let mut read_buf = self.source.allocate_buffer(read_end - read_start).await;
+                    let amount_read =
+                        self.source.read(read_start as u64, read_buf.as_mut()).await?;
+
+                    // SAFETY: This chunk is currently pending which prevents this chunk of the
+                    // buffer from being read. The chunk_states lock ensures that only 1 future can
+                    // put a chunk into the pending state at a time and that's the only future that
+                    // can be modifying this chunk of the buffer.
+                    unsafe {
+                        let buf = &mut *self.buffer.get();
+                        buf[read_start..(read_start + amount_read)]
+                            .copy_from_slice(&read_buf.as_slice()[..amount_read]);
+                        buf[(read_start + amount_read)..read_end].fill(0);
+                    };
+
+                    {
+                        let mut chunk_states = self.chunk_states.write().unwrap();
+                        debug_assert!(chunk_states[chunk_num] == ChunkState::Pending);
+                        chunk_states[chunk_num] = ChunkState::Present;
+                    }
+                    self.event.notify(usize::MAX);
+
+                    scopeguard::ScopeGuard::into_inner(drop_guard);
+                    return Ok(());
                 }
             }
-            transaction.commit_with_callback(|_| self.cache.complete_flush(flushable)).await?;
         }
-        Ok(())
     }
 }
 
-impl<S: HandleOwner> Drop for CachingObjectHandle<S> {
-    fn drop(&mut self) {
-        self.cache.cleanup(self);
-    }
-}
-
-impl<S: HandleOwner> StorageReservation for CachingObjectHandle<S> {
-    fn reservation_needed(&self, mut amount: u64) -> u64 {
-        amount = round_up(amount, self.block_size()).unwrap();
-        amount + how_many(amount, FLUSH_BATCH_SIZE) * TRANSACTION_METADATA_MAX_AMOUNT
-    }
-    fn reserve(&self, mut amount: u64) -> Result<allocator::Reservation, Error> {
-        amount = round_up(amount, self.block_size()).unwrap();
-        let store_id = self.store().store_object_id;
-        self.store().allocator().reserve(Some(store_id), amount).ok_or(anyhow!(FxfsError::NoSpace))
-    }
-    fn wrap_reservation(&self, amount: u64) -> allocator::Reservation {
-        let store_id = self.store().store_object_id;
-        let r = self.store().allocator().reserve_at_most(Some(store_id), 0);
-        r.add(amount);
-        r
-    }
-}
-
-impl<S: HandleOwner> ObjectHandle for CachingObjectHandle<S> {
+impl<S: ReadObjectHandle> ObjectHandle for CachingObjectHandle<S> {
     fn set_trace(&self, v: bool) {
-        self.handle.set_trace(v);
+        self.source.set_trace(v);
     }
 
     fn object_id(&self) -> u64 {
-        self.handle.object_id()
+        self.source.object_id()
     }
 
-    fn allocate_buffer(&self, size: usize) -> Buffer<'_> {
-        self.handle.allocate_buffer(size)
+    fn allocate_buffer(&self, size: usize) -> BufferFuture<'_> {
+        self.source.allocate_buffer(size)
     }
 
     fn block_size(&self) -> u64 {
-        self.handle.block_size()
+        self.source.block_size()
     }
 }
 
 #[async_trait]
-impl<S: HandleOwner> GetProperties for CachingObjectHandle<S> {
-    async fn get_properties(&self) -> Result<ObjectProperties, Error> {
-        // TODO(fxbug.dev/95354): This could be optimized to skip getting the underlying handle's
-        // properties if the cache has all of the timestamps we need.
-        let mut props = self.handle.get_properties().await?;
-        let cached_metadata = self.cache.cached_metadata();
-        props.allocated_size = props.allocated_size + cached_metadata.dirty_bytes;
-        props.data_attribute_size = cached_metadata.content_size;
-        props.creation_time =
-            cached_metadata.creation_time.map(|t| t.into()).unwrap_or(props.creation_time);
-        props.modification_time =
-            cached_metadata.modification_time.map(|t| t.into()).unwrap_or(props.modification_time);
-        Ok(props)
-    }
-}
-
-#[async_trait]
-impl<S: HandleOwner> ReadObjectHandle for CachingObjectHandle<S> {
+impl<S: ReadObjectHandle> ReadObjectHandle for CachingObjectHandle<S> {
     async fn read(&self, offset: u64, mut buf: MutableBufferRef<'_>) -> Result<usize, Error> {
-        self.cache.read(offset, buf.as_mut_slice(), &self.handle).await
+        let buf = buf.as_mut_slice();
+        let slice = self.read(offset as usize, buf.len()).await?;
+        buf[0..slice.len()].copy_from_slice(slice);
+        Ok(slice.len())
     }
 
     fn get_size(&self) -> u64 {
-        self.cache.content_size()
+        self.source.get_size()
     }
 }
 
-#[async_trait]
-impl<S: HandleOwner> WriteObjectHandle for CachingObjectHandle<S> {
-    async fn write_or_append(&self, offset: Option<u64>, buf: BufferRef<'_>) -> Result<u64, Error> {
-        self.write_or_append_cached(offset, buf.as_slice()).await
-    }
-
-    async fn truncate(&self, size: u64) -> Result<(), Error> {
-        let fs = self.store().filesystem();
-        let _locks = fs
-            .transaction_lock(&[LockKey::cached_write(
-                self.store().store_object_id,
-                self.handle.object_id(),
-                self.handle.attribute_id(),
-            )])
-            .await;
-
-        if size > self.cache.content_size() {
-            // If we're trying to grow after we previously shrunk, we need to shrink now.
-            self.flush_metadata().await?;
-        }
-        self.cache.resize(size, self.block_size() as u64, self, &self.handle).await?;
-        // Try and resize immediately, but since we successfully resized the cache, don't propagate
-        // errors here.
-        if let Err(e) = self.flush_metadata().await {
-            warn!(error = ?e, "Failed to flush after resize");
-        }
-        Ok(())
-    }
-
-    async fn write_timestamps<'a>(
-        &'a self,
-        crtime: Option<Timestamp>,
-        mtime: Option<Timestamp>,
-    ) -> Result<(), Error> {
-        let fs = self.store().filesystem();
-        let _locks = fs
-            .transaction_lock(&[LockKey::cached_write(
-                self.store().store_object_id,
-                self.handle.object_id(),
-                self.handle.attribute_id(),
-            )])
-            .await;
-        self.cache.update_timestamps(crtime.map(|t| t.into()), mtime.map(|t| t.into()));
-        Ok(())
-    }
-
-    async fn flush(&self) -> Result<(), Error> {
-        self.flush_impl(/* take_lock: */ true).await
-    }
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ChunkState {
+    Missing,
+    Present,
+    Pending,
 }
 
 #[cfg(test)]
 mod tests {
     use {
-        super::CACHE_READ_AHEAD_SIZE,
-        crate::{
-            filesystem::{Filesystem, FxFilesystem, OpenFxFilesystem},
-            fsck::{fsck_with_options, FsckOptions},
-            lsm_tree::types::{ItemRef, LayerIterator},
-            object_handle::{GetProperties, ObjectHandle, ReadObjectHandle, WriteObjectHandle},
-            object_store::{
-                allocator::Allocator,
-                directory::Directory,
-                object_record::{ObjectKey, ObjectKeyData, ObjectValue, Timestamp},
-                transaction::{Options, TransactionHandler},
-                CachingObjectHandle, HandleOptions, LockKey, ObjectStore,
-                TRANSACTION_MUTATION_THRESHOLD,
-            },
+        super::{CachingObjectHandle, CHUNK_SIZE},
+        crate::object_handle::{ObjectHandle, ReadObjectHandle},
+        anyhow::Error,
+        async_trait::async_trait,
+        event_listener::Event,
+        std::sync::{
+            atomic::{AtomicBool, AtomicU8, Ordering},
+            Arc,
         },
-        fuchsia_async as fasync,
-        rand::Rng,
-        std::ops::Bound,
-        std::sync::Arc,
-        std::time::Duration,
-        storage_device::{fake_device::FakeDevice, DeviceHolder},
+        storage_device::{
+            buffer::{BufferFuture, MutableBufferRef},
+            fake_device::FakeDevice,
+            Device,
+        },
     };
 
-    const TEST_DEVICE_BLOCK_SIZE: u32 = 512;
-
-    // Some tests (the preallocate_range ones) currently assume that the data only occupies a single
-    // device block.
-    const TEST_DATA_OFFSET: u64 = 5000;
-    const TEST_DATA: &[u8] = b"hello";
-    const TEST_OBJECT_SIZE: u64 = 5678;
-
-    async fn test_filesystem() -> OpenFxFilesystem {
-        let device = DeviceHolder::new(FakeDevice::new(16384, TEST_DEVICE_BLOCK_SIZE));
-        FxFilesystem::new_empty(device).await.expect("new_empty failed")
-    }
-
-    async fn test_filesystem_and_object() -> (OpenFxFilesystem, CachingObjectHandle<ObjectStore>) {
-        let fs = test_filesystem().await;
-        let store = fs.root_store();
-        let handle;
-        let mut transaction = fs
-            .clone()
-            .new_transaction(&[], Options::default())
-            .await
-            .expect("new_transaction failed");
-        handle = ObjectStore::create_object(
-            &store,
-            &mut transaction,
-            HandleOptions::default(),
-            None,
-            None,
-        )
-        .await
-        .expect("create_object failed");
-        transaction.commit().await.expect("commit failed");
-        let object = CachingObjectHandle::new(handle);
-        {
-            let align = TEST_DATA_OFFSET as usize % TEST_DEVICE_BLOCK_SIZE as usize;
-            let mut buf = object.allocate_buffer(align + TEST_DATA.len());
-            buf.as_mut_slice()[align..].copy_from_slice(TEST_DATA);
-            object
-                .write_or_append(Some(TEST_DATA_OFFSET), buf.subslice(align..))
-                .await
-                .expect("write failed");
+    // Fills a buffer with a pattern seeded by counter.
+    fn fill_buf(buf: &mut [u8], counter: u8) {
+        for (i, chunk) in buf.chunks_exact_mut(2).enumerate() {
+            chunk[0] = counter;
+            chunk[1] = i as u8;
         }
-        object.truncate(TEST_OBJECT_SIZE).await.expect("truncate failed");
-        object.flush().await.expect("flush failed");
-        (fs, object)
     }
 
-    #[fuchsia::test]
-    async fn test_zero_buf_len_read() {
-        let (fs, object) = test_filesystem_and_object().await;
-        let mut buf = object.allocate_buffer(0);
-        assert_eq!(object.read(0u64, buf.as_mut()).await.expect("read failed"), 0);
-        fs.close().await.expect("Close failed");
+    // Returns a buffer filled with fill_buf.
+    fn make_buf(counter: u8, size: usize) -> Vec<u8> {
+        let mut buf = vec![0; size];
+        fill_buf(&mut buf, counter);
+        buf
     }
 
-    #[fuchsia::test]
-    async fn test_beyond_eof_read() {
-        let (fs, object) = test_filesystem_and_object().await;
-        let offset = TEST_OBJECT_SIZE as usize - 2;
-        let align = offset % fs.block_size() as usize;
-        let len: usize = 2;
-        let mut buf = object.allocate_buffer(align + len + 1);
-        buf.as_mut_slice().fill(123u8);
-        assert_eq!(
-            object.read((offset - align) as u64, buf.as_mut()).await.expect("read failed"),
-            align + len
-        );
-        assert_eq!(&buf.as_slice()[align..align + len], &vec![0u8; len]);
-        fs.close().await.expect("Close failed");
+    struct FakeSource {
+        device: Arc<dyn Device>,
+        size: usize,
+        started: AtomicBool,
+        wake: Event,
+        counter: AtomicU8,
     }
 
-    #[fuchsia::test]
-    async fn test_read_sparse() {
-        let (fs, object) = test_filesystem_and_object().await;
-        // Deliberately read not right to eof.
-        let len = TEST_OBJECT_SIZE as usize - 1;
-        let mut buf = object.allocate_buffer(len);
-        buf.as_mut_slice().fill(123u8);
-        assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed"), len);
-        let mut expected = vec![0; len];
-        let offset = TEST_DATA_OFFSET as usize;
-        expected[offset..offset + TEST_DATA.len()].copy_from_slice(TEST_DATA);
-        assert_eq!(buf.as_slice()[..len], expected[..]);
-        fs.close().await.expect("Close failed");
-    }
-
-    #[fuchsia::test]
-    async fn test_read_after_writes_interspersed_with_flush() {
-        let fs = test_filesystem().await;
-        let mut transaction = fs
-            .clone()
-            .new_transaction(&[], Options::default())
-            .await
-            .expect("new_transaction failed");
-        let handle = ObjectStore::create_object(
-            &fs.root_store(),
-            &mut transaction,
-            HandleOptions::default(),
-            None,
-            None,
-        )
-        .await
-        .expect("create_object failed");
-        transaction.commit().await.expect("transaction commit failed");
-        let object = CachingObjectHandle::new(handle);
-
-        let mut buf = object.allocate_buffer(TEST_DATA.len());
-        buf.as_mut_slice().copy_from_slice(TEST_DATA);
-        object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
-
-        object.flush().await.expect("flush failed");
-
-        let mut buf = object.allocate_buffer(TEST_DATA.len());
-        buf.as_mut_slice().copy_from_slice(TEST_DATA);
-        object.write_or_append(Some(100), buf.as_ref()).await.expect("write failed");
-
-        let mut buf = object.allocate_buffer(TEST_DATA.len());
-        buf.as_mut_slice().copy_from_slice(TEST_DATA);
-        object.write_or_append(Some(TEST_DATA_OFFSET), buf.as_ref()).await.expect("write failed");
-
-        let len = object.get_size() as usize;
-        assert_eq!(len, TEST_DATA_OFFSET as usize + TEST_DATA.len());
-        let mut buf = object.allocate_buffer(len);
-        buf.as_mut_slice().fill(123u8);
-        assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed"), len);
-
-        let mut expected = vec![0u8; len];
-        expected[..TEST_DATA.len()].copy_from_slice(TEST_DATA);
-        expected[100..100 + TEST_DATA.len()].copy_from_slice(TEST_DATA);
-        expected[TEST_DATA_OFFSET as usize..TEST_DATA_OFFSET as usize + TEST_DATA.len()]
-            .copy_from_slice(TEST_DATA);
-        assert_eq!(buf.as_slice(), &expected);
-        fs.close().await.expect("Close failed");
-    }
-
-    #[fuchsia::test]
-    async fn test_read_after_truncate_and_extend() {
-        let (fs, object) = test_filesystem_and_object().await;
-
-        // Arrange for there to be <extent><deleted-extent><extent>.
-        let mut buf = object.allocate_buffer(TEST_DATA.len());
-        buf.as_mut_slice().copy_from_slice(TEST_DATA);
-        // This adds an extent at 0..512.
-        object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
-        object.truncate(3).await.expect("truncate failed"); // This deletes 512..1024.
-        let data = b"foo";
-        let offset = 1500u64;
-        let align = (offset % fs.block_size() as u64) as usize;
-        let mut buf = object.allocate_buffer(align + data.len());
-        buf.as_mut_slice()[align..].copy_from_slice(data);
-        object.write_or_append(Some(1500), buf.subslice(align..)).await.expect("write failed"); // This adds 1024..1536.
-
-        const LEN1: usize = 1503;
-        let mut buf = object.allocate_buffer(LEN1);
-        buf.as_mut_slice().fill(123u8);
-        assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed"), LEN1);
-        let mut expected = [0; LEN1];
-        expected[..3].copy_from_slice(&TEST_DATA[..3]);
-        expected[1500..].copy_from_slice(b"foo");
-        assert_eq!(buf.as_slice(), &expected);
-
-        // Also test a read that ends midway through the deleted extent.
-        const LEN2: usize = 601;
-        let mut buf = object.allocate_buffer(LEN2);
-        buf.as_mut_slice().fill(123u8);
-        assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed"), LEN2);
-        assert_eq!(buf.as_slice(), &expected[..LEN2]);
-        fs.close().await.expect("Close failed");
-    }
-
-    #[fuchsia::test]
-    async fn test_read_whole_blocks_with_multiple_objects() {
-        let (fs, object) = test_filesystem_and_object().await;
-        let mut buffer = object.allocate_buffer(512);
-        buffer.as_mut_slice().fill(0xaf);
-        object.write_or_append(Some(0), buffer.as_ref()).await.expect("write failed");
-
-        let store = object.owner();
-        let mut transaction = fs
-            .clone()
-            .new_transaction(&[], Options::default())
-            .await
-            .expect("new_transaction failed");
-        let handle2 = ObjectStore::create_object(
-            &store,
-            &mut transaction,
-            HandleOptions::default(),
-            None,
-            None,
-        )
-        .await
-        .expect("create_object failed");
-        transaction.commit().await.expect("commit failed");
-        let object2 = CachingObjectHandle::new(handle2);
-        let mut ef_buffer = object.allocate_buffer(512);
-        ef_buffer.as_mut_slice().fill(0xef);
-        object2.write_or_append(Some(0), ef_buffer.as_ref()).await.expect("write failed");
-
-        let mut buffer = object.allocate_buffer(512);
-        buffer.as_mut_slice().fill(0xaf);
-        object.write_or_append(Some(512), buffer.as_ref()).await.expect("write failed");
-        object.truncate(1536).await.expect("truncate failed");
-        object2.write_or_append(Some(512), ef_buffer.as_ref()).await.expect("write failed");
-
-        let mut buffer = object.allocate_buffer(2048);
-        buffer.as_mut_slice().fill(123);
-        assert_eq!(object.read(0, buffer.as_mut()).await.expect("read failed"), 1536);
-        assert_eq!(&buffer.as_slice()[..1024], &[0xaf; 1024]);
-        assert_eq!(&buffer.as_slice()[1024..1536], &[0; 512]);
-        assert_eq!(object2.read(0, buffer.as_mut()).await.expect("read failed"), 1024);
-        assert_eq!(&buffer.as_slice()[..1024], &[0xef; 1024]);
-        fs.close().await.expect("Close failed");
-    }
-
-    #[fuchsia::test]
-    async fn test_truncate_deallocates_old_extents() {
-        let (fs, object) = test_filesystem_and_object().await;
-        let mut buf = object.allocate_buffer(5 * fs.block_size() as usize);
-        buf.as_mut_slice().fill(0xaa);
-        object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
-        object.flush().await.expect("flush failed");
-
-        let allocator = fs.allocator();
-        let allocated_before_truncate = allocator.get_allocated_bytes();
-        object.truncate(fs.block_size() as u64).await.expect("truncate failed");
-        object.flush().await.expect("flush failed");
-        let allocated_after = allocator.get_allocated_bytes();
-        assert!(
-            allocated_after < allocated_before_truncate,
-            "before = {} after = {}",
-            allocated_before_truncate,
-            allocated_after
-        );
-        fs.close().await.expect("Close failed");
-    }
-
-    #[fuchsia::test]
-    async fn test_adjust_refs() {
-        let (fs, object) = test_filesystem_and_object().await;
-        let mut transaction = fs
-            .clone()
-            .new_transaction(
-                &[LockKey::object(object.store().store_object_id(), object.object_id())],
-                Options::default(),
-            )
-            .await
-            .expect("new_transaction failed");
-        let store = object.owner();
-        assert_eq!(
-            store
-                .adjust_refs(&mut transaction, object.object_id(), 1)
-                .await
-                .expect("adjust_refs failed"),
-            false
-        );
-        transaction.commit().await.expect("commit failed");
-
-        let allocator = fs.allocator();
-        let allocated_before = allocator.get_allocated_bytes();
-        let mut transaction = fs
-            .clone()
-            .new_transaction(
-                &[LockKey::object(object.store().store_object_id(), object.object_id())],
-                Options::default(),
-            )
-            .await
-            .expect("new_transaction failed");
-        assert_eq!(
-            store
-                .adjust_refs(&mut transaction, object.object_id(), -2)
-                .await
-                .expect("adjust_refs failed"),
-            true
-        );
-        transaction.commit().await.expect("commit failed");
-
-        assert_eq!(allocator.get_allocated_bytes(), allocated_before);
-
-        store
-            .tombstone(
-                object.object_id(),
-                Options { borrow_metadata_space: true, ..Default::default() },
-            )
-            .await
-            .expect("purge failed");
-
-        assert_eq!(allocated_before - allocator.get_allocated_bytes(), fs.block_size() as u64);
-
-        let layer_set = store.tree.layer_set();
-        let mut merger = layer_set.merger();
-        let mut iter = merger.seek(Bound::Unbounded).await.expect("seek failed");
-        let mut found_tombstone = false;
-        while let Some(ItemRef { key: ObjectKey { object_id, data }, value, .. }) = iter.get() {
-            if *object_id == object.object_id() {
-                match (data, value) {
-                    // Tombstone entry
-                    (ObjectKeyData::Object, ObjectValue::None) => {
-                        assert!(!found_tombstone);
-                        found_tombstone = true;
-                    }
-                    // We don't expect anything else.
-                    _ => assert!(false, "Unexpected item {:?}", iter.get()),
-                }
+    impl FakeSource {
+        // `device` is only used to provide allocate_buffer; reads don't go to the device.
+        fn new(device: Arc<dyn Device>, size: usize) -> Self {
+            FakeSource {
+                started: AtomicBool::new(false),
+                size,
+                wake: Event::new(),
+                device,
+                counter: AtomicU8::new(1),
             }
-            iter.advance().await.expect("advance failed");
         }
-        assert!(found_tombstone);
 
-        fs.close().await.expect("Close failed");
-    }
+        fn start(&self) {
+            self.started.store(true, Ordering::SeqCst);
+            self.wake.notify(usize::MAX);
+        }
 
-    #[fuchsia::test(threads = 10)]
-    async fn test_racy_reads() {
-        let fs = test_filesystem().await;
-        let handle;
-        let mut transaction = fs
-            .clone()
-            .new_transaction(&[], Options::default())
-            .await
-            .expect("new_transaction failed");
-        let store = fs.root_store();
-        handle = ObjectStore::create_object(
-            &store,
-            &mut transaction,
-            HandleOptions::default(),
-            None,
-            None,
-        )
-        .await
-        .expect("create_object failed");
-        let object = Arc::new(CachingObjectHandle::new(handle));
-        transaction.commit().await.expect("commit failed");
-        for _ in 0..100 {
-            let cloned_object = object.clone();
-            let writer = fasync::Task::spawn(async move {
-                let mut buf = cloned_object.allocate_buffer(10);
-                buf.as_mut_slice().fill(123);
-                cloned_object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
-                cloned_object.flush().await.expect("flush failed");
-            });
-            let cloned_object = object.clone();
-            let reader = fasync::Task::spawn(async move {
-                let wait_time = rand::thread_rng().gen_range(0..5);
-                fasync::Timer::new(Duration::from_millis(wait_time)).await;
-                let mut buf = cloned_object.allocate_buffer(10);
-                buf.as_mut_slice().fill(23);
-                let amount = cloned_object.read(0, buf.as_mut()).await.expect("write failed");
-                // If we succeed in reading data, it must include the write; i.e. if we see the size
-                // change, we should see the data too.
-                if amount != 0 {
-                    assert_eq!(amount, 10);
-                    assert_eq!(buf.as_slice(), &[123; 10]);
+        async fn wait_for_start(&self) {
+            while !self.started.load(Ordering::SeqCst) {
+                let listener = self.wake.listen();
+                if self.started.load(Ordering::SeqCst) {
+                    break;
                 }
-            });
-            writer.await;
-            reader.await;
-            object.truncate(0).await.expect("truncate failed");
-            object.flush().await.expect("flush failed");
-        }
-        fs.close().await.expect("Close failed");
-    }
-
-    #[fuchsia::test]
-    async fn test_properties() {
-        let (fs, object) = test_filesystem_and_object().await;
-        let crtime = Timestamp::from_nanos(1234u64);
-        let mtime = Timestamp::from_nanos(5678u64);
-
-        object
-            .write_timestamps(Some(crtime.clone()), None)
-            .await
-            .expect("update_timestamps failed");
-        let properties = object.get_properties().await.expect("get_properties failed");
-        assert_eq!(properties.creation_time, crtime);
-        assert_ne!(properties.modification_time, mtime);
-
-        object.write_timestamps(None, Some(mtime.clone())).await.expect("update_timestamps failed");
-        let properties = object.get_properties().await.expect("get_properties failed");
-        assert_eq!(properties.creation_time, crtime);
-        assert_eq!(properties.modification_time, mtime);
-
-        // Writes should update mtime.
-        let mut buf = object.allocate_buffer(5);
-        buf.as_mut_slice().copy_from_slice(b"hello");
-        object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
-
-        let properties = object.get_properties().await.expect("get_properties failed");
-        assert_eq!(properties.creation_time, crtime);
-        assert_ne!(properties.modification_time, mtime);
-        fs.close().await.expect("Close failed");
-    }
-
-    #[fuchsia::test]
-    async fn test_cached_writes() {
-        let fs = test_filesystem().await;
-        let object_id = {
-            let handle;
-            let mut transaction = fs
-                .clone()
-                .new_transaction(&[], Options::default())
-                .await
-                .expect("new_transaction failed");
-            handle = ObjectStore::create_object(
-                &fs.root_store(),
-                &mut transaction,
-                HandleOptions::default(),
-                None,
-                None,
-            )
-            .await
-            .expect("create_object failed");
-            transaction.commit().await.expect("transaction commit failed");
-            let object = CachingObjectHandle::new(handle);
-
-            let mut buf = object.allocate_buffer(2 * CACHE_READ_AHEAD_SIZE as usize);
-
-            // Simple case is an aligned, non-sparse write.
-            buf.as_mut_slice()[..12].copy_from_slice(b"hello, mars!");
-            object.write_or_append(Some(0), buf.subslice(..12)).await.expect("write failed");
-            assert_eq!(object.get_size(), 12);
-
-            // Partially overwrite that write.
-            buf.as_mut_slice()[..6].copy_from_slice(b"earth!");
-            object.write_or_append(Some(7), buf.subslice(..6)).await.expect("write failed");
-            assert_eq!(object.get_size(), 13);
-
-            // Also do an unaligned, sparse appending write.
-            buf.as_mut_slice().fill(0xaa);
-            object
-                .write_or_append(Some(2 * CACHE_READ_AHEAD_SIZE - 1), buf.as_ref())
-                .await
-                .expect("write failed");
-
-            // Also do an unaligned, sparse non-appending write.
-            buf.as_mut_slice().fill(0xbb);
-            object.write_or_append(Some(8000), buf.subslice(..500)).await.expect("write failed");
-
-            // Also truncate.
-            object.truncate(4 * CACHE_READ_AHEAD_SIZE - 2).await.expect("truncate failed");
-
-            object.flush().await.expect("flush failed");
-
-            object.object_id()
-        };
-
-        fs.close().await.expect("Close failed");
-        let device = fs.take_device().await;
-        device.reopen(false);
-        let fs = FxFilesystem::open(device).await.expect("FS open failed");
-
-        let handle =
-            ObjectStore::open_object(&fs.root_store(), object_id, HandleOptions::default(), None)
-                .await
-                .expect("open_object failed");
-        let object = CachingObjectHandle::new(handle);
-        assert_eq!(object.get_size(), 4 * CACHE_READ_AHEAD_SIZE - 2);
-        let mut buf = object.allocate_buffer(object.get_size() as usize);
-        object.read(0, buf.as_mut()).await.expect("read failed");
-        assert_eq!(&buf.as_slice()[..13], b"hello, earth!");
-        assert_eq!(buf.as_slice()[13..8000], [0u8; 7987]);
-        assert_eq!(buf.as_slice()[8000..8500], [0xbb; 500]);
-        assert_eq!(
-            buf.as_slice()[8500..2 * CACHE_READ_AHEAD_SIZE as usize - 1],
-            [0u8; 2 * CACHE_READ_AHEAD_SIZE as usize - 8501]
-        );
-        assert_eq!(
-            buf.as_slice()[2 * CACHE_READ_AHEAD_SIZE as usize - 1..],
-            vec![0xaa; 2 * CACHE_READ_AHEAD_SIZE as usize - 1]
-        );
-    }
-
-    #[fuchsia::test]
-    async fn test_cached_writes_unflushed() {
-        let fs = test_filesystem().await;
-        let object_id = {
-            let object;
-            let mut transaction = fs
-                .clone()
-                .new_transaction(&[], Options::default())
-                .await
-                .expect("new_transaction failed");
-            object = ObjectStore::create_object(
-                &fs.root_store(),
-                &mut transaction,
-                HandleOptions::default(),
-                None,
-                None,
-            )
-            .await
-            .expect("create_object failed");
-            transaction.commit().await.expect("transaction commit failed");
-            let object = CachingObjectHandle::new(object);
-
-            let mut buf = object.allocate_buffer(2 * CACHE_READ_AHEAD_SIZE as usize + 6);
-
-            // First, do a write and immediately flush. Only this should persist.
-            buf.as_mut_slice()[..5].copy_from_slice(b"hello");
-            object.write_or_append(Some(0), buf.subslice(..5)).await.expect("write failed");
-            object.flush().await.expect("Flush failed");
-            assert_eq!(object.get_size(), 5);
-
-            buf.as_mut_slice()[..5].copy_from_slice(b"bye!!");
-            object.write_or_append(Some(0), buf.subslice(..5)).await.expect("write failed");
-
-            buf.as_mut_slice().fill(0xaa);
-            object
-                .write_or_append(Some(CACHE_READ_AHEAD_SIZE - 5), buf.as_ref())
-                .await
-                .expect("write failed");
-            buf.as_mut_slice().fill(0xbb);
-            object
-                .write_or_append(Some(CACHE_READ_AHEAD_SIZE + 1), buf.as_ref())
-                .await
-                .expect("write failed");
-            object.truncate(3 * CACHE_READ_AHEAD_SIZE + 6).await.expect("truncate failed");
-
-            let mut buf = object.allocate_buffer(object.get_size() as usize);
-            buf.as_mut_slice().fill(0x00);
-            object.read(0, buf.as_mut()).await.expect("read failed");
-            assert_eq!(&buf.as_slice()[..5], b"bye!!");
-            assert_eq!(
-                &buf.as_slice()[5..CACHE_READ_AHEAD_SIZE as usize - 5],
-                vec![0u8; CACHE_READ_AHEAD_SIZE as usize - 10]
-            );
-            assert_eq!(
-                &buf.as_slice()
-                    [CACHE_READ_AHEAD_SIZE as usize - 5..CACHE_READ_AHEAD_SIZE as usize + 1],
-                vec![0xaa; 6]
-            );
-            assert_eq!(
-                &buf.as_slice()
-                    [CACHE_READ_AHEAD_SIZE as usize + 1..CACHE_READ_AHEAD_SIZE as usize + 65536],
-                vec![0xbb; 65535]
-            );
-
-            object.object_id()
-        };
-
-        fs.close().await.expect("Close failed");
-        let device = fs.take_device().await;
-        device.reopen(false);
-        let fs = FxFilesystem::open(device).await.expect("FS open failed");
-
-        let object =
-            ObjectStore::open_object(&fs.root_store(), object_id, HandleOptions::default(), None)
-                .await
-                .expect("open_object failed");
-        let object = CachingObjectHandle::new(object);
-        assert_eq!(object.get_size(), 5);
-        let mut buf = object.allocate_buffer(5);
-        object.read(0, buf.subslice_mut(..5)).await.expect("read failed");
-        assert_eq!(&buf.as_slice()[..5], b"hello");
-    }
-
-    #[fuchsia::test]
-    async fn test_large_flush() {
-        let fs = test_filesystem().await;
-        let object;
-        let mut transaction = fs
-            .clone()
-            .new_transaction(&[], Options::default())
-            .await
-            .expect("new_transaction failed");
-        object = ObjectStore::create_object(
-            &fs.root_store(),
-            &mut transaction,
-            HandleOptions::default(),
-            None,
-            None,
-        )
-        .await
-        .expect("create_object failed");
-        transaction.commit().await.expect("transaction commit failed");
-        let object = CachingObjectHandle::new(object);
-
-        const DATA_TO_WRITE: usize = super::FLUSH_BATCH_SIZE as usize + 32_768;
-        let mut data = vec![123u8; DATA_TO_WRITE];
-        object.write_or_append_cached(None, &data[..]).await.expect("write failed");
-
-        object.flush().await.expect("flush failed");
-
-        let object_id = object.object_id();
-        std::mem::drop(object);
-        let object =
-            ObjectStore::open_object(&fs.root_store(), object_id, HandleOptions::default(), None)
-                .await
-                .expect("open_object failed");
-        let object = CachingObjectHandle::new(object);
-
-        data.fill(0);
-        object.read_cached(0, &mut data[..]).await.expect("read failed");
-
-        for chunk in data.chunks(32_768) {
-            assert_eq!(chunk, &[123u8; 32_768]);
-        }
-    }
-
-    #[fuchsia::test]
-    async fn test_trim_before_flush() {
-        let fs = test_filesystem().await;
-        let store = fs.root_store();
-        let root_directory =
-            Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
-        let object;
-        let mut transaction = fs
-            .clone()
-            .new_transaction(
-                &[LockKey::object(store.store_object_id(), root_directory.object_id())],
-                Options::default(),
-            )
-            .await
-            .expect("new_transaction failed");
-        object = root_directory
-            .create_child_file(&mut transaction, "foo", None)
-            .await
-            .expect("create_child_file failed");
-        let block_size = object.block_size();
-        let object_size = (TRANSACTION_MUTATION_THRESHOLD as u64 + 10) * 2 * block_size;
-
-        // Create enough extents in it such that when we truncate the object it will require more
-        // than one transaction.
-        {
-            let mut buf = object.allocate_buffer(5);
-            buf.as_mut_slice().fill(1);
-            // Write every other block.
-            for offset in (0..object_size).into_iter().step_by(2 * block_size as usize) {
-                object
-                    .txn_write(&mut transaction, offset, buf.as_ref())
-                    .await
-                    .expect("write failed");
+                listener.await;
             }
-            transaction.commit().await.expect("commit failed");
+        }
+    }
+
+    #[async_trait]
+    impl ReadObjectHandle for FakeSource {
+        async fn read(&self, _offset: u64, mut buf: MutableBufferRef<'_>) -> Result<usize, Error> {
+            let counter = self.counter.fetch_add(1, Ordering::Relaxed);
+            self.wait_for_start().await;
+            fill_buf(buf.as_mut_slice(), counter);
+            Ok(buf.len())
         }
 
-        // Truncate the file, but don't commit more than the first transaction.
-        let mut transaction = object.new_transaction().await.expect("new_transaction failed");
-        assert_eq!(object.shrink(&mut transaction, 0).await.expect("shrink failed").0, true);
-        transaction.commit().await.expect("commit failed");
+        fn get_size(&self) -> u64 {
+            self.size as u64
+        }
+    }
 
-        // Grow the file using caching_object_handle.
-        let object = CachingObjectHandle::new(object);
-        object.truncate(object_size).await.expect("truncate failed");
-        object.flush().await.expect("flush failed");
+    impl ObjectHandle for FakeSource {
+        fn object_id(&self) -> u64 {
+            unreachable!();
+        }
 
-        // The tail of the file should have been zeroed.
-        let (buf, size) = object
-            .read_uncached(object_size - 2 * block_size..object_size)
+        fn block_size(&self) -> u64 {
+            self.device.block_size().into()
+        }
+
+        fn allocate_buffer(&self, size: usize) -> BufferFuture<'_> {
+            self.device.allocate_buffer(size)
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_read_with_missing_chunk() {
+        let device = Arc::new(FakeDevice::new(1024, 512));
+        let source = FakeSource::new(device, 4096);
+        source.start();
+        let caching_object_handle = CachingObjectHandle::new(source);
+
+        let slice = caching_object_handle.read(0, 4096).await.unwrap();
+        assert_eq!(slice, make_buf(1, 4096));
+    }
+
+    #[fuchsia::test]
+    async fn test_read_with_present_chunk() {
+        let device = Arc::new(FakeDevice::new(1024, 512));
+        let source = FakeSource::new(device, 4096);
+        source.start();
+        let caching_object_handle = CachingObjectHandle::new(source);
+
+        let expected = make_buf(1, 4096);
+        let slice = caching_object_handle.read(0, 4096).await.unwrap();
+        assert_eq!(slice, expected);
+
+        // The chunk was already populated so this read receives the same value as the above read.
+        let slice = caching_object_handle.read(0, 4096).await.unwrap();
+        assert_eq!(slice, expected);
+    }
+
+    #[fuchsia::test]
+    async fn test_read_with_pending_chunk() {
+        let device = Arc::new(FakeDevice::new(1024, 512));
+        let source = FakeSource::new(device, 4096);
+        let caching_object_handle = CachingObjectHandle::new(source);
+
+        let mut read_fut1 = std::pin::pin!(caching_object_handle.read(0, 4096));
+        let mut read_fut2 = std::pin::pin!(caching_object_handle.read(0, 4096));
+
+        // The first future will transition the chunk from `Missing` to `Pending` and then wait
+        // on the source.
+        assert!(futures::poll!(&mut read_fut1).is_pending());
+        // The second future will wait on the event.
+        assert!(futures::poll!(&mut read_fut2).is_pending());
+        caching_object_handle.source.start();
+        // Even though the source is ready the second future can't make progress.
+        assert!(futures::poll!(&mut read_fut2).is_pending());
+        // The first future reads from the source, transition the chunk from `Pending` to
+        // `Present`, and then notifies the event.
+        let expected = make_buf(1, 4096);
+        assert_eq!(read_fut1.await.unwrap(), expected);
+        // The event has been notified and the second future can now complete.
+        assert_eq!(read_fut2.await.unwrap(), expected);
+    }
+
+    #[fuchsia::test]
+    async fn test_read_with_notification_for_other_chunk() {
+        let device = Arc::new(FakeDevice::new(1024, 512));
+        let source = FakeSource::new(device, CHUNK_SIZE + 4096);
+        let caching_object_handle = CachingObjectHandle::new(source);
+
+        let mut read_fut1 = std::pin::pin!(caching_object_handle.read(0, 4096));
+        let mut read_fut2 = std::pin::pin!(caching_object_handle.read(CHUNK_SIZE, 4096));
+        let mut read_fut3 = std::pin::pin!(caching_object_handle.read(0, 4096));
+
+        // The first and second futures will transition their chunks from `Missing` to `Pending`
+        // and then wait on the source.
+        assert!(futures::poll!(&mut read_fut1).is_pending());
+        assert!(futures::poll!(&mut read_fut2).is_pending());
+        // The third future will wait on the event.
+        assert!(futures::poll!(&mut read_fut3).is_pending());
+        caching_object_handle.source.start();
+        // Even though the source is ready the third future can't make progress.
+        assert!(futures::poll!(&mut read_fut3).is_pending());
+        // The second future will read from the source and notify the event.
+        assert_eq!(read_fut2.await.unwrap(), make_buf(2, 4096));
+        // The event was notified but the first chunk is still `Pending` so the third future
+        // resumes waiting.
+        assert!(futures::poll!(&mut read_fut3).is_pending());
+        // The first future will read from the source, transition the first chunk to `Present`,
+        // and notify the event.
+        let expected = make_buf(1, 4096);
+        assert_eq!(read_fut1.await.unwrap(), expected);
+        // The first chunk is now present so the third future can complete.
+        assert_eq!(read_fut3.await.unwrap(), expected);
+    }
+
+    #[fuchsia::test]
+    async fn test_read_with_dropped_future() {
+        let device = Arc::new(FakeDevice::new(1024, 512));
+        let source = FakeSource::new(device, 4096);
+        let caching_object_handle = CachingObjectHandle::new(source);
+
+        let mut read_fut2 = std::pin::pin!(caching_object_handle.read(0, 4096));
+        {
+            let mut read_fut1 = std::pin::pin!(caching_object_handle.read(0, 4096));
+
+            // The first future will transition the chunk from `Missing` to `Pending` and then
+            // wait on the source.
+            assert!(futures::poll!(&mut read_fut1).is_pending());
+            // The second future will wait on the event.
+            assert!(futures::poll!(&mut read_fut2).is_pending());
+            caching_object_handle.source.start();
+            // Even though the source is ready the second future can't make progress.
+            assert!(futures::poll!(&mut read_fut2).is_pending());
+        }
+        // The first future was dropped which transitioned the chunk from `Pending` to `Missing`
+        // and notified the event. When the second future is polled it transitions the chunk
+        // from `Missing` back to `Pending`, reads from the source, and then transitions the
+        // chunk to `Present`.
+        assert_eq!(read_fut2.await.unwrap(), make_buf(2, 4096));
+    }
+
+    #[fuchsia::test]
+    async fn test_read_past_end_of_source() {
+        let device = Arc::new(FakeDevice::new(1024, 512));
+        let source = FakeSource::new(device, 300);
+        source.start();
+        let caching_object_handle = CachingObjectHandle::new(source);
+
+        let slice = caching_object_handle.read(500, 10).await.unwrap();
+        assert!(slice.is_empty());
+    }
+
+    #[fuchsia::test]
+    async fn test_read_more_than_source() {
+        let device = Arc::new(FakeDevice::new(1024, 512));
+        const SOURCE_SIZE: usize = 300;
+        const READ_SIZE: usize = SOURCE_SIZE + 200;
+        let source = FakeSource::new(device, SOURCE_SIZE);
+        source.start();
+        let caching_object_handle = CachingObjectHandle::new(source);
+
+        let slice = caching_object_handle.read(0, READ_SIZE).await.unwrap();
+        assert_eq!(slice, make_buf(1, SOURCE_SIZE));
+    }
+
+    #[fuchsia::test]
+    async fn test_read_spanning_multiple_chunks() {
+        let device = Arc::new(FakeDevice::new(1024, 512));
+        const SOURCE_SIZE: usize = CHUNK_SIZE + 10;
+        let source = FakeSource::new(device, SOURCE_SIZE);
+        source.start();
+        let caching_object_handle = CachingObjectHandle::new(source);
+
+        let slice = caching_object_handle.read(0, SOURCE_SIZE).await.unwrap();
+        assert_eq!(slice[0..CHUNK_SIZE], make_buf(1, CHUNK_SIZE));
+        assert_eq!(slice[CHUNK_SIZE..SOURCE_SIZE], make_buf(2, SOURCE_SIZE - CHUNK_SIZE));
+    }
+
+    #[fuchsia::test]
+    async fn test_empty_source() {
+        let device = Arc::new(FakeDevice::new(1024, 512));
+        let source = FakeSource::new(device, 0);
+        source.start();
+        let caching_object_handle = CachingObjectHandle::new(source);
+
+        let slice = caching_object_handle.read(0, 10).await.unwrap();
+        assert!(slice.is_empty());
+    }
+
+    #[fuchsia::test]
+    async fn test_read_with_read_object_handle() {
+        let device = Arc::new(FakeDevice::new(1024, 512));
+        let source = FakeSource::new(device.clone(), CHUNK_SIZE + 8192);
+        source.start();
+        let caching_object_handle = CachingObjectHandle::new(source);
+
+        let mut buf = device.allocate_buffer(4096).await;
+        assert_eq!(
+            ReadObjectHandle::read(
+                &caching_object_handle,
+                (CHUNK_SIZE + 4096) as u64,
+                buf.as_mut()
+            )
             .await
-            .expect("read_uncached failed");
-        assert_eq!(size, buf.len());
-        assert_eq!(buf.as_slice(), &vec![0; 2 * block_size as usize]);
-
-        fsck_with_options(
-            fs.clone(),
-            &FsckOptions {
-                fail_on_warning: true,
-                on_error: Box::new(|err| println!("fsck error: {:?}", err)),
-                ..Default::default()
-            },
-        )
-        .await
-        .expect("fsck_with_options failed");
+            .unwrap(),
+            4096
+        );
+        assert_eq!(buf.as_slice(), make_buf(1, 4096));
     }
 }

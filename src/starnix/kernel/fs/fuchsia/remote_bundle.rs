@@ -3,24 +3,44 @@
 // found in the LICENSE file.
 
 use crate::{
-    auth::FsCred,
-    fs::{
-        fuchsia::{update_info_from_attrs, RemoteFileObject},
-        *,
+    fs::fuchsia::update_info_from_attrs,
+    mm::{ProtectionFlags, VMEX_RESOURCE},
+    task::{CurrentTask, EventHandler, Kernel, WaitCanceler, Waiter},
+    vfs::{
+        default_seek, emit_dotdot, fileops_impl_directory, fileops_impl_seekable,
+        fs_node_impl_dir_readonly, fs_node_impl_not_dir, fs_node_impl_symlink, CacheConfig,
+        CacheMode, DirectoryEntryType, DirentSink, FdEvents, FileObject, FileOps, FileSystem,
+        FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo,
+        FsNodeOps, FsStr, FsString, InputBuffer, OutputBuffer, SeekTarget, SymlinkTarget,
+        ValueOrSize,
     },
-    lock::{RwLock, RwLockReadGuard, RwLockWriteGuard},
-    logging::log_warn,
-    task::{CurrentTask, Kernel},
-    types::*,
 };
 use anyhow::{anyhow, ensure, Error};
-use ext4_metadata::{Node, NodeInfo};
+use ext4_metadata::{Metadata, Node, NodeInfo};
 use fidl_fuchsia_io as fio;
-use fuchsia_zircon::{self as zx, HandleBased};
-use std::{io::Read, sync::Arc};
-use syncio::Zxio;
+use fuchsia_zircon::{
+    HandleBased, {self as zx},
+};
+use starnix_logging::{impossible_error, log_warn};
+use starnix_sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use starnix_uapi::{
+    auth::FsCred,
+    errno, error,
+    errors::{Errno, SourceContext},
+    file_mode::FileMode,
+    from_status_like_fdio, ino_t,
+    mount_flags::MountFlags,
+    off_t,
+    open_flags::OpenFlags,
+    statfs,
+};
+use std::{
+    io::Read,
+    sync::{Arc, Mutex},
+};
+use syncio::{zxio_node_attr_has_t, zxio_node_attributes_t};
 
-use ext4_metadata::Metadata;
+const REMOTE_BUNDLE_NODE_LRU_CAPACITY: usize = 1024;
 
 /// RemoteBundle is a remote, immutable filesystem that stores additional metadata that would
 /// otherwise not be available.  The metadata exists in the "metadata.v1" file, which contains
@@ -28,7 +48,7 @@ use ext4_metadata::Metadata;
 /// accessed remotely as normal.
 pub struct RemoteBundle {
     metadata: Metadata,
-    root: Arc<syncio::Zxio>,
+    root: fio::DirectorySynchronousProxy,
     rights: fio::OpenFlags,
 }
 
@@ -40,18 +60,26 @@ impl RemoteBundle {
         rights: fio::OpenFlags,
         path: &str,
     ) -> Result<FileSystemHandle, Error> {
-        let root = syncio::directory_open_directory_async(base, path, rights)
-            .map_err(|e| anyhow!("Failed to open root: {}", e))?
-            .into_channel();
+        let (root, server_end) = fidl::endpoints::create_endpoints::<fio::NodeMarker>();
+        base.open(rights, fio::ModeType::empty(), path, server_end)
+            .map_err(|e| anyhow!("Failed to open root: {}", e))?;
+        let root = fio::DirectorySynchronousProxy::new(root.into_channel());
 
-        let (metadata_file, server) = zx::Channel::create();
-        fdio::open_at(&root, "metadata.v1", fio::OpenFlags::RIGHT_READABLE, server)
+        let metadata = {
+            let (file, server_end) = fidl::endpoints::create_endpoints::<fio::NodeMarker>();
+            root.open(
+                fio::OpenFlags::RIGHT_READABLE,
+                fio::ModeType::empty(),
+                "metadata.v1",
+                server_end,
+            )
             .source_context("open metadata file")?;
-        let mut metadata_file: std::fs::File =
-            fdio::create_fd(metadata_file.into()).source_context("create fd from metadata file")?;
-        let mut buf = Vec::new();
-        metadata_file.read_to_end(&mut buf).source_context("read metadata file")?;
-        let metadata = Metadata::deserialize(&buf).source_context("deserialize metadata file")?;
+            let mut file: std::fs::File = fdio::create_fd(file.into_channel().into_handle())
+                .source_context("create fd from metadata file")?;
+            let mut buf = Vec::new();
+            file.read_to_end(&mut buf).source_context("read metadata file")?;
+            Metadata::deserialize(&buf).source_context("deserialize metadata file")?
+        };
 
         // Make sure the root node exists.
         ensure!(
@@ -59,14 +87,9 @@ impl RemoteBundle {
             "Root node does not exist in remote bundle"
         );
 
-        let root = Arc::new(
-            Zxio::create(root.into_handle()).map_err(|status| from_status_like_fdio!(status))?,
-        );
-        let mut root_node = FsNode::new_root(DirectoryObject);
-        root_node.node_id = ext4_metadata::ROOT_INODE_NUM;
         let fs = FileSystem::new(
             kernel,
-            CacheMode::Cached,
+            CacheMode::Cached(CacheConfig { capacity: REMOTE_BUNDLE_NODE_LRU_CAPACITY }),
             RemoteBundle { metadata, root, rights },
             FileSystemOptions {
                 source: path.as_bytes().to_vec(),
@@ -78,6 +101,8 @@ impl RemoteBundle {
                 params: b"".to_vec(),
             },
         );
+        let mut root_node = FsNode::new_root(DirectoryObject);
+        root_node.node_id = ext4_metadata::ROOT_INODE_NUM;
         fs.set_root_node(root_node);
         Ok(fs)
     }
@@ -107,11 +132,39 @@ impl FileSystemOps for RemoteBundle {
 }
 
 struct File {
-    /// The underlying Zircon I/O object for this remote file.
-    ///
-    /// We delegate to the zxio library for actually doing I/O with remote
-    /// file objects.
-    zxio: Arc<syncio::Zxio>,
+    inner: Mutex<Inner>,
+}
+
+enum Inner {
+    NeedsVmo(fio::FileSynchronousProxy),
+    Vmo(Arc<zx::Vmo>),
+}
+
+impl Inner {
+    fn get_vmo(&mut self) -> Result<Arc<zx::Vmo>, Errno> {
+        if let Inner::NeedsVmo(file) = &*self {
+            let vmo = match file
+                .get_backing_memory(fio::VmoFlags::READ, zx::Time::INFINITE)
+                .map_err(|err| errno!(EIO, format!("Error {err} on GetBackingMemory")))?
+                .map_err(zx::Status::from_raw)
+            {
+                Ok(vmo) => Arc::new(vmo),
+                Err(zx::Status::BAD_STATE) => {
+                    // TODO(fxbug.dev/305272765): ZX_ERR_BAD_STATE is returned for the empty
+                    // blob, but Blobfs/Fxblob should be changed to handle this case
+                    // successfully.  Remove the error-swallowing when the behaviour is fixed.
+                    Arc::new(
+                        zx::Vmo::create_with_opts(zx::VmoOptions::empty(), 0)
+                            .map_err(|status| from_status_like_fdio!(status))?,
+                    )
+                }
+                Err(status) => return Err(from_status_like_fdio!(status)),
+            };
+            *self = Inner::Vmo(vmo);
+        }
+        let Inner::Vmo(vmo) = &*self else { unreachable!() };
+        Ok(vmo.clone())
+    }
 }
 
 impl FsNodeOps for File {
@@ -123,8 +176,12 @@ impl FsNodeOps for File {
         _current_task: &CurrentTask,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
-        let zxio = (*self.zxio).clone().map_err(|status| from_status_like_fdio!(status))?;
-        Ok(Box::new(RemoteFileObject::new(zxio)))
+        let vmo = self.inner.lock().unwrap().get_vmo()?;
+        let size = usize::try_from(
+            vmo.get_content_size().map_err(|status| from_status_like_fdio!(status))?,
+        )
+        .unwrap();
+        Ok(Box::new(VmoFile { vmo, size }))
     }
 
     fn refresh_info<'a>(
@@ -133,7 +190,22 @@ impl FsNodeOps for File {
         _current_task: &CurrentTask,
         info: &'a RwLock<FsNodeInfo>,
     ) -> Result<RwLockReadGuard<'a, FsNodeInfo>, Errno> {
-        let attrs = self.zxio.attr_get().map_err(|status| from_status_like_fdio!(status))?;
+        let vmo = self.inner.lock().unwrap().get_vmo()?;
+        let attrs = zxio_node_attributes_t {
+            content_size: vmo
+                .get_content_size()
+                .map_err(|status| from_status_like_fdio!(status))?,
+            // TODO(fxbug.dev/293607051): Plumb through storage size from underlying connection.
+            storage_size: 0,
+            link_count: 1,
+            has: zxio_node_attr_has_t {
+                content_size: true,
+                storage_size: true,
+                link_count: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         let mut info = info.write();
         update_info_from_attrs(&mut info, &attrs);
         Ok(RwLockWriteGuard::downgrade(info))
@@ -143,7 +215,7 @@ impl FsNodeOps for File {
         &self,
         node: &FsNode,
         _current_task: &CurrentTask,
-        name: &crate::fs::FsStr,
+        name: &crate::vfs::FsStr,
         _size: usize,
     ) -> Result<ValueOrSize<FsString>, Errno> {
         let fs = node.fs();
@@ -172,6 +244,94 @@ impl FsNodeOps for File {
             .map(|k| k.clone().to_vec())
             .collect::<Vec<_>>()
             .into())
+    }
+}
+
+// NB: This is different from VmoFileObject, which is designed to wrap a VMO that is owned and
+// managed by Starnix.  This struct is a wrapper around a pager-backed VMO received from the
+// filesystem backing the remote bundle.
+// VmoFileObject does its own content size management, which is (a) incompatible with the content
+// size management done for us by the remote filesystem, and (b) the content size is based on file
+// attributes in the case of VmoFileObject, which we've intentionally avoided querying here for
+// performance.  Specifically, VmoFile is designed to be opened as fast as possible, and requiring
+// that we stat the file whilst opening it is counter to that goal.
+// Note that VmoFile assumes that the underlying file is read-only and not resizable (which is the
+// case for remote bundles since they're stored as blobs).
+struct VmoFile {
+    vmo: Arc<zx::Vmo>,
+    size: usize,
+}
+
+impl FileOps for VmoFile {
+    fileops_impl_seekable!();
+
+    fn read(
+        &self,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+        mut offset: usize,
+        data: &mut dyn OutputBuffer,
+    ) -> Result<usize, Errno> {
+        data.write_each(&mut |buf| {
+            let buflen = buf.len();
+            let buf = &mut buf[..std::cmp::min(self.size.saturating_sub(offset), buflen)];
+            if !buf.is_empty() {
+                self.vmo
+                    .read_uninit(buf, offset as u64)
+                    .map_err(|status| from_status_like_fdio!(status))?;
+                offset += buf.len();
+            }
+            Ok(buf.len())
+        })
+    }
+
+    fn write(
+        &self,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+        _offset: usize,
+        _data: &mut dyn InputBuffer,
+    ) -> Result<usize, Errno> {
+        Err(errno!(EPERM))
+    }
+
+    fn get_vmo(
+        &self,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+        _length: Option<usize>,
+        prot: ProtectionFlags,
+    ) -> Result<Arc<zx::Vmo>, Errno> {
+        Ok(if prot.contains(ProtectionFlags::EXEC) {
+            Arc::new(
+                self.vmo
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                    .map_err(impossible_error)?
+                    .replace_as_executable(&VMEX_RESOURCE)
+                    .map_err(impossible_error)?,
+            )
+        } else {
+            self.vmo.clone()
+        })
+    }
+
+    fn wait_async(
+        &self,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+        _waiter: &Waiter,
+        _events: FdEvents,
+        _handler: EventHandler,
+    ) -> Option<WaitCanceler> {
+        None
+    }
+
+    fn query_events(
+        &self,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+    ) -> Result<FdEvents, Errno> {
+        Ok(FdEvents::POLLIN)
     }
 }
 
@@ -231,7 +391,7 @@ impl FsNodeOps for DirectoryObject {
     fn lookup(
         &self,
         node: &FsNode,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
         let name = std::str::from_utf8(name).map_err(|_| {
@@ -250,19 +410,29 @@ impl FsNodeOps for DirectoryObject {
 
         match metadata_node.info() {
             NodeInfo::Symlink(_) => {
-                Ok(fs.create_node_with_id(Box::new(SymlinkObject), inode_num, info))
+                Ok(fs.create_node_with_id(current_task, SymlinkObject, inode_num, info))
             }
             NodeInfo::Directory(_) => {
-                Ok(fs.create_node_with_id(Box::new(DirectoryObject), inode_num, info))
+                Ok(fs.create_node_with_id(current_task, DirectoryObject, inode_num, info))
             }
             NodeInfo::File(_) => {
-                let zxio = Arc::new(
-                    bundle
-                        .root
-                        .open(bundle.rights, &format!("{inode_num}"))
-                        .map_err(|status| from_status_like_fdio!(status, name))?,
-                );
-                Ok(fs.create_node_with_id(Box::new(File { zxio }), inode_num, info))
+                let (file, server_end) = fidl::endpoints::create_endpoints::<fio::NodeMarker>();
+                bundle
+                    .root
+                    .open(
+                        bundle.rights,
+                        fio::ModeType::empty(),
+                        &format!("{inode_num}"),
+                        server_end,
+                    )
+                    .map_err(|_| errno!(EIO))?;
+                let file = fio::FileSynchronousProxy::new(file.into_channel());
+                Ok(fs.create_node_with_id(
+                    current_task,
+                    File { inner: Mutex::new(Inner::NeedsVmo(file)) },
+                    inode_num,
+                    info,
+                ))
             }
         }
     }
@@ -271,7 +441,7 @@ impl FsNodeOps for DirectoryObject {
         &self,
         node: &FsNode,
         _current_task: &CurrentTask,
-        name: &crate::fs::FsStr,
+        name: &crate::vfs::FsStr,
         _size: usize,
     ) -> Result<ValueOrSize<FsString>, Errno> {
         let fs = node.fs();
@@ -332,12 +502,17 @@ fn to_fs_node_info(inode_num: ino_t, metadata_node: &ext4_metadata::Node) -> FsN
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use crate::{
-        fs::{buffers::VecOutputBuffer, SymlinkTarget},
-        testing::*,
+        fs::fuchsia::RemoteBundle,
+        testing::create_kernel_and_task,
+        vfs::{
+            buffers::VecOutputBuffer, DirectoryEntryType, DirentSink, FsStr, LookupContext,
+            Namespace, SymlinkMode, SymlinkTarget,
+        },
     };
     use fidl_fuchsia_io as fio;
+    use fuchsia_zircon as zx;
+    use starnix_uapi::{errors::Errno, file_mode::FileMode, ino_t, off_t, open_flags::OpenFlags};
     use std::collections::{HashMap, HashSet};
 
     #[::fuchsia::test]
@@ -374,7 +549,7 @@ mod test {
         assert_eq!(
             &test_file
                 .node()
-                .get_xattr(&current_task, b"user.a", usize::MAX)
+                .get_xattr(&current_task, &test_dir.mount, b"user.a", usize::MAX)
                 .expect("get_xattr failed")
                 .unwrap(),
             b"apple"
@@ -382,7 +557,7 @@ mod test {
         assert_eq!(
             &test_file
                 .node()
-                .get_xattr(&current_task, b"user.b", usize::MAX)
+                .get_xattr(&current_task, &test_dir.mount, b"user.b", usize::MAX)
                 .expect("get_xattr failed")
                 .unwrap(),
             b"ball"

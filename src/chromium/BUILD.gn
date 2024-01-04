@@ -17,11 +17,7 @@ group("chromium") {
   visibility += [ "//src:*" ]
 }
 
-generate_chrome_browser_targets("chromium") {
-}
-
-# The other targets are more complex to configure for historical reasons.
-
+# There is no (non-flavor) suffix for targets generated in this file.
 archive_path_suffix = ""
 
 # TODO(crbug.com/1385930): Change this to "chromium.org".
@@ -31,12 +27,7 @@ repository = "fuchsia.com"
 declare_args() {
   # Whether to use the most recent (canary) version of prebuilt Chromium
   # components. Otherwise, the qualified "release" version is used.
-  # For scenarios where CastRunner is used,
-  # [`use_cast_runner_canary`](#use_cast_runner_canary) must be set to the same
-  # value.
-  # TODO(crbug.com/1065707): Uncomment this once the .gni file is no longer
-  # using it.
-  # use_chromium_canary = false
+  use_chromium_canary = false
 }
 
 # TODO(fxbug.dev/70573): Replace with solution that does not rely on GN args.
@@ -60,6 +51,8 @@ generate_fuchsia_web_targets("chromium") {
 generate_fuchsia_web_test_targets("chromium") {
 }
 
+# The targets below do not use generate_package_flavors(), so the paths must be
+# modified manually.
 # TODO(fxbug.dev/70573, fxbug.dev/119526): Replace with a solution that
 # does not rely on GN args.
 if (use_chromium_canary) {

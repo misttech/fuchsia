@@ -26,6 +26,9 @@
 #endif
 
 extern zx_handle_t root_resource_handle;
+extern zx_handle_t ioport_resource_handle;
+extern zx_handle_t irq_resource_handle;
+extern zx_handle_t power_resource_handle;
 
 #ifndef ACPI_OFFSET
 #define ACPI_OFFSET(d, f) offsetof(d, f)

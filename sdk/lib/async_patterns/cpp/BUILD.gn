@@ -5,7 +5,7 @@
 import("//build/cpp/sdk_source_set.gni")
 
 sdk_source_set("cpp") {
-  category = "internal"
+  category = "partner"
   sdk_name = "async_patterns_cpp"
   include_base = "//sdk"
 
@@ -18,8 +18,10 @@ sdk_source_set("cpp") {
     "internal/receiver_base.cc",
     "internal/receiver_base.h",
     "internal/sendable.h",
+    "internal/tag.h",
     "internal/task_queue.cc",
     "internal/task_queue.h",
+    "pending_call.h",
     "receiver.h",
     "sendable.h",
     "task_scope.cc",
@@ -28,6 +30,7 @@ sdk_source_set("cpp") {
 
   public_deps = [
     "//sdk/lib/fit",
+    "//sdk/lib/fit-promise",
     "//sdk/lib/stdcompat",
     "//zircon/system/ulib/async",
     "//zircon/system/ulib/async:async-cpp",

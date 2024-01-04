@@ -12,6 +12,9 @@ use super::blob::BlobSet;
 use super::data_source as ds;
 use super::hash::Hash;
 use super::DataSource;
+use cm_rust::ComponentDecl;
+use cm_rust::FidlIntoNative as _;
+use fidl_fuchsia_component_decl as fdecl;
 use fuchsia_archive::Error as FarError;
 use fuchsia_archive::Utf8Reader as FarReader;
 use fuchsia_merkle::MerkleTree as FuchsiaMerkleTree;
@@ -202,7 +205,7 @@ impl Package {
             .collect::<Result<Vec<BlobData>, Error>>()?;
 
         Ok(Self(Rc::new(PackageData {
-            data_source: Box::new(package_data_source),
+            data_source: package_data_source,
             hash,
             meta_package: MetaPackage(meta_package),
             meta_contents: MetaContents(meta_contents),
@@ -211,6 +214,10 @@ impl Package {
             far_reader: Rc::new(RefCell::new(far_reader)),
             content_blob_set,
         })))
+    }
+
+    pub fn data_source(&self) -> ds::DataSource {
+        self.0.data_source.clone()
     }
 }
 
@@ -250,17 +257,41 @@ impl api::Package for Package {
         }))
     }
 
-    fn components(
+    fn component_manifests(
         &self,
-    ) -> Box<dyn Iterator<Item = (Box<dyn api::Path>, Box<dyn api::Component>)>> {
-        todo!("TODO(fxbug.dev/111245): Implement component-finding over meta and content blobs");
+    ) -> Result<
+        Box<dyn Iterator<Item = (Box<dyn api::Path>, ComponentDecl)>>,
+        api::PackageComponentsError,
+    > {
+        let mut components = vec![];
+        for (path, meta_blob) in self.meta_blobs() {
+            let mut meta_blob_reader = meta_blob.reader_seeker()?;
+            let mut bytes = vec![];
+            meta_blob_reader.read_to_end(&mut bytes)?;
+            if let Ok(manifest) = fidl::unpersist::<fdecl::Component>(bytes.as_slice()) {
+                let component = manifest.fidl_into_native();
+                components.push((path, component));
+            }
+        }
+
+        for (path, content_blob) in self.content_blobs() {
+            let mut content_blob_reader = content_blob.reader_seeker()?;
+            let mut bytes = vec![];
+            content_blob_reader.read_to_end(&mut bytes)?;
+            if let Ok(manifest) = fidl::unpersist::<fdecl::Component>(bytes.as_slice()) {
+                let component = manifest.fidl_into_native();
+                components.push((path, component));
+            }
+        }
+
+        Ok(Box::new(components.into_iter()))
     }
 }
 
 /// Internal state of a [`Package`] object.
 struct PackageData {
     /// The data source from which the package was loaded.
-    data_source: Box<dyn api::DataSource>,
+    data_source: ds::DataSource,
 
     /// The `Hash` of the package's meta.far file.
     hash: Box<dyn api::Hash>,
@@ -347,15 +378,176 @@ impl api::Blob for ContentBlob {
 }
 
 #[cfg(test)]
+pub(crate) mod test {
+    use super::super::api;
+    use super::super::blob::test::VerifiedMemoryBlobSet;
+    use super::super::blob::BlobSet as _;
+    use super::super::data_source as ds;
+    use super::super::hash::Hash;
+    use super::Package;
+    use cm_rust as cm;
+    use cm_rust::NativeIntoFidl as _;
+    use cm_rust_testing as cmt;
+    use fuchsia_merkle::MerkleTree as FuchsiaMerkleTree;
+    use fuchsia_pkg::MetaContents as FuchsiaMetaContents;
+    use fuchsia_pkg::MetaPackage as FuchsiaMetaPackage;
+    use fuchsia_pkg::PackageName;
+    use fuchsia_url::boot_url::BootUrl;
+    use fuchsia_url::PackageUrl;
+    use maplit::btreemap;
+    use maplit::hashmap;
+    use std::io;
+    use std::str::FromStr as _;
+
+    const PLACEHOLDER_COMPONENT_PATH: &str = "meta/placeholder.cm";
+    const PLACEHOLDER_CHILD_URL: &str = "#meta/test_child.cm";
+
+    /// Returns the resource path to the placeholder component within the placeholder package.
+    pub(crate) fn placeholder_component_path() -> String {
+        PLACEHOLDER_COMPONENT_PATH.to_string()
+    }
+
+    /// Returns the child URL used to refer to the placeholder component in component manifests.
+    pub(crate) fn placeholder_component_child_url() -> api::ComponentResolverUrl {
+        api::ComponentResolverUrl::parse(PLACEHOLDER_CHILD_URL).expect("placeholder child url")
+    }
+
+    /// Returns the component declaration for the placeholder component.
+    pub(crate) fn placeholder_component() -> cm::ComponentDecl {
+        cmt::ComponentDeclBuilder::new()
+            .add_child(cmt::ChildDeclBuilder::new().url(PLACEHOLDER_CHILD_URL).build())
+            .use_(cm::UseDecl::Protocol(cm::UseProtocolDecl {
+                dependency_type: cm::DependencyType::Strong,
+                source: cm::UseSource::Parent,
+                source_name: "test_protocol".parse().expect("use protocol name"),
+                source_dictionary: None,
+                target_path: "/svc/test_protocol".parse().expect("use protocol target path"),
+                availability: cm::Availability::Required,
+            }))
+            .expose(cm::ExposeDecl::Protocol(cm::ExposeProtocolDecl {
+                source: cm::ExposeSource::Self_,
+                source_name: "test_protocol".parse().expect("expose protocol source name"),
+                source_dictionary: None,
+                target_name: "test_protocol".parse().expect("expose protocol target name"),
+                target: cm::ExposeTarget::Parent,
+                availability: cm::Availability::Required,
+            }))
+            .offer(cm::OfferDecl::Protocol(cm::OfferProtocolDecl {
+                source: cm::OfferSource::Parent,
+                source_name: "test_protocol".parse().unwrap(),
+                source_dictionary: None,
+                target: cm::OfferTarget::static_child("test_child".to_string()),
+                target_name: "test_protocol".parse().unwrap(),
+                dependency_type: cm::DependencyType::Strong,
+                availability: cm::Availability::Required,
+            }))
+            .build()
+    }
+
+    /// Returns the hash and serialized contents of hte placeholder component.
+    pub(crate) fn placeholder_component_cm() -> (Box<dyn api::Hash>, Vec<u8>) {
+        let component = placeholder_component();
+        let component_fidl = component.native_into_fidl();
+        let component_bytes = fidl::persist(&component_fidl).expect("persist component fidl");
+        let component_hash = Hash::from_contents(component_bytes.as_slice());
+        (Box::new(component_hash), component_bytes)
+    }
+
+    /// Returns the URL used for a placeholder package.
+    pub(crate) fn placeholder_package_url() -> api::PackageResolverUrl {
+        api::PackageResolverUrl::Package(
+            PackageUrl::parse("fuchsia-pkg://fuchsia.com/placeholder")
+                .expect("placeholder package url"),
+        )
+    }
+
+    /// Returns the URL used for a placeholder boot package.
+    pub(crate) fn placeholder_boot_package_url() -> api::PackageResolverUrl {
+        api::PackageResolverUrl::Boot(
+            BootUrl::parse("fuchsia-boot:///placeholder").expect("placeholder boot package url"),
+        )
+    }
+
+    /// Returns a placeholder [`super::Package`].
+    pub(crate) fn placeholder_package() -> Package {
+        placeholder_package_of_kind(PlaceholderUrlKind::Package)
+    }
+
+    /// Returns a placeholder boot [`super::Package`].
+    pub(crate) fn placeholder_boot_package() -> Package {
+        placeholder_package_of_kind(PlaceholderUrlKind::Boot)
+    }
+
+    /// Returns a pair (meta FAR hash, FAR bytes) for a placeholder package definition.
+    pub(crate) fn placeholder_package_far() -> (Box<dyn api::Hash>, Vec<u8>) {
+        let meta_package =
+            FuchsiaMetaPackage::from_name(PackageName::from_str("placeholder").unwrap());
+        let mut meta_package_bytes = vec![];
+        meta_package.serialize(&mut meta_package_bytes).unwrap();
+
+        let meta_contents = FuchsiaMetaContents::from_map(hashmap! {}).unwrap();
+        let mut meta_contents_bytes = vec![];
+        meta_contents.serialize(&mut meta_contents_bytes).unwrap();
+
+        let (_test_cm_hash, test_cm_bytes) = placeholder_component_cm();
+
+        let far_map = btreemap! {
+            FuchsiaMetaPackage::PATH.to_string() => (meta_package_bytes.len() as u64, Box::new(meta_package_bytes.as_slice()) as Box<dyn io::Read>),
+            FuchsiaMetaContents::PATH.to_string() => (meta_contents_bytes.len() as u64, Box::new(meta_contents_bytes.as_slice()) as Box<dyn io::Read>),
+            placeholder_component_path() => (test_cm_bytes.len() as u64, Box::new(test_cm_bytes.as_slice()) as Box<dyn io::Read>),
+        };
+        let mut far_bytes = vec![];
+        fuchsia_archive::write(&mut far_bytes, far_map).unwrap();
+
+        let far_fuchsia_hash = FuchsiaMerkleTree::from_reader(far_bytes.as_slice()).unwrap().root();
+        let meta_far_hash: Box<dyn api::Hash> = Box::new(Hash::from(far_fuchsia_hash));
+
+        (meta_far_hash, far_bytes)
+    }
+
+    fn placeholder_package_of_kind(url_kind: PlaceholderUrlKind) -> Package {
+        let data_source = ds::DataSource::new(ds::DataSourceInfo::new(
+            api::DataSourceKind::BlobDirectory,
+            None,
+            api::DataSourceVersion::Unknown,
+        ));
+
+        let (meta_far_hash, far_bytes) = placeholder_package_far();
+        let blob_set = VerifiedMemoryBlobSet::new(
+            [Box::new(data_source.clone()) as Box<dyn api::DataSource>],
+            [far_bytes.as_slice()],
+        );
+        let meta_far_blob = blob_set.blob(meta_far_hash.clone()).unwrap();
+
+        Package::new(
+            Some(data_source),
+            match url_kind {
+                PlaceholderUrlKind::Package => placeholder_package_url(),
+                PlaceholderUrlKind::Boot => placeholder_boot_package_url(),
+            },
+            meta_far_blob,
+            Box::new(blob_set),
+        )
+        .unwrap()
+    }
+
+    enum PlaceholderUrlKind {
+        Package,
+        Boot,
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::super::api;
     use super::super::api::Package as _;
     use super::super::blob::test::VerifiedMemoryBlobSet;
     use super::super::blob::BlobOpenError;
     use super::super::blob::BlobSet as _;
-    use super::super::blob::UnverifiedMemoryBlob;
+    use super::super::blob::VerifiedMemoryBlob;
     use super::super::data_source as ds;
     use super::super::hash::Hash;
+    use super::test::placeholder_package_url;
     use super::Error;
     use super::MetaContents;
     use super::MetaPackage;
@@ -416,8 +608,8 @@ mod tests {
         );
         let blob_set_data_source = ds::DataSource::new(blob_set_data_source_info.clone());
         let blob_set: VerifiedMemoryBlobSet = VerifiedMemoryBlobSet::new(
-            [Box::new(blob_set_data_source.clone()) as Box<dyn api::DataSource>].into_iter(),
-            [far_bytes.clone().as_slice(), content_blob_content_str.as_bytes()].into_iter(),
+            [Box::new(blob_set_data_source.clone()) as Box<dyn api::DataSource>],
+            [far_bytes.clone().as_slice(), content_blob_content_str.as_bytes()],
         );
 
         let meta_far_hash: Box<dyn api::Hash> = Box::new(Hash::from(far_fuchsia_hash));
@@ -426,7 +618,7 @@ mod tests {
         // Construct package.
         let package = Package::new(
             Some(blob_set_data_source),
-            api::PackageResolverUrl::Url,
+            placeholder_package_url(),
             meta_far_blob,
             Box::new(blob_set),
         )
@@ -532,16 +724,13 @@ mod tests {
     #[fuchsia::test]
     fn bad_far() {
         let bad_far_contents = vec![];
-        let bad_far_blob = UnverifiedMemoryBlob::new(
-            [].into_iter(),
-            Box::new(Hash::from_contents(bad_far_contents.as_slice())),
-            bad_far_contents.clone(),
-        );
+        let bad_far_blob =
+            VerifiedMemoryBlob::new([], bad_far_contents.clone()).expect("bad far blob");
         match Package::new(
             None,
-            api::PackageResolverUrl::Url,
+            placeholder_package_url(),
             Box::new(bad_far_blob),
-            Box::new(VerifiedMemoryBlobSet::new(iter::empty(), iter::empty::<&[u8]>())),
+            Box::new(VerifiedMemoryBlobSet::new([], iter::empty::<&[u8]>())),
         ) {
             Err(Error::Far(_)) => {}
             Ok(_) => {
@@ -567,22 +756,14 @@ mod tests {
         };
         let mut far_bytes = vec![];
         fuchsia_archive::write(&mut far_bytes, far_map).unwrap();
-        let far_blob = UnverifiedMemoryBlob::new(
-            [].into_iter(),
-            Box::new(Hash::from_contents(far_bytes.as_slice())),
-            far_bytes.clone(),
-        );
+        let far_blob = VerifiedMemoryBlob::new([], far_bytes.clone()).expect("far blob");
 
         // Use empty blob set.
-        let blob_set = VerifiedMemoryBlobSet::new(iter::empty(), iter::empty::<&[u8]>());
+        let blob_set = VerifiedMemoryBlobSet::new([], iter::empty::<&[u8]>());
 
         // Attempt to construct package; expect FarError due to missing meta/package.
-        match Package::new(
-            None,
-            api::PackageResolverUrl::Url,
-            Box::new(far_blob),
-            Box::new(blob_set),
-        ) {
+        match Package::new(None, placeholder_package_url(), Box::new(far_blob), Box::new(blob_set))
+        {
             Err(Error::Far(_)) => {}
             Ok(_) => {
                 assert!(false, "Expected Error, but package initialization succeeded");
@@ -608,22 +789,14 @@ mod tests {
         };
         let mut far_bytes = vec![];
         fuchsia_archive::write(&mut far_bytes, far_map).unwrap();
-        let far_blob = UnverifiedMemoryBlob::new(
-            [].into_iter(),
-            Box::new(Hash::from_contents(far_bytes.as_slice())),
-            far_bytes.clone(),
-        );
+        let far_blob = VerifiedMemoryBlob::new([], far_bytes.clone()).expect("far blob");
 
         // Use empty blob set.
-        let blob_set = VerifiedMemoryBlobSet::new(iter::empty(), iter::empty::<&[u8]>());
+        let blob_set = VerifiedMemoryBlobSet::new([], iter::empty::<&[u8]>());
 
         // Attempt to construct package; expect FarError due to missing meta/package.
-        match Package::new(
-            None,
-            api::PackageResolverUrl::Url,
-            Box::new(far_blob),
-            Box::new(blob_set),
-        ) {
+        match Package::new(None, placeholder_package_url(), Box::new(far_blob), Box::new(blob_set))
+        {
             Err(Error::Far(_)) => {}
             Ok(_) => {
                 assert!(false, "Expected Error, but package initialization succeeded");
@@ -672,23 +845,15 @@ mod tests {
         fuchsia_archive::write(&mut far_bytes, far_map).unwrap();
 
         // Use empty blob set: Lookup of content blob will fail.
-        let blob_set = VerifiedMemoryBlobSet::new(iter::empty(), iter::empty::<&[u8]>());
+        let blob_set = VerifiedMemoryBlobSet::new([], iter::empty::<&[u8]>());
 
-        let far_blob = UnverifiedMemoryBlob::new(
-            [].into_iter(),
-            Box::new(Hash::from_contents(far_bytes.as_slice())),
-            far_bytes.clone(),
-        );
+        let far_blob = VerifiedMemoryBlob::new([], far_bytes.clone()).expect("far blob");
 
         // Attempt to construct package. This will construct content blobs that store their metadata
         // such as their data source. Locating the content blob that is missing from `blob_set`
         // should fail.
-        match Package::new(
-            None,
-            api::PackageResolverUrl::Url,
-            Box::new(far_blob),
-            Box::new(blob_set),
-        ) {
+        match Package::new(None, placeholder_package_url(), Box::new(far_blob), Box::new(blob_set))
+        {
             Err(Error::MissingContent(BlobOpenError::BlobNotFound { hash, directory })) => {
                 assert_eq!(content_blob_hash.as_ref(), hash.as_ref());
                 assert_eq!(None, directory);

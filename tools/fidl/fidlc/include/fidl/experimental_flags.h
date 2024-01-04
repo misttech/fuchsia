@@ -22,7 +22,6 @@ class ExperimentalFlags {
     kNoop = 1 << 0,
 
     kAllowNewTypes = 1 << 1,
-    kNoOptionalStructs = 1 << 2,
     kOutputIndexJson = 1 << 3,
 
     // TODO(fxbug.dev/110021): A temporary measure describe in
@@ -50,6 +49,12 @@ class ExperimentalFlags {
     // used, so this has no effect.
     // TODO(fxbug.dev/88366): Remove once unknown interactions are supported.
     kUnknownInteractionsNewDefaults = 1 << 9,
+
+    // Allow any types in error syntax, not just (u)int32 or enums thereof.
+    kAllowArbitraryErrorTypes = 1 << 10,
+
+    // Enable an allow-list for the @transitional attribute.
+    kTransitionalAllowList = 1 << 11,
   };
 
   ExperimentalFlags() = default;

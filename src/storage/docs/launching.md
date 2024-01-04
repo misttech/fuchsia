@@ -64,7 +64,7 @@ child in the realm. It attempts to connect to it's exposed directory via
 `fuchsia.component.Realm`.
 
 A shard is provided for cml files to include if they plan to launch filesystems as dynamic children
-at `//src/lib/storage/fs_management/client.shard.cml`. The `component_collection_name` using this
+at `//src/storage/lib/fs_management/client.shard.cml`. The `component_collection_name` using this
 shard is `fs-collection`.
 
 Launching a filesystem using regular processes -
@@ -107,9 +107,8 @@ processes. It's intended for filesystem developers - if you just want to mount a
 code, see the previous section.
 
 Platform filesystem processes take 2 startup handles and a handful of command line arguments. The
-two startup handles are `PA_DIRECTORY_REQUEST` and `FS_HANDLE_BLOCK_DEVICE_ID`
-(`PA_HND(PA_USER0,1)`), which are the server end of the export directory and the block device
-handle, respectively.
+two startup handles are the server end of the export directory (`PA_DIRECTORY_REQUEST`), and a
+handle to the block device (`PA_HND(PA_USER0, 1)`).
 
 The export directory should have the structure described at the beginning of this document.
 
@@ -128,7 +127,7 @@ components. It's intended for filesystem developers - if you just want to mount 
 code, see the previous section.
 
 There is currently one filesystem that supports being launched as a component, blobfs. The cml file
-for blobfs is in //src/storage/bin/blobfs-component/meta/blobfs.cml.
+for blobfs is in //src/storage/blobfs/bin-component/meta/blobfs.cml.
 
 When a filesystem component is launched, it starts in a partially configured state. They serve one
 protocol - `fuchsia.fs.startup.Startup`. This is served from the path

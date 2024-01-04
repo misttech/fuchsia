@@ -271,26 +271,36 @@ if (toolchain_environment == "kernel.phys" ||
   source_set("address-space.header") {
     visibility = [
       ":address-space",
+      ":elf-image",
       "$arch_phys:address-space",
     ]
 
-    public = [ "include/phys/address-space.h" ]
+    public = [
+      "$arch_phys/include/phys/arch/address-space.h",
+      "include/phys/address-space.h",
+    ]
 
     public_configs = [ ":includes" ]
 
     public_deps = [
+      ":allocation",
       "//zircon/kernel/lib/ktl",
+      "//zircon/kernel/lib/libc",
 
-      # "address-space.h" has #include <lib/page-table/builder-interface.h>
-      # "address-space.h" has #include <lib/page-table/types.h>
-      "//zircon/kernel/phys/lib/page-table",
+      # <phys/address-space.h> has #include <lib/arch/paging.h>
+      # <phys/arch/address-space.h> has #include <lib/arch/${zircon_cpu}/page-table.h>
+      "//zircon/kernel/lib/arch:headers",
+
+      # <phys/address-space.h> has #include <hwreg/array.h>
+      "//zircon/system/ulib/hwreg:headers",
     ]
   }
 
-  source_set("address-space") {
+  static_library("address-space") {
     sources = [ "address-space.cc" ]
     public_deps = [ ":address-space.header" ]
     deps = [
+      ":allocation",
       ":stdio",
       ":uart",
       "$arch_phys:address-space",
@@ -386,7 +396,6 @@ if (toolchain_environment == "kernel.phys" ||
       deps = [
         ":main",
         "//zircon/kernel/phys/lib/memalloc",
-        "//zircon/kernel/phys/lib/page-table",
       ]
     }
     public_deps = [
@@ -474,7 +483,6 @@ if (toolchain_environment == "kernel.phys" ||
       "//zircon/kernel/lib/arch",
       "//zircon/kernel/lib/boot-options",
       "//zircon/kernel/phys/lib/memalloc",
-      "//zircon/kernel/phys/lib/page-table",
     ]
     public_deps = [
       "//sdk/lib/zbi-format",
@@ -578,6 +586,7 @@ if (toolchain_environment == "kernel.phys" ||
     ]
     public_configs = [ ":includes" ]
     public_deps = [
+      ":address-space.header",
       "//sdk/lib/fit",
       "//src/lib/elfldltl",
       "//src/lib/zbitl",
@@ -588,6 +597,7 @@ if (toolchain_environment == "kernel.phys" ||
       "//zircon/system/ulib/zx",
     ]
     deps = [
+      ":address-space",
       ":allocation",
       ":handoff",
       "//src/lib/llvm-profdata",
@@ -688,6 +698,7 @@ kernel_cmdline("physboot-elf-kernel.cmdline") {
 zbi_executable("physload") {
   sources = [ "physload.cc" ]
   deps = [
+    ":address-space",
     ":allocation",
     ":elf-image",
     ":handoff",
@@ -729,6 +740,7 @@ if (is_kernel) {
     public_configs = [ ":physload.module.config" ]
     sources = [ "physload-module.cc" ]
     deps = [
+      ":address-space",
       ":allocation",
       ":elf-image",
       ":log",

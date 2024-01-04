@@ -8,6 +8,7 @@
 #include <lib/elfldltl/layout.h>
 #include <lib/elfldltl/testing/loader.h>
 #include <lib/ld/testing/test-processargs.h>
+#include <lib/ld/testing/test-vmo.h>
 #include <lib/zx/thread.h>
 #include <lib/zx/vmar.h>
 #include <lib/zx/vmo.h>
@@ -27,7 +28,8 @@ namespace ld::testing {
 // process mechanics, while the templated subclass does the loading.
 class LdStartupCreateProcessTestsBase : public LdLoadZirconProcessTestsBase {
  public:
-  void Init(std::initializer_list<std::string_view> args = {});
+  void Init(std::initializer_list<std::string_view> args = {},
+            std::initializer_list<std::string_view> env = {});
 
   int64_t Run();
 
@@ -36,8 +38,6 @@ class LdStartupCreateProcessTestsBase : public LdLoadZirconProcessTestsBase {
   TestProcessArgs& bootstrap() { return procargs_; }
 
  protected:
-  static zx::unowned_vmo GetVdsoVmo();
-
   const zx::vmar& root_vmar() { return root_vmar_; }
 
   void set_entry(uintptr_t entry) { entry_ = entry; }
@@ -45,6 +45,8 @@ class LdStartupCreateProcessTestsBase : public LdLoadZirconProcessTestsBase {
   void set_vdso_base(uintptr_t vdso_base) { vdso_base_ = vdso_base; }
 
   void set_stack_size(std::optional<size_t> stack_size) { stack_size_ = stack_size; }
+
+  void FinishLoad(std::string_view executable_name);
 
  private:
   uintptr_t entry_ = 0;
@@ -81,8 +83,7 @@ class LdStartupCreateProcessTests
     set_vdso_base(result->info.vaddr_start() + result->loader.load_bias());
     std::move(result->loader).Commit();
 
-    // Send the executable VMO.
-    ASSERT_NO_FATAL_FAILURE(bootstrap().AddExecutableVmo(executable_name));
+    ASSERT_NO_FATAL_FAILURE(FinishLoad(executable_name));
   }
 
  private:

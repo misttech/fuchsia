@@ -4,7 +4,7 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/testing/zbi_test.gni")
+import("//build/testing/boot_tests/zbi_test.gni")
 import("//build/zbi/kernel_cmdline.gni")
 
 # Define a ZBI input to set the kernel.shell.script option.
@@ -58,15 +58,19 @@ template("kernel_shell_script") {
 #     space with `+` as expected for the `kernel.shell.script` boot option.
 #     - Type: list(string)
 #
-#   * deps, visibility
-#     - Optional: See kernel_cmdline().
+#   * deps, visibility, device_types
+#     - Optional: See zbi_test().
 #
 template("kernel_shell_script_test") {
   main_target = target_name
   script_target = "$target_name.script"
 
   zbi_test(main_target) {
-    forward_variables_from(invoker, [ "visibility" ])
+    forward_variables_from(invoker,
+                           [
+                             "device_types",
+                             "visibility",
+                           ])
 
     if (defined(invoker.deps)) {
       deps = invoker.deps

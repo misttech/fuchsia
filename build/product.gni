@@ -3,18 +3,12 @@
 # found in the LICENSE file.
 
 declare_args() {
-  # Whether to build product bundle version 1 related tools and artifacts.
-  build_pb_v1 = true
-
   # Is the `assemble_system()` instantiation used by the product the standard
   # one or the bringup one?
   use_bringup_assembly = false
 
   # A list of binary labels to include in ZBIs built for this product.
   product_bootfs_labels = []
-
-  # A list of binary labels to include in the system_image package.
-  product_system_image_deps = []
 
   # A list of binary host tool labels to also build.
   product_host_labels = []
@@ -38,6 +32,9 @@ declare_args() {
   fuchsia_async_trace_level_logging = true
 
   # The product assembly config used to configure the main Fuchsia image.
+  # For GN products, this is required.
+  # For Bazel products, this is optional.
+  # For Bazel products, netboot will only be available when this is supplied.
   fuchsia_product_assembly_config_label = false
 
   # The product assembly config used to configure the Zedboot image.
@@ -52,4 +49,12 @@ declare_args() {
   # Configuration to override the default window size for the virtual device in pixels.
   emu_window_size_width = false
   emu_window_size_height = false
+
+  # Targets to be traversed by //:cipd_assembly_artifacts for GN metadata only.
+  # These targets are expected to set "assembly_inputs" in metadata, which can
+  # include a JSON file describing artifacts to be uploaded to CPID.
+  #
+  # NOTE: These targets are for GN metadata walk only. If the artifacts need to
+  # be built, they should be included in the build graph through other means.
+  cipd_assembly_artifact_targets = [ "//build/images:main_assembly" ]
 }

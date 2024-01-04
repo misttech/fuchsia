@@ -5,160 +5,165 @@
 #include "sdmmc-root-device.h"
 
 #include <inttypes.h>
-#include <lib/ddk/binding_driver.h>
-#include <lib/ddk/debug.h>
 #include <lib/ddk/metadata.h>
+#include <lib/driver/compat/cpp/metadata.h>
 
 #include <memory>
 
 #include <fbl/alloc_checker.h>
 
+#include "sdio-controller-device.h"
+#include "sdmmc-block-device.h"
+
 namespace sdmmc {
 
-zx_status_t SdmmcRootDevice::Bind(void* ctx, zx_device_t* parent) {
-  ddk::SdmmcProtocolClient host(parent);
-  if (!host.is_valid()) {
-    zxlogf(ERROR, "failed to get sdmmc protocol");
-    return ZX_ERR_NOT_SUPPORTED;
+zx::result<> SdmmcRootDevice::Start() {
+  parent_node_.Bind(std::move(node()));
+
+  fidl::Arena arena;
+  fidl::ObjectView<fuchsia_hardware_sdmmc::wire::SdmmcMetadata> sdmmc_metadata;
+  {
+    zx::result parsed_metadata = GetMetadata(arena);
+    if (parsed_metadata.is_error()) {
+      FDF_LOGL(ERROR, logger(), "Failed to GetMetadata: %s",
+               zx_status_get_string(parsed_metadata.error_value()));
+      return parsed_metadata.take_error();
+    }
+    sdmmc_metadata = *parsed_metadata;
   }
 
-  fbl::AllocChecker ac;
-  std::unique_ptr<SdmmcRootDevice> dev(new (&ac) SdmmcRootDevice(parent, host));
-
-  if (!ac.check()) {
-    zxlogf(ERROR, "Failed to allocate device");
-    return ZX_ERR_NO_MEMORY;
-  }
-  zx_status_t st = dev->DdkAdd(ddk::DeviceAddArgs("sdmmc")
-                                   .set_flags(DEVICE_ADD_NON_BINDABLE)
-                                   .forward_metadata(parent, DEVICE_METADATA_GPT_INFO));
-  if (st != ZX_OK) {
-    return st;
+  zx::result controller_endpoints =
+      fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
+  if (!controller_endpoints.is_ok()) {
+    FDF_LOGL(ERROR, logger(), "Failed to create controller endpoints: %s",
+             controller_endpoints.status_string());
+    return controller_endpoints.take_error();
   }
 
-  [[maybe_unused]] auto* placeholder = dev.release();
-  return st;
+  zx::result node_endpoints = fidl::CreateEndpoints<fuchsia_driver_framework::Node>();
+  if (!node_endpoints.is_ok()) {
+    FDF_LOGL(ERROR, logger(), "Failed to create node endpoints: %s",
+             node_endpoints.status_string());
+    return node_endpoints.take_error();
+  }
+
+  controller_.Bind(std::move(controller_endpoints->client));
+  root_node_.Bind(std::move(node_endpoints->client));
+
+  const auto args =
+      fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena).name(arena, name()).Build();
+
+  auto result = parent_node_->AddChild(args, std::move(controller_endpoints->server),
+                                       std::move(node_endpoints->server));
+  if (!result.ok()) {
+    FDF_LOGL(ERROR, logger(), "Failed to add child: %s", result.status_string());
+    return zx::error(result.status());
+  }
+
+  zx_status_t status = Init(sdmmc_metadata);
+  if (status != ZX_OK) {
+    return zx::error(status);
+  }
+  return zx::ok();
 }
 
-// TODO(hanbinyoon): Simplify further using templated lambda come C++20.
-// Returns true if device was successfully added. Returns false if the probe failed (i.e., no
-// eligible device present).
+// Returns nullptr if device was successfully added. Returns the SdmmcDevice if the probe failed
+// (i.e., no eligible device present).
 template <class DeviceType>
-static zx::result<bool> MaybeAddDevice(
-    const std::string& name, zx_device_t* zxdev, SdmmcDevice& sdmmc,
+zx::result<std::unique_ptr<SdmmcDevice>> SdmmcRootDevice::MaybeAddDevice(
+    const std::string& name, std::unique_ptr<SdmmcDevice> sdmmc,
     const fuchsia_hardware_sdmmc::wire::SdmmcMetadata& metadata) {
+  if (zx_status_t st = sdmmc->Init(metadata.use_fidl()) != ZX_OK) {
+    FDF_LOGL(ERROR, logger(), "Failed to initialize SdmmcDevice: %s", zx_status_get_string(st));
+    return zx::error(st);
+  }
+
   std::unique_ptr<DeviceType> device;
-  if (zx_status_t st = DeviceType::Create(zxdev, sdmmc, &device) != ZX_OK) {
-    zxlogf(ERROR, "Failed to create %s device, retcode = %d", name.c_str(), st);
+  if (zx_status_t st = DeviceType::Create(this, std::move(sdmmc), &device) != ZX_OK) {
+    FDF_LOGL(ERROR, logger(), "Failed to create %s device: %s", name.c_str(),
+             zx_status_get_string(st));
     return zx::error(st);
   }
 
   if (zx_status_t st = device->Probe(metadata); st != ZX_OK) {
-    return zx::ok(false);
+    return zx::ok(std::move(device->TakeSdmmcDevice()));
   }
 
   if (zx_status_t st = device->AddDevice(); st != ZX_OK) {
     return zx::error(st);
   }
 
-  [[maybe_unused]] auto* placeholder = device.release();
-  return zx::ok(true);
+  child_device_ = std::move(device);
+  return zx::ok(nullptr);
 }
 
 zx::result<fidl::ObjectView<fuchsia_hardware_sdmmc::wire::SdmmcMetadata>>
-SdmmcRootDevice::GetMetadata(fidl::AnyArena& allocator) {
-  auto decoded = ddk::GetEncodedMetadata<fuchsia_hardware_sdmmc::wire::SdmmcMetadata>(
-      parent(), DEVICE_METADATA_SDMMC);
+SdmmcRootDevice::GetMetadata(fidl::AnyArena& arena) {
+  zx::result decoded = compat::GetMetadata<fuchsia_hardware_sdmmc::wire::SdmmcMetadata>(
+      incoming(), arena, DEVICE_METADATA_SDMMC);
+
+  constexpr uint32_t kMaxCommandPacking = 16;
+
   if (decoded.is_error()) {
     if (decoded.status_value() == ZX_ERR_NOT_FOUND) {
-      zxlogf(INFO, "No metadata provided");
-      return zx::ok(fidl::ObjectView(allocator,
-                                     fuchsia_hardware_sdmmc::wire::SdmmcMetadata::Builder(allocator)
-                                         .enable_trim(true)
-                                         .enable_cache(true)
-                                         .removable(false)
-                                         .Build()));
-    } else {
-      zxlogf(ERROR, "Failed to decode metadata: %s", decoded.status_string());
-      return decoded.take_error();
+      FDF_LOGL(INFO, logger(), "No metadata provided");
+      return zx::ok(
+          fidl::ObjectView(arena, fuchsia_hardware_sdmmc::wire::SdmmcMetadata::Builder(arena)
+                                      .enable_trim(true)
+                                      .enable_cache(true)
+                                      .removable(false)
+                                      .max_command_packing(kMaxCommandPacking)
+                                      .use_fidl(true)
+                                      .Build()));
     }
+    FDF_LOGL(ERROR, logger(), "Failed to decode metadata: %s", decoded.status_string());
+    return decoded.take_error();
   }
 
   // Default to trim and cache enabled, non-removable.
   return zx::ok(fidl::ObjectView(
-      allocator, fuchsia_hardware_sdmmc::wire::SdmmcMetadata::Builder(allocator)
-                     .enable_trim(!decoded->has_enable_trim() || decoded->enable_trim())
-                     .enable_cache(!decoded->has_enable_cache() || decoded->enable_cache())
-                     .removable(decoded->has_removable() && decoded->removable())
-                     .Build()));
+      arena,
+      fuchsia_hardware_sdmmc::wire::SdmmcMetadata::Builder(arena)
+          .enable_trim(!decoded->has_enable_trim() || decoded->enable_trim())
+          .enable_cache(!decoded->has_enable_cache() || decoded->enable_cache())
+          .removable(decoded->has_removable() && decoded->removable())
+          .max_command_packing(decoded->has_max_command_packing() ? decoded->max_command_packing()
+                                                                  : kMaxCommandPacking)
+          .use_fidl(!decoded->has_use_fidl() || decoded->use_fidl())
+          .Build()));
 }
 
-void SdmmcRootDevice::DdkInit(ddk::InitTxn txn) {
-  SdmmcDevice sdmmc(host_);
-  zx_status_t st = sdmmc.Init();
-  if (st != ZX_OK) {
-    zxlogf(ERROR, "failed to get host info");
-    return txn.Reply(st);
-  }
-
-  zxlogf(DEBUG, "host caps dma %d 8-bit bus %d max_transfer_size %" PRIu64 "",
-         sdmmc.UseDma() ? 1 : 0, (sdmmc.host_info().caps & SDMMC_HOST_CAP_BUS_WIDTH_8) ? 1 : 0,
-         sdmmc.host_info().max_transfer_size);
-
-  fidl::Arena arena;
-  const zx::result metadata = GetMetadata(arena);
-  if (metadata.is_error()) {
-    return txn.Reply(metadata.status_value());
-  }
-
-  // Reset the card.
-  sdmmc.host().HwReset();
-
-  // No matter what state the card is in, issuing the GO_IDLE_STATE command will
-  // put the card into the idle state.
-  if ((st = sdmmc.SdmmcGoIdle()) != ZX_OK) {
-    zxlogf(ERROR, "SDMMC_GO_IDLE_STATE failed, retcode = %d", st);
-    return txn.Reply(st);
-  }
+zx_status_t SdmmcRootDevice::Init(
+    fidl::ObjectView<fuchsia_hardware_sdmmc::wire::SdmmcMetadata> metadata) {
+  auto sdmmc = std::make_unique<SdmmcDevice>(this);
 
   // Probe for SDIO first, then SD/MMC.
-  zx::result<bool> result =
-      MaybeAddDevice<SdioControllerDevice>("sdio", zxdev(), sdmmc, **metadata);
+  zx::result<std::unique_ptr<SdmmcDevice>> result =
+      MaybeAddDevice<SdioControllerDevice>("sdio", std::move(sdmmc), *metadata);
   if (result.is_error()) {
-    return txn.Reply(result.status_value());
-  } else if (*result) {
-    return txn.Reply(ZX_OK);
+    return result.status_value();
+  } else if (*result == nullptr) {
+    return ZX_OK;
   }
-  result = MaybeAddDevice<SdmmcBlockDevice>("block", zxdev(), sdmmc, **metadata);
+  result = MaybeAddDevice<SdmmcBlockDevice>("block", std::move(*result), *metadata);
   if (result.is_error()) {
-    return txn.Reply(result.status_value());
-  } else if (*result) {
-    return txn.Reply(ZX_OK);
+    return result.status_value();
+  } else if (*result == nullptr) {
+    return ZX_OK;
   }
 
   if (metadata->removable()) {
     // This controller is connected to a removable card slot, and no card was inserted. Indicate
     // success so that our device remains available.
     // TODO(fxbug.dev/130283): Enable detection of card insert/removal after initialization.
-    zxlogf(INFO, "failed to probe removable device");
-    return txn.Reply(ZX_OK);
+    FDF_LOGL(INFO, logger(), "failed to probe removable device");
+    return ZX_OK;
   }
 
   // Failure to probe a hardwired device is unexpected. Reply with an error code so that our device
   // gets removed.
-  zxlogf(ERROR, "failed to probe irremovable device");
-  return txn.Reply(ZX_ERR_NOT_FOUND);
+  FDF_LOGL(ERROR, logger(), "failed to probe irremovable device");
+  return ZX_ERR_NOT_FOUND;
 }
 
-void SdmmcRootDevice::DdkRelease() { delete this; }
-
 }  // namespace sdmmc
-
-static constexpr zx_driver_ops_t sdmmc_driver_ops = []() -> zx_driver_ops_t {
-  zx_driver_ops_t ops = {};
-  ops.version = DRIVER_OPS_VERSION;
-  ops.bind = sdmmc::SdmmcRootDevice::Bind;
-  return ops;
-}();
-
-ZIRCON_DRIVER(sdmmc, sdmmc_driver_ops, "zircon", "0.1");

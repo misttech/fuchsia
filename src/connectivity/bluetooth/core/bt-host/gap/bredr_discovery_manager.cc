@@ -4,8 +4,6 @@
 
 #include "bredr_discovery_manager.h"
 
-#include <lib/async/default.h>
-#include <lib/async/time.h>
 #include <lib/fit/defer.h>
 #include <lib/stdcompat/functional.h>
 
@@ -19,35 +17,34 @@
 #include "src/connectivity/bluetooth/core/bt-host/transport/emboss_control_packets.h"
 #include "src/connectivity/bluetooth/core/bt-host/transport/transport.h"
 
-#include <pw_bluetooth/hci.emb.h>
+#include <pw_bluetooth/hci_commands.emb.h>
+#include <pw_bluetooth/hci_events.emb.h>
 
 namespace bt::gap {
 
 namespace {
 
-template <typename EventParamType, typename ResultType>
-std::unordered_set<Peer*> ProcessInquiryResult(PeerCache* cache, const hci::EventPacket& event) {
-  std::unordered_set<Peer*> updated;
+// Make an existing peer connectable, or add a connectable peer if one does not
+// already exist.
+Peer* AddOrUpdateConnectablePeer(PeerCache* cache, const DeviceAddress& addr) {
+  Peer* peer = cache->FindByAddress(addr);
+  if (!peer) {
+    peer = cache->NewPeer(addr, /*connectable=*/true);
+  } else {
+    peer->set_connectable(true);
+  }
+  BT_ASSERT(peer);
+  return peer;
+}
+
+std::unordered_set<Peer*> ProcessInquiryResultEvent(
+    PeerCache* cache, const pw::bluetooth::emboss::InquiryResultWithRssiEventView& event) {
   bt_log(TRACE, "gap-bredr", "inquiry result received");
-
-  const size_t event_payload_size = event.view().payload_size();
-  BT_ASSERT_MSG(event_payload_size >= sizeof(EventParamType), "undersized (%zu) inquiry event",
-                event_payload_size);
-  size_t result_size = event_payload_size - sizeof(EventParamType);
-  BT_ASSERT_MSG(result_size % sizeof(ResultType) == 0, "wrong size result (%zu %% %zu != 0)",
-                result_size, sizeof(ResultType));
-
-  const auto params_data = event.view().payload_data();
-  const auto num_responses = params_data.ReadMember<&EventParamType::num_responses>();
-  for (int i = 0; i < num_responses; i++) {
-    const auto response = params_data.ReadMember<&EventParamType::responses>(i);
-    DeviceAddress addr(DeviceAddress::Type::kBREDR, response.bd_addr);
-    Peer* peer = cache->FindByAddress(addr);
-    if (!peer) {
-      peer = cache->NewPeer(addr, /*connectable=*/true);
-    }
-    BT_ASSERT(peer);
-
+  std::unordered_set<Peer*> updated;
+  auto responses = event.responses();
+  for (auto response : responses) {
+    DeviceAddress addr(DeviceAddress::Type::kBREDR, DeviceAddressBytes(response.bd_addr()));
+    Peer* peer = AddOrUpdateConnectablePeer(cache, addr);
     peer->MutBrEdr().SetInquiryData(response);
     updated.insert(peer);
   }
@@ -78,11 +75,12 @@ BrEdrDiscoverableSession::BrEdrDiscoverableSession(BrEdrDiscoveryManager::WeakPt
 
 BrEdrDiscoverableSession::~BrEdrDiscoverableSession() { manager_->RemoveDiscoverableSession(this); }
 
-BrEdrDiscoveryManager::BrEdrDiscoveryManager(hci::CommandChannel::WeakPtr cmd,
+BrEdrDiscoveryManager::BrEdrDiscoveryManager(pw::async::Dispatcher& pw_dispatcher,
+                                             hci::CommandChannel::WeakPtr cmd,
                                              pw::bluetooth::emboss::InquiryMode mode,
                                              PeerCache* peer_cache)
     : cmd_(std::move(cmd)),
-      dispatcher_(async_get_default_dispatcher()),
+      dispatcher_(pw_dispatcher),
       cache_(peer_cache),
       result_handler_id_(0u),
       desired_inquiry_mode_(mode),
@@ -90,7 +88,6 @@ BrEdrDiscoveryManager::BrEdrDiscoveryManager(hci::CommandChannel::WeakPtr cmd,
       weak_self_(this) {
   BT_DEBUG_ASSERT(cache_);
   BT_DEBUG_ASSERT(cmd_.is_alive());
-  BT_DEBUG_ASSERT(dispatcher_);
 
   result_handler_id_ =
       cmd_->AddEventHandler(hci_spec::kInquiryResultEventCode,
@@ -98,7 +95,7 @@ BrEdrDiscoveryManager::BrEdrDiscoveryManager(hci::CommandChannel::WeakPtr cmd,
   BT_DEBUG_ASSERT(result_handler_id_);
   rssi_handler_id_ =
       cmd_->AddEventHandler(hci_spec::kInquiryResultWithRSSIEventCode,
-                            cpp20::bind_front(&BrEdrDiscoveryManager::InquiryResultWithRSSI, this));
+                            cpp20::bind_front(&BrEdrDiscoveryManager::InquiryResultWithRssi, this));
   BT_DEBUG_ASSERT(rssi_handler_id_);
   eir_handler_id_ =
       cmd_->AddEventHandler(hci_spec::kExtendedInquiryResultEventCode,
@@ -241,12 +238,7 @@ hci::CommandChannel::EventCallbackResult BrEdrDiscoveryManager::InquiryResult(
   for (int i = 0; i < view.num_responses().Read(); i++) {
     const auto response = view.responses()[i];
     DeviceAddress addr(DeviceAddress::Type::kBREDR, DeviceAddressBytes{response.bd_addr()});
-    Peer* peer = cache_->FindByAddress(addr);
-    if (!peer) {
-      peer = cache_->NewPeer(addr, /*connectable=*/true);
-    }
-    BT_ASSERT(peer);
-
+    Peer* peer = AddOrUpdateConnectablePeer(cache_, addr);
     peer->MutBrEdr().SetInquiryData(response);
     peers.insert(peer);
   }
@@ -256,35 +248,21 @@ hci::CommandChannel::EventCallbackResult BrEdrDiscoveryManager::InquiryResult(
   return hci::CommandChannel::EventCallbackResult::kContinue;
 }
 
-hci::CommandChannel::EventCallbackResult BrEdrDiscoveryManager::InquiryResultWithRSSI(
-    const hci::EventPacket& event) {
-  BT_DEBUG_ASSERT(event.event_code() == hci_spec::kInquiryResultWithRSSIEventCode);
-  std::unordered_set<Peer*> peers =
-      ProcessInquiryResult<hci_spec::InquiryResultWithRSSIEventParams, hci_spec::InquiryResultRSSI>(
-          cache_, event);
-
+hci::CommandChannel::EventCallbackResult BrEdrDiscoveryManager::InquiryResultWithRssi(
+    const hci::EmbossEventPacket& event) {
+  std::unordered_set<Peer*> peers = ProcessInquiryResultEvent(
+      cache_, event.view<pw::bluetooth::emboss::InquiryResultWithRssiEventView>());
   NotifyPeersUpdated(peers);
   return hci::CommandChannel::EventCallbackResult::kContinue;
 }
 
 hci::CommandChannel::EventCallbackResult BrEdrDiscoveryManager::ExtendedInquiryResult(
-    const hci::EventPacket& event) {
-  BT_DEBUG_ASSERT(event.event_code() == hci_spec::kExtendedInquiryResultEventCode);
-
+    const hci::EmbossEventPacket& event) {
   bt_log(TRACE, "gap-bredr", "ExtendedInquiryResult received");
-  if (event.view().payload_size() != sizeof(hci_spec::ExtendedInquiryResultEventParams)) {
-    bt_log(WARN, "gap-bredr", "ignoring malformed result (%zu bytes)", event.view().payload_size());
-    return hci::CommandChannel::EventCallbackResult::kContinue;
-  }
-  const auto& result = event.params<hci_spec::ExtendedInquiryResultEventParams>();
+  const auto result = event.view<pw::bluetooth::emboss::ExtendedInquiryResultEventView>();
 
-  DeviceAddress addr(DeviceAddress::Type::kBREDR, result.bd_addr);
-  Peer* peer = cache_->FindByAddress(addr);
-  if (!peer) {
-    peer = cache_->NewPeer(addr, /*connectable=*/true);
-  }
-  BT_DEBUG_ASSERT(peer);
-
+  DeviceAddress addr(DeviceAddress::Type::kBREDR, DeviceAddressBytes(result.bd_addr()));
+  Peer* peer = AddOrUpdateConnectablePeer(cache_, addr);
   peer->MutBrEdr().SetInquiryData(result);
 
   NotifyPeersUpdated({peer});
@@ -376,7 +354,8 @@ void BrEdrDiscoveryManager::InspectProperties::Initialize(inspect::Node new_node
 
 void BrEdrDiscoveryManager::InspectProperties::Update(size_t discoverable_count,
                                                       size_t pending_discoverable_count,
-                                                      size_t discovery_count, zx_time_t now) {
+                                                      size_t discovery_count,
+                                                      pw::chrono::SystemClock::time_point now) {
   if (!node) {
     return;
   }
@@ -385,8 +364,9 @@ void BrEdrDiscoveryManager::InspectProperties::Update(size_t discoverable_count,
     discoverable_started_time.emplace(now);
   } else if (discoverable_started_time.has_value() && discoverable_count == 0) {
     discoverable_sessions_count.Add(1);
-    zx_duration_t length = now - discoverable_started_time.value();
-    last_discoverable_length_sec.Set(length / zx_duration_from_sec(1));
+    pw::chrono::SystemClock::duration length = now - discoverable_started_time.value();
+    last_discoverable_length_sec.Set(
+        std::chrono::duration_cast<std::chrono::seconds>(length).count());
     discoverable_started_time.reset();
   }
 
@@ -394,8 +374,8 @@ void BrEdrDiscoveryManager::InspectProperties::Update(size_t discoverable_count,
     inquiry_started_time.emplace(now);
   } else if (inquiry_started_time.has_value() && discovery_count == 0) {
     inquiry_sessions_count.Add(1);
-    zx_duration_t length = now - inquiry_started_time.value();
-    last_inquiry_length_sec.Set(length / zx_duration_from_sec(1));
+    pw::chrono::SystemClock::duration length = now - inquiry_started_time.value();
+    last_inquiry_length_sec.Set(std::chrono::duration_cast<std::chrono::seconds>(length).count());
     inquiry_started_time.reset();
   }
 
@@ -406,7 +386,7 @@ void BrEdrDiscoveryManager::InspectProperties::Update(size_t discoverable_count,
 
 void BrEdrDiscoveryManager::UpdateInspectProperties() {
   inspect_properties_.Update(discoverable_.size(), pending_discoverable_.size(),
-                             discovering_.size(), async_now(dispatcher_));
+                             discovering_.size(), dispatcher_.now());
 }
 
 void BrEdrDiscoveryManager::NotifyPeersUpdated(const std::unordered_set<Peer*>& peers) {

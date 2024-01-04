@@ -2,10 +2,30 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-group("tests") {
+# Target-side packages needed by example lacewing tests.
+group("packages") {
+  testonly = true
+  public_deps = [ "..:sl4f_packages" ]
+}
+
+if (is_host) {
+  # Group containing all of the Lacewing example test cases.
+  group("tests") {
+    testonly = true
+    public_deps = [
+      "test_hello_world:tests",
+      "test_multi_device:tests",
+      "test_power_cycle:tests",
+      "test_soft_reboot:tests",
+    ]
+  }
+}
+
+# All of the lacewing example tests and their dependencies.
+group("examples") {
   testonly = true
   public_deps = [
-    "test_soft_reboot:soft_reboot_test($host_toolchain)",
-    "test_soft_reboot:soft_reboot_test_fc($host_toolchain)",
+    ":packages",
+    ":tests($host_toolchain)",
   ]
 }

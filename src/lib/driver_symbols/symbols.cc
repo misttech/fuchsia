@@ -184,6 +184,12 @@ zx::result<std::vector<std::string>> FindRestrictedSymbols(zx::vmo& driver_vmo,
     const char* name = dynsym_strings_table->ptr() + symbol.st_name;
     if (kRestrictedLibcSymbols.find(name) != kRestrictedLibcSymbols.end()) {
       matches.push_back(name);
+    } else if (kRestrictedDriverRuntimeSymbols.find(name) !=
+               kRestrictedDriverRuntimeSymbols.end()) {
+      if (kRestrictedDriverRuntimeSymbolsDriversAllowlist.find(*relative_url) ==
+          kRestrictedDriverRuntimeSymbolsDriversAllowlist.end()) {
+        matches.push_back(name);
+      }
     } else if (kCreateThreadSymbols.find(name) != kCreateThreadSymbols.end()) {
       if (kCreateThreadSymbolsDriversAllowlist.find(*relative_url) ==
           kCreateThreadSymbolsDriversAllowlist.end()) {

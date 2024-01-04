@@ -10,7 +10,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from api.proxy import log_pb2
+from api.log import log_pb2
+from api.stat import stat_pb2
 from api.stats import stats_pb2
 
 import upload_reproxy_logs
@@ -22,7 +23,6 @@ from pathlib import Path
 
 
 class ReproxyLogdirTestHarness(unittest.TestCase):
-
     def setUp(self):
         self._reproxy_logdir = Path(tempfile.mkdtemp())
         # The majority of tests expect the metrics file to be present
@@ -58,50 +58,58 @@ class ReproxyLogdirTestHarness(unittest.TestCase):
 
 
 class MainUploadMetricsTest(ReproxyLogdirTestHarness):
-
     def test_dry_run(self):
         with mock.patch.object(
-                upload_reproxy_logs, "read_reproxy_metrics_proto",
-                return_value=stats_pb2.Stats()) as mock_read_proto:
+            upload_reproxy_logs,
+            "read_reproxy_metrics_proto",
+            return_value=stats_pb2.Stats(),
+        ) as mock_read_proto:
             exit_code = upload_reproxy_logs.main_upload_metrics(
                 uuid="feed-face-feed-face",
                 reproxy_logdir=self._reproxy_logdir,
                 bq_metrics_table="project.dataset.rbe_metrics",
                 dry_run=True,
-                verbose=False)
+                verbose=False,
+            )
         mock_read_proto.assert_called_once()
         self.assertEqual(exit_code, 0)
 
     def test_mocked_upload(self):
         with mock.patch.object(
-                upload_reproxy_logs, "read_reproxy_metrics_proto",
-                return_value=stats_pb2.Stats(
-                    stats=[stats_pb2.Stat()])) as mock_read_proto:
-            with mock.patch.object(upload_reproxy_logs, "bq_upload_metrics",
-                                   return_value=0) as mock_upload:
+            upload_reproxy_logs,
+            "read_reproxy_metrics_proto",
+            return_value=stats_pb2.Stats(stats=[stat_pb2.Stat()]),
+        ) as mock_read_proto:
+            with mock.patch.object(
+                upload_reproxy_logs, "bq_upload_metrics", return_value=0
+            ) as mock_upload:
                 exit_code = upload_reproxy_logs.main_upload_metrics(
                     uuid="feed-face-feed-face",
                     reproxy_logdir=self._reproxy_logdir,
                     bq_metrics_table="project.dataset.rbe_metrics",
                     dry_run=False,
-                    verbose=False)
+                    verbose=False,
+                )
         mock_read_proto.assert_called_once()
         mock_upload.assert_called_once()
         self.assertEqual(exit_code, 0)
 
     def test_mocked_upload_failure(self):
         with mock.patch.object(
-                upload_reproxy_logs, "read_reproxy_metrics_proto",
-                return_value=stats_pb2.Stats(
-                    stats=[stats_pb2.Stat()])) as mock_read_proto:
-            with mock.patch.object(upload_reproxy_logs, "bq_upload_metrics",
-                                   return_value=1) as mock_upload:
+            upload_reproxy_logs,
+            "read_reproxy_metrics_proto",
+            return_value=stats_pb2.Stats(stats=[stat_pb2.Stat()]),
+        ) as mock_read_proto:
+            with mock.patch.object(
+                upload_reproxy_logs, "bq_upload_metrics", return_value=1
+            ) as mock_upload:
                 exit_code = upload_reproxy_logs.main_upload_metrics(
                     uuid="feed-face-feed-face",
                     reproxy_logdir=self._reproxy_logdir,
                     bq_metrics_table="project.dataset.rbe_metrics",
                     dry_run=False,
-                    verbose=False)
+                    verbose=False,
+                )
         mock_read_proto.assert_called_once()
         mock_upload.assert_called_once()
         self.assertEqual(exit_code, 1)
@@ -110,30 +118,35 @@ class MainUploadMetricsTest(ReproxyLogdirTestHarness):
         with open(self._metrics_file, "wb") as metrics_file:
             pass
         with mock.patch.object(
-                upload_reproxy_logs, "read_reproxy_metrics_proto",
-                return_value=stats_pb2.Stats()) as mock_read_proto:
-            with mock.patch.object(upload_reproxy_logs, "bq_upload_metrics",
-                                   return_value=0) as mock_upload:
+            upload_reproxy_logs,
+            "read_reproxy_metrics_proto",
+            return_value=stats_pb2.Stats(),
+        ) as mock_read_proto:
+            with mock.patch.object(
+                upload_reproxy_logs, "bq_upload_metrics", return_value=0
+            ) as mock_upload:
                 exit_code = upload_reproxy_logs.main_upload_metrics(
                     uuid="feed-face-feed-face",
                     reproxy_logdir=self._reproxy_logdir,
                     bq_metrics_table="project.dataset.rbe_metrics",
                     dry_run=False,
-                    verbose=False)
+                    verbose=False,
+                )
         mock_read_proto.assert_called_once()
         mock_upload.assert_not_called()
         self.assertEqual(exit_code, 0)
 
 
 class MainUploadLogsTest(unittest.TestCase):
-
     def fake_log(self):
         return log_pb2.LogDump(records=[log_pb2.LogRecord()])
 
     def test_dry_run(self):
         with mock.patch.object(
-                reproxy_logs, "convert_reproxy_actions_log",
-                return_value=self.fake_log()) as mock_convert_log:
+            reproxy_logs,
+            "convert_reproxy_actions_log",
+            return_value=self.fake_log(),
+        ) as mock_convert_log:
             exit_code = upload_reproxy_logs.main_upload_logs(
                 uuid="feed-f00d-feed-f00d",
                 reproxy_logdir=Path("/tmp/reproxy.log.dir"),
@@ -149,11 +162,15 @@ class MainUploadLogsTest(unittest.TestCase):
 
     def test_mocked_upload(self):
         with mock.patch.object(
-                reproxy_logs, "convert_reproxy_actions_log",
-                return_value=self.fake_log()) as mock_convert_log:
-            with mock.patch.object(upload_reproxy_logs,
-                                   "bq_upload_remote_action_logs",
-                                   return_value=0) as mock_upload:
+            reproxy_logs,
+            "convert_reproxy_actions_log",
+            return_value=self.fake_log(),
+        ) as mock_convert_log:
+            with mock.patch.object(
+                upload_reproxy_logs,
+                "bq_upload_remote_action_logs",
+                return_value=0,
+            ) as mock_upload:
                 exit_code = upload_reproxy_logs.main_upload_logs(
                     uuid="feed-f00d-feed-f00d",
                     reproxy_logdir=Path("/tmp/reproxy.log.dir"),
@@ -170,11 +187,15 @@ class MainUploadLogsTest(unittest.TestCase):
 
     def test_mocked_upload_failure(self):
         with mock.patch.object(
-                reproxy_logs, "convert_reproxy_actions_log",
-                return_value=self.fake_log()) as mock_convert_log:
-            with mock.patch.object(upload_reproxy_logs,
-                                   "bq_upload_remote_action_logs",
-                                   return_value=1) as mock_upload:
+            reproxy_logs,
+            "convert_reproxy_actions_log",
+            return_value=self.fake_log(),
+        ) as mock_convert_log:
+            with mock.patch.object(
+                upload_reproxy_logs,
+                "bq_upload_remote_action_logs",
+                return_value=1,
+            ) as mock_upload:
                 exit_code = upload_reproxy_logs.main_upload_logs(
                     uuid="feed-f00d-feed-f00d",
                     reproxy_logdir=Path("/tmp/reproxy.log.dir"),
@@ -191,11 +212,15 @@ class MainUploadLogsTest(unittest.TestCase):
 
     def test_empty_records(self):
         with mock.patch.object(
-                reproxy_logs, "convert_reproxy_actions_log",
-                return_value=log_pb2.LogDump()) as mock_convert_log:
-            with mock.patch.object(upload_reproxy_logs,
-                                   "bq_upload_remote_action_logs",
-                                   return_value=0) as mock_upload:
+            reproxy_logs,
+            "convert_reproxy_actions_log",
+            return_value=log_pb2.LogDump(),
+        ) as mock_convert_log:
+            with mock.patch.object(
+                upload_reproxy_logs,
+                "bq_upload_remote_action_logs",
+                return_value=0,
+            ) as mock_upload:
                 exit_code = upload_reproxy_logs.main_upload_logs(
                     uuid="feed-f00d-feed-f00d",
                     reproxy_logdir=Path("/tmp/reproxy.log.dir"),
@@ -212,11 +237,11 @@ class MainUploadLogsTest(unittest.TestCase):
 
 
 class ReadReproxyMetricsProto(unittest.TestCase):
-
     def test_basic(self):
         with mock.patch.object(__builtins__, "open") as mock_open:
-            with mock.patch.object(stats_pb2.Stats,
-                                   "ParseFromString") as mock_parse:
+            with mock.patch.object(
+                stats_pb2.Stats, "ParseFromString"
+            ) as mock_parse:
                 stats = upload_reproxy_logs.read_reproxy_metrics_proto(
                     metrics_file=Path("/tmp/reproxy.log.dir/rbe_metrics.pb"),
                 )
@@ -226,15 +251,13 @@ class ReadReproxyMetricsProto(unittest.TestCase):
 
 
 class BQUploadRemoteActionLogsTest(unittest.TestCase):
-
     def test_batch_upload(self):
         bq_table = "proj.dataset.tablename"
-        with mock.patch.object(subprocess, "call",
-                               side_effect=[0, 0]) as mock_process_call:
+        with mock.patch.object(
+            subprocess, "call", side_effect=[0, 0]
+        ) as mock_process_call:
             upload_reproxy_logs.bq_upload_remote_action_logs(
-                records=[{
-                    "records": []
-                }] * 8,
+                records=[{"records": []}] * 8,
                 bq_table=bq_table,
                 batch_size=4,
             )
@@ -245,15 +268,13 @@ class BQUploadRemoteActionLogsTest(unittest.TestCase):
 
 
 class BQUploadMetricsTest(unittest.TestCase):
-
     def test_upload(self):
         bq_table = "proj.dataset.tablename"
-        with mock.patch.object(subprocess, "call",
-                               return_value=0) as mock_process_call:
+        with mock.patch.object(
+            subprocess, "call", return_value=0
+        ) as mock_process_call:
             upload_reproxy_logs.bq_upload_metrics(
-                metrics=[{
-                    "metrics": []
-                }],
+                metrics=[{"metrics": []}],
                 bq_table=bq_table,
             )
         # Cannot use assert_called_with due to use of temporary file.
@@ -261,13 +282,14 @@ class BQUploadMetricsTest(unittest.TestCase):
 
 
 class MainSingleLogdirTest(ReproxyLogdirTestHarness):
-
     def test_build_not_done_yet(self):
         os.remove(self._metrics_file)  # cause this log dir to be skipped
-        with mock.patch.object(upload_reproxy_logs,
-                               "main_upload_metrics") as mock_upload_metrics:
-            with mock.patch.object(upload_reproxy_logs,
-                                   "main_upload_logs") as mock_upload_logs:
+        with mock.patch.object(
+            upload_reproxy_logs, "main_upload_metrics"
+        ) as mock_upload_metrics:
+            with mock.patch.object(
+                upload_reproxy_logs, "main_upload_logs"
+            ) as mock_upload_logs:
                 exit_code = upload_reproxy_logs.main_single_logdir(
                     reproxy_logdir=self._reproxy_logdir,
                     reclient_bindir=Path("/re-client/tools"),
@@ -287,10 +309,12 @@ class MainSingleLogdirTest(ReproxyLogdirTestHarness):
     def test_already_uploaded(self):
         self.touch_stamp_file()
         self.write_build_id_file("feed-f4ce")
-        with mock.patch.object(upload_reproxy_logs,
-                               "main_upload_metrics") as mock_upload_metrics:
-            with mock.patch.object(upload_reproxy_logs,
-                                   "main_upload_logs") as mock_upload_logs:
+        with mock.patch.object(
+            upload_reproxy_logs, "main_upload_metrics"
+        ) as mock_upload_metrics:
+            with mock.patch.object(
+                upload_reproxy_logs, "main_upload_logs"
+            ) as mock_upload_logs:
                 upload_reproxy_logs.main_single_logdir(
                     reproxy_logdir=self._reproxy_logdir,
                     reclient_bindir=Path("/re-client/tools"),
@@ -306,10 +330,12 @@ class MainSingleLogdirTest(ReproxyLogdirTestHarness):
         mock_upload_logs.assert_not_called()
 
     def test_no_stamp_have_uuid_flag(self):
-        with mock.patch.object(upload_reproxy_logs, "main_upload_metrics",
-                               return_value=0) as mock_upload_metrics:
-            with mock.patch.object(upload_reproxy_logs, "main_upload_logs",
-                                   return_value=0) as mock_upload_logs:
+        with mock.patch.object(
+            upload_reproxy_logs, "main_upload_metrics", return_value=0
+        ) as mock_upload_metrics:
+            with mock.patch.object(
+                upload_reproxy_logs, "main_upload_logs", return_value=0
+            ) as mock_upload_logs:
                 exit_code = upload_reproxy_logs.main_single_logdir(
                     reproxy_logdir=self._reproxy_logdir,
                     reclient_bindir=Path("/re-client/tools"),
@@ -328,10 +354,12 @@ class MainSingleLogdirTest(ReproxyLogdirTestHarness):
 
     def test_no_stamp_have_uuid_file(self):
         self.write_build_id_file("feed-face")
-        with mock.patch.object(upload_reproxy_logs, "main_upload_metrics",
-                               return_value=0) as mock_upload_metrics:
-            with mock.patch.object(upload_reproxy_logs, "main_upload_logs",
-                                   return_value=0) as mock_upload_logs:
+        with mock.patch.object(
+            upload_reproxy_logs, "main_upload_metrics", return_value=0
+        ) as mock_upload_metrics:
+            with mock.patch.object(
+                upload_reproxy_logs, "main_upload_logs", return_value=0
+            ) as mock_upload_logs:
                 exit_code = upload_reproxy_logs.main_single_logdir(
                     reproxy_logdir=self._reproxy_logdir,
                     reclient_bindir=Path("/re-client/tools"),
@@ -349,10 +377,12 @@ class MainSingleLogdirTest(ReproxyLogdirTestHarness):
         self.assertEqual(exit_code, 0)
 
     def test_no_stamp_auto_uuid(self):
-        with mock.patch.object(upload_reproxy_logs, "main_upload_metrics",
-                               return_value=0) as mock_upload_metrics:
-            with mock.patch.object(upload_reproxy_logs, "main_upload_logs",
-                                   return_value=0) as mock_upload_logs:
+        with mock.patch.object(
+            upload_reproxy_logs, "main_upload_metrics", return_value=0
+        ) as mock_upload_metrics:
+            with mock.patch.object(
+                upload_reproxy_logs, "main_upload_logs", return_value=0
+            ) as mock_upload_logs:
                 upload_reproxy_logs.main_single_logdir(
                     reproxy_logdir=self._reproxy_logdir,
                     reclient_bindir=Path("/re-client/tools"),
@@ -372,8 +402,9 @@ class MainSingleLogdirTest(ReproxyLogdirTestHarness):
 
     def test_upload_metrics_error(self):
         self.write_build_id_file("f00d-face")
-        with mock.patch.object(upload_reproxy_logs, "main_upload_metrics",
-                               return_value=1) as mock_upload_metrics:
+        with mock.patch.object(
+            upload_reproxy_logs, "main_upload_metrics", return_value=1
+        ) as mock_upload_metrics:
             exit_code = upload_reproxy_logs.main_single_logdir(
                 reproxy_logdir=self._reproxy_logdir,
                 reclient_bindir=Path("/re-client/tools"),
@@ -391,10 +422,12 @@ class MainSingleLogdirTest(ReproxyLogdirTestHarness):
 
     def test_upload_logs_error(self):
         self.write_build_id_file("feed-fade")
-        with mock.patch.object(upload_reproxy_logs, "main_upload_logs",
-                               return_value=1) as mock_upload_logs:
-            with mock.patch.object(upload_reproxy_logs, "main_upload_metrics",
-                                   return_value=0) as mock_upload_metrics:
+        with mock.patch.object(
+            upload_reproxy_logs, "main_upload_logs", return_value=1
+        ) as mock_upload_logs:
+            with mock.patch.object(
+                upload_reproxy_logs, "main_upload_metrics", return_value=0
+            ) as mock_upload_metrics:
                 exit_code = upload_reproxy_logs.main_single_logdir(
                     reproxy_logdir=self._reproxy_logdir,
                     reclient_bindir=Path("/re-client/tools"),
@@ -412,5 +445,5 @@ class MainSingleLogdirTest(ReproxyLogdirTestHarness):
         self.assertEqual(exit_code, 1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

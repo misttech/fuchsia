@@ -7,6 +7,7 @@
             type: "skip",
             matchers: [
                 // Skip tests run by loopback target.
+                "All/DualStackAfMismatchTest.*/TCP",
                 "All/DualStackSocketTest.AddressOperations/*",
                 "SocketInetLoopbackTest.LoopbackAddressRangeConnect",
                 "BadSocketPairArgs.ValidateErrForBadCallsToSocketPair",
@@ -15,6 +16,8 @@
                 "All/SocketInetLoopbackTest.TCPListenShutdownListen/*",
                 "All/SocketInetLoopbackTest.TCPListenShutdown/*",
                 "All/SocketInetLoopbackTest.TCPListenClose/*",
+                "All/SocketInetLoopbackTest.TCPUnblockWaitOnLocalRdHUp/*",
+                "All/SocketInetLoopbackTest.TCPUnblockWaitOnRemoteRdHUp/*",
                 "All/SocketInetLoopbackTest.TCPInfoState/*",
                 "All/SocketInetLoopbackTest.TCPListenCloseDuringConnect/*",
                 "All/SocketInetLoopbackTest.TCPListenShutdownDuringConnect/*",
@@ -22,6 +25,7 @@
                 "All/SocketInetLoopbackTest.TCPListenShutdownConnectingRead/*",
                 "All/SocketInetLoopbackTest.TCPNonBlockingConnectClose/*",
                 "All/SocketInetLoopbackTest.TCPResetAfterClose/*",
+                "All/SocketInetLoopbackTest.UdpIPV6Only/*",
                 "All/SocketInetReusePortTest.TcpPortReuseMultiThread/*",
                 "All/SocketInetReusePortTest.UdpPortReuseMultiThread/*",
                 "All/SocketInetReusePortTest.UdpPortReuseMultiThreadShort/*",

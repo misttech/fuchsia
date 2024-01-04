@@ -7,31 +7,16 @@ using fuchsia.sysmem;
 using fuchsia.sysmem2;
 using zx;
 
-/// This interface is for driver-to-driver connection to sysmem. This includes both connection to
-/// both sysmem/sysmem2 `Allocator`, and special-purpose connection for custom heaps and secure
-/// memory.
+/// This interface is for driver-to-driver connection to sysmem. This includes
+/// both connection to both sysmem/sysmem2 `Allocator`, and special-purpose
+/// connection for custom heaps and secure memory.
 @discoverable
 closed protocol Sysmem {
-    /// Takes the server end of a FIDL connection that'll serve
-    /// fuchsia.sysmem.Allocator.  If the connection fails, the channel will
-    /// close.
-    //
-    // TODO(fxb/104188): Maybe remove this method (see discussion in bug).
-    strict ConnectServer(resource struct {
-        allocator_request server_end:fuchsia.sysmem.Allocator;
-    });
-
-    // TODO(fxb/104188): Maybe remove this method (see discussion in bug).
-    //@transitional("Switch to requesting Allocator instead of serving this method.")
-    strict ConnectServerV2(resource table {
-        1: allocator_request server_end:fuchsia.sysmem2.Allocator;
-    });
-
     /// Takes the client end of a FIDL connection that'll serve
     /// fuchsia.sysmem2.Heap.
     strict RegisterHeap(resource struct {
         heap uint64;
-        heap_connection client_end:fuchsia.sysmem2.Heap;
+        heap_connection client_end:Heap;
     });
 
     /// Takes the client end of a FIDL connection that'll serve
@@ -50,5 +35,5 @@ closed protocol Sysmem {
 service Service {
     sysmem client_end:Sysmem;
     allocator_v1 client_end:fuchsia.sysmem.Allocator;
-    allocator client_end:fuchsia.sysmem2.Allocator;
+    allocator_v2 client_end:fuchsia.sysmem2.Allocator;
 };

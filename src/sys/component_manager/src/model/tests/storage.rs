@@ -16,15 +16,14 @@ use {
     cm_moniker::InstancedMoniker,
     cm_rust::*,
     cm_rust_testing::*,
-    component_id_index::gen_instance_id,
+    component_id_index::InstanceId,
     fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys,
     fuchsia_zircon as zx,
     moniker::{Moniker, MonikerBase},
-    routing::{component_id_index::ComponentInstanceId, error::RoutingError, RouteRequest},
+    routing::{error::RoutingError, RouteRequest},
     std::{
         convert::TryInto,
         path::{Path, PathBuf},
-        str::FromStr,
     },
 };
 
@@ -116,6 +115,7 @@ async fn use_in_collection_from_parent() {
                 .offer(OfferDecl::Directory(OfferDirectoryDecl {
                     source: OfferSource::Self_,
                     source_name: "data".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "minfs".parse().unwrap(),
                     target: OfferTarget::static_child("b".to_string()),
                     rights: Some(fio::RW_STAR_DIR),
@@ -132,6 +132,7 @@ async fn use_in_collection_from_parent() {
                 .use_(UseDecl::Protocol(UseProtocolDecl {
                     source: UseSource::Framework,
                     source_name: "fuchsia.component.Realm".parse().unwrap(),
+                    source_dictionary: None,
                     target_path: "/svc/fuchsia.component.Realm".parse().unwrap(),
                     dependency_type: DependencyType::Strong,
                     availability: Availability::Required,
@@ -305,6 +306,7 @@ async fn use_in_collection_from_grandparent() {
                 .use_(UseDecl::Protocol(UseProtocolDecl {
                     source: UseSource::Framework,
                     source_name: "fuchsia.component.Realm".parse().unwrap(),
+                    source_dictionary: None,
                     target_path: "/svc/fuchsia.component.Realm".parse().unwrap(),
                     dependency_type: DependencyType::Strong,
                     availability: Availability::Required,
@@ -474,15 +476,18 @@ async fn instance_id_from_index() {
 /// index.
 #[fuchsia::test]
 async fn use_restricted_storage_start_failure() {
-    let parent_consumer_instance_id = Some(gen_instance_id(&mut rand::thread_rng()));
-    let component_id_index_path = make_index_file(component_id_index::Index {
-        instances: vec![component_id_index::InstanceIdEntry {
-            instance_id: parent_consumer_instance_id.clone(),
-            moniker: Some(Moniker::parse_str("/parent_consumer").unwrap()),
-        }],
-        ..component_id_index::Index::default()
-    })
-    .unwrap();
+    let parent_consumer_instance_id = InstanceId::new_random(&mut rand::thread_rng());
+    let index = {
+        let mut index = component_id_index::Index::default();
+        index
+            .insert(
+                Moniker::parse_str("/parent_consumer").unwrap(),
+                parent_consumer_instance_id.clone(),
+            )
+            .unwrap();
+        index
+    };
+    let component_id_index_path = make_index_file(index).unwrap();
     let components = vec![
         (
             "provider",
@@ -540,7 +545,7 @@ async fn use_restricted_storage_start_failure() {
         ),
     ];
     let test = RoutingTestBuilder::new("provider", components)
-        .set_component_id_index_path(component_id_index_path.path().to_str().unwrap().to_string())
+        .set_component_id_index_path(component_id_index_path.path().to_owned().try_into().unwrap())
         .build()
         .await;
 
@@ -573,15 +578,18 @@ async fn use_restricted_storage_start_failure() {
 /// the component iindex.
 #[fuchsia::test]
 async fn use_restricted_storage_open_failure() {
-    let parent_consumer_instance_id = Some(gen_instance_id(&mut rand::thread_rng()));
-    let component_id_index_path = make_index_file(component_id_index::Index {
-        instances: vec![component_id_index::InstanceIdEntry {
-            instance_id: parent_consumer_instance_id.clone(),
-            moniker: Some(Moniker::parse_str("/parent_consumer/child_consumer").unwrap()),
-        }],
-        ..component_id_index::Index::default()
-    })
-    .unwrap();
+    let parent_consumer_instance_id = InstanceId::new_random(&mut rand::thread_rng());
+    let index = {
+        let mut index = component_id_index::Index::default();
+        index
+            .insert(
+                Moniker::parse_str("/parent_consumer/child_consumer").unwrap(),
+                parent_consumer_instance_id.clone(),
+            )
+            .unwrap();
+        index
+    };
+    let component_id_index_path = make_index_file(index).unwrap();
     let components = vec![
         (
             "provider",
@@ -621,7 +629,7 @@ async fn use_restricted_storage_open_failure() {
         ),
     ];
     let test = RoutingTestBuilder::new("provider", components)
-        .set_component_id_index_path(component_id_index_path.path().to_str().unwrap().to_string())
+        .set_component_id_index_path(component_id_index_path.path().to_owned().try_into().unwrap())
         .build()
         .await;
 
@@ -704,15 +712,18 @@ async fn use_restricted_storage_open_failure() {
 /// Test that a component can open a subdirectory of a storage successfully
 #[fuchsia::test]
 async fn open_storage_subdirectory() {
-    let parent_consumer_instance_id = Some(gen_instance_id(&mut rand::thread_rng()));
-    let component_id_index_path = make_index_file(component_id_index::Index {
-        instances: vec![component_id_index::InstanceIdEntry {
-            instance_id: parent_consumer_instance_id.clone(),
-            moniker: Some(Moniker::parse_str("/consumer").unwrap()),
-        }],
-        ..component_id_index::Index::default()
-    })
-    .unwrap();
+    let parent_consumer_instance_id = InstanceId::new_random(&mut rand::thread_rng());
+    let index = {
+        let mut index = component_id_index::Index::default();
+        index
+            .insert(
+                Moniker::parse_str("/child_consumer").unwrap(),
+                parent_consumer_instance_id.clone(),
+            )
+            .unwrap();
+        index
+    };
+    let component_id_index_path = make_index_file(index).unwrap();
     let components = vec![
         (
             "provider",
@@ -752,7 +763,7 @@ async fn open_storage_subdirectory() {
         ),
     ];
     let test = RoutingTestBuilder::new("provider", components)
-        .set_component_id_index_path(component_id_index_path.path().to_str().unwrap().to_string())
+        .set_component_id_index_path(component_id_index_path.path().to_owned().try_into().unwrap())
         .build()
         .await;
 
@@ -861,6 +872,7 @@ async fn storage_persistence_moniker_path() {
                 .offer(OfferDecl::Protocol(OfferProtocolDecl {
                     source: OfferSource::Capability("data".parse().unwrap()),
                     source_name: "fuchsia.sys2.StorageAdmin".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "fuchsia.sys2.StorageAdmin".parse().unwrap(),
                     target: OfferTarget::static_child("b".to_string()),
                     dependency_type: DependencyType::Strong,
@@ -875,6 +887,7 @@ async fn storage_persistence_moniker_path() {
                 .use_(UseDecl::Protocol(UseProtocolDecl {
                     source: UseSource::Framework,
                     source_name: "fuchsia.component.Realm".parse().unwrap(),
+                    source_dictionary: None,
                     target_path: "/svc/fuchsia.component.Realm".parse().unwrap(),
                     dependency_type: DependencyType::Strong,
                     availability: Availability::Required,
@@ -882,6 +895,7 @@ async fn storage_persistence_moniker_path() {
                 .use_(UseDecl::Protocol(UseProtocolDecl {
                     source: UseSource::Parent,
                     source_name: "fuchsia.sys2.StorageAdmin".parse().unwrap(),
+                    source_dictionary: None,
                     target_path: "/svc/fuchsia.sys2.StorageAdmin".parse().unwrap(),
                     dependency_type: DependencyType::Strong,
                     availability: Availability::Required,
@@ -985,8 +999,10 @@ async fn storage_persistence_moniker_path() {
     >(&namespace, &"/svc/fuchsia.sys2.StorageAdmin".parse().unwrap())
     .await;
     let _ = storage_admin_proxy
-        // the instance ids in the moniker for the request to destroy persistent storage do not matter
-        .delete_component_storage("./b:0/persistent_coll:c:0")
+        // StorageAdmin::DeleteComponentStorage tolerates both regular old monikers and instanced
+        // monikers ("b:0/persistent_col:c:0"). Use the regular moniker here since the IDs would be
+        // ignored anyway.
+        .delete_component_storage("b/persistent_coll:c")
         .await
         .unwrap()
         .unwrap();
@@ -1044,6 +1060,7 @@ async fn storage_persistence_instance_id_path() {
                 .offer(OfferDecl::Protocol(OfferProtocolDecl {
                     source: OfferSource::Capability("data".parse().unwrap()),
                     source_name: "fuchsia.sys2.StorageAdmin".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "fuchsia.sys2.StorageAdmin".parse().unwrap(),
                     target: OfferTarget::static_child("b".to_string()),
                     dependency_type: DependencyType::Strong,
@@ -1058,6 +1075,7 @@ async fn storage_persistence_instance_id_path() {
                 .use_(UseDecl::Protocol(UseProtocolDecl {
                     source: UseSource::Framework,
                     source_name: "fuchsia.component.Realm".parse().unwrap(),
+                    source_dictionary: None,
                     target_path: "/svc/fuchsia.component.Realm".parse().unwrap(),
                     dependency_type: DependencyType::Strong,
                     availability: Availability::Required,
@@ -1065,6 +1083,7 @@ async fn storage_persistence_instance_id_path() {
                 .use_(UseDecl::Protocol(UseProtocolDecl {
                     source: UseSource::Parent,
                     source_name: "fuchsia.sys2.StorageAdmin".parse().unwrap(),
+                    source_dictionary: None,
                     target_path: "/svc/fuchsia.sys2.StorageAdmin".parse().unwrap(),
                     dependency_type: DependencyType::Strong,
                     availability: Availability::Required,
@@ -1100,18 +1119,18 @@ async fn storage_persistence_instance_id_path() {
     ];
 
     // set instance_id for "b/persistent_coll:c" components
-    let instance_id = gen_instance_id(&mut rand::thread_rng());
-    let component_id_index_path = make_index_file(component_id_index::Index {
-        instances: vec![component_id_index::InstanceIdEntry {
-            instance_id: Some(instance_id.clone()),
-            moniker: Some(vec!["b", "persistent_coll:c"].try_into().unwrap()),
-        }],
-        ..component_id_index::Index::default()
-    })
-    .unwrap();
+    let instance_id = InstanceId::new_random(&mut rand::thread_rng());
+    let index = {
+        let mut index = component_id_index::Index::default();
+        index
+            .insert(vec!["b", "persistent_coll:c"].try_into().unwrap(), instance_id.clone())
+            .unwrap();
+        index
+    };
+    let component_id_index_path = make_index_file(index).unwrap();
 
     let test = RoutingTestBuilder::new("a", components)
-        .set_component_id_index_path(component_id_index_path.path().to_str().unwrap().to_string())
+        .set_component_id_index_path(component_id_index_path.path().to_owned().try_into().unwrap())
         .build()
         .await;
 
@@ -1137,7 +1156,7 @@ async fn storage_persistence_instance_id_path() {
     test.destroy_dynamic_child(vec!["b"].try_into().unwrap(), "persistent_coll", "c").await;
 
     // expect the [c:1] storage and data to persist
-    test.check_test_subdir_contents(&instance_id, vec!["c1".to_string()]).await;
+    test.check_test_subdir_contents(&instance_id.to_string(), vec!["c1".to_string()]).await;
 
     // recreate dynamic child [c:2]
     test.create_dynamic_child(
@@ -1161,7 +1180,11 @@ async fn storage_persistence_instance_id_path() {
     test.destroy_dynamic_child(vec!["b"].try_into().unwrap(), "persistent_coll", "c").await;
 
     // expect the [c:1] and [c:2] storage and data to persist
-    test.check_test_subdir_contents(&instance_id, vec!["c1".to_string(), "c2".to_string()]).await;
+    test.check_test_subdir_contents(
+        &instance_id.to_string(),
+        vec!["c1".to_string(), "c2".to_string()],
+    )
+    .await;
 
     // destroy the persistent storage with a storage admin request
     let namespace = test.bind_and_get_namespace(vec!["b"].try_into().unwrap()).await;
@@ -1177,10 +1200,7 @@ async fn storage_persistence_instance_id_path() {
         None,
         true,
         InstancedMoniker::try_from(vec!["b:0", "persistent_coll:c:0"]).unwrap(),
-        Some(
-            &ComponentInstanceId::from_str(&instance_id)
-                .expect("instance id could not be parsed into ComponentInstanceId"),
-        ),
+        Some(&instance_id),
         &test.test_dir_proxy,
     )
     .await;
@@ -1238,6 +1258,7 @@ async fn storage_persistence_inheritance() {
                 .use_(UseDecl::Protocol(UseProtocolDecl {
                     source: UseSource::Framework,
                     source_name: "fuchsia.component.Realm".parse().unwrap(),
+                    source_dictionary: None,
                     target_path: "/svc/fuchsia.component.Realm".parse().unwrap(),
                     dependency_type: DependencyType::Strong,
                     availability: Availability::Required,
@@ -1266,6 +1287,7 @@ async fn storage_persistence_inheritance() {
                 .use_(UseDecl::Protocol(UseProtocolDecl {
                     source: UseSource::Framework,
                     source_name: "fuchsia.component.Realm".parse().unwrap(),
+                    source_dictionary: None,
                     target_path: "/svc/fuchsia.component.Realm".parse().unwrap(),
                     dependency_type: DependencyType::Strong,
                     availability: Availability::Required,
@@ -1316,18 +1338,18 @@ async fn storage_persistence_inheritance() {
     ];
 
     // set instance_id for "b/persistent_coll:c" components
-    let instance_id = gen_instance_id(&mut rand::thread_rng());
-    let component_id_index_path = make_index_file(component_id_index::Index {
-        instances: vec![component_id_index::InstanceIdEntry {
-            instance_id: Some(instance_id.clone()),
-            moniker: Some(vec!["b", "persistent_coll:c"].try_into().unwrap()),
-        }],
-        ..component_id_index::Index::default()
-    })
-    .unwrap();
+    let instance_id = InstanceId::new_random(&mut rand::thread_rng());
+    let index = {
+        let mut index = component_id_index::Index::default();
+        index
+            .insert(vec!["b", "persistent_coll:c"].try_into().unwrap(), instance_id.clone())
+            .unwrap();
+        index
+    };
+    let component_id_index_path = make_index_file(index).unwrap();
 
     let test = RoutingTestBuilder::new("a", components)
-        .set_component_id_index_path(component_id_index_path.path().to_str().unwrap().to_string())
+        .set_component_id_index_path(component_id_index_path.path().to_owned().try_into().unwrap())
         .build()
         .await;
 
@@ -1408,7 +1430,7 @@ async fn storage_persistence_inheritance() {
     .await;
 
     // test that [c:1] wrote to instance id path
-    test.check_test_subdir_contents(&instance_id, vec!["hippos".to_string()]).await;
+    test.check_test_subdir_contents(&instance_id.to_string(), vec!["hippos".to_string()]).await;
     // test that d:0 wrote to moniker based path with instance ids cleared
     test.check_test_subdir_contents(
         "b:0/children/persistent_coll:c:0/children/d:0/data",
@@ -1426,7 +1448,7 @@ async fn storage_persistence_inheritance() {
     test.destroy_dynamic_child(vec!["b"].try_into().unwrap(), "persistent_coll", "c").await;
 
     // expect [c:1], d:0, and [e:1] storage and data to persist
-    test.check_test_subdir_contents(&instance_id, vec!["hippos".to_string()]).await;
+    test.check_test_subdir_contents(&instance_id.to_string(), vec!["hippos".to_string()]).await;
     test.check_test_subdir_contents(
         "b:0/children/persistent_coll:c:0/children/d:0/data",
         vec!["hippos".to_string()],
@@ -1491,6 +1513,7 @@ async fn storage_persistence_disablement() {
                 .use_(UseDecl::Protocol(UseProtocolDecl {
                     source: UseSource::Framework,
                     source_name: "fuchsia.component.Realm".parse().unwrap(),
+                    source_dictionary: None,
                     target_path: "/svc/fuchsia.component.Realm".parse().unwrap(),
                     dependency_type: DependencyType::Strong,
                     availability: Availability::Required,
@@ -1519,6 +1542,7 @@ async fn storage_persistence_disablement() {
                 .use_(UseDecl::Protocol(UseProtocolDecl {
                     source: UseSource::Framework,
                     source_name: "fuchsia.component.Realm".parse().unwrap(),
+                    source_dictionary: None,
                     target_path: "/svc/fuchsia.component.Realm".parse().unwrap(),
                     dependency_type: DependencyType::Strong,
                     availability: Availability::Required,
@@ -1555,6 +1579,7 @@ async fn storage_persistence_disablement() {
                 .use_(UseDecl::Protocol(UseProtocolDecl {
                     source: UseSource::Framework,
                     source_name: "fuchsia.component.Realm".parse().unwrap(),
+                    source_dictionary: None,
                     target_path: "/svc/fuchsia.component.Realm".parse().unwrap(),
                     dependency_type: DependencyType::Strong,
                     availability: Availability::Required,
@@ -1579,22 +1604,18 @@ async fn storage_persistence_disablement() {
     ];
 
     // set instance_id for "b/persistent_coll:c" components
-    let instance_id = gen_instance_id(&mut rand::thread_rng());
-    let component_id_index_path = make_index_file(component_id_index::Index {
-        instances: vec![component_id_index::InstanceIdEntry {
-            instance_id: Some(instance_id.clone()),
-            moniker: Some(
-                vec!["b".try_into().unwrap(), "persistent_coll:c".try_into().unwrap()]
-                    .try_into()
-                    .unwrap(),
-            ),
-        }],
-        ..component_id_index::Index::default()
-    })
-    .unwrap();
+    let instance_id = InstanceId::new_random(&mut rand::thread_rng());
+    let index = {
+        let mut index = component_id_index::Index::default();
+        index
+            .insert(vec!["b", "persistent_coll:c"].try_into().unwrap(), instance_id.clone())
+            .unwrap();
+        index
+    };
+    let component_id_index_path = make_index_file(index).unwrap();
 
     let test = RoutingTestBuilder::new("a", components)
-        .set_component_id_index_path(component_id_index_path.path().to_str().unwrap().to_string())
+        .set_component_id_index_path(component_id_index_path.path().to_owned().try_into().unwrap())
         .build()
         .await;
 
@@ -1679,7 +1700,7 @@ async fn storage_persistence_disablement() {
     .await;
 
     // test that [c:1] wrote to instance id path
-    test.check_test_subdir_contents(&instance_id, vec!["hippos".to_string()]).await;
+    test.check_test_subdir_contents(&instance_id.to_string(), vec!["hippos".to_string()]).await;
     // test that b:0 children includes:
     // 1. persistent_coll:c:0 used by persistent storage
     // 2. persistent_coll:c:1 used by non persistent storage
@@ -1705,7 +1726,7 @@ async fn storage_persistence_disablement() {
     test.destroy_dynamic_child(vec!["b"].try_into().unwrap(), "persistent_coll", "c").await;
 
     // expect [c:1], d:0 storage and data to persist
-    test.check_test_subdir_contents(&instance_id, vec!["hippos".to_string()]).await;
+    test.check_test_subdir_contents(&instance_id.to_string(), vec!["hippos".to_string()]).await;
     test.check_test_subdir_contents(
         "b:0/children/persistent_coll:c:0/children/d:0/data",
         vec!["hippos".to_string()],

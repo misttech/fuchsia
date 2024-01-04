@@ -7,10 +7,11 @@
 
 #include <fidl/fuchsia.driver.index/cpp/fidl.h>
 
+#include <queue>
+
 #include "src/devices/bin/driver_manager/v2/bind_manager.h"
 #include "src/devices/bin/driver_manager/v2/composite_node_spec_v2.h"
-#include "src/devices/bin/driver_manager/v2/node.h"
-#include "src/lib/testing/loop_fixture/test_loop_fixture.h"
+#include "src/devices/bin/driver_manager/v2/tests/driver_manager_test_base.h"
 
 // Test class to expose protected functions.
 class TestBindManager : public dfv2::BindManager {
@@ -43,7 +44,7 @@ class TestDriverIndex final : public fidl::WireServer<fuchsia_driver_index::Driv
   explicit TestDriverIndex(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
 
   void MatchDriver(MatchDriverRequestView request, MatchDriverCompleter::Sync& completer) override;
-  void WaitForBaseDrivers(WaitForBaseDriversCompleter::Sync& completer) override;
+  void WatchForDriverLoad(WatchForDriverLoadCompleter::Sync& completer) override;
   void AddCompositeNodeSpec(AddCompositeNodeSpecRequestView request,
                             AddCompositeNodeSpecCompleter::Sync& completer) override;
   void RebindCompositeNodeSpec(RebindCompositeNodeSpecRequestView request,
@@ -52,7 +53,7 @@ class TestDriverIndex final : public fidl::WireServer<fuchsia_driver_index::Driv
   zx::result<fidl::ClientEnd<fuchsia_driver_index::DriverIndex>> Connect();
 
   // Pop the next completer with the |id| in |completers_| and reply with |result|.
-  void ReplyWithMatch(uint32_t id, zx::result<fuchsia_driver_index::MatchedDriver> result);
+  void ReplyWithMatch(uint32_t id, zx::result<fuchsia_driver_index::MatchDriverResult> result);
 
   void VerifyRequestCount(uint32_t id, size_t expected_count);
   size_t NumOfMatchRequests() const { return match_request_count_; }
@@ -71,7 +72,7 @@ class TestBindManagerBridge final : public dfv2::BindManagerBridge, public Compo
  public:
   struct CompositeNodeSpecData {
     dfv2::CompositeNodeSpecV2* spec;
-    fuchsia_driver_index::MatchedCompositeNodeSpecInfo fidl_info;
+    fuchsia_driver_framework::CompositeInfo fidl_info;
   };
 
   explicit TestBindManagerBridge(fidl::WireClient<fuchsia_driver_index::DriverIndex> client)
@@ -79,14 +80,15 @@ class TestBindManagerBridge final : public dfv2::BindManagerBridge, public Compo
   ~TestBindManagerBridge() = default;
 
   // BindManagerBridge implementation:
-  zx::result<BindSpecResult> BindToParentSpec(
-      fuchsia_driver_index::wire::MatchedCompositeNodeParentInfo match_info,
-      std::weak_ptr<dfv2::Node> node, bool enable_multibind) override {
-    return composite_manager_.BindParentSpec(match_info, node, enable_multibind);
+  zx::result<BindSpecResult> BindToParentSpec(fidl::AnyArena& arena,
+                                              dfv2::CompositeParents composite_parents,
+                                              std::weak_ptr<dfv2::Node> node,
+                                              bool enable_multibind) override {
+    return composite_manager_.BindParentSpec(arena, composite_parents, node, enable_multibind);
   }
 
   zx::result<std::string> StartDriver(
-      dfv2::Node& node, fuchsia_driver_index::wire::MatchedDriverInfo driver_info) override {
+      dfv2::Node& node, fuchsia_driver_framework::wire::DriverInfo driver_info) override {
     return zx::ok("");
   }
 
@@ -120,20 +122,10 @@ class TestBindManagerBridge final : public dfv2::BindManagerBridge, public Compo
   TestBindManager* bind_manager_;
 };
 
-class TestNodeManager : public dfv2::NodeManager {
+class TestNodeManager : public TestNodeManagerBase {
  public:
   void Bind(dfv2::Node& node, std::shared_ptr<dfv2::BindResultTracker> result_tracker) override {
     bind_manager_->Bind(node, {}, std::move(result_tracker));
-  }
-
-  zx::result<dfv2::DriverHost*> CreateDriverHost() override { return zx::ok(nullptr); }
-  void DestroyDriverComponent(
-      dfv2::Node& node,
-      fit::callback<void(fidl::WireUnownedResult<fuchsia_component::Realm::DestroyChild>& result)>
-          callback) override {}
-  zx::result<> StartDriver(dfv2::Node& node, std::string_view url,
-                           fuchsia_driver_index::DriverPackageType package_type) override {
-    return zx::ok();
   }
 
   void set_bind_manager(TestBindManager* bind_manager) { bind_manager_ = bind_manager; }
@@ -142,7 +134,7 @@ class TestNodeManager : public dfv2::NodeManager {
   TestBindManager* bind_manager_;
 };
 
-class BindManagerTestBase : public gtest::TestLoopFixture {
+class BindManagerTestBase : public DriverManagerTestBase {
  public:
   struct BindManagerData {
     size_t driver_index_request_count;
@@ -153,6 +145,8 @@ class BindManagerTestBase : public gtest::TestLoopFixture {
 
   void SetUp() override;
   void TearDown() override;
+
+  dfv2::NodeManager* GetNodeManager() override { return &node_manager_; }
 
   BindManagerData CurrentBindManagerData() const;
   void VerifyBindManagerData(BindManagerData expected);
@@ -238,8 +232,6 @@ class BindManagerTestBase : public gtest::TestLoopFixture {
   // unique instance ID if it's missing.
   uint32_t GetOrAddInstanceId(std::string node_name);
 
-  InspectManager inspect_{dispatcher()};
-
   std::unique_ptr<TestDriverIndex> driver_index_;
   std::unique_ptr<TestBindManagerBridge> bridge_;
   TestNodeManager node_manager_;
@@ -250,10 +242,6 @@ class BindManagerTestBase : public gtest::TestLoopFixture {
   // Maps each node to a unique instance id. The instance id is used to the node's
   // property for binding.
   std::unordered_map<std::string, uint32_t> instance_ids_;
-
-  std::shared_ptr<dfv2::Node> root_;
-  std::optional<Devnode> root_devnode_;
-  std::optional<Devfs> devfs_;
 
   fidl::Arena<> arena_;
 };

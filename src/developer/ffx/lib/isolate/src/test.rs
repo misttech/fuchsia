@@ -12,6 +12,8 @@ pub enum TestingError {
     ExecutionError(anyhow::Error),
     #[error("IO error {0:?}")]
     IoError(std::io::Error),
+    #[error("Output did not match expected. Actual output: {0}")]
+    MatchingError(String),
 }
 
 /// Struct defining a command line for executing as part of a test.
@@ -56,25 +58,27 @@ impl<'a> TestCommandLineInfo<'a> {
     async fn run_command_with_checks(&self, isolate: &Isolate) -> Result<String, TestingError> {
         let output = isolate.ffx(&self.args).await.map_err(|e| TestingError::ExecutionError(e))?;
 
-        assert_eq!(
-            output.status.code().unwrap(),
-            self.expected_exit_code,
-            "expected exit code of {} for ffx {:?}\n{output:?}",
-            self.expected_exit_code,
-            self.args
-        );
-        assert!(
-            (self.stdout_check)(&output.stdout),
-            "Stdout check failed for {:?} stdout == {:?}",
-            self.args,
-            output.stdout
-        );
-        assert!(
-            (self.stderr_check)(&output.stderr),
-            "Stderr check failed for {:?} {:?}",
-            self.args,
-            output.stderr
-        );
+        let actual_exit_code = output.status.code().expect("exit code");
+        if actual_exit_code != self.expected_exit_code {
+            return Err(TestingError::UnexpectedExitCode(
+                self.expected_exit_code,
+                actual_exit_code,
+            ));
+        }
+
+        if !(self.stdout_check)(&output.stdout) {
+            return Err(TestingError::MatchingError(format!(
+                "stdout check failed for {:?}",
+                self.args
+            )));
+        }
+
+        if !(self.stderr_check)(&output.stderr) {
+            return Err(TestingError::MatchingError(format!(
+                "stderr check failed for {:?}",
+                self.args
+            )));
+        }
 
         Ok(output.stdout)
     }

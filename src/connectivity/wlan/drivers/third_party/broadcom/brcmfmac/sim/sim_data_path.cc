@@ -55,7 +55,16 @@ void SimDataPath::Init(drivers::components::NetworkDevice* net_dev) {
   ZX_ASSERT(net_dev);
   net_dev_ = net_dev;
 
-  net_dev_->NetworkDeviceImplInit(&ifc_protocol_);
+  sync_completion_t initialized;
+  net_dev_->NetworkDeviceImplInit(
+      &ifc_protocol_,
+      [](void* ctx, zx_status_t status) {
+        sync_completion_t* initialized = static_cast<sync_completion_t*>(ctx);
+        ZX_ASSERT(status == ZX_OK);
+        sync_completion_signal(initialized);
+      },
+      &initialized);
+  sync_completion_wait(&initialized, ZX_TIME_INFINITE);
   net_dev_->NetworkDeviceImplGetInfo(&device_info_);
 
   // setup tx vmo, which is just a single frame of size kMaxFrameSize
@@ -137,10 +146,11 @@ void SimDataPath::OnRxComplete(const rx_buffer_t* rx_list, size_t rx_count) {
   QueueRxBuffer();
 }
 
-void SimDataPath::OnAddPort(uint8_t id, const network_port_protocol_t* port) {
+zx_status_t SimDataPath::OnAddPort(uint8_t id, const network_port_protocol_t* port) {
   ZX_ASSERT(port && port->ctx && port->ops);
   ZX_ASSERT(port_clients_.find(id) == port_clients_.end());
   port_clients_.insert({id, ddk::NetworkPortProtocolClient(port)});
+  return ZX_OK;
 }
 
 void SimDataPath::OnRemovePort(uint8_t id) {

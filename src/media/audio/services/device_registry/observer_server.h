@@ -9,7 +9,6 @@
 
 #include "src/media/audio/services/common/base_fidl_server.h"
 #include "src/media/audio/services/device_registry/device.h"
-#include "src/media/audio/services/device_registry/logging.h"
 #include "src/media/audio/services/device_registry/observer_notify.h"
 
 namespace media_audio {
@@ -45,6 +44,7 @@ class ObserverServer
   void WatchElementState(WatchElementStateRequest& request,
                          WatchElementStateCompleter::Sync& completer) final {}
   void GetTopologies(GetTopologiesCompleter::Sync& completer) final {}
+  void WatchTopology(WatchTopologyCompleter::Sync& completer) final {}
 
   // Static object count, for debugging purposes.
   static inline uint64_t count() { return count_; }
@@ -58,10 +58,10 @@ class ObserverServer
 
   explicit ObserverServer(std::shared_ptr<const Device> device);
 
-  std::optional<fuchsia_audio_device::GainState> updated_gain_state_;
+  std::optional<fuchsia_audio_device::GainState> new_gain_state_to_notify_;
   std::optional<WatchGainStateCompleter::Async> watch_gain_state_completer_;
 
-  std::optional<fuchsia_audio_device::ObserverWatchPlugStateResponse> plug_state_update_;
+  std::optional<fuchsia_audio_device::ObserverWatchPlugStateResponse> new_plug_state_to_notify_;
   std::optional<WatchPlugStateCompleter::Async> watch_plug_state_completer_;
 
   bool has_error_ = false;

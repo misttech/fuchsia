@@ -4,27 +4,7 @@
 library fuchsia.hardware.display;
 
 using fuchsia.images2;
-
-/// Type of the internal value in [`fuchsia.hardware.display/DisplayId`].
-alias DisplayIdValue = uint64;
-
-/// Unique identifier for a display device attached to the system.
-///
-/// [`fuchsia.hardware.display/INVALID_DISP_ID`] represents an invalid value.
-///
-/// Values are unique within a [`fuchsia.hardware.display/Controller`]
-/// connection. An external display will be associated with different display ID
-/// values if it is disconnected and reconnected.
-///
-/// A display device may be identified by different values across boot cycles or
-/// across different Controller connections. Software that needs to identify
-/// displays (for example, to honor display-specific preferences) should use
-/// [`fuchsia.hardware.display/Info`] identifiers, not display IDs.
-///
-/// This type is not related to the VESA DisplayID standard.
-type DisplayId = struct {
-    value DisplayIdValue;
-};
+using fuchsia.hardware.display.types;
 
 /// Describes an operational mode for a display device attached to the system.
 ///
@@ -67,8 +47,8 @@ type Mode = struct {
 type Info = struct {
     /// Uniquely identifies the display in a Controller connection.
     ///
-    /// See [`fuchsia.hardware.display/DisplayId`].
-    id DisplayId;
+    /// See [`fuchsia.hardware.display.types/DisplayId`].
+    id fuchsia.hardware.display.types.DisplayId;
 
     /// Operational modes supported by the described display device.
     ///
@@ -110,7 +90,7 @@ type Info = struct {
     /// A display config that uses a cursor layer configuration in this list may
     /// still be rejected by the driver, due to limitations that can't be
     /// covered by this API, such as total memory bandwidth constraints.
-    cursor_configs vector<CursorInfo>:MAX;
+    cursor_configs vector<fuchsia.hardware.display.types.CursorInfo>:MAX;
 
     /// Part of a display device identifier that persists across boot cycles.
     ///

@@ -66,7 +66,7 @@ pub(crate) struct UnicastNewRouteArgs<I: Ip> {
     // The metric used to weigh the importance of the route.
     pub priority: u32,
     // The routing table.
-    // TODO(issuetracker.google.com/289582515): Use this to add routes to
+    // TODO(https://issues.fuchsia.dev/289582515): Use this to add routes to
     // a RouteSet based on the table value.
     pub table: u32,
 }
@@ -91,7 +91,7 @@ pub(crate) struct UnicastDelRouteArgs<I: Ip> {
     // The metric used to weigh the importance of the route.
     pub(crate) priority: Option<NonZeroU32>,
     // The routing table.
-    // TODO(issuetracker.google.com/289582515): Use this to remove routes from
+    // TODO(https://issues.fuchsia.dev/289582515): Use this to remove routes from
     // a RouteSet based on the table value.
     pub(crate) table: NonZeroU32,
 }
@@ -249,14 +249,14 @@ pub(crate) struct EventLoop<
     S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
     I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdminIpExt,
 > {
-    /// TODO(issuetracker.google.com/289517742): Share the Control handles
+    /// TODO(https://issues.fuchsia.dev/289517742): Share the Control handles
     /// between Interfaces and Routes.
     /// An `InterfacesProxy` to authenticate the `RouteSet` to manage
     /// routes on interfaces.
     interfaces_proxy: fnet_root::InterfacesProxy,
     /// A 'StateProxy` to connect to the routes watcher.
     state_proxy: <I::StateMarker as ProtocolMarker>::Proxy,
-    /// TODO(issuetracker.google.com/289582515): Create a new `RouteSet`
+    /// TODO(https://issues.fuchsia.dev/289582515): Create a new `RouteSet`
     /// when a request with a new table is received.
     /// A `RouteSetProxy` to provide isolated administrative access
     /// to this worker's `RouteSet`.
@@ -497,7 +497,7 @@ impl<
         }
     }
 
-    // TODO(issuetracker.google.com/289518265): Once `authenticate_for_interface` call is
+    // TODO(https://issues.fuchsia.dev/289518265): Once `authenticate_for_interface` call is
     // forwarded to `Control`, update to use `fnet_interfaces_ext::admin::Control`.
     fn get_interface_control(
         interfaces_proxy: &fnet_root::InterfacesProxy,
@@ -533,7 +533,8 @@ impl<
         let proof = fnet_interfaces_ext::admin::proof_from_grant(&grant);
 
         #[derive(GenericOverIp)]
-        struct AuthorizeInputs<'a, I: Ip + fnet_routes_ext::admin::FidlRouteAdminIpExt> {
+        #[generic_over_ip(I, Ip)]
+        struct AuthorizeInputs<'a, I: fnet_routes_ext::admin::FidlRouteAdminIpExt> {
             route_set_proxy: &'a <I::RouteSetMarker as fidl::endpoints::ProtocolMarker>::Proxy,
             proof: ProofOfInterfaceAuthorization,
         }
@@ -836,7 +837,7 @@ pub(crate) struct NetlinkRouteMessage(RouteMessage);
 
 // Constructs a new set of `NetlinkRouteMessage` from an
 // `InstalledRoute` HashSet.
-// TODO(https://issuetracker.google.com/294273363): Store a HashSet of Route<I>
+// TODO(https://issues.fuchsia.dev/294273363): Store a HashSet of Route<I>
 // instead of NetlinkRouteMessage.
 fn new_set_with_existing_routes<I: Ip>(
     routes: HashSet<fnet_routes_ext::InstalledRoute<I>>,
@@ -1593,12 +1594,14 @@ mod tests {
         };
 
         #[derive(GenericOverIp)]
-        struct StateRequestWrapper<I: Ip + fnet_routes_ext::FidlRouteIpExt> {
+        #[generic_over_ip(I, Ip)]
+        struct StateRequestWrapper<I: fnet_routes_ext::FidlRouteIpExt> {
             request: <<I::StateMarker as ProtocolMarker>::RequestStream as futures::TryStream>::Ok,
         }
 
         #[derive(GenericOverIp)]
-        struct WatcherRequestWrapper<I: Ip + fnet_routes_ext::FidlRouteIpExt> {
+        #[generic_over_ip(I, Ip)]
+        struct WatcherRequestWrapper<I: fnet_routes_ext::FidlRouteIpExt> {
             watcher: <I::WatcherMarker as ProtocolMarker>::RequestStream,
         }
 
@@ -1655,7 +1658,8 @@ mod tests {
         updates: impl IntoIterator<Item = I::WatchEvent>,
     ) {
         #[derive(GenericOverIp)]
-        struct HandleInputs<I: Ip + fnet_routes_ext::FidlRouteIpExt> {
+        #[generic_over_ip(I, Ip)]
+        struct HandleInputs<I: fnet_routes_ext::FidlRouteIpExt> {
             request: <<I::WatcherMarker as ProtocolMarker>::RequestStream as Stream>::Item,
             update: I::WatchEvent,
         }
@@ -2087,12 +2091,14 @@ mod tests {
         route_set_results: impl ExactSizeIterator<Item = RouteSetResult>,
     ) {
         #[derive(GenericOverIp)]
-        struct RouteSetInputs<I: Ip + fnet_routes_ext::admin::FidlRouteAdminIpExt> {
+        #[generic_over_ip(I, Ip)]
+        struct RouteSetInputs<I: fnet_routes_ext::admin::FidlRouteAdminIpExt> {
             request: <<I::RouteSetMarker as ProtocolMarker>::RequestStream as Stream>::Item,
             route_set_result: RouteSetResult,
         }
         #[derive(GenericOverIp)]
-        struct RouteSetOutputs<I: Ip + fnet_routes_ext::FidlRouteIpExt> {
+        #[generic_over_ip(I, Ip)]
+        struct RouteSetOutputs<I: fnet_routes_ext::FidlRouteIpExt> {
             event: Option<I::WatchEvent>,
         }
 

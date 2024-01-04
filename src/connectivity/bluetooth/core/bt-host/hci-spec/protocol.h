@@ -14,7 +14,8 @@
 #include "src/connectivity/bluetooth/core/bt-host/common/uint128.h"
 #include "src/connectivity/bluetooth/core/bt-host/hci-spec/constants.h"
 
-#include <pw_bluetooth/hci.emb.h>
+#include <pw_bluetooth/hci_common.emb.h>
+#include <pw_bluetooth/hci_events.emb.h>
 
 // This file contains general opcode/number and static packet definitions for
 // the Bluetooth Host-Controller Interface. Each packet payload structure
@@ -818,17 +819,6 @@ struct HardwareErrorEventParams {
 // Role Change Event (BR/EDR) (v1.1)
 constexpr EventCode kRoleChangeEventCode = 0x12;
 
-struct RoleChangeEventParams {
-  // See enum StatusCode in hci_constants.h.
-  StatusCode status;
-
-  // The address of the device for which a role change has completed.
-  DeviceAddressBytes bd_addr;
-
-  // The new role for the specified address.
-  ConnectionRole new_role;
-} __attribute__((packed));
-
 // ========================================
 // Number Of Completed Packets Event (v1.1)
 constexpr EventCode kNumberOfCompletedPacketsEventCode = 0x13;
@@ -850,71 +840,17 @@ struct NumberOfCompletedPacketsEventParams {
 // Link Key Request Event (v1.1) (BR/EDR)
 constexpr EventCode kLinkKeyRequestEventCode = 0x17;
 
-struct LinkKeyRequestParams {
-  // The address for the device that a host-stored link key is being requested.
-  DeviceAddressBytes bd_addr;
-} __attribute__((packed));
-
 // ===========================================
 // Link Key Notification Event (v1.1) (BR/EDR)
 constexpr EventCode kLinkKeyNotificationEventCode = 0x18;
-
-struct LinkKeyNotificationEventParams {
-  // The address for the device for which a new link key has been generated.
-  DeviceAddressBytes bd_addr;
-
-  // Link key for the associated address.
-  uint8_t link_key[kBrEdrLinkKeySize];
-
-  // Type of key used when pairing.
-  uint8_t key_type;
-} __attribute__((packed));
 
 // ===========================================
 // Data Buffer Overflow Event (v1.1) (BR/EDR & LE)
 constexpr EventCode kDataBufferOverflowEventCode = 0x1A;
 
-struct DataBufferOverflowEventParams {
-  // The type of data that caused the overflow.
-  LinkType ll_type;
-} __attribute__((packed));
-
 // ==============================================
 // Inquiry Result with RSSI Event (v1.2) (BR/EDR)
 constexpr EventCode kInquiryResultWithRSSIEventCode = 0x22;
-
-struct InquiryResultRSSI {
-  // The address for the device which responded.
-  DeviceAddressBytes bd_addr;
-
-  // The Page Scan Repetition Mode being used by the remote device.
-  pw::bluetooth::emboss::PageScanRepetitionMode page_scan_repetition_mode;
-
-  // Reserved (no meaning as of v1.2)
-  uint8_t page_scan_period_mode;
-
-  // Class of device
-  DeviceClass class_of_device;
-
-  // Clock Offset
-  // the 15 lower bits represent bits 16-2 of CLKNPeripheral-CLK
-  // the most significant bit is reserved
-  uint16_t clock_offset;
-
-  // RSSI
-  // Valid range: -127 to +20
-  int8_t rssi;
-} __attribute__((packed));
-
-struct InquiryResultWithRSSIEventParams {
-  InquiryResultWithRSSIEventParams() = default;
-  BT_DISALLOW_COPY_ASSIGN_AND_MOVE(InquiryResultWithRSSIEventParams);
-
-  // The number of responses included.
-  uint8_t num_responses;
-
-  InquiryResultRSSI responses[];
-} __attribute__((packed));
 
 // ============================================================
 // Read Remote Extended Features Complete Event (v1.1) (BR/EDR)
@@ -924,115 +860,21 @@ constexpr EventCode kReadRemoteExtendedFeaturesCompleteEventCode = 0x23;
 // Synchronous Connection Complete Event (BR/EDR)
 constexpr EventCode kSynchronousConnectionCompleteEventCode = 0x2C;
 
-struct SynchronousConnectionCompleteEventParams {
-  // See enum StatusCode in hci_constants.h.
-  StatusCode status;
-
-  // A connection handle for the newly created SCO connection.
-  ConnectionHandle connection_handle;
-
-  // BD_ADDR of the other connected device forming the connection.
-  DeviceAddressBytes bd_addr;
-
-  LinkType link_type;
-
-  // Time between two consecutive eSCO instants measured in slots. Shall be
-  // zero for SCO links.
-  uint8_t transmission_interval;
-
-  // The size of the retransmission window measured in slots. Shall be zero for
-  // SCO links.
-  uint8_t retransmission_window;
-
-  // Length in bytes of the eSCO payload in the receive direction. Shall be
-  // zero for SCO links.
-  uint16_t rx_packet_length;
-
-  // Length in bytes of the eSCO payload in the transmit direction. Shall be
-  // zero for SCO links.
-  uint16_t tx_packet_length;
-
-  pw::bluetooth::emboss::CodingFormat air_coding_format;
-} __attribute__((packed));
-
 // =============================================
 // Extended Inquiry Result Event (v1.2) (BR/EDR)
 constexpr EventCode kExtendedInquiryResultEventCode = 0x2F;
-
-struct ExtendedInquiryResultEventParams {
-  // Num_Responses
-  // The number of responses from the inquiry.
-  // Must be 1.
-  uint8_t num_responses;
-
-  // BD_ADDR of the device that responded.
-  DeviceAddressBytes bd_addr;
-
-  // The Page Scan Repetition Mode being used by the remote device.
-  pw::bluetooth::emboss::PageScanRepetitionMode page_scan_repetition_mode;
-
-  // Reserved for future use
-  uint8_t reserved;
-
-  // Class of device
-  DeviceClass class_of_device;
-
-  // Clock offset
-  // the 15 lower bits represent bits 16-2 of CLKNPeripheral-CLK
-  // the most significant bit is reserved
-  uint16_t clock_offset;
-
-  // RSSI in dBm.
-  // Valid range: -127 to +20
-  int8_t rssi;
-
-  // Extended inquiey response data as defined in Vol 3, Part C, Sec 8
-  uint8_t extended_inquiry_response[kExtendedInquiryResponseBytes];
-} __attribute__((packed));
 
 // ================================================================
 // Encryption Key Refresh Complete Event (v2.1 + EDR) (BR/EDR & LE)
 constexpr EventCode kEncryptionKeyRefreshCompleteEventCode = 0x30;
 
-struct EncryptionKeyRefreshCompleteEventParams {
-  // See enum StatusCode in hci_constants.h.
-  StatusCode status;
-
-  // Connection_Handle (only the lower 12-bits are meaningful).
-  //   Range: 0x0000 to kConnectionHandleMax in hci_constants.h
-  ConnectionHandle connection_handle;
-} __attribute__((packed));
-
 // =================================================
 // IO Capability Request Event (v2.1 + EDR) (BR/EDR)
 constexpr EventCode kIOCapabilityRequestEventCode = 0x31;
 
-struct IOCapabilityRequestEventParams {
-  // The address of the remote device involved in the simple pairing process
-  DeviceAddressBytes bd_addr;
-} __attribute__((packed));
-
 // ==================================================
 // IO Capability Response Event (v2.1 + EDR) (BR/EDR)
 constexpr EventCode kIOCapabilityResponseEventCode = 0x32;
-
-struct IOCapabilityResponseEventParams {
-  // The address of the remote device which the IO capabilities apply
-  DeviceAddressBytes bd_addr;
-
-  // IO Capabilities of the device
-  pw::bluetooth::emboss::IoCapability io_capability;
-
-  // Whether OOB Data is present.
-  // Allowed values:
-  //  0x00 - OOB authentication data not present
-  //  0x01 - OOB authentication data from remote device present
-  uint8_t oob_data_present;
-
-  // Authentication Requirements.
-  // See AuthenticationRequirements in hci_constants.h
-  pw::bluetooth::emboss::AuthenticationRequirements auth_requirements;
-} __attribute__((packed));
 
 // =====================================================
 // User Confirmation Request Event (v2.1 + EDR) (BR/EDR)
@@ -1445,15 +1287,6 @@ struct LEScanRequestReceivedSubeventParams {
 
 // LE Channel Selection Algorithm Event (v5.0) (LE)
 constexpr EventCode kLEChannelSelectionAlgorithmSubeventCode = 0x014;
-
-struct LEChannelSelectionAlgorithmSubeventParams {
-  // Connection Handle (only the lower 12-bits are meaningful).
-  //   Range: 0x0000 to kConnectionHandleMax in hci_constants.h
-  ConnectionHandle connection_handle;
-
-  // Channel selection algorithm is used on the data channel connection.
-  LEChannelSelectionAlgorithm channel_selection_algorithm;
-} __attribute__((packed));
 
 // ================================================================
 // Number Of Completed Data Blocks Event (v3.0 + HS) (BR/EDR & AMP)
@@ -2395,58 +2228,6 @@ constexpr OpCode kLESetExtendedScanEnable = LEControllerCommandOpCode(0x0042);
 // =================================================
 // LE Extended Create Connection Command (v5.0) (LE)
 constexpr OpCode kLEExtendedCreateConnection = LEControllerCommandOpCode(0x0043);
-
-struct LEExtendedCreateConnectionData {
-  // Range: see kLEExtendedScanInterval[Min|Max] in hci_constants.h
-  // Time: N * 0.625 ms
-  // Time Range: 2.5 ms to 40.959375 s
-  uint16_t scan_interval;
-  uint16_t scan_window;
-
-  // Range: see kLEConnectionInterval[Min|Max] in hci_constants.h
-  // Time: N * 1.25 ms
-  // Time Range: 7.5 ms to 4 s.
-  uint16_t conn_interval_min;
-  uint16_t conn_interval_max;
-
-  // Range: 0x0000 to kLEConnectionLatencyMax in hci_constants.h
-  uint16_t conn_latency;
-
-  // Range: see kLEConnectionSupervisionTimeout[Min|Max] in hci_constants.h
-  // Time: N * 10 ms
-  // Time Range: 100 ms to 32 s
-  uint16_t supervision_timeout;
-
-  // Range: 0x0000 - 0xFFFF
-  // Time: N * 0x625 ms
-  uint16_t minimum_ce_length;
-  uint16_t maximum_ce_length;
-} __attribute__((packed));
-
-struct LEExtendedCreateConnectionCommandParams {
-  LEExtendedCreateConnectionCommandParams() = delete;
-  BT_DISALLOW_COPY_ASSIGN_AND_MOVE(LEExtendedCreateConnectionCommandParams);
-
-  GenericEnableParam initiator_filter_policy;
-  pw::bluetooth::emboss::LEOwnAddressType own_address_type;
-  LEPeerAddressType peer_address_type;
-
-  // Public Device Address, Random Device Address, Public Identity Address, or
-  // Random (static) Identity Address of the device to be connected.
-  DeviceAddressBytes peer_address;
-
-  // See the kLEPHYBit* constants in hci_constants.h for possible bitfield
-  // values.
-  uint8_t initiating_phys;
-
-  // The number of array elements is determined by the number of bits set in the
-  // |initiating_phys| parameter.
-  LEExtendedCreateConnectionData data[];
-} __attribute__((packed));
-
-// NOTE on ReturnParams: No Command Complete event is sent by the Controller to
-// indicate that this command has been completed. Instead, the LE Enhanced
-// Connection Complete event indicates that this command has been completed.
 
 // =======================================================
 // LE Periodic Advertising Create Sync Command (v5.0) (LE)

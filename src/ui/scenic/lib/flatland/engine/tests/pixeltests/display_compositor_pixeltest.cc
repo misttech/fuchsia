@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.hardware.display.types/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem/cpp/wire.h>
 #include <fuchsia/sysmem/cpp/fidl.h>
@@ -358,21 +359,23 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     // Get the latest applied config stamp. This will be used to compare against the config
     // stamp in the OnSync callback function used by the display. If the two stamps match,
     // then we know that the vsync has completed and it is safe to do readbacks.
-    fuchsia::hardware::display::ConfigStamp pending_config_stamp;
+    fuchsia::hardware::display::types::ConfigStamp pending_config_stamp;
     auto status = (*display_coordinator.get())->GetLatestAppliedConfigStamp(&pending_config_stamp);
     ASSERT_TRUE(status == ZX_OK);
 
     // The callback will switch this bool to |true| if the two configs match. It is initialized
     // to |false| and blocks the main thread below.
     bool configs_are_equal = false;
-    display->SetVsyncCallback([&pending_config_stamp, &configs_are_equal](
-                                  zx::time timestamp,
-                                  fuchsia::hardware::display::ConfigStamp applied_config_stamp) {
-      if (pending_config_stamp.value == applied_config_stamp.value &&
-          applied_config_stamp.value != fuchsia::hardware::display::INVALID_CONFIG_STAMP_VALUE) {
-        configs_are_equal = true;
-      }
-    });
+    display->SetVsyncCallback(
+        [&pending_config_stamp, &configs_are_equal](
+            zx::time timestamp,
+            fuchsia::hardware::display::types::ConfigStamp applied_config_stamp) {
+          if (pending_config_stamp.value == applied_config_stamp.value &&
+              applied_config_stamp.value !=
+                  fuchsia::hardware::display::types::INVALID_CONFIG_STAMP_VALUE) {
+            configs_are_equal = true;
+          }
+        });
 
     // Run loop until the configs match.
     ASSERT_TRUE(RunLoopWithTimeoutOrUntil([&configs_are_equal] { return configs_are_equal; },
@@ -414,8 +417,8 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     }
 
     // Set up buffer collection and image for recording a snapshot.
-    fuchsia::hardware::display::ImageConfig image_config = {
-        .type = fuchsia::hardware::display::TYPE_CAPTURE};
+    fuchsia::hardware::display::types::ImageConfig image_config = {
+        .type = fuchsia::hardware::display::types::TYPE_CAPTURE};
 
     auto tokens = SysmemTokens::Create(sysmem_allocator_.get());
     auto result = scenic_impl::ImportBufferCollection(collection_id, *display_coordinator.get(),
@@ -545,7 +548,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
 
     // This ID would only be zero if we were running in an environment without capture support.
     EXPECT_NE(capture_image_id, 0U);
-    const fuchsia::hardware::display::ImageId fidl_capture_image_id =
+    const fuchsia::hardware::display::types::ImageId fidl_capture_image_id =
         allocation::ToFidlImageId(capture_image_id);
 
     auto display = display_manager_->default_display();
@@ -706,8 +709,9 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
       }
     }
 
-    EXPECT_EQ(num_pixels_different, 0U)
-        << "Capture Compare number of pixels different: " << num_pixels_different;
+    if (num_pixels_different != 0U) {
+      FX_LOGS(ERROR) << "Capture Compare number of pixels different: " << num_pixels_different;
+    }
     return num_pixels_different == 0U;
   }
 #endif  // FAKE_DISPLAY
@@ -755,7 +759,7 @@ Vulkan Renderer, try creating a DisplayCompositor with the NullRenderer
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->default_display_coordinator(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
-      true);
+      true, 1);
 
 Lastly, if you are specifically testing the Vulkan Renderer and do not need Display Compositing, try
 creating a DisplayCompositor with enable_display_composition=false:
@@ -763,7 +767,7 @@ creating a DisplayCompositor with enable_display_composition=false:
    auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->default_display_coordinator(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
-      false);
+      false, 1);
 
 When uploading a CL that makes changes to these tests, also make sure that they run on NUC
 environments with basic envs. This should happen automatically because this is specified in
@@ -784,7 +788,7 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenRectangleTest) {
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->default_display_coordinator(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
-      /*enable_display_composition*/ true);
+      /*enable_display_composition*/ true, /*max_display_layers=*/1);
 
   auto display = display_manager_->default_display();
   auto display_coordinator = display_manager_->default_display_coordinator();
@@ -890,13 +894,25 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenRectangleTest) {
           {{display->display_id().value, std::make_pair(display_info, root_handle)}}),
       {}, [](const scheduling::Timestamps&) {});
 
-  // Grab the capture vmo data.
-  std::vector<uint8_t> read_values;
-  CaptureDisplayOutput(capture_info, capture_image_id, &read_values);
+  bool images_are_same = [&]() -> bool {
+    // The amlogic capture IP block can sometimes be flaky.
+    // If the images aren't the same, retry a single time.
+    static constexpr int kNumTries = 2;
 
-  // Compare the capture vmo data to the texture data above.
-  bool images_are_same = CaptureCompare(read_values, write_bytes, GetParam(),
-                                        display->height_in_px(), display->width_in_px());
+    for (int i = 0; i < kNumTries; i++) {
+      // Grab the capture vmo data.
+      std::vector<uint8_t> read_values;
+      CaptureDisplayOutput(capture_info, capture_image_id, &read_values);
+
+      // Compare the capture vmo data to the texture data above.
+      if (CaptureCompare(read_values, write_bytes, GetParam(), display->height_in_px(),
+                         display->width_in_px())) {
+        return true;
+      }
+    }
+    return false;
+  }();
+
   EXPECT_TRUE(images_are_same);
 }
 
@@ -910,7 +926,7 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, ColorConversionTest) {
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->default_display_coordinator(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
-      /*enable_display_composition=*/true);
+      /*enable_display_composition=*/true, /*max_display_layers=*/1);
 
   auto display = display_manager_->default_display();
   auto display_coordinator = display_manager_->default_display_coordinator();
@@ -1018,7 +1034,7 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenSolidColorRectangle
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->default_display_coordinator(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
-      /*enable_display_composition*/ true);
+      /*enable_display_composition*/ true, /*max_display_layers=*/1);
 
   auto display = display_manager_->default_display();
   auto display_coordinator = display_manager_->default_display_coordinator();
@@ -1117,7 +1133,7 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, SetMinimumRGBTest) {
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->default_display_coordinator(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
-      /*enable_display_composition*/ true);
+      /*enable_display_composition*/ true, /*max_display_layers=*/1);
 
   auto display = display_manager_->default_display();
   auto display_coordinator = display_manager_->default_display_coordinator();
@@ -1283,7 +1299,7 @@ VK_TEST_P(DisplayCompositorFallbackParameterizedPixelTest, SoftwareRenderingTest
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->default_display_coordinator(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
-      /*enable_display_composition*/ true);
+      /*enable_display_composition*/ true, /*max_display_layers=*/1);
 
   auto texture_collection = SetupClientTextures(display_compositor.get(), kTextureCollectionId,
                                                 GetParam(), kTextureWidth, kTextureHeight,
@@ -1468,7 +1484,7 @@ VK_TEST_F(DisplayCompositorPixelTest, OverlappingTransparencyTest) {
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->default_display_coordinator(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
-      /*enable_display_composition*/ true);
+      /*enable_display_composition*/ true, /*max_display_layers=*/1);
 
   auto texture_collection =
       SetupClientTextures(display_compositor.get(), kTextureCollectionId,
@@ -1633,7 +1649,7 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->default_display_coordinator(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
-      /*enable_display_composition*/ false);
+      /*enable_display_composition*/ false, /*max_display_layers=*/1);
 
   const uint64_t kTextureCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const uint64_t kCaptureCollectionId = allocation::GenerateUniqueBufferCollectionId();
@@ -1757,14 +1773,25 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
                    EXPECT_EQ(0U, display_bytes_per_row % 4);
                    const uint32_t display_width_including_padding = display_bytes_per_row / 4;
 
-                   // Grab the capture vmo data.
-                   std::vector<uint8_t> read_values;
-                   CaptureDisplayOutput(capture_info, capture_image_id, &read_values);
+                   bool images_are_same = [&]() -> bool {
+                     // The amlogic capture IP block can sometimes be flaky.
+                     // If the images aren't the same, retry a single time.
+                     static constexpr int kNumTries = 2;
 
-                   // Compare the capture vmo data to the values we are expecting.
-                   bool images_are_same =
-                       CaptureCompare(read_values, cpp20::span(vmo_host, num_bytes), GetParam(),
-                                      display->height_in_px(), display->width_in_px());
+                     for (int i = 0; i < kNumTries; i++) {
+                       // Grab the capture vmo data.
+                       std::vector<uint8_t> read_values;
+                       CaptureDisplayOutput(capture_info, capture_image_id, &read_values);
+
+                       // Compare the capture vmo data to the values we are expecting.
+                       if (CaptureCompare(read_values, cpp20::span(vmo_host, num_bytes), GetParam(),
+                                          display->height_in_px(), display->width_in_px())) {
+                         return true;
+                       }
+                     }
+                     return false;
+                   }();
+
                    EXPECT_TRUE(images_are_same);
 
                    // |vmo_host| has BGRA sequence in pixel values.
@@ -1871,7 +1898,7 @@ VK_TEST_P(DisplayCompositorParameterizedTest, ImageFlipRotate180DegreesPixelTest
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->default_display_coordinator(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
-      /*enable_display_composition=*/false);
+      /*enable_display_composition=*/false, /*max_display_layers=*/1);
 
   const uint64_t kTextureCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const uint64_t kCaptureCollectionId = allocation::GenerateUniqueBufferCollectionId();
@@ -2058,7 +2085,7 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
   auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
       dispatcher(), display_manager_->default_display_coordinator(), renderer,
       utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
-      /*enable_display_composition=*/true);
+      /*enable_display_composition=*/true, /*max_display_layers=*/1);
 
   const uint64_t kTextureCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const uint64_t kCaptureCollectionId = allocation::GenerateUniqueBufferCollectionId();

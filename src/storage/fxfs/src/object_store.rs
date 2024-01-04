@@ -16,29 +16,25 @@ pub mod object_manager;
 mod object_record;
 pub mod project_id;
 mod store_object_handle;
-#[cfg(test)]
-mod testing;
 pub mod transaction;
 mod tree;
 mod tree_cache;
 pub mod volume;
-pub mod writeback_cache;
 
 pub use caching_object_handle::CachingObjectHandle;
 pub use data_object_handle::{DataObjectHandle, DirectWriter};
 pub use directory::Directory;
-pub use key_manager::KeyUnwrapper;
 pub use object_record::{ChildValue, ObjectDescriptor, PosixAttributes, Timestamp};
-pub use store_object_handle::{SetExtendedAttributeMode, StoreObjectHandle};
+pub use store_object_handle::{
+    SetExtendedAttributeMode, StoreObjectHandle, EXTENDED_ATTRIBUTE_RANGE_END,
+    EXTENDED_ATTRIBUTE_RANGE_START,
+};
 
 use {
     crate::{
-        data_buffer::{DataBuffer, MemDataBuffer},
-        debug_assert_not_too_long,
         errors::FxfsError,
         filesystem::{
-            ApplyContext, ApplyMode, Filesystem, FxFilesystem, JournalingObject, SyncOptions,
-            MAX_FILE_SIZE,
+            ApplyContext, ApplyMode, FxFilesystem, JournalingObject, SyncOptions, MAX_FILE_SIZE,
         },
         log::*,
         lsm_tree::{
@@ -46,27 +42,26 @@ use {
             types::{Item, ItemRef, LayerIterator},
             LSMTree,
         },
-        object_handle::{ObjectHandle, ObjectHandleExt, ReadObjectHandle, INVALID_OBJECT_ID},
+        object_handle::{ObjectHandle, ReadObjectHandle, INVALID_OBJECT_ID},
         object_store::{
-            allocator::SimpleAllocator,
+            allocator::Allocator,
             graveyard::Graveyard,
             journal::{JournalCheckpoint, JournaledTransaction},
+            key_manager::KeyManager,
             transaction::{
-                AssocObj, AssociatedObject, LockKey, ObjectStoreMutation, Operation, Options,
-                Transaction, UpdateMutationsKey,
+                lock_keys, AssocObj, AssociatedObject, LockKey, ObjectStoreMutation, Operation,
+                Options, Transaction, UpdateMutationsKey,
             },
         },
         range::RangeExt,
         round::round_up,
         serialized_types::{Version, Versioned, VersionedLatest},
     },
-    allocator::Allocator,
     anyhow::{anyhow, bail, ensure, Context, Error},
     assert_matches::assert_matches,
     async_trait::async_trait,
     fidl_fuchsia_io as fio,
     fprint::TypeFingerprint,
-    fuchsia_async as fasync,
     fuchsia_inspect::ArrayProperty,
     fxfs_crypto::{ff1::Ff1, Crypt, KeyPurpose, StreamCipher, WrappedKey, WrappedKeys},
     once_cell::sync::OnceCell,
@@ -77,7 +72,7 @@ use {
         fmt,
         ops::Bound,
         sync::{
-            atomic::{AtomicBool, Ordering},
+            atomic::{AtomicBool, AtomicU64, Ordering},
             Arc, Mutex, Weak,
         },
     },
@@ -89,16 +84,17 @@ use {
 pub use allocator::{AllocatorInfo, AllocatorKey, AllocatorValue};
 pub use extent_record::{
     ExtentKey, ExtentValue, BLOB_MERKLE_ATTRIBUTE_ID, DEFAULT_DATA_ATTRIBUTE_ID,
+    FSVERITY_MERKLE_ATTRIBUTE_ID,
 };
 pub use journal::{
     JournalRecord, JournalRecordV20, JournalRecordV25, JournalRecordV29, JournalRecordV30,
-    SuperBlockHeader, SuperBlockRecord, SuperBlockRecordV25, SuperBlockRecordV29,
-    SuperBlockRecordV30, SuperBlockRecordV5,
+    JournalRecordV31, JournalRecordV32, SuperBlockHeader, SuperBlockRecord, SuperBlockRecordV25,
+    SuperBlockRecordV29, SuperBlockRecordV30, SuperBlockRecordV31, SuperBlockRecordV5,
 };
 pub use object_record::{
-    AttributeKey, EncryptionKeys, ExtendedAttributeValue, ObjectAttributes, ObjectAttributesV5,
-    ObjectKey, ObjectKeyData, ObjectKeyDataV5, ObjectKeyV25, ObjectKeyV5, ObjectKind, ObjectValue,
-    ObjectValueV25, ObjectValueV29, ObjectValueV30, ObjectValueV5, ProjectProperty,
+    AttributeKey, EncryptionKeys, ExtendedAttributeValue, FsverityMetadata, ObjectAttributes,
+    ObjectKey, ObjectKeyData, ObjectKeyV25, ObjectKeyV5, ObjectKind, ObjectValue, ObjectValueV25,
+    ObjectValueV29, ObjectValueV30, ObjectValueV31, ObjectValueV5, ProjectProperty, RootDigest,
 };
 pub use transaction::Mutation;
 
@@ -110,12 +106,8 @@ const OBJECT_ID_HI_MASK: u64 = 0xffffffff00000000;
 const TRANSACTION_MUTATION_THRESHOLD: usize = 200;
 
 /// DataObjectHandle stores an owner that must implement this trait, which allows the handle to get
-/// back to an ObjectStore and provides a callback for creating a data buffer for the handle.
-pub trait HandleOwner: AsRef<ObjectStore> + Send + Sync + 'static {
-    type Buffer: DataBuffer;
-
-    fn create_data_buffer(&self, object_id: u64, initial_size: u64) -> Self::Buffer;
-}
+/// back to an ObjectStore.
+pub trait HandleOwner: AsRef<ObjectStore> + Send + Sync + 'static {}
 
 // StoreInfo stores information about the object store.  This is stored within the parent object
 // store, and is used, for example, to get the persistent layer objects.
@@ -187,13 +179,13 @@ pub const MAX_STORE_INFO_SERIALIZED_SIZE: usize = 131072;
 
 // This needs to be large enough to accommodate the maximum amount of unflushed data (data that is
 // in the journal but hasn't yet been written to layer files) for a store.  We set a limit because
-// we want to limit the amount of memory use in the case the filesystem is corrupt or under attaack.
+// we want to limit the amount of memory use in the case the filesystem is corrupt or under attack.
 pub const MAX_ENCRYPTED_MUTATIONS_SIZE: usize = 8 * journal::DEFAULT_RECLAIM_SIZE as usize;
 
 #[derive(Default)]
 pub struct HandleOptions {
     /// If true, transactions used by this handle will skip journal space checks.
-    skip_journal_checks: bool,
+    pub skip_journal_checks: bool,
 }
 
 #[derive(Default)]
@@ -451,7 +443,7 @@ pub struct ObjectStore {
     store_object_id: u64,
     device: Arc<dyn Device>,
     block_size: u64,
-    filesystem: Weak<dyn Filesystem>,
+    filesystem: Weak<FxFilesystem>,
     // Lock ordering: This must be taken before `lock_state`.
     store_info: Mutex<StoreOrReplayInfo>,
     tree: LSMTree<ObjectKey, ObjectValue>,
@@ -468,12 +460,19 @@ pub struct ObjectStore {
     // Current lock state of the store.
     // Lock ordering: This must be taken after `store_info`.
     lock_state: Mutex<LockState>,
+    key_manager: KeyManager,
 
     // Enable/disable tracing.
     trace: AtomicBool,
 
     // Informational counters for events occurring within the store.
     counters: Mutex<ObjectStoreCounters>,
+
+    // These are updated in performance-sensitive code paths so we use atomics instead of counters.
+    device_read_ops: AtomicU64,
+    device_write_ops: AtomicU64,
+    logical_read_ops: AtomicU64,
+    logical_write_ops: AtomicU64,
 
     // Contains the last object ID and, optionally, a cipher to be used when generating new object
     // IDs.
@@ -493,7 +492,7 @@ impl ObjectStore {
     fn new(
         parent_store: Option<Arc<ObjectStore>>,
         store_object_id: u64,
-        filesystem: Arc<dyn Filesystem>,
+        filesystem: Arc<FxFilesystem>,
         store_info: Option<StoreInfo>,
         object_cache: Box<dyn ObjectCache<ObjectKey, ObjectValue>>,
         mutations_cipher: Option<StreamCipher>,
@@ -516,8 +515,13 @@ impl ObjectStore {
             store_info_handle: OnceCell::new(),
             mutations_cipher: Mutex::new(mutations_cipher),
             lock_state: Mutex::new(lock_state),
+            key_manager: KeyManager::new(),
             trace: AtomicBool::new(false),
             counters: Mutex::new(ObjectStoreCounters::default()),
+            device_read_ops: AtomicU64::new(0),
+            device_write_ops: AtomicU64::new(0),
+            logical_read_ops: AtomicU64::new(0),
+            logical_write_ops: AtomicU64::new(0),
             last_object_id: Mutex::new(last_object_id),
         })
     }
@@ -525,7 +529,7 @@ impl ObjectStore {
     fn new_empty(
         parent_store: Option<Arc<ObjectStore>>,
         store_object_id: u64,
-        filesystem: Arc<dyn Filesystem>,
+        filesystem: Arc<FxFilesystem>,
         object_cache: Box<dyn ObjectCache<ObjectKey, ObjectValue>>,
     ) -> Arc<Self> {
         Self::new(
@@ -554,18 +558,20 @@ impl ObjectStore {
             store_info_handle: OnceCell::new(),
             mutations_cipher: Mutex::new(None),
             lock_state: Mutex::new(LockState::Unencrypted),
+            key_manager: KeyManager::new(),
             trace: AtomicBool::new(false),
             counters: Mutex::new(ObjectStoreCounters::default()),
+            device_read_ops: AtomicU64::new(0),
+            device_write_ops: AtomicU64::new(0),
+            logical_read_ops: AtomicU64::new(0),
+            logical_write_ops: AtomicU64::new(0),
             last_object_id: Mutex::new(LastObjectId::default()),
         }
     }
 
     /// Used to set filesystem on root_parent stores at bootstrap time after the filesystem has
     /// been created.
-    pub fn attach_filesystem(
-        mut this: ObjectStore,
-        filesystem: Arc<dyn Filesystem>,
-    ) -> ObjectStore {
+    pub fn attach_filesystem(mut this: ObjectStore, filesystem: Arc<FxFilesystem>) -> ObjectStore {
         this.filesystem = Arc::downgrade(&filesystem);
         this
     }
@@ -651,15 +657,18 @@ impl ObjectStore {
             let graveyard_directory_object_id = Graveyard::create(transaction, &self);
             let root_directory = Directory::create(transaction, &self, Default::default()).await?;
 
-            let mut store_info = self.store_info.lock().unwrap();
-            let store_info = store_info.info_mut().unwrap();
+            let serialized_info = {
+                let mut store_info = self.store_info.lock().unwrap();
+                let store_info = store_info.info_mut().unwrap();
 
-            store_info.graveyard_directory_object_id = graveyard_directory_object_id;
-            store_info.root_directory_object_id = root_directory.object_id();
+                store_info.graveyard_directory_object_id = graveyard_directory_object_id;
+                store_info.root_directory_object_id = root_directory.object_id();
 
-            let mut serialized_info = Vec::new();
-            store_info.serialize_with_version(&mut serialized_info)?;
-            let mut buf = self.device.allocate_buffer(serialized_info.len());
+                let mut serialized_info = Vec::new();
+                store_info.serialize_with_version(&mut serialized_info)?;
+                serialized_info
+            };
+            let mut buf = self.device.allocate_buffer(serialized_info.len()).await;
             buf.as_mut_slice().copy_from_slice(&serialized_info[..]);
             buf
         };
@@ -710,6 +719,11 @@ impl ObjectStore {
         for i in 0..counters.persistent_layer_file_sizes.len() {
             sizes.set(i, counters.persistent_layer_file_sizes[i]);
         }
+        root.record_uint("device_read_ops", self.device_read_ops.load(Ordering::Relaxed));
+        root.record_uint("device_write_ops", self.device_write_ops.load(Ordering::Relaxed));
+        root.record_uint("logical_read_ops", self.logical_read_ops.load(Ordering::Relaxed));
+        root.record_uint("logical_write_ops", self.logical_write_ops.load(Ordering::Relaxed));
+
         root.record(sizes);
     }
 
@@ -721,7 +735,7 @@ impl ObjectStore {
         self.block_size
     }
 
-    pub fn filesystem(&self) -> Arc<dyn Filesystem> {
+    pub fn filesystem(&self) -> Arc<FxFilesystem> {
         self.filesystem.upgrade().unwrap()
     }
 
@@ -797,33 +811,19 @@ impl ObjectStore {
     }
 
     /// `crypt` can be provided if the crypt service should be different to the default; see the
-    /// comment on create_object.
+    /// comment on create_object.  Users should avoid having more than one handle open for the same
+    /// object at the same time because they might get out-of-sync; there is no code that will
+    /// prevent this.  One example where this can cause an issue is if the object ends up using a
+    /// permanent key (which is the case if a value is passed for `crypt`), the permanent key is
+    /// dropped when a handle is dropped, which will impact any other handles for the same object.
     pub async fn open_object<S: HandleOwner>(
         owner: &Arc<S>,
         object_id: u64,
         options: HandleOptions,
-        mut crypt: Option<Arc<dyn Crypt>>,
+        crypt: Option<Arc<dyn Crypt>>,
     ) -> Result<DataObjectHandle<S>, Error> {
         let store = owner.as_ref().as_ref();
-        let store_crypt = store.crypt();
-        if crypt.is_none() {
-            crypt = store_crypt;
-        }
-        let keys = if let Some(crypt) = crypt {
-            match store.tree.find(&ObjectKey::keys(object_id)).await?.ok_or(FxfsError::NotFound)? {
-                Item { value: ObjectValue::Keys(EncryptionKeys::AES256XTS(keys)), .. } => {
-                    let (keys, task) = KeyUnwrapper::new_from_wrapped(object_id, crypt, keys);
-                    fasync::Task::spawn(task).detach();
-                    Some(keys)
-                }
-                _ => {
-                    bail!(anyhow!(FxfsError::Inconsistent).context("open_object: Expected keys"))
-                }
-            }
-        } else {
-            None
-        };
-
+        let mut fsverity_descriptor = None;
         let item = store
             .tree
             .find(&ObjectKey::attribute(
@@ -833,20 +833,53 @@ impl ObjectStore {
             ))
             .await?
             .ok_or(FxfsError::NotFound)?;
-        if let ObjectValue::Attribute { size } = item.value {
-            ensure!(size <= MAX_FILE_SIZE, FxfsError::Inconsistent);
-            Ok(DataObjectHandle::new(
-                owner.clone(),
-                object_id,
-                keys,
-                DEFAULT_DATA_ATTRIBUTE_ID,
-                size,
-                options,
-                false,
-            ))
+
+        let size = match item.value {
+            ObjectValue::Attribute { size } => size,
+            ObjectValue::VerifiedAttribute { size, fsverity_metadata } => {
+                fsverity_descriptor = Some(fsverity_metadata);
+                size
+            }
+            _ => bail!(anyhow!(FxfsError::Inconsistent).context("open_object: Expected attribute")),
+        };
+
+        ensure!(size <= MAX_FILE_SIZE, FxfsError::Inconsistent);
+
+        // If a crypt service has been specified, it needs to be a permanent key because cached
+        // keys can only use the store's crypt service.
+        let permanent = if let Some(crypt) = crypt {
+            store
+                .key_manager
+                .get_or_insert(
+                    object_id,
+                    crypt,
+                    store.get_keys(object_id),
+                    /* permanent: */ true,
+                )
+                .await?;
+            true
         } else {
-            bail!(anyhow!(FxfsError::Inconsistent).context("open_object: Expected attribute"));
+            false
+        };
+        let data_object_handle = DataObjectHandle::new(
+            owner.clone(),
+            object_id,
+            permanent,
+            DEFAULT_DATA_ATTRIBUTE_ID,
+            size,
+            fsverity_descriptor.clone(),
+            options,
+            false,
+        );
+        if fsverity_descriptor.is_some() {
+            match data_object_handle.read_attr(FSVERITY_MERKLE_ATTRIBUTE_ID).await? {
+                None => {
+                    return Err(anyhow!(FxfsError::NotFound));
+                }
+                Some(data) => data_object_handle.set_merkle_tree(data),
+            }
         }
+        Ok(data_object_handle)
     }
 
     // See the comment on create_object for the semantics of the `crypt` argument.  If object_id ==
@@ -861,11 +894,13 @@ impl ObjectStore {
     ) -> Result<DataObjectHandle<S>, Error> {
         let store = owner.as_ref().as_ref();
         if object_id == INVALID_OBJECT_ID {
-            object_id = store.get_next_object_id().await?;
+            object_id = store.get_next_object_id(transaction).await?;
         } else {
             store.update_last_object_id(object_id);
         }
         let store_crypt;
+        // See comment for equivalent in open_object.
+        let permanent = crypt.is_some();
         if crypt.is_none() {
             store_crypt = store.crypt();
             crypt = store_crypt.as_deref();
@@ -878,7 +913,12 @@ impl ObjectStore {
         let modification_time = create_attributes
             .and_then(|a| a.modification_time)
             .map(Timestamp::from_nanos)
-            .unwrap_or_else(|| now);
+            .unwrap_or_else(|| now.clone());
+        let access_time = create_attributes
+            .and_then(|a| a.access_time)
+            .map(Timestamp::from_nanos)
+            .unwrap_or_else(|| now.clone());
+        let change_time = now;
         let posix_attributes = create_attributes.and_then(|a| {
             (a.mode.is_some() || a.uid.is_some() || a.gid.is_some() || a.rdev.is_some()).then_some(
                 PosixAttributes {
@@ -893,10 +933,19 @@ impl ObjectStore {
             store.store_object_id(),
             Mutation::insert_object(
                 ObjectKey::object(object_id),
-                ObjectValue::file(1, 0, creation_time, modification_time, 0, posix_attributes),
+                ObjectValue::file(
+                    1,
+                    0,
+                    creation_time,
+                    modification_time,
+                    access_time,
+                    change_time,
+                    0,
+                    posix_attributes,
+                ),
             ),
         );
-        let unwrapped_keys = if let Some(crypt) = crypt {
+        if let Some(crypt) = crypt {
             let (key, unwrapped_key) = crypt.create_key(object_id, KeyPurpose::Data).await?;
             transaction.add(
                 store.store_object_id(),
@@ -905,10 +954,8 @@ impl ObjectStore {
                     ObjectValue::keys(EncryptionKeys::AES256XTS(WrappedKeys(vec![(0, key)]))),
                 ),
             );
-            Some(vec![(0, unwrapped_key)])
-        } else {
-            None
-        };
+            store.key_manager.insert(object_id, &vec![(0, unwrapped_key)], permanent);
+        }
         transaction.add(
             store.store_object_id(),
             Mutation::insert_object(
@@ -919,9 +966,10 @@ impl ObjectStore {
         Ok(DataObjectHandle::new(
             owner.clone(),
             object_id,
-            unwrapped_keys.map(KeyUnwrapper::new_from_unwrapped),
+            permanent,
             DEFAULT_DATA_ATTRIBUTE_ID,
             0,
+            None,
             options,
             false,
         ))
@@ -930,7 +978,9 @@ impl ObjectStore {
     /// There are instances where a store might not be an encrypted store, but the object should
     /// still be encrypted.  For example, the layer files for child stores should be encrypted using
     /// the crypt service of the child store even though the root store doesn't have encryption.  If
-    /// `crypt` is None, the default for the store is used.
+    /// `crypt` is None, the default for the store is used (and prefer to pass None over passing the
+    /// store's crypt service directly because the latter will end up using a permanent key that
+    /// isn't purged when inactive).
     pub async fn create_object<S: HandleOwner>(
         owner: &Arc<S>,
         mut transaction: &mut Transaction<'_>,
@@ -1016,7 +1066,7 @@ impl ObjectStore {
             let mut transaction = fs
                 .clone()
                 .new_transaction(
-                    &[
+                    lock_keys![
                         LockKey::object_attribute(self.store_object_id, object_id, attribute_id),
                         LockKey::object(self.store_object_id, object_id),
                     ],
@@ -1108,7 +1158,7 @@ impl ObjectStore {
                         }
                         round_up(*size, self.block_size).ok_or(FxfsError::Inconsistent)?
                     } else {
-                        // At time of writing, we should always see a size record here, but
+                        // At time of writing, we should always see a size record or None here, but
                         // asserting here would be brittle so just skip to the the next attribute
                         // instead.
                         return Ok(TrimResult::Done(Some(attribute_id + 1)));
@@ -1235,14 +1285,6 @@ impl ObjectStore {
         self.store_info.lock().unwrap().info().unwrap().parent_objects()
     }
 
-    /// Returns the object ID of all layer files for this store (which are in the parent store).
-    pub fn layer_file_object_ids(&self) -> Vec<u64> {
-        assert!(self.store_info_handle.get().is_some());
-        let guard = self.store_info.lock().unwrap();
-        let store_info = guard.info().unwrap();
-        store_info.layers.clone()
-    }
-
     /// Returns root objects for this store.
     pub fn root_objects(&self) -> Vec<u64> {
         let mut objects = Vec::new();
@@ -1346,7 +1388,7 @@ impl ObjectStore {
             let object_layers = self.open_layers(object_tree_layer_object_ids, None).await?;
             let size: u64 = object_layers.iter().map(|h| h.get_size()).sum();
             self.tree
-                .append_layers(object_layers.into())
+                .append_layers(object_layers)
                 .await
                 .context("Failed to read object store layers")?;
             *self.lock_state.lock().unwrap() = LockState::Unencrypted;
@@ -1370,21 +1412,19 @@ impl ObjectStore {
         &self,
         object_ids: impl std::iter::IntoIterator<Item = u64>,
         crypt: Option<Arc<dyn Crypt>>,
-    ) -> Result<Vec<CachingObjectHandle<ObjectStore>>, Error> {
+    ) -> Result<Vec<DataObjectHandle<ObjectStore>>, Error> {
         let parent_store = self.parent_store.as_ref().unwrap();
         let mut handles = Vec::new();
         let mut sizes = Vec::new();
         for object_id in object_ids {
-            let handle = CachingObjectHandle::new(
-                ObjectStore::open_object(
-                    &parent_store,
-                    object_id,
-                    HandleOptions::default(),
-                    crypt.clone(),
-                )
-                .await
-                .context(format!("Failed to open layer file {}", object_id))?,
-            );
+            let handle = ObjectStore::open_object(
+                &parent_store,
+                object_id,
+                HandleOptions::default(),
+                crypt.clone(),
+            )
+            .await
+            .with_context(|| format!("Failed to open layer file {}", object_id))?;
             sizes.push(handle.get_size());
             handles.push(handle);
         }
@@ -1422,17 +1462,15 @@ impl ObjectStore {
             LockState::Unlocking => panic!("Store is being unlocked"),
         }
         // We must lock flushing since that can modify store_info and the encrypted mutations file.
-        let keys = [LockKey::flush(self.store_object_id())];
+        let keys = lock_keys![LockKey::flush(self.store_object_id())];
         let fs = self.filesystem();
-        let guard = debug_assert_not_too_long!(fs.write_lock(&keys));
+        let guard = fs.lock_manager().write_lock(keys).await;
 
         let store_info = self.load_store_info().await?;
 
         self.tree
             .append_layers(
-                self.open_layers(store_info.layers.iter().cloned(), Some(crypt.clone()))
-                    .await?
-                    .into(),
+                self.open_layers(store_info.layers.iter().cloned(), Some(crypt.clone())).await?,
             )
             .await
             .context("Failed to read object tree layer file contents")?;
@@ -1591,9 +1629,9 @@ impl ObjectStore {
     pub async fn lock(&self) -> Result<(), Error> {
         // We must lock flushing since it is not safe for that to be happening whilst we are locking
         // the store.
-        let keys = [LockKey::flush(self.store_object_id())];
+        let keys = lock_keys![LockKey::flush(self.store_object_id())];
         let fs = self.filesystem();
-        let _guard = debug_assert_not_too_long!(fs.write_lock(&keys));
+        let _guard = fs.lock_manager().write_lock(keys).await;
 
         {
             let mut lock_state = self.lock_state.lock().unwrap();
@@ -1617,6 +1655,7 @@ impl ObjectStore {
         } else {
             LockState::Locked
         };
+        self.key_manager.clear();
         *self.store_info.lock().unwrap() = StoreOrReplayInfo::Locked;
         self.tree.reset();
 
@@ -1643,7 +1682,9 @@ impl ObjectStore {
     }
 
     // Returns a new object ID that can be used.  This will create an object ID cipher if necessary.
-    pub async fn get_next_object_id(&self) -> Result<u64, Error> {
+    // We require a transaction to guarantee that a guard is held because if we create a transaction
+    // to roll the object ID key, we skip taking the filesystem lock.
+    pub async fn get_next_object_id(&self, transaction: &Transaction<'_>) -> Result<u64, Error> {
         let object_id = self.maybe_get_next_object_id();
         if object_id != INVALID_OBJECT_ID {
             return Ok(object_id);
@@ -1653,7 +1694,7 @@ impl ObjectStore {
         let mut transaction = self
             .filesystem()
             .new_transaction(
-                &[LockKey::object(
+                lock_keys![LockKey::object(
                     self.parent_store.as_ref().unwrap().store_object_id,
                     self.store_object_id,
                 )],
@@ -1662,6 +1703,7 @@ impl ObjectStore {
                     // compact.
                     skip_journal_checks: true,
                     borrow_metadata_space: true,
+                    txn_guard: Some(transaction.txn_guard()),
                     ..Default::default()
                 },
             )
@@ -1687,12 +1729,15 @@ impl ObjectStore {
 
         // Update StoreInfo.
         let buf = {
-            let mut store_info = self.store_info.lock().unwrap();
-            let store_info = store_info.info_mut().unwrap();
-            store_info.object_id_key = Some(object_id_wrapped);
-            let mut serialized_info = Vec::new();
-            store_info.serialize_with_version(&mut serialized_info)?;
-            let mut buf = self.device.allocate_buffer(serialized_info.len());
+            let serialized_info = {
+                let mut store_info = self.store_info.lock().unwrap();
+                let store_info = store_info.info_mut().unwrap();
+                store_info.object_id_key = Some(object_id_wrapped);
+                let mut serialized_info = Vec::new();
+                store_info.serialize_with_version(&mut serialized_info)?;
+                serialized_info
+            };
+            let mut buf = self.device.allocate_buffer(serialized_info.len()).await;
             buf.as_mut_slice().copy_from_slice(&serialized_info[..]);
             buf
         };
@@ -1712,7 +1757,7 @@ impl ObjectStore {
             | last_object_id.cipher.as_ref().unwrap().encrypt(last_object_id.id as u32) as u64)
     }
 
-    fn allocator(&self) -> Arc<SimpleAllocator> {
+    fn allocator(&self) -> Arc<Allocator> {
         self.filesystem().allocator()
     }
 
@@ -1818,6 +1863,82 @@ impl ObjectStore {
             Some(item) => Err(anyhow!(FxfsError::Inconsistent)
                 .context(format!("Unexpected item in lookup: {item:?}"))),
         }
+    }
+
+    /// Retrieves the wrapped keys for the given object.
+    async fn get_keys(&self, object_id: u64) -> Result<WrappedKeys, Error> {
+        match self.tree.find(&ObjectKey::keys(object_id)).await?.ok_or(FxfsError::NotFound)? {
+            Item { value: ObjectValue::Keys(EncryptionKeys::AES256XTS(keys)), .. } => Ok(keys),
+            _ => Err(anyhow!(FxfsError::Inconsistent).context("open_object: Expected keys")),
+        }
+    }
+
+    pub async fn update_attributes<'a>(
+        &self,
+        transaction: &mut Transaction<'a>,
+        object_id: u64,
+        node_attributes: Option<&fio::MutableNodeAttributes>,
+        change_time: Option<Timestamp>,
+    ) -> Result<(), Error> {
+        if change_time.is_none() {
+            if let Some(attributes) = node_attributes {
+                let empty_attributes = fio::MutableNodeAttributes { ..Default::default() };
+                if *attributes == empty_attributes {
+                    return Ok(());
+                }
+            } else {
+                return Ok(());
+            }
+        }
+        let mut mutation = self.txn_get_object_mutation(transaction, object_id).await?;
+        if let ObjectValue::Object { ref mut attributes, .. } = mutation.item.value {
+            if let Some(time) = change_time {
+                attributes.change_time = time;
+            }
+            if let Some(node_attributes) = node_attributes {
+                if let Some(time) = node_attributes.creation_time {
+                    attributes.creation_time = Timestamp::from_nanos(time);
+                }
+                if let Some(time) = node_attributes.modification_time {
+                    attributes.modification_time = Timestamp::from_nanos(time);
+                }
+                if let Some(time) = node_attributes.access_time {
+                    attributes.access_time = Timestamp::from_nanos(time);
+                }
+                if node_attributes.mode.is_some()
+                    || node_attributes.uid.is_some()
+                    || node_attributes.gid.is_some()
+                    || node_attributes.rdev.is_some()
+                {
+                    if let Some(a) = &mut attributes.posix_attributes {
+                        if let Some(mode) = node_attributes.mode {
+                            a.mode = mode;
+                        }
+                        if let Some(uid) = node_attributes.uid {
+                            a.uid = uid;
+                        }
+                        if let Some(gid) = node_attributes.gid {
+                            a.gid = gid;
+                        }
+                        if let Some(rdev) = node_attributes.rdev {
+                            a.rdev = rdev;
+                        }
+                    } else {
+                        attributes.posix_attributes = Some(PosixAttributes {
+                            mode: node_attributes.mode.unwrap_or_default(),
+                            uid: node_attributes.uid.unwrap_or_default(),
+                            gid: node_attributes.gid.unwrap_or_default(),
+                            rdev: node_attributes.rdev.unwrap_or_default(),
+                        });
+                    }
+                }
+            }
+        } else {
+            bail!(anyhow!(FxfsError::Inconsistent)
+                .context("ObjectStore.update_attributes: Expected object value"));
+        };
+        transaction.add(self.store_object_id(), Mutation::ObjectStore(mutation));
+        Ok(())
     }
 }
 
@@ -1942,14 +2063,7 @@ impl JournalingObject for ObjectStore {
     }
 }
 
-// TODO(fxbug.dev/95980): MemDataBuffer has size limits so we should check sizes before we use it.
-impl HandleOwner for ObjectStore {
-    type Buffer = MemDataBuffer;
-
-    fn create_data_buffer(&self, _object_id: u64, initial_size: u64) -> Self::Buffer {
-        MemDataBuffer::new(initial_size)
-    }
-}
+impl HandleOwner for ObjectStore {}
 
 impl AsRef<ObjectStore> for ObjectStore {
     fn as_ref(&self) -> &ObjectStore {
@@ -1971,6 +2085,7 @@ fn layer_size_from_encrypted_mutations_size(size: u64) -> u64 {
 impl AssociatedObject for ObjectStore {}
 
 /// Argument to the trim_some method.
+#[derive(Debug)]
 pub enum TrimMode {
     /// Trim extents beyond the current size.
     UseSize,
@@ -1983,6 +2098,7 @@ pub enum TrimMode {
 }
 
 /// Result of the trim_some method.
+#[derive(Debug)]
 pub enum TrimResult {
     /// We reached the limit of the transaction and more extents might follow.
     Incomplete,
@@ -2002,7 +2118,7 @@ pub async fn load_store_info(
 
     Ok(if handle.get_size() > 0 {
         let serialized_info = handle.contents(MAX_STORE_INFO_SERIALIZED_SIZE).await?;
-        let mut cursor = std::io::Cursor::new(&serialized_info[..]);
+        let mut cursor = std::io::Cursor::new(serialized_info);
         let (store_info, _) = StoreInfo::deserialize_with_version(&mut cursor)
             .context("Failed to deserialize StoreInfo")?;
         store_info
@@ -2015,21 +2131,22 @@ pub async fn load_store_info(
 #[cfg(test)]
 mod tests {
     use {
-        super::{StoreInfo, MAX_STORE_INFO_SERIALIZED_SIZE, OBJECT_ID_HI_MASK},
+        super::{
+            StoreInfo, DEFAULT_DATA_ATTRIBUTE_ID, FSVERITY_MERKLE_ATTRIBUTE_ID,
+            MAX_STORE_INFO_SERIALIZED_SIZE, OBJECT_ID_HI_MASK,
+        },
         crate::{
             errors::FxfsError,
-            filesystem::{
-                Filesystem, FxFilesystem, JournalingObject, OpenFxFilesystem, SyncOptions,
-            },
+            filesystem::{FxFilesystem, JournalingObject, OpenFxFilesystem, SyncOptions},
             fsck::fsck,
             lsm_tree::types::{Item, ItemRef, LayerIterator},
             object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle, INVALID_OBJECT_ID},
             object_store::{
                 directory::Directory,
-                object_record::{ObjectKey, ObjectValue},
-                transaction::{Options, TransactionHandler},
+                object_record::{AttributeKey, ObjectKey, ObjectValue},
+                transaction::{lock_keys, Options},
                 volume::root_volume,
-                HandleOptions, LockKey, ObjectStore,
+                FsverityMetadata, HandleOptions, LockKey, Mutation, ObjectStore, RootDigest,
             },
             serialized_types::VersionedLatest,
         },
@@ -2061,7 +2178,7 @@ mod tests {
         let object3;
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         let store = fs.root_store();
@@ -2079,7 +2196,7 @@ mod tests {
         transaction.commit().await.expect("commit failed");
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         object2 = Arc::new(
@@ -2099,7 +2216,7 @@ mod tests {
 
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         object3 = Arc::new(
@@ -2137,6 +2254,99 @@ mod tests {
     }
 
     #[fuchsia::test]
+    async fn test_verified_file_with_verified_attribute() {
+        let fs: OpenFxFilesystem = test_filesystem().await;
+        let mut transaction = fs
+            .clone()
+            .new_transaction(lock_keys![], Options::default())
+            .await
+            .expect("new_transaction failed");
+        let store = fs.root_store();
+        let object = Arc::new(
+            ObjectStore::create_object(
+                &store,
+                &mut transaction,
+                HandleOptions::default(),
+                None,
+                None,
+            )
+            .await
+            .expect("create_object failed"),
+        );
+
+        transaction.add(
+            store.store_object_id(),
+            Mutation::replace_or_insert_object(
+                ObjectKey::attribute(
+                    object.object_id(),
+                    DEFAULT_DATA_ATTRIBUTE_ID,
+                    AttributeKey::Attribute,
+                ),
+                ObjectValue::verified_attribute(
+                    0,
+                    FsverityMetadata { root_digest: RootDigest::Sha256([0; 32]), salt: vec![] },
+                ),
+            ),
+        );
+
+        transaction.add(
+            store.store_object_id(),
+            Mutation::replace_or_insert_object(
+                ObjectKey::attribute(
+                    object.object_id(),
+                    FSVERITY_MERKLE_ATTRIBUTE_ID,
+                    AttributeKey::Attribute,
+                ),
+                ObjectValue::attribute(0),
+            ),
+        );
+
+        transaction.commit().await.unwrap();
+
+        let handle =
+            ObjectStore::open_object(&store, object.object_id(), HandleOptions::default(), None)
+                .await
+                .expect("open_object failed");
+
+        assert!(handle.verified_file());
+
+        fs.close().await.expect("Close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_verified_file_without_verified_attribute() {
+        let fs: OpenFxFilesystem = test_filesystem().await;
+        let mut transaction = fs
+            .clone()
+            .new_transaction(lock_keys![], Options::default())
+            .await
+            .expect("new_transaction failed");
+        let store = fs.root_store();
+        let object = Arc::new(
+            ObjectStore::create_object(
+                &store,
+                &mut transaction,
+                HandleOptions::default(),
+                None,
+                None,
+            )
+            .await
+            .expect("create_object failed"),
+        );
+
+        transaction.commit().await.unwrap();
+
+        let handle =
+            ObjectStore::open_object(&store, object.object_id(), HandleOptions::default(), None)
+                .await
+                .expect("open_object failed");
+
+        assert!(!handle.verified_file());
+
+        fs.close().await.expect("Close failed");
+    }
+
+    #[fuchsia::test]
     async fn test_create_and_open_store() {
         let fs = test_filesystem().await;
         let store_id = {
@@ -2167,7 +2377,7 @@ mod tests {
         let store = fs.root_store();
         let mut transaction = fs
             .clone()
-            .new_transaction(&[], Options::default())
+            .new_transaction(lock_keys![], Options::default())
             .await
             .expect("new_transaction failed");
         let object = Arc::new(
@@ -2185,7 +2395,7 @@ mod tests {
 
         store.flush().await.expect("flush failed");
 
-        let mut buf = object.allocate_buffer(5);
+        let mut buf = object.allocate_buffer(5).await;
         buf.as_mut_slice().copy_from_slice(b"hello");
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
 
@@ -2230,7 +2440,7 @@ mod tests {
         let child_id = {
             let mut transaction = fs
                 .clone()
-                .new_transaction(&[], Options::default())
+                .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
             let child = ObjectStore::create_object(
@@ -2245,7 +2455,7 @@ mod tests {
             transaction.commit().await.expect("commit failed");
 
             // Allocate an extent in the file.
-            let mut buffer = child.allocate_buffer(8192);
+            let mut buffer = child.allocate_buffer(8192).await;
             buffer.as_mut_slice().fill(0xaa);
             child.write_or_append(Some(0), buffer.as_ref()).await.expect("write failed");
 
@@ -2265,7 +2475,7 @@ mod tests {
         let child_id = {
             let mut transaction = fs
                 .clone()
-                .new_transaction(&[], Options::default())
+                .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
             let child = ObjectStore::create_object(
@@ -2280,7 +2490,7 @@ mod tests {
             transaction.commit().await.expect("commit failed");
 
             // Allocate an extent in the file.
-            let mut buffer = child.allocate_buffer(8192);
+            let mut buffer = child.allocate_buffer(8192).await;
             buffer.as_mut_slice().fill(0xaa);
             child.write_or_append(Some(0), buffer.as_ref()).await.expect("write failed");
 
@@ -2316,7 +2526,10 @@ mod tests {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), store.root_directory_object_id())],
+                lock_keys![LockKey::object(
+                    store.store_object_id(),
+                    store.root_directory_object_id()
+                )],
                 Options::default(),
             )
             .await
@@ -2329,7 +2542,7 @@ mod tests {
             .expect("create_child_file failed");
         transaction.commit().await.expect("commit failed");
 
-        let buf = object.allocate_buffer(16384);
+        let buf = object.allocate_buffer(16384).await;
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
 
         store.flush().await.expect("flush failed");
@@ -2368,7 +2581,7 @@ mod tests {
                 let mut transaction = fs
                     .clone()
                     .new_transaction(
-                        &[LockKey::object(
+                        lock_keys![LockKey::object(
                             store.store_object_id(),
                             store.root_directory_object_id(),
                         )],
@@ -2385,7 +2598,7 @@ mod tests {
                     .expect("create_child_file failed");
                 transaction.commit().await.expect("commit failed");
 
-                let mut buf = object.allocate_buffer(1000);
+                let mut buf = object.allocate_buffer(1000).await;
                 for i in 0..buf.len() {
                     buf.as_mut_slice()[i] = i as u8;
                 }
@@ -2396,7 +2609,7 @@ mod tests {
 
             let fs = reopen(fs).await;
 
-            let check_object = |fs: Arc<dyn Filesystem>| {
+            let check_object = |fs: Arc<FxFilesystem>| {
                 let crypt = crypt.clone();
                 async move {
                     let root_volume = root_volume(fs).await.expect("root_volume failed");
@@ -2411,7 +2624,7 @@ mod tests {
                     )
                     .await
                     .expect("open_object failed");
-                    let mut buf = object.allocate_buffer(1000);
+                    let mut buf = object.allocate_buffer(1000).await;
                     assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed"), 1000);
                     for i in 0..buf.len() {
                         assert_eq!(buf.as_slice()[i], i as u8);
@@ -2505,7 +2718,10 @@ mod tests {
             let mut transaction = fs
                 .clone()
                 .new_transaction(
-                    &[LockKey::object(store.store_object_id(), store.root_directory_object_id())],
+                    lock_keys![LockKey::object(
+                        store.store_object_id(),
+                        store.root_directory_object_id()
+                    )],
                     Options::default(),
                 )
                 .await
@@ -2548,7 +2764,10 @@ mod tests {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), store.root_directory_object_id())],
+                lock_keys![LockKey::object(
+                    store.store_object_id(),
+                    store.root_directory_object_id()
+                )],
                 Options::default(),
             )
             .await
@@ -2577,7 +2796,10 @@ mod tests {
         let mut transaction = fs
             .clone()
             .new_transaction(
-                &[LockKey::object(store.store_object_id(), store.root_directory_object_id())],
+                lock_keys![LockKey::object(
+                    store.store_object_id(),
+                    store.root_directory_object_id()
+                )],
                 Options::default(),
             )
             .await
@@ -2613,7 +2835,10 @@ mod tests {
             let mut transaction = fs
                 .clone()
                 .new_transaction(
-                    &[LockKey::object(store.store_object_id(), store.root_directory_object_id())],
+                    lock_keys![LockKey::object(
+                        store.store_object_id(),
+                        store.root_directory_object_id()
+                    )],
                     Options::default(),
                 )
                 .await
@@ -2652,7 +2877,7 @@ mod tests {
                     ObjectStore::open_object(&store, object_id, HandleOptions::default(), None)
                         .await
                         .expect("open_object failed");
-                let buffer = handle.allocate_buffer(100);
+                let buffer = handle.allocate_buffer(100).await;
                 handle
                     .write_or_append(Some(0), buffer.as_ref())
                     .await
@@ -2712,7 +2937,10 @@ mod tests {
             let mut transaction = fs
                 .clone()
                 .new_transaction(
-                    &[LockKey::object(store.store_object_id(), root_directory.object_id())],
+                    lock_keys![LockKey::object(
+                        store.store_object_id(),
+                        root_directory.object_id()
+                    )],
                     Options::default(),
                 )
                 .await
@@ -2727,7 +2955,10 @@ mod tests {
             let mut transaction = fs
                 .clone()
                 .new_transaction(
-                    &[LockKey::object(store.store_object_id(), root_directory.object_id())],
+                    lock_keys![LockKey::object(
+                        store.store_object_id(),
+                        root_directory.object_id()
+                    )],
                     Options::default(),
                 )
                 .await
@@ -2760,5 +2991,31 @@ mod tests {
     #[fuchsia::test(threads = 10)]
     async fn test_reopen_read_only_after_crypt_failure() {
         reopen_after_crypt_failure_inner(true).await;
+    }
+
+    #[fuchsia::test(threads = 10)]
+    #[should_panic(expected = "Insufficient reservation space")]
+    #[cfg(debug_assertions)]
+    async fn large_transaction_causes_panic_in_debug_builds() {
+        let fs = test_filesystem().await;
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+        let store = root_volume.new_volume("vol", None).await.expect("new_volume failed");
+        let root_directory =
+            Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
+        let mut transaction = fs
+            .clone()
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("transaction");
+        for i in 0..500 {
+            root_directory
+                .create_symlink(&mut transaction, b"link", &format!("{}", i))
+                .await
+                .expect("symlink");
+        }
+        assert_eq!(transaction.commit().await.expect("commit"), 0);
     }
 }

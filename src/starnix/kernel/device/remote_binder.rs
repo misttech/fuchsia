@@ -4,20 +4,11 @@
 
 use crate::{
     device::{DeviceOps, RemoteBinderConnection},
-    fs::{
+    mm::{DesiredAddress, MappingOptions, MemoryAccessorExt, ProtectionFlags},
+    task::{CurrentTask, Kernel, ThreadGroup, WaitQueue, Waiter},
+    vfs::{
         buffers::{InputBuffer, OutputBuffer},
         fileops_impl_nonseekable, FdEvents, FileObject, FileOps, FsNode, NamespaceNode,
-    },
-    lock::{Mutex, MutexGuard},
-    logging::{log_error, log_warn},
-    mm::{DesiredAddress, MappedVmo, MappingOptions, MemoryAccessorExt, ProtectionFlags},
-    syscalls::*,
-    task::{CurrentTask, ThreadGroup, WaitQueue, Waiter},
-    types::{
-        errno,
-        errno::{EAGAIN, EINTR},
-        errno_from_code, error, pid_t, uapi, DeviceType, Errno, ErrnoCode, OpenFlags, UserAddress,
-        UserCString, UserRef, PATH_MAX,
     },
 };
 use anyhow::{Context, Error};
@@ -31,8 +22,27 @@ use fidl_fuchsia_starnix_binder as fbinder;
 use fuchsia_async as fasync;
 use fuchsia_zircon as zx;
 use futures::{
-    channel::oneshot, future::FutureExt, pin_mut, select, task::Poll, Future, Stream, StreamExt,
-    TryStreamExt,
+    channel::oneshot,
+    future::{FutureExt, TryFutureExt},
+    pin_mut, select,
+    task::Poll,
+    Future, Stream, StreamExt, TryStreamExt,
+};
+use starnix_lifecycle::DropWaiter;
+use starnix_logging::{
+    log_error, log_warn, trace_category_starnix, trace_duration, trace_flow_begin, trace_flow_end,
+    trace_flow_step,
+};
+use starnix_sync::{Mutex, MutexGuard};
+use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_uapi::{
+    device_type::DeviceType,
+    errno, errno_from_code, error,
+    errors::{Errno, ErrnoCode, EAGAIN, EINTR},
+    open_flags::OpenFlags,
+    pid_t, uapi,
+    user_address::{UserAddress, UserCString, UserRef},
+    PATH_MAX,
 };
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -113,7 +123,7 @@ impl FileOps for RemoteBinderFileOps {
         Ok(FdEvents::empty())
     }
 
-    fn close(&self, _file: &FileObject) {
+    fn close(&self, _file: &FileObject, _current_task: &CurrentTask) {
         self.0.close();
     }
 
@@ -147,7 +157,7 @@ impl FileOps for RemoteBinderFileOps {
         _prot_flags: ProtectionFlags,
         _mapping_options: MappingOptions,
         _filename: NamespaceNode,
-    ) -> Result<MappedVmo, Errno> {
+    ) -> Result<UserAddress, Errno> {
         error!(EOPNOTSUPP)
     }
 
@@ -185,49 +195,50 @@ type SynchronousResponder = Box<dyn FnOnce(Result<(), Errno>) -> Result<(), fidl
 enum TaskRequest {
     /// Set the associated vmo for the binder connection. See the SetVmo method in the Binder FIDL
     /// protocol.
-    SetVmo(
-        // remote_binder_connection,
-        #[derivative(Debug = "ignore")] Arc<RemoteBinderConnection>,
-        // vmo
-        fidl::Vmo,
-        // mapped_address
-        u64,
-        // responder.
+    SetVmo {
+        #[derivative(Debug = "ignore")]
+        remote_binder_connection: Arc<RemoteBinderConnection>,
+        vmo: fidl::Vmo,
+        mapped_address: u64,
         // a synchronous function avoids thread hops.
-        #[derivative(Debug = "ignore")] SynchronousResponder,
-    ),
+        #[derivative(Debug = "ignore")]
+        responder: SynchronousResponder,
+    },
     /// Execute the given ioctl. See the Ioctl method in the Binder FIDL
     /// protocol.
-    Ioctl(
+    Ioctl {
         // remote_binder_connection,
-        #[derivative(Debug = "ignore")] Arc<RemoteBinderConnection>,
-        // request
-        u32,
-        // parameter
-        u64,
-        // KOID,
-        u64,
-        // responder.
+        #[derivative(Debug = "ignore")]
+        remote_binder_connection: Arc<RemoteBinderConnection>,
+        request: u32,
+        parameter: u64,
+        koid: u64,
         // a synchronous function avoids thread hops.
-        #[derivative(Debug = "ignore")] SynchronousResponder,
-    ),
+        #[derivative(Debug = "ignore")]
+        responder: SynchronousResponder,
+    },
     /// Open the binder device driver situated at `path` in the Task filesystem namespace.
-    Open(
-        // path
-        Vec<u8>,
-        // process_accessor
-        ClientEnd<fbinder::ProcessAccessorMarker>,
-        // process
-        zx::Process,
-        // responder
-        oneshot::Sender<Result<Arc<RemoteBinderConnection>, Errno>>,
-    ),
+    Open {
+        path: Vec<u8>,
+        process_accessor: ClientEnd<fbinder::ProcessAccessorMarker>,
+        process: zx::Process,
+        responder: oneshot::Sender<Result<Arc<RemoteBinderConnection>, Errno>>,
+    },
     /// Have the task returns to userspace. `spawn_thread` must be returned to the caller through
     /// the ioctl command parameter.
-    Return(
-        // spawn_thread
-        bool,
-    ),
+    Return { spawn_thread: bool },
+}
+
+impl TaskRequest {
+    fn remote_binder_connection(&self) -> Option<Arc<RemoteBinderConnection>> {
+        match self {
+            Self::SetVmo { remote_binder_connection, .. }
+            | Self::Ioctl { remote_binder_connection, .. } => {
+                Some(remote_binder_connection.clone())
+            }
+            Self::Open { .. } | Self::Return { .. } => None,
+        }
+    }
 }
 
 /// A `TaskRequest` that is associated with a given thread koid. Each thread koid must be
@@ -238,7 +249,14 @@ struct BoundTaskRequest {
     request: TaskRequest,
 }
 
-/// Returns the Errno in result if it is either EINTR or EAGAIN, None therwise.
+impl std::ops::Deref for BoundTaskRequest {
+    type Target = TaskRequest;
+    fn deref(&self) -> &Self::Target {
+        &self.request
+    }
+}
+
+/// Returns the Errno in result if it is either EINTR or EAGAIN, None otherwise.
 fn must_interrupt<R>(result: &Result<R, Errno>) -> Option<Errno> {
     match result {
         Err(e) if *e == EINTR => Some(errno!(EINTR)),
@@ -378,7 +396,7 @@ impl RemoteBinderHandleState {
                 self.exit(error!(EINVAL));
                 return;
             }
-            self.waiters.notify_value_event(tid as u64);
+            self.waiters.notify_value(tid as u64);
         } else if let Some(tid) = self.unassigned_tasks.iter().next().copied() {
             // There was no task associated with the koid, but there exists an unassigned task.
             // Associated the task with the koid, and insert the pending request.
@@ -391,27 +409,32 @@ impl RemoteBinderHandleState {
                 self.exit(error!(EINVAL));
                 return;
             }
-            self.waiters.notify_value_event(tid as u64);
+            self.waiters.notify_value(tid as u64);
         } else {
+            // Get the eventual RemoteBinderConnection.
+            let remote_binder_connection = request.remote_binder_connection();
             // And add the request to the unassigned queue.
             self.unassigned_requests.push_back(request);
             // Not unassigned task ready. Request userspace to spawn a new one.
-            self.enqueue_taskless_request(TaskRequest::Return(true));
+            self.enqueue_taskless_request(
+                remote_binder_connection.as_deref(),
+                TaskRequest::Return { spawn_thread: true },
+            );
         }
     }
 
     /// Enqueue a request that can be run by any task.
-    fn enqueue_taskless_request(&mut self, request: TaskRequest) {
+    fn enqueue_taskless_request(
+        &mut self,
+        remote_binder_connection: Option<&RemoteBinderConnection>,
+        request: TaskRequest,
+    ) {
         self.taskless_requests.push_back(request);
-        // Interrupt at least one task in the thread group to ensure that the request will be
-        // handled.
-        if let Some(thread_group) = self.thread_group.upgrade() {
-            if let Ok(task) = thread_group.read().get_live_task() {
-                task.interrupt();
-            }
+        if let Some(remote_binder_connection) = remote_binder_connection {
+            remote_binder_connection.interrupt();
         }
         // Interrupt a single task to handle the request.
-        self.waiters.notify_count(1);
+        self.waiters.notify_unordered_count(1);
     }
 
     /// Called when a task starts waiting.
@@ -531,12 +554,15 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                         }
                         Ok(())
                     });
-                self.lock().enqueue_taskless_request(TaskRequest::SetVmo(
-                    remote_binder_connection,
-                    vmo,
-                    mapped_address,
-                    responder,
-                ));
+                self.lock().enqueue_taskless_request(
+                    Some(&remote_binder_connection),
+                    TaskRequest::SetVmo {
+                        remote_binder_connection: remote_binder_connection.clone(),
+                        vmo,
+                        mapped_address,
+                        responder,
+                    },
+                );
                 waiter.await;
             }
             fbinder::BinderRequest::Ioctl { tid, request, parameter, responder } => {
@@ -564,18 +590,99 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                     });
                 self.lock().enqueue_task_request(BoundTaskRequest {
                     koid: tid,
-                    request: TaskRequest::Ioctl(
-                        remote_binder_connection,
+                    request: TaskRequest::Ioctl {
+                        remote_binder_connection: remote_binder_connection.clone(),
                         request,
                         parameter,
-                        tid,
+                        koid: tid,
                         responder,
-                    ),
+                    },
                 });
                 waiter.await;
             }
+            fbinder::BinderRequest::_UnknownMethod { ordinal, .. } => {
+                log_warn!("Unknown Binder ordinal: {}", ordinal);
+            }
         }
         Ok(())
+    }
+
+    /// Serve the LutexController protocol.
+    async fn serve_lutex_controller(
+        kernel: Arc<Kernel>,
+        server_end: ServerEnd<fbinder::LutexControllerMarker>,
+    ) -> Result<(), Error> {
+        async fn handle_request(
+            kernel: &Arc<Kernel>,
+            event: fbinder::LutexControllerRequest,
+        ) -> Result<(), Error> {
+            match event {
+                fbinder::LutexControllerRequest::WaitBitset { payload, responder } => {
+                    let deadline_and_receiver = (|| {
+                        let vmo = payload.vmo.ok_or_else(|| errno!(EINVAL))?;
+                        let offset = payload.offset.ok_or_else(|| errno!(EINVAL))?;
+                        let value = payload.value.ok_or_else(|| errno!(EINVAL))?;
+                        let mask = payload.mask.unwrap_or(u32::MAX);
+                        let deadline = payload.deadline.map(zx::Time::from_nanos);
+                        kernel
+                            .shared_futexes
+                            .external_wait(vmo, offset, value, mask)
+                            .map(|receiver| (deadline, receiver))
+                    })();
+                    let result = match deadline_and_receiver {
+                        Ok((deadline, receiver)) => {
+                            let receiver = receiver.map_err(|_| errno!(EINTR));
+                            if let Some(deadline) = deadline {
+                                let timer = fasync::Timer::new(deadline).map(|_| error!(ETIMEDOUT));
+                                select_first(timer, receiver).await
+                            } else {
+                                receiver.await
+                            }
+                        }
+                        Err(e) => Err(e),
+                    };
+                    let result = result.map_err(|e: Errno| {
+                        fposix::Errno::from_primitive(e.code.error_code() as i32)
+                            .unwrap_or(fposix::Errno::Einval)
+                    });
+                    responder
+                        .send(result)
+                        .context("Unable to send LutexControllerRequest::WaitBitset response")
+                }
+                fbinder::LutexControllerRequest::WakeBitset { payload, responder } => {
+                    let result = (|| {
+                        let vmo = payload.vmo.ok_or_else(|| errno!(EINVAL))?;
+                        let offset = payload.offset.ok_or_else(|| errno!(EINVAL))?;
+                        let count = payload.count.ok_or_else(|| errno!(EINVAL))?;
+                        let mask = payload.mask.unwrap_or(u32::MAX);
+                        kernel.shared_futexes.external_wake(vmo, offset, count as usize, mask)
+                    })();
+                    let result = result
+                        .map(|count| fbinder::WakeResponse {
+                            count: Some(count as u64),
+                            ..fbinder::WakeResponse::default()
+                        })
+                        .map_err(|e: Errno| {
+                            fposix::Errno::from_primitive(e.code.error_code() as i32)
+                                .unwrap_or(fposix::Errno::Einval)
+                        });
+                    responder
+                        .send(result)
+                        .context("Unable to send LutexControllerRequest::WakeBitset response")
+                }
+                fbinder::LutexControllerRequest::_UnknownMethod { ordinal, .. } => {
+                    log_warn!("Unknown LutexController ordinal: {}", ordinal);
+                    Ok(())
+                }
+            }
+        }
+        let stream = fbinder::LutexControllerRequestStream::from_channel(
+            fasync::Channel::from_channel(server_end.into_channel())?,
+        );
+        stream
+            .map(|result| result.context("failed fbinder::LutexController request"))
+            .try_for_each_concurrent(None, |event| handle_request(&kernel, event))
+            .await
     }
 
     /// Serve the given `binder` handle, by opening `path`.
@@ -588,12 +695,10 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
     ) -> Result<(), Error> {
         // Open the device.
         let (sender, receiver) = oneshot::channel::<Result<Arc<RemoteBinderConnection>, Errno>>();
-        self.lock().enqueue_taskless_request(TaskRequest::Open(
-            path,
-            process_accessor,
-            process,
-            sender,
-        ));
+        self.lock().enqueue_taskless_request(
+            None,
+            TaskRequest::Open { path, process_accessor, process, responder: sender },
+        );
         let remote_binder_connection = receiver.await??;
 
         scopeguard::defer! {
@@ -732,6 +837,9 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                         Ok(None) => {}
                     }
                 }
+                fbinder::DevBinderRequest::_UnknownMethod { ordinal, .. } => {
+                    log_warn!("Unknown DevBinder ordinal: {}", ordinal);
+                }
             }
         }
         Ok(())
@@ -745,7 +853,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
             if let Some(result) = state.exit.as_ref() {
                 return result
                     .map_err(|c| errno_from_code!(c.error_code() as i16))
-                    .map(|_| TaskRequest::Return(false));
+                    .map(|_| TaskRequest::Return { spawn_thread: false });
             }
             // Taskless request have the highest priority.
             if let Some(request) = state.taskless_requests.pop_front() {
@@ -809,39 +917,42 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
         let remote_controller =
             fbinder::RemoteControllerSynchronousProxy::new(remote_controller_client.into_channel());
         let (dev_binder_server_end, dev_binder_client_end) = zx::Channel::create();
+        let (lutex_controller_server_end, lutex_controller_client_end) = zx::Channel::create();
         remote_controller
             .start(fbinder::RemoteControllerStartRequest {
                 dev_binder: Some(dev_binder_client_end.into()),
+                lutex_controller: Some(lutex_controller_client_end.into()),
                 ..Default::default()
             })
             .map_err(|_| errno!(EINVAL))?;
         let handle = self.clone();
-        current_task.kernel().kthreads.pool.dispatch(move || {
+        current_task.kernel().kthreads.spawner().spawn(move |_, _| {
             let mut executor = fasync::LocalExecutor::new();
             let result = executor.run_singlethreaded({
                 let handle = handle.clone();
                 async {
-                    // Retrieve a `DropWaiter` for the thread_group, taking care not to keep a
-                    // strong reference to the thread_group itself.
-                    let drop_waiter = handle
+                    // Retrieve the Kernel and a `DropWaiter` for the thread_group, taking care not
+                    // to keep a strong reference to the thread_group itself.
+                    let kernel_and_drop_waiter = handle
                         .state
                         .lock()
                         .thread_group
                         .upgrade()
-                        .map(|tg| tg.drop_notifier.waiter());
-                    let Some(drop_waiter) = drop_waiter else { return Ok(()); };
+                        .map(|tg| (tg.kernel.clone(), tg.drop_notifier.waiter()));
+                    let Some((kernel, drop_waiter)) = kernel_and_drop_waiter else {
+                        return Ok(());
+                    };
+                    // Start the 2 servers.
                     let dev_binder_server =
-                        handle.serve_dev_binder(dev_binder_server_end.into()).fuse();
-                    let on_task_end = drop_waiter
-                        .on_closed()
-                        .map(|r| r.map(|_| ()).map_err(anyhow::Error::from))
-                        .fuse();
-
-                    pin_mut!(dev_binder_server, on_task_end);
-                    select! {
-                        dev_binder_server = dev_binder_server => dev_binder_server,
-                        on_task_end = on_task_end => on_task_end,
-                    }
+                        fasync::Task::local(handle.serve_dev_binder(dev_binder_server_end.into()));
+                    let lutex_controller_server = fasync::Task::local(
+                        Self::serve_lutex_controller(kernel, lutex_controller_server_end.into()),
+                    );
+                    // Wait until both are done, or the task exits.
+                    let binder_result = future_or_task_end(&drop_waiter, dev_binder_server).await;
+                    let lutex_controller_result =
+                        future_or_task_end(&drop_waiter, lutex_controller_server).await;
+                    binder_result.and(lutex_controller_result)
                 }
             });
             if let Err(e) = &result {
@@ -862,25 +973,34 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
         self.lock().register_waiting_task(current_task.get_tid());
         loop {
             let interruption = match self.get_next_task(current_task)? {
-                TaskRequest::Open(path, process_accessor, process, responder) => {
+                TaskRequest::Open { path, process_accessor, process, responder } => {
                     let result = self.open(current_task, path, process_accessor, process);
                     let interruption = must_interrupt(&result);
                     responder.send(result).map_err(|_| errno!(EINVAL))?;
                     interruption
                 }
-                TaskRequest::SetVmo(remote_binder_connection, vmo, mapped_address, responder) => {
-                    let result = remote_binder_connection.map_external_vmo(vmo, mapped_address);
+                TaskRequest::SetVmo {
+                    remote_binder_connection,
+                    vmo,
+                    mapped_address,
+                    responder,
+                } => {
+                    let result = remote_binder_connection.map_external_vmo(
+                        current_task,
+                        vmo,
+                        mapped_address,
+                    );
                     let interruption = must_interrupt(&result);
                     responder(result).map_err(|_| errno!(EINVAL))?;
                     interruption
                 }
-                TaskRequest::Ioctl(
+                TaskRequest::Ioctl {
                     remote_binder_connection,
                     request,
                     parameter,
                     koid,
                     responder,
-                ) => {
+                } => {
                     trace_duration!(
                         trace_category_starnix!(),
                         trace_name_remote_binder_ioctl_worker_process!()
@@ -901,7 +1021,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                     responder(result).map_err(|_| errno!(EINVAL))?;
                     interruption
                 }
-                TaskRequest::Return(spawn_thread) => {
+                TaskRequest::Return { spawn_thread } => {
                     let wait_command = uapi::remote_binder_wait_command {
                         spawn_thread: if spawn_thread { 1 } else { 0 },
                     };
@@ -916,20 +1036,40 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
     }
 }
 
+async fn future_or_task_end(
+    drop_waiter: &DropWaiter,
+    fut: impl Future<Output = Result<(), Error>>,
+) -> Result<(), Error> {
+    let on_task_end = drop_waiter.on_closed().map(|r| r.map(|_| ()).map_err(anyhow::Error::from));
+    select_first(fut, on_task_end).await
+}
+
+async fn select_first<O>(f1: impl Future<Output = O>, f2: impl Future<Output = O>) -> O {
+    let f1 = f1.fuse();
+    let f2 = f2.fuse();
+    pin_mut!(f1, f2);
+    select! {
+        f1 = f1 => f1,
+        f2 = f2 => f2,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
         device::{binder::tests::run_process_accessor, BinderFs},
-        fs::{FileSystemOptions, WhatToMount},
         mm::MemoryAccessor,
-        task::Task,
         testing::*,
-        types::{mode, MountFlags},
+        vfs::{FileSystemOptions, WhatToMount},
     };
-    use fidl::endpoints::{create_endpoints, create_proxy, Proxy};
+    use fidl::{
+        endpoints::{create_endpoints, create_proxy, Proxy},
+        HandleBased,
+    };
     use once_cell::sync::Lazy;
     use rand::distributions::{Alphanumeric, DistString};
+    use starnix_uapi::{file_mode::mode, mount_flags::MountFlags};
     use std::{collections::BTreeMap, ffi::CString, future::Future};
 
     static REMOTE_CONTROLLER_CLIENT: Lazy<
@@ -954,73 +1094,80 @@ mod tests {
     async fn run_remote_binder_test<F, Fut>(f: F)
     where
         Fut: Future<Output = fbinder::BinderProxy>,
-        F: FnOnce(fbinder::BinderProxy) -> Fut,
+        F: FnOnce(fbinder::BinderProxy, fbinder::LutexControllerProxy) -> Fut,
     {
         let service_name = Alphanumeric.sample_string(&mut rand::thread_rng(), 16);
         let (remote_controller_client, remote_controller_server) =
             create_endpoints::<fbinder::RemoteControllerMarker>();
         REMOTE_CONTROLLER_CLIENT.lock().insert(service_name.clone(), remote_controller_client);
         // Simulate the remote binder user process.
-        let (kernel, init_task) = create_kernel_and_task();
-        let starnix_thread = std::thread::spawn(move || {
-            init_task
-                .fs()
-                .root()
-                .create_node(&init_task, b"dev", mode!(IFDIR, 0o755), DeviceType::NONE)
-                .expect("mkdir dev");
-            let dev = init_task.lookup_path_from_root(b"/dev").expect("lookup_path_from_root");
-            dev.mount(
-                WhatToMount::Fs(
-                    BinderFs::new_fs(&kernel, FileSystemOptions::default()).expect("new_fs"),
-                ),
-                MountFlags::empty(),
-            )
-            .expect("mount");
+        let (kernel, _init_task) = create_kernel_and_task();
+        let starnix_thread = kernel.kthreads.spawner().spawn_and_get_result({
+            let kernel = Arc::clone(&kernel);
+            move |_, current_task| {
+                current_task
+                    .fs()
+                    .root()
+                    .create_node(&current_task, b"dev", mode!(IFDIR, 0o755), DeviceType::NONE)
+                    .expect("mkdir dev");
+                let dev =
+                    current_task.lookup_path_from_root(b"/dev").expect("lookup_path_from_root");
+                dev.mount(
+                    WhatToMount::Fs(
+                        BinderFs::new_fs(&kernel, FileSystemOptions::default()).expect("new_fs"),
+                    ),
+                    MountFlags::empty(),
+                )
+                .expect("mount");
 
-            let task: AutoReleasableTask = Task::create_init_child_process(
-                &kernel,
-                &CString::new("remote_binder".to_string()).expect("CString"),
-            )
-            .expect("Task")
-            .into();
+                let task: AutoReleasableTask = CurrentTask::create_init_child_process(
+                    &kernel,
+                    &CString::new("remote_binder".to_string()).expect("CString"),
+                )
+                .expect("Task")
+                .into();
 
-            let remote_binder_handle =
-                RemoteBinderHandle::<TestRemoteControllerConnector>::new(&task.thread_group);
+                let remote_binder_handle =
+                    RemoteBinderHandle::<TestRemoteControllerConnector>::new(&task.thread_group);
 
-            let service_name_string = CString::new(service_name.as_bytes()).expect("CString::new");
-            let service_name_bytes = service_name_string.as_bytes_with_nul();
-            let service_name_address =
-                map_memory(&task, UserAddress::default(), service_name_bytes.len() as u64);
-            task.mm.write_memory(service_name_address, service_name_bytes).expect("write_memory");
+                let service_name_string =
+                    CString::new(service_name.as_bytes()).expect("CString::new");
+                let service_name_bytes = service_name_string.as_bytes_with_nul();
+                let service_name_address =
+                    map_memory(&task, UserAddress::default(), service_name_bytes.len() as u64);
+                task.mm()
+                    .write_memory(service_name_address, service_name_bytes)
+                    .expect("write_memory");
 
-            let start_command_address =
-                map_memory(&task, UserAddress::default(), std::mem::size_of::<u64>() as u64);
-            task.mm
-                .write_object(start_command_address.into(), &service_name_address.ptr())
-                .expect("write_object");
+                let start_command_address =
+                    map_memory(&task, UserAddress::default(), std::mem::size_of::<u64>() as u64);
+                task.mm()
+                    .write_object(start_command_address.into(), &service_name_address.ptr())
+                    .expect("write_object");
 
-            let wait_command_address = map_memory(
-                &task,
-                UserAddress::default(),
-                std::mem::size_of::<uapi::remote_binder_wait_command>() as u64,
-            );
-
-            let start_result = remote_binder_handle.ioctl(
-                &task,
-                uapi::REMOTE_BINDER_START,
-                start_command_address.into(),
-            );
-            if must_interrupt(&start_result).is_none() {
-                panic!("Unexpected result for start ioctl: {start_result:?}");
-            }
-            loop {
-                let result = remote_binder_handle.ioctl(
+                let wait_command_address = map_memory(
                     &task,
-                    uapi::REMOTE_BINDER_WAIT,
-                    wait_command_address.into(),
+                    UserAddress::default(),
+                    std::mem::size_of::<uapi::remote_binder_wait_command>() as u64,
                 );
-                if must_interrupt(&result).is_none() {
-                    break result;
+
+                let start_result = remote_binder_handle.ioctl(
+                    &task,
+                    uapi::REMOTE_BINDER_START,
+                    start_command_address.into(),
+                );
+                if must_interrupt(&start_result).is_none() {
+                    panic!("Unexpected result for start ioctl: {start_result:?}");
+                }
+                loop {
+                    let result = remote_binder_handle.ioctl(
+                        &task,
+                        uapi::REMOTE_BINDER_WAIT,
+                        wait_command_address.into(),
+                    );
+                    if must_interrupt(&result).is_none() {
+                        break result;
+                    }
                 }
             }
         });
@@ -1030,12 +1177,16 @@ mod tests {
             fasync::Channel::from_channel(remote_controller_server.into_channel())
                 .expect("from_channel"),
         );
-        let dev_binder_client_end = match remote_controller_stream.try_next().await {
-            Ok(Some(fbinder::RemoteControllerRequest::Start { payload, .. })) => {
-                payload.dev_binder.expect("dev_binder")
-            }
-            x => panic!("Expected a start request, got: {x:?}"),
-        };
+        let (dev_binder_client_end, lutex_controller_client_end) =
+            match remote_controller_stream.try_next().await {
+                Ok(Some(fbinder::RemoteControllerRequest::Start { payload, .. })) => (
+                    payload.dev_binder.expect("dev_binder"),
+                    payload.lutex_controller.expect("lutex_controller"),
+                ),
+                x => panic!("Expected a start request, got: {x:?}"),
+            };
+
+        let lutex_controller = lutex_controller_client_end.into_proxy().expect("into_proxy");
 
         let (process_accessor_client_end, process_accessor_server_end) =
             create_endpoints::<fbinder::ProcessAccessorMarker>();
@@ -1060,7 +1211,7 @@ mod tests {
             .expect("open");
 
         // Do the test.
-        let binder = f(binder).await;
+        let binder = f(binder, lutex_controller).await;
 
         // Notify of the close binder
         dev_binder
@@ -1071,13 +1222,13 @@ mod tests {
             .expect("close");
 
         std::mem::drop(dev_binder);
-        starnix_thread.join().expect("thread join").expect("thread result");
+        starnix_thread.await.expect("thread join").expect("thread result");
         process_accessor_task.await.expect("process accessor wait");
     }
 
     #[::fuchsia::test]
     async fn external_binder_connection() {
-        run_remote_binder_test(|binder| async move {
+        run_remote_binder_test(|binder, _| async move {
             const VMO_SIZE: usize = 10 * 1024 * 1024;
             let vmo = zx::Vmo::create(VMO_SIZE as u64).expect("Vmo::create");
             let addr = fuchsia_runtime::vmar_root_self()
@@ -1102,5 +1253,70 @@ mod tests {
             binder
         })
         .await;
+    }
+
+    #[::fuchsia::test]
+    async fn lutex_controller() {
+        run_remote_binder_test(|binder, lutex_controller| async move {
+            const VMO_SIZE: usize = 4 * 1024;
+            let vmo = zx::Vmo::create(VMO_SIZE as u64).expect("Vmo::create");
+            // Wait on an incorrect value.
+            let wait = lutex_controller
+                .wait_bitset(fbinder::WaitBitsetRequest {
+                    vmo: Some(
+                        vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicate vmo"),
+                    ),
+                    offset: Some(0),
+                    value: Some(1),
+                    ..Default::default()
+                })
+                .await
+                .expect("got_answer");
+            assert_eq!(wait, Err(fposix::Errno::Eagain));
+
+            // Wait with a timeout
+            let wait = lutex_controller
+                .wait_bitset(fbinder::WaitBitsetRequest {
+                    vmo: Some(
+                        vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicate vmo"),
+                    ),
+                    offset: Some(0),
+                    value: Some(0),
+                    deadline: Some(0),
+                    ..Default::default()
+                })
+                .await
+                .expect("got_answer");
+            assert_eq!(wait, Err(fposix::Errno::Etimedout));
+
+            let mut wait = lutex_controller.wait_bitset(fbinder::WaitBitsetRequest {
+                vmo: Some(vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicate vmo")),
+                offset: Some(0),
+                value: Some(0),
+                ..Default::default()
+            });
+            // The wait is correct, the future should stay pending until a wake.
+            assert!(futures::poll!(&mut wait).is_pending());
+
+            let waken_up = lutex_controller
+                .wake_bitset(fbinder::WakeBitsetRequest {
+                    vmo: Some(
+                        vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicate vmo"),
+                    ),
+                    offset: Some(0),
+                    count: Some(1),
+                    ..Default::default()
+                })
+                .await
+                .expect("wake_answer")
+                .expect("wake_response");
+            assert_eq!(waken_up.count, Some(1));
+
+            // The wait should now return.
+            assert!(wait.await.expect("await_answer").is_ok());
+
+            binder
+        })
+        .await
     }
 }

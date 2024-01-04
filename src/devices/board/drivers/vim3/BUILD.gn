@@ -12,8 +12,7 @@ driver_bind_rules("vim3-video-bind") {
   deps = [
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.amlogic.platform.meson",
-    "//src/devices/bind/fuchsia.hardware.amlogiccanvas",
-    "//src/devices/bind/fuchsia.hardware.clock",
+    "//src/devices/bind/fuchsia.clock",
     "//src/devices/bind/fuchsia.platform",
     "//src/devices/bind/fuchsia.sysmem",
   ]
@@ -26,9 +25,9 @@ driver_bind_rules("vim3-sdio-bind") {
   deps = [
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.amlogic.platform.a311d",
-    "//src/devices/bind/fuchsia.hardware.gpio",
-    "//src/devices/bind/fuchsia.hardware.pwm",
+    "//src/devices/bind/fuchsia.gpio",
     "//src/devices/bind/fuchsia.platform",
+    "//src/devices/bind/fuchsia.pwm",
   ]
 }
 
@@ -39,21 +38,9 @@ driver_bind_rules("vim3-emmc-bind") {
   deps = [
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.amlogic.platform.a311d",
-    "//src/devices/bind/fuchsia.hardware.gpio",
-    "//src/devices/bind/fuchsia.platform",
-  ]
-}
-
-driver_bind_rules("vim3-cpu-bind") {
-  rules = "vim3-cpu.bind"
-  header_output = "vim3-cpu-bind.h"
-  bind_output = "vim3-cpu-bind.bc"
-  deps = [
-    "//src/devices/bind/fuchsia.amlogic.platform",
-    "//src/devices/bind/fuchsia.amlogic.platform.a311d",
     "//src/devices/bind/fuchsia.amlogic.platform.meson",
-    "//src/devices/bind/fuchsia.hardware.clock",
-    "//src/devices/bind/fuchsia.hardware.power",
+    "//src/devices/bind/fuchsia.clock",
+    "//src/devices/bind/fuchsia.gpio",
     "//src/devices/bind/fuchsia.platform",
   ]
 }
@@ -65,8 +52,8 @@ driver_bind_rules("vim3-wifi-bind") {
   deps = [
     "//src/devices/bind/fuchsia.amlogic.platform.a311d",
     "//src/devices/bind/fuchsia.broadcom.platform",
-    "//src/devices/bind/fuchsia.broadcom.sdio",
-    "//src/devices/bind/fuchsia.hardware.gpio",
+    "//src/devices/bind/fuchsia.broadcom.platform.sdio",
+    "//src/devices/bind/fuchsia.gpio",
     "//src/devices/bind/fuchsia.platform",
     "//src/devices/bind/fuchsia.sdio",
   ]
@@ -78,8 +65,8 @@ driver_bind_rules("vim3-pwm-bind") {
   bind_output = "vim3-pwm-bind.bc"
   deps = [
     "//src/devices/bind/fuchsia.amlogic.platform.a311d",
-    "//src/devices/bind/fuchsia.hardware.gpio",
-    "//src/devices/bind/fuchsia.hardware.pwm",
+    "//src/devices/bind/fuchsia.gpio",
+    "//src/devices/bind/fuchsia.pwm",
   ]
 }
 
@@ -88,8 +75,8 @@ driver_bind_rules("vim3-bind") {
   header_output = "vim3-bind.h"
   tests = "bind-tests.json"
   deps = [
-    "//src/devices/bind/fuchsia.hardware.platform.bus",
     "//src/devices/bind/fuchsia.khadas.platform",
+    "//src/devices/bind/fuchsia.platform",
   ]
 }
 
@@ -100,9 +87,11 @@ fuchsia_driver("vim3-driver") {
     "//build/config/fuchsia:enable_zircon_asserts",
   ]
   sources = [
+    "vim3-adc.cc",
     "vim3-audio.cc",
     "vim3-backlight.cc",
     "vim3-bluetooth.cc",
+    "vim3-buttons.cc",
     "vim3-canvas.cc",
     "vim3-clk.cc",
     "vim3-cpu.cc",
@@ -111,7 +100,6 @@ fuchsia_driver("vim3-driver") {
     "vim3-emmc.cc",
     "vim3-eth.cc",
     "vim3-gpio.cc",
-    "vim3-hdmi.cc",
     "vim3-i2c.cc",
     "vim3-lcd.cc",
     "vim3-mali.cc",
@@ -130,13 +118,11 @@ fuchsia_driver("vim3-driver") {
   ]
   deps = [
     ":vim3-bind",
-    ":vim3-cpu-bind_header",
     ":vim3-emmc-bind_header",
     ":vim3-pwm-bind_header",
     ":vim3-sdio-bind_header",
     ":vim3-video-bind_header",
     ":vim3-wifi-bind_header",
-    "//sdk/banjo/fuchsia.hardware.clockimpl:fuchsia.hardware.clockimpl_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.ethernet:fuchsia.hardware.ethernet_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.gpio:fuchsia.hardware.gpio_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.gpioimpl:fuchsia.hardware.gpioimpl_banjo_cpp",
@@ -144,29 +130,39 @@ fuchsia_driver("vim3-driver") {
     "//sdk/banjo/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.serial:fuchsia.hardware.serial_banjo_cpp",
     "//sdk/banjo/fuchsia.sysmem:fuchsia.sysmem_banjo_c",
+    "//sdk/fidl/fuchsia.buttons:fuchsia.buttons_cpp",
+    "//sdk/fidl/fuchsia.hardware.adc:fuchsia.hardware.adc_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.amlogiccanvas:fuchsia.hardware.amlogiccanvas_bindlib_cpp",
-    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp_driver",
-    "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.thermal:fuchsia.hardware.thermal_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.usb.peripheral:fuchsia.hardware.usb.peripheral_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.clockimpl:fuchsia.hardware.clockimpl_cpp",
+    "//sdk/fidl/fuchsia.hardware.gpioimpl:fuchsia.hardware.gpioimpl_cpp",
+    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
+    "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_cpp",
+    "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial_cpp",
+    "//sdk/fidl/fuchsia.hardware.thermal:fuchsia.hardware.thermal_cpp",
+    "//sdk/fidl/fuchsia.hardware.usb.peripheral:fuchsia.hardware.usb.peripheral_cpp",
+    "//sdk/fidl/fuchsia.hardware.usb.phy:fuchsia.hardware.usb.phy_bindlib_cpp",
     "//sdk/lib/driver/component/cpp:cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/devices/bind/fuchsia.adc:fuchsia.adc_cpp",
     "//src/devices/bind/fuchsia.amlogic.platform:fuchsia.amlogic.platform_cpp",
     "//src/devices/bind/fuchsia.amlogic.platform.a311d:fuchsia.amlogic.platform.a311d_cpp",
+    "//src/devices/bind/fuchsia.amlogic.platform.meson:fuchsia.amlogic.platform.meson_cpp",
     "//src/devices/bind/fuchsia.arm.platform:fuchsia.arm.platform_cpp",
+    "//src/devices/bind/fuchsia.clock:fuchsia.clock_cpp",
     "//src/devices/bind/fuchsia.designware.platform:fuchsia.designware.platform_cpp",
-    "//src/devices/bind/fuchsia.hardware.dsi:fuchsia.hardware.dsi_cpp",
-    "//src/devices/bind/fuchsia.hardware.ethernet.board:fuchsia.hardware.ethernet.board_cpp",
-    "//src/devices/bind/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
-    "//src/devices/bind/fuchsia.hardware.hdmi:fuchsia.hardware.hdmi_cpp",
-    "//src/devices/bind/fuchsia.hardware.pwm:fuchsia.hardware.pwm_cpp",
-    "//src/devices/bind/fuchsia.hardware.registers:fuchsia.hardware.registers_cpp",
+    "//src/devices/bind/fuchsia.display.dsi:fuchsia.display.dsi_cpp",
+    "//src/devices/bind/fuchsia.ethernet:fuchsia.ethernet_cpp",
+    "//src/devices/bind/fuchsia.focaltech.platform:fuchsia.focaltech.platform_cpp",
+    "//src/devices/bind/fuchsia.gpio:fuchsia.gpio_cpp",
     "//src/devices/bind/fuchsia.i2c:fuchsia.i2c_cpp",
     "//src/devices/bind/fuchsia.khadas.platform:fuchsia.khadas.platform_cpp",
+    "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
     "//src/devices/bind/fuchsia.power:fuchsia.power_cpp",
+    "//src/devices/bind/fuchsia.pwm:fuchsia.pwm_cpp",
+    "//src/devices/bind/fuchsia.register:fuchsia.register_cpp",
     "//src/devices/bind/fuchsia.sysmem:fuchsia.sysmem_cpp",
     "//src/devices/bind/fuchsia.ti.platform:fuchsia.ti.platform_cpp",
+    "//src/devices/bind/fuchsia.usb.phy:fuchsia.usb.phy_cpp",
     "//src/devices/bus/lib/platform-bus-composites",
     "//src/devices/lib/amlogic",
     "//src/devices/lib/broadcom",
@@ -202,6 +198,11 @@ fuchsia_driver_component("vim3") {
   deps = [ ":vim3-driver" ]
   info = "vim3-info.json"
   manifest = "meta/vim3.cml"
+}
+
+fuchsia_driver_package("package") {
+  package_name = "vim3"
+  driver_components = [ ":vim3" ]
 }
 
 group("tests") {

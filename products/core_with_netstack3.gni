@@ -2,25 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//products/common/core.gni")
+include_shell_commands_package = true
 
-assembly_fshost = true
-
-product_bootfs_labels +=
-    [ "//src/sys/component_manager:component_manager_bootfs_config" ]
-
-core_realm_shards += [ "//src/intl/intl_services:intl_services_small_shard" ]
+product_bootfs_labels = []
+legacy_base_package_labels = []
 
 legacy_base_package_labels +=
-    [ "//src/connectivity/network/netcfg:config-default" ]
+    [ "//src/connectivity/policy/netcfg:config-default" ]
+
+discoverable_package_labels = [ "//bundles/tools" ]
 
 # Use the product assembly config target to specify the product configuration.
 #
 # NOTE: This should be overridden by products which inherit from core.
 fuchsia_product_assembly_config_label = "//products/core:core_with_netstack3"
 zedboot_product_assembly_config_label = "//products/zedboot"
-
-# Set to empty so that products which inherit from core don't automatically get minimal's no-op
-# policy. Necessary to ensure that the check for policy on non-eng builds will actually discover
-# missing policies.
-fuchsia_structured_config_policy = ""

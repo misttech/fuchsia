@@ -14,6 +14,15 @@ mod rtc;
 mod time_source;
 mod time_source_manager;
 
+use anyhow::{Context as _, Result};
+use fidl::AsHandleRef;
+use fidl_fuchsia_time as fft;
+use futures::{
+    channel::mpsc,
+    future::{self, OptionFuture},
+    stream::StreamExt as _,
+    SinkExt,
+};
 use {
     crate::{
         clock_manager::ClockManager,
@@ -25,18 +34,13 @@ use {
         time_source::{TimeSource, TimeSourceLauncher},
         time_source_manager::TimeSourceManager,
     },
-    anyhow::{Context as _, Error},
     chrono::prelude::*,
     fidl_fuchsia_time as ftime, fuchsia_async as fasync,
     fuchsia_component::server::ServiceFs,
     fuchsia_zircon as zx,
-    futures::{
-        future::{self, OptionFuture},
-        stream::StreamExt as _,
-    },
     std::sync::Arc,
     time_metrics_registry::TimeMetricDimensionExperiment,
-    tracing::{error, info, warn},
+    tracing::{debug, error, info, warn},
 };
 
 /// Timekeeper config, populated from build-time generated structured config.
@@ -93,6 +97,14 @@ impl Config {
     fn get_primary_uses_pull(&self) -> bool {
         self.source_config.primary_uses_pull
     }
+
+    fn get_utc_start_at_startup(&self) -> bool {
+        self.source_config.utc_start_at_startup
+    }
+
+    fn get_early_exit(&self) -> bool {
+        self.source_config.early_exit
+    }
 }
 
 /// A definition which time sources to install, along with the URL and child names for each.
@@ -135,10 +147,17 @@ struct MonitorTrack {
     clock: Arc<zx::Clock>,
 }
 
-#[fuchsia::main(logging_tags=["time"])]
-async fn main() -> Result<(), Error> {
+fn koid_of(c: &zx::Clock) -> u64 {
+    c.as_handle_ref().get_koid().expect("infallible").raw_koid()
+}
+
+#[fuchsia::main(logging_tags=["time", "timekeeper"])]
+async fn main() -> Result<()> {
     let config: Arc<Config> =
         Arc::new(timekeeper_config::Config::take_from_startup_handle().into());
+
+    // If we don't get this, timekeeper probably didn't even start.
+    debug!("starting timekeeper: config: {:?}", &config);
 
     info!("retrieving UTC clock handle");
     let time_maintainer =
@@ -149,6 +168,7 @@ async fn main() -> Result<(), Error> {
             .await
             .context("failed to get UTC clock from maintainer")?,
     );
+    debug!("utc_clock handle with koid: {}", koid_of(&utc_clock));
 
     let time_source_urls = TimeSourceUrls {
         primary: TimeSourceDetails {
@@ -176,8 +196,6 @@ async fn main() -> Result<(), Error> {
         InspectDiagnostics::new(diagnostics::INSPECTOR.root(), &primary_track, &monitor_track),
         CobaltDiagnostics::new(cobalt_experiment, &primary_track, &monitor_track),
     ));
-    let mut fs = ServiceFs::new();
-    inspect_runtime::serve(&diagnostics::INSPECTOR, &mut fs)?;
 
     info!("connecting to real time clock");
     let optional_rtc = match RtcImpl::only_device() {
@@ -197,7 +215,14 @@ async fn main() -> Result<(), Error> {
     })
     .detach();
 
+    let _inspect_server_task = inspect_runtime::publish(
+        &diagnostics::INSPECTOR,
+        inspect_runtime::PublishOptions::default(),
+    );
+
+    let mut fs = ServiceFs::new();
     fs.take_and_serve_directory_handle()?;
+
     Ok(fs.collect().await)
 }
 
@@ -212,15 +237,16 @@ fn create_monitor_clock(primary_clock: &zx::Clock) -> zx::Clock {
 }
 
 /// Determines whether the supplied clock has previously been set.
-fn initial_clock_state(utc_clock: &zx::Clock) -> InitialClockState {
+/// Returns the clock state and the backstop.
+fn initial_clock_state(utc_clock: &zx::Clock) -> (InitialClockState, zx::ClockDetails) {
     // Note: Failure should not be possible from a valid zx::Clock.
     let clock_details = utc_clock.get_details().expect("failed to get UTC clock details");
     // When the clock is first initialized to the backstop time, its synthetic offset should
     // be identical. Once the clock is updated, this is no longer true.
     if clock_details.backstop.into_nanos() == clock_details.ticks_to_synthetic.synthetic_offset {
-        InitialClockState::NotSet
+        (InitialClockState::NotSet, clock_details)
     } else {
-        InitialClockState::PreviouslySet
+        (InitialClockState::PreviouslySet, clock_details)
     }
 }
 
@@ -249,13 +275,16 @@ async fn set_clock_from_rtc<R: Rtc, D: Diagnostics>(
 
     let rtc_chrono = Utc.timestamp_nanos(rtc_time.into_nanos());
     let backstop = clock.get_details().expect("failed to get UTC clock details").backstop;
+    let backstop_chrono = Utc.timestamp_nanos(backstop.into_nanos());
     if rtc_time < backstop {
-        warn!("initial RTC time before backstop: {}", rtc_chrono);
+        warn!("initial RTC time {} is before backstop: {}", rtc_chrono, backstop_chrono);
         diagnostics.record(Event::InitializeRtc {
             outcome: InitializeRtcOutcome::InvalidBeforeBackstop,
             time: Some(rtc_time),
         });
         return;
+    } else {
+        debug!("RTC time {} is ahead of backstop {}, as expected", rtc_chrono, backstop_chrono);
     }
 
     diagnostics.record(Event::InitializeRtc {
@@ -270,6 +299,17 @@ async fn set_clock_from_rtc<R: Rtc, D: Diagnostics>(
         diagnostics
             .record(Event::StartClock { track: Track::Primary, source: StartClockSource::Rtc });
         info!("started UTC clock from RTC at time: {}", rtc_chrono);
+
+        if let Err(status) = clock.signal_handle(
+            zx::Signals::NONE,
+            zx::Signals::from_bits(fft::SIGNAL_UTC_CLOCK_LOGGING_QUALITY).unwrap(),
+        ) {
+            // Since userspace depends on this signal, we probably can not recover if
+            // we can not signal.
+            panic!("Failed to signal clock logging quality: {}", status);
+        } else {
+            debug!("sent SIGNAL_UTC_CLOCK_LOGGING_QUALITY");
+        }
     }
 }
 
@@ -287,7 +327,7 @@ async fn maintain_utc<R: 'static, D: 'static>(
     D: Diagnostics,
 {
     info!("record the state at initialization.");
-    let initial_clock_state = initial_clock_state(&primary.clock);
+    let (initial_clock_state, clock_details) = initial_clock_state(&primary.clock);
     diagnostics.record(Event::Initialized { clock_state: initial_clock_state });
 
     if let Some(rtc) = optional_rtc.as_ref() {
@@ -303,22 +343,57 @@ async fn maintain_utc<R: 'static, D: 'static>(
             }
         }
     }
-
     info!("launching time source managers...");
     let time_source_fn = match config.get_disable_delays() {
         true => TimeSourceManager::new_with_delays_disabled,
         false => TimeSourceManager::new,
     };
-    let backstop = primary.clock.get_details().expect("failed to get UTC clock details").backstop;
-    let primary_source_manager =
-        time_source_fn(backstop, Role::Primary, primary.time_source, Arc::clone(&diagnostics));
+
+    if optional_rtc.is_none() && config.get_utc_start_at_startup() {
+        // Legacy programs assume that UTC clock is always running.  If config allows it,
+        // we start the clock from backstop and hope for the best.
+        let backstop = &clock_details.backstop;
+        // Not possible to start at backstop, so we start just a bit after.
+        let b1 = *backstop + zx::Duration::from_nanos(1);
+        let mono = zx::Time::get_monotonic();
+        info!("starting the UTC clock from backstop time, to handle legacy programs");
+        debug!("`- synthetic (backstop+1): {:?}, reference (monotonic): {:?}", &b1, &mono);
+        if let Err(status) =
+            primary.clock.update(zx::ClockUpdate::builder().absolute_value(mono, b1))
+        {
+            warn!("failed to start UTC clock from backstop time: {}", &status);
+            // If we got here, the UTC clock is not started yet. We might have better luck with
+            // time sources, provided that we have network access.
+        } else {
+            // Yay, the clock is started!  Announce to the world.
+            diagnostics.record(Event::InitializeRtc {
+                outcome: InitializeRtcOutcome::StartedFromBackstop,
+                time: Some(b1),
+            });
+        }
+    }
+    if config.get_early_exit() {
+        tracing::info!("early_exit=true: exiting early per request from configuration. UTC clock will not be managed");
+        return;
+    }
+    let primary_source_manager = time_source_fn(
+        clock_details.backstop,
+        Role::Primary,
+        primary.time_source,
+        Arc::clone(&diagnostics),
+    );
     let monitor_source_manager_and_clock = optional_monitor.map(|monitor| {
-        let source_manager =
-            time_source_fn(backstop, Role::Monitor, monitor.time_source, Arc::clone(&diagnostics));
+        let source_manager = time_source_fn(
+            clock_details.backstop,
+            Role::Monitor,
+            monitor.time_source,
+            Arc::clone(&diagnostics),
+        );
         (source_manager, monitor.clock)
     });
 
     info!("launching clock managers...");
+    let (mut s1, r1) = mpsc::channel(1);
     let fut1 = ClockManager::execute(
         primary.clock,
         primary_source_manager,
@@ -326,7 +401,9 @@ async fn maintain_utc<R: 'static, D: 'static>(
         Arc::clone(&diagnostics),
         Track::Primary,
         Arc::clone(&config),
+        r1,
     );
+    let (_, r2) = mpsc::channel(1);
     let fut2: OptionFuture<_> = monitor_source_manager_and_clock
         .map(|(source_manager, clock)| {
             ClockManager::<R, D>::execute(
@@ -336,10 +413,16 @@ async fn maintain_utc<R: 'static, D: 'static>(
                 diagnostics,
                 Track::Monitor,
                 config,
+                r2,
             )
         })
         .into();
-    future::join(fut1, fut2).await;
+    let oneshot = Box::pin(async move {
+        // TODO: b/304805834 - Integrate with actual management API here.
+        fasync::Timer::new(fasync::Time::after(zx::Duration::from_seconds(5))).await;
+        let _ignore = s1.send(()).await;
+    });
+    future::join3(fut1, fut2, oneshot).await;
 }
 
 // Reexport test config creation to be used in other tests.
@@ -348,6 +431,7 @@ use tests::make_test_config;
 
 #[cfg(test)]
 mod tests {
+    use std::matches;
     use {
         super::*,
         crate::{
@@ -393,6 +477,8 @@ mod tests {
             back_off_time_between_pull_samples_sec: 0,
             monitor_time_source_url: "".to_string(),
             primary_uses_pull: false,
+            utc_start_at_startup: false,
+            early_exit: false,
         }))
     }
 
@@ -613,12 +699,14 @@ mod tests {
         clock
             .update(zx::ClockUpdate::builder().approximate_value(zx::Time::from_nanos(1_000)))
             .unwrap();
-        assert_eq!(initial_clock_state(&clock), InitialClockState::NotSet);
+        let (state, _) = initial_clock_state(&clock);
+        assert!(matches!(state, InitialClockState::NotSet));
 
         // Update the clock, which is already running.
         clock
             .update(zx::ClockUpdate::builder().approximate_value(zx::Time::from_nanos(1_000_000)))
             .unwrap();
-        assert_eq!(initial_clock_state(&clock), InitialClockState::PreviouslySet);
+        let (state, _) = initial_clock_state(&clock);
+        assert_eq!(state, InitialClockState::PreviouslySet);
     }
 }

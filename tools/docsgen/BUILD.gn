@@ -66,17 +66,37 @@ action("invoke_fidldoc") {
 }
 
 clidoc_tarfile = "clidoc_out.tar.gz"
+
+# Some SDK dependencies lifted from //src/developer/ffx/build/ffx_action.
+# This is the actual label for the sdk host tools, and is used to provide the
+# path to the sdk molecule manifest.
+sdk_host_tools_visibility_bridge_label =
+    "//src/developer/ffx/build:internal_sdk_tools_for_ffx($host_toolchain)"
+
+_sdk_host_tools_label = "//sdk:host_tools.internal($host_toolchain)"
+
+sdk_host_tools_manifest =
+    get_label_info(_sdk_host_tools_label, "root_out_dir") +
+    "/sdk/manifest/host_tools.internal"
+
 compiled_action("invoke_clidoc") {
   tool = "//tools/clidoc:clidoc_bin"
   tool_output_name = "clidoc"
-  testonly = true
   depfile = "$target_out_dir/$target_name.d"
   deps = [
-    "//sdk:host_tools.all",
-
-    # TODO(https://fxbug.dev/86553) check if triage belongs in sdk docs.
-    "//src/diagnostics/triage:triage",
+    "//sdk:host_tools",
+    sdk_host_tools_visibility_bridge_label,
   ]
+  if (is_host) {
+    deps += [
+      "//src/developer/ffx/frontends/ffx:ffx_bin_unversioned($host_toolchain)",
+      "//src/developer/ffx/tools($host_toolchain)",
+
+      # TODO(https://fxbug.dev/86553) check if triage belongs in sdk docs.
+      "//src/diagnostics/triage:triage_bin",
+    ]
+  }
+
   metadata = {
     # Record metadata for the //tools/docsgen build API.
     generated_docset = [
@@ -91,17 +111,23 @@ compiled_action("invoke_clidoc") {
       },
     ]
   }
+
+  inputs = [ sdk_host_tools_manifest ]
   outputs = [ "$target_out_dir/$clidoc_tarfile" ]
   args = [
     "-o",
     rebase_path("$target_gen_dir/sdk-docs", root_build_dir),
     "--quiet",
-
-    # TODO (https://fxbug.dev/86553) to rename tarball-dir.
-    "--tarball-dir",
+    "--archive-path",
     rebase_path("$target_out_dir/$clidoc_tarfile", root_build_dir),
     "--depfile",
     rebase_path(depfile, root_build_dir),
+    "--sdk-root",
+    rebase_path(root_build_dir, root_build_dir),
+    "--sdk-manifest",
+    rebase_path(sdk_host_tools_manifest, root_build_dir),
+    "--isolate-dir",
+    rebase_path(target_gen_dir, root_build_dir),
   ]
 }
 
@@ -130,7 +156,6 @@ action("invoke_helpdoc") {
 
   script_output = get_target_outputs(":${_helpdoc_script_target}")
   script = script_output[0]
-  testonly = true
   depfile = "$target_out_dir/$target_name.d"
   metadata = {
     # Record metadata for the //tools/docsgen build API.
@@ -165,10 +190,38 @@ action("invoke_helpdoc") {
   deps = [ ":${_helpdoc_script_target}" ]
 }
 
+action("create_syscall_docs") {
+  script = "gen_syscalls_toc.py"
+
+  deps = [ "//zircon/vdso:syscall_docs.zip" ]
+  inputs = [ get_label_info(deps[0], "target_out_dir") + "/syscall_docs.zip" ]
+  outputs = [ "${target_out_dir}/syscalls.zip" ]
+
+  args = [
+    "--input",
+    rebase_path(inputs[0], root_build_dir),
+    "--output",
+    rebase_path(outputs[0], root_build_dir),
+    "--reference-root",
+    "/reference/syscalls",
+  ]
+
+  metadata = {
+    generated_docset = [
+      {
+        name = "syscalls"
+        archive = {
+          origin_file = rebase_path(outputs[0], root_build_dir)
+        }
+        dest_folder = "syscalls"
+      },
+    ]
+  }
+}
+
 compiled_action("invoke_cmldoc") {
   tool = "//tools/cmc:cmc"
   tool_output_name = "cmc"
-  testonly = true
   metadata = {
     # Record metadata for the //tools/docsgen build API.
     generated_docset = [
@@ -187,57 +240,6 @@ compiled_action("invoke_cmldoc") {
     rebase_path("$target_out_dir/cmldoc_out/index.md", root_build_dir),
   ]
   deps = [ "//tools/cmc($host_toolchain)" ]
-}
-
-# Set up targets and files for sdk_documentation and build_api_module.
-ref_docs = [
-  {
-    target = ":invoke_clidoc"
-    file = "clidoc_out.tar.gz"
-  },
-  {
-    target = ":invoke_cmldoc"
-    file = "cmldoc_out/index.md"
-  },
-  {
-    target = ":invoke_fidldoc"
-    file = "fidldoc.zip"
-  },
-  {
-    target = ":invoke_helpdoc"
-    file = "helpdoc_out.tar.gz"
-  },
-  {
-    target = "//bundles:create_all_drivers_doc"
-    file = "all_drivers_doc.yaml"
-  },
-  {
-    target = "//sdk/lib/fdio:docs"
-    file = "fdio.zip"
-  },
-]
-
-ref_doc_files = []
-ref_doc_targets = []
-foreach(ref_doc, ref_docs) {
-  out_dir = get_label_info(ref_doc.target, "target_out_dir")
-  ref_doc_file_prefix = ref_doc.file
-
-  # TODO(https://fxbug.dev/103315) to move drivers doc to output_dir.
-  # Unlike other ref docs, drivers docs uses gen_dir instead of output_dir
-  if (ref_doc_file_prefix == "all_drivers_doc.yaml") {
-    gen_dir = get_label_info(ref_doc.target, "target_gen_dir")
-    ref_doc_file_path = "$gen_dir/$ref_doc_file_prefix"
-  } else {
-    ref_doc_file_path = "$out_dir/$ref_doc_file_prefix"
-  }
-  ref_doc_files += [
-    {
-      source = ref_doc_file_path
-      dest = "docs/$ref_doc_file_prefix"
-    },
-  ]
-  ref_doc_targets += [ ref_doc.target ]
 }
 
 # This exposes relevant reference doc paths for infra to upload.
@@ -280,16 +282,63 @@ foreach(ref_doc, ref_docs) {
 build_api_module("generated_docs") {
   testonly = true
   data_keys = [ "generated_docset" ]
-  deps = ref_doc_targets
+  deps = [
+    ":create_syscall_docs",
+    ":invoke_clidoc",
+    ":invoke_cmldoc",
+    ":invoke_fidldoc",
+    ":invoke_helpdoc",
+    "//bundles/drivers:create_all_drivers_doc",
+    "//sdk/lib/fdio:docs",
+  ]
+}
+
+# Set up targets and files for sdk_documentation
+
+sdk_docs = [
+  {
+    target = ":invoke_clidoc"
+    file = "clidoc_out.tar.gz"
+  },
+  {
+    target = ":invoke_cmldoc"
+    file = "cmldoc_out/index.md"
+  },
+  {
+    target = ":invoke_fidldoc"
+    file = "fidldoc.zip"
+  },
+  {
+    target = ":invoke_helpdoc"
+    file = "helpdoc_out.tar.gz"
+  },
+  {
+    target = "//sdk/lib/fdio:docs"
+    file = "fdio.zip"
+  },
+]
+
+sdk_doc_files = []
+sdk_doc_targets = []
+foreach(sdk_doc, sdk_docs) {
+  src_dir = get_label_info(sdk_doc.target, "target_out_dir")
+  sdk_doc_file = sdk_doc.file
+
+  sdk_doc_files += [
+    {
+      source = "$src_dir/$sdk_doc_file"
+      dest = "docs/$sdk_doc_file"
+    },
+  ]
+  sdk_doc_targets += [ sdk_doc.target ]
 }
 
 sdk_documentation("ref_docs_sdk") {
   name = "ref_docs"
-  testonly = true
   category = "partner"
 
-  files = ref_doc_files
-  non_sdk_deps = ref_doc_targets
+  files = sdk_doc_files
+  non_sdk_deps = sdk_doc_targets
 }
 
 group("tests") {

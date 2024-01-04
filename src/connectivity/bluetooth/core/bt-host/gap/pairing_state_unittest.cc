@@ -6,20 +6,25 @@
 
 #include <gtest/gtest.h>
 
+#include "gmock/gmock.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/fake_pairing_delegate.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/peer_cache.h"
 #include "src/connectivity/bluetooth/core/bt-host/hci/fake_bredr_connection.h"
 #include "src/connectivity/bluetooth/core/bt-host/sm/types.h"
 #include "src/connectivity/bluetooth/core/bt-host/testing/controller_test.h"
 #include "src/connectivity/bluetooth/core/bt-host/testing/fake_peer.h"
+#include "src/connectivity/bluetooth/core/bt-host/testing/inspect.h"
+#include "src/connectivity/bluetooth/core/bt-host/testing/inspect_util.h"
 #include "src/connectivity/bluetooth/core/bt-host/testing/mock_controller.h"
 #include "src/connectivity/bluetooth/core/bt-host/testing/test_helpers.h"
 #include "src/connectivity/bluetooth/core/bt-host/testing/test_packets.h"
 #include "src/connectivity/bluetooth/core/bt-host/transport/error.h"
-#include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 
 namespace bt::gap {
 namespace {
+
+using namespace inspect::testing;
+using bt::testing::ReadInspect;
 
 using hci::testing::FakeBrEdrConnection;
 using hci_spec::kUserConfirmationRequestEventCode;
@@ -73,7 +78,7 @@ class NoOpPairingDelegate final : public PairingDelegate {
   WeakSelf<PairingDelegate> weak_self_;
 };
 
-using TestBase = testing::ControllerTest<testing::MockController>;
+using TestBase = testing::FakeDispatcherControllerTest<testing::MockController>;
 class PairingStateTest : public TestBase {
  public:
   PairingStateTest() = default;
@@ -83,7 +88,7 @@ class PairingStateTest : public TestBase {
     TestBase::SetUp();
     InitializeACLDataChannel();
 
-    peer_cache_ = std::make_unique<PeerCache>();
+    peer_cache_ = std::make_unique<PeerCache>(dispatcher());
     peer_ = peer_cache_->NewPeer(kPeerAddress, /*connectable=*/true);
 
     auth_request_count_ = 0;
@@ -1986,8 +1991,8 @@ TEST_F(PairingStateDeathTest, OnLinkKeyRequestReceivedMissingPeerAsserts) {
 
   EXPECT_TRUE(peer_cache()->RemoveDisconnectedPeer(peer()->identifier()));
 
-  ASSERT_DEATH_IF_SUPPORTED({ [[maybe_unused]] auto reply_key = pairing_state.OnLinkKeyRequest(); },
-                            ".*peer.*");
+  ASSERT_DEATH_IF_SUPPORTED(
+      { [[maybe_unused]] auto reply_key = pairing_state.OnLinkKeyRequest(); }, ".*peer.*");
 }
 
 TEST_F(PairingStateTest, AuthenticationCompleteWithErrorCodeReceivedEarlyFailsPairing) {
@@ -2369,6 +2374,33 @@ TEST_F(PairingStateTest, InitiatingPairingDuringAuthenticationWithExistingUnauth
   EXPECT_EQ(2u, auth_request_count());
   EXPECT_FALSE(pairing_state.initiator());
 }
+
+#ifndef NINSPECT
+TEST_F(PairingStateTest, Inspect) {
+  TestStatusHandler status_handler;
+
+  inspect::Inspector inspector;
+
+  PairingState pairing_state(peer()->GetWeakPtr(), connection(), /*link_initiated=*/false,
+                             MakeAuthRequestCallback(), status_handler.MakeStatusCallback());
+
+  pairing_state.AttachInspect(inspector.GetRoot(), "pairing_state");
+
+  auto security_properties_matcher = AllOf(NodeMatches(AllOf(
+      NameMatches("security_properties"),
+      PropertyList(UnorderedElementsAre(StringIs("level", "not secure"), BoolIs("encrypted", false),
+                                        BoolIs("secure_connections", false),
+                                        BoolIs("authenticated", false))))));
+
+  auto pairing_state_matcher = AllOf(
+      NodeMatches(AllOf(NameMatches("pairing_state"),
+                        PropertyList(UnorderedElementsAre(StringIs("encryption_status", "OFF"))))),
+      ChildrenMatch(UnorderedElementsAre(security_properties_matcher)));
+
+  inspect::Hierarchy hierarchy = ReadInspect(inspector);
+  EXPECT_THAT(hierarchy, ChildrenMatch(ElementsAre(pairing_state_matcher)));
+}
+#endif  // NINSPECT
 
 }  // namespace
 }  // namespace bt::gap

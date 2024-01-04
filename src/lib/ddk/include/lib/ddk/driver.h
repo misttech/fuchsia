@@ -153,13 +153,6 @@ typedef struct device_add_args {
   // Number of power states in the list
   uint8_t power_state_count;
 
-  // List of performant states that the device supports.
-  // List cannot be more than MAX_DEVICE_PERFORMANCE_STATES size.
-  const device_performance_state_info_t* performance_states;
-
-  // Number of performant power states in the list
-  uint8_t performance_state_count;
-
   // Optional custom protocol for this device
   uint32_t proto_id;
 
@@ -203,13 +196,6 @@ typedef struct device_init_reply_args {
 
   // Number of power states in the list
   uint8_t power_state_count;
-
-  // List of performant states that the device supports.
-  // List cannot be more than MAX_DEVICE_PERFORMANCE_STATES size.
-  const device_performance_state_info_t* performance_states;
-
-  // Number of performant power states in the list
-  uint8_t performance_state_count;
 } device_init_reply_args_t;
 
 struct zx_driver_rec {
@@ -392,6 +378,22 @@ zx_status_t device_add_composite(zx_device_t* dev, const char* name,
 
 // temporary accessor for root resource handle
 zx_handle_t get_root_resource(zx_device_t* dev);
+
+zx_handle_t get_mmio_resource(zx_device_t* dev);
+
+zx_handle_t get_power_resource(zx_device_t* dev);
+
+zx_handle_t get_ioport_resource(zx_device_t* dev);
+
+zx_handle_t get_iommu_resource(zx_device_t* dev);
+
+zx_handle_t get_framebuffer_resource(zx_device_t* dev);
+
+zx_handle_t get_irq_resource(zx_device_t* dev);
+
+zx_handle_t get_smc_resource(zx_device_t* dev);
+
+zx_handle_t get_info_resource(zx_device_t* dev);
 
 zx_status_t load_firmware_from_driver(zx_driver_t* drv, zx_device_t* device, const char* path,
                                       zx_handle_t* fw, size_t* size);

@@ -13,6 +13,7 @@
 
 #include "src/connectivity/wlan/drivers/third_party/nxp/nxpfmac/client_connection.h"
 
+#include <fidl/fuchsia.wlan.common/cpp/wire_types.h>
 #include <fidl/fuchsia.wlan.fullmac/cpp/fidl.h>
 #include <fuchsia/wlan/ieee80211/c/banjo.h>
 #include <lib/ddk/debug.h>
@@ -48,19 +49,17 @@ constexpr uint8_t kSaeFramePriority = 7u;
 class ConnectRequestParams {
  public:
   explicit ConnectRequestParams(
-      const fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectReqRequest* req)
+      const fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectRequest* req)
       : request_arena_() {
     auto natural_req = fidl::ToNatural(*req);
     request_ = fidl::ToWire(request_arena_, natural_req);
   }
 
-  const fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectReqRequest* get() const {
-    return &request_;
-  }
+  const fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectRequest* get() const { return &request_; }
 
  private:
   fidl::Arena<kConnectReqBufferSize> request_arena_;
-  fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectReqRequest request_;
+  fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectRequest request_;
 };
 
 ClientConnection::ClientConnection(ClientConnectionIfc* ifc, DeviceContext* context,
@@ -125,7 +124,7 @@ ClientConnection::~ClientConnection() {
 }
 
 zx_status_t ClientConnection::Connect(
-    const fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectReqRequest* req,
+    const fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectRequest* req,
     OnConnectCallback&& on_connect) {
   std::lock_guard lock(mutex_);
   if (state_ != State::Idle && state_ != State::Authenticating) {
@@ -157,7 +156,7 @@ zx_status_t ClientConnection::Connect(
 }
 
 zx_status_t ClientConnection::ConnectLocked(
-    const fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectReqRequest* req,
+    const fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectRequest* req,
     OnConnectCallback&& on_connect) {
   if (!req->has_selected_bss() || !req->has_auth_type()) {
     NXPF_ERR("Missing field in connection request: %s %s",
@@ -182,16 +181,23 @@ zx_status_t ClientConnection::ConnectLocked(
     return status;
   }
 
-  if (req->has_wep_key() && req->wep_key().key.count() > 0) {
+  if (req->has_wep_key()) {
+    fuchsia_wlan_common::wire::WlanKeyConfig& wep_key = req->wep_key();
+    if (!(wep_key.has_key() && wep_key.has_peer_addr() && wep_key.has_key_idx())) {
+      NXPF_ERR(
+          "WEP key does not have required fields: has_key %u, has_peer_addr %u, has_key_idx %u",
+          wep_key.has_key(), wep_key.has_peer_addr(), wep_key.has_key_idx());
+      return ZX_ERR_INVALID_ARGS;
+    }
+
     // The WEP key address should be considered a group key, set address to broadcast address.
-    fuchsia_wlan_fullmac::wire::SetKeyDescriptor& wep_key = req->wep_key();
-    memset(wep_key.address.data(), 0xFF, ETH_ALEN);
+    memset(wep_key.peer_addr().data(), 0xFF, ETH_ALEN);
     status = key_ring_->AddKey(wep_key);
     if (status != ZX_OK) {
       NXPF_ERR("Could not set WEP key: %s", zx_status_get_string(status));
       return status;
     }
-    status = key_ring_->EnableWepKey(wep_key.key_id);
+    status = key_ring_->EnableWepKey(wep_key.key_idx());
     if (status != ZX_OK) {
       NXPF_ERR("Could not enable WEP key: %s", zx_status_get_string(status));
       return status;
@@ -658,7 +664,7 @@ void ClientConnection::OnSaeTimeout() {
 }
 
 zx_status_t ClientConnection::InitiateSaeHandshake(
-    const fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectReqRequest* req) {
+    const fuchsia_wlan_fullmac::wire::WlanFullmacImplConnectRequest* req) {
   // The SAE handshake requires that we manually handle some management frames. Register to receive
   // them here before the authentication process starts.
   zx_status_t status = RegisterForMgmtFrames({wlan::ManagementSubtype::kAuthentication,

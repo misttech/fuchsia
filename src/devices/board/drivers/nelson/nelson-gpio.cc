@@ -165,34 +165,13 @@ static const gpio_pin_t gpio_pins[] = {
     DECL_GPIO_PIN(SOC_EMMC_DS),
 };
 
-static const std::vector<fpbus::Metadata> gpio_metadata{
-    {{
-        .type = DEVICE_METADATA_GPIO_PINS,
-        .data =
-            std::vector<uint8_t>(reinterpret_cast<const uint8_t*>(&gpio_pins),
-                                 reinterpret_cast<const uint8_t*>(&gpio_pins) + sizeof(gpio_pins)),
-    }},
-};
-
-static const fpbus::Node gpio_dev = []() {
-  fpbus::Node dev = {};
-  dev.name() = "gpio";
-  dev.vid() = PDEV_VID_AMLOGIC;
-  dev.pid() = PDEV_PID_AMLOGIC_S905D3;
-  dev.did() = PDEV_DID_AMLOGIC_GPIO;
-  dev.mmio() = gpio_mmios;
-  dev.irq() = gpio_irqs;
-  dev.metadata() = gpio_metadata;
-  return dev;
-}();
-
 // The GPIO H device won't be able to provide interrupts for the pins it exposes, so
 // GPIO_SOC_SELINA_IRQ_OUT must be be exposed by the main GPIO device (see the list of pins above)
 // instead of this one.
 static const gpio_pin_t gpio_h_pins[] = {
     DECL_GPIO_PIN(GPIO_SOC_SELINA_RESET), DECL_GPIO_PIN(GPIO_SOC_SPI_B_MOSI),
-    DECL_GPIO_PIN(GPIO_SOC_SPI_B_MISO), DECL_GPIO_PIN(GPIO_SOC_SPI_B_SS0),
-    DECL_GPIO_PIN(GPIO_SOC_SPI_B_SCLK)};
+    DECL_GPIO_PIN(GPIO_SOC_SPI_B_MISO),   DECL_GPIO_PIN(GPIO_SOC_SPI_B_SS0),
+    DECL_GPIO_PIN(GPIO_SOC_SPI_B_SCLK),   DECL_GPIO_PIN(GPIO_SOC_SELINA_OSC_EN)};
 
 static const std::vector<fpbus::Metadata> gpio_h_metadata{
     {{
@@ -244,31 +223,54 @@ static const fpbus::Node gpio_c_dev = []() {
 }();
 
 zx_status_t Nelson::GpioInit() {
+  // Enable mute LED so it will be controlled by mute switch.
+  gpio_init_steps_.push_back({GPIO_AMBER_LED_PWM, GpioConfigOut(1)});
+
+  fuchsia_hardware_gpioimpl::wire::InitMetadata metadata;
+  metadata.steps = fidl::VectorView<fuchsia_hardware_gpioimpl::wire::InitStep>::FromExternal(
+      gpio_init_steps_.data(), gpio_init_steps_.size());
+
+  const fit::result encoded_metadata = fidl::Persist(metadata);
+  if (!encoded_metadata.is_ok()) {
+    zxlogf(ERROR, "Failed to encode GPIO init metadata: %s",
+           encoded_metadata.error_value().FormatDescription().c_str());
+    return encoded_metadata.error_value().status();
+  }
+
+  const std::vector<fpbus::Metadata> gpio_metadata{
+      {{
+          .type = DEVICE_METADATA_GPIO_PINS,
+          .data = std::vector<uint8_t>(
+              reinterpret_cast<const uint8_t*>(&gpio_pins),
+              reinterpret_cast<const uint8_t*>(&gpio_pins) + sizeof(gpio_pins)),
+      }},
+      {{
+          .type = DEVICE_METADATA_GPIO_INIT,
+          .data = encoded_metadata.value(),
+      }},
+  };
+
+  fpbus::Node gpio_dev;
+  gpio_dev.name() = "gpio";
+  gpio_dev.vid() = PDEV_VID_AMLOGIC;
+  gpio_dev.pid() = PDEV_PID_AMLOGIC_S905D3;
+  gpio_dev.did() = PDEV_DID_AMLOGIC_GPIO;
+  gpio_dev.mmio() = gpio_mmios;
+  gpio_dev.irq() = gpio_irqs;
+  gpio_dev.metadata() = gpio_metadata;
+
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('GPIO');
-  auto result = pbus_.buffer(arena)->ProtocolNodeAdd(ZX_PROTOCOL_GPIO_IMPL,
-                                                     fidl::ToWire(fidl_arena, gpio_dev));
+  auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, gpio_dev));
   if (!result.ok()) {
-    zxlogf(ERROR, "%s: ProtocolNodeAdd Gpio(gpio_dev) request failed: %s", __func__,
+    zxlogf(ERROR, "%s: NodeAdd Gpio(gpio_dev) request failed: %s", __func__,
            result.FormatDescription().data());
     return result.status();
   }
   if (result->is_error()) {
-    zxlogf(ERROR, "%s: ProtocolNodeAdd Gpio(gpio_dev) failed: %s", __func__,
+    zxlogf(ERROR, "%s: NodeAdd Gpio(gpio_dev) failed: %s", __func__,
            zx_status_get_string(result->error_value()));
     return result->error_value();
-  }
-
-  gpio_impl_ = ddk::GpioImplProtocolClient(parent());
-  if (!gpio_impl_.is_valid()) {
-    zxlogf(ERROR, "%s: GpioImplProtocolClient failed", __func__);
-    return ZX_ERR_INTERNAL;
-  }
-
-  // Enable mute LED so it will be controlled by mute switch.
-  zx_status_t status = gpio_impl_.ConfigOut(GPIO_AMBER_LED_PWM, 1);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "%s: ConfigOut failed: %d", __func__, status);
   }
 
   {

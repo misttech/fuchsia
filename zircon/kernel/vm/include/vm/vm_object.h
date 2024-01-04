@@ -62,6 +62,13 @@ enum class CloneType {
   SnapshotModified,
 };
 
+// Argument that specifies the context in which we are supplying pages.
+enum class SupplyOptions : uint8_t {
+  PagerSupply,
+  TransferData,
+  PhysicalPageProvider,
+};
+
 namespace internal {
 struct ChildListTag {};
 struct GlobalListTag {};
@@ -103,8 +110,8 @@ class VmHierarchyState : public fbl::RefCounted<VmHierarchyState> {
  private:
   bool running_delete_ TA_GUARDED(lock_) = false;
   mutable DECLARE_CRITICAL_MUTEX(VmHierarchyState) lock_;
-  fbl::SinglyLinkedListCustomTraits<fbl::RefPtr<VmHierarchyBase>, internal::DeferredDeleteTraits>
-      delete_list_ TA_GUARDED(lock_);
+  fbl::SinglyLinkedListCustomTraits<fbl::RefPtr<VmHierarchyBase>,
+                                    internal::DeferredDeleteTraits> delete_list_ TA_GUARDED(lock_);
 
   // Each VMO hierarchy has a generation count, which is incremented on any change to the hierarchy
   // - either in the VMO tree, or the page lists of VMO's.
@@ -302,8 +309,6 @@ class VmObject : public VmHierarchyBase,
   virtual bool is_discardable() const { return false; }
   // Returns true if the VMO was created via CreatePagerVmo().
   virtual bool is_user_pager_backed() const { return false; }
-  // Returns true if the VMO supports CloneType::SnapshotAtLeastOnWrite.
-  virtual bool is_snapshot_at_least_on_write_supported() const { return false; }
   // Returns true if the VMO's pages require dirty bit tracking.
   virtual bool is_dirty_tracked_locked() const TA_REQ(lock()) { return false; }
   // Marks the VMO as modified if the VMO tracks modified state (only supported for pager-backed
@@ -420,26 +425,25 @@ class VmObject : public VmHierarchyBase,
   // May block on user pager requests and must be called without locks held.
   //
   // Bytes are guaranteed to be transferred in order from low to high offset.
-  virtual zx_status_t ReadUser(VmAspace* current_aspace, user_out_ptr<char> ptr, uint64_t offset,
-                               size_t len, VmObjectReadWriteOptions options, size_t* out_actual) {
+  virtual zx_status_t ReadUser(user_out_ptr<char> ptr, uint64_t offset, size_t len,
+                               VmObjectReadWriteOptions options, size_t* out_actual) {
     return ZX_ERR_NOT_SUPPORTED;
   }
-  virtual zx_status_t ReadUserVector(VmAspace* current_aspace, user_out_iovec_t vec,
-                                     uint64_t offset, size_t len, size_t* out_actual);
+  virtual zx_status_t ReadUserVector(user_out_iovec_t vec, uint64_t offset, size_t len,
+                                     size_t* out_actual);
 
   // |OnWriteBytesTransferredCallback| is guaranteed to be called after bytes have been successfully
   // transferred from the user source to the VMO and will be called before the VMO lock is dropped.
   // As a result, operations performed within the callback should not take any other locks or be
   // long-running.
   using OnWriteBytesTransferredCallback = fit::inline_function<void(uint64_t offset, size_t len)>;
-  virtual zx_status_t WriteUser(VmAspace* current_aspace, user_in_ptr<const char> ptr,
-                                uint64_t offset, size_t len, VmObjectReadWriteOptions options,
-                                size_t* out_actual,
+  virtual zx_status_t WriteUser(user_in_ptr<const char> ptr, uint64_t offset, size_t len,
+                                VmObjectReadWriteOptions options, size_t* out_actual,
                                 const OnWriteBytesTransferredCallback& on_bytes_transferred) {
     return ZX_ERR_NOT_SUPPORTED;
   }
-  virtual zx_status_t WriteUserVector(VmAspace* current_aspace, user_in_iovec_t vec,
-                                      uint64_t offset, size_t len, size_t* out_actual,
+  virtual zx_status_t WriteUserVector(user_in_iovec_t vec, uint64_t offset, size_t len,
+                                      size_t* out_actual,
                                       const OnWriteBytesTransferredCallback& on_bytes_transferred);
 
   // Removes the pages from this vmo in the range [offset, offset + len) and returns
@@ -450,9 +454,12 @@ class VmObject : public VmHierarchyBase,
   }
 
   // Supplies this vmo with pages for the range [offset, offset + len). If this vmo
-  // already has pages in the target range, the corresponding pages in |pages| will be
-  // freed, instead of being moved into this vmo. |offset| and |len| must be page aligned.
-  virtual zx_status_t SupplyPages(uint64_t offset, uint64_t len, VmPageSpliceList* pages) {
+  // already has pages in the target range, the |options| field will dictate what happens:
+  // If options is SupplyOptions::TransferData, the pages in the target range will be overwritten,
+  // Otherwise, the corresponding pages in |pages| will be freed.
+  // |offset| and |len| must be page aligned.
+  virtual zx_status_t SupplyPages(uint64_t offset, uint64_t len, VmPageSpliceList* pages,
+                                  SupplyOptions options) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -519,6 +526,20 @@ class VmObject : public VmHierarchyBase,
     // This does nothing by default.
   }
 
+  // Performs any page commits necessary for a VMO with high memory priority over the given range.
+  // This method is always safe to call as it will internally check the memory priority status and
+  // skip if necessary, so the caller does not need to worry about races with the VMO no longer
+  // being high priority.
+  // As this may need to acquire the lock even to check the memory priority, if the caller knows
+  // they have not caused this VMO to become high priority (i.e. they have not called
+  // ChangeHighPriorityCountLocked with a positive value), then calling this should be skipped for
+  // performance.
+  // This method has no return value as it is entirely best effort and no part of its operation is
+  // needed for correctness.
+  virtual void CommitHighPriorityPages(uint64_t offset, uint64_t len) TA_EXCL(lock()) {
+    // This does nothing by default.
+  }
+
   // The associated VmObjectDispatcher will set an observer to notify user mode.
   void SetChildObserver(VmObjectChildObserver* child_observer);
 
@@ -559,7 +580,11 @@ class VmObject : public VmHierarchyBase,
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  virtual uint32_t GetMappingCachePolicy() const = 0;
+  virtual uint32_t GetMappingCachePolicy() const {
+    Guard<CriticalMutex> guard{lock()};
+    return GetMappingCachePolicyLocked();
+  }
+  virtual uint32_t GetMappingCachePolicyLocked() const = 0;
   virtual zx_status_t SetMappingCachePolicy(const uint32_t cache_policy) {
     return ZX_ERR_NOT_SUPPORTED;
   }

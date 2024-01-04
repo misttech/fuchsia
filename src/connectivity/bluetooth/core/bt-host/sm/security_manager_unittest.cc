@@ -4,6 +4,7 @@
 
 #include "security_manager.h"
 
+#include <chrono>
 #include <cstdlib>
 
 #include "src/connectivity/bluetooth/core/bt-host/common/macros.h"
@@ -48,7 +49,7 @@ class SecurityManagerTest : public l2cap::testing::FakeChannelTest, public sm::D
     InitializeTransport();
   }
   void TearDown() override {
-    RunLoopUntilIdle();
+    RunUntilIdle();
     DestroySecurityManager();
     fake_link_.reset();
     transport_.reset();
@@ -73,14 +74,14 @@ class SecurityManagerTest : public l2cap::testing::FakeChannelTest, public sm::D
       EXPECT_CMD_PACKET_OUT(controller_, testing::DisconnectPacket(kConnectionHandle),
                             &status_event, &disconnect_complete);
       fake_link_.reset();
-      RunLoopUntilIdle();
+      RunUntilIdle();
     }
     fake_link_ = std::make_unique<hci::testing::FakeLowEnergyConnection>(
         kConnectionHandle, kLocalAddr, kPeerAddr, link_role, transport_->GetWeakPtr());
 
     pairing_ = SecurityManager::Create(fake_link_->GetWeakPtr(), fake_chan_->GetWeakPtr(), ioc,
                                        weak_delegate_.GetWeakPtr(), bondable_mode,
-                                       gap::LESecurityMode::Mode1);
+                                       gap::LESecurityMode::Mode1, dispatcher());
   }
 
   void DestroySecurityManager() { pairing_ = nullptr; }
@@ -307,7 +308,7 @@ class SecurityManagerTest : public l2cap::testing::FakeChannelTest, public sm::D
     buffer[0] = kSecurityRequest;
     buffer[1] = auth_req;
     fake_chan()->Receive(buffer);
-    RunLoopUntilIdle();
+    RunUntilIdle();
   }
 
   void GenerateLegacyConfirmValue(const UInt128& random, UInt128* out_value,
@@ -427,13 +428,13 @@ class SecurityManagerTest : public l2cap::testing::FakeChannelTest, public sm::D
 
   void InitializeTransport() {
     // Ensure any tasks posted by an existing transport are dispatched.
-    RunLoopUntilIdle();
-    auto mock_controller = std::make_unique<bt::testing::MockController>();
+    RunUntilIdle();
+    auto mock_controller = std::make_unique<bt::testing::MockController>(dispatcher());
     controller_ = mock_controller->GetWeakPtr();
-    transport_ = std::make_unique<hci::Transport>(std::move(mock_controller));
+    transport_ = std::make_unique<hci::Transport>(std::move(mock_controller), dispatcher());
     std::optional<bool> init_success;
     transport_->Initialize([&](bool success) { init_success = success; });
-    RunLoopUntilIdle();
+    RunUntilIdle();
     ASSERT_TRUE(init_success.has_value());
     ASSERT_TRUE(init_success.value());
     transport_->InitializeACLDataChannel(hci::DataBufferInfo(1, 1), hci::DataBufferInfo(1, 1));
@@ -495,16 +496,16 @@ class SecurityManagerTest : public l2cap::testing::FakeChannelTest, public sm::D
   int central_ident_count_ = 0;
 
   // Values that have we have sent to the peer.
-  AuthReqField security_auth_req_;
+  AuthReqField security_auth_req_ = 0;
   std::optional<EcdhKey> public_ecdh_key_;
-  UInt128 pairing_confirm_;
-  UInt128 pairing_random_;
-  UInt128 pairing_dhkey_check_;
-  UInt128 enc_info_;
-  UInt128 id_info_;
+  UInt128 pairing_confirm_ = {};
+  UInt128 pairing_random_ = {};
+  UInt128 pairing_dhkey_check_ = {};
+  UInt128 enc_info_ = {};
+  UInt128 id_info_ = {};
   DeviceAddress id_addr_info_;
-  uint16_t ediv_;
-  uint64_t rand_;
+  uint16_t ediv_ = 0;
+  uint64_t rand_ = 0;
 
   std::optional<ErrorCode> received_error_code_;
 
@@ -575,13 +576,13 @@ class InitiatorPairingTest : public SecurityManagerTest {
 
     // Run the loop until the harness caches the feature exchange PDUs (preq &
     // pres) so that we can generate a valid confirm value.
-    RunLoopUntilIdle();
+    RunUntilIdle();
 
     UInt128 sconfirm, srand;
     GenerateMatchingLegacyConfirmAndRandom(&sconfirm, &srand);
     ReceivePairingConfirm(sconfirm);
     ReceivePairingRandom(srand);
-    RunLoopUntilIdle();
+    RunUntilIdle();
 
     EXPECT_EQ(1, pairing_confirm_count());
     EXPECT_EQ(1, pairing_random_count());
@@ -612,7 +613,7 @@ class InitiatorPairingTest : public SecurityManagerTest {
 
     // Resolve the encryption request.
     fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
-    RunLoopUntilIdle();
+    RunUntilIdle();
     EXPECT_EQ(1, new_sec_props_count());
     EXPECT_EQ(level, new_sec_props().level());
   }
@@ -621,11 +622,12 @@ class InitiatorPairingTest : public SecurityManagerTest {
                           KeyDistGenField peer_keys = 0, KeyDistGenField local_keys = 0,
                           BondableMode bondable = BondableMode::Bondable) {
     UpgradeSecurity(level);
-    RunLoopUntilIdle();
+    RunUntilIdle();
 
     ASSERT_EQ(1, pairing_request_count());
     PairingRequestParams pres;
     pres.io_capability = IOCapability::kDisplayYesNo;
+    pres.oob_data_flag = OOBDataFlag::kNotPresent;
     AuthReqField bondable_flag = (bondable == BondableMode::Bondable) ? AuthReq::kBondingFlag : 0;
     AuthReqField mitm_flag = (level >= SecurityLevel::kAuthenticated) ? AuthReq::kMITM : 0;
     pres.auth_req = AuthReq::kSC | mitm_flag | bondable_flag;
@@ -633,17 +635,17 @@ class InitiatorPairingTest : public SecurityManagerTest {
     pres.initiator_key_dist_gen = local_keys;
     pres.responder_key_dist_gen = peer_keys;
     ReceivePairingFeatures(pres);
-    RunLoopUntilIdle();
+    RunUntilIdle();
 
     ASSERT_TRUE(public_ecdh_key().has_value());
     LocalEcdhKey peer_key = *LocalEcdhKey::Create();
     ReceivePairingPublicKey(peer_key.GetSerializedPublicKey());
-    RunLoopUntilIdle();
+    RunUntilIdle();
     // We're in SC Numeric Comparison/Just Works, so as initiator we should not send a confirm.
     ASSERT_EQ(0, pairing_confirm_count());
     MatchingPair phase_2_vals = GenerateMatchingScConfirmAndRandom(peer_key);
     ReceivePairingConfirm(phase_2_vals.confirm);
-    RunLoopUntilIdle();
+    RunUntilIdle();
     ASSERT_EQ(1, pairing_random_count());
     // If using MITM, we expect to be in Numeric Comparison
     ConfirmCallback display_cb = nullptr;
@@ -661,7 +663,7 @@ class InitiatorPairingTest : public SecurityManagerTest {
       });
     }
     ReceivePairingRandom(phase_2_vals.random);
-    RunLoopUntilIdle();
+    RunUntilIdle();
     if (mitm_flag != 0) {
       ASSERT_TRUE(display_cb);
       display_cb(true);
@@ -679,11 +681,11 @@ class InitiatorPairingTest : public SecurityManagerTest {
     UInt128 dhkey_check_b =
         *util::F6(f5.mac_key, phase_2_vals.random, pairing_random(), r_array, pres.auth_req,
                   pres.oob_data_flag, pres.io_capability, kPeerAddr, kLocalAddr);
-    RunLoopUntilIdle();
+    RunUntilIdle();
     EXPECT_EQ(1, pairing_dhkey_check_count());
     ASSERT_EQ(dhkey_check_a, pairing_dhkey_check());
     ReceivePairingDHKeyCheck(dhkey_check_b);
-    RunLoopUntilIdle();
+    RunUntilIdle();
     EXPECT_EQ(0, pairing_failed_count());
     EXPECT_EQ(0, security_callback_count());
 
@@ -750,7 +752,7 @@ class ResponderPairingTest : public SecurityManagerTest {
 
     // Run the loop until the harness caches the feature exchange PDUs (preq &
     // pres) so that we can generate a valid confirm value.
-    RunLoopUntilIdle();
+    RunUntilIdle();
     EXPECT_EQ(0, pairing_request_count());
     EXPECT_EQ(1, pairing_response_count());
 
@@ -761,12 +763,12 @@ class ResponderPairingTest : public SecurityManagerTest {
     UInt128 mconfirm, mrand;
     GenerateMatchingLegacyConfirmAndRandom(&mconfirm, &mrand);
     ReceivePairingConfirm(mconfirm);
-    RunLoopUntilIdle();
+    RunUntilIdle();
     EXPECT_EQ(1, pairing_confirm_count());
     EXPECT_EQ(0, pairing_random_count());
 
     ReceivePairingRandom(mrand);
-    RunLoopUntilIdle();
+    RunUntilIdle();
     EXPECT_EQ(1, pairing_confirm_count());
     EXPECT_EQ(1, pairing_random_count());
     EXPECT_EQ(0, pairing_failed_count());
@@ -798,7 +800,7 @@ class ResponderPairingTest : public SecurityManagerTest {
 
     // Pretend that the initiator succeeded in encrypting the connection.
     fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
-    RunLoopUntilIdle();
+    RunUntilIdle();
     EXPECT_EQ(1, new_sec_props_count());
     EXPECT_EQ(level, new_sec_props().level());
   }
@@ -808,6 +810,7 @@ class ResponderPairingTest : public SecurityManagerTest {
                           BondableMode bondable = BondableMode::Bondable) {
     PairingRequestParams preq;
     preq.io_capability = IOCapability::kDisplayYesNo;
+    preq.oob_data_flag = OOBDataFlag::kNotPresent;
     AuthReqField bondable_flag = (bondable == BondableMode::Bondable) ? AuthReq::kBondingFlag : 0;
     AuthReqField mitm_flag = (level >= SecurityLevel::kAuthenticated) ? AuthReq::kMITM : 0;
     preq.auth_req = AuthReq::kSC | mitm_flag | bondable_flag;
@@ -815,12 +818,12 @@ class ResponderPairingTest : public SecurityManagerTest {
     preq.initiator_key_dist_gen = local_keys;
     preq.responder_key_dist_gen = peer_keys;
     ReceivePairingFeatures(preq, /*peer_initiator=*/true);
-    RunLoopUntilIdle();
+    RunUntilIdle();
     ASSERT_EQ(1, pairing_response_count());
 
     LocalEcdhKey peer_key = *LocalEcdhKey::Create();
     ReceivePairingPublicKey(peer_key.GetSerializedPublicKey());
-    RunLoopUntilIdle();
+    RunUntilIdle();
     ASSERT_TRUE(public_ecdh_key().has_value());
     ASSERT_EQ(1, pairing_public_key_count());
 
@@ -838,7 +841,7 @@ class ResponderPairingTest : public SecurityManagerTest {
     }  // Else we are content to use the default confirm delegate behavior to accept the pairing.
     auto peer_rand = Random<PairingRandomValue>();
     ReceivePairingRandom(peer_rand);
-    RunLoopUntilIdle();
+    RunUntilIdle();
     ASSERT_EQ(1, pairing_random_count());
     ASSERT_EQ(GenerateScConfirmValue(peer_key, pairing_random(), Role::kResponder, false),
               pairing_confirm());
@@ -865,7 +868,7 @@ class ResponderPairingTest : public SecurityManagerTest {
         *util::F6(f5.mac_key, pairing_random(), peer_rand, r_array, pres.auth_req,
                   pres.oob_data_flag, pres.io_capability, kLocalAddr, kPeerAddr);
     ReceivePairingDHKeyCheck(dhkey_check_a);
-    RunLoopUntilIdle();
+    RunUntilIdle();
     EXPECT_EQ(1, pairing_dhkey_check_count());
     ASSERT_EQ(dhkey_check_b, pairing_dhkey_check());
     EXPECT_EQ(0, pairing_failed_count());
@@ -882,21 +885,21 @@ class ResponderPairingTest : public SecurityManagerTest {
 // Calling `Abort` with no in-progress security upgrade should not cause a PairingComplete event.
 TEST_F(InitiatorPairingTest, AbortNoSecurityUpgradeInProgress) {
   pairing()->Abort();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(0, pairing_complete_count());
 }
 
 // Disconnecting with no in-progress security upgrade should not cause a PairingComplete event.
 TEST_F(InitiatorPairingTest, DisconnectNoSecurityUpgradeInProgress) {
   fake_chan()->Close();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(0, pairing_complete_count());
 }
 
 // Requesting pairing at the current security level should succeed immediately.
 TEST_F(InitiatorPairingTest, UpgradeSecurityCurrentLevel) {
   UpgradeSecurity(SecurityLevel::kNoSecurity);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // No pairing requests should have been made.
   EXPECT_EQ(0, pairing_request_count());
@@ -913,14 +916,14 @@ TEST_F(InitiatorPairingTest, UpgradeSecurityCurrentLevel) {
 // Peer aborts during Phase 1.
 TEST_F(InitiatorPairingTest, PairingFailedInPhase1) {
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pairing not complete yet but we should be in Phase 1.
   EXPECT_EQ(0, security_callback_count());
   EXPECT_EQ(1, pairing_request_count());
 
   ReceivePairingFailed(ErrorCode::kPairingNotSupported);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, security_callback_count());
   EXPECT_EQ(1, pairing_request_count());
@@ -933,14 +936,14 @@ TEST_F(InitiatorPairingTest, PairingFailedInPhase1) {
 // Local aborts during Phase 1.
 TEST_F(InitiatorPairingTest, PairingAbortedInPhase1) {
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pairing not complete yet but we should be in Phase 1.
   EXPECT_EQ(0, security_callback_count());
   EXPECT_EQ(1, pairing_request_count());
 
   pairing()->Abort();
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, security_callback_count());
   EXPECT_EQ(1, pairing_request_count());
@@ -955,14 +958,14 @@ TEST_F(InitiatorPairingTest, PairingAbortedInPhase1) {
 // requests.
 TEST_F(InitiatorPairingTest, SecurityManagerResetDuringPairing) {
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pairing not complete yet but we should be in Phase 1.
   EXPECT_EQ(0, security_callback_count());
   EXPECT_EQ(1, pairing_request_count());
 
   pairing()->Reset(IOCapability::kNoInputNoOutput);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, security_callback_count());
   EXPECT_EQ(1, pairing_request_count());
@@ -972,7 +975,7 @@ TEST_F(InitiatorPairingTest, SecurityManagerResetDuringPairing) {
   EXPECT_EQ(security_status(), pairing_complete_status());
 
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Should have sent a new pairing request.
   EXPECT_EQ(2, pairing_request_count());
@@ -985,7 +988,7 @@ TEST_F(InitiatorPairingTest, SecurityManagerResetDuringPairing) {
 TEST_F(InitiatorPairingTest, ReceiveConfirmValueWhileNotPairing) {
   UInt128 confirm;
   ReceivePairingConfirm(confirm);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Nothing should happen.
   EXPECT_EQ(0, pairing_confirm_count());
@@ -996,11 +999,11 @@ TEST_F(InitiatorPairingTest, ReceiveConfirmValueWhileNotPairing) {
 
 TEST_F(InitiatorPairingTest, ReceiveConfirmValueInPhase1) {
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   UInt128 confirm;
   ReceivePairingConfirm(confirm);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(0, pairing_confirm_count());
   EXPECT_EQ(0, pairing_random_count());
@@ -1019,7 +1022,7 @@ TEST_F(InitiatorPairingTest, RejectUnauthenticatedPairingInSecureConnectionsOnly
   UpgradeSecurity(SecurityLevel::kEncrypted);
   // The peer has NoInputNoOutput IOCapabilities, thus cannot perform authenticated pairing.
   ReceivePairingFeatures(IOCapability::kNoInputNoOutput, AuthReq::kBondingFlag | AuthReq::kSC);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, pairing_failed_count());
   EXPECT_EQ(1, security_callback_count());
@@ -1035,11 +1038,11 @@ TEST_F(InitiatorPairingTest, RejectUnauthenticatedEncryptionInSecureConnectionsO
                          /*secure_connections=*/true, kMaxEncryptionKeySize),
       hci_spec::LinkKey());
   pairing()->AssignLongTermKey(kUnauthenticatedLtk);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   // After setting SC Only mode, assigning and encrypting with an unauthenticated LTK should cause
   // the channel to be disconnected with an authentication failure.
   fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, auth_failure_callback_count());
   EXPECT_EQ(ToResult(HostError::kInsufficientSecurity), auth_failure_status());
@@ -1051,7 +1054,7 @@ TEST_F(InitiatorPairingTest, AllowSecureAuthenticatedPairingInSecureConnectionsO
   pairing()->set_security_mode(gap::LESecurityMode::SecureConnectionsOnly);
   UInt128 enc_key;
   FastForwardToPhase3(&enc_key, /*secure_connections=*/true, SecurityLevel::kSecureAuthenticated);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   // After setting SC Only mode, secure authenticated pairing should still complete successfully.
   EXPECT_EQ(1, pairing_data_callback_count());
   EXPECT_TRUE(peer_ltk().has_value());
@@ -1071,12 +1074,12 @@ TEST_F(InitiatorPairingTest, ReceiveConfirmValueWhileWaitingForUserInput) {
 
   UpgradeSecurity(SecurityLevel::kEncrypted);
   ReceivePairingFeatures();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(tk_requested);
 
   UInt128 confirm;
   ReceivePairingConfirm(confirm);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(0, pairing_confirm_count());
   EXPECT_EQ(0, pairing_random_count());
@@ -1095,14 +1098,14 @@ TEST_F(InitiatorPairingTest, SecurityManagerDestroyedStateWhileWaitingForUserInp
 
   UpgradeSecurity(SecurityLevel::kEncrypted);
   ReceivePairingFeatures();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(respond);
 
   DestroySecurityManager();
 
   // This should proceed safely.
   respond(true);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 }
 
 // Pairing no longer in progress when waiting for Just Works user confirmation.
@@ -1112,11 +1115,11 @@ TEST_F(InitiatorPairingTest, PairingAbortedWhileWaitingForUserInput) {
 
   UpgradeSecurity(SecurityLevel::kEncrypted);
   ReceivePairingFeatures();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(respond);
 
   ReceivePairingFailed(ErrorCode::kPairingNotSupported);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1, security_callback_count());
   EXPECT_EQ(ToResult(ErrorCode::kPairingNotSupported), security_status());
 
@@ -1125,7 +1128,7 @@ TEST_F(InitiatorPairingTest, PairingAbortedWhileWaitingForUserInput) {
 
   // This should have no effect.
   respond(true);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1, pairing_request_count());
   EXPECT_EQ(0, pairing_response_count());
   EXPECT_EQ(0, pairing_confirm_count());
@@ -1144,12 +1147,12 @@ TEST_F(InitiatorPairingTest, PairingRestartedWhileWaitingForTK) {
 
   UpgradeSecurity(SecurityLevel::kEncrypted);
   ReceivePairingFeatures();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(respond);
 
   // Stop pairing.
   ReceivePairingFailed(ErrorCode::kPairingNotSupported);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1, security_callback_count());
   EXPECT_EQ(ToResult(ErrorCode::kPairingNotSupported), security_status());
 
@@ -1161,7 +1164,7 @@ TEST_F(InitiatorPairingTest, PairingRestartedWhileWaitingForTK) {
 
   UpgradeSecurity(SecurityLevel::kEncrypted);
   ReceivePairingFeatures();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(2, pairing_request_count());
   EXPECT_EQ(0, pairing_response_count());
   EXPECT_EQ(1, pairing_confirm_count());
@@ -1172,7 +1175,7 @@ TEST_F(InitiatorPairingTest, PairingRestartedWhileWaitingForTK) {
 
   // This should have no effect.
   respond(true);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(2, pairing_request_count());
   EXPECT_EQ(0, pairing_response_count());
   EXPECT_EQ(1, pairing_confirm_count());
@@ -1186,7 +1189,7 @@ TEST_F(InitiatorPairingTest, PairingRestartedWhileWaitingForTK) {
 TEST_F(InitiatorPairingTest, ReceiveRandomValueWhileNotPairing) {
   UInt128 random;
   ReceivePairingRandom(random);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Nothing should happen.
   EXPECT_EQ(0, pairing_confirm_count());
@@ -1197,11 +1200,11 @@ TEST_F(InitiatorPairingTest, ReceiveRandomValueWhileNotPairing) {
 
 TEST_F(InitiatorPairingTest, ReceiveRandomValueInPhase1) {
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   UInt128 random;
   ReceivePairingRandom(random);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(0, pairing_confirm_count());
   EXPECT_EQ(0, pairing_random_count());
@@ -1220,12 +1223,12 @@ TEST_F(InitiatorPairingTest, ReceiveRandomValueWhileWaitingForTK) {
 
   UpgradeSecurity(SecurityLevel::kEncrypted);
   ReceivePairingFeatures();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(confirmation_requested);
 
   UInt128 random;
   ReceivePairingRandom(random);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(0, pairing_confirm_count());
   EXPECT_EQ(0, pairing_random_count());
@@ -1239,10 +1242,10 @@ TEST_F(InitiatorPairingTest, ReceiveRandomValueWhileWaitingForTK) {
 
 TEST_F(InitiatorPairingTest, LegacyPhase2SconfirmValueReceivedTwice) {
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ReceivePairingFeatures();
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Should have received Mconfirm.
   EXPECT_EQ(1, pairing_confirm_count());
@@ -1251,7 +1254,7 @@ TEST_F(InitiatorPairingTest, LegacyPhase2SconfirmValueReceivedTwice) {
 
   UInt128 confirm;
   ReceivePairingConfirm(confirm);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Should have received Mrand.
   EXPECT_EQ(1, pairing_confirm_count());
@@ -1260,7 +1263,7 @@ TEST_F(InitiatorPairingTest, LegacyPhase2SconfirmValueReceivedTwice) {
 
   // Send Mconfirm again
   ReceivePairingConfirm(confirm);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, pairing_confirm_count());
   EXPECT_EQ(1, pairing_random_count());
@@ -1274,10 +1277,10 @@ TEST_F(InitiatorPairingTest, LegacyPhase2SconfirmValueReceivedTwice) {
 
 TEST_F(InitiatorPairingTest, LegacyPhase2ReceiveRandomValueInWrongOrder) {
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ReceivePairingFeatures();
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Should have received Mconfirm.
   EXPECT_EQ(1, pairing_confirm_count());
@@ -1286,7 +1289,7 @@ TEST_F(InitiatorPairingTest, LegacyPhase2ReceiveRandomValueInWrongOrder) {
 
   UInt128 random;
   ReceivePairingRandom(random);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Should have aborted pairing if Srand arrives before Srand.
   EXPECT_EQ(1, pairing_confirm_count());
@@ -1301,12 +1304,12 @@ TEST_F(InitiatorPairingTest, LegacyPhase2ReceiveRandomValueInWrongOrder) {
 
 TEST_F(InitiatorPairingTest, LegacyPhase2SconfirmValueInvalid) {
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pick I/O capabilities and MITM flags that will result in Just Works
   // pairing.
   ReceivePairingFeatures();
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Should have received Mconfirm.
   EXPECT_EQ(1, pairing_confirm_count());
@@ -1319,7 +1322,7 @@ TEST_F(InitiatorPairingTest, LegacyPhase2SconfirmValueInvalid) {
   random.fill(1);
 
   ReceivePairingConfirm(confirm);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Should have received Mrand.
   EXPECT_EQ(1, pairing_confirm_count());
@@ -1333,7 +1336,7 @@ TEST_F(InitiatorPairingTest, LegacyPhase2SconfirmValueInvalid) {
 
   // Send the non-matching Srandom.
   ReceivePairingRandom(random);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, pairing_confirm_count());
   EXPECT_EQ(1, pairing_random_count());
@@ -1347,12 +1350,12 @@ TEST_F(InitiatorPairingTest, LegacyPhase2SconfirmValueInvalid) {
 
 TEST_F(InitiatorPairingTest, LegacyPhase2RandomValueReceivedTwice) {
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pick I/O capabilities and MITM flags that will result in Just Works
   // pairing.
   ReceivePairingFeatures();
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Should have received Mconfirm.
   EXPECT_EQ(1, pairing_confirm_count());
@@ -1364,7 +1367,7 @@ TEST_F(InitiatorPairingTest, LegacyPhase2RandomValueReceivedTwice) {
   GenerateMatchingLegacyConfirmAndRandom(&confirm, &random);
 
   ReceivePairingConfirm(confirm);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Should have received Mrand.
   EXPECT_EQ(1, pairing_confirm_count());
@@ -1378,7 +1381,7 @@ TEST_F(InitiatorPairingTest, LegacyPhase2RandomValueReceivedTwice) {
 
   // Send Srandom.
   ReceivePairingRandom(random);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, pairing_confirm_count());
   EXPECT_EQ(1, pairing_random_count());
@@ -1387,7 +1390,7 @@ TEST_F(InitiatorPairingTest, LegacyPhase2RandomValueReceivedTwice) {
 
   // Send Srandom again.
   ReceivePairingRandom(random);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, pairing_confirm_count());
   EXPECT_EQ(1, pairing_random_count());
@@ -1401,12 +1404,12 @@ TEST_F(InitiatorPairingTest, LegacyPhase2RandomValueReceivedTwice) {
 
 TEST_F(InitiatorPairingTest, LegacyPhase2ConfirmValuesExchanged) {
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pick I/O capabilities and MITM flags that will result in Just Works
   // pairing.
   ReceivePairingFeatures();
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Should have received Mconfirm.
   EXPECT_EQ(1, pairing_confirm_count());
@@ -1418,7 +1421,7 @@ TEST_F(InitiatorPairingTest, LegacyPhase2ConfirmValuesExchanged) {
   GenerateMatchingLegacyConfirmAndRandom(&confirm, &random);
 
   ReceivePairingConfirm(confirm);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Should have received Mrand.
   EXPECT_EQ(1, pairing_confirm_count());
@@ -1432,7 +1435,7 @@ TEST_F(InitiatorPairingTest, LegacyPhase2ConfirmValuesExchanged) {
 
   // Send Srandom.
   ReceivePairingRandom(random);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, pairing_confirm_count());
   EXPECT_EQ(1, pairing_random_count());
@@ -1453,17 +1456,17 @@ TEST_F(InitiatorPairingTest, LegacyPhase2TKDelegateRejectsPasskeyInput) {
   });
 
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pick I/O capabilities and MITM flags that will result in Passkey Entry
   // pairing.
   ReceivePairingFeatures(IOCapability::kDisplayOnly, AuthReq::kMITM);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(tk_requested);
 
   // Reject pairing.
   respond(-1);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(0, pairing_confirm_count());
   EXPECT_EQ(0, pairing_random_count());
@@ -1482,15 +1485,15 @@ TEST_F(InitiatorPairingTest, LegacyPhase2TKDelegateRejectsPairing) {
   });
 
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ReceivePairingFeatures();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(tk_requested);
 
   // Reject pairing.
   respond(false);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(0, pairing_confirm_count());
   EXPECT_EQ(0, pairing_random_count());
@@ -1504,14 +1507,14 @@ TEST_F(InitiatorPairingTest, IgnoresExpiredConfirmRequestCallback) {
   set_confirm_delegate([&](ConfirmCallback rsp) { respond = std::move(rsp); });
 
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ReceivePairingFeatures();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(respond);
   ConfirmCallback first_pairing_cb = std::move(respond);
   pairing()->Abort();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1, pairing_failed_count());
 
   // We reset the respond variable so we can "catch" the next PairingDelegate request in the same
@@ -1520,18 +1523,18 @@ TEST_F(InitiatorPairingTest, IgnoresExpiredConfirmRequestCallback) {
 
   // Start a separate pairing from the one captured in `first_pairing_cb`, which was `Abort`ed
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ReceivePairingFeatures();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   first_pairing_cb(true);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   // The callback from the `Abort`ed pairing should be ignored, while calling `respond`, which is
   // associated with the active pairing, should cause the expected Pairing Confirm to be sent.
   EXPECT_EQ(0, pairing_confirm_count());
   ASSERT_TRUE(respond);
   respond(true);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1, pairing_confirm_count());
 }
 
@@ -1545,14 +1548,14 @@ TEST_F(InitiatorPairingTest, IgnoresExpiredDisplayRequestCallback) {
 
   // Must request MITM to test PasskeyEntryDisplay instead of JustWorks pairing
   UpgradeSecurity(SecurityLevel::kAuthenticated);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ReceivePairingFeatures(IOCapability::kKeyboardOnly);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(respond);
   ConfirmCallback first_pairing_cb = std::move(respond);
   pairing()->Abort();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1, pairing_failed_count());
 
   // We reset the respond variable so we can "catch" the next PairingDelegate request in the same
@@ -1561,18 +1564,18 @@ TEST_F(InitiatorPairingTest, IgnoresExpiredDisplayRequestCallback) {
 
   // Start a separate pairing from the one captured in `first_pairing_cb`, which was `Abort`ed
   UpgradeSecurity(SecurityLevel::kAuthenticated);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ReceivePairingFeatures(IOCapability::kKeyboardOnly);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   first_pairing_cb(true);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   // The callback from the `Abort`ed pairing should be ignored, while calling `respond`, which is
   // associated with the active pairing, should cause the expected Pairing Confirm to be sent.
   EXPECT_EQ(0, pairing_confirm_count());
   ASSERT_TRUE(respond);
   respond(true);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1, pairing_confirm_count());
 }
 
@@ -1583,14 +1586,14 @@ TEST_F(InitiatorPairingTest, IgnoresExpiredPasskeyEntryInputCallback) {
 
   // Must request MITM to test PasskeyEntryInput instead of JustWorks pairing
   UpgradeSecurity(SecurityLevel::kAuthenticated);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ReceivePairingFeatures(IOCapability::kDisplayOnly);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(passkey_cb);
   PasskeyResponseCallback first_pairing_cb = std::move(passkey_cb);
   pairing()->Abort();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1, pairing_failed_count());
 
   // We reset the respond variable so we can "catch" the next PairingDelegate request in the same
@@ -1599,19 +1602,19 @@ TEST_F(InitiatorPairingTest, IgnoresExpiredPasskeyEntryInputCallback) {
 
   // Start a separate pairing from the one captured in `first_pairing_cb`, which was `Abort`ed
   UpgradeSecurity(SecurityLevel::kAuthenticated);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ReceivePairingFeatures(IOCapability::kDisplayOnly);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   const int32_t kGenericPositive6DigitNumber = 123456;
   first_pairing_cb(kGenericPositive6DigitNumber);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   // The callback from the `Abort`ed pairing should be ignored, while calling `respond`, which is
   // associated with the active pairing, should cause the expected Pairing Confirm to be sent.
   EXPECT_EQ(0, pairing_confirm_count());
   ASSERT_TRUE(passkey_cb);
   passkey_cb(kGenericPositive6DigitNumber);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1, pairing_confirm_count());
 }
 
@@ -1629,12 +1632,12 @@ TEST_F(InitiatorPairingTest, LegacyPhase2ConfirmValuesExchangedWithUserTK) {
       });
 
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pick I/O capabilities and MITM flags that will result in Passkey Entry
   // pairing.
   ReceivePairingFeatures(IOCapability::kKeyboardOnly, AuthReq::kMITM);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(tk.has_value());
 
   // DisplayMethod should be kPeerEntry, as Comparison is only for Secure Connections, not Legacy.
@@ -1642,7 +1645,7 @@ TEST_F(InitiatorPairingTest, LegacyPhase2ConfirmValuesExchangedWithUserTK) {
 
   // Notify that TK was displayed.
   respond(true);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Should have received Mconfirm.
   EXPECT_EQ(1, pairing_confirm_count());
@@ -1654,7 +1657,7 @@ TEST_F(InitiatorPairingTest, LegacyPhase2ConfirmValuesExchangedWithUserTK) {
   GenerateMatchingLegacyConfirmAndRandom(&confirm, &random, *tk);
 
   ReceivePairingConfirm(confirm);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Should have received Mrand.
   EXPECT_EQ(1, pairing_confirm_count());
@@ -1668,7 +1671,7 @@ TEST_F(InitiatorPairingTest, LegacyPhase2ConfirmValuesExchangedWithUserTK) {
 
   // Send Srandom.
   ReceivePairingRandom(random);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, pairing_confirm_count());
   EXPECT_EQ(1, pairing_random_count());
@@ -1680,13 +1683,13 @@ TEST_F(InitiatorPairingTest, LegacyPhase2ConfirmValuesExchangedWithUserTK) {
 TEST_F(InitiatorPairingTest, PairingFailedInPhase2) {
   UpgradeSecurity(SecurityLevel::kEncrypted);
   ReceivePairingFeatures();
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   UInt128 confirm, random;
   GenerateMatchingLegacyConfirmAndRandom(&confirm, &random);
 
   ReceivePairingConfirm(confirm);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, pairing_confirm_count());
   EXPECT_EQ(1, pairing_random_count());
@@ -1694,7 +1697,7 @@ TEST_F(InitiatorPairingTest, PairingFailedInPhase2) {
   EXPECT_EQ(0, security_callback_count());
 
   ReceivePairingFailed(ErrorCode::kConfirmValueFailed);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, pairing_confirm_count());
   EXPECT_EQ(1, pairing_random_count());
@@ -1719,7 +1722,7 @@ TEST_F(InitiatorPairingTest, EncryptionWithSTKFails) {
 
   fake_link()->TriggerEncryptionChangeCallback(
       ToResult(pw::bluetooth::emboss::StatusCode::PIN_OR_KEY_MISSING).take_error());
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, pairing_failed_count());
   EXPECT_EQ(1, security_callback_count());
@@ -1748,7 +1751,7 @@ TEST_F(InitiatorPairingTest, EncryptionDisabledInPhase2) {
   EXPECT_EQ(SecurityProperties(), pairing()->security());
 
   fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/false));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, pairing_failed_count());
   EXPECT_EQ(1, security_callback_count());
@@ -1793,7 +1796,7 @@ TEST_F(InitiatorPairingTest, LegacyPhase3CompleteWithoutKeyExchange) {
   EXPECT_EQ(1, fake_link()->start_encryption_count());
 
   fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pairing should succeed without any pairing data.
   EXPECT_EQ(1, pairing_data_callback_count());
@@ -1887,7 +1890,7 @@ TEST_F(InitiatorPairingTest, ScPhase3EncKeyBitSetNotDistributed) {
   EXPECT_EQ(1, fake_link()->start_encryption_count());
 
   fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pairing should succeed without any messages being sent in "Phase 3". The LTK was generated in
   // SC Phase 2, and as the pairing is bondable, it is included in the callback.
@@ -1937,7 +1940,7 @@ TEST_F(InitiatorPairingTest, ScPhase3NonBondableCompleteWithoutKeyExchange) {
   EXPECT_EQ(1, fake_link()->start_encryption_count());
 
   fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pairing should succeed with the LTK as we are in SC, but as the pairing is non-bondable, no
   // LTK should be relayed up to the delegate.
@@ -1971,7 +1974,7 @@ TEST_F(InitiatorPairingTest, Phase3EncryptionInformationReceivedTwice) {
   EXPECT_EQ(0, pairing_data_callback_count());
 
   ReceiveEncryptionInformation(UInt128());
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Waiting for EDIV and Rand
   EXPECT_EQ(0, pairing_failed_count());
@@ -1979,7 +1982,7 @@ TEST_F(InitiatorPairingTest, Phase3EncryptionInformationReceivedTwice) {
 
   // Send the LTK twice. This should cause pairing to fail.
   ReceiveEncryptionInformation(UInt128());
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1, pairing_failed_count());
   EXPECT_EQ(1, security_callback_count());
   EXPECT_EQ(1, pairing_complete_count());
@@ -2002,7 +2005,7 @@ TEST_F(InitiatorPairingTest, Phase3CentralIdentificationReceivedInWrongOrder) {
   // Send central identification before encryption information. This should cause
   // pairing to fail.
   ReceiveCentralIdentification(1, 2);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, pairing_failed_count());
   EXPECT_EQ(1, security_callback_count());
@@ -2028,7 +2031,7 @@ TEST_F(InitiatorPairingTest, Phase3CentralIdentificationReceiveSampleLTK) {
 
   // Send a bad LTK, this should cause pairing to fail.
   ReceiveEncryptionInformation(kLtkSample);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, pairing_failed_count());
   EXPECT_EQ(1, security_callback_count());
@@ -2055,7 +2058,7 @@ TEST_F(InitiatorPairingTest, Phase3CentralIdentificationReceiveExampleRand) {
   // Send a bad Rand, this should cause pairing to fail.
   ReceiveEncryptionInformation(UInt128());
   ReceiveCentralIdentification(kRandSample, kEDiv);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, pairing_failed_count());
   EXPECT_EQ(1, security_callback_count());
@@ -2081,7 +2084,7 @@ TEST_F(InitiatorPairingTest, Phase3CentralIdentificationReceiveLongLTK) {
 
   // Send a long LTK, this should cause pairing to fail.
   ReceiveEncryptionInformation(kLtk);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, pairing_failed_count());
   EXPECT_EQ(1, security_callback_count());
@@ -2111,7 +2114,7 @@ TEST_F(InitiatorPairingTest, Phase3CentralIdentificationReceivedTwice) {
   ReceiveEncryptionInformation(UInt128());
   ReceiveCentralIdentification(kRand, kEdiv);
   ReceiveCentralIdentification(kDupRand, kDupEdiv);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(0, pairing_failed_count());
   EXPECT_EQ(1, security_callback_count());
@@ -2136,7 +2139,7 @@ TEST_F(InitiatorPairingTest, Phase3CompleteWithReceivingEncKey) {
 
   ReceiveEncryptionInformation(kLTK);
   ReceiveCentralIdentification(kRand, kEDiv);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pairing should have succeeded.
   EXPECT_EQ(0, pairing_failed_count());
@@ -2189,7 +2192,7 @@ TEST_F(InitiatorPairingTest, Phase3CompleteWithSendingEncKey) {
   KeyDistGenField remote_keys{0u}, local_keys{KeyDistGen::kEncKey};
   FastForwardToPhase3(&stk, /*secure_connections=*/false, SecurityLevel::kEncrypted, remote_keys,
                       local_keys);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pairing should have succeeded.
   EXPECT_EQ(0, pairing_failed_count());
@@ -2228,7 +2231,7 @@ TEST_F(InitiatorPairingTest, Phase3CompleteWithShortEncKey) {
 
   ReceiveEncryptionInformation(kLTK);
   ReceiveCentralIdentification(kRand, kEDiv);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pairing should have succeeded.
   EXPECT_EQ(0, pairing_failed_count());
@@ -2328,7 +2331,7 @@ TEST_F(InitiatorPairingTest, Phase3IsAbortedIfLocalIdKeyIsRemoved) {
 
   // Encrypt with the STK to finish phase 2.
   fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pairing should have been aborted.
   EXPECT_EQ(0, id_info_count());
@@ -2350,7 +2353,7 @@ TEST_F(InitiatorPairingTest, Phase3IRKReceivedTwice) {
   EXPECT_EQ(0, pairing_data_callback_count());
 
   ReceiveIdentityResolvingKey(UInt128());
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Waiting for identity address.
   EXPECT_EQ(0, pairing_failed_count());
@@ -2359,7 +2362,7 @@ TEST_F(InitiatorPairingTest, Phase3IRKReceivedTwice) {
 
   // Send an IRK again. This should cause pairing to fail.
   ReceiveIdentityResolvingKey(UInt128());
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1, pairing_failed_count());
   EXPECT_EQ(1, security_callback_count());
   EXPECT_EQ(1, pairing_complete_count());
@@ -2382,7 +2385,7 @@ TEST_F(InitiatorPairingTest, Phase3IdentityAddressReceivedInWrongOrder) {
 
   // Send identity address before the IRK. This should cause pairing to fail.
   ReceiveIdentityAddress(kPeerAddr);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, pairing_failed_count());
   EXPECT_EQ(1, security_callback_count());
@@ -2408,7 +2411,7 @@ TEST_F(InitiatorPairingTest, Phase3IdentityAddressReceivedTwice) {
   ReceiveIdentityResolvingKey(UInt128());
   ReceiveIdentityAddress(kPeerAddr);
   ReceiveIdentityAddress(kPeerAddr);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, pairing_failed_count());
   EXPECT_EQ(1, security_callback_count());
@@ -2434,7 +2437,7 @@ TEST_F(InitiatorPairingTest, Phase3CompleteWithIdKey) {
 
   ReceiveIdentityResolvingKey(kIRK);
   ReceiveIdentityAddress(kPeerAddr);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(0, pairing_failed_count());
   EXPECT_EQ(1, security_callback_count());
@@ -2474,7 +2477,7 @@ TEST_F(InitiatorPairingTest, Phase3CompleteWithAllKeys) {
   // Receive EncKey
   ReceiveEncryptionInformation(kLTK);
   ReceiveCentralIdentification(kRand, kEDiv);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pairing still pending. SMP does not assign the LTK to the link until pairing completes.
   EXPECT_EQ(0, pairing_failed_count());
@@ -2484,7 +2487,7 @@ TEST_F(InitiatorPairingTest, Phase3CompleteWithAllKeys) {
   // Receive IdKey
   ReceiveIdentityResolvingKey(kIRK);
   ReceiveIdentityAddress(kPeerAddr);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pairing should have succeeded
   EXPECT_EQ(0, pairing_failed_count());
@@ -2527,7 +2530,7 @@ TEST_F(InitiatorPairingTest, GenerateCrossTransportLinkKey) {
   // Indicate support for SC and for link keys in both directions to enable CTKG.
   FastForwardToPhase3(&stk, /*secure_connections=*/true, SecurityLevel::kEncrypted,
                       KeyDistGen::kLinkKey, KeyDistGen::kLinkKey);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pairing should have succeeded
   EXPECT_EQ(0, pairing_failed_count());
@@ -2560,7 +2563,7 @@ TEST_F(InitiatorPairingTest, AssignLongTermKey) {
   // The link security level is not assigned until successful encryption.
   EXPECT_EQ(SecurityProperties(), pairing()->security());
   fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, new_sec_props_count());
   EXPECT_EQ(sec_props, new_sec_props());
@@ -2569,7 +2572,7 @@ TEST_F(InitiatorPairingTest, AssignLongTermKey) {
 
 TEST_F(InitiatorPairingTest, ReceiveSecurityRequest) {
   ReceiveSecurityRequest(AuthReq::kMITM);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Should have requested pairing with MITM protection.
   EXPECT_EQ(1, pairing_request_count());
@@ -2590,9 +2593,9 @@ TEST_F(InitiatorPairingTest, ReceiveSecurityRequestWhenPaired) {
   uint16_t kEDiv = 20;
   ReceiveEncryptionInformation(kLTK);
   ReceiveCentralIdentification(kRand, kEDiv);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_EQ(1, pairing_complete_count());
   ASSERT_EQ(fit::ok(), security_status());
   ASSERT_TRUE(peer_ltk());
@@ -2626,7 +2629,7 @@ TEST_F(InitiatorPairingTest, ReceiveMITMSecurityRequestLocalIoCapNoInputNoOutput
 
   // When we receive a Security Request, we start a timer. Run the loop to ensure that when we can't
   // fulfill the Security Request, we stop the timer before it expires as we never started pairing.
-  RunLoopFor(kPairingTimeout + zx::sec(1));
+  RunFor(kPairingTimeout + std::chrono::seconds(1));
   // Double check we haven't sent any more Pairing Failed messages
   EXPECT_EQ(1, pairing_failed_count());
   // We should not notify local clients of any pairing completion, because no pairing ever started.
@@ -2638,13 +2641,13 @@ TEST_F(InitiatorPairingTest, RejectPairingRequest) {
   // reception of the Pairing Request command, not the Pairing Response command.
   ReceivePairingFeatures(IOCapability::kDisplayYesNo, AuthReqField{0}, kMaxEncryptionKeySize,
                          /*peer_initiator=*/true);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   // We should reject the security request with CommandNotSupported as initiator.
   EXPECT_EQ(1, pairing_failed_count());
   EXPECT_EQ(ErrorCode::kCommandNotSupported, received_error_code());
 
   // Run for the full pairing timeout to ensure we do not timeout due to sending a message.
-  RunLoopFor(kPairingTimeout + zx::sec(1));
+  RunFor(kPairingTimeout + std::chrono::seconds(1));
   // No pairing occurred, as we rejected the security request command.
   EXPECT_EQ(0, pairing_complete_count());
   EXPECT_EQ(1, pairing_failed_count());
@@ -2652,13 +2655,13 @@ TEST_F(InitiatorPairingTest, RejectPairingRequest) {
 
 TEST_F(InitiatorPairingTest, PairingTimeoutWorks) {
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_EQ(1, pairing_request_count());
   // Expiration of the pairing timeout should trigger the link error callback per v5.2 Vol. 3 Part H
   // 3.4. Link disconnection will generally cause channel closure, so this simulates that behavior
   // to validate that SM handles this safely.
   fake_chan()->SetLinkErrorCallback([chan = fake_chan()]() { chan->Close(); });
-  RunLoopFor(kPairingTimeout);
+  RunFor(kPairingTimeout);
   EXPECT_TRUE(fake_chan()->link_error());
   ASSERT_EQ(1, security_callback_count());
   EXPECT_EQ(ToResult(HostError::kTimedOut), security_status());
@@ -2675,7 +2678,7 @@ TEST_F(InitiatorPairingTest, NoTimeoutAfterSuccessfulPairing) {
   ASSERT_EQ(fit::ok(), security_status());
   ASSERT_EQ(fit::ok(), pairing_complete_status());
   // Verify that no timeout occurs after a successful pairing followed by a long interval.
-  RunLoopFor(kPairingTimeout * 2);
+  RunFor(kPairingTimeout * 2);
   ASSERT_EQ(1, pairing_complete_count());
   ASSERT_EQ(1, security_callback_count());
   EXPECT_NE(ToResult(HostError::kTimedOut), pairing_complete_status());
@@ -2684,14 +2687,14 @@ TEST_F(InitiatorPairingTest, NoTimeoutAfterSuccessfulPairing) {
 
 TEST_F(InitiatorPairingTest, AbortStopsPairingTimer) {
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_EQ(1, pairing_request_count());
   pairing()->Abort();
   // Calling Abort should stop the pairing procedure and the timer.
   ASSERT_EQ(1, pairing_complete_count());
   ASSERT_EQ(1, security_callback_count());
   // Run the loop for a time that would cause a timeout if a timer were active.
-  RunLoopFor(kPairingTimeout * 2);
+  RunFor(kPairingTimeout * 2);
   ASSERT_EQ(1, pairing_complete_count());
   ASSERT_EQ(1, security_callback_count());
   EXPECT_NE(ToResult(HostError::kTimedOut), pairing_complete_status());
@@ -2700,14 +2703,14 @@ TEST_F(InitiatorPairingTest, AbortStopsPairingTimer) {
 
 TEST_F(InitiatorPairingTest, ResetStopsPairingTimer) {
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_EQ(1, pairing_request_count());
   pairing()->Reset(IOCapability::kDisplayYesNo);
   // Resetting the pairing aborts the current procedure.
   ASSERT_EQ(1, pairing_complete_count());
   ASSERT_EQ(1, security_callback_count());
   // Run the loop for a time that would cause a timeout if a timer were active.
-  RunLoopFor(kPairingTimeout * 2);
+  RunFor(kPairingTimeout * 2);
   ASSERT_EQ(1, pairing_complete_count());
   ASSERT_EQ(1, security_callback_count());
   EXPECT_NE(ToResult(HostError::kTimedOut), pairing_complete_status());
@@ -2718,21 +2721,21 @@ TEST_F(InitiatorPairingTest, SendingMessageRestartsTimer) {
   // SM will send the Pairing Request, which is special-cased to "reset and start" the pairing
   // timer (v5.2 Vol. 3 Part H 3.4), and thus not under test here.
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_EQ(1, pairing_request_count());
   // Run the loop until the pairing timeout has almost expired.
-  RunLoopFor(kPairingTimeout - zx::duration(1));
+  RunFor(kPairingTimeout - pw::chrono::SystemClock::duration(1));
   // Receive the not special-cased Pairing Response, which should trigger SM to send the also not
   // special-cased Pairing Confirm.
   ReceivePairingFeatures();
   // Run the loop for 1 more second, which would timeout if the timer had not been reset.
-  RunLoopFor(zx::duration(1));
+  RunFor(pw::chrono::SystemClock::duration(1));
   // The timeout should not have triggered, so there should be no notification of pairing failure.
   ASSERT_EQ(0, pairing_complete_count());
   ASSERT_EQ(0, security_callback_count());
   // Verify that the timer is in fact still active; without receiving further messages, the timeout
   // should trigger.
-  RunLoopFor(kPairingTimeout);
+  RunFor(kPairingTimeout);
   ASSERT_EQ(1, pairing_complete_count());
   ASSERT_EQ(1, security_callback_count());
   EXPECT_EQ(ToResult(HostError::kTimedOut), pairing_complete_status());
@@ -2750,7 +2753,7 @@ TEST_F(InitiatorPairingTest, ModifyAssignedLinkLtkBeforeSecurityRequestCausesDis
   // connection, we will refresh the encryption key. This checks that the link LTK = the SMP LTK
   // which is not the case.
   ReceiveSecurityRequest(AuthReqField{0});
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(fake_chan()->link_error());
   ASSERT_EQ(1, auth_failure_callback_count());
   ASSERT_EQ(ToResult(pw::bluetooth::emboss::StatusCode::PIN_OR_KEY_MISSING), auth_failure_status());
@@ -2758,26 +2761,26 @@ TEST_F(InitiatorPairingTest, ModifyAssignedLinkLtkBeforeSecurityRequestCausesDis
 
 TEST_F(ResponderPairingTest, SuccessfulPairAfterResetInProgressPairing) {
   ReceivePairingRequest();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   // At this point, we expect to have completed Phase 1, and pairing should still be in progress.
   EXPECT_EQ(1, pairing_response_count());
 
   pairing()->Abort();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   // Pairing should have failed and ended.
   EXPECT_EQ(1, pairing_failed_count());
   EXPECT_EQ(1, pairing_complete_count());
 
   // Verify that the next pairing request is properly handled
   ReceivePairingRequest();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   // At this point, we expect to have completed Phase 1, and pairing should still be in progress.
   EXPECT_EQ(2, pairing_response_count());
 }
 
 TEST_F(ResponderPairingTest, SecurityRequestCausesPairing) {
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   AuthReqField expected_auth_req = AuthReq::kBondingFlag;
   EXPECT_EQ(1, security_request_count());
   EXPECT_EQ(expected_auth_req, security_request_payload());
@@ -2818,7 +2821,7 @@ TEST_F(ResponderPairingTest, SecurityRequestWithExistingLtk) {
 
   // Make the Security Upgrade request
   UpgradeSecurity(SecurityLevel::kAuthenticated);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   AuthReqField expected_auth_req = AuthReq::kBondingFlag | AuthReq::kMITM;
   EXPECT_EQ(1, security_request_count());
   EXPECT_EQ(expected_auth_req, security_request_payload());
@@ -2849,7 +2852,7 @@ TEST_F(ResponderPairingTest, SecurityRequestInitiatorEncryptsWithInsufficientSec
 
   // Make a security request for authenticated security
   UpgradeSecurity(SecurityLevel::kAuthenticated);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   AuthReqField expected_auth_req = AuthReq::kBondingFlag | AuthReq::kMITM;
   EXPECT_EQ(1, security_request_count());
   EXPECT_EQ(expected_auth_req, security_request_payload());
@@ -2866,7 +2869,7 @@ TEST_F(ResponderPairingTest, AuthenticatedSecurityRequestWithInsufficientIoCapRe
   SetUpSecurityManager(IOCapability::kNoInputNoOutput);
   // Make a security request for authenticated security
   UpgradeSecurity(SecurityLevel::kAuthenticated);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   // The security callback should have been rejected w/o sending any messages, as our IOCap cannot
   // perform authenticated pairing.
   EXPECT_EQ(0, security_request_count());
@@ -2878,7 +2881,7 @@ TEST_F(ResponderPairingTest, AuthenticatedSecurityRequestWithInsufficientIoCapRe
 TEST_F(ResponderPairingTest, HandlesMultipleSecurityRequestsCorrectly) {
   // Make a security request for encrypted security
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   AuthReqField expected_auth_req = AuthReq::kBondingFlag;
   EXPECT_EQ(1, security_request_count());
   EXPECT_EQ(expected_auth_req, security_request_payload());
@@ -2886,7 +2889,7 @@ TEST_F(ResponderPairingTest, HandlesMultipleSecurityRequestsCorrectly) {
   // Making another security request, this time for authenticated security, while the first is
   // still pending should not cause another Security Request message to be sent.
   UpgradeSecurity(SecurityLevel::kAuthenticated);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1, security_request_count());
 
   // Handle the first Security Request
@@ -2914,7 +2917,7 @@ TEST_F(ResponderPairingTest, HandlesMultipleSecurityRequestsCorrectly) {
 
 TEST_F(ResponderPairingTest, ReceiveSecondPairingRequestWhilePairing) {
   ReceivePairingRequest();
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // We should have sent a pairing response and should now be in Phase 2,
   // waiting for the peer to send us Mconfirm.
@@ -2928,7 +2931,7 @@ TEST_F(ResponderPairingTest, ReceiveSecondPairingRequestWhilePairing) {
 
   // This should cause pairing to be aborted.
   ReceivePairingRequest();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(0, pairing_request_count());
   // We will abort the second pairing request without responding if we're already in progress
   EXPECT_EQ(1, pairing_response_count());
@@ -2950,12 +2953,12 @@ TEST_F(ResponderPairingTest, ReceiveConfirmValueWhileWaitingForTK) {
   });
 
   ReceivePairingRequest();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(tk_requested);
 
   UInt128 confirm;
   ReceivePairingConfirm(confirm);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pairing should still be in progress without sending out any packets.
   EXPECT_EQ(0, pairing_confirm_count());
@@ -2966,7 +2969,7 @@ TEST_F(ResponderPairingTest, ReceiveConfirmValueWhileWaitingForTK) {
 
   // Respond with the TK. This should cause us to send Sconfirm.
   respond(true);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1, pairing_confirm_count());
   EXPECT_EQ(0, pairing_random_count());
   EXPECT_EQ(0, pairing_failed_count());
@@ -2976,7 +2979,7 @@ TEST_F(ResponderPairingTest, ReceiveConfirmValueWhileWaitingForTK) {
 
 TEST_F(ResponderPairingTest, LegacyPhase2ReceivePairingRandomInWrongOrder) {
   ReceivePairingRequest();
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // We should have sent a pairing response and should now be in Phase 2,
   // waiting for the peer to send us Mconfirm.
@@ -2991,7 +2994,7 @@ TEST_F(ResponderPairingTest, LegacyPhase2ReceivePairingRandomInWrongOrder) {
   // Peer sends Mrand before Mconfirm.
   UInt128 random;
   ReceivePairingRandom(random);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(0, pairing_request_count());
   EXPECT_EQ(1, pairing_response_count());
   EXPECT_EQ(0, pairing_confirm_count());
@@ -3005,7 +3008,7 @@ TEST_F(ResponderPairingTest, LegacyPhase2ReceivePairingRandomInWrongOrder) {
 
 TEST_F(ResponderPairingTest, LegacyPhase2MconfirmValueInvalid) {
   ReceivePairingRequest();
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // We should have sent a pairing response and should now be in Phase 2,
   // waiting for the peer to send us Mconfirm.
@@ -3023,7 +3026,7 @@ TEST_F(ResponderPairingTest, LegacyPhase2MconfirmValueInvalid) {
   random.fill(1);
 
   ReceivePairingConfirm(confirm);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // We should have sent Sconfirm.
   EXPECT_EQ(0, pairing_request_count());
@@ -3037,7 +3040,7 @@ TEST_F(ResponderPairingTest, LegacyPhase2MconfirmValueInvalid) {
   // Peer sends Mrand that doesn't match. We should reject the pairing
   // without sending Srand.
   ReceivePairingRandom(random);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(0, pairing_request_count());
   EXPECT_EQ(1, pairing_response_count());
   EXPECT_EQ(1, pairing_confirm_count());
@@ -3051,7 +3054,7 @@ TEST_F(ResponderPairingTest, LegacyPhase2MconfirmValueInvalid) {
 
 TEST_F(ResponderPairingTest, LegacyPhase2ConfirmValuesExchanged) {
   ReceivePairingRequest();
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // We should have sent a pairing response and should now be in Phase 2,
   // waiting for the peer to send us Mconfirm.
@@ -3069,7 +3072,7 @@ TEST_F(ResponderPairingTest, LegacyPhase2ConfirmValuesExchanged) {
 
   // Peer sends Mconfirm.
   ReceivePairingConfirm(confirm);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // We should have sent Sconfirm.
   EXPECT_EQ(0, pairing_request_count());
@@ -3082,7 +3085,7 @@ TEST_F(ResponderPairingTest, LegacyPhase2ConfirmValuesExchanged) {
 
   // Peer sends Mrand.
   ReceivePairingRandom(random);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // We should have sent Srand.
   EXPECT_EQ(0, pairing_request_count());
@@ -3132,7 +3135,7 @@ TEST_F(ResponderPairingTest, LegacyPhase3LocalLTKDistributionNoRemoteKeys) {
 
   // Make sure that an encryption change has no effect.
   fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1, pairing_data_callback_count());
 
   // No additional security property update should have been sent since the STK
@@ -3169,7 +3172,7 @@ TEST_F(ResponderPairingTest, LegacyPhase3LocalLTKDistributionWithRemoteKeys) {
   const auto kIrk = Random<UInt128>();
   ReceiveIdentityResolvingKey(kIrk);
   ReceiveIdentityAddress(kPeerAddr);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pairing is considered complete when all keys have been distributed even if
   // we're still encrypted with the STK. This is because the initiator may not
@@ -3242,7 +3245,7 @@ TEST_F(ResponderPairingTest, LegacyPhase3ReceiveInitiatorEncKey) {
 
   ReceiveEncryptionInformation(kLTK.value());
   ReceiveCentralIdentification(kRand, kEDiv);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pairing should have succeeded.
   EXPECT_EQ(0, pairing_failed_count());
@@ -3298,7 +3301,7 @@ TEST_F(ResponderPairingTest, LegacyPhase3LocalIdKeyDistributionWithRemoteKeys) {
   const auto kIrk = Random<UInt128>();
   ReceiveIdentityResolvingKey(kIrk);
   ReceiveIdentityAddress(kPeerAddr);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Pairing is considered complete when all keys have been distributed even if
   // we're still encrypted with the STK. This is because the initiator may not
@@ -3314,7 +3317,7 @@ TEST_F(ResponderPairingTest, LegacyPhase3LocalIdKeyDistributionWithRemoteKeys) {
 
 TEST_F(ResponderPairingTest, AssignLongTermKeyFailsDuringPairing) {
   ReceivePairingRequest();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   SecurityProperties sec_props(SecurityLevel::kAuthenticated, 16, /*secure_connections=*/false);
   EXPECT_FALSE(pairing()->AssignLongTermKey(LTK(sec_props, hci_spec::LinkKey())));
   EXPECT_EQ(0, fake_link()->start_encryption_count());
@@ -3336,7 +3339,7 @@ TEST_F(ResponderPairingTest, AssignLongTermKey) {
   // The link security level is not assigned until successful encryption.
   EXPECT_EQ(SecurityProperties(), pairing()->security());
   fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, new_sec_props_count());
   EXPECT_EQ(sec_props, new_sec_props());
@@ -3351,7 +3354,7 @@ TEST_F(ResponderPairingTest, EncryptWithLinkKeyModifiedOutsideSmDisconnects) {
   EXPECT_TRUE(pairing()->AssignLongTermKey(kOriginalLtk));
   fake_link()->set_ltk(kModifiedLtk);
   fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(fake_chan()->link_error());
   ASSERT_EQ(1, auth_failure_callback_count());
   ASSERT_EQ(ToResult(pw::bluetooth::emboss::StatusCode::PIN_OR_KEY_MISSING), auth_failure_status());
@@ -3362,7 +3365,7 @@ TEST_F(ResponderPairingTest, EncryptWithLinkKeyButNoSmLtkDisconnects) {
   // a link LTK but no SM LTK, this is a violation of bt-host assumptions and we will disconnect.
   fake_link()->set_ltk(hci_spec::LinkKey({1}, 2, 3));
   fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(fake_chan()->link_error());
   ASSERT_EQ(1, auth_failure_callback_count());
   ASSERT_EQ(ToResult(pw::bluetooth::emboss::StatusCode::PIN_OR_KEY_MISSING), auth_failure_status());
@@ -3375,7 +3378,7 @@ TEST_F(ResponderPairingTest, RejectSecurityRequest) {
   EXPECT_EQ(ErrorCode::kCommandNotSupported, received_error_code());
 
   // Run for the full pairing timeout to ensure we do not timeout due to sending a message.
-  RunLoopFor(kPairingTimeout + zx::sec(1));
+  RunFor(kPairingTimeout + std::chrono::seconds(1));
   EXPECT_EQ(0, pairing_request_count());
   EXPECT_EQ(0, fake_link()->start_encryption_count());
   EXPECT_EQ(1, pairing_failed_count());
@@ -3438,7 +3441,7 @@ TEST_F(ResponderPairingTest, BothSidesRequestNonBondableNoLTKCreated) {
 
 TEST_F(ResponderPairingTest, PairingRequestStartsPairingTimer) {
   ReceivePairingRequest();
-  RunLoopFor(kPairingTimeout);
+  RunFor(kPairingTimeout);
   EXPECT_TRUE(fake_chan()->link_error());
   // Pairing should fail, but no callbacks should be notified because the pairing was initiated
   // remotely, not through UpgradeSecurity locally
@@ -3452,12 +3455,12 @@ TEST_F(ResponderPairingTest, RejectUnauthenticatedPairingInSecureConnectionsOnly
   pairing()->set_security_mode(gap::LESecurityMode::SecureConnectionsOnly);
   // In SC Only mode, SM should translate this "encrypted" request into a MITM requirement.
   UpgradeSecurity(SecurityLevel::kEncrypted);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1, security_request_count());
   EXPECT_EQ(AuthReq::kBondingFlag | AuthReq::kMITM | AuthReq::kSC, security_request_payload());
   // The peer has NoInputNoOutput IOCapabilities, thus cannot perform authenticated pairing.
   ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kBondingFlag | AuthReq::kSC);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, pairing_failed_count());
   EXPECT_EQ(1, security_callback_count());
@@ -3473,7 +3476,7 @@ TEST_F(ResponderPairingTest, RejectInsufficientKeySizeRequestInSecureConnections
   // Connections Only requirements.
   ReceivePairingRequest(IOCapability::kDisplayYesNo, AuthReq::kBondingFlag | AuthReq::kSC,
                         kMaxEncryptionKeySize - 1);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1, pairing_failed_count());
   EXPECT_EQ(1, pairing_complete_count());

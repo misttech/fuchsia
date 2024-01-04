@@ -6,9 +6,11 @@
 #define LIB_DRIVER_DEVICETREE_EXAMPLES_EXAMPLE_BOARD_EXAMPLE_BOARD_H_
 
 #include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/devicetree/manager.h>
+#include <lib/driver/devicetree/manager/manager.h>
+#include <lib/driver/devicetree/visitors/registry.h>
 #include <lib/zx/result.h>
 
+#include <memory>
 #include <optional>
 
 namespace example_board {
@@ -22,6 +24,7 @@ class ExampleBoard : public fdf::DriverBase {
 
  private:
   std::optional<fdf_devicetree::Manager> manager_;
+  std::unique_ptr<fdf_devicetree::VisitorRegistry> visitors_;
   fidl::SyncClient<fuchsia_driver_framework::Node> node_;
 };
 

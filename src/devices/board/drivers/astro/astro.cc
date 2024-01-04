@@ -56,6 +56,43 @@ int Astro::Thread() {
     return status;
   }
 
+  if ((status = I2cInit()) != ZX_OK) {
+    zxlogf(ERROR, "I2cInit failed: %d", status);
+  }
+
+  if ((status = CpuInit()) != ZX_OK) {
+    zxlogf(ERROR, "CpuInit failed: %d", status);
+  }
+
+  if ((status = RawNandInit()) != ZX_OK) {
+    zxlogf(ERROR, "RawNandInit failed: %d", status);
+  }
+
+  if ((status = SdioInit()) != ZX_OK) {
+    zxlogf(ERROR, "SdioInit failed: %d", status);
+  }
+
+  if ((status = LightInit()) != ZX_OK) {
+    zxlogf(ERROR, "LightInit failed: %d", status);
+  }
+
+  if ((status = AudioInit()) != ZX_OK) {
+    zxlogf(ERROR, "AudioInit failed: %d", status);
+  }
+
+  if ((status = BluetoothInit()) != ZX_OK) {
+    zxlogf(ERROR, "BluetoothInit failed: %d", status);
+  }
+
+  // ClkInit() must be called after other subsystems that bind to clock have had a chance to add
+  // their init steps.
+  if ((status = ClkInit()) != ZX_OK) {
+    zxlogf(ERROR, "ClkInit failed: %d", status);
+  }
+  clock_init_steps_.clear();
+
+  // GpioInit() must be called after other subsystems that bind to GPIO have had a chance to add
+  // their init steps.
   if ((status = GpioInit()) != ZX_OK) {
     zxlogf(ERROR, "%s: GpioInit() failed: %d", __func__, status);
     return status;
@@ -89,24 +126,12 @@ int Astro::Thread() {
     return status;
   }
 
-  if ((status = ClkInit()) != ZX_OK) {
-    zxlogf(ERROR, "ClkInit failed: %d", status);
-  }
-
   if ((status = PowerInit()) != ZX_OK) {
     zxlogf(ERROR, "PowerInit failed: %d", status);
   }
 
   if ((status = ButtonsInit()) != ZX_OK) {
     zxlogf(ERROR, "ButtonsInit failed: %d", status);
-  }
-
-  if ((status = I2cInit()) != ZX_OK) {
-    zxlogf(ERROR, "I2cInit failed: %d", status);
-  }
-
-  if ((status = CpuInit()) != ZX_OK) {
-    zxlogf(ERROR, "CpuInit failed: %d", status);
   }
 
   if ((status = MaliInit()) != ZX_OK) {
@@ -145,28 +170,16 @@ int Astro::Thread() {
     zxlogf(ERROR, "VideoInit failed: %d", status);
   }
 
-  if ((status = RawNandInit()) != ZX_OK) {
-    zxlogf(ERROR, "RawNandInit failed: %d", status);
-  }
-
-  if ((status = SdioInit()) != ZX_OK) {
-    zxlogf(ERROR, "SdioInit failed: %d", status);
-  }
-
-  if ((status = LightInit()) != ZX_OK) {
-    zxlogf(ERROR, "LightInit failed: %d", status);
-  }
-
   if ((status = ThermalInit()) != ZX_OK) {
     zxlogf(ERROR, "ThermalInit failed: %d", status);
   }
 
-  if ((status = ThermistorInit()) != ZX_OK) {
-    zxlogf(ERROR, "ThermistorInit failed: %d", status);
+  if (auto result = AdcInit(); result.is_error()) {
+    zxlogf(ERROR, "AdcInit failed: %d", result.error_value());
   }
 
-  if ((status = AudioInit()) != ZX_OK) {
-    zxlogf(ERROR, "AudioInit failed: %d", status);
+  if ((status = ThermistorInit()) != ZX_OK) {
+    zxlogf(ERROR, "ThermistorInit failed: %d", status);
   }
 
   if ((status = SecureMemInit()) != ZX_OK) {
@@ -181,11 +194,7 @@ int Astro::Thread() {
     zxlogf(ERROR, "RamCtlInit failed: %d", status);
   }
 
-  // This function includes some non-trivial delays, so lets run this last
-  // to avoid slowing down the rest of the boot.
-  if ((status = BluetoothInit()) != ZX_OK) {
-    zxlogf(ERROR, "BluetoothInit failed: %d", status);
-  }
+  ZX_ASSERT_MSG(clock_init_steps_.empty(), "Clock init steps added but not applied");
 
   return ZX_OK;
 }

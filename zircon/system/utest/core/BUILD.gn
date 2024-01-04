@@ -5,10 +5,12 @@
 import("//build/components/fuchsia_unittest_package.gni")
 import("//build/config/zircon/levels.gni")
 import("//build/test.gni")
+import("//build/testing/boot_tests/kernel_zbi_test.gni")
+import("//build/testing/boot_tests/zbi_test.gni")
+import("//build/testing/boot_tests/zbi_test_executable.gni")
 import("//build/testing/bootfs_test.gni")
-import("//build/testing/kernel_zbi_test.gni")
-import("//build/testing/zbi_test.gni")
-import("//build/testing/zbi_test_executable.gni")
+import("//build/toolchain/rbe.gni")
+import("//zircon/kernel/params.gni")
 
 # Each subdirectory just provides an eponymous source_set().
 core_tests = [
@@ -47,6 +49,7 @@ core_tests = [
   "sync-condition",
   "sync-mutex",
   "syscall-generation",
+  "thread-initial-state",
   "time",
   "version",
 ]
@@ -113,6 +116,7 @@ unified_only = [
   "resource",
   "system-event",
   "system-cpu",
+  "system-suspend",
 ]
 assert(core_tests + core_tests_with_custom_manifests -
            core_tests_with_custom_manifests == core_tests,
@@ -132,13 +136,15 @@ foreach(test_name, all_bootfs_tests) {
   test(test_name) {
     output_name = "core-$test_name"
 
+    deps = [ test_name ]
+
     if (is_fuchsia) {
       fdio_config = [ "//build/config/fuchsia:fdio_config" ]
       if (configs + fdio_config - fdio_config != configs) {
         configs -= fdio_config
       }
+      deps += [ "//sdk/lib/fdio" ]
     }
-    deps = [ test_name ]
   }
 
   bootfs_test("core-$test_name-bootfs-test") {
@@ -217,6 +223,10 @@ if (is_fuchsia) {
         toolchain_variant.tags + [ "thinlto" ] - [ "thinlto" ] !=
         toolchain_variant.tags) {
       pool = "//build/config:highmem($default_toolchain)"
+      if (link_rbe_enable) {
+        # OOM on RBE workers
+        configs += [ "//build/config:no_remote_link" ]
+      }
     }
   }
 
@@ -225,6 +235,11 @@ if (is_fuchsia) {
       "kernel.vdso.always_use_next=true",
       "kernel.enable-debugging-syscalls=true",
       "kernel.test.ram.reserve=0x8000",
+      "kernel.compression.strategy=lz4",
+      "kernel.compression.storage-strategy=tri_page",
+      "kernel.compression.reclaim_anonymous=true",
+      "kernel.compression.reclaim_zero_forks=true",
+      "kernel.compression.random-debug-compress=true",
     ]
 
     # Only add this switch if we're building with ZX_DEBUG_ASSERT enabled
@@ -238,24 +253,12 @@ if (is_fuchsia) {
 
 boot_tests = [ ":core-tests" ]
 core_tests("core-tests") {
-  device_types = [
-    "AEMU",
-    "Astro",
-    "QEMU",
-    "Intel NUC Kit NUC7i5DNHE",
-    "Sherlock",
-  ]
+  device_types = kernel_test_device_types
 
   # We've observed the ASAN variant of core-tests take as long as 701 seconds
   # when booted via firmware on certain types of hardware.  Leave a little buffer
   # for growth.
   timeout = 840
-
-  # TODO(https://fxbug.dev/126120): The Bti.DecommitRace test case takes 15
-  # to 17 minutes on RISC-V, so extend the timeout in that case.
-  if (current_cpu == "riscv64") {
-    timeout = 1800
-  }
 }
 
 # If we are building for x64, make sure to run the core tests on a system which
@@ -277,12 +280,6 @@ if (current_cpu == "x64") {
 core_tests("core-tests-serial-migration") {
   args = [ "kernel.experimental.serial_migration=true" ]
   device_types = [ "QEMU" ]
-
-  # TODO(https://fxbug.dev/126120): The Bti.DecommitRace test case takes 15
-  # to 17 minutes on RISC-V, so extend the timeout in that case.
-  if (current_cpu == "riscv64") {
-    timeout = 1800
-  }
 }
 boot_tests += [ ":core-tests-serial-migration" ]
 

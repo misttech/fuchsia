@@ -3,8 +3,9 @@
 // found in the LICENSE file.
 
 use crate::subsystems::prelude::*;
+use assembly_config_capabilities::{Config, ConfigValueType};
 use assembly_config_schema::platform_config::driver_framework_config::{
-    DriverFrameworkConfig, DriverHostCrashPolicy,
+    DriverFrameworkConfig, DriverHostCrashPolicy, TestFuzzingConfig,
 };
 
 pub(crate) struct DriverFrameworkSubsystemConfig;
@@ -15,17 +16,19 @@ impl DefineSubsystemConfiguration<DriverFrameworkConfig> for DriverFrameworkSubs
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
         let mut disabled_drivers = driver_framework_config.disabled_drivers.clone();
-        let use_dfv2 = context.board_info.provides_feature("fuchsia::driver_framework_v2_support");
-        if use_dfv2 {
-            // TODO(http://fxbug.dev/102096): Remove this once DFv2 is enabled by default and there
-            // exists only one da7219 driver.
-            disabled_drivers.push("fuchsia-boot:///#meta/da7219.cm".to_string());
-            builder.platform_bundle("driver_framework_v2");
-        } else {
-            builder.platform_bundle("driver_framework_v1");
-        }
+        // TODO(http://fxbug.dev/102096): Remove this once DFv2 is enabled by default and there
+        // exists only one da7219 driver.
+        disabled_drivers.push("fuchsia-boot:///#meta/da7219.cm".to_string());
+        builder.platform_bundle("driver_framework_v2");
 
         let delay_fallback = !matches!(context.feature_set_level, FeatureSupportLevel::Bootstrap);
+
+        let test_fuzzing_config =
+            driver_framework_config.test_fuzzing_config.as_ref().unwrap_or(&TestFuzzingConfig {
+                enable_load_fuzzer: false,
+                max_load_delay_ms: 0,
+                enable_test_shutdown_delays: false,
+            });
 
         builder
             .package("driver-index")
@@ -33,7 +36,14 @@ impl DefineSubsystemConfiguration<DriverFrameworkConfig> for DriverFrameworkSubs
             .field("enable_ephemeral_drivers", matches!(context.build_type, BuildType::Eng))?
             .field("delay_fallback_until_base_drivers_indexed", delay_fallback)?
             .field("bind_eager", driver_framework_config.eager_drivers.clone())?
+            .field("enable_driver_load_fuzzer", test_fuzzing_config.enable_load_fuzzer)?
+            .field("driver_load_fuzzer_max_delay_ms", test_fuzzing_config.max_load_delay_ms)?
             .field("disabled_drivers", disabled_drivers)?;
+
+        builder.set_config_capability(
+            "fuchsia.driver.DriverLoadFuzzerMaxDelayMs",
+            Config::new(ConfigValueType::Int64, test_fuzzing_config.max_load_delay_ms.into()),
+        )?;
 
         let driver_host_crash_policy = driver_framework_config
             .driver_host_crash_policy
@@ -47,9 +57,13 @@ impl DefineSubsystemConfiguration<DriverFrameworkConfig> for DriverFrameworkSubs
             .field("delay_fallback_until_base_drivers_indexed", delay_fallback)?
             .field("suspend_timeout_fallback", true)?
             .field("verbose", false)?
-            .field("use_driver_framework_v2", use_dfv2)?
+            .field("use_driver_framework_v2", true)?
             .field("driver_host_crash_policy", format!("{driver_host_crash_policy}"))?
-            .field("root_driver", "fuchsia-boot:///platform-bus#meta/platform-bus.cm")?;
+            .field("root_driver", "fuchsia-boot:///platform-bus#meta/platform-bus.cm")?
+            .field(
+                "enable_test_shutdown_delays",
+                test_fuzzing_config.enable_test_shutdown_delays,
+            )?;
 
         Ok(())
     }

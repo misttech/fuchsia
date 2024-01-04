@@ -11,10 +11,11 @@ use {
     async_trait::async_trait,
     cm_rust::{
         CapabilityDecl, ChildRef, CollectionDecl, DependencyType, EnvironmentDecl, ExposeDecl,
-        OfferDecl, OfferDirectoryDecl, OfferProtocolDecl, OfferResolverDecl, OfferRunnerDecl,
-        OfferServiceDecl, OfferSource, OfferStorageDecl, OfferTarget, RegistrationDeclCommon,
-        RegistrationSource, StorageDirectorySource, UseDecl, UseDirectoryDecl, UseEventStreamDecl,
-        UseProtocolDecl, UseServiceDecl, UseSource,
+        OfferConfigurationDecl, OfferDecl, OfferDictionaryDecl, OfferDirectoryDecl,
+        OfferProtocolDecl, OfferResolverDecl, OfferRunnerDecl, OfferServiceDecl, OfferSource,
+        OfferStorageDecl, OfferTarget, RegistrationDeclCommon, RegistrationSource,
+        StorageDirectorySource, UseConfigurationDecl, UseDecl, UseDirectoryDecl,
+        UseEventStreamDecl, UseProtocolDecl, UseRunnerDecl, UseServiceDecl, UseSource,
     },
     cm_types::Name,
     futures::future::select_all,
@@ -22,16 +23,30 @@ use {
     std::collections::{HashMap, HashSet},
     std::fmt,
     std::sync::Arc,
-    tracing::error,
+    tracing::*,
 };
 
 /// Shuts down all component instances in this component (stops them and guarantees they will never
 /// be started again).
-pub struct ShutdownAction {}
+pub struct ShutdownAction {
+    shutdown_type: ShutdownType,
+}
+
+/// Indicates the type of shutdown being performed.
+#[derive(Clone, Copy)]
+pub enum ShutdownType {
+    /// An individual component instance was shut down. For example, this is used when
+    /// a component instance is destroyed.
+    Instance,
+
+    /// The entire system under this component_manager was shutdown on behalf of
+    /// a call to SystemController/Shutdown.
+    System,
+}
 
 impl ShutdownAction {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(shutdown_type: ShutdownType) -> Self {
+        Self { shutdown_type }
     }
 }
 
@@ -39,14 +54,17 @@ impl ShutdownAction {
 impl Action for ShutdownAction {
     type Output = Result<(), StopActionError>;
     async fn handle(self, component: &Arc<ComponentInstance>) -> Self::Output {
-        do_shutdown(component).await
+        do_shutdown(component, self.shutdown_type).await
     }
     fn key(&self) -> ActionKey {
         ActionKey::Shutdown
     }
 }
 
-async fn shutdown_component(target: ShutdownInfo) -> Result<ComponentRef, StopActionError> {
+async fn shutdown_component(
+    target: ShutdownInfo,
+    shutdown_type: ShutdownType,
+) -> Result<ComponentRef, StopActionError> {
     match target.ref_ {
         ComponentRef::Self_ => {
             // TODO: Put `self` in a "shutting down" state so that if it creates
@@ -55,7 +73,7 @@ async fn shutdown_component(target: ShutdownInfo) -> Result<ComponentRef, StopAc
             target.component.stop_instance_internal(true).await?;
         }
         ComponentRef::Child(_) => {
-            ActionSet::register(target.component, ShutdownAction::new()).await?;
+            ActionSet::register(target.component, ShutdownAction::new(shutdown_type)).await?;
         }
     }
 
@@ -71,6 +89,8 @@ struct ShutdownJob {
     /// A map from providers of capabilities to those components which use the
     /// capabilities
     source_to_targets: HashMap<ComponentRef, ShutdownInfo>,
+    /// The type of shutdown being performed. For debug purposes.
+    shutdown_type: ShutdownType,
 }
 
 /// ShutdownJob encapsulates the logic and state require to shutdown a component.
@@ -81,6 +101,7 @@ impl ShutdownJob {
     pub async fn new(
         instance: &Arc<ComponentInstance>,
         state: &ResolvedInstanceState,
+        shutdown_type: ShutdownType,
     ) -> ShutdownJob {
         // `dependency_map` represents the dependency relationships between the
         // nodes in this realm (the children, and the component itself).
@@ -118,7 +139,7 @@ impl ShutdownJob {
                     .push(provider.ref_.clone());
             }
         }
-        let new_job = ShutdownJob { source_to_targets, target_to_sources };
+        let new_job = ShutdownJob { source_to_targets, target_to_sources, shutdown_type };
         return new_job;
     }
 
@@ -168,7 +189,7 @@ impl ShutdownJob {
         // Continue while we have new stop targets or unfinished futures
         while !stop_targets.is_empty() || !futs.is_empty() {
             for target in stop_targets.drain(..) {
-                futs.push(Box::pin(shutdown_component(target)));
+                futs.push(Box::pin(shutdown_component(target, self.shutdown_type)));
             }
 
             let (component_ref, _, remaining) = select_all(futs).await;
@@ -225,29 +246,54 @@ impl ShutdownJob {
     }
 }
 
-async fn do_shutdown(component: &Arc<ComponentInstance>) -> Result<(), StopActionError> {
+async fn do_shutdown(
+    component: &Arc<ComponentInstance>,
+    shutdown_type: ShutdownType,
+) -> Result<(), StopActionError> {
     {
         let state = component.lock_state().await;
         {
             let exec_state = component.lock_execution().await;
             if exec_state.is_shut_down() {
+                if matches!(shutdown_type, ShutdownType::System) {
+                    info!(url=%component.component_url, moniker=%component.moniker, "Shutdown is no-op");
+                }
                 return Ok(());
             }
         }
         match *state {
             InstanceState::Resolved(ref s) => {
-                let mut shutdown_job = ShutdownJob::new(component, s).await;
+                if matches!(shutdown_type, ShutdownType::System) {
+                    info!(url=%component.component_url, moniker=%component.moniker, "Shutting down component");
+                }
+                let mut shutdown_job = ShutdownJob::new(component, s, shutdown_type).await;
                 drop(state);
-                Box::pin(shutdown_job.execute()).await?;
+                Box::pin(shutdown_job.execute()).await.map_err(|err| {
+                    warn!(err=%err, url=%component.component_url, moniker=%component.moniker, "Shutdown failed");
+                    err
+                })?;
+                if matches!(shutdown_type, ShutdownType::System) {
+                    info!(url=%component.component_url, moniker=%component.moniker, "Shutdown complete");
+                }
                 return Ok(());
             }
-            InstanceState::New | InstanceState::Unresolved | InstanceState::Destroyed => {}
+            InstanceState::New | InstanceState::Unresolved(_) | InstanceState::Destroyed => {}
         }
     }
+
     // Control flow arrives here if the component isn't resolved.
     // TODO: Put this component in a "shutting down" state so that if it creates new instances
     // after this point, they are created in a shut down state.
-    component.stop_instance_internal(true).await?;
+    if let ShutdownType::System = shutdown_type {
+        info!(url=%component.component_url, moniker=%component.moniker, "Shutting down unresolved component");
+    }
+    component.stop_instance_internal(true).await.map_err(|err| {
+        warn!(err=%err, url=%component.component_url, moniker=%component.moniker, "Shutdown failed");
+        err
+    })?;
+    if matches!(shutdown_type, ShutdownType::System) {
+        info!(url=%component.component_url, moniker=%component.moniker, "Shutdown complete");
+    }
 
     Ok(())
 }
@@ -438,14 +484,16 @@ fn get_dependencies_from_uses(instance: &impl Component) -> HashSet<(ComponentRe
             UseDecl::Service(UseServiceDecl { source: UseSource::Child(name), .. })
             | UseDecl::Protocol(UseProtocolDecl { source: UseSource::Child(name), .. })
             | UseDecl::Directory(UseDirectoryDecl { source: UseSource::Child(name), .. })
-            | UseDecl::EventStream(UseEventStreamDecl { source: UseSource::Child(name), .. }) => {
-                name
-            }
+            | UseDecl::EventStream(UseEventStreamDecl { source: UseSource::Child(name), .. })
+            | UseDecl::Config(UseConfigurationDecl { source: UseSource::Child(name), .. })
+            | UseDecl::Runner(UseRunnerDecl { source: UseSource::Child(name), .. }) => name,
             UseDecl::Service(_)
             | UseDecl::Protocol(_)
             | UseDecl::Directory(_)
             | UseDecl::Storage(_)
-            | UseDecl::EventStream(_) => {
+            | UseDecl::EventStream(_)
+            | UseDecl::Config(_)
+            | UseDecl::Runner(_) => {
                 // capabilities which cannot or are not used from a child can be ignored.
                 continue;
             }
@@ -459,7 +507,10 @@ fn get_dependencies_from_uses(instance: &impl Component) -> HashSet<(ComponentRe
                     continue;
                 }
             }
-            UseDecl::Storage(_) | UseDecl::EventStream(_) => {
+            UseDecl::Storage(_)
+            | UseDecl::EventStream(_)
+            | UseDecl::Runner(_)
+            | UseDecl::Config(_) => {
                 // Any other capability type cannot be marked as weak, so we can proceed
             }
         }
@@ -523,10 +574,15 @@ fn get_dependency_from_offer(
             target,
             ..
         })
+        | OfferDecl::Config(OfferConfigurationDecl { source, target, .. })
         | OfferDecl::Runner(OfferRunnerDecl { source, target, .. })
-        | OfferDecl::Resolver(OfferResolverDecl { source, target, .. }) => {
-            Some((find_offer_sources(instance, source), find_offer_targets(instance, target)))
-        }
+        | OfferDecl::Resolver(OfferResolverDecl { source, target, .. })
+        | OfferDecl::Dictionary(OfferDictionaryDecl {
+            dependency_type: DependencyType::Strong,
+            source,
+            target,
+            ..
+        }) => Some((find_offer_sources(instance, source), find_offer_targets(instance, target))),
 
         OfferDecl::Service(OfferServiceDecl { source, target, .. }) => Some((
             find_service_offer_sources(instance, source),
@@ -538,6 +594,10 @@ fn get_dependency_from_offer(
         })
         | OfferDecl::Directory(OfferDirectoryDecl {
             dependency_type: DependencyType::Weak, ..
+        })
+        | OfferDecl::Dictionary(OfferDictionaryDecl {
+            dependency_type: DependencyType::Weak,
+            ..
         }) => {
             // weak dependencies are ignored by this algorithm, because weak
             // dependencies can be broken arbitrarily.
@@ -713,6 +773,10 @@ fn find_offer_targets(instance: &impl Component, target: &OfferTarget) -> Vec<Co
             .filter(|child| child.moniker.collection() == Some(collection))
             .map(|child| child.moniker.into())
             .collect(),
+        OfferTarget::Capability(_capability) => {
+            // TODO(fxbug.dev/301674053): Support dictionary routing.
+            vec![]
+        }
     }
 }
 
@@ -789,10 +853,7 @@ mod tests {
     use {
         super::*,
         crate::model::{
-            actions::{
-                test_utils::{is_executing, is_unresolved},
-                StopAction,
-            },
+            actions::{test_utils::is_unresolved, StopAction},
             component::StartReason,
             testing::{
                 test_helpers::{
@@ -804,9 +865,9 @@ mod tests {
         },
         cm_rust::{
             Availability, ChildDecl, ComponentDecl, DependencyType, ExposeDecl, ExposeProtocolDecl,
-            ExposeSource, ExposeTarget, OfferDecl, OfferProtocolDecl, OfferResolverDecl,
-            OfferSource, OfferStorageDecl, OfferTarget, ProtocolDecl, StorageDecl,
-            StorageDirectorySource, UseDecl, UseSource,
+            ExposeRunnerDecl, ExposeSource, ExposeTarget, OfferDecl, OfferProtocolDecl,
+            OfferResolverDecl, OfferSource, OfferStorageDecl, OfferTarget, ProtocolDecl,
+            StorageDecl, StorageDirectorySource, UseDecl, UseSource,
         },
         cm_rust_testing::{
             ChildDeclBuilder, CollectionDeclBuilder, ComponentDeclBuilder, EnvironmentDeclBuilder,
@@ -888,6 +949,7 @@ mod tests {
             offers: vec![OfferDecl::Protocol(OfferProtocolDecl {
                 source: OfferSource::Self_,
                 source_name: "serviceSelf".parse().unwrap(),
+                source_dictionary: None,
                 target_name: "serviceSelf".parse().unwrap(),
                 target: OfferTarget::static_child("childA".to_string()),
                 dependency_type: DependencyType::Strong,
@@ -919,6 +981,7 @@ mod tests {
             offers: vec![OfferDecl::Protocol(OfferProtocolDecl {
                 source: OfferSource::Self_,
                 source_name: "serviceSelf".parse().unwrap(),
+                source_dictionary: None,
                 target_name: "serviceSelf".parse().unwrap(),
                 target: OfferTarget::static_child("childA".to_string()),
                 dependency_type: weak_dep,
@@ -950,6 +1013,7 @@ mod tests {
             exposes: vec![ExposeDecl::Protocol(ExposeProtocolDecl {
                 target: ExposeTarget::Parent,
                 source_name: "serviceFromChild".parse().unwrap(),
+                source_dictionary: None,
                 target_name: "serviceFromChild".parse().unwrap(),
                 source: ExposeSource::Child("childA".to_string()),
                 availability: cm_rust::Availability::Required,
@@ -997,6 +1061,7 @@ mod tests {
                 OfferDecl::Protocol(OfferProtocolDecl {
                     source: OfferSource::Self_,
                     source_name: "serviceParent".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "serviceParent".parse().unwrap(),
                     target: OfferTarget::static_child("childA".to_string()),
                     dependency_type: DependencyType::Strong,
@@ -1005,6 +1070,7 @@ mod tests {
                 OfferDecl::Protocol(OfferProtocolDecl {
                     source: OfferSource::static_child("childB".to_string()),
                     source_name: "childBOffer".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "serviceSibling".parse().unwrap(),
                     target: OfferTarget::static_child("childA".to_string()),
                     dependency_type: DependencyType::Strong,
@@ -1211,6 +1277,7 @@ mod tests {
             offers: vec![OfferDecl::Protocol(OfferProtocolDecl {
                 source: OfferSource::static_child("childB".to_string()),
                 source_name: "childBOffer".parse().unwrap(),
+                source_dictionary: None,
                 target_name: "serviceSibling".parse().unwrap(),
                 target: OfferTarget::static_child("childC".to_string()),
                 dependency_type: DependencyType::Strong,
@@ -1448,6 +1515,7 @@ mod tests {
                 source: OfferSource::Child(ChildRef { name: "childA".into(), collection: None }),
                 target: OfferTarget::Collection("coll".parse().unwrap()),
                 source_name: "some_dir".parse().unwrap(),
+                source_dictionary: None,
                 target_name: "some_dir".parse().unwrap(),
                 dependency_type: DependencyType::Strong,
                 rights: None,
@@ -1475,6 +1543,7 @@ mod tests {
                         collection: Some("coll".parse().unwrap()),
                     }),
                     source_name: "test.protocol".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "test.protocol".parse().unwrap(),
                     dependency_type: DependencyType::Strong,
                     availability: Availability::Required,
@@ -1489,6 +1558,7 @@ mod tests {
                         collection: Some("coll".parse().unwrap()),
                     }),
                     source_name: "test.protocol".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "test.protocol".parse().unwrap(),
                     dependency_type: DependencyType::Strong,
                     availability: Availability::Required,
@@ -1546,6 +1616,7 @@ mod tests {
                         collection: Some("coll2".parse().unwrap()),
                     }),
                     source_name: "test.protocol".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "test.protocol".parse().unwrap(),
                     dependency_type: DependencyType::Strong,
                     availability: Availability::Required,
@@ -1560,6 +1631,7 @@ mod tests {
                         collection: Some("coll1".parse().unwrap()),
                     }),
                     source_name: "test.protocol".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "test.protocol".parse().unwrap(),
                     dependency_type: DependencyType::Strong,
                     availability: Availability::Required,
@@ -1600,6 +1672,7 @@ mod tests {
                     collection: Some("coll".parse().unwrap()),
                 }),
                 source_name: "test.protocol".parse().unwrap(),
+                source_dictionary: None,
                 target_name: "test.protocol".parse().unwrap(),
                 dependency_type: DependencyType::Strong,
                 availability: Availability::Required,
@@ -1635,6 +1708,7 @@ mod tests {
                     collection: Some("coll".parse().unwrap()),
                 }),
                 source_name: "test.protocol".parse().unwrap(),
+                source_dictionary: None,
                 target_name: "test.protocol".parse().unwrap(),
                 dependency_type: DependencyType::Strong,
                 availability: Availability::Required,
@@ -1675,6 +1749,7 @@ mod tests {
                     collection: Some("coll".parse().unwrap()),
                 }),
                 source_name: "test.protocol".parse().unwrap(),
+                source_dictionary: None,
                 target_name: "test.protocol".parse().unwrap(),
                 dependency_type: DependencyType::Strong,
                 availability: Availability::Required,
@@ -1721,6 +1796,7 @@ mod tests {
                 OfferDecl::Protocol(OfferProtocolDecl {
                     source: OfferSource::Self_,
                     source_name: "serviceSelf".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "serviceSelf".parse().unwrap(),
                     target: OfferTarget::static_child("childA".to_string()),
                     dependency_type: weak_dep.clone(),
@@ -1729,6 +1805,7 @@ mod tests {
                 OfferDecl::Protocol(OfferProtocolDecl {
                     source: OfferSource::static_child("childB".to_string()),
                     source_name: "childBOffer".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "serviceSibling".parse().unwrap(),
                     target: OfferTarget::static_child("childA".to_string()),
                     dependency_type: weak_dep.clone(),
@@ -1772,6 +1849,7 @@ mod tests {
                 OfferDecl::Protocol(OfferProtocolDecl {
                     source: OfferSource::Self_,
                     source_name: "serviceSelf".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "serviceSelf".parse().unwrap(),
                     target: OfferTarget::static_child("childA".to_string()),
                     dependency_type: DependencyType::Strong,
@@ -1780,6 +1858,7 @@ mod tests {
                 OfferDecl::Protocol(OfferProtocolDecl {
                     source: OfferSource::static_child("childB".to_string()),
                     source_name: "childBOffer".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "serviceSibling".parse().unwrap(),
                     target: OfferTarget::static_child("childA".to_string()),
                     dependency_type: DependencyType::Strong,
@@ -1788,6 +1867,7 @@ mod tests {
                 OfferDecl::Protocol(OfferProtocolDecl {
                     source: OfferSource::static_child("childB".to_string()),
                     source_name: "childBOtherOffer".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "serviceOtherSibling".parse().unwrap(),
                     target: OfferTarget::static_child("childA".to_string()),
                     dependency_type: DependencyType::Strong,
@@ -1839,6 +1919,7 @@ mod tests {
                 OfferDecl::Protocol(OfferProtocolDecl {
                     source: OfferSource::static_child("childB".to_string()),
                     source_name: "childBOffer".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "serviceSibling".parse().unwrap(),
                     target: OfferTarget::static_child("childA".to_string()),
                     dependency_type: DependencyType::Strong,
@@ -1847,6 +1928,7 @@ mod tests {
                 OfferDecl::Protocol(OfferProtocolDecl {
                     source: OfferSource::static_child("childB".to_string()),
                     source_name: "childBToC".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "serviceSibling".parse().unwrap(),
                     target: OfferTarget::static_child("childC".to_string()),
                     dependency_type: DependencyType::Strong,
@@ -1904,6 +1986,7 @@ mod tests {
                 OfferDecl::Protocol(OfferProtocolDecl {
                     source: OfferSource::static_child("childA".to_string()),
                     source_name: "childBOffer".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "serviceSibling".parse().unwrap(),
                     target: OfferTarget::static_child("childC".to_string()),
                     dependency_type: DependencyType::Strong,
@@ -1912,6 +1995,7 @@ mod tests {
                 OfferDecl::Protocol(OfferProtocolDecl {
                     source: OfferSource::static_child("childB".to_string()),
                     source_name: "childBToC".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "serviceSibling".parse().unwrap(),
                     target: OfferTarget::static_child("childC".to_string()),
                     dependency_type: DependencyType::Strong,
@@ -1920,6 +2004,7 @@ mod tests {
                 OfferDecl::Protocol(OfferProtocolDecl {
                     source: OfferSource::static_child("childC".to_string()),
                     source_name: "childCToA".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "serviceSibling".parse().unwrap(),
                     target: OfferTarget::static_child("childA".to_string()),
                     dependency_type: weak_dep,
@@ -1976,6 +2061,7 @@ mod tests {
                 OfferDecl::Protocol(OfferProtocolDecl {
                     source: OfferSource::static_child("childA".to_string()),
                     source_name: "childBOffer".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "serviceSibling".parse().unwrap(),
                     target: OfferTarget::static_child("childB".to_string()),
                     dependency_type: DependencyType::Strong,
@@ -1984,6 +2070,7 @@ mod tests {
                 OfferDecl::Protocol(OfferProtocolDecl {
                     source: OfferSource::static_child("childB".to_string()),
                     source_name: "childBToC".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "serviceSibling".parse().unwrap(),
                     target: OfferTarget::static_child("childC".to_string()),
                     dependency_type: DependencyType::Strong,
@@ -2065,6 +2152,7 @@ mod tests {
                 OfferDecl::Protocol(OfferProtocolDecl {
                     source: OfferSource::static_child("childA".to_string()),
                     source_name: "childAService".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "childAService".parse().unwrap(),
                     target: OfferTarget::static_child("childB".to_string()),
                     dependency_type: DependencyType::Strong,
@@ -2073,6 +2161,7 @@ mod tests {
                 OfferDecl::Protocol(OfferProtocolDecl {
                     source: OfferSource::static_child("childA".to_string()),
                     source_name: "childAService".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "childAService".parse().unwrap(),
                     target: OfferTarget::static_child("childC".to_string()),
                     dependency_type: DependencyType::Strong,
@@ -2081,6 +2170,7 @@ mod tests {
                 OfferDecl::Protocol(OfferProtocolDecl {
                     source: OfferSource::static_child("childB".to_string()),
                     source_name: "childBService".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "childBService".parse().unwrap(),
                     target: OfferTarget::static_child("childD".to_string()),
                     dependency_type: DependencyType::Strong,
@@ -2089,6 +2179,7 @@ mod tests {
                 OfferDecl::Protocol(OfferProtocolDecl {
                     source: OfferSource::static_child("childC".to_string()),
                     source_name: "childAService".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "childAService".parse().unwrap(),
                     target: OfferTarget::static_child("childD".to_string()),
                     dependency_type: DependencyType::Strong,
@@ -2097,6 +2188,7 @@ mod tests {
                 OfferDecl::Protocol(OfferProtocolDecl {
                     source: OfferSource::static_child("childC".to_string()),
                     source_name: "childAService".parse().unwrap(),
+                    source_dictionary: None,
                     target_name: "childAService".parse().unwrap(),
                     target: OfferTarget::static_child("childE".to_string()),
                     dependency_type: DependencyType::Strong,
@@ -2147,6 +2239,7 @@ mod tests {
             offers: vec![OfferDecl::Protocol(OfferProtocolDecl {
                 source: OfferSource::static_child("childA".to_string()),
                 source_name: "childBOffer".parse().unwrap(),
+                source_dictionary: None,
                 target_name: "serviceSibling".parse().unwrap(),
                 target: OfferTarget::static_child("childB".to_string()),
                 dependency_type: DependencyType::Strong,
@@ -2187,6 +2280,7 @@ mod tests {
             offers: vec![OfferDecl::Service(OfferServiceDecl {
                 source: OfferSource::Collection("coll".parse().unwrap()),
                 source_name: "service_capability".parse().unwrap(),
+                source_dictionary: None,
                 target: OfferTarget::Child(ChildRef {
                     name: "static_child".into(),
                     collection: None,
@@ -2238,6 +2332,7 @@ mod tests {
             offers: vec![OfferDecl::Service(OfferServiceDecl {
                 source: OfferSource::Collection("coll".parse().unwrap()),
                 source_name: "service_capability".parse().unwrap(),
+                source_dictionary: None,
                 target: OfferTarget::Child(ChildRef {
                     name: "static_child".into(),
                     collection: None,
@@ -2300,6 +2395,7 @@ mod tests {
             offers: vec![OfferDecl::Service(OfferServiceDecl {
                 source: OfferSource::Collection(c1_name.parse().unwrap()),
                 source_name: cap_name.clone().parse().unwrap(),
+                source_dictionary: None,
                 target: OfferTarget::Collection(c2_name.parse().unwrap()),
                 target_name: cap_name.clone().parse().unwrap(),
                 source_instance_filter: None,
@@ -2362,6 +2458,7 @@ mod tests {
             offers: vec![OfferDecl::Protocol(OfferProtocolDecl {
                 source: OfferSource::static_child("childB".to_string()),
                 source_name: "childBOffer".parse().unwrap(),
+                source_dictionary: None,
                 target_name: "serviceSibling".parse().unwrap(),
                 target: OfferTarget::static_child("childA".to_string()),
                 dependency_type: DependencyType::Strong,
@@ -2386,6 +2483,7 @@ mod tests {
             offers: vec![OfferDecl::Protocol(OfferProtocolDecl {
                 source: OfferSource::Self_,
                 source_name: "serviceSelf".parse().unwrap(),
+                source_dictionary: None,
                 target_name: "serviceSelf".parse().unwrap(),
                 target: OfferTarget::static_child("childA".to_string()),
                 dependency_type: DependencyType::Weak,
@@ -2402,6 +2500,7 @@ mod tests {
             uses: vec![UseDecl::Protocol(UseProtocolDecl {
                 source: UseSource::Child("childA".to_string()),
                 source_name: "test.protocol".parse().unwrap(),
+                source_dictionary: None,
                 target_path: "/svc/test.protocol".parse().unwrap(),
                 dependency_type: DependencyType::Strong,
                 availability: Availability::Required,
@@ -2415,7 +2514,35 @@ mod tests {
                 child("childA") => hashset![ComponentRef::Self_],
             },
             process_component_dependencies(&FakeComponent::from_decl(decl))
-        )
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_use_runner_from_child() {
+        let decl = ComponentDecl {
+            children: vec![ChildDecl {
+                name: "childA".to_string(),
+                url: "ignored:///child".to_string(),
+                startup: fdecl::StartupMode::Lazy,
+                environment: None,
+                on_terminate: None,
+                config_overrides: None,
+            }],
+            uses: vec![UseDecl::Runner(UseRunnerDecl {
+                source: UseSource::Child("childA".to_string()),
+                source_name: "test.runner".parse().unwrap(),
+                source_dictionary: None,
+            })],
+            ..default_component_decl()
+        };
+
+        pretty_assertions::assert_eq!(
+            hashmap! {
+                ComponentRef::Self_ => hashset![],
+                child("childA") => hashset![ComponentRef::Self_],
+            },
+            process_component_dependencies(&FakeComponent::from_decl(decl))
+        );
     }
 
     #[fuchsia::test]
@@ -2424,6 +2551,7 @@ mod tests {
             offers: vec![OfferDecl::Protocol(OfferProtocolDecl {
                 source: OfferSource::Self_,
                 source_name: "serviceSelf".parse().unwrap(),
+                source_dictionary: None,
                 target_name: "serviceSelf".parse().unwrap(),
                 target: OfferTarget::static_child("childA".to_string()),
                 dependency_type: DependencyType::Weak,
@@ -2450,6 +2578,7 @@ mod tests {
             uses: vec![UseDecl::Protocol(UseProtocolDecl {
                 source: UseSource::Child("childA".to_string()),
                 source_name: "test.protocol".parse().unwrap(),
+                source_dictionary: None,
                 target_path: "/svc/test.protocol".parse().unwrap(),
                 dependency_type: DependencyType::Strong,
                 availability: Availability::Required,
@@ -2526,6 +2655,7 @@ mod tests {
             uses: vec![UseDecl::Protocol(UseProtocolDecl {
                 source: UseSource::Child("childA".to_string()),
                 source_name: "test.protocol".parse().unwrap(),
+                source_dictionary: None,
                 target_path: "/svc/test.protocol".parse().unwrap(),
                 dependency_type: DependencyType::Strong,
                 availability: Availability::Required,
@@ -2549,6 +2679,7 @@ mod tests {
             offers: vec![OfferDecl::Protocol(OfferProtocolDecl {
                 source: OfferSource::Self_,
                 source_name: "serviceSelf".parse().unwrap(),
+                source_dictionary: None,
                 target_name: "serviceSelf".parse().unwrap(),
                 target: OfferTarget::static_child("childA".to_string()),
                 dependency_type: DependencyType::Strong,
@@ -2565,6 +2696,7 @@ mod tests {
             uses: vec![UseDecl::Protocol(UseProtocolDecl {
                 source: UseSource::Child("childA".to_string()),
                 source_name: "test.protocol".parse().unwrap(),
+                source_dictionary: None,
                 target_path: "/svc/test.protocol".parse().unwrap(),
                 dependency_type: DependencyType::Weak,
                 availability: Availability::Required,
@@ -2587,6 +2719,7 @@ mod tests {
             offers: vec![OfferDecl::Protocol(OfferProtocolDecl {
                 source: OfferSource::Self_,
                 source_name: "serviceSelf".parse().unwrap(),
+                source_dictionary: None,
                 target_name: "serviceSelf".parse().unwrap(),
                 target: OfferTarget::static_child("childA".to_string()),
                 dependency_type: DependencyType::Weak,
@@ -2614,6 +2747,7 @@ mod tests {
                 UseDecl::Protocol(UseProtocolDecl {
                     source: UseSource::Child("childA".to_string()),
                     source_name: "test.protocol".parse().unwrap(),
+                    source_dictionary: None,
                     target_path: "/svc/test.protocol".parse().unwrap(),
                     dependency_type: DependencyType::Strong,
                     availability: Availability::Required,
@@ -2621,6 +2755,7 @@ mod tests {
                 UseDecl::Protocol(UseProtocolDecl {
                     source: UseSource::Child("childB".to_string()),
                     source_name: "test.protocol2".parse().unwrap(),
+                    source_dictionary: None,
                     target_path: "/svc/test.protocol2".parse().unwrap(),
                     dependency_type: DependencyType::Weak,
                     availability: Availability::Required,
@@ -2662,6 +2797,7 @@ mod tests {
             offers: vec![OfferDecl::Resolver(OfferResolverDecl {
                 source: OfferSource::static_child("childA".to_string()),
                 source_name: "resolver".parse().unwrap(),
+                source_dictionary: None,
                 target_name: "resolver".parse().unwrap(),
                 target: OfferTarget::static_child("childB".to_string()),
             })],
@@ -2687,7 +2823,8 @@ mod tests {
 
         // Register some actions, and get notifications. Use `register_inner` so we can register
         // the action without immediately running it.
-        let (task1, nf1) = action_set.register_inner(&component, ShutdownAction::new());
+        let (task1, nf1) =
+            action_set.register_inner(&component, ShutdownAction::new(ShutdownType::Instance));
         let (task2, nf2) = action_set.register_inner(&component, StopAction::new(false));
 
         drop(action_set);
@@ -2712,7 +2849,8 @@ mod tests {
 
         // Register some actions, and get notifications. Use `register_inner` so we can register
         // the action without immediately running it.
-        let (task1, nf1) = action_set.register_inner(&component, ShutdownAction::new());
+        let (task1, nf1) =
+            action_set.register_inner(&component, ShutdownAction::new(ShutdownType::Instance));
         let (task2, nf2) = action_set.register_inner(&component, StopAction::new(false));
         let (task3, nf3) = action_set.register_inner(&component, StopAction::new(false));
 
@@ -2745,12 +2883,12 @@ mod tests {
             .start_instance(&component.moniker, &StartReason::Eager)
             .await
             .expect("could not start a");
-        assert!(is_executing(&component).await);
+        assert!(component.is_started().await);
         let a_info = ComponentInfo::new(component.clone()).await;
 
         // Register shutdown action, and wait for it. Component should shut down (no more
         // `Execution`).
-        ActionSet::register(a_info.component.clone(), ShutdownAction::new())
+        ActionSet::register(a_info.component.clone(), ShutdownAction::new(ShutdownType::Instance))
             .await
             .expect("shutdown failed");
         a_info.check_is_shut_down(&test.runner).await;
@@ -2762,7 +2900,7 @@ mod tests {
             .expect_err("successfully bound to a after shutdown");
 
         // Shut down the component again. This succeeds, but has no additional effect.
-        ActionSet::register(a_info.component.clone(), ShutdownAction::new())
+        ActionSet::register(a_info.component.clone(), ShutdownAction::new(ShutdownType::Instance))
             .await
             .expect("shutdown failed");
         a_info.check_is_shut_down(&test.runner).await;
@@ -2811,10 +2949,10 @@ mod tests {
             .start_instance(&component_c.moniker, &StartReason::Eager)
             .await
             .expect("could not start c");
-        assert!(is_executing(&component_container).await);
-        assert!(is_executing(&component_a).await);
-        assert!(is_executing(&component_b).await);
-        assert!(is_executing(&component_c).await);
+        assert!(component_container.is_started().await);
+        assert!(component_a.is_started().await);
+        assert!(component_b.is_started().await);
+        assert!(component_c.is_started().await);
         assert!(has_child(&component_container, "coll:a").await);
         assert!(has_child(&component_container, "coll:b").await);
 
@@ -2825,9 +2963,12 @@ mod tests {
         // Register shutdown action, and wait for it. Components should shut down (no more
         // `Execution`). Also, the instances in the collection should have been destroyed because
         // they were transient.
-        ActionSet::register(component_container_info.component.clone(), ShutdownAction::new())
-            .await
-            .expect("shutdown failed");
+        ActionSet::register(
+            component_container_info.component.clone(),
+            ShutdownAction::new(ShutdownType::Instance),
+        )
+        .await
+        .expect("shutdown failed");
         component_container_info.check_is_shut_down(&test.runner).await;
         assert!(!has_child(&component_container_info.component, "coll:a").await);
         assert!(!has_child(&component_container_info.component, "coll:b").await);
@@ -2883,6 +3024,7 @@ mod tests {
                     .offer(cm_rust::OfferDecl::Protocol(OfferProtocolDecl {
                         source: OfferSource::Child(ChildRef { name: "c".into(), collection: None }),
                         source_name: "static_offer_source".parse().unwrap(),
+                        source_dictionary: None,
                         target: OfferTarget::Collection("coll".parse().unwrap()),
                         target_name: "static_offer_target".parse().unwrap(),
                         dependency_type: DependencyType::Strong,
@@ -2940,10 +3082,10 @@ mod tests {
             .start_instance(&component_c.moniker, &StartReason::Eager)
             .await
             .expect("could not start c");
-        assert!(is_executing(&component_container).await);
-        assert!(is_executing(&component_a).await);
-        assert!(is_executing(&component_b).await);
-        assert!(is_executing(&component_c).await);
+        assert!(component_container.is_started().await);
+        assert!(component_a.is_started().await);
+        assert!(component_b.is_started().await);
+        assert!(component_c.is_started().await);
         assert!(has_child(&component_container, "coll:a").await);
         assert!(has_child(&component_container, "coll:b").await);
 
@@ -2954,9 +3096,12 @@ mod tests {
         // Register shutdown action, and wait for it. Components should shut down (no more
         // `Execution`). Also, the instances in the collection should have been destroyed because
         // they were transient.
-        ActionSet::register(component_container_info.component.clone(), ShutdownAction::new())
-            .await
-            .expect("shutdown failed");
+        ActionSet::register(
+            component_container_info.component.clone(),
+            ShutdownAction::new(ShutdownType::Instance),
+        )
+        .await
+        .expect("shutdown failed");
         component_container_info.check_is_shut_down(&test.runner).await;
         assert!(!has_child(&component_container_info.component, "coll:a").await);
         assert!(!has_child(&component_container_info.component, "coll:b").await);
@@ -3010,11 +3155,11 @@ mod tests {
         let test = ActionsTest::new("root", components, None).await;
         let component_a = test.look_up(vec!["a"].try_into().unwrap()).await;
         let component_b = test.look_up(vec!["a", "b"].try_into().unwrap()).await;
-        assert!(!is_executing(&component_a).await);
-        assert!(!is_executing(&component_b).await);
+        assert!(!component_a.is_started().await);
+        assert!(!component_b.is_started().await);
 
         // Register shutdown action on "a", and wait for it.
-        ActionSet::register(component_a.clone(), ShutdownAction::new())
+        ActionSet::register(component_a.clone(), ShutdownAction::new(ShutdownType::Instance))
             .await
             .expect("shutdown failed");
         assert!(execution_is_shut_down(&component_a).await);
@@ -3022,7 +3167,7 @@ mod tests {
 
         // Now "a" is shut down. There should be no events though because the component was
         // never started.
-        ActionSet::register(component_a.clone(), ShutdownAction::new())
+        ActionSet::register(component_a.clone(), ShutdownAction::new(ShutdownType::Instance))
             .await
             .expect("shutdown failed");
         assert!(execution_is_shut_down(&component_a).await);
@@ -3055,10 +3200,10 @@ mod tests {
             .start_instance(&component_a.moniker, &StartReason::Eager)
             .await
             .expect("could not start a");
-        assert!(is_executing(&component_a).await);
+        assert!(component_a.is_started().await);
 
         // Register shutdown action on "a", and wait for it.
-        ActionSet::register(component_a.clone(), ShutdownAction::new())
+        ActionSet::register(component_a.clone(), ShutdownAction::new(ShutdownType::Instance))
             .await
             .expect("shutdown failed");
         assert!(execution_is_shut_down(&component_a).await);
@@ -3117,10 +3262,10 @@ mod tests {
             .start_instance(&component_a.moniker, &StartReason::Eager)
             .await
             .expect("could not start a");
-        assert!(is_executing(&component_a).await);
-        assert!(is_executing(&component_b).await);
-        assert!(is_executing(&component_c).await);
-        assert!(is_executing(&component_d).await);
+        assert!(component_a.is_started().await);
+        assert!(component_b.is_started().await);
+        assert!(component_c.is_started().await);
+        assert!(component_d.is_started().await);
 
         let component_a_info = ComponentInfo::new(component_a).await;
         let component_b_info = ComponentInfo::new(component_b).await;
@@ -3129,9 +3274,12 @@ mod tests {
 
         // Register shutdown action on "a", and wait for it. This should cause all components
         // to shut down, in bottom-up order.
-        ActionSet::register(component_a_info.component.clone(), ShutdownAction::new())
-            .await
-            .expect("shutdown failed");
+        ActionSet::register(
+            component_a_info.component.clone(),
+            ShutdownAction::new(ShutdownType::Instance),
+        )
+        .await
+        .expect("shutdown failed");
         component_a_info.check_is_shut_down(&test.runner).await;
         component_b_info.check_is_shut_down(&test.runner).await;
         component_c_info.check_is_shut_down(&test.runner).await;
@@ -3184,6 +3332,7 @@ mod tests {
                     .offer(OfferDecl::Protocol(OfferProtocolDecl {
                         source: OfferSource::static_child("d".to_string()),
                         source_name: "serviceD".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "serviceD".parse().unwrap(),
                         target: OfferTarget::static_child("c".to_string()),
                         dependency_type: DependencyType::Strong,
@@ -3192,6 +3341,7 @@ mod tests {
                     .offer(OfferDecl::Protocol(OfferProtocolDecl {
                         source: OfferSource::static_child("d".to_string()),
                         source_name: "serviceD".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "serviceD".parse().unwrap(),
                         target: OfferTarget::static_child("e".to_string()),
                         dependency_type: DependencyType::Strong,
@@ -3205,6 +3355,7 @@ mod tests {
                     .use_(UseDecl::Protocol(UseProtocolDecl {
                         source: UseSource::Parent,
                         source_name: "serviceD".parse().unwrap(),
+                        source_dictionary: None,
                         target_path: "/svc/serviceD".parse().unwrap(),
                         dependency_type: DependencyType::Strong,
                         availability: Availability::Required,
@@ -3221,6 +3372,7 @@ mod tests {
                     .expose(ExposeDecl::Protocol(ExposeProtocolDecl {
                         source: ExposeSource::Self_,
                         source_name: "serviceD".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "serviceD".parse().unwrap(),
                         target: ExposeTarget::Parent,
                         availability: cm_rust::Availability::Required,
@@ -3233,6 +3385,7 @@ mod tests {
                     .use_(UseDecl::Protocol(UseProtocolDecl {
                         source: UseSource::Parent,
                         source_name: "serviceD".parse().unwrap(),
+                        source_dictionary: None,
                         target_path: "/svc/serviceD".parse().unwrap(),
                         dependency_type: DependencyType::Strong,
                         availability: Availability::Required,
@@ -3252,11 +3405,11 @@ mod tests {
             .start_instance(&component_a.moniker, &StartReason::Eager)
             .await
             .expect("could not start a");
-        assert!(is_executing(&component_a).await);
-        assert!(is_executing(&component_b).await);
-        assert!(is_executing(&component_c).await);
-        assert!(is_executing(&component_d).await);
-        assert!(is_executing(&component_e).await);
+        assert!(component_a.is_started().await);
+        assert!(component_b.is_started().await);
+        assert!(component_c.is_started().await);
+        assert!(component_d.is_started().await);
+        assert!(component_e.is_started().await);
 
         let component_a_info = ComponentInfo::new(component_a).await;
         let component_b_info = ComponentInfo::new(component_b).await;
@@ -3266,9 +3419,12 @@ mod tests {
 
         // Register shutdown action on "a", and wait for it. This should cause all components
         // to shut down, in bottom-up order.
-        ActionSet::register(component_a_info.component.clone(), ShutdownAction::new())
-            .await
-            .expect("shutdown failed");
+        ActionSet::register(
+            component_a_info.component.clone(),
+            ShutdownAction::new(ShutdownType::Instance),
+        )
+        .await
+        .expect("shutdown failed");
         component_a_info.check_is_shut_down(&test.runner).await;
         component_b_info.check_is_shut_down(&test.runner).await;
         component_c_info.check_is_shut_down(&test.runner).await;
@@ -3333,6 +3489,7 @@ mod tests {
                     .offer(OfferDecl::Protocol(OfferProtocolDecl {
                         source: OfferSource::static_child("d".to_string()),
                         source_name: "serviceD".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "serviceD".parse().unwrap(),
                         target: OfferTarget::static_child("c".to_string()),
                         dependency_type: DependencyType::Strong,
@@ -3341,6 +3498,7 @@ mod tests {
                     .offer(OfferDecl::Protocol(OfferProtocolDecl {
                         source: OfferSource::static_child("d".to_string()),
                         source_name: "serviceD".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "serviceD".parse().unwrap(),
                         target: OfferTarget::static_child("e".to_string()),
                         dependency_type: DependencyType::Strong,
@@ -3349,6 +3507,7 @@ mod tests {
                     .offer(OfferDecl::Protocol(OfferProtocolDecl {
                         source: OfferSource::static_child("e".to_string()),
                         source_name: "serviceE".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "serviceE".parse().unwrap(),
                         target: OfferTarget::static_child("f".to_string()),
                         dependency_type: DependencyType::Strong,
@@ -3362,6 +3521,7 @@ mod tests {
                     .use_(UseDecl::Protocol(UseProtocolDecl {
                         source: UseSource::Parent,
                         source_name: "serviceD".parse().unwrap(),
+                        source_dictionary: None,
                         target_path: "/svc/serviceD".parse().unwrap(),
                         dependency_type: DependencyType::Strong,
                         availability: Availability::Required,
@@ -3378,6 +3538,7 @@ mod tests {
                     .expose(ExposeDecl::Protocol(ExposeProtocolDecl {
                         source: ExposeSource::Self_,
                         source_name: "serviceD".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "serviceD".parse().unwrap(),
                         target: ExposeTarget::Parent,
                         availability: cm_rust::Availability::Required,
@@ -3394,6 +3555,7 @@ mod tests {
                     .use_(UseDecl::Protocol(UseProtocolDecl {
                         source: UseSource::Parent,
                         source_name: "serviceD".parse().unwrap(),
+                        source_dictionary: None,
                         target_path: "/svc/serviceD".parse().unwrap(),
                         dependency_type: DependencyType::Strong,
                         availability: Availability::Required,
@@ -3401,6 +3563,7 @@ mod tests {
                     .expose(ExposeDecl::Protocol(ExposeProtocolDecl {
                         source: ExposeSource::Self_,
                         source_name: "serviceE".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "serviceE".parse().unwrap(),
                         target: ExposeTarget::Parent,
                         availability: cm_rust::Availability::Required,
@@ -3413,6 +3576,7 @@ mod tests {
                     .use_(UseDecl::Protocol(UseProtocolDecl {
                         source: UseSource::Parent,
                         source_name: "serviceE".parse().unwrap(),
+                        source_dictionary: None,
                         target_path: "/svc/serviceE".parse().unwrap(),
                         dependency_type: DependencyType::Strong,
                         availability: Availability::Required,
@@ -3439,12 +3603,12 @@ mod tests {
             .start_instance(&component_a.moniker, &StartReason::Eager)
             .await
             .expect("could not start a");
-        assert!(is_executing(&component_a).await);
-        assert!(is_executing(&component_b).await);
-        assert!(is_executing(&component_c).await);
-        assert!(is_executing(&component_d).await);
-        assert!(is_executing(&component_e).await);
-        assert!(is_executing(&component_f).await);
+        assert!(component_a.is_started().await);
+        assert!(component_b.is_started().await);
+        assert!(component_c.is_started().await);
+        assert!(component_d.is_started().await);
+        assert!(component_e.is_started().await);
+        assert!(component_f.is_started().await);
 
         let component_a_info = ComponentInfo::new(component_a).await;
         let component_b_info = ComponentInfo::new(component_b).await;
@@ -3455,9 +3619,12 @@ mod tests {
 
         // Register shutdown action on "a", and wait for it. This should cause all components
         // to shut down, in bottom-up order.
-        ActionSet::register(component_a_info.component.clone(), ShutdownAction::new())
-            .await
-            .expect("shutdown failed");
+        ActionSet::register(
+            component_a_info.component.clone(),
+            ShutdownAction::new(ShutdownType::Instance),
+        )
+        .await
+        .expect("shutdown failed");
         component_a_info.check_is_shut_down(&test.runner).await;
         component_b_info.check_is_shut_down(&test.runner).await;
         component_c_info.check_is_shut_down(&test.runner).await;
@@ -3542,6 +3709,7 @@ mod tests {
                     .offer(OfferDecl::Protocol(OfferProtocolDecl {
                         source: OfferSource::static_child("d".to_string()),
                         source_name: "serviceD".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "serviceD".parse().unwrap(),
                         target: OfferTarget::static_child("c".to_string()),
                         dependency_type: DependencyType::Strong,
@@ -3550,6 +3718,7 @@ mod tests {
                     .offer(OfferDecl::Protocol(OfferProtocolDecl {
                         source: OfferSource::static_child("d".to_string()),
                         source_name: "serviceD".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "serviceD".parse().unwrap(),
                         target: OfferTarget::static_child("e".to_string()),
                         dependency_type: DependencyType::Strong,
@@ -3558,6 +3727,7 @@ mod tests {
                     .offer(OfferDecl::Protocol(OfferProtocolDecl {
                         source: OfferSource::static_child("d".to_string()),
                         source_name: "serviceD".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "serviceD".parse().unwrap(),
                         target: OfferTarget::static_child("f".to_string()),
                         dependency_type: DependencyType::Strong,
@@ -3566,6 +3736,7 @@ mod tests {
                     .offer(OfferDecl::Protocol(OfferProtocolDecl {
                         source: OfferSource::static_child("e".to_string()),
                         source_name: "serviceE".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "serviceE".parse().unwrap(),
                         target: OfferTarget::static_child("f".to_string()),
                         dependency_type: DependencyType::Strong,
@@ -3579,6 +3750,7 @@ mod tests {
                     .use_(UseDecl::Protocol(UseProtocolDecl {
                         source: UseSource::Parent,
                         source_name: "serviceD".parse().unwrap(),
+                        source_dictionary: None,
                         target_path: "/svc/serviceD".parse().unwrap(),
                         dependency_type: DependencyType::Strong,
                         availability: Availability::Required,
@@ -3595,6 +3767,7 @@ mod tests {
                     .expose(ExposeDecl::Protocol(ExposeProtocolDecl {
                         source: ExposeSource::Self_,
                         source_name: "serviceD".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "serviceD".parse().unwrap(),
                         target: ExposeTarget::Parent,
                         availability: cm_rust::Availability::Required,
@@ -3611,6 +3784,7 @@ mod tests {
                     .use_(UseDecl::Protocol(UseProtocolDecl {
                         source: UseSource::Parent,
                         source_name: "serviceE".parse().unwrap(),
+                        source_dictionary: None,
                         target_path: "/svc/serviceE".parse().unwrap(),
                         dependency_type: DependencyType::Strong,
                         availability: Availability::Required,
@@ -3618,6 +3792,7 @@ mod tests {
                     .expose(ExposeDecl::Protocol(ExposeProtocolDecl {
                         source: ExposeSource::Self_,
                         source_name: "serviceE".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "serviceE".parse().unwrap(),
                         target: ExposeTarget::Parent,
                         availability: cm_rust::Availability::Required,
@@ -3630,6 +3805,7 @@ mod tests {
                     .use_(UseDecl::Protocol(UseProtocolDecl {
                         source: UseSource::Parent,
                         source_name: "serviceE".parse().unwrap(),
+                        source_dictionary: None,
                         target_path: "/svc/serviceE".parse().unwrap(),
                         dependency_type: DependencyType::Strong,
                         availability: Availability::Required,
@@ -3637,6 +3813,7 @@ mod tests {
                     .use_(UseDecl::Protocol(UseProtocolDecl {
                         source: UseSource::Parent,
                         source_name: "serviceD".parse().unwrap(),
+                        source_dictionary: None,
                         target_path: "/svc/serviceD".parse().unwrap(),
                         dependency_type: DependencyType::Strong,
                         availability: Availability::Required,
@@ -3663,12 +3840,12 @@ mod tests {
             .start_instance(&component_a.moniker, &StartReason::Eager)
             .await
             .expect("could not start a");
-        assert!(is_executing(&component_a).await);
-        assert!(is_executing(&component_b).await);
-        assert!(is_executing(&component_c).await);
-        assert!(is_executing(&component_d).await);
-        assert!(is_executing(&component_e).await);
-        assert!(is_executing(&component_f).await);
+        assert!(component_a.is_started().await);
+        assert!(component_b.is_started().await);
+        assert!(component_c.is_started().await);
+        assert!(component_d.is_started().await);
+        assert!(component_e.is_started().await);
+        assert!(component_f.is_started().await);
 
         let component_a_info = ComponentInfo::new(component_a).await;
         let component_b_info = ComponentInfo::new(component_b).await;
@@ -3679,9 +3856,12 @@ mod tests {
 
         // Register shutdown action on "a", and wait for it. This should cause all components
         // to shut down, in bottom-up order.
-        ActionSet::register(component_a_info.component.clone(), ShutdownAction::new())
-            .await
-            .expect("shutdown failed");
+        ActionSet::register(
+            component_a_info.component.clone(),
+            ShutdownAction::new(ShutdownType::Instance),
+        )
+        .await
+        .expect("shutdown failed");
         component_a_info.check_is_shut_down(&test.runner).await;
         component_b_info.check_is_shut_down(&test.runner).await;
         component_c_info.check_is_shut_down(&test.runner).await;
@@ -3756,6 +3936,7 @@ mod tests {
                     .offer(OfferDecl::Protocol(OfferProtocolDecl {
                         source: OfferSource::static_child("c".to_string()),
                         source_name: "serviceC".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "serviceC".parse().unwrap(),
                         target: OfferTarget::static_child("d".to_string()),
                         dependency_type: DependencyType::Strong,
@@ -3773,6 +3954,7 @@ mod tests {
                     .expose(ExposeDecl::Protocol(ExposeProtocolDecl {
                         source: ExposeSource::Self_,
                         source_name: "serviceC".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "serviceC".parse().unwrap(),
                         target: ExposeTarget::Parent,
                         availability: cm_rust::Availability::Required,
@@ -3785,6 +3967,7 @@ mod tests {
                     .use_(UseDecl::Protocol(UseProtocolDecl {
                         source: UseSource::Parent,
                         source_name: "serviceC".parse().unwrap(),
+                        source_dictionary: None,
                         target_path: "/svc/serviceC".parse().unwrap(),
                         dependency_type: DependencyType::Strong,
                         availability: Availability::Required,
@@ -3811,9 +3994,12 @@ mod tests {
 
         // Register shutdown action on "a", and wait for it. This should cause all components
         // to shut down, in bottom-up and dependency order.
-        ActionSet::register(component_a_info.component.clone(), ShutdownAction::new())
-            .await
-            .expect("shutdown failed");
+        ActionSet::register(
+            component_a_info.component.clone(),
+            ShutdownAction::new(ShutdownType::Instance),
+        )
+        .await
+        .expect("shutdown failed");
         component_a_info.check_is_shut_down(&test.runner).await;
         component_b_info.check_is_shut_down(&test.runner).await;
         component_c_info.check_is_shut_down(&test.runner).await;
@@ -3856,6 +4042,7 @@ mod tests {
                     .use_(UseDecl::Protocol(UseProtocolDecl {
                         source: UseSource::Child("b".to_string()),
                         source_name: "serviceC".parse().unwrap(),
+                        source_dictionary: None,
                         target_path: "/svc/serviceC".parse().unwrap(),
                         dependency_type: DependencyType::Strong,
                         availability: Availability::Required,
@@ -3872,6 +4059,7 @@ mod tests {
                     .expose(ExposeDecl::Protocol(ExposeProtocolDecl {
                         source: ExposeSource::Self_,
                         source_name: "serviceC".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "serviceC".parse().unwrap(),
                         target: ExposeTarget::Parent,
                         availability: cm_rust::Availability::Required,
@@ -3897,9 +4085,93 @@ mod tests {
 
         // Register shutdown action on "a", and wait for it. This should cause all components
         // to shut down.
-        ActionSet::register(component_a_info.component.clone(), ShutdownAction::new())
+        ActionSet::register(
+            component_a_info.component.clone(),
+            ShutdownAction::new(ShutdownType::Instance),
+        )
+        .await
+        .expect("shutdown failed");
+        component_a_info.check_is_shut_down(&test.runner).await;
+        component_b_info.check_is_shut_down(&test.runner).await;
+        component_c_info.check_is_shut_down(&test.runner).await;
+
+        {
+            let events: Vec<_> = test
+                .test_hook
+                .lifecycle()
+                .into_iter()
+                .filter(|e| match e {
+                    Lifecycle::Stop(_) => true,
+                    _ => false,
+                })
+                .collect();
+            let expected: Vec<_> = vec![
+                Lifecycle::Stop(vec!["a", "c"].try_into().unwrap()),
+                Lifecycle::Stop(vec!["a"].try_into().unwrap()),
+                Lifecycle::Stop(vec!["a", "b"].try_into().unwrap()),
+            ];
+            assert_eq!(events, expected);
+        }
+    }
+
+    /// Shut down `a`:
+    ///   a     (a uses runner from b)
+    ///  / \
+    /// b    c
+    /// In this case, c shuts down first, then a, then b.
+    #[fuchsia::test]
+    async fn test_shutdown_use_runner_from_child() {
+        let components = vec![
+            ("root", ComponentDeclBuilder::new().add_lazy_child("a").build()),
+            (
+                "a",
+                ComponentDeclBuilder::new()
+                    .add_eager_child("b")
+                    .add_eager_child("c")
+                    .use_(UseDecl::Runner(UseRunnerDecl {
+                        source: UseSource::Child("b".to_string()),
+                        source_name: "test.runner".parse().unwrap(),
+                        source_dictionary: None,
+                    }))
+                    .build(),
+            ),
+            (
+                "b",
+                ComponentDeclBuilder::new()
+                    .expose(ExposeDecl::Runner(ExposeRunnerDecl {
+                        source: ExposeSource::Self_,
+                        source_name: "test.runner".parse().unwrap(),
+                        source_dictionary: None,
+                        target_name: "test.runner".parse().unwrap(),
+                        target: ExposeTarget::Parent,
+                    }))
+                    .build(),
+            ),
+            ("c", ComponentDeclBuilder::new().build()),
+        ];
+        let test = ActionsTest::new("root", components, None).await;
+        let component_a = test.look_up(vec!["a"].try_into().unwrap()).await;
+        let component_b = test.look_up(vec!["a", "b"].try_into().unwrap()).await;
+        let component_c = test.look_up(vec!["a", "c"].try_into().unwrap()).await;
+
+        // Component startup was eager, so they should all have an `Execution`.
+        test.model
+            .start_instance(&component_a.moniker, &StartReason::Eager)
             .await
-            .expect("shutdown failed");
+            .expect("could not start a");
+
+        let component_a_info = ComponentInfo::new(component_a).await;
+        let component_b_info = ComponentInfo::new(component_b).await;
+        let component_c_info = ComponentInfo::new(component_c).await;
+
+        // Register shutdown action on "a", and wait for it. This should cause all components
+        // to shut down.
+        ActionSet::register(
+            component_a_info.component.clone(),
+            ShutdownAction::new(ShutdownType::Instance),
+        )
+        .await
+        .expect("shutdown failed");
         component_a_info.check_is_shut_down(&test.runner).await;
         component_b_info.check_is_shut_down(&test.runner).await;
         component_c_info.check_is_shut_down(&test.runner).await;
@@ -3940,6 +4212,7 @@ mod tests {
                     .use_(UseDecl::Protocol(UseProtocolDecl {
                         source: UseSource::Child("b".to_string()),
                         source_name: "serviceB".parse().unwrap(),
+                        source_dictionary: None,
                         target_path: "/svc/serviceB".parse().unwrap(),
                         dependency_type: DependencyType::Strong,
                         availability: Availability::Required,
@@ -3947,6 +4220,7 @@ mod tests {
                     .offer(OfferDecl::Protocol(OfferProtocolDecl {
                         source: OfferSource::static_child("c".to_string()),
                         source_name: "serviceC".parse().unwrap(),
+                        source_dictionary: None,
                         target: OfferTarget::static_child("b".to_string()),
                         target_name: "serviceB".parse().unwrap(),
                         dependency_type: DependencyType::Strong,
@@ -3964,6 +4238,7 @@ mod tests {
                     .expose(ExposeDecl::Protocol(ExposeProtocolDecl {
                         source: ExposeSource::Self_,
                         source_name: "serviceB".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "serviceB".parse().unwrap(),
                         target: ExposeTarget::Parent,
                         availability: cm_rust::Availability::Required,
@@ -3971,6 +4246,7 @@ mod tests {
                     .use_(UseDecl::Protocol(UseProtocolDecl {
                         source: UseSource::Parent,
                         source_name: "serviceC".parse().unwrap(),
+                        source_dictionary: None,
                         target_path: "/svc/serviceC".parse().unwrap(),
                         dependency_type: DependencyType::Strong,
                         availability: Availability::Required,
@@ -3987,6 +4263,7 @@ mod tests {
                     .expose(ExposeDecl::Protocol(ExposeProtocolDecl {
                         source: ExposeSource::Self_,
                         source_name: "serviceC".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "serviceC".parse().unwrap(),
                         target: ExposeTarget::Parent,
                         availability: cm_rust::Availability::Required,
@@ -4011,9 +4288,12 @@ mod tests {
 
         // Register shutdown action on "a", and wait for it. This should cause all components
         // to shut down.
-        ActionSet::register(component_a_info.component.clone(), ShutdownAction::new())
-            .await
-            .expect("shutdown failed");
+        ActionSet::register(
+            component_a_info.component.clone(),
+            ShutdownAction::new(ShutdownType::Instance),
+        )
+        .await
+        .expect("shutdown failed");
         component_a_info.check_is_shut_down(&test.runner).await;
         component_b_info.check_is_shut_down(&test.runner).await;
         component_c_info.check_is_shut_down(&test.runner).await;
@@ -4054,6 +4334,7 @@ mod tests {
                     .use_(UseDecl::Protocol(UseProtocolDecl {
                         source: UseSource::Child("b".to_string()),
                         source_name: "serviceC".parse().unwrap(),
+                        source_dictionary: None,
                         target_path: "/svc/serviceC".parse().unwrap(),
                         dependency_type: DependencyType::Weak,
                         availability: Availability::Required,
@@ -4070,6 +4351,7 @@ mod tests {
                     .expose(ExposeDecl::Protocol(ExposeProtocolDecl {
                         source: ExposeSource::Self_,
                         source_name: "serviceC".parse().unwrap(),
+                        source_dictionary: None,
                         target_name: "serviceC".parse().unwrap(),
                         target: ExposeTarget::Parent,
                         availability: cm_rust::Availability::Required,
@@ -4095,9 +4377,12 @@ mod tests {
 
         // Register shutdown action on "a", and wait for it. This should cause all components
         // to shut down.
-        ActionSet::register(component_a_info.component.clone(), ShutdownAction::new())
-            .await
-            .expect("shutdown failed");
+        ActionSet::register(
+            component_a_info.component.clone(),
+            ShutdownAction::new(ShutdownType::Instance),
+        )
+        .await
+        .expect("shutdown failed");
         component_a_info.check_is_shut_down(&test.runner).await;
         component_b_info.check_is_shut_down(&test.runner).await;
         component_c_info.check_is_shut_down(&test.runner).await;
@@ -4161,9 +4446,9 @@ mod tests {
             .start_instance(&component_b2.moniker, &StartReason::Eager)
             .await
             .expect("could not start b2");
-        assert!(is_executing(&component_a).await);
-        assert!(is_executing(&component_b).await);
-        assert!(is_executing(&component_b2).await);
+        assert!(component_a.is_started().await);
+        assert!(component_b.is_started().await);
+        assert!(component_b2.is_started().await);
 
         let component_a_info = ComponentInfo::new(component_a).await;
         let component_b_info = ComponentInfo::new(component_b).await;
@@ -4171,9 +4456,12 @@ mod tests {
 
         // Register shutdown action on "a", and wait for it. This should cause all components
         // to shut down, in bottom-up and dependency order.
-        ActionSet::register(component_a_info.component.clone(), ShutdownAction::new())
-            .await
-            .expect("shutdown failed");
+        ActionSet::register(
+            component_a_info.component.clone(),
+            ShutdownAction::new(ShutdownType::Instance),
+        )
+        .await
+        .expect("shutdown failed");
         component_a_info.check_is_shut_down(&test.runner).await;
         component_b_info.check_is_shut_down(&test.runner).await;
         component_b2_info.check_is_shut_down(&test.runner).await;
@@ -4226,10 +4514,10 @@ mod tests {
             .start_instance(&component_a.moniker, &StartReason::Eager)
             .await
             .expect("could not start a");
-        assert!(is_executing(&component_a).await);
-        assert!(is_executing(&component_b).await);
-        assert!(is_executing(&component_c).await);
-        assert!(is_executing(&component_d).await);
+        assert!(component_a.is_started().await);
+        assert!(component_b.is_started().await);
+        assert!(component_c.is_started().await);
+        assert!(component_d.is_started().await);
 
         let component_a_info = ComponentInfo::new(component_a).await;
         let component_b_info = ComponentInfo::new(component_b).await;
@@ -4248,9 +4536,12 @@ mod tests {
         // Register shutdown action on "a", and wait for it. "d" fails to shutdown, so "a" fails
         // too. The state of "c" is unknown at this point. The shutdown of stop targets occur
         // simultaneously. "c" could've shutdown before "d" or it might not have.
-        ActionSet::register(component_a_info.component.clone(), ShutdownAction::new())
-            .await
-            .expect_err("shutdown succeeded unexpectedly");
+        ActionSet::register(
+            component_a_info.component.clone(),
+            ShutdownAction::new(ShutdownType::Instance),
+        )
+        .await
+        .expect_err("shutdown succeeded unexpectedly");
         component_a_info.check_not_shut_down(&test.runner).await;
         component_b_info.check_not_shut_down(&test.runner).await;
         component_d_info.check_not_shut_down(&test.runner).await;
@@ -4262,9 +4553,12 @@ mod tests {
         }
 
         // Register shutdown action on "a" again which should succeed
-        ActionSet::register(component_a_info.component.clone(), ShutdownAction::new())
-            .await
-            .expect("shutdown failed");
+        ActionSet::register(
+            component_a_info.component.clone(),
+            ShutdownAction::new(ShutdownType::Instance),
+        )
+        .await
+        .expect("shutdown failed");
         component_a_info.check_is_shut_down(&test.runner).await;
         component_b_info.check_is_shut_down(&test.runner).await;
         component_c_info.check_is_shut_down(&test.runner).await;

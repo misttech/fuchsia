@@ -27,4 +27,10 @@
 
     // Wait for 5 minutes between successive pull samples.
     back_off_time_between_pull_samples_sec: 300,
+
+    // `false` is the default and legacy behavior.
+    utc_start_at_startup: false,
+
+    // `false` is the default.
+    early_exit: false,
 }

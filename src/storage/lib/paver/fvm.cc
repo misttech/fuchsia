@@ -35,12 +35,12 @@
 #include <safemath/safe_math.h>
 
 #include "pave-logging.h"
-#include "src/lib/storage/block_client/cpp/client.h"
-#include "src/lib/storage/fs_management/cpp/fvm.h"
 #include "src/lib/uuid/uuid.h"
 #include "src/security/lib/zxcrypt/client.h"
 #include "src/storage/fvm/format.h"
 #include "src/storage/fvm/fvm_sparse.h"
+#include "src/storage/lib/block_client/cpp/client.h"
+#include "src/storage/lib/fs_management/cpp/fvm.h"
 
 namespace paver {
 namespace {
@@ -278,7 +278,9 @@ zx::result<fidl::ClientEnd<fuchsia_device::Controller>> TryBindToFvmDriver(
     return zx::error(result.value().error_value());
   }
 
-  zx::result channel = device_watcher::RecursiveWaitForFile(dirfd(dir), kFvmName, timeout);
+  auto fvm_controller_path = std::string(kFvmName) + "/device_controller";
+  zx::result channel =
+      device_watcher::RecursiveWaitForFile(dirfd(dir), fvm_controller_path.c_str(), timeout);
   if (channel.is_error()) {
     ERROR("Error waiting for fvm driver to bind: %s\n", channel.status_string());
     return channel.take_error();

@@ -4,13 +4,18 @@
 
 use {
     crate::composite_node_spec_manager::CompositeNodeSpecManager,
+    crate::driver_loading_fuzzer::Session,
     crate::match_common::{node_to_device_property, node_to_device_property_no_autobind},
     crate::resolved_driver::{DriverPackageType, ResolvedDriver},
     bind::interpreter::decode_bind_rules::DecodedRules,
-    fidl_fuchsia_component_resolution as fresolution, fidl_fuchsia_driver_development as fdd,
-    fidl_fuchsia_driver_framework as fdf, fidl_fuchsia_driver_index as fdi,
+    fidl_fuchsia_component_resolution as fresolution, fidl_fuchsia_driver_framework as fdf,
+    fidl_fuchsia_driver_index as fdi, fuchsia_async as fasync,
     fuchsia_zircon::Status,
-    std::{cell::RefCell, collections::HashMap, collections::HashSet, ops::Deref, ops::DerefMut},
+    futures::StreamExt,
+    std::{
+        cell::RefCell, collections::HashMap, collections::HashSet, ops::Deref, ops::DerefMut,
+        rc::Rc,
+    },
 };
 
 fn ignore_peer_closed(err: fidl::Error) -> Result<(), fidl::Error> {
@@ -25,11 +30,11 @@ pub enum BaseRepo {
     // We know that Base won't update so we can store these as resolved.
     Resolved(Vec<ResolvedDriver>),
     // If it's not resolved we store the clients waiting for it.
-    NotResolved(Vec<fdi::DriverIndexWaitForBaseDriversResponder>),
+    NotResolved,
 }
 
 pub struct Indexer {
-    pub boot_repo: Vec<ResolvedDriver>,
+    pub boot_repo: RefCell<Vec<ResolvedDriver>>,
 
     // |base_repo| needs to be in a RefCell because it starts out NotResolved,
     // but will eventually resolve when base packages are available.
@@ -38,6 +43,9 @@ pub struct Indexer {
     // Manages the specs. This is wrapped in a RefCell since the
     // specs are added after the driver index server has started.
     pub composite_node_spec_manager: RefCell<CompositeNodeSpecManager>,
+
+    // Clients waiting for a response when a new boot/base driver is loaded.
+    driver_load_watchers: RefCell<Vec<fdi::DriverIndexWatchForDriverLoadResponder>>,
 
     // Used to determine if the indexer should return fallback drivers that match or
     // wait until based packaged drivers are indexed.
@@ -50,7 +58,7 @@ pub struct Indexer {
 
     // Contains the list of driver package urls that are disabled, which means that it should not
     // be returned as part of future match requests.
-    disabled_driver_urls: RefCell<HashSet<fidl_fuchsia_pkg::PackageUrl>>,
+    disabled_driver_urls: RefCell<HashSet<String>>,
 }
 
 impl Indexer {
@@ -60,13 +68,27 @@ impl Indexer {
         delay_fallback_until_base_drivers_indexed: bool,
     ) -> Indexer {
         Indexer {
-            boot_repo,
+            boot_repo: RefCell::new(boot_repo),
             base_repo: RefCell::new(base_repo),
             composite_node_spec_manager: RefCell::new(CompositeNodeSpecManager::new()),
+            driver_load_watchers: RefCell::new(vec![]),
             delay_fallback_until_base_drivers_indexed,
             ephemeral_drivers: RefCell::new(HashMap::new()),
             disabled_driver_urls: RefCell::new(HashSet::new()),
         }
+    }
+
+    pub fn start_driver_load(
+        self: Rc<Self>,
+        receiver: futures::channel::mpsc::UnboundedReceiver<Vec<ResolvedDriver>>,
+        session: Session,
+    ) {
+        fasync::Task::local(async move {
+            self.handle_add_boot_driver(receiver).await;
+        })
+        .detach();
+
+        fasync::Task::local(session.run()).detach();
     }
 
     fn include_fallback_drivers(&self) -> bool {
@@ -77,7 +99,48 @@ impl Indexer {
             }
     }
 
-    // Create a list of all drivers in the following priority:
+    // Checks if the given driver is in the disabled list.
+    fn is_disabled(&self, driver: &ResolvedDriver) -> bool {
+        if self.disabled_driver_urls.borrow().contains(driver.component_url.as_str()) {
+            return true;
+        }
+
+        false
+    }
+
+    pub fn watch_for_driver_load(&self, responder: fdi::DriverIndexWatchForDriverLoadResponder) {
+        self.driver_load_watchers.borrow_mut().push(responder);
+    }
+
+    pub async fn handle_add_boot_driver(
+        self: Rc<Self>,
+        mut receiver: futures::channel::mpsc::UnboundedReceiver<Vec<ResolvedDriver>>,
+    ) {
+        while let Some(drivers) = receiver.next().await {
+            let mut drivers_clone = drivers.clone();
+            self.boot_repo.borrow_mut().append(&mut drivers_clone);
+            tracing::info!("Loaded drivers into the driver index:");
+            for driver in drivers {
+                tracing::info!("     {}", driver.component_url);
+                let mut composite_node_spec_manager = self.composite_node_spec_manager.borrow_mut();
+                composite_node_spec_manager.new_driver_available(driver);
+            }
+
+            self.report_driver_load();
+        }
+    }
+
+    fn report_driver_load(&self) {
+        let mut driver_load_watchers = self.driver_load_watchers.borrow_mut();
+        while let Some(watcher) = driver_load_watchers.pop() {
+            match watcher.send().or_else(ignore_peer_closed) {
+                Err(e) => tracing::error!("Error sending to base_waiter: {:?}", e),
+                Ok(_) => continue,
+            }
+        }
+    }
+
+    // Create a list of all drivers (except for disabled drivers) in the following priority:
     // 1. Non-fallback boot drivers
     // 2. Non-fallback base drivers
     // 3. Fallback boot drivers
@@ -86,10 +149,12 @@ impl Indexer {
         let base_repo = self.base_repo.borrow();
         let base_repo_iter = match base_repo.deref() {
             BaseRepo::Resolved(drivers) => drivers.iter(),
-            BaseRepo::NotResolved(_) => [].iter(),
+            BaseRepo::NotResolved => [].iter(),
         };
+
+        let boot_repo = self.boot_repo.borrow();
         let (boot_drivers, base_drivers) = if self.include_fallback_drivers() {
-            (self.boot_repo.iter(), base_repo_iter.clone())
+            (boot_repo.iter(), base_repo_iter.clone())
         } else {
             ([].iter(), [].iter())
         };
@@ -98,27 +163,23 @@ impl Indexer {
 
         let ephemeral = self.ephemeral_drivers.borrow();
 
-        self.boot_repo
+        boot_repo
             .iter()
             .filter(|&driver| !driver.fallback)
             .chain(base_repo_iter.filter(|&driver| !driver.fallback))
             .chain(ephemeral.values())
             .chain(fallback_boot_drivers)
             .chain(fallback_base_drivers)
+            .filter(|&driver| !self.is_disabled(driver))
             .map(|driver| driver.clone())
             .collect::<Vec<_>>()
     }
 
-    pub fn load_base_repo(&self, base_repo: BaseRepo) {
-        if let BaseRepo::NotResolved(waiters) = self.base_repo.borrow_mut().deref_mut() {
-            while let Some(waiter) = waiters.pop() {
-                match waiter.send().or_else(ignore_peer_closed) {
-                    Err(e) => tracing::error!("Error sending to base_waiter: {:?}", e),
-                    Ok(_) => continue,
-                }
-            }
+    pub fn load_base_repo(&self, base_drivers: Vec<ResolvedDriver>) {
+        if let BaseRepo::NotResolved = self.base_repo.borrow_mut().deref_mut() {
+            self.report_driver_load();
         }
-        self.base_repo.replace(base_repo);
+        self.base_repo.replace(BaseRepo::Resolved(base_drivers));
     }
 
     pub fn match_driver(&self, args: fdi::MatchDriverArgs) -> fdi::DriverIndexMatchDriverResult {
@@ -141,8 +202,8 @@ impl Indexer {
         let driver_list = self.list_drivers();
 
         let (mut fallback, mut non_fallback): (
-            Vec<(bool, fdi::MatchedDriver)>,
-            Vec<(bool, fdi::MatchedDriver)>,
+            Vec<(bool, fdi::MatchDriverResult)>,
+            Vec<(bool, fdi::MatchDriverResult)>,
         ) = driver_list
             .iter()
             .filter_map(|driver| {
@@ -152,14 +213,7 @@ impl Indexer {
                             return None;
                         }
                     }
-                    if self
-                        .disabled_driver_urls
-                        .borrow()
-                        .iter()
-                        .any(|disabled| disabled.url.as_str() == driver.component_url.as_str())
-                    {
-                        return None;
-                    }
+
                     Some((driver.fallback, matched))
                 } else {
                     None
@@ -184,10 +238,7 @@ impl Indexer {
         }
     }
 
-    pub fn add_composite_node_spec(
-        &self,
-        spec: fdf::CompositeNodeSpec,
-    ) -> fdi::DriverIndexAddCompositeNodeSpecResult {
+    pub fn add_composite_node_spec(&self, spec: fdf::CompositeNodeSpec) -> Result<(), i32> {
         let driver_list = self.list_drivers();
         let composite_drivers = driver_list
             .iter()
@@ -218,13 +269,25 @@ impl Indexer {
         self.composite_node_spec_manager.borrow_mut().rebind(spec_name, composite_drivers)
     }
 
-    pub fn get_driver_info(&self, driver_filter: Vec<String>) -> Vec<fdd::DriverInfo> {
+    pub fn rebind_composites_with_driver(&self, driver: String) -> Result<(), i32> {
+        let driver_list = self.list_drivers();
+        let composite_drivers = driver_list
+            .iter()
+            .filter(|&driver| matches!(driver.bind_rules, DecodedRules::Composite(_)))
+            .collect::<Vec<_>>();
+        self.composite_node_spec_manager
+            .borrow_mut()
+            .rebind_composites_with_driver(driver, composite_drivers)
+    }
+
+    pub fn get_driver_info(&self, driver_filter: Vec<String>) -> Vec<fdf::DriverInfo> {
         let mut driver_info = Vec::new();
 
-        for driver in &self.boot_repo {
-            if driver_filter.len() == 0 || driver_filter.iter().any(|f| f == &driver.get_libname())
+        for driver in self.boot_repo.borrow().iter() {
+            if driver_filter.len() == 0
+                || driver_filter.iter().any(|f| f == driver.component_url.as_str())
             {
-                driver_info.push(driver.create_driver_info());
+                driver_info.push(driver.create_driver_info(true));
             }
         }
 
@@ -234,7 +297,7 @@ impl Indexer {
                 if driver_filter.len() == 0
                     || driver_filter.iter().any(|f| f == driver.component_url.as_str())
                 {
-                    driver_info.push(driver.create_driver_info());
+                    driver_info.push(driver.create_driver_info(true));
                 }
             }
         }
@@ -244,7 +307,7 @@ impl Indexer {
             if driver_filter.len() == 0
                 || driver_filter.iter().any(|f| f == driver.component_url.as_str())
             {
-                driver_info.push(driver.create_driver_info());
+                driver_info.push(driver.create_driver_info(true));
             }
         }
 
@@ -253,15 +316,15 @@ impl Indexer {
 
     pub async fn register_driver(
         &self,
-        pkg_url: fidl_fuchsia_pkg::PackageUrl,
+        driver_url: String,
         resolver: &fresolution::ResolverProxy,
     ) -> Result<(), i32> {
-        let component_url = url::Url::parse(&pkg_url.url).map_err(|e| {
-            tracing::error!("Couldn't parse driver url: {}: error: {}", &pkg_url.url, e);
+        let component_url = url::Url::parse(&driver_url).map_err(|e| {
+            tracing::error!("Couldn't parse driver url: {}: error: {}", &driver_url, e);
             Status::ADDRESS_UNREACHABLE.into_raw()
         })?;
 
-        for boot_driver in self.boot_repo.iter() {
+        for boot_driver in self.boot_repo.borrow().iter() {
             if boot_driver.component_url == component_url {
                 tracing::warn!("Driver being registered already exists in boot list.");
                 return Err(Status::ALREADY_EXISTS.into_raw());
@@ -305,11 +368,18 @@ impl Indexer {
         Ok(())
     }
 
-    pub fn disable_driver(&self, driver_url: fidl_fuchsia_pkg::PackageUrl) {
-        self.disabled_driver_urls.borrow_mut().insert(driver_url);
+    pub fn disable_driver(&self, driver_url: String) {
+        self.disabled_driver_urls.borrow_mut().insert(driver_url.clone());
+        let rebind_result = self.rebind_composites_with_driver(driver_url);
+        if let Err(e) = rebind_result {
+            tracing::error!(
+                "Failed to rebind composites with the driver being disabled: {}.",
+                Status::from_raw(e)
+            );
+        }
     }
 
-    pub fn re_enable_driver(&self, driver_url: fidl_fuchsia_pkg::PackageUrl) -> Result<(), i32> {
+    pub fn re_enable_driver(&self, driver_url: String) -> Result<(), i32> {
         let removed = self.disabled_driver_urls.borrow_mut().remove(&driver_url);
         if removed {
             Ok(())

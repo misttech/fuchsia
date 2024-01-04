@@ -4,299 +4,108 @@
 library fuchsia.driver.development;
 
 using fuchsia.component.decl;
-using fuchsia.device.manager;
 using fuchsia.driver.framework;
-using fuchsia.driver.index;
-using fuchsia.pkg;
+using fuchsia.driver.legacy;
 using fuchsia.url;
 using zx;
 
 const BINDING_RESULT_MAX uint8 = 10;
 
-type BindRulesBytecode = strict union {
-    /// Bind rules in the old bytecode format.
-    1: bytecode_v1
-            vector<fuchsia.device.manager.BindInstruction>:fuchsia.device.manager.BIND_RULES_INSTRUCTIONS_MAX;
+const NODE_MONIKER_MAX uint32 = 1024;
 
-    /// Bind rules in the new bytecode format.
-    2: bytecode_v2 vector<uint8>:MAX;
-};
+type V1DeviceInfo = table {
+    /// The topological path of the driver.
+    1: topological_path string:fuchsia.driver.legacy.DEVICE_PATH_MAX;
 
-type DriverInfo = table {
     /// Path to the driver shared library.
-    1: libname string:fuchsia.device.manager.DEVICE_PATH_MAX;
+    2: bound_driver_libname string:fuchsia.driver.legacy.DEVICE_PATH_MAX;
 
-    /// Name of the driver, taken from the first field of the `ZIRCON_DRIVER`
-    /// macro in the driver.
-    2: name string:MAX;
+    /// Properties of the device.
+    3: property_list fuchsia.driver.legacy.DevicePropertyList;
 
-    /// URL of the driver component's manifest. This will only be populated if
-    /// the driver is a component.
-    3: url string:fuchsia.url.MAX_URL_LENGTH;
+    /// Tracks the state of the device.
+    4: flags fuchsia.driver.legacy.DeviceFlags;
 
-    /// Bind rules which declare set of constraints to evaluate in order to
-    /// determine whether the driver indexer should bind this driver to a
-    /// device.
-    4: bind_rules BindRulesBytecode;
+    /// Banjo protocol ID
+    5: protocol_id uint32;
 
-    /// Which type of package this driver is in.
-    5: package_type fuchsia.driver.index.DriverPackageType;
-
-    /// Hash of the package the driver belongs to.
-    6: package_hash fuchsia.pkg.BlobId;
-
-    /// Device categories
-    7: device_categories vector<fuchsia.driver.index.DeviceCategory>:MAX;
+    /// Banjo protocol name
+    6: protocol_name string:MAX;
 };
 
-type DeviceFlags = strict bits : uint32 {
-    //// This device is never destroyed
-    IMMORTAL = 0x0001;
-    /// This device requires that children are created in a
-    /// new driver_host attached to a proxy device
-    MUST_ISOLATE = 0x0002;
+type V2NodeInfo = table {
+    /// The collection-relative moniker of the node.
+    1: moniker string:NODE_MONIKER_MAX;
 
-    /// This device is bound and not eligible for binding
-    /// again until unbound.  Not allowed on ALLOW_MULTI_COMPOSITE ctx.
-    BOUND = 0x0008;
-
-    /// Device has been remove()'d
-    DEAD = 0x0010;
-
-    /// This device is a fragment of a composite device and
-    /// can be part of multiple composite devices.
-    ALLOW_MULTI_COMPOSITE = 0x0020;
-
-    /// Device is a proxy -- its "parent" is the device it's
-    /// a proxy to.
-    PROXY = 0x0040;
-
-    /// Device is not visible in devfs or bindable.
-    /// Devices may be created in this state, but may not
-    /// return to this state once made visible.
-    INVISIBLE = 0x0080;
-
-    /// Device should not go through auto-bind process.
-    SKIP_AUTOBIND = 0x0100;
-};
-
-type DeviceInfo = table {
-    /// (DFv1/DFv2) Unique ID identifying the device.
-    1: id uint64;
-
-    /// (DFv1/DFv2) List of ids representing parents. If more than one, this
-    /// device is a composite device node.
-    2: parent_ids vector<uint64>:MAX;
-
-    /// (DFv1/DFv2) List of ids representing children.
-    3: child_ids vector<uint64>:MAX;
-
-    /// (DFv1/DFv2) The process KOID of the driver host the driver resides
-    /// within.
-    4: driver_host_koid zx.Koid;
-
-    /// (DFv1) The topological path of the driver.
-    5: topological_path string:fuchsia.device.manager.DEVICE_PATH_MAX;
-
-    /// (DFv1) Path to the driver shared library.
-    6: bound_driver_libname string:fuchsia.device.manager.DEVICE_PATH_MAX;
-
-    /// (DFv2) URL to the driver component manifest
-    7: bound_driver_url string:fuchsia.url.MAX_URL_LENGTH;
-
-    /// (DFv1) Properties of the device.
-    8: property_list fuchsia.device.manager.DevicePropertyList;
-
-    /// (DFv1) Tracks the state of the device.
-    9: flags DeviceFlags;
-
-    /// (DFv2) The collection-relative moniker of the node.
-   10: moniker string:fuchsia.device.manager.DEVICE_PATH_MAX;
-
-    /// (DFv2) Properties of the node.
-   11: node_property_list
+    /// Properties of the node.
+    2: node_property_list
             vector<fuchsia.driver.framework.NodeProperty>:fuchsia.driver.framework.MAX_PROPERTY_COUNT;
 
-    /// (DFv2): Component offers to the node.
-   12: offer_list vector<fuchsia.component.decl.Offer>:MAX;
+    /// Component offers to the node.
+    3: offer_list vector<fuchsia.component.decl.Offer>:MAX;
+};
 
-    /// (DFv1): Banjo protocol ID
-   13: protocol_id uint32;
+type VersionedNodeInfo = flexible union {
+    1: v1 V1DeviceInfo;
+    2: v2 V2NodeInfo;
+};
 
-    /// (DFv1): Banjo protocol name
-   14: protocol_name string:MAX;
+type NodeInfo = table {
+    /// Unique ID identifying the node.
+    1: id uint64;
+
+    /// List of ids representing parents. If more than one, this is a composite node.
+    2: parent_ids vector<uint64>:MAX;
+
+    /// List of ids representing children.
+    3: child_ids vector<uint64>:MAX;
+
+    /// The process KOID of the driver host the driver resides within.
+    4: driver_host_koid zx.Koid;
+
+    /// URL to the driver component manifest
+    5: bound_driver_url fuchsia.url.Url;
+
+    /// Information specific to the driver framework version in use.
+    6: versioned_info VersionedNodeInfo;
 };
 
 /// Information about a node binding to either a driver or a composite.
 type NodeBindingInfo = table {
     /// Full topological name of the node.
-    1: node_name string:fuchsia.device.manager.DEVICE_PATH_MAX;
+    1: node_name string:NODE_MONIKER_MAX;
     /// This is the component url for the driver that bound to the node.
-    /// If this is present, then |composite_specs| and |legacy_composites| must not be.
-    2: driver_url string:fuchsia.url.MAX_URL_LENGTH;
-    /// The composite specs that this node binded to.
-    /// Can be present alongside |legacy_composites|, but not |driver_url|.
-    3: composite_specs vector<fuchsia.driver.index.MatchedCompositeNodeSpecInfo>:MAX;
-    /// The legacy composites that this node binded to.
-    /// Can be present alongside |composite_specs|, but not |driver_url|.
-    4: legacy_composites vector<CompositeInfo>:MAX;
+    /// If this is present, then |composite_parents| and |legacy_composite_parents| must not be.
+    2: driver_url fuchsia.url.Url;
+    /// The composite parents that this node binded to.
+    /// Can be present alongside |legacy_composite_parents|, but not |driver_url|.
+    3: composite_parents vector<fuchsia.driver.framework.CompositeParent>:MAX;
+    /// The legacy composite parents that this node binded to.
+    /// Can be present alongside |composite_parents|, but not |driver_url|.
+    4: legacy_composite_parents vector<fuchsia.driver.legacy.CompositeParent>:MAX;
 };
 
-closed protocol DriverInfoIterator {
-    /// Return 0 drivers when no more entries left.
-    strict GetNext() -> (struct {
-        drivers vector<DriverInfo>:MAX;
-    });
+/// Contains information for either a composite or legacy composite.
+type CompositeInfo = strict union {
+    1: legacy_composite fuchsia.driver.legacy.CompositeInfo;
+    2: composite fuchsia.driver.framework.CompositeInfo;
 };
 
-/// Information for a composite node's fragment in DFv1.
-type LegacyCompositeFragmentInfo = table {
-    1: name string:MAX;
-    2: bind_rules
-            vector<fuchsia.device.manager.BindInstruction>:fuchsia.device.manager.BIND_RULES_INSTRUCTIONS_MAX;
-    3: device string:MAX;
-};
+/// Contains information for a composite node.
+type CompositeNodeInfo = table {
+    /// The topological paths of the parent nodes of this composite, ordered by index.
+    1: parent_topological_paths vector<string:<MAX, optional>>:MAX;
 
-/// Information for a legacy composite node in DFv1.
-type LegacyCompositeNodeInfo = table {
-    /// A list of composite fragment information.
-    1: fragments vector<LegacyCompositeFragmentInfo>:MAX;
+    /// The topological path of the created composite node. Empty if not created.
+    2: topological_path string:MAX;
 
-    /// The node properties in the composite node.
-    2: properties
-            vector<fuchsia.driver.framework.NodeProperty>:fuchsia.driver.framework.MAX_PROPERTY_COUNT;
-};
-
-/// Information for a composite node's parent.
-type CompositeParentNodeInfo = table {
-    /// The name of the parent. Provided by the composite driver.
-    1: name string:MAX;
-
-    /// The topological path of the node that parents the composite node.
-    /// Only set if available.
-    2: device string:MAX;
-};
-
-
-/// Contains information for the composite node.
-type CompositeNodeInfo = strict union {
-    1: legacy LegacyCompositeNodeInfo;
-    2: parents vector<CompositeParentNodeInfo>:MAX;
-};
-
-/// Information for a composite node.
-type CompositeInfo = table {
-    /// The name of the composite node.
-    1: name string:MAX;
-
-    /// The url of the driver matched to the composite node.
-    2: driver string:MAX;
-
-    /// The topological of the composite node. Empty if a composite node wasn't created.
-    3: topological_path string:MAX;
-
-    /// The primary node index.
-    4: primary_index uint32;
-
-    /// Information on the composite node.
-    5: node_info CompositeNodeInfo;
-};
-
-/// Used to page through a CompositeList.
-closed protocol CompositeInfoIterator {
-    /// Returns up to 100 entries at a time. Return empty when no more
-    /// composites are left.
-    strict GetNext() -> (struct {
-        composites vector<CompositeInfo>:MAX;
-    });
-};
-
-type CompositeNodeSpecInfo = table {
-    /// The name of the node group.
-    1: name string:MAX;
-
-    /// The url of the driver matched to the spec. Empty if no driver has matched
-    /// to this node group.
-    2: driver string:MAX;
-
-    /// The primary node index, this comes from the matched driver. Empty if no driver has matched
-    /// to this node group.
-    3: primary_index uint32;
-
-    /// A list of all the parents names for the composite node. Empty if no driver has matched to
-    /// this composite node spec. These are ordered according to index.
-    4: parent_names vector<string:MAX>:MAX;
-
-    /// The nodes in the node group.
-    5: parents vector<fuchsia.driver.framework.ParentSpec>:MAX;
-};
-
-closed protocol CompositeNodeSpecIterator {
-    /// Return empty when no more node groups are left.
-    strict GetNext() -> (struct {
-        specs vector<CompositeNodeSpecInfo>:MAX;
-    });
-};
-
-/// Interface for developing and debugging drivers.
-/// This interface should only be used for development and disabled in release builds.
-@discoverable
-closed protocol DriverIndex {
-    /// Returns a list of all drivers that are known to the system.
-    /// If a |driver_filter| is provided, the returned list will be filtered to
-    /// only include drivers specified in the filter.
-    ///
-    /// |iterator| is closed with following epitaphs on error:
-    /// ZX_ERR_NOT_FOUND indicates that there is no driver matching the given path for at least
-    /// one driver in |driver_filter|.
-    /// ZX_ERR_BUFFER_TOO_SMALL indicates that the driver's bind program is longer than the
-    /// maximum number of instructions (BIND_PROGRAM_INSTRUCTIONS_MAX).
-    strict GetDriverInfo(resource struct {
-        driver_filter vector<string:MAX>:MAX;
-        iterator server_end:DriverInfoIterator;
-    });
-
-    /// Returns a list of all composite node specs that are known to the system.
-    /// If a |name_filter| is provided, the returned list will only include 1 spec,
-    /// the one with that exact name.
-    ///
-    /// |iterator| is closed with following epitaphs on error:
-    /// ZX_ERR_NOT_FOUND indicates that there are no specs or if a |name_filter| is provided,
-    /// that there are no specs with that name.
-    strict GetCompositeNodeSpecs(resource struct {
-        name_filter string:<MAX, optional>;
-        iterator server_end:CompositeNodeSpecIterator;
-    });
-
-    /// Disable the given driver url from being returned as a match. When this is called,
-    /// subsequent |fuchsia.driver.index.DriverIndex::MatchDriver| requests will not consider
-    /// the driver with the given url.
-    /// This can be used for all driver package types. The given driver url does not
-    /// have to match existing drivers, it will apply even if the driver appears afterwards,
-    /// for example through a |fuchsia.driver.registrar.Register| operation.
-    strict DisableMatchWithDriverUrl(struct {
-        driver_url fuchsia.pkg.PackageUrl;
-    }) -> ();
-
-    /// Re-enables a given driver url, that was previously disabled with
-    /// |DisableMatchWithDriverUrl|, for matching again. This must be called for driver urls that
-    /// were previously disabled.
-    /// Will return ZX_ERR_NOT_FOUND if the `driver_url` was not previously disabled.
-    strict ReEnableMatchWithDriverUrl(struct {
-        driver_url fuchsia.pkg.PackageUrl;
-    }) -> () error zx.Status;
-};
-
-closed protocol DeviceInfoIterator {
-    /// Return 0 devices when no more entries left.
-    strict GetNext() -> (struct {
-        drivers vector<DeviceInfo>:MAX;
-    });
+    // Information about the composite.
+    3: composite CompositeInfo;
 };
 
 type TestNodeAddArgs = table {
     /// Name of the node.
-    1: name string:fuchsia.device.manager.DEVICE_PATH_MAX;
+    1: name string:NODE_MONIKER_MAX;
 
     /// Properties of the node.
     2: properties
@@ -315,56 +124,133 @@ type RematchFlags = flexible bits : uint32 {
     /// it is a colocated parent.
     NON_REQUESTED = 0x0002;
     /// Rematch nodes that are legacy composite nodes.
-    /// This is currently not supported and will return ZX_ERR_NOT_SUPPORTED when used.
     LEGACY_COMPOSITE = 0x0004;
     /// Rematch nodes that are created as part of a completed composite spec.
-    /// This is currently not supported and will return ZX_ERR_NOT_SUPPORTED when used.
     COMPOSITE_SPEC = 0x0008;
+};
+
+closed protocol DriverInfoIterator {
+    /// Return empty when no more entries left.
+    strict GetNext() -> (struct {
+        drivers vector<fuchsia.driver.framework.DriverInfo>:MAX;
+    });
+};
+
+/// Used to page through a CompositeList.
+closed protocol CompositeInfoIterator {
+    /// Returns up to 100 entries at a time. Return empty when no more
+    /// composites are left.
+    strict GetNext() -> (struct {
+        composites vector<CompositeNodeInfo>:MAX;
+    });
+};
+
+closed protocol CompositeNodeSpecIterator {
+    /// Return empty when no more node groups are left.
+    strict GetNext() -> (struct {
+        specs vector<fuchsia.driver.framework.CompositeInfo>:MAX;
+    });
+};
+
+closed protocol NodeInfoIterator {
+    /// Return empty when no more entries left.
+    strict GetNext() -> (struct {
+        drivers vector<NodeInfo>:MAX;
+    });
 };
 
 /// Interface for developing and debugging drivers.
 /// This interface should only be used for development and disabled in release builds.
 @discoverable
-closed protocol DriverDevelopment {
+open protocol DriverIndex {
+    /// Returns a list of all drivers that are known to the system.
+    /// If a |driver_filter| is provided, the returned list will be filtered to
+    /// only include drivers specified in the filter.
+    ///
+    /// |iterator| is closed with following epitaphs on error:
+    /// ZX_ERR_NOT_FOUND indicates that there is no driver matching the given path for at least
+    /// one driver in |driver_filter|.
+    /// ZX_ERR_BUFFER_TOO_SMALL indicates that the driver's bind program is longer than the
+    /// maximum number of instructions (BIND_PROGRAM_INSTRUCTIONS_MAX).
+    flexible GetDriverInfo(resource struct {
+        driver_filter vector<string:MAX>:MAX;
+        iterator server_end:DriverInfoIterator;
+    });
+
+    /// Returns a list of all composite node specs that are known to the system.
+    /// If a |name_filter| is provided, the returned list will only include 1 spec,
+    /// the one with that exact name.
+    ///
+    /// |iterator| is closed with following epitaphs on error:
+    /// ZX_ERR_NOT_FOUND indicates that there are no specs or if a |name_filter| is provided,
+    /// that there are no specs with that name.
+    flexible GetCompositeNodeSpecs(resource struct {
+        name_filter string:<MAX, optional>;
+        iterator server_end:CompositeNodeSpecIterator;
+    });
+
+    /// Disable the given driver url from being returned as a match. When this is called,
+    /// subsequent |fuchsia.driver.index.DriverIndex::MatchDriver| requests will not consider
+    /// the driver with the given url.
+    /// This can be used for all driver package types. The given driver url does not
+    /// have to match existing drivers, it will apply even if the driver appears afterwards,
+    /// for example through a |fuchsia.driver.registrar.Register| operation.
+    flexible DisableMatchWithDriverUrl(struct {
+        driver_url fuchsia.url.Url;
+    }) -> ();
+
+    /// Re-enables a given driver url, that was previously disabled with
+    /// |DisableMatchWithDriverUrl|, for matching again. This must be called for driver urls that
+    /// were previously disabled.
+    /// Will return ZX_ERR_NOT_FOUND if the `driver_url` was not previously disabled.
+    flexible ReEnableMatchWithDriverUrl(struct {
+        driver_url fuchsia.url.Url;
+    }) -> () error zx.Status;
+};
+
+/// Interface for developing and debugging drivers.
+/// This interface should only be used for development and disabled in release builds.
+@discoverable
+open protocol DriverDevelopment {
     compose DriverIndex;
 
-    /// Restarts all driver hosts containing the driver specified by `driver path`, and returns the
-    /// number of driver hosts that were restarted.
-    strict RestartDriverHosts(struct {
-        driver_path string:fuchsia.device.manager.DEVICE_PATH_MAX;
+    /// Restarts all driver hosts containing the driver specified by the `driver_url` component url,
+    /// and returns the number of driver hosts that were restarted.
+    flexible RestartDriverHosts(struct {
+        driver_url fuchsia.url.Url;
         rematch_flags RematchFlags;
     }) -> (struct {
         count uint32;
     }) error zx.Status;
 
-    /// Returns the list of devices that are running on the system.
+    /// Returns the list of nodes that are running on the system.
     ///
-    /// If a |device_filter| is provided, the returned list will be filtered to
-    /// only include devices specified in the filter. If |exact_match| is true,
-    /// then the filter must exactly match a device's topological path;
+    /// If a |node_filter| is provided, the returned list will be filtered to
+    /// only include nodes specified in the filter. If |exact_match| is true,
+    /// then the filter must exactly match a node's topological path;
     /// otherwise, it performs a substring match. The list will be empty if no
-    /// devices match the filter.
+    /// nodes match the filter.
     ///
     /// |iterator| is closed with following epitaphs on error:
     /// ZX_ERR_BAD_PATH indicates that the given path is not valid.
     /// ZX_ERR_BUFFER_TOO_SMALL indicates either that the given path is too long,
-    /// or that the device has more than the maximum number of properties (PROPERTIES_MAX).
-    strict GetDeviceInfo(resource struct {
-        device_filter vector<string:MAX>:MAX;
-        iterator server_end:DeviceInfoIterator;
+    /// or that the node has more than the maximum number of properties (PROPERTIES_MAX).
+    flexible GetNodeInfo(resource struct {
+        node_filter vector<string:MAX>:MAX;
+        iterator server_end:NodeInfoIterator;
         exact_match bool;
     });
 
     /// Returns the list of composites in the system. This includes composites 
     /// that are not yet assembled and added into the node topology.
-    strict GetCompositeInfo(resource struct {
+    flexible GetCompositeInfo(resource struct {
         iterator server_end:CompositeInfoIterator;
     });
 
 
     /// (DFv2) Attempts to bind all unbound nodes in the topology.
     /// Returns new successful binds.
-    strict BindAllUnboundNodes() -> (struct {
+    flexible BindAllUnboundNodes() -> (struct {
         /// List of new bindings that happened as a result of this.
         binding_result vector<NodeBindingInfo>:BINDING_RESULT_MAX;
     }) error zx.Status;
@@ -373,18 +259,18 @@ closed protocol DriverDevelopment {
     // used.
     // Returns a boolean value of whether or not driver framework version 2 is
     // enabled.
-    strict IsDfv2() -> (struct {
+    flexible IsDfv2() -> (struct {
         response bool;
     });
 
     /// (DFv2) Adds test node under the root node.
-    strict AddTestNode(struct {
+    flexible AddTestNode(struct {
         args TestNodeAddArgs;
     }) -> () error fuchsia.driver.framework.NodeError;
 
     /// (DFv2) Removes the test node. The node is removed asynchronously and is
     /// not guaranteed to be removed by the time this returns.
-    strict RemoveTestNode(struct {
-        name string:fuchsia.device.manager.DEVICE_PATH_MAX;
+    flexible RemoveTestNode(struct {
+        name string:NODE_MONIKER_MAX;
     }) -> () error zx.Status;
 };

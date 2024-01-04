@@ -1,0 +1,28 @@
+# Copyright 2023 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/assembly/board_configuration.gni")
+
+board_configuration("qemu-arm64") {
+  provided_features = [ "fuchsia::driver_framework_v2_support" ]
+
+  input_bundles = [
+    "//boards/arm64:main_bundle",
+    "//boards/emulation/virtio",
+  ]
+
+  filesystems = {
+    fvm = {
+      slice_size = 8388608
+      blobfs = {
+        size_checker_maximum_bytes = 5216665600
+      }
+      sparse_output = {
+      }
+    }
+    fxfs = {
+      size_checker_maximum_bytes = 5216665600
+    }
+  }
+}

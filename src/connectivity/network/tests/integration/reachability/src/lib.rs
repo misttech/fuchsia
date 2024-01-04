@@ -83,7 +83,7 @@ impl InterfaceConfig {
             addr_v4: net_ip_v4!("192.168.1.2"),
             gateway_v6: net_ip_v6!("fe81::1"),
             addr_v6: net_ip_v6!("fe81::2"),
-            gateway_mac: net_mac!("03:00:00:00:00:01"),
+            gateway_mac: net_mac!("04:00:00:00:00:01"),
             metric,
         }
     }
@@ -91,6 +91,7 @@ impl InterfaceConfig {
 
 /// Try to parse `frame` as an ICMP or ICMPv6 Echo Request message, and if successful returns the
 /// Echo Reply message that the netstack would expect as a reply.
+#[track_caller]
 fn reply_if_echo_request(
     frame: Vec<u8>,
     want: State,
@@ -116,7 +117,7 @@ fn reply_if_echo_request(
             .then(|| {
                 icmp_body
                     .into_serializer()
-                    .encapsulate(IcmpPacketBuilder::<net_types::ip::Ipv4, &[u8], _>::new(
+                    .encapsulate(IcmpPacketBuilder::<net_types::ip::Ipv4, _>::new(
                         dst_ip,
                         src_ip,
                         IcmpUnusedCode,
@@ -143,7 +144,7 @@ fn reply_if_echo_request(
             error: packet_formats::error::ParseError::NotExpected,
         }) => {}
         Err(e) => {
-            panic!("parse packet as ICMPv4 error: {}", e);
+            panic!("parse packet as ICMPv4 error: {}\n{:02x?}", e, frame);
         }
     }
 
@@ -166,7 +167,7 @@ fn reply_if_echo_request(
             .then(|| {
                 icmp_body
                     .into_serializer()
-                    .encapsulate(IcmpPacketBuilder::<net_types::ip::Ipv6, &[u8], _>::new(
+                    .encapsulate(IcmpPacketBuilder::<net_types::ip::Ipv6, _>::new(
                         dst_ip,
                         src_ip,
                         IcmpUnusedCode,
@@ -193,7 +194,7 @@ fn reply_if_echo_request(
             error: packet_formats::error::ParseError::NotExpected,
         }) => {}
         Err(e) => {
-            panic!("parse packet as ICMPv6 error: {}", e);
+            panic!("parse packet as ICMPv6 error: {}\n{:02x?}", e, frame);
         }
     }
     None
@@ -756,22 +757,20 @@ impl<'a> ReachabilityTestHelper<'a> {
         let snapshot_fut = self.monitor.watch();
         futures::pin_mut!(snapshot_fut);
 
-        loop {
-            futures::select! {
-                _ = self.echo_reply_streams.as_mut() => {
-                    panic!("interface echo reply stream ended unexpectedly");
+        futures::select! {
+            _ = self.echo_reply_streams.as_mut() => {
+                panic!("interface echo reply stream ended unexpectedly");
+            }
+            r = snapshot_fut => {
+                match r {
+                   Ok(snapshot) => {
+                        return snapshot;
+                   },
+                   Err(e) => panic!("failed to fetch updated snapshot {}", e),
                 }
-                r = snapshot_fut => {
-                    match r {
-                       Ok(snapshot) => {
-                            return snapshot;
-                       },
-                       Err(e) => panic!("failed to fetch updated snapshot {}", e),
-                    }
-                }
-                event = reachability_monitor_wait_fut => {
-                    panic!("reachability monitor terminated unexpectedly with event: {:?}", event);
-                }
+            }
+            event = reachability_monitor_wait_fut => {
+                panic!("reachability monitor terminated unexpectedly with event: {:?}", event);
             }
         }
     }

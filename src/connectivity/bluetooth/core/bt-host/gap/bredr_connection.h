@@ -5,20 +5,19 @@
 #ifndef SRC_CONNECTIVITY_BLUETOOTH_CORE_BT_HOST_GAP_BREDR_CONNECTION_H_
 #define SRC_CONNECTIVITY_BLUETOOTH_CORE_BT_HOST_GAP_BREDR_CONNECTION_H_
 
-#include <lib/async/cpp/time.h>
-#include <lib/async/default.h>
-
 #include <optional>
 
 #include "src/connectivity/bluetooth/core/bt-host/common/identifier.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/bredr_connection_request.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/bredr_interrogator.h"
+#include "src/connectivity/bluetooth/core/bt-host/gap/gap.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/pairing_state.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/peer.h"
 #include "src/connectivity/bluetooth/core/bt-host/hci/bredr_connection.h"
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/channel_manager.h"
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/l2cap_defs.h"
 #include "src/connectivity/bluetooth/core/bt-host/sco/sco_connection_manager.h"
+#include "src/connectivity/bluetooth/core/bt-host/sm/types.h"
 
 namespace bt::gap {
 
@@ -38,12 +37,12 @@ class BrEdrConnection final {
   BrEdrConnection(Peer::WeakPtr peer, std::unique_ptr<hci::BrEdrConnection> link,
                   fit::closure send_auth_request_cb, fit::callback<void()> disconnect_cb,
                   fit::closure on_peer_disconnect_cb, l2cap::ChannelManager* l2cap,
-                  hci::Transport::WeakPtr transport, std::optional<Request> request);
+                  hci::Transport::WeakPtr transport, std::optional<Request> request,
+                  pw::async::Dispatcher& pw_dispatcher);
 
   ~BrEdrConnection();
 
   BrEdrConnection(BrEdrConnection&&) = default;
-  BrEdrConnection& operator=(BrEdrConnection&&) = default;
 
   void Interrogate(BrEdrInterrogator::ResultCallback callback);
 
@@ -59,7 +58,7 @@ class BrEdrConnection final {
 
   // If |OnInterrogationComplete| has been called, opens an L2CAP channel using the preferred
   // parameters |params| on the L2cap provided. Otherwise, calls |cb| with a nullptr.
-  void OpenL2capChannel(l2cap::PSM psm, l2cap::ChannelParameters params, l2cap::ChannelCallback cb);
+  void OpenL2capChannel(l2cap::Psm psm, l2cap::ChannelParameters params, l2cap::ChannelCallback cb);
 
   // See ScoConnectionManager for documentation.
   using ScoRequestHandle = sco::ScoConnectionManager::RequestHandle;
@@ -80,8 +79,16 @@ class BrEdrConnection final {
   PairingState& pairing_state() { return *pairing_state_; }
 
   // Returns the duration that this connection has been alive.
-  zx::duration duration() const {
-    return async::Now(async_get_default_dispatcher()) - create_time_;
+  pw::chrono::SystemClock::duration duration() const;
+
+  sm::SecurityProperties security_properties() const {
+    ZX_ASSERT(pairing_state_);
+    return pairing_state_->security_properties();
+  }
+
+  void set_security_mode(BrEdrSecurityMode mode) {
+    ZX_ASSERT(pairing_state_);
+    pairing_state_->set_security_mode(mode);
   }
 
  private:
@@ -102,7 +109,7 @@ class BrEdrConnection final {
   std::unique_ptr<sco::ScoConnectionManager> sco_manager_;
   std::unique_ptr<BrEdrInterrogator> interrogator_;
   // Time this object was constructed.
-  zx::time create_time_;
+  pw::chrono::SystemClock::time_point create_time_;
   // Called when an error occurs and this connection should be disconnected.
   fit::callback<void()> disconnect_cb_;
 
@@ -116,6 +123,8 @@ class BrEdrConnection final {
   // Ensures that this peer is marked "connected" once pairing completes.
   // Unregisters the connection from PeerCache when this connection is destroyed.
   Peer::ConnectionToken peer_conn_token_;
+
+  pw::async::Dispatcher& dispatcher_;
 
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(BrEdrConnection);
 };

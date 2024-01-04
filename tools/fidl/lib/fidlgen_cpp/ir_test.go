@@ -12,15 +12,15 @@ import (
 )
 
 func TestCompileTypeNames(t *testing.T) {
-	root := compile(fidlgentest.EndToEndTest{T: t}.Single(`
+	root := Compile(fidlgentest.EndToEndTest{T: t}.Single(`
 library foo.bar;
 
 type U = union {
 	1: a uint32;
 };
 
-protocol P {
-	M(resource struct {
+closed protocol P {
+	strict M(resource struct {
 		a array<U:optional, 3>;
 		b vector<client_end:<P, optional>>;
 		c box<struct {}>;
@@ -77,8 +77,8 @@ func TestAnonymousLayoutAliases(t *testing.T) {
 		{
 			desc: "request",
 			fidl: `
-		protocol MyProtocol {
-			MyMethod(struct { req_data struct {}; });
+		closed protocol MyProtocol {
+			strict MyMethod(struct { req_data struct {}; });
 		};
 		`,
 			expected: map[namingContextKey][]ScopedLayout{
@@ -95,8 +95,8 @@ func TestAnonymousLayoutAliases(t *testing.T) {
 		{
 			desc: "result",
 			fidl: `
-		protocol MyProtocol {
-			MyMethod() -> () error enum : uint32 { FOO = 1; };
+		closed protocol MyProtocol {
+			strict MyMethod() -> () error enum : uint32 { FOO = 1; };
 		};
 		`,
 			expected: map[namingContextKey][]ScopedLayout{
@@ -150,7 +150,7 @@ func TestAnonymousLayoutAliases(t *testing.T) {
 	}
 	for _, ex := range cases {
 		t.Run(ex.desc, func(t *testing.T) {
-			root := compile(fidlgentest.EndToEndTest{T: t}.Single("library example; " + ex.fidl))
+			root := Compile(fidlgentest.EndToEndTest{T: t}.Single("library example; " + ex.fidl))
 
 			layoutToChildren := make(map[namingContextKey][]ScopedLayout)
 			for _, decl := range root.Decls {

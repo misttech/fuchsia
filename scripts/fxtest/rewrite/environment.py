@@ -37,6 +37,9 @@ class ExecutionEnvironment:
     # Path to the input test-list.json file.
     test_list_file: str
 
+    # Path to the package-repositories.json file.
+    package_repositories_file: str | None = None
+
     @classmethod
     def initialize_from_args(
         cls: typing.Type[typing.Self], flags: args.Flags
@@ -65,7 +68,9 @@ class ExecutionEnvironment:
         # Fuchsia directory during build time.
         build_dir_file = os.path.join(fuchsia_dir, ".fx-build-dir")
         if not os.path.isfile(build_dir_file):
-            raise EnvironmentError(f"Expected file .fx-build-dir at {build_dir_file}")
+            raise EnvironmentError(
+                f"Expected file .fx-build-dir at {build_dir_file}"
+            )
         with open(build_dir_file) as f:
             out_dir = os.path.join(fuchsia_dir, f.readline().strip())
         if not os.path.isdir(out_dir):
@@ -81,7 +86,8 @@ class ExecutionEnvironment:
             else flags.logpath
             if flags.logpath
             else os.path.join(
-                out_dir, f"fxtest-{datetime.datetime.now().isoformat()}.log.json.gz"
+                out_dir,
+                f"fxtest-{datetime.datetime.now().isoformat()}.log.json.gz",
             )
         )
 
@@ -89,11 +95,25 @@ class ExecutionEnvironment:
         # under the output directory.
         tests_json_file = os.path.join(out_dir, "tests.json")
         test_list_file = os.path.join(out_dir, "test-list.json")
-        if not os.path.isfile(tests_json_file):
-            raise EnvironmentError(f"Expected a file at {tests_json_file}")
-        if not os.path.isfile(test_list_file):
-            raise EnvironmentError(f"Expected a file at {test_list_file}")
-        return cls(fuchsia_dir, out_dir, log_file, tests_json_file, test_list_file)
+        package_repositories_file = os.path.join(
+            out_dir, "package-repositories.json"
+        )
+        for expected_file in [
+            tests_json_file,
+            test_list_file,
+        ]:
+            if not os.path.isfile(expected_file):
+                raise EnvironmentError(f"Expected a file at {expected_file}")
+        return cls(
+            fuchsia_dir,
+            out_dir,
+            log_file,
+            tests_json_file,
+            test_list_file,
+            package_repositories_file=package_repositories_file
+            if os.path.isfile(package_repositories_file)
+            else None,
+        )
 
     def relative_to_root(self, path: str) -> str:
         """Return the path to a file relative to the Fuchsia directory.
@@ -109,3 +129,23 @@ class ExecutionEnvironment:
                 same destination.
         """
         return os.path.relpath(path, self.fuchsia_dir)
+
+    def __hash__(self) -> int:
+        return hash(self.fuchsia_dir)
+
+
+@dataclass
+class DeviceEnvironment:
+    """Environment for connecting to a Fuchsia Device"""
+
+    # IP address of the device
+    address: str
+
+    # SSH port for the device
+    port: str
+
+    # Name of the device
+    name: str
+
+    # Path to the private key used to SSH to the device
+    private_key_path: str

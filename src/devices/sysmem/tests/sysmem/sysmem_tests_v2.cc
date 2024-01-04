@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 #include <fcntl.h>
+#include <fidl/fuchsia.hardware.sysmem/cpp/fidl.h>
+#include <fidl/fuchsia.sysmem/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/cpp/caller.h>
@@ -13,7 +15,10 @@
 #include <lib/zbi-format/graphics.h>
 #include <lib/zbitl/items/graphics.h>
 #include <lib/zx/clock.h>
+#include <zircon/threads.h>
+#include <zircon/types.h>
 
+#include <algorithm>
 #include <random>
 
 #include <fbl/algorithm.h>
@@ -38,6 +43,11 @@ using SharedGroupV2 = std::shared_ptr<GroupV2>;
 zx::result<fidl::SyncClient<fuchsia_sysmem2::Allocator>> connect_to_sysmem_service_v2();
 zx_status_t verify_connectivity_v2(fidl::SyncClient<fuchsia_sysmem2::Allocator>& allocator);
 
+#define DBG_LINE()                  \
+  do {                              \
+    printf("line: %d\n", __LINE__); \
+  } while (0)
+
 zx::result<fidl::SyncClient<fuchsia_sysmem2::Allocator>> connect_to_sysmem_service_v2() {
   auto client_end = component::Connect<fuchsia_sysmem2::Allocator>();
   EXPECT_OK(client_end);
@@ -56,7 +66,7 @@ zx::result<fidl::SyncClient<fuchsia_sysmem2::Allocator>> connect_to_sysmem_servi
 zx::result<fidl::SyncClient<fuchsia_sysmem2::Allocator>> connect_to_sysmem_driver_v2() {
   fbl::unique_fd sysmem_dir(open(SYSMEM_CLASS_PATH, O_RDONLY));
 
-  zx::result<fidl::ClientEnd<fuchsia_sysmem2::DriverConnector>> client_end;
+  zx::result<fidl::ClientEnd<fuchsia_hardware_sysmem::DriverConnector>> client_end;
   zx_status_t status = fdio_watch_directory(
       sysmem_dir.get(),
       [](int dirfd, int event, const char* fn, void* cookie) {
@@ -67,8 +77,9 @@ zx::result<fidl::SyncClient<fuchsia_sysmem2::Allocator>> connect_to_sysmem_drive
           return ZX_OK;
         }
         fdio_cpp::UnownedFdioCaller caller(dirfd);
-        *reinterpret_cast<zx::result<fidl::ClientEnd<fuchsia_sysmem2::DriverConnector>>*>(cookie) =
-            component::ConnectAt<fuchsia_sysmem2::DriverConnector>(caller.directory(), fn);
+        *reinterpret_cast<zx::result<fidl::ClientEnd<fuchsia_hardware_sysmem::DriverConnector>>*>(
+            cookie) =
+            component::ConnectAt<fuchsia_hardware_sysmem::DriverConnector>(caller.directory(), fn);
         return ZX_ERR_STOP;
       },
       ZX_TIME_INFINITE, &client_end);
@@ -346,6 +357,103 @@ void set_picky_constraints_v2(fidl::SyncClient<v2::BufferCollection>& collection
   EXPECT_TRUE(collection->SetConstraints(std::move(set_constraints_request)).is_ok());
 }
 
+void set_specific_constraints_v2(fidl::SyncClient<v2::BufferCollection>& collection,
+                                 uint32_t exact_buffer_size, uint32_t min_buffer_count_for_camping,
+                                 bool physically_contiguous_required) {
+  EXPECT_EQ(exact_buffer_size % zx_system_get_page_size(), 0);
+  v2::BufferCollectionConstraints constraints;
+  constraints.usage().emplace();
+  constraints.usage()->cpu() = v2::kCpuUsageReadOften | v2::kCpuUsageWriteOften;
+  constraints.min_buffer_count_for_camping() = min_buffer_count_for_camping;
+  constraints.buffer_memory_constraints().emplace();
+  auto& buffer_memory = constraints.buffer_memory_constraints().value();
+  buffer_memory.min_size_bytes() = exact_buffer_size;
+  // Allow a max that's just large enough to accommodate the size implied
+  // by the min frame size and PixelFormat.
+  buffer_memory.max_size_bytes() = exact_buffer_size;
+  buffer_memory.physically_contiguous_required() = physically_contiguous_required;
+  buffer_memory.secure_required() = false;
+  buffer_memory.ram_domain_supported() = false;
+  buffer_memory.cpu_domain_supported() = true;
+  buffer_memory.inaccessible_domain_supported() = false;
+  ZX_DEBUG_ASSERT(!buffer_memory.heap_permitted().has_value());
+  ZX_DEBUG_ASSERT(!constraints.image_format_constraints().has_value());
+  v2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  set_constraints_request.constraints() = std::move(constraints);
+  EXPECT_TRUE(collection->SetConstraints(std::move(set_constraints_request)).is_ok());
+}
+
+struct Format {
+  Format(std::optional<fuchsia_images2::PixelFormat> pixel_format,
+         std::optional<uint64_t> pixel_format_modifier)
+      : pixel_format(pixel_format), pixel_format_modifier(pixel_format_modifier) {}
+  std::optional<fuchsia_images2::PixelFormat> pixel_format;
+  std::optional<uint64_t> pixel_format_modifier;
+};
+
+void set_pixel_format_modifier_constraints_v2(fidl::SyncClient<v2::BufferCollection>& collection,
+                                              std::vector<Format> formats, bool has_buffer_usage,
+                                              bool use_only_format_array = false) {
+  v2::BufferCollectionConstraints constraints;
+  if (has_buffer_usage) {
+    constraints.usage().emplace();
+    constraints.usage()->cpu() = v2::kCpuUsageReadOften | v2::kCpuUsageWriteOften;
+  } else {
+    constraints.usage().emplace();
+    constraints.usage()->none() = v2::kNoneUsage;
+  }
+  constraints.min_buffer_count_for_camping() = 1;
+  constraints.buffer_memory_constraints().emplace();
+  auto& buffer_memory = constraints.buffer_memory_constraints().value();
+  buffer_memory.min_size_bytes() = zx_system_get_page_size();
+  // Allow a max that's just large enough to accommodate the size implied
+  // by the min frame size and PixelFormat.
+  buffer_memory.physically_contiguous_required() = false;
+  buffer_memory.secure_required() = false;
+  buffer_memory.ram_domain_supported() = false;
+  buffer_memory.cpu_domain_supported() = true;
+  buffer_memory.inaccessible_domain_supported() = false;
+  ZX_DEBUG_ASSERT(!buffer_memory.heap_permitted().has_value());
+
+  constraints.image_format_constraints().emplace(1);
+  auto& image_format_constraints = constraints.image_format_constraints()->at(0);
+
+  uint32_t i = 0;
+  if (formats.size() >= 1 && !use_only_format_array) {
+    // copy optionals
+    image_format_constraints.pixel_format() = formats[i].pixel_format;
+    image_format_constraints.pixel_format_modifier() = formats[i].pixel_format_modifier;
+    ++i;
+  }
+  for (; i < formats.size(); ++i) {
+    auto& format = formats[i];
+    // caller must set all optionals beyond index 0
+    ZX_ASSERT(format.pixel_format.has_value());
+    ZX_ASSERT(format.pixel_format_modifier.has_value());
+    if (!image_format_constraints.pixel_format_and_modifiers().has_value()) {
+      image_format_constraints.pixel_format_and_modifiers().emplace();
+    }
+    image_format_constraints.pixel_format_and_modifiers()->emplace_back(
+        fuchsia_sysmem2::PixelFormatAndModifier(*format.pixel_format,
+                                                *format.pixel_format_modifier));
+  }
+
+  image_format_constraints.color_spaces().emplace(1);
+  image_format_constraints.color_spaces()->at(0) = fuchsia_images2::ColorSpace::kSrgb;
+  image_format_constraints.min_size() = {256, 256};
+
+  v2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  set_constraints_request.constraints() = std::move(constraints);
+  EXPECT_TRUE(collection->SetConstraints(std::move(set_constraints_request)).is_ok());
+}
+
+void set_empty_constraints_v2(fidl::SyncClient<v2::BufferCollection>& collection) {
+  v2::BufferCollectionConstraints constraints;
+  v2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  set_constraints_request.constraints() = std::move(constraints);
+  EXPECT_TRUE(collection->SetConstraints(std::move(set_constraints_request)).is_ok());
+}
+
 void set_min_camping_constraints_v2(fidl::SyncClient<v2::BufferCollection>& collection,
                                     uint32_t min_buffer_count_for_camping,
                                     uint32_t max_buffer_count = 0) {
@@ -374,10 +482,37 @@ void set_min_camping_constraints_v2(fidl::SyncClient<v2::BufferCollection>& coll
   EXPECT_TRUE(collection->SetConstraints(std::move(set_constraints_request)).is_ok());
 }
 
+void set_heap_constraints_v2(fidl::SyncClient<v2::BufferCollection>& collection,
+                             std::vector<fuchsia_sysmem2::HeapType> heap_types,
+                             bool support_cpu_and_ram, bool support_inaccessible) {
+  v2::BufferCollectionConstraints constraints;
+  constraints.usage().emplace();
+  constraints.usage()->display() = v2::kDisplayUsageLayer;
+  constraints.min_buffer_count() = 1;
+  constraints.buffer_memory_constraints().emplace();
+  auto& buffer_memory = constraints.buffer_memory_constraints().value();
+  buffer_memory.min_size_bytes() = zx_system_get_page_size();
+  // Allow a max that's just large enough to accommodate the size implied
+  // by the min frame size and PixelFormat.
+  buffer_memory.max_size_bytes() = zx_system_get_page_size();
+  buffer_memory.physically_contiguous_required() = false;
+  buffer_memory.secure_required() = false;
+  buffer_memory.ram_domain_supported() = support_cpu_and_ram;
+  buffer_memory.cpu_domain_supported() = support_cpu_and_ram;
+  buffer_memory.inaccessible_domain_supported() = support_inaccessible;
+  if (!heap_types.empty()) {
+    buffer_memory.heap_permitted() = std::move(heap_types);
+  }
+  ZX_DEBUG_ASSERT(!constraints.image_format_constraints().has_value());
+  v2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  set_constraints_request.constraints() = std::move(constraints);
+  EXPECT_TRUE(collection->SetConstraints(std::move(set_constraints_request)).is_ok());
+}
+
 bool Equal(const v2::BufferCollectionInfo& lhs, const v2::BufferCollectionInfo& rhs) {
   // Clone both.
   auto clone = [](const v2::BufferCollectionInfo& v) -> v2::BufferCollectionInfo {
-    auto clone_result = sysmem::V2CloneBufferCollectionInfo(v, 0, 0);
+    auto clone_result = sysmem::V2CloneBufferCollectionInfo(v, 0);
     ZX_ASSERT(clone_result.is_ok());
     return clone_result.take_value();
   };
@@ -2693,6 +2828,46 @@ TEST(Sysmem, RequiredSizeV2) {
   EXPECT_LE(1024 * 512 * 3 / 2, vmo_size);
 }
 
+// min_bytes_per_row should account for the bytes_per_row_divisor.
+TEST(Sysmem, BytesPerRowMinRowV2) {
+  auto collection = make_single_participant_collection_v2();
+
+  v2::BufferCollectionConstraints constraints;
+  constraints.usage().emplace();
+  constraints.usage()->cpu() =
+      fuchsia_sysmem::wire::kCpuUsageReadOften | fuchsia_sysmem::wire::kCpuUsageWriteOften;
+  constraints.min_buffer_count_for_camping() = 1;
+  ZX_DEBUG_ASSERT(!constraints.buffer_memory_constraints().has_value());
+  constraints.image_format_constraints().emplace(1);
+  constexpr uint32_t kBytesPerRowDivisor = 64;
+  auto& image_constraints = constraints.image_format_constraints()->at(0);
+  image_constraints.pixel_format() = fuchsia_images2::PixelFormat::kR8G8B8A8;
+  image_constraints.color_spaces().emplace(1);
+  image_constraints.color_spaces()->at(0) = fuchsia_images2::ColorSpace::kSrgb;
+  image_constraints.min_size() = {254, 256};
+  image_constraints.max_size() = {std::numeric_limits<uint32_t>::max(),
+                                  std::numeric_limits<uint32_t>::max()};
+  image_constraints.min_bytes_per_row() = 256;
+  image_constraints.max_bytes_per_row() = std::numeric_limits<uint32_t>::max();
+  image_constraints.max_surface_width_times_surface_height() = std::numeric_limits<uint32_t>::max();
+  image_constraints.size_alignment() = {1, 1};
+  image_constraints.bytes_per_row_divisor() = kBytesPerRowDivisor;
+  image_constraints.start_offset_divisor() = 1;
+  image_constraints.display_rect_alignment() = {1, 1};
+
+  v2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  set_constraints_request.constraints() = std::move(constraints);
+  ASSERT_TRUE(collection->SetConstraints(std::move(set_constraints_request)).is_ok());
+
+  auto allocate_result = collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(allocate_result.is_ok());
+
+  auto& out_constraints =
+      *allocate_result->buffer_collection_info()->settings()->image_format_constraints();
+  EXPECT_EQ(*out_constraints.min_bytes_per_row() % kBytesPerRowDivisor, 0, "%u",
+            *out_constraints.min_bytes_per_row());
+}
+
 TEST(Sysmem, CpuUsageAndNoBufferMemoryConstraintsV2) {
   auto allocator_1 = connect_to_sysmem_driver_v2();
   ASSERT_TRUE(allocator_1.is_ok());
@@ -3250,55 +3425,11 @@ TEST(Sysmem, CloseTokenV2) {
 
   EXPECT_TRUE(token_2->Sync().is_ok());
 }
-// Sysmem may start with the amlogic secure heaps not ready, so retrying creating memory until
-// everything works.
-// TODO(fxbug.dev/132085): Remove this once sysmem handles this case better.
-void WaitForAmlogicSecureHeap() {
-  // Booting the system to the state where it will have a heap available shouldn't take more that 15
-  // seconds.
-  auto deadline = zx::deadline_after(zx::sec(20));
-
-  while (zx::clock::get_monotonic() < deadline) {
-    auto collection = make_single_participant_collection_v2();
-    v2::BufferCollectionConstraints constraints;
-    constraints.usage().emplace();
-    constraints.usage()->video() = v2::kVideoUsageHwDecoder;
-    constexpr uint32_t kBufferCount = 4;
-    constraints.min_buffer_count_for_camping() = kBufferCount;
-    constraints.buffer_memory_constraints().emplace();
-    auto& buffer_memory = constraints.buffer_memory_constraints().value();
-    constexpr uint32_t kBufferSizeBytes = 64 * 1024;
-    buffer_memory.min_size_bytes() = kBufferSizeBytes;
-    buffer_memory.max_size_bytes() = 128 * 1024;
-    buffer_memory.physically_contiguous_required() = true;
-    buffer_memory.secure_required() = true;
-    buffer_memory.ram_domain_supported() = false;
-    buffer_memory.cpu_domain_supported() = false;
-    buffer_memory.inaccessible_domain_supported() = true;
-    buffer_memory.heap_permitted() = {v2::HeapType::kAmlogicSecure};
-    ZX_DEBUG_ASSERT(!constraints.image_format_constraints().has_value());
-
-    v2::BufferCollectionSetConstraintsRequest set_constraints_request;
-    set_constraints_request.constraints() = std::move(constraints);
-    ASSERT_TRUE(collection->SetConstraints(std::move(set_constraints_request)).is_ok());
-
-    auto allocate_result = collection->WaitForAllBuffersAllocated();
-
-    if (allocate_result.is_ok()) {
-      return;
-    }
-    printf("No amlogic secure heap available, retrying.\n");
-    zx::nanosleep(zx::deadline_after(zx::sec(1)));
-  }
-  fprintf(stderr, "Waiting for amlogic secure heap timed out, continuing test anyway.\n");
-}
 
 TEST(Sysmem, HeapAmlogicSecureV2) {
   if (!is_board_with_amlogic_secure()) {
     return;
   }
-
-  WaitForAmlogicSecureHeap();
 
   for (uint32_t i = 0; i < 64; ++i) {
     auto collection = make_single_participant_collection_v2();
@@ -3363,7 +3494,6 @@ TEST(Sysmem, HeapAmlogicSecureMiniStressV2) {
   if (!is_board_with_amlogic_secure()) {
     return;
   }
-  WaitForAmlogicSecureHeap();
 
   // 256 64 KiB chunks, and well below protected_memory_size, even accounting for fragmentation.
   const uint32_t kBlockSize = 64 * 1024;
@@ -3571,7 +3701,6 @@ TEST(Sysmem, HeapAmlogicSecureOnlySupportsInaccessibleV2) {
   if (!is_board_with_amlogic_secure()) {
     return;
   }
-  WaitForAmlogicSecureHeap();
 
   v2::CoherencyDomain domains[] = {
       v2::CoherencyDomain::kCpu,
@@ -3635,7 +3764,6 @@ TEST(Sysmem, HeapAmlogicSecureVdecV2) {
   if (!is_board_with_amlogic_secure_vdec()) {
     return;
   }
-  WaitForAmlogicSecureHeap();
 
   for (uint32_t i = 0; i < 64; ++i) {
     auto collection = make_single_participant_collection_v2();
@@ -5644,3 +5772,1295 @@ TEST(Sysmem, VmoInspectRight) {
   // ZX_RIGHT_INSPECT right allows get_info to work.
   ASSERT_EQ(ZX_OK, status);
 }
+
+TEST(Sysmem, GetBufferCollectionId) {
+  auto token = create_initial_token_v2();
+  auto get_from_token_result = token->GetBufferCollectionId();
+  ASSERT_TRUE(get_from_token_result.is_ok());
+  uint64_t token_buffer_collection_id = get_from_token_result->buffer_collection_id().value();
+  ASSERT_NE(ZX_KOID_INVALID, token_buffer_collection_id, "0?");
+  ASSERT_NE(ZX_KOID_KERNEL, token_buffer_collection_id, "unexpected value");
+
+  auto group = create_group_under_token_v2(token);
+  auto get_from_group_result = group->GetBufferCollectionId();
+  ASSERT_TRUE(get_from_group_result.is_ok());
+  uint64_t group_buffer_collection_id = get_from_group_result->buffer_collection_id().value();
+  ASSERT_EQ(token_buffer_collection_id, group_buffer_collection_id,
+            "id via token and group must match");
+
+  auto collection = convert_token_to_collection_v2(std::move(token));
+  auto get_from_collection_result = collection->GetBufferCollectionId();
+  ASSERT_TRUE(get_from_collection_result.is_ok());
+  uint64_t collection_buffer_collection_id =
+      get_from_collection_result->buffer_collection_id().value();
+  ASSERT_EQ(token_buffer_collection_id, collection_buffer_collection_id,
+            "id via token and collection must match");
+
+  // This nop (empty constraints) child is just to make the group happy, since a zero-child group
+  // intentionally fails.
+  auto nop_child_token = create_token_under_group_v2(group);
+  auto nop_child_collection = convert_token_to_collection_v2(std::move(nop_child_token));
+  set_empty_constraints_v2(nop_child_collection);
+  // This indicates that the group is ready for allocation (simimlar to SetConstraints for
+  // collection).
+  auto all_present_result = group->AllChildrenPresent();
+  ASSERT_TRUE(all_present_result.is_ok());
+
+  // Indicate that collection is ready for allocation.
+  set_picky_constraints_v2(collection, zx_system_get_page_size());
+
+  auto wait_result = collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(wait_result.is_ok());
+  auto& info = *wait_result->buffer_collection_info();
+  ASSERT_EQ(token_buffer_collection_id, *info.buffer_collection_id());
+}
+
+TEST(Sysmem, GetVmoInfo) {
+  constexpr uint32_t kBufferCount = 10;
+  auto token = create_initial_token_v2();
+  auto weak_token = create_token_under_token_v2(token);
+  ASSERT_TRUE(weak_token->SetWeak().is_ok());
+  auto get_buffer_collection_id_result = token->GetBufferCollectionId();
+  ASSERT_TRUE(get_buffer_collection_id_result.is_ok());
+  uint64_t buffer_collection_id = *get_buffer_collection_id_result->buffer_collection_id();
+  auto collection = convert_token_to_collection_v2(std::move(token));
+  auto weak_collection = convert_token_to_collection_v2(std::move(weak_token));
+  set_min_camping_constraints_v2(collection, kBufferCount);
+  set_min_camping_constraints_v2(weak_collection, 0);
+
+  auto wait_result = collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(wait_result.is_ok());
+  auto collection_info = std::move(*wait_result->buffer_collection_info());
+
+  ASSERT_TRUE(weak_collection->SetWeakOk(fuchsia_sysmem2::NodeSetWeakOkRequest{}).is_ok());
+
+  auto weak_wait_result = weak_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(weak_wait_result.is_ok());
+  auto weak_collection_info = std::move(*weak_wait_result->buffer_collection_info());
+
+  auto sysmem_result = connect_to_sysmem_service_v2();
+  ASSERT_TRUE(sysmem_result.is_ok());
+  auto sysmem = std::move(sysmem_result.value());
+  for (uint32_t buffer_index = 0; buffer_index < kBufferCount; ++buffer_index) {
+    zx::vmo dup_strong_vmo;
+    ASSERT_OK(collection_info.buffers()
+                  ->at(buffer_index)
+                  .vmo()
+                  .value()
+                  .duplicate(ZX_RIGHT_SAME_RIGHTS, &dup_strong_vmo));
+    fuchsia_sysmem2::AllocatorGetVmoInfoRequest get_vmo_info_request;
+    get_vmo_info_request.vmo() = std::move(dup_strong_vmo);
+    auto get_vmo_info_result = sysmem->GetVmoInfo(std::move(get_vmo_info_request));
+    ASSERT_TRUE(get_vmo_info_result.is_ok());
+    auto vmo_info = std::move(get_vmo_info_result.value());
+    ASSERT_EQ(buffer_collection_id, vmo_info.buffer_collection_id());
+    ASSERT_EQ(buffer_index, vmo_info.buffer_index());
+    ASSERT_FALSE(vmo_info.close_weak_asap().has_value());
+
+    zx::vmo dup_weak_vmo;
+    ASSERT_OK(weak_collection_info.buffers()
+                  ->at(buffer_index)
+                  .vmo()
+                  .value()
+                  .duplicate(ZX_RIGHT_SAME_RIGHTS, &dup_weak_vmo));
+    fuchsia_sysmem2::AllocatorGetVmoInfoRequest get_vmo_info_request_2;
+    get_vmo_info_request_2.vmo() = std::move(dup_weak_vmo);
+    auto weak_get_vmo_info_result = sysmem->GetVmoInfo(std::move(get_vmo_info_request_2));
+    ASSERT_TRUE(weak_get_vmo_info_result.is_ok());
+    auto weak_vmo_info = std::move(weak_get_vmo_info_result.value());
+    ASSERT_EQ(buffer_collection_id, weak_vmo_info.buffer_collection_id());
+    ASSERT_EQ(buffer_index, weak_vmo_info.buffer_index());
+    ASSERT_TRUE(weak_vmo_info.close_weak_asap().has_value());
+  }
+}
+
+TEST(Sysmem, Weak_SetWeakOk_NeverSentFails) {
+  // SetWeakOk never sent means WaitForAllBuffersAllocated should fail if the collection is weak.
+  // However, since SetWeak implies SetWeakOk, to test this we have to SetWeak via a parent Node.
+  auto parent_token = create_initial_token_v2();
+  // We need at least one strong Node until allocation is done, to avoid all-weak causing zero
+  // strong VMOs causing LogicalBufferCollection failure. This node could get VMOs and then become
+  // weak without breaking this test, but that aspect is covered in a different test.
+  auto strong_child_token = create_token_under_token_v2(parent_token);
+  auto set_weak_result = parent_token->SetWeak();
+  ASSERT_TRUE(set_weak_result.is_ok());
+  auto weak_child_token = create_token_under_token_v2(parent_token);
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto weak_child_collection = convert_token_to_collection_v2(std::move(weak_child_token));
+  set_picky_constraints_v2(parent_collection, zx_system_get_page_size());
+  set_picky_constraints_v2(weak_child_collection, zx_system_get_page_size());
+  ASSERT_TRUE(parent_collection->Sync().is_ok());
+  ASSERT_TRUE(weak_child_collection->Sync().is_ok());
+  auto child_result = weak_child_collection->WaitForAllBuffersAllocated();
+  // Failure expected because SetWeakOk nor SetWeak were ever sent via child_collection, but
+  // child_collection is weak because parent was weak at the time the child was created.
+  ASSERT_FALSE(child_result.is_ok());
+  // We never did anything with strong_child_token, to verify that WaitForAllBuffersAllocated on
+  // a weak collection without SetWeakOk fails even if not all Nodes have become ready for
+  // allocation yet (failure can and should be before any actual waiting).
+}
+
+TEST(Sysmem, Weak_SetWeakOk_SentSucceeds) {
+  auto parent_token = create_initial_token_v2();
+  // We need at least one strong Node until initial allocation
+  auto strong_child_token = create_token_under_token_v2(parent_token);
+  auto set_weak_result = parent_token->SetWeak();
+  ASSERT_TRUE(set_weak_result.is_ok());
+  auto child_token = create_token_under_token_v2(parent_token);
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+  auto strong_child_collection = convert_token_to_collection_v2(std::move(strong_child_token));
+  set_picky_constraints_v2(parent_collection, zx_system_get_page_size());
+  set_picky_constraints_v2(child_collection, zx_system_get_page_size());
+  set_picky_constraints_v2(strong_child_collection, zx_system_get_page_size());
+  ASSERT_TRUE(parent_collection->Sync().is_ok());
+  ASSERT_TRUE(child_collection->Sync().is_ok());
+  ASSERT_TRUE(strong_child_collection->Sync().is_ok());
+  // sending SetWeakOk as late as allowed
+  ASSERT_TRUE(child_collection->SetWeakOk(fuchsia_sysmem2::NodeSetWeakOkRequest{}).is_ok());
+  auto child_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(child_result.is_ok());
+}
+
+TEST(Sysmem, Weak_SetWeakOk_TooLateFails) {
+  auto token = create_initial_token_v2();
+  auto collection = convert_token_to_collection_v2(std::move(token));
+  set_picky_constraints_v2(collection, zx_system_get_page_size());
+  auto result = collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(result.is_ok());
+  // Sending SetWeakOk one-way message works, but the Sync call after doesn't, because the server
+  // fails the collection on reception of SetWeakOk since it arrives after
+  // WaitForAllBuffersAllocated.
+  ASSERT_TRUE(collection->SetWeakOk(fuchsia_sysmem2::NodeSetWeakOkRequest{}).is_ok());
+  ASSERT_FALSE(collection->Sync().is_ok());
+}
+
+TEST(Sysmem, Weak_SetWeak_SparseBufferSet) {
+  constexpr uint32_t kBufferCount = 10;
+  auto parent_token = create_initial_token_v2();
+  auto child_token = create_token_under_token_v2(parent_token);
+  auto set_weak_result = child_token->SetWeak();
+  ASSERT_TRUE(set_weak_result.is_ok());
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+  set_min_camping_constraints_v2(parent_collection, 0);
+  set_min_camping_constraints_v2(child_collection, kBufferCount);
+  ASSERT_TRUE(parent_collection->Sync().is_ok());
+  ASSERT_TRUE(child_collection->Sync().is_ok());
+  auto parent_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(parent_result.is_ok());
+  auto parent_info = std::move(parent_result->buffer_collection_info().value());
+  ASSERT_EQ(kBufferCount, parent_info.buffers()->size());
+  zx::eventpair dropped_2_client;
+  zx::eventpair dropped_2_server;
+  zx_status_t create_status = zx::eventpair::create(0, &dropped_2_client, &dropped_2_server);
+  ASSERT_EQ(ZX_OK, create_status);
+  fuchsia_sysmem2::BufferCollectionAttachLifetimeTrackingRequest request;
+  request.server_end() = std::move(dropped_2_server);
+  request.buffers_remaining() = kBufferCount - 2;
+  auto attach_result = parent_collection->AttachLifetimeTracking(std::move(request));
+  ASSERT_TRUE(attach_result.is_ok());
+  parent_info.buffers()->at(0).vmo().reset();
+  parent_info.buffers()->at(kBufferCount - 1).vmo().reset();
+  // parent_collection is a strong Node, so keeps the logical buffers alive
+  zx_signals_t pending_signals = 0;
+  zx_status_t wait_status = dropped_2_client.wait_one(
+      ZX_EVENTPAIR_PEER_CLOSED, zx::deadline_after(zx::msec(50)), &pending_signals);
+  ASSERT_EQ(ZX_ERR_TIMED_OUT, wait_status);
+  // close the parent_collection strong Node to let the first and last buffer get cleaned up in
+  // sysmem
+  auto close_result = parent_collection->Close();
+  ASSERT_TRUE(close_result.is_ok());
+  parent_collection.TakeClientEnd();
+  pending_signals = 0;
+  wait_status =
+      dropped_2_client.wait_one(ZX_EVENTPAIR_PEER_CLOSED, zx::time::infinite(), &pending_signals);
+  ASSERT_EQ(ZX_OK, wait_status);
+  ASSERT_TRUE(!!(pending_signals & ZX_EVENTPAIR_PEER_CLOSED));
+  // sending SetWeakOk as late as allowed (just before WaitForAllBuffersAllocated)
+  ASSERT_TRUE(child_collection->SetWeakOk(fuchsia_sysmem2::NodeSetWeakOkRequest{}).is_ok());
+  auto child_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(child_result.is_ok());
+  auto child_info = std::move(child_result->buffer_collection_info().value());
+  // first and last buffer expected to be absent
+  auto& first_buffer = child_info.buffers()->at(0);
+  ASSERT_FALSE(first_buffer.vmo().has_value());
+  ASSERT_FALSE(first_buffer.close_weak_asap().has_value());
+  auto& last_buffer = child_info.buffers()->at(kBufferCount - 1);
+  ASSERT_FALSE(last_buffer.vmo().has_value());
+  ASSERT_FALSE(last_buffer.close_weak_asap().has_value());
+  // all other buffers expected to be present, along with close_weak_asap client ends
+  for (uint32_t buffer_index = 1; buffer_index < kBufferCount - 1; ++buffer_index) {
+    auto& buffer = child_info.buffers()->at(buffer_index);
+    ASSERT_TRUE(buffer.vmo().has_value());
+    ASSERT_TRUE(buffer.vmo()->is_valid());
+    ASSERT_TRUE(buffer.close_weak_asap().has_value());
+    ASSERT_TRUE(buffer.close_weak_asap()->is_valid());
+  }
+}
+
+TEST(Sysmem, Weak_ZeroStrongNodesBeforeReadyForAllocation_Fails) {
+  // In the "pass" case we won't wait anywhere near this long.
+  constexpr zx::duration kWaitDuration = zx::sec(10);
+  // The expected failure is allowed to be async, so we need to wait for the failure to happen while
+  // a weak Node is preventing allocation by not being ready yet.
+  auto parent_token = create_initial_token_v2();
+  auto child_token = create_token_under_token_v2(parent_token);
+  ASSERT_TRUE(child_token->SetWeak().is_ok());
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+  ASSERT_TRUE(child_collection->Sync().is_ok());
+  ASSERT_TRUE(parent_token->Close().is_ok());
+  // Closing the last strong Node before initial allocation is expected to cause
+  // LogicalBufferCollection failure. This can be thought of as essentially equivalent to how
+  // closing the last stromg VMO causes LogicalBufferCollection failure, since at this point there
+  // can be no strong VMOs yet. The sysmem internal mechanism differs for this case so we test it
+  // separately.
+  parent_token.TakeClientEnd();
+  const zx::time start_wait = zx::clock::get_monotonic();
+  while (true) {
+    // give up after kWaitDuration
+    ASSERT_TRUE(zx::clock::get_monotonic() < start_wait + kWaitDuration);
+    if (child_collection->Sync().is_ok()) {
+      // closing strong parent_token takes effect async; try again
+      zx::nanosleep(zx::deadline_after(zx::msec(10)));
+      continue;
+    } else {
+      // expected failure seen - pass
+      break;
+    }
+  }
+}
+
+TEST(Sysmem, Weak_CloseWeakAsap_Signaled) {
+  constexpr uint32_t kBufferCount = 10;
+  constexpr zx::duration kWaitDuration = zx::sec(10);
+  auto parent_token = create_initial_token_v2();
+  auto child_token = create_token_under_token_v2(parent_token);
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+  set_min_camping_constraints_v2(parent_collection, 0);
+  auto set_weak_result = child_collection->SetWeak();
+  ASSERT_TRUE(set_weak_result.is_ok());
+  set_min_camping_constraints_v2(child_collection, kBufferCount);
+  auto parent_wait_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(parent_wait_result.is_ok());
+  auto parent_info = std::move(parent_wait_result.value().buffer_collection_info().value());
+  auto child_wait_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(child_wait_result.is_ok());
+  auto child_info = std::move(child_wait_result.value().buffer_collection_info().value());
+  ASSERT_EQ(parent_info.buffers()->size(), child_info.buffers()->size());
+
+  for (uint32_t buffer_index = 0; buffer_index < parent_info.buffers()->size(); ++buffer_index) {
+    auto& parent_buffer = parent_info.buffers()->at(buffer_index);
+    EXPECT_TRUE(parent_buffer.vmo().has_value());
+    EXPECT_TRUE(parent_buffer.vmo()->is_valid());
+    // this is a strong VMO, so no close_weak_asap
+    EXPECT_FALSE(parent_buffer.close_weak_asap().has_value());
+
+    auto& child_buffer = child_info.buffers()->at(buffer_index);
+    EXPECT_TRUE(child_buffer.vmo().has_value());
+    EXPECT_TRUE(child_buffer.vmo()->is_valid());
+    // this is a weak VMO, so close_weak_asap present
+    EXPECT_TRUE(child_buffer.close_weak_asap().has_value());
+    EXPECT_TRUE(child_buffer.close_weak_asap()->is_valid());
+  }
+
+  // drop the strong parent Node, which leaves only the parent_info holding the only strong VMOs
+  ASSERT_TRUE(parent_collection->Close().is_ok());
+  parent_collection.TakeClientEnd();
+  // give a moment for LogicalBufferCollection to fail, in case it incorrectly fails at this point
+  zx::nanosleep(zx::deadline_after(zx::msec(100)));
+  // The LogicalBufferCollection isn't failed at this point
+  ASSERT_TRUE(child_collection->Sync().is_ok());
+  auto is_signaled = [&child_info](uint32_t buffer_index, int line) -> bool {
+    auto& buffer = child_info.buffers()->at(buffer_index);
+    zx_signals_t pending_signals = 0;
+    zx_status_t wait_status = buffer.close_weak_asap()->wait_one(
+        ZX_EVENTPAIR_PEER_CLOSED, zx::time::infinite_past(), &pending_signals);
+    ZX_ASSERT_MSG(wait_status == ZX_OK || wait_status == ZX_ERR_TIMED_OUT,
+                  "wait_status: %d line: %d", wait_status, line);
+    return !!(pending_signals & ZX_EVENTPAIR_PEER_CLOSED);
+  };
+  for (uint32_t buffer_index = 0; buffer_index < child_info.buffers()->size(); ++buffer_index) {
+    EXPECT_FALSE(is_signaled(buffer_index, __LINE__));
+  }
+
+  zx::eventpair sysmem_parent_vmos_gone_client;
+  zx::eventpair sysmem_parent_vmos_gone_server;
+  zx_status_t create_status =
+      zx::eventpair::create(0, &sysmem_parent_vmos_gone_client, &sysmem_parent_vmos_gone_server);
+  ASSERT_EQ(ZX_OK, create_status);
+  fuchsia_sysmem2::BufferCollectionAttachLifetimeTrackingRequest attach_request;
+  attach_request.server_end() = std::move(sysmem_parent_vmos_gone_server);
+  attach_request.buffers_remaining() = 0;
+  ASSERT_TRUE(child_collection->AttachLifetimeTracking(std::move(attach_request)).is_ok());
+
+  for (uint32_t buffer_index = 0; buffer_index < child_info.buffers()->size(); ++buffer_index) {
+    // close 1 strong VMO
+    parent_info.buffers()->at(buffer_index).vmo().reset();
+    zx::time start_wait = zx::clock::get_monotonic();
+    while (true) {
+      ASSERT_TRUE(zx::clock::get_monotonic() < start_wait + kWaitDuration);
+      if (!is_signaled(buffer_index, __LINE__)) {
+        zx::nanosleep(zx::deadline_after(zx::msec(10)));
+        // not signaled yet; try again until kWaitDuration elapsed
+        continue;
+      }
+      // signaled as expected
+      break;
+    }
+    if (buffer_index < child_info.buffers()->size() - 1) {
+      zx::nanosleep(zx::deadline_after(zx::msec(10)));
+      // LogicalBufferCollection not failed since at least one strong VMO remains
+      ASSERT_TRUE(child_collection->Sync().is_ok());
+    }
+  }
+
+  zx::time start_wait = zx::clock::get_monotonic();
+  while (true) {
+    ASSERT_TRUE(zx::clock::get_monotonic() < start_wait + kWaitDuration);
+    if (child_collection->Sync().is_ok()) {
+      zx::nanosleep(zx::deadline_after(zx::msec(10)));
+      continue;
+    }
+    // closing last strong VMO caused LogicalBufferCollection failure as expected
+    break;
+  }
+
+  // sysmem hasn't cleaned up all its parent VMOs yet because the weak VMOs have not yet been
+  // closed
+  zx::nanosleep(zx::deadline_after(zx::msec(10)));
+  zx_signals_t pending_signals = 0;
+  zx_status_t wait_status = sysmem_parent_vmos_gone_client.wait_one(
+      ZX_EVENTPAIR_PEER_CLOSED, zx::time::infinite_past(), &pending_signals);
+  ASSERT_TRUE(wait_status == ZX_OK || wait_status == ZX_ERR_TIMED_OUT);
+  ASSERT_FALSE(!!(pending_signals & ZX_EVENTPAIR_PEER_CLOSED));
+
+  // close all but one weak VMO
+  for (uint32_t buffer_index = 0; buffer_index < child_info.buffers()->size() - 1; ++buffer_index) {
+    auto& buffer = child_info.buffers()->at(buffer_index);
+    buffer.vmo().reset();
+  }
+
+  // sysmem hasn't cleaned up all its parent VMOs yet because the weak VMOs have not yet been
+  // closed
+  zx::nanosleep(zx::deadline_after(zx::msec(10)));
+  pending_signals = 0;
+  wait_status = sysmem_parent_vmos_gone_client.wait_one(
+      ZX_EVENTPAIR_PEER_CLOSED, zx::time::infinite_past(), &pending_signals);
+  ASSERT_TRUE(wait_status == ZX_OK || wait_status == ZX_ERR_TIMED_OUT);
+  ASSERT_FALSE(!!(pending_signals & ZX_EVENTPAIR_PEER_CLOSED));
+
+  child_info.buffers()->at(child_info.buffers()->size() - 1).vmo().reset();
+  start_wait = zx::clock::get_monotonic();
+  while (true) {
+    ASSERT_TRUE(zx::clock::get_monotonic() < start_wait + kWaitDuration);
+    pending_signals = 0;
+    wait_status = sysmem_parent_vmos_gone_client.wait_one(
+        ZX_EVENTPAIR_PEER_CLOSED, zx::time::infinite_past(), &pending_signals);
+    ASSERT_TRUE(wait_status == ZX_OK || wait_status == ZX_ERR_TIMED_OUT);
+    if (!(pending_signals & ZX_EVENTPAIR_PEER_CLOSED)) {
+      zx::nanosleep(zx::deadline_after(zx::msec(10)));
+      continue;
+    }
+    // sysmem cleaned up parent VMOs as expected
+    break;
+  }
+}
+
+TEST(Sysmem, LogWeakLeak_DoesNotCrashSysmem) {
+  auto parent_token = create_initial_token_v2();
+  auto child_token = create_token_under_token_v2(parent_token);
+  auto set_weak_result = child_token->SetWeak();
+  ASSERT_TRUE(set_weak_result.is_ok());
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+  set_min_camping_constraints_v2(parent_collection, 0);
+  set_min_camping_constraints_v2(child_collection, 1);
+  auto set_weak_ok_result = child_collection->SetWeakOk(fuchsia_sysmem2::NodeSetWeakOkRequest{});
+  ASSERT_TRUE(set_weak_ok_result.is_ok());
+  auto wait_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(wait_result.is_ok());
+  ASSERT_EQ(1, wait_result->buffer_collection_info()->buffers()->size());
+  auto& buffer = wait_result->buffer_collection_info()->buffers()->at(0);
+  ASSERT_TRUE(buffer.vmo().has_value());
+  ASSERT_TRUE(buffer.close_weak_asap().has_value());
+  auto child_info = std::move(wait_result->buffer_collection_info().value());
+  parent_collection.TakeClientEnd();
+  // Only thing keeping LogicalBufferCollection alive is child_info.buffers()->at(0).vmo() which is
+  // a weak VMO. Sysmem will complain loudly to the log in 5 seconds.
+  zx::nanosleep(zx::deadline_after(zx::sec(6)));
+  // make sure sysmem didn't crash
+  auto extra_token = create_initial_token_v2();
+}
+
+TEST(Sysmem, SetWeakOk_ForChildNodesAlso) {
+  // strong Node, because we need a strong node at least until allocation, else
+  // LogicalBufferCollection will intentionally fail)
+  auto parent_token = create_initial_token_v2();
+
+  // weak Node
+  auto child1_token = create_token_under_token_v2(parent_token);
+  ASSERT_TRUE(child1_token->SetWeak().is_ok());
+  fuchsia_sysmem2::NodeSetWeakOkRequest set_weak_ok_request;
+  set_weak_ok_request.for_child_nodes_also() = true;
+  ASSERT_TRUE(child1_token->SetWeakOk(std::move(set_weak_ok_request)).is_ok());
+
+  auto child2_token = create_token_under_token_v2(child1_token);
+
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child1_collection = convert_token_to_collection_v2(std::move(child1_token));
+  auto child2_collection = convert_token_to_collection_v2(std::move(child2_token));
+
+  set_min_camping_constraints_v2(parent_collection, 1);
+  set_min_camping_constraints_v2(child1_collection, 1);
+  set_min_camping_constraints_v2(child2_collection, 1);
+
+  auto parent_wait_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(parent_wait_result.is_ok());
+  auto child1_wait_result = child1_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(child1_wait_result.is_ok());
+  auto child2_wait_result = child2_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(child2_wait_result.is_ok());
+
+  ASSERT_FALSE(
+      parent_wait_result->buffer_collection_info()->buffers()->at(0).close_weak_asap().has_value());
+  ASSERT_TRUE(
+      child1_wait_result->buffer_collection_info()->buffers()->at(0).close_weak_asap().has_value());
+  ASSERT_TRUE(
+      child2_wait_result->buffer_collection_info()->buffers()->at(0).close_weak_asap().has_value());
+
+  // allocation success means child2 didn't cause LogicalBufferCollection failure, despite not
+  // sending SetWeakOk itself, thanks to child1 sending SetWeakOk(for_child_nodes_also=true)
+}
+
+TEST(Sysmem, SetWeak_NoUsage_HasCloseWeakAsap) {
+  auto parent_token = create_initial_token_v2();
+  auto child_token = create_token_under_token_v2(parent_token);
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+  ASSERT_TRUE(child_collection->SetWeak().is_ok());
+  set_min_camping_constraints_v2(parent_collection, 1);
+  set_empty_constraints_v2(child_collection);
+
+  auto parent_wait_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(parent_wait_result.is_ok());
+  auto child_wait_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(child_wait_result.is_ok());
+
+  auto& vmo_buffer = child_wait_result->buffer_collection_info()->buffers()->at(0);
+  // empty constraints; no usage bits; no vmo provided
+  ASSERT_FALSE(vmo_buffer.vmo().has_value());
+  // despite empty constraints, weak --> we get close_weak_asap
+  ASSERT_TRUE(vmo_buffer.close_weak_asap().has_value());
+}
+
+TEST(Sysmem, SetWeakOk_ForChildNodesAlso_AllowsSysmem1Child) {
+  auto parent_token = create_initial_token_v2();
+  auto child_token = create_token_under_token_v2(parent_token);
+
+  // The implicit SetWeakOk as part of SetWeak is only for this node.
+  ASSERT_TRUE(child_token->SetWeak().is_ok());
+  // Explicitly SetWeakOk to get the for_child_nodes_also=true.
+  fuchsia_sysmem2::NodeSetWeakOkRequest set_weak_ok_request;
+  set_weak_ok_request.for_child_nodes_also() = true;
+  ASSERT_TRUE(child_token->SetWeakOk(std::move(set_weak_ok_request)).is_ok());
+
+  // This token must be created after for_child_nodes_also=true above, for that
+  // to take effect for this node.
+  auto child_token_v2 = create_token_under_token_v2(child_token);
+
+  // Treat v2 token channel as v1 token (server serves both protocols on the same channel).
+  auto child_token_v1 = fidl::SyncClient<fuchsia_sysmem::BufferCollectionToken>(
+      fidl::ClientEnd<fuchsia_sysmem::BufferCollectionToken>(
+          child_token_v2.TakeClientEnd().TakeChannel()));
+
+  // Convert child_token_v1 into v1 BufferCollection.
+  auto v1_collection_endpoints = fidl::CreateEndpoints<fuchsia_sysmem::BufferCollection>();
+  ASSERT_TRUE(v1_collection_endpoints.is_ok());
+  auto child_collection_v1 = fidl::SyncClient(std::move(v1_collection_endpoints->client));
+  auto allocator_result = component::Connect<fuchsia_sysmem::Allocator>();
+  ASSERT_OK(allocator_result.status_value());
+  auto allocator = fidl::SyncClient(std::move(allocator_result.value()));
+  fuchsia_sysmem::AllocatorBindSharedCollectionRequest bind_shared_request;
+  bind_shared_request.token() = child_token_v1.TakeClientEnd();
+  bind_shared_request.buffer_collection_request() = std::move(v1_collection_endpoints->server);
+  ASSERT_TRUE(allocator->BindSharedCollection(std::move(bind_shared_request)).is_ok());
+
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+
+  set_min_camping_constraints_v2(parent_collection, 1);
+  set_min_camping_constraints_v2(child_collection, 1);
+
+  fuchsia_sysmem::BufferCollectionSetConstraintsRequest set_constraints_request;
+  set_constraints_request.has_constraints() = false;
+  ASSERT_TRUE(child_collection_v1->SetConstraints(std::move(set_constraints_request)).is_ok());
+
+  auto parent_wait_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(parent_wait_result.is_ok());
+  auto child_wait_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(child_wait_result.is_ok());
+  auto child_v1_wait_result = child_collection_v1->WaitForBuffersAllocated();
+  ASSERT_TRUE(child_v1_wait_result.is_ok());
+
+  // Despite inability to deliver close_weak_asap to a v1 Node that's weak, because the weak v1
+  // Node is covered by a v2 parent node that SetWeakOk(for_child_nodes_also=true), the v1 weak
+  // child Node did not cause allocation failure.
+}
+
+TEST(Sysmem, SetDebugClientInfo_NoIdIsFine) {
+  auto token = create_initial_token_v2();
+  fuchsia_sysmem2::NodeSetDebugClientInfoRequest token_set_debug_info_request;
+  token_set_debug_info_request.name() = "foo";
+  ZX_DEBUG_ASSERT(!token_set_debug_info_request.id().has_value());
+  auto token_set_debug_info_result =
+      token->SetDebugClientInfo(std::move(token_set_debug_info_request));
+  ASSERT_TRUE(token_set_debug_info_result.is_ok());
+  auto token_sync_result = token->Sync();
+  ASSERT_TRUE(token_sync_result.is_ok());
+
+  auto allocator_result = connect_to_sysmem_service_v2();
+  ASSERT_TRUE(allocator_result.is_ok());
+  auto allocator = std::move(allocator_result.value());
+  fuchsia_sysmem2::AllocatorSetDebugClientInfoRequest allocator_set_debug_info_request;
+  allocator_set_debug_info_request.name() = "foo";
+  ZX_DEBUG_ASSERT(!allocator_set_debug_info_request.id().has_value());
+  auto allocator_set_debug_info_result =
+      allocator->SetDebugClientInfo(std::move(allocator_set_debug_info_request));
+  ASSERT_TRUE(allocator_set_debug_info_result.is_ok());
+  auto allocator_server_koid = get_related_koid(token.client_end().channel().get());
+  ASSERT_NE(ZX_KOID_INVALID, allocator_server_koid);
+  fuchsia_sysmem2::AllocatorValidateBufferCollectionTokenRequest validate_request;
+  validate_request.token_server_koid() = allocator_server_koid;
+  auto allocator_validate_result =
+      allocator->ValidateBufferCollectionToken(std::move(validate_request));
+  ASSERT_TRUE(allocator_validate_result.is_ok());
+  ASSERT_TRUE(allocator_validate_result->is_known());
+
+  auto group = create_group_under_token_v2(token);
+  fuchsia_sysmem2::NodeSetDebugClientInfoRequest group_set_debug_info_request;
+  group_set_debug_info_request.name() = "foo";
+  ZX_DEBUG_ASSERT(!group_set_debug_info_request.id().has_value());
+  auto group_set_debug_info_result =
+      group->SetDebugClientInfo(std::move(group_set_debug_info_request));
+  ASSERT_TRUE(group_set_debug_info_result.is_ok());
+  auto group_sync_result = group->Sync();
+  ASSERT_TRUE(group_sync_result.is_ok());
+
+  auto collection = convert_token_to_collection_v2(std::move(token));
+  fuchsia_sysmem2::NodeSetDebugClientInfoRequest collection_set_debug_info_request;
+  collection_set_debug_info_request.name() = "foo";
+  ZX_DEBUG_ASSERT(!collection_set_debug_info_request.id().has_value());
+  auto collection_set_debug_info_result =
+      group->SetDebugClientInfo(std::move(collection_set_debug_info_request));
+  ASSERT_TRUE(collection_set_debug_info_result.is_ok());
+  auto collection_sync_result = group->Sync();
+  ASSERT_TRUE(collection_sync_result.is_ok());
+}
+
+TEST(Sysmem, PixelFormatModifier_DoNotCare) {
+  // These modifiers should succeed, in either accumulation order.
+  std::vector<uint64_t> modifiers;
+  // explicit kFormatModifierDoNotCare, with usage
+  modifiers.emplace_back(fuchsia_images2::kFormatModifierDoNotCare);
+  // specific pixel_format_modifier, with usage
+  modifiers.emplace_back(fuchsia_images2::kFormatModifierIntelI915XTiled);
+
+  for (uint32_t iteration = 0; iteration < 2; ++iteration) {
+    if (iteration == 1) {
+      std::swap(modifiers[0], modifiers[1]);
+    }
+
+    auto parent_token = create_initial_token_v2();
+    auto child_token = create_token_under_token_v2(parent_token);
+
+    auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+    auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+
+    set_pixel_format_modifier_constraints_v2(
+        parent_collection, {Format(fuchsia_images2::PixelFormat::kR8G8B8A8, modifiers[0])}, true);
+    set_pixel_format_modifier_constraints_v2(
+        child_collection, {Format(fuchsia_images2::PixelFormat::kR8G8B8A8, modifiers[1])}, true);
+
+    auto parent_wait_result = parent_collection->WaitForAllBuffersAllocated();
+    ASSERT_TRUE(parent_wait_result.is_ok());
+    auto child_wait_result = child_collection->WaitForAllBuffersAllocated();
+    ASSERT_TRUE(child_wait_result.is_ok());
+
+    auto& image_constraints =
+        *parent_wait_result->buffer_collection_info()->settings()->image_format_constraints();
+    ASSERT_EQ(image_constraints.pixel_format().value(), fuchsia_images2::PixelFormat::kR8G8B8A8);
+    ASSERT_EQ(image_constraints.pixel_format_modifier().value(),
+              fuchsia_images2::kFormatModifierIntelI915XTiled);
+  }
+}
+
+TEST(Sysmem, PixelFormatModifier_NoUsageDefaultDoNotCare) {
+  auto parent_token = create_initial_token_v2();
+  auto child_token = create_token_under_token_v2(parent_token);
+
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+
+  set_pixel_format_modifier_constraints_v2(
+      parent_collection, {{fuchsia_images2::PixelFormat::kR8G8B8A8, std::nullopt}}, false);
+  set_pixel_format_modifier_constraints_v2(
+      child_collection,
+      {{fuchsia_images2::PixelFormat::kR8G8B8A8, fuchsia_images2::kFormatModifierIntelI915XTiled}},
+      true);
+
+  auto parent_wait_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(parent_wait_result.is_ok());
+  auto child_wait_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(child_wait_result.is_ok());
+
+  auto& image_constraints =
+      *parent_wait_result->buffer_collection_info()->settings()->image_format_constraints();
+  ASSERT_EQ(image_constraints.pixel_format().value(), fuchsia_images2::PixelFormat::kR8G8B8A8);
+  ASSERT_EQ(image_constraints.pixel_format_modifier().value(),
+            fuchsia_images2::kFormatModifierIntelI915XTiled);
+}
+
+TEST(Sysmem, PixelFormatModifier_PixelFormatDoNotCareButConstrainPixelFormatModifier) {
+  auto parent_token = create_initial_token_v2();
+  auto child_token = create_token_under_token_v2(parent_token);
+
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+
+  set_pixel_format_modifier_constraints_v2(
+      parent_collection,
+      {{fuchsia_images2::PixelFormat::kR8G8B8A8, fuchsia_images2::kFormatModifierDoNotCare}}, true);
+  set_pixel_format_modifier_constraints_v2(
+      child_collection,
+      {{fuchsia_images2::PixelFormat::kDoNotCare, fuchsia_images2::kFormatModifierIntelI915XTiled}},
+      true);
+
+  auto parent_wait_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(parent_wait_result.is_ok());
+  auto child_wait_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(child_wait_result.is_ok());
+
+  auto& image_constraints =
+      *parent_wait_result->buffer_collection_info()->settings()->image_format_constraints();
+  ASSERT_EQ(image_constraints.pixel_format().value(), fuchsia_images2::PixelFormat::kR8G8B8A8);
+  ASSERT_EQ(image_constraints.pixel_format_modifier().value(),
+            fuchsia_images2::kFormatModifierIntelI915XTiled);
+}
+
+TEST(Sysmem, PixelFormatModifier_PixelFormatDoNotCareImpliesModifierDefaultDoNotCare) {
+  auto parent_token = create_initial_token_v2();
+  auto child_token = create_token_under_token_v2(parent_token);
+  auto child2_token = create_token_under_token_v2(child_token);
+
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+  auto child2_collection = convert_token_to_collection_v2(std::move(child2_token));
+
+  set_pixel_format_modifier_constraints_v2(
+      parent_collection,
+      {{fuchsia_images2::PixelFormat::kR8G8B8A8, fuchsia_images2::kFormatModifierDoNotCare}}, true);
+  // pixel_format DoNotCare implies modifier default DoNotCare, despite usage
+  set_pixel_format_modifier_constraints_v2(
+      child_collection, {{fuchsia_images2::PixelFormat::kDoNotCare, std::nullopt}}, true);
+  set_pixel_format_modifier_constraints_v2(
+      child2_collection,
+      {{fuchsia_images2::PixelFormat::kDoNotCare, fuchsia_images2::kFormatModifierIntelI915XTiled}},
+      true);
+
+  auto parent_wait_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(parent_wait_result.is_ok());
+  auto child_wait_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(child_wait_result.is_ok());
+  auto child2_wait_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(child2_wait_result.is_ok());
+
+  auto& image_constraints =
+      *parent_wait_result->buffer_collection_info()->settings()->image_format_constraints();
+  ASSERT_EQ(image_constraints.pixel_format().value(), fuchsia_images2::PixelFormat::kR8G8B8A8);
+  ASSERT_EQ(image_constraints.pixel_format_modifier().value(),
+            fuchsia_images2::kFormatModifierIntelI915XTiled);
+}
+
+TEST(Sysmem, PixelFormatModifier_SpecificPixelFormatWithUsageDefaultsToLinear) {
+  auto parent_token = create_initial_token_v2();
+  auto child_token = create_token_under_token_v2(parent_token);
+
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+
+  set_pixel_format_modifier_constraints_v2(
+      parent_collection,
+      {{fuchsia_images2::PixelFormat::kR8G8B8A8, fuchsia_images2::kFormatModifierDoNotCare}}, true);
+  // specific pixel_format with usage defaults to pixel_format_modifier linear
+  set_pixel_format_modifier_constraints_v2(
+      child_collection, {{fuchsia_images2::PixelFormat::kR8G8B8A8, std::nullopt}}, true);
+
+  auto parent_wait_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(parent_wait_result.is_ok());
+  auto child_wait_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(child_wait_result.is_ok());
+
+  auto& image_constraints =
+      *parent_wait_result->buffer_collection_info()->settings()->image_format_constraints();
+  ASSERT_EQ(image_constraints.pixel_format().value(), fuchsia_images2::PixelFormat::kR8G8B8A8);
+  ASSERT_EQ(image_constraints.pixel_format_modifier().value(),
+            fuchsia_images2::kFormatModifierLinear);
+}
+
+TEST(Sysmem, PixelFormatModifier_SpecificPixelFormatWithoutUsageDefaultsToModifierDoNotCare) {
+  auto parent_token = create_initial_token_v2();
+  auto child_token = create_token_under_token_v2(parent_token);
+
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+
+  set_pixel_format_modifier_constraints_v2(
+      parent_collection,
+      {{fuchsia_images2::PixelFormat::kR8G8B8A8, fuchsia_images2::kFormatModifierIntelI915XTiled}},
+      true);
+  // specific pixel_format without usage defaults to pixel_format_modifier DoNotCare
+  set_pixel_format_modifier_constraints_v2(
+      child_collection, {{fuchsia_images2::PixelFormat::kR8G8B8A8, std::nullopt}}, false);
+
+  auto parent_wait_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(parent_wait_result.is_ok());
+  auto child_wait_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(child_wait_result.is_ok());
+
+  auto& image_constraints =
+      *parent_wait_result->buffer_collection_info()->settings()->image_format_constraints();
+  ASSERT_EQ(image_constraints.pixel_format().value(), fuchsia_images2::PixelFormat::kR8G8B8A8);
+  ASSERT_EQ(image_constraints.pixel_format_modifier().value(),
+            fuchsia_images2::kFormatModifierIntelI915XTiled);
+}
+
+TEST(Sysmem, VectorPixelFormatAndModifier) {
+  auto parent_token = create_initial_token_v2();
+  auto child_token = create_token_under_token_v2(parent_token);
+
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+
+  set_pixel_format_modifier_constraints_v2(
+      parent_collection,
+      {{fuchsia_images2::PixelFormat::kBgr24, fuchsia_images2::kFormatModifierLinear},
+       {fuchsia_images2::PixelFormat::kR8G8B8A8, fuchsia_images2::kFormatModifierLinear}},
+      true);
+  set_pixel_format_modifier_constraints_v2(
+      child_collection,
+      {{fuchsia_images2::PixelFormat::kR8G8B8A8, fuchsia_images2::kFormatModifierLinear},
+       {fuchsia_images2::PixelFormat::kBgra32, fuchsia_images2::kFormatModifierLinear}},
+      true);
+
+  auto parent_wait_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(parent_wait_result.is_ok());
+  auto child_wait_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(child_wait_result.is_ok());
+
+  auto& image_constraints =
+      *parent_wait_result->buffer_collection_info()->settings()->image_format_constraints();
+  ASSERT_EQ(image_constraints.pixel_format().value(), fuchsia_images2::PixelFormat::kR8G8B8A8);
+  ASSERT_EQ(image_constraints.pixel_format_modifier().value(),
+            fuchsia_images2::kFormatModifierLinear);
+}
+
+TEST(Sysmem, VectorPixelFormatAndModifier_SingleEntry) {
+  auto parent_token = create_initial_token_v2();
+  auto child_token = create_token_under_token_v2(parent_token);
+
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+
+  set_pixel_format_modifier_constraints_v2(
+      parent_collection,
+      {{fuchsia_images2::PixelFormat::kR8G8B8A8, fuchsia_images2::kFormatModifierIntelI915XTiled}},
+      true, true);
+  set_pixel_format_modifier_constraints_v2(
+      child_collection,
+      {{fuchsia_images2::PixelFormat::kDoNotCare, fuchsia_images2::kFormatModifierDoNotCare}}, true,
+      true);
+
+  auto parent_wait_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(parent_wait_result.is_ok());
+  auto child_wait_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(child_wait_result.is_ok());
+
+  auto& image_constraints =
+      *parent_wait_result->buffer_collection_info()->settings()->image_format_constraints();
+  ASSERT_EQ(image_constraints.pixel_format().value(), fuchsia_images2::PixelFormat::kR8G8B8A8);
+  ASSERT_EQ(image_constraints.pixel_format_modifier().value(),
+            fuchsia_images2::kFormatModifierIntelI915XTiled);
+}
+
+TEST(Sysmem, VectorPixelFormatAndModifier_NoPixelFormatFails) {
+  auto parent_token = create_initial_token_v2();
+  auto child_token = create_token_under_token_v2(parent_token);
+
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+
+  set_pixel_format_modifier_constraints_v2(
+      parent_collection,
+      {{fuchsia_images2::PixelFormat::kR8G8B8A8, fuchsia_images2::kFormatModifierIntelI915XTiled},
+       {fuchsia_images2::PixelFormat::kR8G8B8A8, fuchsia_images2::kFormatModifierIntelI915YTiled}},
+      true);
+  set_pixel_format_modifier_constraints_v2(
+      child_collection,
+      {{std::nullopt, fuchsia_images2::kFormatModifierIntelI915XTiled},
+       {fuchsia_images2::PixelFormat::kR8G8B8A8, fuchsia_images2::kFormatModifierArmAfbc16X16}},
+      true);
+
+  auto parent_wait_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_FALSE(parent_wait_result.is_ok());
+  auto child_wait_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_FALSE(child_wait_result.is_ok());
+
+  // verify sysmem still alive (fail here if not, instead of failing in a subsequent test)
+  auto token3 = create_initial_token_v2();
+}
+
+TEST(Sysmem, VectorPixelFormatAndModifier_MultipleInVector) {
+  auto parent_token = create_initial_token_v2();
+  auto child_token = create_token_under_token_v2(parent_token);
+
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+
+  set_pixel_format_modifier_constraints_v2(
+      parent_collection,
+      {{fuchsia_images2::PixelFormat::kBgra32, fuchsia_images2::kFormatModifierArmAfbc16X16},
+       {fuchsia_images2::PixelFormat::kR8G8B8A8, fuchsia_images2::kFormatModifierIntelI915XTiled}},
+      true, true);
+  set_pixel_format_modifier_constraints_v2(
+      child_collection,
+      {{fuchsia_images2::PixelFormat::kBgra32, fuchsia_images2::kFormatModifierIntelI915YTiled},
+       {fuchsia_images2::PixelFormat::kR8G8B8A8, fuchsia_images2::kFormatModifierIntelI915XTiled}},
+      true, true);
+
+  auto parent_wait_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(parent_wait_result.is_ok());
+  auto child_wait_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(child_wait_result.is_ok());
+
+  auto& image_constraints =
+      *parent_wait_result->buffer_collection_info()->settings()->image_format_constraints();
+  ASSERT_EQ(image_constraints.pixel_format().value(), fuchsia_images2::PixelFormat::kR8G8B8A8);
+  ASSERT_EQ(image_constraints.pixel_format_modifier().value(),
+            fuchsia_images2::kFormatModifierIntelI915XTiled);
+}
+
+TEST(Sysmem, PixelFormatAndModifier_SeparateDuplicatedFormatFails) {
+  for (uint32_t is_failure_case = 0; is_failure_case < 2; ++is_failure_case) {
+    auto token = create_initial_token_v2();
+    auto collection = convert_token_to_collection_v2(std::move(token));
+
+    auto format = Format{fuchsia_images2::PixelFormat::kR8G8B8A8,
+                         fuchsia_images2::kFormatModifierIntelI915XTiled};
+    auto formats = std::vector<Format>{{format}};
+    if (is_failure_case) {
+      // another instance of same format will cause failure below
+      formats.emplace_back(format);
+    }
+
+    fuchsia_sysmem2::BufferCollectionConstraints constraints;
+    auto& usage = constraints.usage().emplace();
+    usage.cpu() = fuchsia_sysmem2::kCpuUsageWriteOften;
+    constraints.min_buffer_count() = 1;
+    constraints.image_format_constraints().emplace(formats.size());
+    for (uint32_t i = 0; i < formats.size(); ++i) {
+      auto& ifc = constraints.image_format_constraints()->at(i);
+      ifc.pixel_format() = formats[i].pixel_format;
+      ifc.pixel_format_modifier() = formats[i].pixel_format_modifier;
+      ifc.min_size() = {64, 64};
+      ifc.color_spaces() = {fuchsia_images2::ColorSpace::kSrgb};
+    }
+
+    fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+    set_constraints_request.constraints() = std::move(constraints);
+    auto set_constraints_result = collection->SetConstraints(std::move(set_constraints_request));
+    ASSERT_TRUE(set_constraints_result.is_ok());
+
+    auto wait_result = collection->WaitForAllBuffersAllocated();
+    if (is_failure_case) {
+      ASSERT_FALSE(wait_result.is_ok());
+    } else {
+      ASSERT_TRUE(wait_result.is_ok());
+    }
+  }
+}
+
+TEST(Sysmem, PixelFormatAndModifier_TogetherDuplicatedFormatFails) {
+  for (uint32_t is_failure_case = 0; is_failure_case < 2; ++is_failure_case) {
+    auto token = create_initial_token_v2();
+    auto collection = convert_token_to_collection_v2(std::move(token));
+
+    auto format = Format{fuchsia_images2::PixelFormat::kR8G8B8A8,
+                         fuchsia_images2::kFormatModifierIntelI915XTiled};
+    auto formats = std::vector<Format>{{format}};
+    if (is_failure_case) {
+      // another instance of same format will cause failure below
+      formats.emplace_back(format);
+    }
+
+    fuchsia_sysmem2::BufferCollectionConstraints constraints;
+    auto& usage = constraints.usage().emplace();
+    usage.cpu() = fuchsia_sysmem2::kCpuUsageWriteOften;
+    constraints.min_buffer_count() = 1;
+    constraints.image_format_constraints().emplace(1);
+    auto& ifc = constraints.image_format_constraints()->at(0);
+    ifc.pixel_format_and_modifiers().emplace(formats.size());
+    for (uint32_t i = 0; i < formats.size(); ++i) {
+      auto& format_and_modifier = ifc.pixel_format_and_modifiers()->at(i);
+      format_and_modifier.pixel_format() = formats[i].pixel_format.value();
+      format_and_modifier.pixel_format_modifier() = formats[i].pixel_format_modifier.value();
+      ifc.min_size() = {64, 64};
+      ifc.color_spaces() = {fuchsia_images2::ColorSpace::kSrgb};
+    }
+
+    fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+    set_constraints_request.constraints() = std::move(constraints);
+    auto set_constraints_result = collection->SetConstraints(std::move(set_constraints_request));
+    ASSERT_TRUE(set_constraints_result.is_ok());
+
+    auto wait_result = collection->WaitForAllBuffersAllocated();
+    if (is_failure_case) {
+      ASSERT_FALSE(wait_result.is_ok());
+    } else {
+      ASSERT_TRUE(wait_result.is_ok());
+    }
+  }
+}
+
+TEST(Sysmem, PixelFormatDoNotCareCombinedWithPixelFormatModifierDoNotCare) {
+  auto parent_token = create_initial_token_v2();
+  auto child_token = create_token_under_token_v2(parent_token);
+
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+
+  set_pixel_format_modifier_constraints_v2(
+      parent_collection,
+      {{fuchsia_images2::PixelFormat::kR8G8B8A8, fuchsia_images2::kFormatModifierDoNotCare}}, true);
+  set_pixel_format_modifier_constraints_v2(
+      child_collection,
+      {{fuchsia_images2::PixelFormat::kDoNotCare, fuchsia_images2::kFormatModifierIntelI915XTiled}},
+      true);
+
+  auto parent_wait_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(parent_wait_result.is_ok());
+  auto child_wait_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(child_wait_result.is_ok());
+
+  auto& image_constraints =
+      *parent_wait_result->buffer_collection_info()->settings()->image_format_constraints();
+  ASSERT_EQ(image_constraints.pixel_format().value(), fuchsia_images2::PixelFormat::kR8G8B8A8);
+  ASSERT_EQ(image_constraints.pixel_format_modifier().value(),
+            fuchsia_images2::kFormatModifierIntelI915XTiled);
+}
+
+TEST(Sysmem, RedundantMorePickyPixelFormatFails) {
+  auto parent_token = create_initial_token_v2();
+  auto child_token = create_token_under_token_v2(parent_token);
+
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+
+  set_pixel_format_modifier_constraints_v2(
+      parent_collection,
+      {{fuchsia_images2::PixelFormat::kR8G8B8A8, fuchsia_images2::kFormatModifierDoNotCare}}, true);
+  // Not allowed to specify two entries where one covers the other.
+  set_pixel_format_modifier_constraints_v2(
+      child_collection,
+      {{fuchsia_images2::PixelFormat::kDoNotCare, fuchsia_images2::kFormatModifierIntelI915XTiled},
+       {fuchsia_images2::PixelFormat::kR8G8B8A8, fuchsia_images2::kFormatModifierIntelI915XTiled}},
+      true);
+
+  auto parent_wait_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_FALSE(parent_wait_result.is_ok());
+  auto child_wait_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_FALSE(child_wait_result.is_ok());
+}
+
+TEST(Sysmem, RedundantMorePickyPixelFormatModifierFails) {
+  auto parent_token = create_initial_token_v2();
+  auto child_token = create_token_under_token_v2(parent_token);
+
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+
+  // Not allowed to specify two entries where one covers the other.
+  set_pixel_format_modifier_constraints_v2(
+      parent_collection,
+      {{fuchsia_images2::PixelFormat::kR8G8B8A8, fuchsia_images2::kFormatModifierDoNotCare},
+       {fuchsia_images2::PixelFormat::kR8G8B8A8, fuchsia_images2::kFormatModifierIntelI915XTiled}},
+      true);
+  set_pixel_format_modifier_constraints_v2(
+      child_collection,
+      {{fuchsia_images2::PixelFormat::kDoNotCare, fuchsia_images2::kFormatModifierIntelI915XTiled}},
+      true);
+
+  auto parent_wait_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_FALSE(parent_wait_result.is_ok());
+  auto child_wait_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_FALSE(child_wait_result.is_ok());
+}
+
+TEST(Sysmem, RedundantMorePickyFormatFails) {
+  auto parent_token = create_initial_token_v2();
+
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+
+  // Not allowed to specify two entries where one covers the other.
+  set_pixel_format_modifier_constraints_v2(
+      parent_collection,
+      {{fuchsia_images2::PixelFormat::kDoNotCare, fuchsia_images2::kFormatModifierDoNotCare},
+       {fuchsia_images2::PixelFormat::kR8G8B8A8, fuchsia_images2::kFormatModifierIntelI915XTiled}},
+      true);
+
+  auto parent_wait_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_FALSE(parent_wait_result.is_ok());
+}
+
+TEST(Sysmem, ImpliedNonSupportedFormatDoesNotForceFailure) {
+  auto parent_token = create_initial_token_v2();
+  auto child_token = create_token_under_token_v2(parent_token);
+
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+
+  // kMjpeg isn't supported as of this comment regardless of tiling, but because it only becomes a
+  // specific format during DoNotCare processing, it gets filtered out instead of forcing failure.
+  set_pixel_format_modifier_constraints_v2(
+      parent_collection,
+      {{fuchsia_images2::PixelFormat::kR8G8B8A8, fuchsia_images2::kFormatModifierDoNotCare},
+       {fuchsia_images2::PixelFormat::kMjpeg, fuchsia_images2::kFormatModifierDoNotCare}},
+      true);
+  set_pixel_format_modifier_constraints_v2(
+      child_collection,
+      {{fuchsia_images2::PixelFormat::kDoNotCare, fuchsia_images2::kFormatModifierIntelI915XTiled}},
+      true);
+
+  auto parent_wait_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(parent_wait_result.is_ok());
+  auto child_wait_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(child_wait_result.is_ok());
+
+  auto& image_constraints =
+      *parent_wait_result->buffer_collection_info()->settings()->image_format_constraints();
+  ASSERT_EQ(image_constraints.pixel_format().value(), fuchsia_images2::PixelFormat::kR8G8B8A8);
+  ASSERT_EQ(image_constraints.pixel_format_modifier().value(),
+            fuchsia_images2::kFormatModifierIntelI915XTiled);
+}
+
+TEST(Sysmem, ImpliedNonSupportedColorspaceDoesNotForceFailure) {
+  auto parent_token = create_initial_token_v2();
+  auto child_token = create_token_under_token_v2(parent_token);
+
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+
+  {  // scope parent constraints
+    fuchsia_sysmem2::BufferCollectionConstraints constraints;
+    constraints.usage().emplace();
+    constraints.usage()->cpu() = fuchsia_sysmem2::kCpuUsageWriteOften;
+    constraints.min_buffer_count() = 1;
+    constraints.image_format_constraints().emplace(1);
+    auto& ifc = constraints.image_format_constraints()->at(0);
+    ifc.pixel_format() = fuchsia_images2::PixelFormat::kR8G8B8A8;
+    ifc.pixel_format_modifier() = fuchsia_images2::kFormatModifierDoNotCare;
+    ifc.min_size() = {64, 64};
+    ifc.color_spaces() = {fuchsia_images2::ColorSpace::kSrgb};
+    fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+    set_constraints_request.constraints() = std::move(constraints);
+    auto set_constraints_result =
+        parent_collection->SetConstraints(std::move(set_constraints_request));
+    ASSERT_TRUE(set_constraints_result.is_ok());
+  }
+
+  {  // scope child constraints
+    fuchsia_sysmem2::BufferCollectionConstraints constraints;
+    constraints.usage().emplace();
+    constraints.usage()->cpu() = fuchsia_sysmem2::kCpuUsageWriteOften;
+    constraints.min_buffer_count() = 1;
+    constraints.image_format_constraints().emplace(1);
+    auto& ifc = constraints.image_format_constraints()->at(0);
+    ifc.pixel_format() = fuchsia_images2::PixelFormat::kDoNotCare;
+    ifc.pixel_format_modifier() = fuchsia_images2::kFormatModifierIntelI915XTiled;
+    ifc.min_size() = {64, 64};
+    // kRec2020 isn't supported with kR8G8B8A8, but because this ifc entry has a DoNotCare, the
+    // server will filter out the unsupported color space when combining with kR8G8B8A8 from other
+    // participant instead of failing the allocation.
+    ifc.color_spaces() = {fuchsia_images2::ColorSpace::kSrgb,
+                          fuchsia_images2::ColorSpace::kRec2020};
+    fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+    set_constraints_request.constraints() = std::move(constraints);
+    auto set_constraints_result =
+        child_collection->SetConstraints(std::move(set_constraints_request));
+    ASSERT_TRUE(set_constraints_result.is_ok());
+  }
+
+  auto parent_wait_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(parent_wait_result.is_ok());
+  auto child_wait_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(child_wait_result.is_ok());
+
+  auto& image_constraints =
+      *parent_wait_result->buffer_collection_info()->settings()->image_format_constraints();
+  ASSERT_EQ(image_constraints.pixel_format().value(), fuchsia_images2::PixelFormat::kR8G8B8A8);
+  ASSERT_EQ(image_constraints.pixel_format_modifier().value(),
+            fuchsia_images2::kFormatModifierIntelI915XTiled);
+}
+
+TEST(Sysmem, CombineableFormatsFromSingleParticipantFails) {
+  auto parent_token = create_initial_token_v2();
+
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+
+  // Not allowed to specify two entries where one covers the other.
+  set_pixel_format_modifier_constraints_v2(
+      parent_collection,
+      {{fuchsia_images2::PixelFormat::kR8G8B8A8, fuchsia_images2::kFormatModifierDoNotCare},
+       {fuchsia_images2::PixelFormat::kDoNotCare, fuchsia_images2::kFormatModifierIntelI915XTiled}},
+      true);
+
+  auto parent_wait_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_FALSE(parent_wait_result.is_ok());
+}
+
+TEST(Sysmem, DuplicateSyncRightsAttenuationMaskZeroFails) {
+  auto parent = create_initial_token_v2();
+  std::vector<zx_rights_t> rights_masks{0, 0};
+  fuchsia_sysmem2::BufferCollectionTokenDuplicateSyncRequest request;
+  request.rights_attenuation_masks() = std::move(rights_masks);
+  auto duplicate_sync_result = parent->DuplicateSync(std::move(request));
+  ASSERT_FALSE(duplicate_sync_result.is_ok());
+}
+
+TEST(Sysmem, BufferCollectionTokenGroupCreateChildZeroAttenuationMaskFails) {
+  auto parent = create_initial_token_v2();
+  auto group = create_group_under_token_v2(parent);
+  auto child_endpoints =
+      std::move(fidl::CreateEndpoints<fuchsia_sysmem2::BufferCollectionToken>().value());
+  fuchsia_sysmem2::BufferCollectionTokenGroupCreateChildRequest request;
+  request.rights_attenuation_mask() = 0;
+  request.token_request() = std::move(child_endpoints.server);
+  auto create_child_result = group->CreateChild(std::move(request));
+  // one-way, so no failure yet
+  ASSERT_TRUE(create_child_result.is_ok());
+  // We shouldn't have to wait anywhere near this long, but to avoid flakes we
+  // won't fail the test until it's very clear that sysmem hasn't failed the
+  // buffer collection despite zero attenuation mask.
+  constexpr zx::duration kWaitDuration = zx::sec(10);
+  const zx::time start_wait = zx::clock::get_monotonic();
+  while (true) {
+    // give up after kWaitDuration
+    ASSERT_TRUE(zx::clock::get_monotonic() < start_wait + kWaitDuration);
+    if (parent->Sync().is_ok()) {
+      // failure due to Close before AllChildrenPresent takes effect async; try again
+      zx::nanosleep(zx::deadline_after(zx::msec(10)));
+      continue;
+    } else {
+      // expected failure seen - pass
+      break;
+    }
+  }
+}
+
+TEST(Sysmem, BufferCollectionTokenGroupCreateChildrenZeroAttenuationMaskFails) {
+  auto parent = create_initial_token_v2();
+  auto group = create_group_under_token_v2(parent);
+  std::vector<zx_rights_t> rights_masks{0, 0};
+  fuchsia_sysmem2::BufferCollectionTokenGroupCreateChildrenSyncRequest request;
+  request.rights_attenuation_masks() = std::move(rights_masks);
+  auto create_sync_result = group->CreateChildrenSync(std::move(request));
+  ASSERT_FALSE(create_sync_result.is_ok());
+}
+
+TEST(Sysmem, BufferCollectionTokenGroupCloseBeforeAllChildrenPresentFails) {
+  auto parent = create_initial_token_v2();
+  auto group = create_group_under_token_v2(parent);
+  auto child1 = create_token_under_group_v2(group);
+
+  // sending Close before AllChildrenPresent expected to cause buffer collection failure
+  auto close_result = group->Close();
+  // one-way message; no visible error yet
+  ASSERT_TRUE(close_result.is_ok());
+
+  // We shouldn't have to wait anywhere near this long, but to avoid flakes we
+  // won't fail the test until it's very clear that sysmem hasn't failed the
+  // buffer collection despite Close before AllChildrenPresent.
+  constexpr zx::duration kWaitDuration = zx::sec(10);
+  const zx::time start_wait = zx::clock::get_monotonic();
+  while (true) {
+    // give up after kWaitDuration
+    ASSERT_TRUE(zx::clock::get_monotonic() < start_wait + kWaitDuration);
+    if (parent->Sync().is_ok()) {
+      // failure due to Close before AllChildrenPresent takes effect async; try again
+      zx::nanosleep(zx::deadline_after(zx::msec(10)));
+      continue;
+    } else {
+      // expected failure seen - pass
+      break;
+    }
+  }
+}
+
+TEST(Sysmem, HeapConflictMovesToNextGroupChild) {
+  auto parent = create_initial_token_v2();
+  auto group = create_group_under_token_v2(parent);
+  auto child1 = create_token_under_group_v2(group);
+  auto child2 = create_token_under_group_v2(group);
+
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent));
+  auto child1_collection = convert_token_to_collection_v2(std::move(child1));
+  auto child2_collection = convert_token_to_collection_v2(std::move(child2));
+
+  // Intentionally setting supported domains incompatible with kGoldfishDeviceLocal, which only
+  // supports inaccessible domain. We expect allocation to succeed when the group tries child2
+  // (after having tried child1 unsuccessfully first).
+  set_heap_constraints_v2(parent_collection, {}, true, false);
+  ASSERT_TRUE(group->AllChildrenPresent().is_ok());
+  set_heap_constraints_v2(child1_collection, {v2::HeapType::kGoldfishDeviceLocal}, true, true);
+  set_heap_constraints_v2(child2_collection, {}, true, false);
+
+  auto wait_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(wait_result.is_ok());
+  auto& info = wait_result->buffer_collection_info().value();
+  ASSERT_EQ(info.settings()->buffer_settings()->heap().value(), v2::HeapType::kSystemRam);
+}
+
+// This test is too likely to cause an OOM which would be treated as a flake. For now we can enable
+// and run this manually.
+#if 0
+TEST(Sysmem, FailAllocateVmoMidAllocate) {
+  // 1 GiB cap for now.
+  const uint64_t kMaxTotalSizeBytesPerCollection = 1ull * 1024 * 1024 * 1024;
+  // 256 MiB cap for now.
+  const uint64_t kMaxSizeBytesPerBuffer = 256ull * 1024 * 1024;
+  const uint32_t kMaxBufferCount = std::min(kMaxTotalSizeBytesPerCollection / kMaxSizeBytesPerBuffer, static_cast<uint64_t>(fuchsia_sysmem::kMaxCountBufferCollectionInfoBuffers));
+
+  std::vector<zx::vmo> keep_vmos;
+
+  while(true) {
+    auto parent_token = create_initial_token_v2();
+    auto child_token = create_token_under_token_v2(parent_token);
+    auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+    auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+    set_specific_constraints_v2(parent_collection, kMaxSizeBytesPerBuffer, kMaxBufferCount, true);
+    set_specific_constraints_v2(child_collection, kMaxSizeBytesPerBuffer, 0, true);
+    auto wait_result = parent_collection->WaitForAllBuffersAllocated();
+    if (!wait_result.is_ok()) {
+      break;
+    }
+    auto info = std::move(*wait_result->buffer_collection_info());
+    for (auto& vmo_buffer : *info.buffers()) {
+      keep_vmos.emplace_back(std::move(*vmo_buffer.vmo()));
+    }
+  }
+
+  auto alive_token = create_initial_token_v2();
+  ASSERT_TRUE(alive_token->Sync().is_ok());
+}
+#endif

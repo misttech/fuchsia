@@ -25,6 +25,7 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 	"go.fuchsia.dev/fuchsia/tools/lib/serial"
 	serialconstants "go.fuchsia.dev/fuchsia/tools/lib/serial/constants"
+	"go.fuchsia.dev/fuchsia/tools/lib/subprocess"
 	"go.fuchsia.dev/fuchsia/tools/net/netboot"
 	"go.fuchsia.dev/fuchsia/tools/net/netutil"
 	"go.fuchsia.dev/fuchsia/tools/net/sshutil"
@@ -40,6 +41,17 @@ const (
 	// String to look for in serial log that indicates system booted. From
 	// https://cs.opensource.google/fuchsia/fuchsia/+/main:zircon/kernel/top/main.cc;l=116;drc=6a0fd696cde68b7c65033da57ab911ee5db75064
 	bootedLogSignature = "welcome to Zircon"
+
+	// Idling in fastboot
+	fastbootIdleSignature = "USB RESET"
+
+	// Timeout for the overall "recover device by hard power-cycling and
+	// forcing into fastboot" flow
+	hardRecoveryTimeoutSecs = 60
+
+	// Timeout to observe fastbootIdleSignature before proceeding anyway
+	// after hard power cycle
+	fastbootIdleWaitTimeoutSecs = 10
 
 	// Whether we should place the device in Zedboot if idling in fastboot.
 	// TODO(fxbug.dev/124946): Remove once release branches no longer need this.
@@ -66,6 +78,15 @@ type DeviceConfig struct {
 	// PDU is an optional reference to the power distribution unit controlling
 	// power delivery to the target. This will not always be present.
 	PDU *targetPDU `json:"pdu,omitempty"`
+
+	// MaxFlashAttempts is an optional integer indicating the number of
+	// attempts we will make to provision this device via flashing.  If not
+	// present, we will assume its value to be 1.  It should only be set >1
+	// for hardware types which have silicon bugs which make flashing
+	// unreliable in a way that we cannot address with any other means.
+	// Other failure modes should be resolved by fixing the source of the
+	// failure, not papering over it with retries.
+	MaxFlashAttempts int `json:"max_flash_attempts,omitempty"`
 }
 
 // NetworkProperties are the static network properties of a target.
@@ -197,12 +218,16 @@ func (t *Device) SSHClient() (*sshutil.Client, error) {
 	return t.sshClient(&net.IPAddr{IP: addr})
 }
 
+func (t *Device) UseProductBundles() bool {
+	return t.UseFFX()
+}
+
 func (t *Device) mustLoadThroughZedboot() bool {
 	return mustLoadThroughZedboot || t.config.FastbootSernum == "" || !t.UseFFX()
 }
 
 // Start starts the device target.
-func (t *Device) Start(ctx context.Context, images []bootserver.Image, args []string) error {
+func (t *Device) Start(ctx context.Context, images []bootserver.Image, args []string, pbPath string, isBootTest bool) error {
 	serialSocketPath := t.SerialSocketPath()
 
 	// Set up log listener and dump kernel output to stdout.
@@ -210,6 +235,8 @@ func (t *Device) Start(ctx context.Context, images []bootserver.Image, args []st
 	if err != nil {
 		return fmt.Errorf("cannot listen: %w", err)
 	}
+	stdout, _, flush := botanist.NewStdioWritersWithTimestamp(ctx)
+	defer flush()
 	go func() {
 		defer l.Close()
 		for atomic.LoadUint32(&t.stopping) == 0 {
@@ -217,7 +244,9 @@ func (t *Device) Start(ctx context.Context, images []bootserver.Image, args []st
 			if err != nil {
 				continue
 			}
-			fmt.Print(data)
+			if _, err := stdout.Write([]byte(data)); err != nil {
+				logger.Warningf(ctx, "failed to write log to stdout: %s, data: %s", err, data)
+			}
 		}
 	}()
 
@@ -296,12 +325,36 @@ func (t *Device) Start(ctx context.Context, images []bootserver.Image, args []st
 				return err
 			}
 		} else if t.opts.Netboot {
-			if err := t.ramBoot(ctx, imgs); err != nil {
+			if err := t.ramBoot(ctx, imgs, pbPath); err != nil {
 				return err
 			}
 		} else {
-			if err := t.flash(ctx, imgs); err != nil {
-				return err
+			maxAllowedAttempts := 1
+			if t.config.MaxFlashAttempts > maxAllowedAttempts {
+				maxAllowedAttempts = t.config.MaxFlashAttempts
+			}
+			var err error
+			for attempt := 1; attempt <= maxAllowedAttempts; attempt++ {
+				logger.Debugf(ctx, "Starting flash attempt %d/%d", attempt, maxAllowedAttempts)
+				if err = t.flash(ctx, imgs, pbPath); err == nil {
+					// If successful, early exit.
+					break
+				}
+				if attempt == maxAllowedAttempts {
+					logger.Errorf(ctx, "Flashing attempt %d/%d failed: %s.", attempt, maxAllowedAttempts, err)
+					return err
+				} else {
+					// If not successful, and we have
+					// remaining attempts, try hard
+					// power-cycling the target to recover.
+					logger.Warningf(ctx, "Flashing attempt %d/%d failed: %s.  Attempting hard power cycle.", attempt, maxAllowedAttempts, err)
+					err = t.hardPowerCycleAndPlaceInFastboot(ctx)
+					if err != nil {
+						errWrapped := fmt.Errorf("while hard power cycling and placing device back in fastboot: %w", err)
+						logger.Errorf(ctx, "%s", errWrapped)
+						return errWrapped
+					}
+				}
 			}
 		}
 	}
@@ -326,21 +379,56 @@ func (t *Device) Start(ctx context.Context, images []bootserver.Image, args []st
 			}
 			t.tftp = tftpClient
 		}
-		var imgs []bootserver.Image
-		for _, img := range images {
-			if t.imageOverrides.IsEmpty() {
-				imgs = append(imgs, img)
-			} else {
-				if img.Label == t.imageOverrides.ZBI {
-					img.Args = append(img.Args, "--boot")
-					imgs = append(imgs, img)
-				} else if img.Label == t.imageOverrides.FVM && filepath.Ext(img.Name) == ".fvm" {
-					img.Args = append(img.Args, "--fvm")
-					imgs = append(imgs, img)
+		// For boot tests, we need to add the appropriate boot args to the
+		// specified custom images instead of the default images, so we'll pass
+		// in only the custom images to bootserver.Boot() to exclude the default
+		// images which already have boot args attached to them.
+		var finalImgs []bootserver.Image
+		if t.imageOverrides.IsEmpty() && pbPath != "" {
+			// pbPath should only be provided if ffx is enabled.
+			// TODO(ihuh): Parse from the product bundle manifest
+			// even when ffx is not enabled.
+			if !t.UseFFX() {
+				return fmt.Errorf("product bundles are not supported without ffx")
+			}
+			var zbi, fvm *bootserver.Image
+			if isBootTest {
+				// Only get images from product bundle for boot tests when
+				// loading through zedboot. Regular tests should just use
+				// the images from images.json as is.
+				zbi, err = t.ffx.GetImageFromPB(ctx, pbPath, "a", "zbi", "")
+				if err != nil {
+					return err
+				}
+				if zbi != nil {
+					zbi.Args = []string{"--boot"}
+					finalImgs = append(finalImgs, *zbi)
+				}
+				fvm, err = t.ffx.GetImageFromPB(ctx, pbPath, "a", "fvm", "")
+				if err != nil {
+					return err
+				}
+				if fvm != nil {
+					fvm.Args = []string{"--fvm"}
+					finalImgs = append(finalImgs, *fvm)
 				}
 			}
 		}
-		if err := bootserver.Boot(ctx, t.Tftp(), imgs, args, authorizedKeys); err != nil {
+		if len(finalImgs) == 0 {
+			for _, img := range images {
+				if !t.imageOverrides.IsEmpty() {
+					if img.Label == t.imageOverrides.ZBI {
+						img.Args = append(img.Args, "--boot")
+					} else if img.Label == t.imageOverrides.FVM && filepath.Ext(img.Name) == ".fvm" {
+						img.Args = append(img.Args, "--fvm")
+					} else {
+						continue
+					}
+				}
+				finalImgs = append(finalImgs, img)
+			}
+		}
+		if err := bootserver.Boot(ctx, t.Tftp(), finalImgs, args, authorizedKeys); err != nil {
 			return err
 		}
 	}
@@ -393,7 +481,7 @@ func (t *Device) bootZedboot(ctx context.Context, images []bootserver.Image) err
 		return err
 	}
 	cmd := exec.CommandContext(ctx, fastboot.Path, "-s", t.config.FastbootSernum, "boot", combinedZBIVBMeta)
-	stdout, stderr, flush := botanist.NewStdioWriters(ctx)
+	stdout, stderr, flush := botanist.NewStdioWritersWithTimestamp(ctx)
 	defer flush()
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
@@ -403,8 +491,11 @@ func (t *Device) bootZedboot(ctx context.Context, images []bootserver.Image) err
 	return err
 }
 
-func (t *Device) ramBoot(ctx context.Context, images []bootserver.Image) error {
+func (t *Device) ramBoot(ctx context.Context, images []bootserver.Image, productBundle string) error {
 	if t.UseFFX() {
+		if productBundle != "" && t.imageOverrides.IsEmpty() {
+			return t.ffx.BootloaderBoot(ctx, t.config.FastbootSernum, "", "", "", productBundle)
+		}
 		var zbi *bootserver.Image
 		if t.imageOverrides.ZBI == "" {
 			zbi = getImageByName(images, "zbi_zircon-a")
@@ -425,14 +516,14 @@ func (t *Device) ramBoot(ctx context.Context, images []bootserver.Image) error {
 			return fmt.Errorf("could not find \"vbmeta_zircon-a\" or VBMeta override")
 		}
 
-		return t.ffx.BootloaderBoot(ctx, t.config.FastbootSernum, zbi.Path, vbmeta.Path, "")
+		return t.ffx.BootloaderBoot(ctx, t.config.FastbootSernum, zbi.Path, vbmeta.Path, "", "")
 	}
 	bootScript := getImageByName(images, "script_fastboot-boot-script")
 	if bootScript == nil {
 		return errors.New("fastboot boot script not found")
 	}
 	cmd := exec.CommandContext(ctx, bootScript.Path, "-s", t.config.FastbootSernum)
-	stdout, stderr, flush := botanist.NewStdioWriters(ctx)
+	stdout, stderr, flush := botanist.NewStdioWritersWithTimestamp(ctx)
 	defer flush()
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
@@ -452,7 +543,7 @@ func (t *Device) writePubKey() (string, error) {
 	return pubkey.Name(), nil
 }
 
-func (t *Device) flash(ctx context.Context, images []bootserver.Image) error {
+func (t *Device) flash(ctx context.Context, images []bootserver.Image, productBundle string) error {
 	var pubkey string
 	var err error
 	if len(t.signers) > 0 {
@@ -474,11 +565,16 @@ func (t *Device) flash(ctx context.Context, images []bootserver.Image) error {
 
 	// TODO(fxbug.dev/87634): Need support for ffx target flash for cuckoo tests.
 	if pubkey != "" && t.UseFFX() {
-		flashManifest := getImageByName(images, "manifest_flash-manifest")
-		if flashManifest == nil {
-			return errors.New("flash manifest not found")
+		var flashManifestPath string
+		if productBundle == "" {
+			flashManifest := getImageByName(images, "manifest_flash-manifest")
+			if flashManifest == nil {
+				return errors.New("flash manifest not found")
+			}
+			flashManifestPath = flashManifest.Path
 		}
-		return t.ffx.Flash(ctx, t.config.FastbootSernum, flashManifest.Path, pubkey)
+
+		return t.ffx.Flash(ctx, t.config.FastbootSernum, flashManifestPath, pubkey, productBundle)
 	}
 
 	flashScript := getImageByName(images, "script_flash-script")
@@ -492,11 +588,150 @@ func (t *Device) flash(ctx context.Context, images []bootserver.Image) error {
 	}
 
 	cmd := exec.CommandContext(ctx, flashScript.Path, flashArgs...)
-	stdout, stderr, flush := botanist.NewStdioWriters(ctx)
+	stdout, stderr, flush := botanist.NewStdioWritersWithTimestamp(ctx)
 	defer flush()
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	return cmd.Run()
+}
+
+// Nasty hack to try to deal with the fact that some devices have real bad USB
+// signal quality which results in dropping packets in a way the target doesn't
+// recognize.
+func (t *Device) hardPowerCycleAndPlaceInFastboot(ctx context.Context) error {
+	// All of this should easily complete within a minute.
+	ctx, cancel := context.WithTimeout(ctx, hardRecoveryTimeoutSecs*time.Second)
+	defer cancel()
+	serialSocketPath := t.SerialSocketPath()
+	if serialSocketPath == "" {
+		return errors.New("No serial socket configured; cannot force device into fastboot")
+	}
+
+	// Start a goroutine which just periodically sends `f\r\n` on the serial
+	// console, which is the magic invocation which tells firmware to drop
+	// into the fastboot idle loop.
+	serialSpamContext, serialSpamCancel := context.WithCancel(ctx)
+	defer serialSpamCancel()
+	go spamFToSerial(serialSpamContext, serialSocketPath)
+
+	// Ask DMS to hard power cycle this device.  This usually takes ~20 seconds.
+	err := t.hardPowerCycle(ctx)
+	if err != nil {
+		return fmt.Errorf("dmc invocation failed: %w", err)
+	}
+	logger.Debugf(ctx, "dmc invocation completed successfully")
+
+	// Start a goroutine which watches the serial logs for this device for
+	// fastbootIdleSignature.  This is intrinsically racy no matter when we
+	// start it -- if we do it before the power-cycle, we might pick up the
+	// line emission due to a USB link renegotiation from before we cut
+	// power.  If we do it after the power-cycle, we might not open the
+	// socket quickly enough to see the `USB RESET` line.
+	// We opt for the latter, combined with a 10-second timeout after which
+	// we assume success and carry on anyway.  This whole flow is only
+	// intended for use in an attempted error recovery path anyway.
+	fastbootedLogChan := make(chan error)
+	go func() {
+		defer close(fastbootedLogChan)
+		logger.Debugf(ctx, "watching serial for string that indicates device is in fastboot: %q", fastbootIdleSignature)
+		socket, err := net.Dial("unix", serialSocketPath)
+		if err != nil {
+			fastbootedLogChan <- fmt.Errorf("%s: %w", serialconstants.FailedToOpenSerialSocketMsg, err)
+			return
+		}
+		defer socket.Close()
+		_, err = iomisc.ReadUntilMatchString(ctx, socket, fastbootIdleSignature)
+		fastbootedLogChan <- err
+	}()
+	fastbootWaitCtx, fastbootWaitCtxCancel := context.WithTimeout(ctx, fastbootIdleWaitTimeoutSecs*time.Second)
+	defer fastbootWaitCtxCancel()
+
+	// Wait until either we have seen the device enumerate on USB again (as
+	// evidenced by the serial log signature) or until 10 seconds have
+	// elapsed (an upper bound on the amount of time it should take a
+	// device to reach fastboot).
+	var retval error
+	select {
+	case res := <-fastbootedLogChan:
+		logger.Debugf(fastbootWaitCtx, "Log watcher returned %s", err)
+		retval = res
+		// We wait an additional two seconds here because at the
+		// instant we see this log line, the host is still enumerating
+		// the device and has likely not finished all of its USB
+		// requests yet, and `ffx flash` will error out immediately if
+		// it can't find the device with the matching serial number,
+		// rather than wait for such a device to appear (which is what
+		// `fastboot` would do).
+		// Feel free to remove this if `ffx flash` ever gets around to
+		// doing the more-useful thing.
+		time.Sleep(2 * time.Second)
+	case <-fastbootWaitCtx.Done():
+		logger.Debugf(fastbootWaitCtx, "Did not see '%s' in logs within %d seconds; carrying on anyway", fastbootIdleSignature, fastbootIdleWaitTimeoutSecs)
+		retval = nil
+	case <-ctx.Done():
+		retval = fmt.Errorf("hard-reboot recovery did not complete within %d seconds", hardRecoveryTimeoutSecs)
+	}
+
+	return retval
+}
+
+func spamFToSerial(ctx context.Context, serialSocketPath string) {
+	logger.Debugf(ctx, "starting serial spam to place device in fastboot")
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	socket, err := net.Dial("unix", serialSocketPath)
+	if err != nil {
+		logger.Errorf(ctx, "%s: %s", serialconstants.FailedToOpenSerialSocketMsg, err)
+		return
+	}
+	defer socket.Close()
+
+	// Start a routine to read from the socket we opened in the background,
+	// lest the socket that never drains the kernel buffer eventually cause
+	// the mux to block on writes, causing all other mux readers to stop
+	// getting any new data as the channel buffers fill
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			if ctx.Err() != nil {
+				return
+			}
+			_, err := socket.Read(buf)
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+WriteLoop:
+	for {
+		select {
+		case <-ctx.Done():
+			break WriteLoop
+		case <-ticker.C:
+			msg := []byte{'\r', '\n', 'f', '\r', '\n'}
+			socket.Write(msg)
+		}
+	}
+	logger.Debugf(ctx, "stopping serial spam")
+}
+
+func (t *Device) hardPowerCycle(ctx context.Context) error {
+	// there should be an env var DMC_PATH with the path to dmc
+	cmdline := []string{
+		os.Getenv("DMC_PATH"),
+		"set-power-state",
+		"-server-port",
+		os.Getenv("DMS_PORT"),
+		"-state",
+		"cycle",
+		"-nodename",
+		t.Nodename(),
+	}
+	runner := subprocess.Runner{}
+	// Run the dmc invocation and wait for the subprocess call to complete.
+	// This usually takes ~20 seconds.
+	return runner.Run(ctx, cmdline, subprocess.RunOptions{})
 }
 
 // Stop stops the device.

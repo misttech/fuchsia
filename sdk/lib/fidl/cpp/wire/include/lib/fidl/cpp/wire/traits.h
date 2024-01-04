@@ -125,8 +125,6 @@ struct IsResource : public std::false_type {
 //                        unbounded.
 // |kHasFlexibleEnvelope| is a bool specifying if this message contains a
 //                        flexible union or a flexible table.
-// |kHasEnvelope|         is a boolean specifying if the structure contains
-//                        envelopes.
 // |kHasPointer|          is a boolean specifying if the structure contains
 //                        pointer indirections, hence requires linearization
 //                        when sending.
@@ -212,6 +210,11 @@ template <typename T>
 struct IsFidlObject<
     T, typename std::enable_if<IsTable<T>::value || IsUnion<T>::value || IsStruct<T>::value>::type>
     : std::true_type {};
+
+// IsWire is a subset of IsFidlObject referring to user defined aggregate types bound for the wire
+// bindings.
+template <typename T>
+struct IsWire : public std::false_type {};
 
 // Indicates if the parameterized type contains a handle.
 template <typename T, typename Enable = void>

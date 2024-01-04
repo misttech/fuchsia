@@ -2,12 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use starnix_sync::Mutex;
 use std::{
     collections::{hash_map::Entry, HashMap},
     sync::{Arc, Weak},
 };
 
-use crate::{fs::socket::*, lock::Mutex, task::CurrentTask, types::*};
+use crate::{
+    task::CurrentTask,
+    vfs::socket::{Socket, SocketAddress, SocketHandle},
+};
+use starnix_uapi::{errno, error, errors::Errno};
 
 /// A registry of abstract sockets.
 ///
@@ -58,7 +63,11 @@ where
         Ok(())
     }
 
-    pub fn lookup(&self, address: &K) -> Result<SocketHandle, Errno> {
+    pub fn lookup<Q: ?Sized>(&self, address: &Q) -> Result<SocketHandle, Errno>
+    where
+        K: std::borrow::Borrow<Q>,
+        Q: std::hash::Hash + Eq,
+    {
         let table = self.table.lock();
         table.get(address).and_then(|weak| weak.upgrade()).ok_or_else(|| errno!(ECONNREFUSED))
     }

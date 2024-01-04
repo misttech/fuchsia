@@ -6,14 +6,14 @@ use {
     crate::realm::{
         get_all_instances, get_resolved_declaration, GetAllInstancesError, GetDeclarationError,
     },
-    cm_rust::{ComponentDecl, SourceName},
+    cm_rust::{
+        CapabilityDecl, ComponentDecl, ExposeDecl, ExposeDeclCommon, OfferDecl, OfferDeclCommon,
+        SourceName, UseDecl, UseDeclCommon,
+    },
     fidl_fuchsia_sys2 as fsys,
     moniker::Moniker,
     thiserror::Error,
 };
-
-// Export so it is easier for others to use.
-pub use routing::mapper::RouteSegment;
 
 #[derive(Debug, Error)]
 pub enum FindInstancesError {
@@ -28,6 +28,58 @@ pub enum FindInstancesError {
     },
 }
 
+pub enum RouteSegment {
+    /// The capability was used by a component instance in its manifest.
+    UseBy { moniker: Moniker, capability: UseDecl },
+
+    /// The capability was offered by a component instance in its manifest.
+    OfferBy { moniker: Moniker, capability: OfferDecl },
+
+    /// The capability was exposed by a component instance in its manifest.
+    ExposeBy { moniker: Moniker, capability: ExposeDecl },
+
+    /// The capability was declared by a component instance in its manifest.
+    DeclareBy { moniker: Moniker, capability: CapabilityDecl },
+}
+
+impl std::fmt::Display for RouteSegment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UseBy { moniker, capability } => {
+                write!(
+                    f,
+                    "`{}` used `{}` from {}",
+                    moniker,
+                    capability.source_name(),
+                    capability.source()
+                )
+            }
+            Self::OfferBy { moniker, capability } => {
+                write!(
+                    f,
+                    "`{}` offered `{}` from {} to {}",
+                    moniker,
+                    capability.source_name(),
+                    capability.source(),
+                    capability.target()
+                )
+            }
+            Self::ExposeBy { moniker, capability } => {
+                write!(
+                    f,
+                    "`{}` exposed `{}` from {} to {}",
+                    moniker,
+                    capability.source_name(),
+                    capability.source(),
+                    capability.target()
+                )
+            }
+            Self::DeclareBy { moniker, capability } => {
+                write!(f, "`{}` declared capability `{}`", moniker, capability.name())
+            }
+        }
+    }
+}
 /// Find components that reference a capability matching the given |query|.
 pub async fn get_all_route_segments(
     query: String,
@@ -42,7 +94,14 @@ pub async fn get_all_route_segments(
                 let mut component_segments = get_segments(&instance.moniker, decl, &query);
                 segments.append(&mut component_segments)
             }
-            Err(GetDeclarationError::InstanceNotResolved(_)) => continue,
+            // If the instance is not yet resolved, then we can't get its resolved declaration. If
+            // the component doesn't exist, then it's been destroyed since the `get_all_instances`
+            // call and we can't get its resolved declaration. Both of these things are expected,
+            // so ignore these errors.
+            Err(
+                GetDeclarationError::InstanceNotResolved(_)
+                | GetDeclarationError::InstanceNotFound(_),
+            ) => continue,
             Err(err) => {
                 return Err(FindInstancesError::GetDeclarationError {
                     moniker: instance.moniker.clone(),
@@ -122,6 +181,7 @@ mod tests {
                     uses: vec![UseDecl::Protocol(UseProtocolDecl {
                         source: UseSource::Parent,
                         source_name: "fuchsia.foo.bar".parse().unwrap(),
+                        source_dictionary: None,
                         target_path: "/svc/fuchsia.foo.bar".parse().unwrap(),
                         dependency_type: DependencyType::Strong,
                         availability: Availability::Required,
@@ -129,6 +189,7 @@ mod tests {
                     exposes: vec![ExposeDecl::Protocol(ExposeProtocolDecl {
                         source: ExposeSource::Self_,
                         source_name: "fuchsia.foo.bar".parse().unwrap(),
+                        source_dictionary: None,
                         target: ExposeTarget::Parent,
                         target_name: "fuchsia.foo.bar".parse().unwrap(),
                         availability: Availability::Required,
@@ -136,6 +197,7 @@ mod tests {
                     offers: vec![OfferDecl::Protocol(OfferProtocolDecl {
                         source: OfferSource::Self_,
                         source_name: "fuchsia.foo.bar".parse().unwrap(),
+                        source_dictionary: None,
                         target: OfferTarget::Child(ChildRef {
                             name: "my_bar".into(),
                             collection: None,
@@ -181,6 +243,7 @@ mod tests {
                         UseDecl::Protocol(UseProtocolDecl {
                             source: UseSource::Parent,
                             source_name: "fuchsia.foo.bar".parse().unwrap(),
+                            source_dictionary: None,
                             target_path: "/svc/fuchsia.foo.bar".parse().unwrap(),
                             dependency_type: DependencyType::Strong,
                             availability: Availability::Required
@@ -195,6 +258,7 @@ mod tests {
                         OfferDecl::Protocol(OfferProtocolDecl {
                             source: OfferSource::Self_,
                             source_name: "fuchsia.foo.bar".parse().unwrap(),
+                            source_dictionary: None,
                             target: OfferTarget::Child(ChildRef {
                                 name: "my_bar".into(),
                                 collection: None,
@@ -213,6 +277,7 @@ mod tests {
                         ExposeDecl::Protocol(ExposeProtocolDecl {
                             source: ExposeSource::Self_,
                             source_name: "fuchsia.foo.bar".parse().unwrap(),
+                            source_dictionary: None,
                             target: ExposeTarget::Parent,
                             target_name: "fuchsia.foo.bar".parse().unwrap(),
                             availability: Availability::Required
@@ -230,7 +295,6 @@ mod tests {
                         })
                     );
                 }
-                _ => panic!("unexpected segment"),
             }
         }
 

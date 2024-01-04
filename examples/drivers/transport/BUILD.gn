@@ -12,24 +12,39 @@ group("transport") {
   ]
 }
 
-group("tests") {
+group("hermetic_tests") {
   testonly = true
   deps = [
-    ":banjo-test-package",
-    ":driver-test-package-v1",
+    ":banjo-test-package-v1",
+    ":banjo-test-package-v2",
+
+    # TODO(b/316176095): Re-enable test after ensuring it works with DFv2.
+    # ":driver-test-package-v1",
     ":driver-test-package-v2",
-    ":zircon-test-package-v1",
+
+    # TODO(b/316176095): Re-enable test after ensuring it works with DFv2.
+    # ":zircon-test-package-v1",
     ":zircon-test-package-v2",
   ]
 }
 
 # Test packages to run each driver pair in DriverTestRealm
-fuchsia_unittest_package("banjo-test-package") {
-  package_name = "banjo_transport_test"
+fuchsia_unittest_package("banjo-test-package-v1") {
+  package_name = "banjo_transport_test_v1"
   deps = [
     "tests:transport_test_v1",
-    "//examples/drivers/transport/banjo:child_component",
-    "//examples/drivers/transport/banjo:parent_component",
+    "//examples/drivers/transport/banjo/v1:child_component",
+    "//examples/drivers/transport/banjo/v1:parent_component",
+    "//src/devices/misc/drivers/test-parent",
+  ]
+}
+
+fuchsia_unittest_package("banjo-test-package-v2") {
+  package_name = "banjo_transport_test_v2"
+  deps = [
+    "tests:transport_test_v2",
+    "//examples/drivers/transport/banjo/v2:child_component",
+    "//examples/drivers/transport/banjo/v2:parent_component",
     "//src/devices/misc/drivers/test-parent",
   ]
 }

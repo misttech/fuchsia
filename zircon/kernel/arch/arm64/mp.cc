@@ -12,11 +12,11 @@
 #include <zircon/types.h>
 
 #include <arch/mp.h>
+#include <arch/mp_unplug_event.h>
 #include <arch/ops.h>
 #include <arch/quirks.h>
 #include <dev/interrupt.h>
 #include <kernel/cpu.h>
-#include <kernel/event.h>
 #include <ktl/iterator.h>
 
 #include <ktl/enforce.h>
@@ -70,6 +70,11 @@ cpu_num_t arm64_mpidr_to_cpu_num(uint64_t mpidr) {
   return INVALID_CPU;
 }
 
+uint64_t arch_cpu_num_to_mpidr(cpu_num_t cpu_num) {
+  DEBUG_ASSERT(cpu_num < ktl::size(arm64_cpu_list));
+  return arm64_cpu_list[cpu_num];
+}
+
 // do the 'slow' lookup by mpidr to cpu number
 static cpu_num_t arch_curr_cpu_num_slow() {
   uint64_t mpidr = __arm_rsr64("mpidr_el1");
@@ -109,7 +114,7 @@ void arm64_init_percpu_early(void) {
 
 void arch_mp_init_percpu(void) { interrupt_init_percpu(); }
 
-void arch_flush_state_and_halt(Event* flush_done) {
+void arch_flush_state_and_halt(MpUnplugEvent* flush_done) {
   DEBUG_ASSERT(arch_ints_disabled());
   Thread::Current::Get()->preemption_state().PreemptDisable();
   flush_done->Signal();
@@ -155,22 +160,8 @@ zx_status_t arch_mp_cpu_hotplug(cpu_num_t cpu_id) {
     // Start failed, so free the stack.
     [[maybe_unused]] zx_status_t free_stack_status = arm64_free_secondary_stack(cpu_id);
     DEBUG_ASSERT(free_stack_status == ZX_OK);
-    return status;
   }
-
-  // Poll the CPU till it comes online, waiting up to 5 seconds for this to happen.
-  // TODO(https://fxbug.dev/130793): Don't hard code the deadline for mp_hotplug CPU startup.
-  const auto deadline = Deadline::after(ZX_SEC(5));
-  while (current_time() < deadline.when()) {
-    if (mp_is_cpu_online(cpu_id)) {
-      return ZX_OK;
-    }
-    Thread::Current::SleepRelative(ZX_MSEC(10));
-  }
-  printf("timed out waiting for cpu-%u to come online\n", cpu_id);
-
-  // If we got here, the CPU never came online.
-  return ZX_ERR_BAD_STATE;
+  return status;
 }
 
 // If there are any A73 cores in this system, then we need the clock read

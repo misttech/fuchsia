@@ -8,8 +8,6 @@
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <fidl/fuchsia.process.lifecycle/cpp/wire.h>
 
-#include "src/storage/f2fs/bcache.h"
-
 namespace f2fs {
 
 enum class MountOption {
@@ -21,10 +19,10 @@ enum class MountOption {
   kNoAcl,
   kDisableExtIdentify,
   kInlineXattr,
-  kInlineData,
   kInlineDentry,
   kForceLfs,
   kReadOnly,
+  kReadExtentCache,
   kActiveLogs,  // It should be (kOptMaxNum - 1).
   kMaxNum,
 };
@@ -38,7 +36,6 @@ class MountOptions {
 
   zx::result<size_t> GetValue(const MountOption option) const;
   zx_status_t SetValue(const MountOption option, const size_t value);
-  static uint64_t ToBit(const MountOption option);
   static std::vector<MountOption> Iter() {
     std::vector<MountOption> iter;
     for (size_t i = 0; i < kMaxOptionCount; ++i) {
@@ -57,12 +54,12 @@ class MountOptions {
   // "noacl", 1
   // "disable_ext_identify", 0
   // "inline_xattr", 0
-  // "inline_data", 0
   // "inline_dentry", 1
   // "mode", ModeType::kModeAdaptive (0)
   // "readonly", 0
+  // "read_extent_cache", 1
   // "active_logs", 6
-  std::array<size_t, kMaxOptionCount> opt_ = {1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 6};
+  std::array<size_t, kMaxOptionCount> opt_ = {1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 6};
 };
 
 zx::result<> StartComponent(fidl::ServerEnd<fuchsia_io::Directory> root,

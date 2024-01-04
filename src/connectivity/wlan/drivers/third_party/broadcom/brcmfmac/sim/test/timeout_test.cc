@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fuchsia/wlan/common/c/banjo.h>
 #include <zircon/errors.h>
 
 #include <wifi/wifi-config.h>
@@ -66,7 +65,7 @@ TEST_F(TimeoutTest, ScanTimeout) {
   EXPECT_TRUE(result);
 
   // Verify result was an error code
-  EXPECT_EQ(*result, wlan_fullmac::WlanScanResult::kCanceledByDriverOrFirmware);
+  EXPECT_EQ(*result, wlan_fullmac_wire::WlanScanResult::kCanceledByDriverOrFirmware);
 
   // No results should have been seen
   auto scan_result_list = client_ifc_.ScanResultList(kDefaultScanTxnId);
@@ -153,7 +152,7 @@ TEST_F(TimeoutTest, ScanAfterAssocTimeout) {
   // Verify that the scan completed successfully
   auto result = client_ifc_.ScanResultCode(kDefaultScanTxnId);
   EXPECT_TRUE(result);
-  EXPECT_EQ(*result, wlan_fullmac::WlanScanResult::kSuccess);
+  EXPECT_EQ(*result, wlan_fullmac_wire::WlanScanResult::kSuccess);
 
   // There is only one AP in the environment, but two scan results will be heard from SME since the
   // scan dwell time is twice the beacon interval.

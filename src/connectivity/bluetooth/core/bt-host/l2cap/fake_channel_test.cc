@@ -44,7 +44,7 @@ bool FakeChannelTest::ExpectAfterMaybeReceiving(std::optional<BufferView> packet
   if (packet.has_value()) {
     fake_chan()->Receive(packet.value());
   }
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   return success;
 }

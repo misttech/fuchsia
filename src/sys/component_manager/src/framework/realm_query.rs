@@ -4,30 +4,26 @@
 
 use {
     crate::{
-        capability::{CapabilityProvider, CapabilitySource, PERMITTED_FLAGS},
+        capability::{CapabilityProvider, FrameworkCapability, InternalCapabilityProvider},
         model::{
-            component::{ComponentInstance, InstanceState},
-            error::{CapabilityProviderError, ModelError},
-            hooks::{Event, EventPayload, EventType, Hook, HooksRegistration},
+            component::{ComponentInstance, InstanceState, WeakComponentInstance},
             model::Model,
             namespace::create_namespace,
             resolver::Resolver,
             storage::admin_protocol::StorageAdmin,
         },
     },
+    ::routing::capability_source::InternalCapability,
     async_trait::async_trait,
     cm_rust::NativeIntoFidl,
-    cm_task_scope::TaskScope,
     cm_types::Name,
-    cm_util::channel,
     fidl::{
         endpoints::{ClientEnd, ServerEnd},
         prelude::*,
     },
     fidl_fuchsia_component_decl as fcdecl, fidl_fuchsia_component_runner as fcrunner,
-    fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys, fuchsia_zircon as zx,
+    fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys,
     fuchsia_zircon::sys::ZX_CHANNEL_MAX_MSG_BYTES,
-    futures::lock::Mutex,
     futures::StreamExt,
     lazy_static::lazy_static,
     measure_tape_for_instance::Measurable,
@@ -39,15 +35,14 @@ use {
     },
     std::{
         convert::TryFrom,
-        path::PathBuf,
         sync::{Arc, Weak},
     },
     tracing::{trace, warn},
+    vfs::directory::entry::DirectoryEntry,
 };
 
 lazy_static! {
-    pub static ref REALM_QUERY_CAPABILITY_NAME: Name =
-        fsys::RealmQueryMarker::PROTOCOL_NAME.parse().unwrap();
+    static ref CAPABILITY_NAME: Name = fsys::RealmQueryMarker::PROTOCOL_NAME.parse().unwrap();
 }
 
 // Number of bytes the header of a vector occupies in a fidl message.
@@ -65,43 +60,12 @@ const FIDL_MANIFEST_MAX_MSG_BYTES: usize =
 
 // Serves the fuchsia.sys2.RealmQuery protocol.
 pub struct RealmQuery {
-    model: Arc<Model>,
+    model: Weak<Model>,
 }
 
 impl RealmQuery {
-    pub fn new(model: Arc<Model>) -> Self {
-        Self { model }
-    }
-
-    pub fn hooks(self: &Arc<Self>) -> Vec<HooksRegistration> {
-        vec![HooksRegistration::new(
-            "RealmQuery",
-            vec![EventType::CapabilityRouted],
-            Arc::downgrade(self) as Weak<dyn Hook>,
-        )]
-    }
-
-    /// Given a `CapabilitySource`, determine if it is a framework-provided
-    /// RealmQuery capability. If so, serve the capability.
-    async fn on_capability_routed_async(
-        self: Arc<Self>,
-        source: CapabilitySource,
-        capability_provider: Arc<Mutex<Option<Box<dyn CapabilityProvider>>>>,
-    ) -> Result<(), ModelError> {
-        // If this is a scoped framework directory capability, then check the source path
-        if let CapabilitySource::Framework { capability, component } = source {
-            if capability.matches_protocol(&REALM_QUERY_CAPABILITY_NAME) {
-                // Set the capability provider, if not already set.
-                let mut capability_provider = capability_provider.lock().await;
-                if capability_provider.is_none() {
-                    *capability_provider = Some(Box::new(RealmQueryCapabilityProvider::query(
-                        self,
-                        component.moniker.clone(),
-                    )));
-                }
-            }
-        }
-        Ok(())
+    pub fn new(model: Weak<Model>) -> Arc<Self> {
+        Arc::new(Self { model })
     }
 
     /// Serve the fuchsia.sys2.RealmQuery protocol for a given scope on a given stream
@@ -119,19 +83,20 @@ impl RealmQuery {
                 }
                 None => break,
             };
+            let Some(model) = self.model.upgrade() else {
+                break;
+            };
             let result = match request {
                 fsys::RealmQueryRequest::GetInstance { moniker, responder } => {
-                    let result = get_instance(&self.model, &scope_moniker, &moniker).await;
+                    let result = get_instance(&model, &scope_moniker, &moniker).await;
                     responder.send(result.as_ref().map_err(|e| *e))
                 }
                 fsys::RealmQueryRequest::GetManifest { moniker, responder } => {
-                    let result =
-                        get_resolved_declaration(&self.model, &scope_moniker, &moniker).await;
+                    let result = get_resolved_declaration(&model, &scope_moniker, &moniker).await;
                     responder.send(result)
                 }
                 fsys::RealmQueryRequest::GetResolvedDeclaration { moniker, responder } => {
-                    let result =
-                        get_resolved_declaration(&self.model, &scope_moniker, &moniker).await;
+                    let result = get_resolved_declaration(&model, &scope_moniker, &moniker).await;
                     responder.send(result)
                 }
                 fsys::RealmQueryRequest::ResolveDeclaration {
@@ -140,26 +105,21 @@ impl RealmQuery {
                     url,
                     responder,
                 } => {
-                    let result = resolve_declaration(
-                        &self.model,
-                        &scope_moniker,
-                        &parent,
-                        &child_location,
-                        &url,
-                    )
-                    .await;
+                    let result =
+                        resolve_declaration(&model, &scope_moniker, &parent, &child_location, &url)
+                            .await;
                     responder.send(result)
                 }
                 fsys::RealmQueryRequest::GetStructuredConfig { moniker, responder } => {
-                    let result = get_structured_config(&self.model, &scope_moniker, &moniker).await;
+                    let result = get_structured_config(&model, &scope_moniker, &moniker).await;
                     responder.send(result.as_ref().map_err(|e| *e))
                 }
                 fsys::RealmQueryRequest::GetAllInstances { responder } => {
-                    let result = get_all_instances(&self.model, &scope_moniker).await;
+                    let result = get_all_instances(&model, &scope_moniker).await;
                     responder.send(result)
                 }
                 fsys::RealmQueryRequest::ConstructNamespace { moniker, responder } => {
-                    let result = construct_namespace(&self.model, &scope_moniker, &moniker).await;
+                    let result = construct_namespace(&model, &scope_moniker, &moniker).await;
                     responder.send(result)
                 }
                 fsys::RealmQueryRequest::Open {
@@ -172,7 +132,7 @@ impl RealmQuery {
                     responder,
                 } => {
                     let result = open(
-                        &self.model,
+                        &model,
                         &scope_moniker,
                         &moniker,
                         dir_type,
@@ -191,7 +151,7 @@ impl RealmQuery {
                     responder,
                 } => {
                     let result = connect_to_storage_admin(
-                        &self.model,
+                        &model,
                         &scope_moniker,
                         &moniker,
                         storage_name,
@@ -209,17 +169,27 @@ impl RealmQuery {
     }
 }
 
-#[async_trait]
-impl Hook for RealmQuery {
-    async fn on(self: Arc<Self>, event: &Event) -> Result<(), ModelError> {
-        match &event.payload {
-            EventPayload::CapabilityRouted { source, capability_provider } => {
-                self.on_capability_routed_async(source.clone(), capability_provider.clone())
-                    .await?;
-            }
-            _ => {}
-        }
-        Ok(())
+pub struct RealmQueryFrameworkCapability {
+    host: Arc<RealmQuery>,
+}
+
+impl RealmQueryFrameworkCapability {
+    pub fn new(host: Arc<RealmQuery>) -> Self {
+        Self { host }
+    }
+}
+
+impl FrameworkCapability for RealmQueryFrameworkCapability {
+    fn matches(&self, capability: &InternalCapability) -> bool {
+        capability.matches_protocol(&CAPABILITY_NAME)
+    }
+
+    fn new_provider(
+        &self,
+        scope: WeakComponentInstance,
+        _target: WeakComponentInstance,
+    ) -> Box<dyn CapabilityProvider> {
+        Box::new(RealmQueryCapabilityProvider::new(self.host.clone(), scope.moniker.clone()))
     }
 }
 
@@ -229,46 +199,16 @@ pub struct RealmQueryCapabilityProvider {
 }
 
 impl RealmQueryCapabilityProvider {
-    pub fn query(query: Arc<RealmQuery>, scope_moniker: Moniker) -> Self {
+    fn new(query: Arc<RealmQuery>, scope_moniker: Moniker) -> Self {
         Self { query, scope_moniker }
     }
 }
 
 #[async_trait]
-impl CapabilityProvider for RealmQueryCapabilityProvider {
-    async fn open(
-        self: Box<Self>,
-        task_scope: TaskScope,
-        flags: fio::OpenFlags,
-        relative_path: PathBuf,
-        server_end: &mut zx::Channel,
-    ) -> Result<(), CapabilityProviderError> {
-        let forbidden = flags - PERMITTED_FLAGS;
-        if !forbidden.is_empty() {
-            warn!(?forbidden, "RealmQuery capability");
-            return Err(CapabilityProviderError::BadFlags);
-        }
-
-        if relative_path.components().count() != 0 {
-            warn!(
-                path=%relative_path.display(),
-                "RealmQuery capability got open request with non-empty",
-            );
-            return Err(CapabilityProviderError::BadPath);
-        }
-
-        let server_end = channel::take_channel(server_end);
-
-        let server_end = ServerEnd::<fsys::RealmQueryMarker>::new(server_end);
-        let stream: fsys::RealmQueryRequestStream =
-            server_end.into_stream().map_err(|_| CapabilityProviderError::StreamCreationError)?;
-        task_scope
-            .add_task(async move {
-                self.query.serve(self.scope_moniker, stream).await;
-            })
-            .await;
-
-        Ok(())
+impl InternalCapabilityProvider for RealmQueryCapabilityProvider {
+    type Marker = fsys::RealmQueryMarker;
+    async fn open_protocol(self: Box<Self>, server_end: ServerEnd<Self::Marker>) {
+        self.query.serve(self.scope_moniker, server_end.into_stream().unwrap()).await;
     }
 }
 
@@ -284,7 +224,7 @@ pub async fn get_instance(
 
     // TODO(https://fxbug.dev/108532): Close the connection if the scope root cannot be found.
     let instance = model.find(&moniker).await.ok_or(fsys::GetInstanceError::InstanceNotFound)?;
-    let instance_id = model.component_id_index().look_up_moniker(&instance.moniker).cloned();
+    let instance_id = model.component_id_index().id_for_moniker(&instance.moniker).cloned();
 
     let resolved_info = {
         let state = instance.lock_state().await;
@@ -361,8 +301,8 @@ pub async fn get_resolved_declaration(
         fidl::endpoints::create_endpoints::<fsys::ManifestBytesIteratorMarker>();
 
     // Attach the iterator task to the scope root.
-    let task_scope = scope_root.nonblocking_task_scope();
-    task_scope.add_task(serve_manifest_bytes_iterator(server_end, bytes)).await;
+    let task_group = scope_root.nonblocking_task_group();
+    task_group.spawn(serve_manifest_bytes_iterator(server_end, bytes));
 
     Ok(client_end)
 }
@@ -441,8 +381,8 @@ async fn resolve_declaration(
 
     // Attach the iterator task to the scope root.
     trace!("spawning bytes iterator task");
-    let task_scope = scope_root.nonblocking_task_scope();
-    task_scope.add_task(serve_manifest_bytes_iterator(server_end, bytes)).await;
+    let task_group = scope_root.nonblocking_task_group();
+    task_group.spawn(serve_manifest_bytes_iterator(server_end, bytes));
     Ok(client_end)
 }
 
@@ -489,9 +429,10 @@ async fn construct_namespace(
     let mut state = instance.lock_state().await;
     match &mut *state {
         InstanceState::Resolved(r) => {
-            let (namespace, _logger) =
-                create_namespace(r.package(), &instance, r.decl(), vec![]).await.unwrap();
-            Ok(namespace.into())
+            let namespace = create_namespace(r.package(), &instance, r.decl()).await.unwrap();
+            let (ns, fut) = namespace.serve().unwrap();
+            instance.nonblocking_task_group().spawn(fut);
+            Ok(ns.into())
         }
         _ => Err(fsys::ConstructNamespaceError::InstanceNotResolved),
     }
@@ -521,8 +462,7 @@ async fn open(
                 .runtime
                 .as_ref()
                 .ok_or(fsys::OpenError::InstanceNotRunning)?
-                .outgoing_dir
-                .as_ref()
+                .outgoing_dir()
                 .ok_or(fsys::OpenError::NoSuchDir)?;
             dir.open(flags, mode, path, object).map_err(|_| fsys::OpenError::FidlError)
         }
@@ -563,17 +503,24 @@ async fn open(
             }
         }
         fsys::OpenDirType::NamespaceDir => {
-            let mut state = instance.lock_state().await;
-            match &mut *state {
-                InstanceState::Resolved(r) => {
-                    let path = vfs::path::Path::validate_and_split(path)
-                        .map_err(|_| fsys::OpenError::BadPath)?;
+            let path =
+                vfs::path::Path::validate_and_split(path).map_err(|_| fsys::OpenError::BadPath)?;
 
-                    r.get_ns_dir().open(flags, path, object);
-                    Ok(())
-                }
+            let mut state = instance.lock_state().await;
+            let resolved_state = match &mut *state {
+                InstanceState::Resolved(r) => Ok(r),
                 _ => Err(fsys::OpenError::InstanceNotResolved),
-            }
+            }?;
+
+            let execution_scope = resolved_state.execution_scope().clone();
+            resolved_state.namespace_dir().await.map_err(|_| fsys::OpenError::NoSuchDir)?.open(
+                execution_scope,
+                flags,
+                path,
+                object,
+            );
+
+            Ok(())
         }
         _ => Err(fsys::OpenError::BadDirType),
     }
@@ -596,7 +543,7 @@ async fn connect_to_storage_admin(
         model.find(&moniker).await.ok_or(fsys::ConnectToStorageAdminError::InstanceNotFound)?;
 
     let storage_admin = StorageAdmin::new(Arc::downgrade(model));
-    let task_scope = instance.nonblocking_task_scope();
+    let task_group = instance.nonblocking_task_group();
 
     let storage_decl = {
         let mut state = instance.lock_state().await;
@@ -614,18 +561,16 @@ async fn connect_to_storage_admin(
         }
     };
 
-    task_scope
-        .add_task(async move {
-            if let Err(error) = Arc::new(storage_admin)
-                .serve(storage_decl, instance.as_weak(), server_end.into_channel().into())
-                .await
-            {
-                warn!(
-                    %moniker, %error, "StorageAdmin created by LifecycleController failed to serve",
-                );
-            };
-        })
-        .await;
+    task_group.spawn(async move {
+        if let Err(error) = storage_admin
+            .serve(storage_decl, instance.as_weak(), server_end.into_stream().unwrap())
+            .await
+        {
+            warn!(
+                %moniker, %error, "StorageAdmin created by LifecycleController failed to serve",
+            );
+        };
+    });
     Ok(())
 }
 
@@ -656,8 +601,8 @@ async fn get_all_instances(
         fidl::endpoints::create_endpoints::<fsys::InstanceIteratorMarker>();
 
     // Attach the iterator task to the scope root.
-    let task_scope = scope_root.nonblocking_task_scope();
-    task_scope.add_task(serve_instance_iterator(server_end, instances)).await;
+    let task_group = scope_root.nonblocking_task_group();
+    task_group.spawn(serve_instance_iterator(server_end, instances));
 
     Ok(client_end)
 }
@@ -673,7 +618,7 @@ async fn get_fidl_instance_and_children(
         .moniker
         .strip_prefix(scope_moniker)
         .expect("instance must have been a child of scope root");
-    let instance_id = model.component_id_index().look_up_moniker(&instance.moniker).cloned();
+    let instance_id = model.component_id_index().id_for_moniker(&instance.moniker).cloned();
 
     let (resolved_info, children) = {
         let state = instance.lock_state().await;
@@ -781,14 +726,19 @@ async fn serve_manifest_bytes_iterator(
 mod tests {
     use {
         super::*,
-        crate::model::component::StartReason,
-        crate::model::testing::test_helpers::{TestEnvironmentBuilder, TestModelResult},
+        crate::model::{
+            component::StartReason,
+            testing::test_helpers::{TestEnvironmentBuilder, TestModelResult},
+        },
         assert_matches::assert_matches,
         cm_rust::*,
         cm_rust_testing::ComponentDeclBuilder,
+        component_id_index::InstanceId,
         fidl::endpoints::{create_endpoints, create_proxy, create_proxy_and_stream},
         fidl_fuchsia_component_decl as fcdecl, fidl_fuchsia_io as fio, fuchsia_async as fasync,
+        fuchsia_zircon as zx,
         routing_test_helpers::component_id_index::make_index_file,
+        sandbox::Dict,
     };
 
     fn is_closed(handle: impl fidl::AsHandleRef) -> bool {
@@ -798,21 +748,19 @@ mod tests {
     #[fuchsia::test]
     async fn get_instance_test() {
         // Create index.
-        let iid = format!("1234{}", "5".repeat(60));
-        let index_file = make_index_file(component_id_index::Index {
-            instances: vec![component_id_index::InstanceIdEntry {
-                instance_id: Some(iid.clone()),
-                moniker: Some(Moniker::parse_str("/").unwrap()),
-            }],
-            ..component_id_index::Index::default()
-        })
-        .unwrap();
+        let iid = format!("1234{}", "5".repeat(60)).parse::<InstanceId>().unwrap();
+        let index = {
+            let mut index = component_id_index::Index::default();
+            index.insert(Moniker::parse_str("/").unwrap(), iid.clone()).unwrap();
+            index
+        };
+        let index_file = make_index_file(index).unwrap();
 
         let components = vec![("root", ComponentDeclBuilder::new().build())];
 
         let TestModelResult { model, builtin_environment, .. } = TestEnvironmentBuilder::new()
             .set_components(components)
-            .set_component_id_index_path(index_file.path().to_str().map(str::to_string))
+            .set_component_id_index_path(index_file.path().to_owned().try_into().unwrap())
             .build()
             .await;
 
@@ -828,13 +776,13 @@ mod tests {
             realm_query.serve(Moniker::root(), query_request_stream).await
         });
 
-        model.start().await;
+        model.start(Dict::new()).await;
 
         let instance = query.get_instance(".").await.unwrap().unwrap();
 
         assert_eq!(instance.moniker.unwrap(), ".");
         assert_eq!(instance.url.unwrap(), "test:///root");
-        assert_eq!(instance.instance_id.unwrap(), iid);
+        assert_eq!(instance.instance_id.unwrap().parse::<InstanceId>().unwrap(), iid);
 
         let resolved = instance.resolved_info.unwrap();
         assert_eq!(resolved.resolved_url.unwrap(), "test:///root");
@@ -856,6 +804,7 @@ mod tests {
             let use_decl = UseDecl::Protocol(UseProtocolDecl {
                 source: UseSource::Framework,
                 source_name: use_name.parse().unwrap(),
+                source_dictionary: None,
                 target_path: capability_path.parse().unwrap(),
                 dependency_type: DependencyType::Strong,
                 availability: Availability::Required,
@@ -864,6 +813,7 @@ mod tests {
             let expose_decl = ExposeDecl::Protocol(ExposeProtocolDecl {
                 source: ExposeSource::Self_,
                 source_name: expose_name.parse().unwrap(),
+                source_dictionary: None,
                 target: ExposeTarget::Parent,
                 target_name: expose_name.parse().unwrap(),
                 availability: Availability::Required,
@@ -889,7 +839,7 @@ mod tests {
             realm_query.serve(Moniker::root(), query_request_stream).await
         });
 
-        model.start().await;
+        model.start(Dict::new()).await;
 
         let iterator = query.get_resolved_declaration("./").await.unwrap().unwrap();
         let iterator = iterator.into_proxy().unwrap();
@@ -970,7 +920,7 @@ mod tests {
             realm_query.serve(Moniker::root(), query_request_stream).await
         });
 
-        model.start().await;
+        model.start(Dict::new()).await;
 
         let config = query.get_structured_config("./").await.unwrap().unwrap();
 
@@ -990,6 +940,7 @@ mod tests {
         let use_decl = UseDecl::Protocol(UseProtocolDecl {
             source: UseSource::Framework,
             source_name: "foo".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/foo".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
@@ -998,6 +949,7 @@ mod tests {
         let expose_decl = ExposeDecl::Protocol(ExposeProtocolDecl {
             source: ExposeSource::Self_,
             source_name: "bar".parse().unwrap(),
+            source_dictionary: None,
             target: ExposeTarget::Parent,
             target_name: "bar".parse().unwrap(),
             availability: cm_rust::Availability::Required,
@@ -1023,7 +975,7 @@ mod tests {
             realm_query.serve(Moniker::root(), query_request_stream).await
         });
 
-        model.start().await;
+        model.start(Dict::new()).await;
 
         let (outgoing_dir, server_end) = create_endpoints::<fio::DirectoryMarker>();
         let server_end = ServerEnd::new(server_end.into_channel());
@@ -1132,7 +1084,7 @@ mod tests {
             entries,
             vec![fuchsia_fs::directory::DirEntry {
                 name: "foo".to_string(),
-                kind: fuchsia_fs::directory::DirentKind::Unknown
+                kind: fuchsia_fs::directory::DirentKind::Service
             }]
         );
     }
@@ -1142,6 +1094,7 @@ mod tests {
         let use_decl = UseDecl::Protocol(UseProtocolDecl {
             source: UseSource::Framework,
             source_name: "foo".parse().unwrap(),
+            source_dictionary: None,
             target_path: "/svc/foo".parse().unwrap(),
             dependency_type: DependencyType::Strong,
             availability: Availability::Required,
@@ -1164,11 +1117,12 @@ mod tests {
             realm_query.serve(Moniker::root(), query_request_stream).await
         });
 
-        model.start().await;
+        model.start(Dict::new()).await;
 
         let mut ns = query.construct_namespace("./").await.unwrap().unwrap();
 
         assert_eq!(ns.len(), 2);
+        ns.sort_by_key(|entry| entry.path.as_ref().unwrap().clone());
 
         // Test resolvers provide a pkg dir with a fake file
         let pkg_entry = ns.remove(0);
@@ -1194,7 +1148,7 @@ mod tests {
             entries,
             vec![fuchsia_fs::directory::DirEntry {
                 name: "foo".to_string(),
-                kind: fuchsia_fs::directory::DirentKind::Unknown
+                kind: fuchsia_fs::directory::DirentKind::Service
             }]
         );
     }
@@ -1229,6 +1183,7 @@ mod tests {
                         target_name: "fs".parse().unwrap(),
                         subdir: None,
                         source: ExposeSource::Self_,
+                        source_dictionary: None,
                         target: ExposeTarget::Parent,
                         rights: None,
                         availability: cm_rust::Availability::Required,
@@ -1252,7 +1207,7 @@ mod tests {
             realm_query.serve(Moniker::root(), query_request_stream).await
         });
 
-        model.start().await;
+        model.start(Dict::new()).await;
 
         let (storage_admin, server_end) = create_proxy::<fsys::StorageAdminMarker>().unwrap();
 

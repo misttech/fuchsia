@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use assembly_file_relative_path::{FileRelativePathBuf, SupportsFileRelativePaths};
 use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 
@@ -22,12 +23,27 @@ pub enum PackageSet {
     /// They cannot be updated without performing an OTA of the system.
     Base,
 
+    /// The contents of the cache package set are present on the device in
+    /// nearly all circumstances but the version may be updated in some
+    /// circumstances during local development. This package set is not used
+    /// in production.
+    Cache,
+
+    /// The packages in this set are placed in one of the other package sets by
+    /// assembly based on the assembly context.
+    Flexible,
+
+    /// The packages in this set are merged into the "base" package
+    /// (system image) to make them available to the software delivery
+    /// subsystem while the system is booting up.
+    System,
+
     /// The packages in this set are stored in the BootFS in the zbi.  They are
     /// always available (via `fuchsia-boot:///<name>` pkg urls), and are pinned
     /// by merkle when the ZBI is created.
     ///
     /// They cannot be updated without performing an OTA of the system.
-    BootFS,
+    Bootfs,
 }
 
 /// Details about a package that contains drivers.
@@ -39,6 +55,32 @@ pub struct DriverDetails {
 
     /// The driver components within the package, e.g. meta/foo.cm.
     pub components: Vec<Utf8PathBuf>,
+}
+
+/// This defines one or more drivers in a package, and which package set they
+/// belong to.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, SupportsFileRelativePaths)]
+#[serde(deny_unknown_fields)]
+pub struct PackagedDriverDetails {
+    /// The package containing the driver.
+    pub package: FileRelativePathBuf,
+
+    /// Which set this package belongs to.
+    pub set: PackageSet,
+
+    /// The driver components within the package, e.g. meta/foo.cm.
+    pub components: Vec<Utf8PathBuf>,
+}
+
+/// This defines a package, and which package set it belongs to.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, SupportsFileRelativePaths)]
+#[serde(deny_unknown_fields)]
+pub struct PackageDetails {
+    /// A package to add.
+    pub package: FileRelativePathBuf,
+
+    /// Which set this package belongs to.
+    pub set: PackageSet,
 }
 
 /// A mapping between a file source and destination.

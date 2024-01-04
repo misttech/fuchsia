@@ -7,81 +7,25 @@
 # by default.
 # Cq-Include-Trybots: luci.turquoise.global.try:bringup.vim3-debug,core.vim3-debug,core.vim3-vg-debug
 
-import("//boards/common/arm64-common.gni")
+has_board = true
+target_cpu = "arm64"
 
-# BoardInformation for Product Assembly
-board_information_for_assembly = "//boards/vim3/board_information.json5"
+# Board configuration for Product Assembly
+board_configuration_label = "//boards/vim3"
 
 board_name = "vim3"
 board_description = "A generic vim3 device"
 
-board_configs += [ "//build/config/arm64:cortex-a53" ]
+partitions_config_label = "//boards/partitions:vim3"
+partitions_config_contents =
+    [ "//prebuilt/third_party/firmware/vim3/u-boot.bin.unsigned" ]
 
-_common_bootfs_deps = [
-  "//boards/kernel_cmdline:vim3",
-  "//src/connectivity/ethernet/drivers/aml-ethernet",
-  "//src/connectivity/ethernet/drivers/dwmac",
-  "//src/connectivity/ethernet/drivers/realtek-8211f",
-  "//src/devices/block/drivers/aml-sdmmc",
-  "//src/devices/block/drivers/bootpart",
-  "//src/devices/board/drivers/vim3",
-  "//src/devices/clock/drivers/amlogic-clk",
-  "//src/devices/cpu/drivers/aml-cpu",
-  "//src/devices/gpio/drivers/aml-gpio",
-  "//src/devices/gpio/drivers/ti-tca6408a",
-  "//src/devices/i2c/drivers/aml-i2c",
-  "//src/devices/mcu/drivers/vim3-mcu",
-  "//src/devices/ml/drivers/aml-nna",
-  "//src/devices/power/drivers/aml-meson-power",
-  "//src/devices/power/drivers/aml-pwm-regulator",
-  "//src/devices/power/drivers/fusb302",
-  "//src/devices/pwm/drivers/aml-pwm",
-  "//src/devices/pwm/drivers/aml-pwm-init",
-  "//src/devices/registers/drivers/registers",
-  "//src/devices/serial/drivers/aml-uart",
-  "//src/devices/thermal/drivers/aml-thermal",
-  "//src/devices/usb/drivers/dwc2",
-  "//src/devices/usb/drivers/vim3-usb-phy",
-  "//src/graphics/display/drivers/aml-canvas",
-  "//src/graphics/display/drivers/aml-hdmi",
-  "//src/graphics/display/drivers/amlogic-display",
-  "//src/graphics/display/drivers/dsi-dw",
-  "//src/graphics/drivers/aml-gpu",
-  "//src/media/audio/drivers/aml-g12-tdm",
-  "//src/power/power-manager/thermal_config:vim3",
-  "//src/ui/backlight/drivers/vim3-pwm-backlight",
-  "//src/ui/input/drivers/focaltech",
-]
+bazel_product_bundle_board = "vim3"
 
-board_bootfs_labels += _common_bootfs_deps
-
-board_bootfs_labels -= [ "//src/power/power-manager:base_config" ]
-board_bootfs_labels += [ "//src/power/power-manager:vim3_config" ]
-
-board_zedboot_bootfs_labels += _common_bootfs_deps
-
-board_recovery_bootfs_labels += _common_bootfs_deps
-
-board_driver_package_labels += [
-  "//src/graphics/drivers/msd-arm-mali:msd-system",
-  "//src/graphics/drivers/msd-vsi-vip",
-  "//src/media/drivers/amlogic_decoder",
-  "//src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac:brcmfmac-vim3",
-  "//src/connectivity/wlan/drivers/wlanphy:wlanphy",
-  "//src/devices/rtc/drivers/nxp:nxp-pkg",
-  "//bundles/packages/prod:wlan_fullmac_core_drivers",
-  "//src/connectivity/bluetooth/hci/transport/uart",
-  "//src/connectivity/bluetooth/hci/vendor/broadcom",
-]
-
-board_package_labels += [
-  "//src/graphics/drivers/msd-arm-mali:msd-config",
-  "//src/graphics/bin/vulkan_loader",
-  "//src/graphics/drivers/arm-mali/icd:libvulkan_arm_g52_r0p0",
-]
-
-# Board file adds vulkan VCD that lets vulkan tests work on systems with Mali GPUs.
-board_has_libvulkan_arm_mali = true
+#####
+#
+# Items below here are duplicating information assembly, and are used by targets
+# that need to switch using assembly outputs as their source of truth.
 
 firmware_prebuilts_path_suffix = ""
 firmware_prebuilts = [
@@ -99,6 +43,10 @@ avb_algorithm = "SHA512_RSA4096"
 avb_atx_metadata =
     "//src/firmware/avb_keys/vim3/vim3-dev-key/vim3_dev_atx_metadata.bin"
 
+blobfs_capacity = 10485760000  # 10000 MiB
+max_blob_contents_size =
+    5216665600  # 4975 MiB. Leaves 50 MiB for the update package.
+
 # partitions for fx flash to flash
 zircon_a_partition = "zircon_a"
 zircon_b_partition = "zircon_b"
@@ -107,6 +55,7 @@ vbmeta_a_partition = "vbmeta_a"
 vbmeta_b_partition = "vbmeta_b"
 vbmeta_r_partition = "vbmeta_r"
 fvm_partition = "fvm"
+fxfs_partition = "fvm"
 active_partition = "a"
 fastboot_product = "galilei"
 
@@ -115,9 +64,3 @@ assembly_generate_fvm_fastboot = true
 # Supports only physical devices.
 board_is_emu = false
 board_is_phys = true
-
-partitions_config_label = "//boards/partitions:vim3"
-partitions_config_contents +=
-    [ "//prebuilt/third_party/firmware/vim3/u-boot.bin.unsigned" ]
-
-bazel_product_bundle_board = "vim3"

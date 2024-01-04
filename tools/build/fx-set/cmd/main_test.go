@@ -38,8 +38,9 @@ func TestParseArgsAndEnv(t *testing.T) {
 			name: "valid PRODUCT.BOARD",
 			args: []string{"core.x64"},
 			expected: setArgs{
-				product: "core",
-				board:   "x64",
+				product:       "core",
+				board:         "x64",
+				includeClippy: true,
 			},
 		},
 		{
@@ -56,9 +57,10 @@ func TestParseArgsAndEnv(t *testing.T) {
 			name: "verbose",
 			args: []string{"--verbose", "core.x64"},
 			expected: setArgs{
-				product: "core",
-				board:   "x64",
-				verbose: true,
+				product:       "core",
+				board:         "x64",
+				includeClippy: true,
+				verbose:       true,
 			},
 		},
 		{
@@ -67,6 +69,7 @@ func TestParseArgsAndEnv(t *testing.T) {
 			expected: setArgs{
 				product:          "core",
 				board:            "x64",
+				includeClippy:    true,
 				universePackages: []string{"u1", "u2", "u3", "u4"},
 			},
 		},
@@ -74,9 +77,10 @@ func TestParseArgsAndEnv(t *testing.T) {
 			name: "base packages",
 			args: []string{"core.x64", "--with-base", "b1,b2", "--with-base", "b3,b4"},
 			expected: setArgs{
-				product:      "core",
-				board:        "x64",
-				basePackages: []string{"b1", "b2", "b3", "b4"},
+				product:       "core",
+				board:         "x64",
+				includeClippy: true,
+				basePackages:  []string{"b1", "b2", "b3", "b4"},
 			},
 		},
 		{
@@ -85,6 +89,7 @@ func TestParseArgsAndEnv(t *testing.T) {
 			expected: setArgs{
 				product:       "core",
 				board:         "x64",
+				includeClippy: true,
 				cachePackages: []string{"c1", "c2", "c3", "c4"},
 			},
 		},
@@ -92,18 +97,20 @@ func TestParseArgsAndEnv(t *testing.T) {
 			name: "host labels",
 			args: []string{"core.x64", "--with-host", "h1,h2", "--with-host", "h3,h4"},
 			expected: setArgs{
-				product:    "core",
-				board:      "x64",
-				hostLabels: []string{"h1", "h2", "h3", "h4"},
+				product:       "core",
+				board:         "x64",
+				includeClippy: true,
+				hostLabels:    []string{"h1", "h2", "h3", "h4"},
 			},
 		},
 		{
 			name: "variants",
 			args: []string{"core.x64", "--variant", "kasan,profile", "--variant", "ubsan"},
 			expected: setArgs{
-				product:  "core",
-				board:    "x64",
-				variants: []string{"kasan", "profile", "ubsan"},
+				product:       "core",
+				board:         "x64",
+				includeClippy: true,
+				variants:      []string{"kasan", "profile", "ubsan"},
 			},
 		},
 		{
@@ -112,6 +119,7 @@ func TestParseArgsAndEnv(t *testing.T) {
 			expected: setArgs{
 				product:        "core",
 				board:          "x64",
+				includeClippy:  true,
 				fuzzSanitizers: []string{"asan", "ubsan", "kasan"},
 			},
 		},
@@ -119,8 +127,9 @@ func TestParseArgsAndEnv(t *testing.T) {
 			name: "gn args",
 			args: []string{"core.x64", "--args", `foo=["bar", "baz"]`, "--args", "x=5"},
 			expected: setArgs{
-				product: "core",
-				board:   "x64",
+				product:       "core",
+				board:         "x64",
+				includeClippy: true,
 				// --args values shouldn't be split at commas, since commas can
 				// be part of the args themselves.
 				gnArgs: []string{`foo=["bar", "baz"]`, "x=5"},
@@ -130,9 +139,10 @@ func TestParseArgsAndEnv(t *testing.T) {
 			name: "release",
 			args: []string{"core.x64", "--release"},
 			expected: setArgs{
-				product:   "core",
-				board:     "x64",
-				isRelease: true,
+				product:       "core",
+				board:         "x64",
+				includeClippy: true,
+				isRelease:     true,
 			},
 		},
 		{
@@ -140,6 +150,7 @@ func TestParseArgsAndEnv(t *testing.T) {
 			args: []string{"--fint-params-path", "foo.fint.textproto"},
 			expected: setArgs{
 				fintParamsPath: "foo.fint.textproto",
+				includeClippy:  true,
 			},
 		},
 		{
@@ -148,8 +159,18 @@ func TestParseArgsAndEnv(t *testing.T) {
 			expectErr: true,
 		},
 		{
+			name:      "rejects --goma and --cxx-rbe",
+			args:      []string{"core.x64", "--goma", "--cxx-rbe"},
+			expectErr: true,
+		},
+		{
 			name:      "rejects --goma and --no-goma",
 			args:      []string{"core.x64", "--goma", "--no-goma"},
+			expectErr: true,
+		},
+		{
+			name:      "rejects --cxx-rbe and --no-cxx-rbe",
+			args:      []string{"core.x64", "--cxx-rbe", "--no-cxx-rbe"},
 			expectErr: true,
 		},
 		{
@@ -165,9 +186,10 @@ func TestParseArgsAndEnv(t *testing.T) {
 				buildDirEnvVar: "/usr/foo/fuchsia/out/foo",
 			},
 			expected: setArgs{
-				product:  "core",
-				board:    "x64",
-				buildDir: "/usr/foo/fuchsia/out/foo",
+				product:       "core",
+				board:         "x64",
+				includeClippy: true,
+				buildDir:      "/usr/foo/fuchsia/out/foo",
 			},
 		},
 		{
@@ -183,30 +205,33 @@ func TestParseArgsAndEnv(t *testing.T) {
 			name: "auto dir",
 			args: []string{"bringup.arm64", "--auto-dir"},
 			expected: setArgs{
-				product:  "bringup",
-				board:    "arm64",
-				buildDir: "out/bringup.arm64",
+				product:       "bringup",
+				board:         "arm64",
+				includeClippy: true,
+				buildDir:      "out/bringup.arm64",
 			},
 		},
 		{
 			name: "auto dir with variants",
 			args: []string{"core.x64", "--auto-dir", "--variant", "profile,kasan", "--variant", "ubsan"},
 			expected: setArgs{
-				product:  "core",
-				board:    "x64",
-				buildDir: "out/core.x64-profile-kasan-ubsan",
-				variants: []string{"profile", "kasan", "ubsan"},
+				product:       "core",
+				board:         "x64",
+				includeClippy: true,
+				buildDir:      "out/core.x64-profile-kasan-ubsan",
+				variants:      []string{"profile", "kasan", "ubsan"},
 			},
 		},
 		{
 			name: "auto dir and release",
 			args: []string{"core.x64", "--auto-dir", "--variant", "foo", "--release"},
 			expected: setArgs{
-				product:   "core",
-				board:     "x64",
-				isRelease: true,
-				buildDir:  "out/core.x64-foo-release",
-				variants:  []string{"foo"},
+				product:       "core",
+				board:         "x64",
+				includeClippy: true,
+				isRelease:     true,
+				buildDir:      "out/core.x64-foo-release",
+				variants:      []string{"foo"},
 			},
 		},
 		{
@@ -216,21 +241,23 @@ func TestParseArgsAndEnv(t *testing.T) {
 		},
 		{
 			name: "simple boolean flags",
-			args: []string{"core.x64", "--netboot", "--cargo-toml-gen"},
+			args: []string{"core.x64", "--include-clippy=false", "--netboot", "--cargo-toml-gen"},
 			expected: setArgs{
-				product:      "core",
-				board:        "x64",
-				netboot:      true,
-				cargoTOMLGen: true,
+				product:       "core",
+				board:         "x64",
+				includeClippy: false,
+				netboot:       true,
+				cargoTOMLGen:  true,
 			},
 		},
 		{
 			name: "ide files",
 			args: []string{"core.x64", "--ide", "json,vs"},
 			expected: setArgs{
-				product:  "core",
-				board:    "x64",
-				ideFiles: []string{"json", "vs"},
+				product:       "core",
+				board:         "x64",
+				includeClippy: true,
+				ideFiles:      []string{"json", "vs"},
 			},
 		},
 		{
@@ -240,6 +267,7 @@ func TestParseArgsAndEnv(t *testing.T) {
 				product:        "core",
 				board:          "x64",
 				jsonIDEScripts: []string{"//foo.py", "//bar.py"},
+				includeClippy:  true,
 			},
 		},
 	}
@@ -287,11 +315,14 @@ func (r fakeSubprocessRunner) Run(context.Context, []string, subprocess.RunOptio
 }
 
 func TestConstructStaticSpec(t *testing.T) {
+	rbeSupported := rbeIsSupported()
 	testCases := []struct {
-		name     string
-		args     *setArgs
-		runner   fakeSubprocessRunner
-		expected *fintpb.Static
+		name         string
+		args         *setArgs
+		runner       fakeSubprocessRunner
+		expected     *fintpb.Static
+		expectErr    bool
+		cannotUseRbe bool
 	}{
 		{
 			name: "basic",
@@ -308,6 +339,7 @@ func TestConstructStaticSpec(t *testing.T) {
 				jsonIDEScripts:   []string{"foo.py"},
 				gnArgs:           []string{"args"},
 				noGoma:           true,
+				disableCxxRbe:    true,
 			},
 			expected: &fintpb.Static{
 				Board:            "boards/arm64.gni",
@@ -344,48 +376,122 @@ func TestConstructStaticSpec(t *testing.T) {
 			},
 		},
 		{
-			name: "goma enabled by default",
+			name: "goma default",
 			args: &setArgs{},
 			expected: &fintpb.Static{
-				UseGoma: true,
+				UseGoma:      false, // deprecated
+				CxxRbeEnable: rbeSupported,
 			},
 		},
 		{
 			name:   "goma disabled if goma auth fails",
-			args:   &setArgs{},
+			args:   &setArgs{useGoma: true},
 			runner: fakeSubprocessRunner{fail: true},
 			expected: &fintpb.Static{
 				UseGoma: false,
 			},
 		},
 		{
+			name: "cxx-rbe default with access",
+			args: &setArgs{},
+			expected: &fintpb.Static{
+				CxxRbeEnable: rbeSupported,
+			},
+		},
+		{
+			name: "cxx-rbe default without access",
+			args: &setArgs{},
+			expected: &fintpb.Static{
+				CxxRbeEnable: false,
+			},
+			cannotUseRbe: true,
+		},
+		{
+			name: "cxx-rbe enabled",
+			args: &setArgs{enableCxxRbe: true},
+			expected: &fintpb.Static{
+				CxxRbeEnable: true,
+			},
+			expectErr: !rbeSupported,
+		},
+		{
+			// allow the setting, but gives a notice about access
+			name: "cxx-rbe enabled without access",
+			args: &setArgs{enableCxxRbe: true},
+			expected: &fintpb.Static{
+				CxxRbeEnable: true,
+			},
+			expectErr:    !rbeSupported,
+			cannotUseRbe: true,
+		},
+		{
+			name: "cxx-rbe disabled",
+			args: &setArgs{disableCxxRbe: true},
+			expected: &fintpb.Static{
+				CxxRbeEnable: false,
+			},
+		},
+		{
+			name: "link-rbe default",
+			args: &setArgs{disableCxxRbe: true},
+			expected: &fintpb.Static{
+				LinkRbeEnable: false,
+			},
+		},
+		{
+			name: "link-rbe enabled",
+			args: &setArgs{disableCxxRbe: true, enableLinkRbe: true},
+			expected: &fintpb.Static{
+				LinkRbeEnable: true,
+			},
+			expectErr: !rbeSupported,
+		},
+		{
+			name: "rust-rbe default",
+			args: &setArgs{disableCxxRbe: true},
+			expected: &fintpb.Static{
+				RustRbeEnable: false,
+			},
+		},
+		{
+			name: "rust-rbe enabled",
+			args: &setArgs{disableCxxRbe: true, enableRustRbe: true},
+			expected: &fintpb.Static{
+				RustRbeEnable: true,
+			},
+			expectErr: !rbeSupported,
+		},
+		{
 			name: "fuzzer variants",
 			args: &setArgs{
 				fuzzSanitizers: []string{"asan", "ubsan"},
+				disableCxxRbe:  true,
 			},
 			expected: &fintpb.Static{
-				UseGoma:  true,
+				UseGoma:  false,
 				Variants: append(fuzzerVariants("asan"), fuzzerVariants("ubsan")...),
 			},
 		},
 		{
 			name: "netboot",
 			args: &setArgs{
-				netboot: true,
+				netboot:       true,
+				disableCxxRbe: true,
 			},
 			expected: &fintpb.Static{
-				UseGoma: true,
+				UseGoma: false,
 				GnArgs:  []string{"enable_netboot=true"},
 			},
 		},
 		{
 			name: "cargo toml gen",
 			args: &setArgs{
-				basePackages: []string{"foo"},
-				cargoTOMLGen: true,
+				basePackages:  []string{"foo"},
+				cargoTOMLGen:  true,
+				disableCxxRbe: true,
 			},
 			expected: &fintpb.Static{
-				UseGoma:      true,
+				UseGoma:      false,
 				BasePackages: []string{"foo"},
 				HostLabels:   []string{"//build/rust:cargo_toml_gen"},
 			},
@@ -415,9 +521,15 @@ func TestConstructStaticSpec(t *testing.T) {
 			createFile(t, checkoutDir, expected.Product)
 
 			fx := fxRunner{sr: tc.runner, checkoutDir: checkoutDir}
-			got, err := constructStaticSpec(ctx, fx, checkoutDir, tc.args)
+			got, err := constructStaticSpec(ctx, fx, checkoutDir, tc.args, !tc.cannotUseRbe)
 			if err != nil {
-				t.Fatal(err)
+				if tc.expectErr {
+					return
+				} else {
+					t.Fatal(err)
+				}
+			} else if tc.expectErr {
+				t.Errorf("Expected an error, but got nil.")
 			}
 
 			if diff := cmp.Diff(expected, got, protocmp.Transform()); diff != "" {

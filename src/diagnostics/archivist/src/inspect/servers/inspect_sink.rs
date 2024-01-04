@@ -11,10 +11,9 @@ use crate::{
     inspect::{container::InspectHandle, repository::InspectRepository},
 };
 use anyhow::Error;
-use async_lock::{Mutex, RwLock};
-use async_trait::async_trait;
 use fidl_fuchsia_inspect as finspect;
 use fuchsia_async as fasync;
+use fuchsia_sync::{Mutex, RwLock};
 use futures::{channel::mpsc, StreamExt};
 use std::sync::Arc;
 use tracing::warn;
@@ -24,7 +23,7 @@ pub struct InspectSinkServer {
     repo: Arc<InspectRepository>,
 
     /// Sender end of drain_listeners_task.
-    task_sender: Arc<RwLock<mpsc::UnboundedSender<fasync::Task<()>>>>,
+    task_sender: RwLock<mpsc::UnboundedSender<fasync::Task<()>>>,
 
     /// Task that makes sure every handler closes down before closing down InspectSinkSErver.
     drain_listeners_task: Mutex<Option<fasync::Task<()>>>,
@@ -36,7 +35,7 @@ impl InspectSinkServer {
         let (sender, receiver) = mpsc::unbounded();
         Self {
             repo,
-            task_sender: Arc::new(RwLock::new(sender)),
+            task_sender: RwLock::new(sender),
             drain_listeners_task: Mutex::new(Some(fasync::Task::spawn(async move {
                 receiver
                     .for_each_concurrent(None, |rx| async move {
@@ -48,20 +47,14 @@ impl InspectSinkServer {
     }
 
     /// Handle incoming events. Mainly for use in EventConsumer impl.
-    async fn spawn(
-        &self,
-        component: Arc<ComponentIdentity>,
-        stream: finspect::InspectSinkRequestStream,
-    ) {
+    fn spawn(&self, component: Arc<ComponentIdentity>, stream: finspect::InspectSinkRequestStream) {
         let repo = Arc::clone(&self.repo);
 
-        if let Err(e) =
-            self.task_sender.read().await.unbounded_send(fasync::Task::spawn(async move {
-                if let Err(e) = Self::handle_requests(repo, component, stream).await {
-                    warn!("error handling InspectSink requests: {e}");
-                }
-            }))
-        {
+        if let Err(e) = self.task_sender.read().unbounded_send(fasync::Task::spawn(async move {
+            if let Err(e) = Self::handle_requests(repo, component, stream).await {
+                warn!("error handling InspectSink requests: {e}");
+            }
+        })) {
             warn!("couldn't queue listener task: {e:?}");
         }
     }
@@ -76,13 +69,10 @@ impl InspectSinkServer {
                 finspect::InspectSinkRequest::Publish {
                     payload: finspect::InspectSinkPublishRequest { tree: Some(tree), name, .. },
                     ..
-                } => {
-                    repo.add_inspect_handle(
-                        Arc::clone(&component),
-                        InspectHandle::from_named_tree_proxy(tree.into_proxy()?, name),
-                    )
-                    .await;
-                }
+                } => repo.add_inspect_handle(
+                    Arc::clone(&component),
+                    InspectHandle::from_named_tree_proxy(tree.into_proxy()?, name),
+                ),
                 _ => continue,
             }
         }
@@ -92,29 +82,28 @@ impl InspectSinkServer {
 
     /// Instructs the server to finish handling all connections.
     pub async fn wait_for_servers_to_complete(&self) {
-        self.drain_listeners_task
+        let task = self
+            .drain_listeners_task
             .lock()
-            .await
             .take()
-            .expect("the accessor server task is only awaited once")
-            .await;
+            .expect("the accessor server task is only awaited once");
+        task.await;
     }
 
     /// Instructs the server to stop accepting new connections.
-    pub async fn stop(&self) {
-        self.task_sender.write().await.disconnect();
+    pub fn stop(&self) {
+        self.task_sender.write().disconnect();
     }
 }
 
-#[async_trait]
 impl EventConsumer for InspectSinkServer {
-    async fn handle(self: Arc<Self>, event: Event) {
+    fn handle(self: Arc<Self>, event: Event) {
         match event.payload {
             EventPayload::InspectSinkRequested(InspectSinkRequestedPayload {
                 component,
                 request_stream,
             }) => {
-                self.spawn(component, request_stream).await;
+                self.spawn(component, request_stream);
             }
             _ => unreachable!("InspectSinkServer is only subscribed to InspectSinkRequested"),
         }
@@ -123,28 +112,27 @@ impl EventConsumer for InspectSinkServer {
 
 #[cfg(test)]
 mod tests {
-    use crate::identity::ComponentIdentity;
-    use crate::inspect::container::InspectHandle;
-    use crate::inspect::repository::InspectRepository;
-    use crate::inspect::servers::InspectSinkServer;
     use crate::{
         events::{
             router::EventConsumer,
             types::{Event, EventPayload, InspectSinkRequestedPayload},
         },
-        inspect::container::InspectArtifactsContainer,
+        identity::ComponentIdentity,
+        inspect::{
+            container::InspectHandle, repository::InspectRepository, servers::InspectSinkServer,
+        },
     };
     use assert_matches::assert_matches;
+    use diagnostics_assertions::assert_json_diff;
     use fidl::endpoints::{create_proxy_and_stream, create_request_stream, ClientEnd};
     use fidl_fuchsia_inspect::TreeMarker;
     use fidl_fuchsia_inspect::{InspectSinkMarker, InspectSinkProxy, InspectSinkPublishRequest};
     use fuchsia_async::Task;
-    use fuchsia_inspect::{
-        assert_json_diff, hierarchy::DiagnosticsHierarchy, reader::read, Inspector,
-    };
+    use fuchsia_inspect::{reader::read, Inspector};
     use fuchsia_zircon::{self as zx, AsHandleRef};
     use futures::Future;
-    use inspect_runtime::service::{spawn_tree_server, TreeServerSettings};
+    use inspect_runtime::{service::spawn_tree_server_with_stream, TreeServerSendPreference};
+    use selectors::VerboseError;
     use std::sync::Arc;
 
     struct TestHarness {
@@ -167,7 +155,7 @@ mod tests {
     impl TestHarness {
         /// Construct an InspectSinkServer with a ComponentIdentity/InspectSinkProxy pair
         /// for each input ComponentIdentity.
-        async fn new(identity: Vec<Arc<ComponentIdentity>>) -> Self {
+        fn new(identity: Vec<Arc<ComponentIdentity>>) -> Self {
             let mut proxy_pairs = vec![];
             let repo = Arc::new(InspectRepository::default());
             let server = Arc::new(InspectSinkServer::new(Arc::clone(&repo)));
@@ -175,15 +163,13 @@ mod tests {
                 let (proxy, request_stream) =
                     create_proxy_and_stream::<InspectSinkMarker>().unwrap();
 
-                Arc::clone(&server)
-                    .handle(Event {
-                        timestamp: zx::Time::get_monotonic(),
-                        payload: EventPayload::InspectSinkRequested(InspectSinkRequestedPayload {
-                            component: Arc::clone(&id),
-                            request_stream,
-                        }),
-                    })
-                    .await;
+                Arc::clone(&server).handle(Event {
+                    timestamp: zx::Time::get_monotonic(),
+                    payload: EventPayload::InspectSinkRequested(InspectSinkRequestedPayload {
+                        component: Arc::clone(&id),
+                        request_stream,
+                    }),
+                });
 
                 proxy_pairs.push((id, Some(proxy)));
             }
@@ -218,16 +204,16 @@ mod tests {
             &mut self,
             component: Arc<ComponentIdentity>,
             inspector: Inspector,
-            settings: TreeServerSettings,
+            settings: TreeServerSendPreference,
         ) -> ClientEnd<TreeMarker> {
             let (tree, request_stream) = create_request_stream::<TreeMarker>().unwrap();
-            let server = spawn_tree_server(inspector, settings, request_stream);
+            let server = spawn_tree_server_with_stream(inspector, settings, request_stream);
             self.tree_pairs.push((component, Some(server)));
             tree
         }
 
         /// Drop the server(s) associated with `component`, as initialized by `serve`.
-        async fn drop_tree_servers(&mut self, component: &Arc<ComponentIdentity>) {
+        fn drop_tree_servers(&mut self, component: &Arc<ComponentIdentity>) {
             for (id, ref mut server) in &mut self.tree_pairs {
                 if id != component {
                     continue;
@@ -252,14 +238,38 @@ mod tests {
         /// This function will wait for data to be available in `self.repo`, and therefore
         /// might hang indefinitely if the data never appears. This is not a problem since
         /// it is a unit test and `fx test` has timeouts available.
-        async fn assert<F, Fut>(&self, identity: &Arc<ComponentIdentity>, assertions: F)
-        where
-            F: FnOnce(&InspectArtifactsContainer) -> Fut,
+        async fn assert<const N: usize, F, Fut>(
+            &self,
+            identity: &Arc<ComponentIdentity>,
+            koids: [zx::Koid; N],
+            assertions: F,
+        ) where
+            F: FnOnce([InspectHandle; N]) -> Fut,
             Fut: Future<Output = ()>,
         {
-            if !self.repo.execute_on_identity(identity, assertions).await {
-                panic!("could not find identity");
-            }
+            self.repo.wait_for_artifact(identity).await;
+            let containers = self.repo.fetch_inspect_data(
+                &Some(vec![selectors::parse_selector::<VerboseError>(&format!("{identity}:root"))
+                    .expect("parse selector")]),
+                None,
+            );
+            assert_eq!(containers.len(), 1);
+            assertions(
+                koids
+                    .iter()
+                    .map(|koid| {
+                        containers[0]
+                            .inspect_handles
+                            .iter()
+                            .find(|handle| handle.koid() == *koid)
+                            .unwrap()
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap(),
+            )
+            .await;
         }
 
         /// Drops all published proxies, stops the server, and waits for it to complete.
@@ -268,7 +278,7 @@ mod tests {
                 proxy.take();
             }
 
-            self.server.stop().await;
+            self.server.stop();
             self.server.wait_for_servers_to_complete().await;
         }
 
@@ -281,28 +291,24 @@ mod tests {
     async fn connect() {
         let identity: Arc<ComponentIdentity> = Arc::new(vec!["a", "b", "foo.cm"].into());
 
-        let mut test = TestHarness::new(vec![Arc::clone(&identity)]).await;
+        let mut test = TestHarness::new(vec![Arc::clone(&identity)]);
 
         let insp = Inspector::default();
         insp.root().record_int("int", 0);
-        let tree = test.serve(Arc::clone(&identity), insp, TreeServerSettings::default());
+        let tree = test.serve(Arc::clone(&identity), insp, TreeServerSendPreference::default());
         test.publish(&identity, tree);
 
         let koid = test.published_koids()[0];
 
-        test.assert(&identity, |inspect_artifacts| {
-            assert_eq!(1, inspect_artifacts.len());
-            let handle = inspect_artifacts.get_handle_by_koid(&koid).unwrap();
-            async move {
-                assert_matches!(
-                    &*handle,
-                    InspectHandle::Tree(tree, _) => {
-                       let hierarchy = read(tree).await.unwrap();
-                       assert_json_diff!(hierarchy, root: {
-                           int: 0i64,
-                       });
-                });
-            }
+        test.assert(&identity, [koid], |handles| async move {
+            assert_matches!(
+                &handles[0],
+                InspectHandle::Tree(tree, _) => {
+                   let hierarchy = read(tree).await.unwrap();
+                   assert_json_diff!(hierarchy, root: {
+                       int: 0i64,
+                   });
+            });
         })
         .await;
     }
@@ -311,16 +317,16 @@ mod tests {
     async fn publish_multiple_times_on_the_same_connection() {
         let identity: Arc<ComponentIdentity> = Arc::new(vec!["a", "b", "foo.cm"].into());
 
-        let mut test = TestHarness::new(vec![Arc::clone(&identity)]).await;
+        let mut test = TestHarness::new(vec![Arc::clone(&identity)]);
 
         let insp = Inspector::default();
         insp.root().record_int("int", 0);
-        let tree = test.serve(Arc::clone(&identity), insp, TreeServerSettings::default());
+        let tree = test.serve(Arc::clone(&identity), insp, TreeServerSendPreference::default());
 
         let other_insp = Inspector::default();
         other_insp.root().record_double("double", 1.24);
         let other_tree =
-            test.serve(Arc::clone(&identity), other_insp, TreeServerSettings::default());
+            test.serve(Arc::clone(&identity), other_insp, TreeServerSendPreference::default());
 
         test.publish(&identity, tree);
         test.publish(&identity, other_tree);
@@ -328,29 +334,24 @@ mod tests {
         let koid0 = test.published_koids()[0];
         let koid1 = test.published_koids()[1];
 
-        test.assert(&identity, |inspect_artifacts| {
-            assert_eq!(2, inspect_artifacts.len());
-            let handle1 = inspect_artifacts.get_handle_by_koid(&koid0).unwrap();
-            let handle2 = inspect_artifacts.get_handle_by_koid(&koid1).unwrap();
-            async move {
-                assert_matches!(
-                    &*handle1,
-                    InspectHandle::Tree(tree, _) => {
-                       let hierarchy = read(tree).await.unwrap();
-                       assert_json_diff!(hierarchy, root: {
-                           int: 0i64,
-                       });
-                });
+        test.assert(&identity, [koid0, koid1], |handles| async move {
+            assert_matches!(
+                &handles[0],
+                InspectHandle::Tree(tree, _) => {
+                   let hierarchy = read(tree).await.unwrap();
+                   assert_json_diff!(hierarchy, root: {
+                       int: 0i64,
+                   });
+            });
 
-                assert_matches!(
-                    &*handle2,
-                    InspectHandle::Tree(tree, _) => {
-                       let hierarchy = read(tree).await.unwrap();
-                       assert_json_diff!(hierarchy, root: {
-                           double: 1.24,
-                       });
-                });
-            }
+            assert_matches!(
+                &handles[1],
+                InspectHandle::Tree(tree, _) => {
+                   let hierarchy = read(tree).await.unwrap();
+                   assert_json_diff!(hierarchy, root: {
+                       double: 1.24,
+                   });
+            });
         })
         .await;
     }
@@ -359,47 +360,39 @@ mod tests {
     async fn tree_remains_after_inspect_sink_disconnects() {
         let identity: Arc<ComponentIdentity> = Arc::new(vec!["a", "b", "foo.cm"].into());
 
-        let mut test = TestHarness::new(vec![Arc::clone(&identity)]).await;
+        let mut test = TestHarness::new(vec![Arc::clone(&identity)]);
 
         let insp = Inspector::default();
         insp.root().record_int("int", 0);
-        let tree = test.serve(Arc::clone(&identity), insp, TreeServerSettings::default());
+        let tree = test.serve(Arc::clone(&identity), insp, TreeServerSendPreference::default());
         test.publish(&identity, tree);
 
         let koid = test.published_koids()[0];
 
-        test.assert(&identity, |inspect_artifacts| {
-            assert_eq!(1, inspect_artifacts.len());
-            let handle = inspect_artifacts.get_handle_by_koid(&koid).unwrap();
-            async move {
-                assert_matches!(
-                    &*handle,
-                    InspectHandle::Tree(tree, _) => {
-                       let hierarchy = read(tree).await.unwrap();
-                       assert_json_diff!(hierarchy, root: {
-                           int: 0i64,
-                       });
-                });
-            }
+        test.assert(&identity, [koid], |handles| async move {
+            assert_matches!(
+                &handles[0],
+                InspectHandle::Tree(tree, _) => {
+                   let hierarchy = read(tree).await.unwrap();
+                   assert_json_diff!(hierarchy, root: {
+                       int: 0i64,
+                   });
+            });
         })
         .await;
 
         test.stop_all().await;
 
         // the data must remain present as long as the tree server started above is alive
-        test.assert(&identity, |inspect_artifacts| {
-            assert_eq!(1, inspect_artifacts.len());
-            let handle = inspect_artifacts.get_handle_by_koid(&koid).unwrap();
-            async move {
-                assert_matches!(
-                    &*handle,
-                    InspectHandle::Tree(tree, _) => {
-                       let hierarchy = read(tree).await.unwrap();
-                       assert_json_diff!(hierarchy, root: {
-                           int: 0i64,
-                       });
-                });
-            }
+        test.assert(&identity, [koid], |handles| async move {
+            assert_matches!(
+                &handles[0],
+                InspectHandle::Tree(tree, _) => {
+                   let hierarchy = read(tree).await.unwrap();
+                   assert_json_diff!(hierarchy, root: {
+                       int: 0i64,
+                   });
+            });
         })
         .await;
     }
@@ -411,15 +404,17 @@ mod tests {
             Arc::new(vec!["a", "b", "foo2.cm"].into()),
         ];
 
-        let mut test = TestHarness::new(identities.clone()).await;
+        let mut test = TestHarness::new(identities.clone());
 
         let insp = Inspector::default();
         insp.root().record_int("int", 0);
-        let tree = test.serve(Arc::clone(&identities[0]), insp, TreeServerSettings::default());
+        let tree =
+            test.serve(Arc::clone(&identities[0]), insp, TreeServerSendPreference::default());
 
         let insp2 = Inspector::default();
         insp2.root().record_bool("is_insp2", true);
-        let tree2 = test.serve(Arc::clone(&identities[1]), insp2, TreeServerSettings::default());
+        let tree2 =
+            test.serve(Arc::clone(&identities[1]), insp2, TreeServerSendPreference::default());
 
         test.publish(&identities[0], tree);
         test.publish(&identities[1], tree2);
@@ -427,35 +422,27 @@ mod tests {
         let koid_component_0 = test.published_koids()[0];
         let koid_component_1 = test.published_koids()[1];
 
-        test.assert(&identities[0], |inspect_artifacts| {
-            assert_eq!(1, inspect_artifacts.len());
-            let handle = inspect_artifacts.get_handle_by_koid(&koid_component_0).unwrap();
-            async move {
-                assert_matches!(
-                    &*handle,
-                    InspectHandle::Tree(tree, _) => {
-                       let hierarchy = read(tree).await.unwrap();
-                       assert_json_diff!(hierarchy, root: {
-                           int: 0i64,
-                       });
-                });
-            }
+        test.assert(&identities[0], [koid_component_0], |handles| async move {
+            assert_matches!(
+                &handles[0],
+                InspectHandle::Tree(tree, _) => {
+                   let hierarchy = read(tree).await.unwrap();
+                   assert_json_diff!(hierarchy, root: {
+                       int: 0i64,
+                   });
+            });
         })
         .await;
 
-        test.assert(&identities[1], |inspect_artifacts| {
-            assert_eq!(1, inspect_artifacts.len());
-            let handle = inspect_artifacts.get_handle_by_koid(&koid_component_1).unwrap();
-            async move {
-                assert_matches!(
-                    &*handle,
-                    InspectHandle::Tree(tree, _) => {
-                       let hierarchy = read(tree).await.unwrap();
-                       assert_json_diff!(hierarchy, root: {
-                           is_insp2: true,
-                       });
-                });
-            }
+        test.assert(&identities[1], [koid_component_1], |handles| async move {
+            assert_matches!(
+                &handles[0],
+                InspectHandle::Tree(tree, _) => {
+                   let hierarchy = read(tree).await.unwrap();
+                   assert_json_diff!(hierarchy, root: {
+                       is_insp2: true,
+                   });
+            });
         })
         .await;
     }
@@ -464,22 +451,25 @@ mod tests {
     async fn dropping_tree_removes_component_identity_from_repo() {
         let identity: Arc<ComponentIdentity> = Arc::new(vec!["a", "b", "foo.cm"].into());
 
-        let mut test = TestHarness::new(vec![Arc::clone(&identity)]).await;
+        let mut test = TestHarness::new(vec![Arc::clone(&identity)]);
 
-        let tree =
-            test.serve(Arc::clone(&identity), Inspector::default(), TreeServerSettings::default());
+        let tree = test.serve(
+            Arc::clone(&identity),
+            Inspector::default(),
+            TreeServerSendPreference::default(),
+        );
         test.publish(&identity, tree);
 
         test.stop_all().await;
 
         // this executing to completion means the identity was present
-        test.assert(&identity, |inspect_artifacts| {
-            assert_eq!(1, inspect_artifacts.len());
+        test.assert(&identity, [test.published_koids()[0]], |handles: [_; 1]| {
+            assert_eq!(handles.len(), 1);
             async {}
         })
         .await;
 
-        test.drop_tree_servers(&identity).await;
+        test.drop_tree_servers(&identity);
 
         // this executing to completion means the identity is not there anymore; we know
         // it previously was present

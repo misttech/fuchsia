@@ -1,0 +1,145 @@
+# Copyright 2023 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/compiled_action.gni")
+import("//build/host.gni")
+import("//build/rust/rustc_binary.gni")
+import("//build/testing/golden_files.gni")
+import("//src/developer/ffx/config.gni")
+import("ffx_command_golden_file_test.gni")
+
+if (is_host && has_board) {
+  rustc_binary("ffx_cli_goldens") {
+    edition = "2021"
+    testonly = true
+    with_unit_tests = true
+    output_name = "ffx_cli_goldens"
+    sources = [ "src/main.rs" ]
+    deps = [
+      # Directly depend on the SDK here. This binary
+      # runs ffx from the sdk to build files read
+      # by the build, and without this it
+      # would run a stale version of ffx, causing
+      # golden file mismatches.
+      ":sdk_exported_for_ffx",
+      "//src/developer/ffx/command:lib",
+      "//src/developer/ffx/config:lib",
+      "//src/developer/ffx/lib/isolate:lib",
+      "//src/lib/fuchsia",
+      "//third_party/rust_crates:anyhow",
+      "//third_party/rust_crates:argh",
+      "//third_party/rust_crates:serde",
+      "//third_party/rust_crates:serde_json",
+    ]
+  }
+
+  # Exported SDK with ffx binary.
+  _sdk_label = "//sdk:core($default_toolchain)"
+  _sdk_outdir = get_label_info(_sdk_label, "root_out_dir")
+  _sdk_path = _sdk_outdir + "/sdk/exported/core"
+
+  host_test_data("sdk_exported_for_ffx") {
+    sources = [ _sdk_path ]
+    deps = [ _sdk_label ]
+  }
+
+  _golden_dir = "${target_out_dir}/goldens"
+
+  # This breaks up the comparisons of the command lines into a
+  # collection of comparisons per top level command. This avoids
+  # hitting ulimit when building the stamp file command line.
+  #
+  # First a list of top level commands is created, and kept up
+  # to date with a golden_files test.
+  #
+  # Then each top level command creates a list of comparisons
+  # and the list of output files used by golden tests.
+  _command_list = "${_golden_dir}/commandlist.txt"
+  _src_command_list = "goldens/commandlist.txt"
+
+  golden_files("ffx-golden-command-list") {
+    testonly = true
+    comparisons = [
+      {
+        golden = _src_command_list
+        candidate = _command_list
+      },
+    ]
+    deps = [ ":generate_ffx_command_list" ]
+  }
+
+  compiled_action("generate_ffx_command_list") {
+    testonly = true
+
+    # Avoid using the host tool coming from previous builds.
+    can_use_previously_built_tool = false
+    tool = ":ffx_cli_goldens"
+
+    outputs = [ _command_list ]
+    args = [
+      "--commandlist-only",
+      "--command-list",
+      rebase_path(_command_list, root_build_dir),
+      "--sdk-root",
+      rebase_path(_sdk_path, root_build_dir),
+    ]
+
+    # Add a dependency on the SDK so ffx is up to
+    # date within the SDK.
+    deps = [ ":sdk_exported_for_ffx" ]
+  }
+
+  command_test_deps = []
+
+  ffx_command_golden_file_test("ffx_ffx_command_golden_file_test") {
+    golden_source_dir = "goldens"
+    command_name = "ffx"
+    golden_processor_tool = ":ffx_cli_goldens"
+    sdk_path = _sdk_path
+
+    # Depend on generating the top level command list
+    # and the SDK so the command list represents the
+    # latest ffx commands.
+    deps = [
+      ":generate_ffx_command_list",
+      ":sdk_exported_for_ffx",
+    ]
+  }
+
+  command_test_deps += [ ":ffx_ffx_command_golden_file_test" ]
+
+  _command_name_list = read_file(_src_command_list, "list lines")
+  foreach(c, _command_name_list) {
+    ffx_command_golden_file_test("${c}_ffx_command_golden_file_test") {
+      golden_source_dir = "goldens"
+      command_name = c
+      golden_processor_tool = ":ffx_cli_goldens"
+      sdk_path = _sdk_path
+
+      # Since we're iterating over the command list to generate
+      # these targets, add the command list as dependency
+      # so if the list changes, the targets change.
+      deps = [
+        ":generate_ffx_command_list",
+        ":sdk_exported_for_ffx",
+      ]
+    }
+    command_test_deps += [ ":${c}_ffx_command_golden_file_test" ]
+  }
+}
+
+group("tests") {
+  testonly = true
+
+  # TODO(http://fxbug.dev/124461): Support product bundle for testing on mac
+  # For now, just test on linux.
+  # Also check for has_board, since this test cannot run on a configuration without a
+  # board.
+  # TODO(b/287779902) Also check that dual mode as subtools aren't enabled,
+  # because that produces an incomplete SDK.
+  if (is_host && is_linux && has_board &&
+      !ffx_build_dual_mode_plugins_as_subtools) {
+    deps = [ ":ffx-golden-command-list" ] + command_test_deps
+  }
+}

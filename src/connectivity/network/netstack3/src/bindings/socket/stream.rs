@@ -5,7 +5,6 @@
 //! Stream sockets, primarily TCP sockets.
 
 use std::{
-    convert::Infallible as Never,
     num::{NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize, TryFromIntError},
     ops::ControlFlow,
     sync::Arc,
@@ -23,33 +22,19 @@ use fidl_fuchsia_posix as fposix;
 use fidl_fuchsia_posix_socket as fposix_socket;
 use fuchsia_async as fasync;
 use fuchsia_zircon::{self as zx, Peered as _};
-use futures::{FutureExt as _, StreamExt as _};
-use net_types::{
-    ip::{IpAddress, IpVersion, Ipv4, Ipv6},
-    ZonedAddr,
-};
+use futures::{future::FusedFuture as _, FutureExt as _, StreamExt as _};
+use net_types::ip::{IpAddress, IpVersion, Ipv4, Ipv6};
 use netstack3_core::{
     device::{DeviceId, WeakDeviceId},
     ip::IpExt,
-    socket::Shutdown,
-    transport::tcp::{
-        self,
-        buffer::{
-            Buffer, BufferLimits, IntoBuffers, ReceiveBuffer, RingBuffer, SendBuffer, SendPayload,
-        },
-        segment::Payload,
-        socket::{
-            accept, bind, close, connect, create_socket, get_info, get_socket_error, listen,
-            receive_buffer_size, reuseaddr, send_buffer_size, set_device, set_receive_buffer_size,
-            set_reuseaddr, set_send_buffer_size, shutdown, with_socket_options,
-            with_socket_options_mut, AcceptError, BindError, BoundInfo, ConnectError,
-            ConnectionInfo, ListenError, ListenerNotifier, NoConnection, SetReuseAddrError,
-            SocketAddr, SocketId, SocketInfo,
-        },
-        state::Takeable,
-        BufferSizes, ConnectionError, SocketOptions,
+    socket::ShutdownType,
+    tcp::{
+        self, AcceptError, BindError, BoundInfo, Buffer, BufferLimits, BufferSizes, ConnectError,
+        ConnectionError, ConnectionInfo, DualStackIpExt, IntoBuffers, ListenError,
+        ListenerNotifier, NoConnection, Payload, ReceiveBuffer, RingBuffer, SendBuffer,
+        SendPayload, SetReuseAddrError, SocketAddr, SocketInfo, SocketOptions, Takeable,
+        TcpBindingsTypes, UnboundInfo,
     },
-    SyncCtx,
 };
 use once_cell::sync::Lazy;
 use packet_formats::utils::NonZeroDuration;
@@ -62,16 +47,19 @@ use crate::bindings::{
     },
     trace_duration,
     util::{
-        ConversionContext, DeviceNotFoundError, IntoCore, IntoFidl, NeedsDataNotifier,
-        NeedsDataWatcher, TryFromFidlWithContext, TryIntoCoreWithContext, TryIntoFidlWithContext,
+        AllowBindingIdFromWeak, ConversionContext, DeviceNotFoundError, IntoCore, IntoFidl,
+        NeedsDataNotifier, NeedsDataWatcher, TryFromFidlWithContext, TryIntoCoreWithContext,
+        TryIntoFidlWithContext,
     },
-    BindingsNonSyncCtxImpl, Ctx,
+    BindingsCtx, Ctx,
 };
 
 /// Maximum values allowed on linux: https://github.com/torvalds/linux/blob/0326074ff4652329f2a1a9c8685104576bd8d131/include/net/tcp.h#L159-L161
 const MAX_TCP_KEEPIDLE_SECS: u64 = 32767;
 const MAX_TCP_KEEPINTVL_SECS: u64 = 32767;
 const MAX_TCP_KEEPCNT: u8 = 127;
+
+type TcpSocketId<I> = tcp::TcpSocketId<I, WeakDeviceId<BindingsCtx>, BindingsCtx>;
 
 #[derive(Debug)]
 pub(crate) struct ListenerState(zx::Socket);
@@ -130,7 +118,7 @@ impl ListenerNotifier for LocalZirconSocketAndNotifier {
     }
 }
 
-impl tcp::socket::NonSyncContext for BindingsNonSyncCtxImpl {
+impl TcpBindingsTypes for BindingsCtx {
     type ReceiveBuffer = ReceiveBufferWithZirconSocket;
     type SendBuffer = SendBufferWithZirconSocket;
     type ReturnedBuffers = PeerZirconSocketAndWatcher;
@@ -319,13 +307,21 @@ pub(crate) struct SendBufferWithZirconSocket {
 
 impl Buffer for SendBufferWithZirconSocket {
     fn limits(&self) -> BufferLimits {
-        let Self { zx_socket_capacity, socket, ready_to_send, notifier: _ } = self;
+        let Self { zx_socket_capacity, socket, ready_to_send, notifier } = self;
         let info = socket.info().expect("failed to get socket info");
 
         let BufferLimits { capacity: ready_to_send_capacity, len: ready_to_send_len } =
             ready_to_send.limits();
         let len = info.rx_buf_size + ready_to_send_len;
         let capacity = *zx_socket_capacity + ready_to_send_capacity;
+
+        // Core checks for limits whenever `tcp::do_send` is hit. If it sees
+        // that there's no data in the send buffer, it'll end its attempt to
+        // send so we must make sure the watcher in the send task is hit when we
+        // observe zero bytes on the zircon socket from here.
+        if len == 0 {
+            notifier.schedule();
+        }
         BufferLimits { capacity, len }
     }
 
@@ -438,29 +434,27 @@ impl SendBuffer for SendBufferWithZirconSocket {
     }
 }
 
-struct BindingData<I: IpExt> {
-    id: SocketId<I>,
+struct BindingData<I: IpExt + DualStackIpExt> {
+    id: TcpSocketId<I>,
     peer: zx::Socket,
     local_socket_and_watcher: Option<(Arc<zx::Socket>, NeedsDataWatcher)>,
+    send_task_abort: Option<futures::channel::oneshot::Sender<()>>,
 }
 
-impl<I: IpExt> BindingData<I> {
-    fn new(
-        sync_ctx: &SyncCtx<BindingsNonSyncCtxImpl>,
-        non_sync_ctx: &mut BindingsNonSyncCtxImpl,
-        properties: SocketWorkerProperties,
-    ) -> Self {
+impl<I: IpExt + DualStackIpExt> BindingData<I> {
+    fn new(ctx: &mut Ctx, properties: SocketWorkerProperties) -> Self {
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
         let (local, peer) = zx::Socket::create_stream();
         let local = Arc::new(local);
         let SocketWorkerProperties {} = properties;
         let notifier = NeedsDataNotifier::default();
         let watcher = notifier.watcher();
-        let id = create_socket::<I, _>(
-            sync_ctx,
-            non_sync_ctx,
+        let id = tcp::create_socket::<I, _>(
+            core_ctx,
+            bindings_ctx,
             LocalZirconSocketAndNotifier(Arc::clone(&local), notifier),
         );
-        Self { id, peer, local_socket_and_watcher: Some((local, watcher)) }
+        Self { id, peer, local_socket_and_watcher: Some((local, watcher)), send_task_abort: None }
     }
 }
 
@@ -470,47 +464,66 @@ impl CloseResponder for fposix_socket::StreamSocketCloseResponder {
     }
 }
 
-impl<I: IpExt + IpSockAddrExt> worker::SocketWorkerHandler for BindingData<I>
+enum InitialSocketState {
+    Unbound,
+    Connected,
+}
+
+impl<I: IpExt + DualStackIpExt + IpSockAddrExt> worker::SocketWorkerHandler for BindingData<I>
 where
-    DeviceId<BindingsNonSyncCtxImpl>:
-        TryFromFidlWithContext<<I::SocketAddress as SockAddr>::Zone, Error = DeviceNotFoundError>,
-    WeakDeviceId<BindingsNonSyncCtxImpl>:
-        TryIntoFidlWithContext<<I::SocketAddress as SockAddr>::Zone, Error = DeviceNotFoundError>,
+    DeviceId<BindingsCtx>: TryFromFidlWithContext<NonZeroU64, Error = DeviceNotFoundError>,
+    WeakDeviceId<BindingsCtx>: TryIntoFidlWithContext<NonZeroU64, Error = DeviceNotFoundError>,
 {
     type Request = fposix_socket::StreamSocketRequest;
     type RequestStream = fposix_socket::StreamSocketRequestStream;
     type CloseResponder = fposix_socket::StreamSocketCloseResponder;
+    type SetupArgs = InitialSocketState;
+    type Spawner = crate::bindings::util::TaskWaitGroupSpawner;
+
+    fn setup(
+        &mut self,
+        ctx: &mut Ctx,
+        args: InitialSocketState,
+        spawners: &worker::TaskSpawnerCollection<crate::bindings::util::TaskWaitGroupSpawner>,
+    ) {
+        match args {
+            InitialSocketState::Unbound => (),
+            InitialSocketState::Connected => {
+                let Self { id, peer: _, local_socket_and_watcher, send_task_abort } = self;
+                let (socket, watcher) = local_socket_and_watcher
+                    .take()
+                    .expect("connected socket did not provide socket and watcher");
+                let sender = spawn_send_task(
+                    ctx.clone(),
+                    socket,
+                    watcher,
+                    id.clone(),
+                    &spawners.socket_scope,
+                );
+                assert_matches::assert_matches!(send_task_abort.replace(sender), None);
+            }
+        }
+    }
 
     fn handle_request(
         &mut self,
-        ctx: &Ctx,
+        ctx: &mut Ctx,
         request: Self::Request,
+        spawners: &worker::TaskSpawnerCollection<crate::bindings::util::TaskWaitGroupSpawner>,
     ) -> ControlFlow<Self::CloseResponder, Option<Self::RequestStream>> {
-        RequestHandler { ctx, data: self }.handle_request(request)
+        RequestHandler { ctx, data: self }.handle_request(request, spawners)
     }
 
-    fn close(
-        self,
-        sync_ctx: &SyncCtx<BindingsNonSyncCtxImpl>,
-        non_sync_ctx: &mut BindingsNonSyncCtxImpl,
-    ) {
-        let Self { mut id, peer, local_socket_and_watcher: _ } = self;
-        match shutdown::<I, _>(
-            &sync_ctx,
-            non_sync_ctx,
-            &mut id,
-            Shutdown { send: true, receive: true },
-        ) {
-            Ok(true) => {
-                peer.set_disposition(
-                    Some(zx::SocketWriteDisposition::Disabled),
-                    Some(zx::SocketWriteDisposition::Disabled),
-                )
-                .expect("failed to set socket disposition");
-            }
-            Ok(false) | Err(NoConnection) => {}
+    fn close(self, ctx: &mut Ctx) {
+        let Self { id, peer: _, local_socket_and_watcher: _, send_task_abort } = self;
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+        tcp::close::<I, _>(core_ctx, bindings_ctx, id);
+        if let Some(send_task_abort) = send_task_abort {
+            // Signal the task to stop but drop the canceled error. The data
+            // notifier might have been closed in `close` or due to state
+            // machine progression.
+            send_task_abort.send(()).unwrap_or_else(|()| ());
         }
-        close::<I, _>(sync_ctx, non_sync_ctx, id)
     }
 }
 
@@ -519,29 +532,30 @@ pub(super) fn spawn_worker(
     proto: fposix_socket::StreamSocketProtocol,
     ctx: crate::bindings::Ctx,
     request_stream: fposix_socket::StreamSocketRequestStream,
-) where
-    DeviceId<BindingsNonSyncCtxImpl>: TryFromFidlWithContext<Never, Error = DeviceNotFoundError>
-        + TryFromFidlWithContext<NonZeroU64, Error = DeviceNotFoundError>,
-{
+    spawner: &worker::ProviderScopedSpawner<crate::bindings::util::TaskWaitGroupSpawner>,
+) {
     match (domain, proto) {
         (fposix_socket::Domain::Ipv4, fposix_socket::StreamSocketProtocol::Tcp) => {
-            fasync::Task::spawn(SocketWorker::serve_stream_with(
+            spawner.spawn(SocketWorker::serve_stream_with(
                 ctx,
                 BindingData::<Ipv4>::new,
                 SocketWorkerProperties {},
                 request_stream,
+                InitialSocketState::Unbound,
+                spawner.clone(),
             ))
         }
         (fposix_socket::Domain::Ipv6, fposix_socket::StreamSocketProtocol::Tcp) => {
-            fasync::Task::spawn(SocketWorker::serve_stream_with(
+            spawner.spawn(SocketWorker::serve_stream_with(
                 ctx,
                 BindingData::<Ipv6>::new,
                 SocketWorkerProperties {},
                 request_stream,
+                InitialSocketState::Unbound,
+                spawner.clone(),
             ))
         }
     }
-    .detach()
 }
 
 impl IntoErrno for AcceptError {
@@ -619,80 +633,106 @@ impl IntoErrno for ConnectionError {
 
 /// Spawns a task that sends more data from the `socket` each time we observe
 /// a wakeup through the `watcher`.
-fn spawn_send_task<I: IpExt>(
-    ctx: crate::bindings::Ctx,
+fn spawn_send_task<I: IpExt + DualStackIpExt>(
+    mut ctx: crate::bindings::Ctx,
     socket: Arc<zx::Socket>,
-    watcher: NeedsDataWatcher,
-    id: SocketId<I>,
-) {
-    fasync::Task::spawn(async move {
-        let watcher = watcher.peekable();
-        futures::pin_mut!(watcher);
-        while let Some(()) = watcher.next().await {
-            // Wait until either the zircon socket is readable or the watcher
-            // has received another notification. This allows the watcher
-            // stream's ending to interrupt a blocking wait for the socket to
-            // become readable.
-            let mut readable =
-                fasync::OnSignals::new(&*socket, zx::Signals::SOCKET_READABLE).fuse();
-            let observed = futures::select! {
-                result = readable => result.expect("failed to observe signals on zircon socket"),
-                // Only peek at the next result so we can allow the next
-                // iteration of the while loop to take ownership of it.
-                _ = watcher.as_mut().peek() => continue,
+    mut watcher: NeedsDataWatcher,
+    id: TcpSocketId<I>,
+    spawner: &worker::SocketScopedSpawner<crate::bindings::util::TaskWaitGroupSpawner>,
+) -> futures::channel::oneshot::Sender<()> {
+    let (sender, abort) = futures::channel::oneshot::channel();
+    let abort = abort.map(|r| r.expect("send task abort dropped without signaling"));
+    let watch_fut = async move {
+        let mut signals = futures::future::OptionFuture::default();
+        loop {
+            let mut watcher_next = watcher.next().fuse();
+
+            // NB: Extract work out of the select macro because rustfmt
+            // doesn't like it.
+            enum Work {
+                Watcher(Option<()>),
+                Signals(zx::Signals),
+            }
+            let work = futures::select! {
+                w = watcher_next => Work::Watcher(w),
+                s = signals => {
+                    Work::Signals(s.expect("OptionFuture is only selected when non-empty"))
+                }
             };
-            assert!(observed.contains(zx::Signals::SOCKET_READABLE));
-            let mut ctx = ctx.clone();
-            let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
-            netstack3_core::transport::tcp::socket::do_send::<I, _>(
-                sync_ctx,
-                non_sync_ctx,
-                id.into(),
-            );
+            match work {
+                Work::Watcher(Some(())) => {
+                    // Only create a new signals wait if it's already
+                    // terminated, otherwise it means this is a spurious wakeup.
+                    if signals.is_terminated() {
+                        signals = Some(
+                            fasync::OnSignals::new(&*socket, zx::Signals::SOCKET_READABLE)
+                                .map(|r| r.expect("failed to observe signals on zircon socket")),
+                        )
+                        .into()
+                    }
+                }
+                Work::Watcher(None) => break,
+                Work::Signals(observed) => {
+                    assert!(observed.contains(zx::Signals::SOCKET_READABLE));
+                    let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+                    tcp::do_send::<I, _>(core_ctx, bindings_ctx, &id);
+                }
+            }
         }
-    })
-    .detach();
+    };
+    spawner.spawn(async move {
+        futures::pin_mut!(watch_fut);
+        futures::future::select(watch_fut, abort)
+            .map(|_: futures::future::Either<((), _), ((), _)>| ())
+            .await;
+    });
+    sender
 }
 
-struct RequestHandler<'a, I: IpExt> {
+struct RequestHandler<'a, I: IpExt + DualStackIpExt> {
     data: &'a mut BindingData<I>,
-    ctx: &'a Ctx,
+    ctx: &'a mut Ctx,
 }
 
-impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I>
+impl<I: IpSockAddrExt + IpExt + DualStackIpExt> RequestHandler<'_, I>
 where
-    DeviceId<BindingsNonSyncCtxImpl>:
-        TryFromFidlWithContext<<I::SocketAddress as SockAddr>::Zone, Error = DeviceNotFoundError>,
-    WeakDeviceId<BindingsNonSyncCtxImpl>:
-        TryIntoFidlWithContext<<I::SocketAddress as SockAddr>::Zone, Error = DeviceNotFoundError>,
+    DeviceId<BindingsCtx>: TryFromFidlWithContext<NonZeroU64, Error = DeviceNotFoundError>,
+    WeakDeviceId<BindingsCtx>: TryIntoFidlWithContext<NonZeroU64, Error = DeviceNotFoundError>,
 {
     fn bind(self, addr: fnet::SocketAddress) -> Result<(), fposix::Errno> {
-        let Self { data: BindingData { id, peer: _, local_socket_and_watcher: _ }, ctx } = self;
+        let Self {
+            data: BindingData { id, peer: _, local_socket_and_watcher: _, send_task_abort: _ },
+            ctx,
+        } = self;
         let addr = I::SocketAddress::from_sock_addr(addr)?;
-        let mut ctx = ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
         let (addr, port) =
-            addr.try_into_core_with_ctx(non_sync_ctx).map_err(IntoErrno::into_errno)?;
-        *id = bind::<I, _>(sync_ctx, non_sync_ctx, *id, addr, NonZeroU16::new(port))
+            addr.try_into_core_with_ctx(bindings_ctx).map_err(IntoErrno::into_errno)?;
+        tcp::bind::<I, _>(core_ctx, bindings_ctx, id, addr, NonZeroU16::new(port))
             .map_err(IntoErrno::into_errno)?;
         Ok(())
     }
 
-    fn connect(self, addr: fnet::SocketAddress) -> Result<(), fposix::Errno> {
-        let Self { data: BindingData { id, peer: _, local_socket_and_watcher: _ }, ctx: ns_ctx } =
-            self;
+    fn connect(
+        self,
+        addr: fnet::SocketAddress,
+        spawner: &worker::SocketScopedSpawner<crate::bindings::util::TaskWaitGroupSpawner>,
+    ) -> Result<(), fposix::Errno> {
+        let Self {
+            data: BindingData { id, peer: _, local_socket_and_watcher: _, send_task_abort },
+            ctx,
+        } = self;
+
         let addr = I::SocketAddress::from_sock_addr(addr)?;
-        let mut ctx = ns_ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
         let (ip, remote_port) =
-            addr.try_into_core_with_ctx(&non_sync_ctx).map_err(IntoErrno::into_errno)?;
+            addr.try_into_core_with_ctx(&bindings_ctx).map_err(IntoErrno::into_errno)?;
         let port = NonZeroU16::new(remote_port).ok_or(fposix::Errno::Einval)?;
-        let ip = ip.unwrap_or(ZonedAddr::Unzoned(I::LOOPBACK_ADDRESS));
-        let connection = connect::<I, _>(sync_ctx, non_sync_ctx, *id, SocketAddr { ip, port })
+        tcp::connect::<I, _>(core_ctx, bindings_ctx, id, ip, port)
             .map_err(IntoErrno::into_errno)?;
         if let Some((local, watcher)) = self.data.local_socket_and_watcher.take() {
-            spawn_send_task::<I>(ns_ctx.clone(), local, watcher, connection);
-            *id = connection;
+            let sender = spawn_send_task::<I>(ctx.clone(), local, watcher, id.clone(), spawner);
+            assert_matches::assert_matches!(send_task_abort.replace(sender), None);
             Err(fposix::Errno::Einprogress)
         } else {
             Ok(())
@@ -700,9 +740,11 @@ where
     }
 
     fn listen(self, backlog: i16) -> Result<(), fposix::Errno> {
-        let Self { data: BindingData { id, peer: _, local_socket_and_watcher: _ }, ctx } = self;
-        let mut ctx = ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx: _ } = &mut ctx;
+        let Self {
+            data: BindingData { id, peer: _, local_socket_and_watcher: _, send_task_abort: _ },
+            ctx,
+        } = self;
+        let core_ctx = ctx.core_ctx();
         // The POSIX specification for `listen` [1] says
         //
         //   If listen() is called with a backlog argument value that is
@@ -725,21 +767,25 @@ where
             NonZeroUsize::min(MAXIMUM_BACKLOG_SIZE, NonZeroUsize::max(b, MINIMUM_BACKLOG_SIZE))
         });
 
-        *id = listen::<I, _>(sync_ctx, *id, backlog).map_err(IntoErrno::into_errno)?;
+        tcp::listen::<I, _>(core_ctx, id, backlog).map_err(IntoErrno::into_errno)?;
         Ok(())
     }
 
     fn get_sock_name(self) -> Result<fnet::SocketAddress, fposix::Errno> {
-        let Self { data: BindingData { id, peer: _, local_socket_and_watcher: _ }, ctx } = self;
-        let mut ctx = ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
-        let fidl = match get_info::<I, _>(sync_ctx, *id) {
-            SocketInfo::Unbound(_) => return Err(fposix::Errno::Einval),
+        let Self {
+            data: BindingData { id, peer: _, local_socket_and_watcher: _, send_task_abort: _ },
+            ctx,
+        } = self;
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+        let fidl = match tcp::get_info::<I, _>(core_ctx, id) {
+            SocketInfo::Unbound(UnboundInfo { device: _ }) => {
+                Ok(<<I as IpSockAddrExt>::SocketAddress as SockAddr>::UNSPECIFIED)
+            }
             SocketInfo::Bound(BoundInfo { addr, port, device: _ }) => {
-                (addr, port).try_into_fidl_with_ctx(non_sync_ctx)
+                (addr, port).try_into_fidl_with_ctx(bindings_ctx)
             }
             SocketInfo::Connection(ConnectionInfo { local_addr, remote_addr: _, device: _ }) => {
-                local_addr.try_into_fidl_with_ctx(non_sync_ctx)
+                local_addr.try_into_fidl_with_ctx(bindings_ctx)
             }
         }
         .map_err(IntoErrno::into_errno)?;
@@ -747,14 +793,16 @@ where
     }
 
     fn get_peer_name(self) -> Result<fnet::SocketAddress, fposix::Errno> {
-        let Self { data: BindingData { id, peer: _, local_socket_and_watcher: _ }, ctx } = self;
-        let mut ctx = ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
-        match get_info::<I, _>(sync_ctx, *id) {
+        let Self {
+            data: BindingData { id, peer: _, local_socket_and_watcher: _, send_task_abort: _ },
+            ctx,
+        } = self;
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+        match tcp::get_info::<I, _>(core_ctx, id) {
             SocketInfo::Unbound(_) | SocketInfo::Bound(_) => Err(fposix::Errno::Enotconn),
             SocketInfo::Connection(info) => Ok({
                 info.remote_addr
-                    .try_into_fidl_with_ctx(non_sync_ctx)
+                    .try_into_fidl_with_ctx(bindings_ctx)
                     .map_err(IntoErrno::into_errno)?
                     .into_sock_addr()
             }),
@@ -764,53 +812,64 @@ where
     fn accept(
         self,
         want_addr: bool,
+        spawner: &worker::ProviderScopedSpawner<crate::bindings::util::TaskWaitGroupSpawner>,
     ) -> Result<
         (Option<fnet::SocketAddress>, ClientEnd<fposix_socket::StreamSocketMarker>),
         fposix::Errno,
     > {
-        let Self { data: BindingData { id, peer: _, local_socket_and_watcher: _ }, ctx: ns_ctx } =
-            self;
+        let Self {
+            data: BindingData { id, peer: _, local_socket_and_watcher: _, send_task_abort: _ },
+            ctx,
+        } = self;
 
-        let mut ctx = ns_ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
         let (accepted, addr, peer) =
-            accept::<I, _>(sync_ctx, non_sync_ctx, *id).map_err(IntoErrno::into_errno)?;
+            tcp::accept::<I, _>(core_ctx, bindings_ctx, id).map_err(IntoErrno::into_errno)?;
         let addr = addr
-            .try_into_fidl_with_ctx(&non_sync_ctx)
-            .unwrap_or_else(|DeviceNotFoundError| panic!("unknown device"))
+            .map_zone(AllowBindingIdFromWeak)
+            .try_into_fidl_with_ctx(bindings_ctx)
+            .unwrap_or_else(|never| match never {})
             .into_sock_addr();
         let PeerZirconSocketAndWatcher { peer, watcher, socket } = peer;
         let (client, request_stream) = crate::bindings::socket::create_request_stream();
         peer.signal_handle(zx::Signals::NONE, ZXSIO_SIGNAL_CONNECTED)
             .expect("failed to signal connection established");
-        spawn_send_task::<I>(ns_ctx.clone(), socket, watcher, accepted);
-        spawn_connected_socket_task(ns_ctx.clone(), accepted, peer, request_stream);
+        spawn_connected_socket_task(
+            ctx.clone(),
+            accepted,
+            peer,
+            request_stream,
+            socket,
+            watcher,
+            spawner,
+        );
         Ok((want_addr.then_some(addr), client))
     }
 
     fn get_error(self) -> Result<(), fposix::Errno> {
-        let Self { data: BindingData { id, peer: _, local_socket_and_watcher: _ }, ctx } = self;
-        let mut ctx = ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx: _ } = &mut ctx;
-        match get_socket_error(sync_ctx, *id) {
+        let Self {
+            data: BindingData { id, peer: _, local_socket_and_watcher: _, send_task_abort: _ },
+            ctx,
+        } = self;
+        let core_ctx = ctx.core_ctx();
+        match tcp::get_socket_error(core_ctx, id) {
             Some(err) => Err(err.into_errno()),
             None => Ok(()),
         }
     }
 
     fn shutdown(self, mode: fposix_socket::ShutdownMode) -> Result<(), fposix::Errno> {
-        let Self { data: BindingData { id, peer, local_socket_and_watcher: _ }, ctx } = self;
-        let mut ctx = ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
+        let Self {
+            data: BindingData { id, peer, local_socket_and_watcher: _, send_task_abort: _ },
+            ctx,
+        } = self;
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
         let shutdown_recv = mode.contains(fposix_socket::ShutdownMode::READ);
         let shutdown_send = mode.contains(fposix_socket::ShutdownMode::WRITE);
-        let is_conn = shutdown::<I, _>(
-            &sync_ctx,
-            non_sync_ctx,
-            id,
-            Shutdown { send: shutdown_send, receive: shutdown_recv },
-        )
-        .map_err(IntoErrno::into_errno)?;
+        let shutdown_type = ShutdownType::from_send_receive(shutdown_send, shutdown_recv)
+            .ok_or(fposix::Errno::Einval)?;
+        let is_conn = tcp::shutdown::<I, _>(&core_ctx, bindings_ctx, id, shutdown_type)
+            .map_err(IntoErrno::into_errno)?;
         if is_conn {
             let peer_disposition = shutdown_send.then_some(zx::SocketWriteDisposition::Disabled);
             let my_disposition = shutdown_recv.then_some(zx::SocketWriteDisposition::Disabled);
@@ -821,30 +880,36 @@ where
     }
 
     fn set_bind_to_device(self, device: Option<&str>) -> Result<(), fposix::Errno> {
-        let Self { data: BindingData { id, peer: _, local_socket_and_watcher: _ }, ctx } = self;
-        let mut ctx = ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
+        let Self {
+            data: BindingData { id, peer: _, local_socket_and_watcher: _, send_task_abort: _ },
+            ctx,
+        } = self;
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
         let device = device
-            .map(|name| non_sync_ctx.devices.get_device_by_name(name).ok_or(fposix::Errno::Enodev))
+            .map(|name| bindings_ctx.devices.get_device_by_name(name).ok_or(fposix::Errno::Enodev))
             .transpose()?;
 
-        set_device(sync_ctx, non_sync_ctx, *id, device).map_err(IntoErrno::into_errno)
+        tcp::set_device(core_ctx, bindings_ctx, id, device).map_err(IntoErrno::into_errno)
     }
 
     fn set_send_buffer_size(self, new_size: u64) {
-        let Self { data: BindingData { id, peer: _, local_socket_and_watcher: _ }, ctx } = self;
-        let mut ctx = ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
+        let Self {
+            data: BindingData { id, peer: _, local_socket_and_watcher: _, send_task_abort: _ },
+            ctx,
+        } = self;
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
         let new_size =
             usize::try_from(new_size).ok_checked::<TryFromIntError>().unwrap_or(usize::MAX);
-        set_send_buffer_size(sync_ctx, non_sync_ctx, *id, new_size);
+        tcp::set_send_buffer_size(core_ctx, bindings_ctx, id, new_size);
     }
 
     fn send_buffer_size(self) -> u64 {
-        let Self { data: BindingData { id, peer: _, local_socket_and_watcher: _ }, ctx } = self;
-        let mut ctx = ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
-        send_buffer_size(sync_ctx, non_sync_ctx, *id)
+        let Self {
+            data: BindingData { id, peer: _, local_socket_and_watcher: _, send_task_abort: _ },
+            ctx,
+        } = self;
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+        tcp::send_buffer_size(core_ctx, bindings_ctx, id)
             // If the socket doesn't have a send buffer (e.g. because it was shut
             // down for writing and all the data was sent to the peer), return 0.
             .unwrap_or(0)
@@ -854,19 +919,23 @@ where
     }
 
     fn set_receive_buffer_size(self, new_size: u64) {
-        let Self { data: BindingData { id, peer: _, local_socket_and_watcher: _ }, ctx } = self;
-        let mut ctx = ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
+        let Self {
+            data: BindingData { id, peer: _, local_socket_and_watcher: _, send_task_abort: _ },
+            ctx,
+        } = self;
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
         let new_size =
             usize::try_from(new_size).ok_checked::<TryFromIntError>().unwrap_or(usize::MAX);
-        set_receive_buffer_size(sync_ctx, non_sync_ctx, *id, new_size);
+        tcp::set_receive_buffer_size(core_ctx, bindings_ctx, id, new_size);
     }
 
     fn receive_buffer_size(self) -> u64 {
-        let Self { data: BindingData { id, peer: _, local_socket_and_watcher: _ }, ctx } = self;
-        let mut ctx = ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
-        receive_buffer_size(sync_ctx, non_sync_ctx, *id)
+        let Self {
+            data: BindingData { id, peer: _, local_socket_and_watcher: _, send_task_abort: _ },
+            ctx,
+        } = self;
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+        tcp::receive_buffer_size(core_ctx, bindings_ctx, id)
             // If the socket doesn't have a receive buffer (e.g. because the remote
             // end signalled FIN and all data was sent to the client), return 0.
             .unwrap_or(0)
@@ -876,17 +945,21 @@ where
     }
 
     fn set_reuse_address(self, value: bool) -> Result<(), fposix::Errno> {
-        let Self { data: BindingData { id, peer: _, local_socket_and_watcher: _ }, ctx } = self;
-        let mut ctx = ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx: _ } = &mut ctx;
-        set_reuseaddr(sync_ctx, *id, value).map_err(IntoErrno::into_errno)
+        let Self {
+            data: BindingData { id, peer: _, local_socket_and_watcher: _, send_task_abort: _ },
+            ctx,
+        } = self;
+        let core_ctx = ctx.core_ctx();
+        tcp::set_reuseaddr(core_ctx, id, value).map_err(IntoErrno::into_errno)
     }
 
     fn reuse_address(self) -> bool {
-        let Self { data: BindingData { id, peer: _, local_socket_and_watcher: _ }, ctx } = self;
-        let mut ctx = ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx: _ } = &mut ctx;
-        reuseaddr(sync_ctx, *id)
+        let Self {
+            data: BindingData { id, peer: _, local_socket_and_watcher: _, send_task_abort: _ },
+            ctx,
+        } = self;
+        let core_ctx = ctx.core_ctx();
+        tcp::reuseaddr(core_ctx, id)
     }
 
     /// Returns a [`ControlFlow`] to indicate whether the parent stream should
@@ -898,11 +971,15 @@ where
     fn handle_request(
         self,
         request: fposix_socket::StreamSocketRequest,
+        spawners: &worker::TaskSpawnerCollection<crate::bindings::util::TaskWaitGroupSpawner>,
     ) -> ControlFlow<
         fposix_socket::StreamSocketCloseResponder,
         Option<fposix_socket::StreamSocketRequestStream>,
     > {
-        let Self { data: BindingData { id: _, peer, local_socket_and_watcher: _ }, ctx: _ } = self;
+        let Self {
+            data: BindingData { id: _, peer, local_socket_and_watcher: _, send_task_abort: _ },
+            ctx: _,
+        } = self;
         match request {
             fposix_socket::StreamSocketRequest::Bind { addr, responder } => {
                 responder
@@ -910,8 +987,10 @@ where
                     .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
             }
             fposix_socket::StreamSocketRequest::Connect { addr, responder } => {
+                // Connect always spawns on the socket scope.
+                let response = self.connect(addr, &spawners.socket_scope);
                 responder
-                    .send(self.connect(addr).clone())
+                    .send(response)
                     .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
             }
             fposix_socket::StreamSocketRequest::Describe { responder } => {
@@ -935,8 +1014,11 @@ where
                     .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
             }
             fposix_socket::StreamSocketRequest::Accept { want_addr, responder } => {
+                // Accept receives the provider scope because it creates a new
+                // socket worker for the newly created socket.
+                let response = self.accept(want_addr, &spawners.provider_scope);
                 responder
-                    .send(match self.accept(want_addr) {
+                    .send(match response {
                         Ok((ref addr, client)) => Ok((addr.as_ref(), client)),
                         Err(e) => Err(e),
                     })
@@ -952,8 +1034,8 @@ where
             fposix_socket::StreamSocketRequest::Clone2 { request, control_handle: _ } => {
                 let channel = fidl::AsyncChannel::from_channel(request.into_channel())
                     .expect("failed to create async channel");
-                let events = fposix_socket::StreamSocketRequestStream::from_channel(channel);
-                return ControlFlow::Continue(Some(events));
+                let rs = fposix_socket::StreamSocketRequestStream::from_channel(channel);
+                return ControlFlow::Continue(Some(rs));
             }
             fposix_socket::StreamSocketRequest::SetBindToDevice { value, responder } => {
                 let identifier = (!value.is_empty()).then_some(value.as_str());
@@ -982,14 +1064,10 @@ where
                     .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
             }
             fposix_socket::StreamSocketRequest::SetBroadcast { value: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetBroadcast { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetSendBuffer { value_bytes, responder } => {
                 self.set_send_buffer_size(value_bytes);
@@ -1025,73 +1103,53 @@ where
                     .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
             }
             fposix_socket::StreamSocketRequest::SetOutOfBandInline { value: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetOutOfBandInline { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetNoCheck { value: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetNoCheck { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetLinger {
                 linger: _,
                 length_secs: _,
                 responder,
             } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetLinger { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetReusePort { value: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetReusePort { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetAcceptConn { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetBindToDevice { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetTimestamp { value: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetTimestamp { responder } => {
+                respond_not_supported!(responder);
+            }
+            fposix_socket::StreamSocketRequest::GetOriginalDestination { responder } => {
+                // When we support NAT, we should return the original address.
                 responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
+                    .send(Err(fposix::Errno::Enoent))
                     .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
             }
             fposix_socket::StreamSocketRequest::Disconnect { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetSockName { responder } => {
                 responder
@@ -1109,167 +1167,125 @@ where
                     .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
             }
             fposix_socket::StreamSocketRequest::SetIpTypeOfService { value: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetIpTypeOfService { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetIpTtl { value: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetIpTtl { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetIpPacketInfo { value: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetIpPacketInfo { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetIpReceiveTypeOfService {
                 value: _,
                 responder,
             } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetIpReceiveTypeOfService { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetIpReceiveTtl { value: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetIpReceiveTtl { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetIpMulticastInterface {
                 iface: _,
                 address: _,
                 responder,
             } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetIpMulticastInterface { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetIpMulticastTtl { value: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetIpMulticastTtl { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetIpMulticastLoopback { value: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetIpMulticastLoopback { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::AddIpMembership { membership: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::DropIpMembership { membership: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
+            }
+            fposix_socket::StreamSocketRequest::SetIpTransparent { value: _, responder } => {
+                // In theory this can be used on stream sockets, but we don't need it right now.
+                respond_not_supported!(responder);
+            }
+            fposix_socket::StreamSocketRequest::GetIpTransparent { responder } => {
+                respond_not_supported!(responder);
+            }
+            fposix_socket::StreamSocketRequest::SetIpReceiveOriginalDestinationAddress {
+                value: _,
+                responder,
+            } => {
+                respond_not_supported!(responder);
+            }
+            fposix_socket::StreamSocketRequest::GetIpReceiveOriginalDestinationAddress {
+                responder,
+            } => {
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::AddIpv6Membership { membership: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::DropIpv6Membership { membership: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetIpv6MulticastInterface {
                 value: _,
                 responder,
             } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetIpv6MulticastInterface { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetIpv6UnicastHops { value: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetIpv6UnicastHops { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetIpv6ReceiveHopLimit { value: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetIpv6ReceiveHopLimit { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetIpv6MulticastHops { value: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetIpv6MulticastHops { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetIpv6MulticastLoopback {
                 value: _,
                 responder,
             } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetIpv6MulticastLoopback { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetIpv6Only { value, responder } => {
                 // TODO(https://fxbug.dev/21198): support dual-stack sockets.
@@ -1280,55 +1296,39 @@ where
                             IpVersion::V4 => false,
                         }
                         .then_some(())
-                        .ok_or(fposix::Errno::Eopnotsupp),
+                        .ok_or(fposix::Errno::Enoprotoopt),
                     )
                     .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
             }
             fposix_socket::StreamSocketRequest::GetIpv6Only { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetIpv6ReceiveTrafficClass {
                 value: _,
                 responder,
             } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetIpv6ReceiveTrafficClass { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetIpv6TrafficClass { value: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetIpv6TrafficClass { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetIpv6ReceivePacketInfo {
                 value: _,
                 responder,
             } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetIpv6ReceivePacketInfo { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetInfo { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             // Note for the following two options:
             // Nagle enabled means TCP delays sending segment, thus meaning
@@ -1348,24 +1348,16 @@ where
                     .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
             }
             fposix_socket::StreamSocketRequest::SetTcpMaxSegment { value_bytes: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetTcpMaxSegment { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetTcpCork { value: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetTcpCork { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetTcpKeepAliveIdle { value_secs, responder } => {
                 match NonZeroU64::new(value_secs.into())
@@ -1489,29 +1481,19 @@ where
                     .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
             }
             fposix_socket::StreamSocketRequest::SetTcpDeferAccept { value_secs: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetTcpDeferAccept { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetTcpWindowClamp { value: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetTcpWindowClamp { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetTcpInfo { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetTcpQuickAck { value, responder } => {
                 self.with_socket_options_mut(|so| so.delayed_ack = !value);
@@ -1526,14 +1508,10 @@ where
                     .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
             }
             fposix_socket::StreamSocketRequest::SetTcpCongestion { value: _, responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::GetTcpCongestion { responder } => {
-                responder
-                    .send(Err(fposix::Errno::Eopnotsupp))
-                    .unwrap_or_else(|e| tracing::error!("failed to respond: {e:?}"));
+                respond_not_supported!(responder);
             }
             fposix_socket::StreamSocketRequest::SetTcpUserTimeout { value_millis, responder } => {
                 let user_timeout =
@@ -1560,52 +1538,57 @@ where
     }
 
     fn with_socket_options_mut<R, F: FnOnce(&mut SocketOptions) -> R>(self, f: F) -> R {
-        let Self { data: BindingData { id, peer: _, local_socket_and_watcher: _ }, ctx } = self;
-        let mut ctx = ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx } = &mut ctx;
-        with_socket_options_mut(sync_ctx, non_sync_ctx, *id, f)
+        let Self {
+            data: BindingData { id, peer: _, local_socket_and_watcher: _, send_task_abort: _ },
+            ctx,
+        } = self;
+        let (core_ctx, bindings_ctx) = ctx.contexts_mut();
+        tcp::with_socket_options_mut(core_ctx, bindings_ctx, id, f)
     }
 
     fn with_socket_options<R, F: FnOnce(&SocketOptions) -> R>(self, f: F) -> R {
-        let Self { data: BindingData { id, peer: _, local_socket_and_watcher: _ }, ctx } = self;
-        let ctx = ctx.clone();
-        let Ctx { sync_ctx, non_sync_ctx: _ } = &ctx;
-        with_socket_options(sync_ctx, *id, f)
+        let Self {
+            data: BindingData { id, peer: _, local_socket_and_watcher: _, send_task_abort: _ },
+            ctx,
+        } = self;
+        tcp::with_socket_options(ctx.core_ctx(), id, f)
     }
 }
 
-fn spawn_connected_socket_task<I: IpExt + IpSockAddrExt>(
+fn spawn_connected_socket_task<I: IpExt + IpSockAddrExt + DualStackIpExt>(
     ctx: Ctx,
-    accepted: SocketId<I>,
+    accepted: TcpSocketId<I>,
     peer: zx::Socket,
     request_stream: fposix_socket::StreamSocketRequestStream,
+    local_socket: Arc<zx::Socket>,
+    watcher: NeedsDataWatcher,
+    spawner: &worker::ProviderScopedSpawner<crate::bindings::util::TaskWaitGroupSpawner>,
 ) where
-    DeviceId<BindingsNonSyncCtxImpl>:
-        TryFromFidlWithContext<<I::SocketAddress as SockAddr>::Zone, Error = DeviceNotFoundError>,
-    WeakDeviceId<BindingsNonSyncCtxImpl>:
-        TryIntoFidlWithContext<<I::SocketAddress as SockAddr>::Zone, Error = DeviceNotFoundError>,
+    DeviceId<BindingsCtx>: TryFromFidlWithContext<NonZeroU64, Error = DeviceNotFoundError>,
+    WeakDeviceId<BindingsCtx>: TryIntoFidlWithContext<NonZeroU64, Error = DeviceNotFoundError>,
 {
-    fasync::Task::spawn(SocketWorker::<BindingData<I>>::serve_stream_with(
+    spawner.spawn(SocketWorker::<BindingData<I>>::serve_stream_with(
         ctx,
-        move |_: &SyncCtx<_>, _: &mut BindingsNonSyncCtxImpl, SocketWorkerProperties {}| {
-            BindingData { id: accepted, peer, local_socket_and_watcher: None }
+        move |_: &mut Ctx, SocketWorkerProperties {}| BindingData {
+            id: accepted,
+            peer,
+            local_socket_and_watcher: Some((local_socket, watcher)),
+            send_task_abort: None,
         },
         SocketWorkerProperties {},
         request_stream,
+        InitialSocketState::Connected,
+        spawner.clone(),
     ))
-    .detach();
 }
 
 impl<A: IpAddress, D> TryIntoFidlWithContext<<A::Version as IpSockAddrExt>::SocketAddress>
     for SocketAddr<A, D>
 where
     A::Version: IpSockAddrExt,
-    D: TryIntoFidlWithContext<
-        <<A::Version as IpSockAddrExt>::SocketAddress as SockAddr>::Zone,
-        Error = DeviceNotFoundError,
-    >,
+    D: TryIntoFidlWithContext<NonZeroU64>,
 {
-    type Error = DeviceNotFoundError;
+    type Error = D::Error;
 
     fn try_into_fidl_with_ctx<C: ConversionContext>(
         self,
@@ -1773,5 +1756,34 @@ mod tests {
             let _: usize = peer.write(&LARGE_PAYLOAD[..]).expect("can write");
             sbuf.poll();
         }
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn send_buffer_installs_notifier_on_empty_limits_check() {
+        let (local, peer) = zx::Socket::create_stream();
+        let notifier = NeedsDataNotifier::default();
+        let mut watcher = notifier.watcher();
+        let sbuf = SendBufferWithZirconSocket::new(
+            Arc::new(local),
+            notifier,
+            SendBufferWithZirconSocket::MAX_CAPACITY,
+        );
+        // Watcher starts without pending data.
+        assert_eq!(futures::poll!(watcher.next()), futures::task::Poll::Pending);
+
+        // Check initial limits, there's no data and the watcher should be
+        // asserted once.
+        let BufferLimits { len, capacity: _ } = sbuf.limits();
+        assert_eq!(len, 0);
+        assert_eq!(futures::poll!(watcher.next()), futures::task::Poll::Ready(Some(())));
+        assert_eq!(futures::poll!(watcher.next()), futures::task::Poll::Pending);
+
+        // Send data from the peer. Limits returns the available data and
+        // doesn't wake the watcher.
+        let peer_data = [1, 2, 3, 4];
+        assert_eq!(peer.write(&peer_data[..]).expect("write to peer"), peer_data.len());
+        let BufferLimits { len, capacity: _ } = sbuf.limits();
+        assert_eq!(len, peer_data.len());
+        assert_eq!(futures::poll!(watcher.next()), futures::task::Poll::Pending);
     }
 }

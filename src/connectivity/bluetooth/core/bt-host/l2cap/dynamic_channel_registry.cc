@@ -4,7 +4,6 @@
 
 #include "dynamic_channel_registry.h"
 
-#include "lib/zx/channel.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/assert.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/log.h"
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/l2cap_defs.h"
@@ -12,7 +11,7 @@
 namespace bt::l2cap::internal {
 // Run return callbacks on the L2CAP thread. LogicalLink takes care of out-of-
 // thread dispatch for delivering the pointer to the channel.
-void DynamicChannelRegistry::OpenOutbound(PSM psm, ChannelParameters params,
+void DynamicChannelRegistry::OpenOutbound(Psm psm, ChannelParameters params,
                                           DynamicChannelCallback open_cb) {
   const ChannelId id = FindAvailableChannelId();
   if (id == kInvalidChannelId) {
@@ -59,7 +58,7 @@ DynamicChannelRegistry::DynamicChannelRegistry(uint16_t max_num_channels,
   BT_DEBUG_ASSERT(service_request_cb_);
 }
 
-DynamicChannel* DynamicChannelRegistry::RequestService(PSM psm, ChannelId local_cid,
+DynamicChannel* DynamicChannelRegistry::RequestService(Psm psm, ChannelId local_cid,
                                                        ChannelId remote_cid) {
   BT_DEBUG_ASSERT(local_cid != kInvalidChannelId);
 

@@ -4,6 +4,7 @@
 
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.sdmmc/cpp/wire.h>
 #include <fuchsia/hardware/sdmmc/c/banjo.h>
 #include <lib/ddk/binding.h>
 #include <lib/ddk/debug.h>
@@ -62,22 +63,12 @@ constexpr wifi_config_t wifi_config = {
         },
     .cc_table =
         {
-            {"WW", 1},   {"AU", 923}, {"CA", 901}, {"US", 843}, {"GB", 889}, {"BE", 889},
-            {"BG", 889}, {"CZ", 889}, {"DK", 889}, {"DE", 889}, {"EE", 889}, {"IE", 889},
-            {"GR", 889}, {"ES", 889}, {"FR", 889}, {"HR", 889}, {"IT", 889}, {"CY", 889},
-            {"LV", 889}, {"LT", 889}, {"LU", 889}, {"HU", 889}, {"MT", 889}, {"NL", 889},
-            {"AT", 889}, {"PL", 889}, {"PT", 889}, {"RO", 889}, {"SI", 889}, {"SK", 889},
-            {"FI", 889}, {"SE", 889}, {"EL", 889}, {"IS", 889}, {"LI", 889}, {"TR", 889},
-            {"CH", 889}, {"NO", 889}, {"JP", 2},   {"", 0},
+            {"WW", 0}, {"AU", 0}, {"CA", 0}, {"US", 0}, {"GB", 0}, {"BE", 0}, {"BG", 0}, {"CZ", 0},
+            {"DK", 0}, {"DE", 0}, {"EE", 0}, {"IE", 0}, {"GR", 0}, {"ES", 0}, {"FR", 0}, {"HR", 0},
+            {"IT", 0}, {"CY", 0}, {"LV", 0}, {"LT", 0}, {"LU", 0}, {"HU", 0}, {"MT", 0}, {"NL", 0},
+            {"AT", 0}, {"PL", 0}, {"PT", 0}, {"RO", 0}, {"SI", 0}, {"SK", 0}, {"FI", 0}, {"SE", 0},
+            {"EL", 0}, {"IS", 0}, {"LI", 0}, {"TR", 0}, {"CH", 0}, {"NO", 0}, {"JP", 0}, {"", 0},
         },
-};
-
-static const std::vector<fpbus::Metadata> sdio_metadata{
-    {{
-        .type = DEVICE_METADATA_PRIVATE,
-        .data = std::vector<uint8_t>(reinterpret_cast<const uint8_t*>(&config),
-                                     reinterpret_cast<const uint8_t*>(&config) + sizeof(config)),
-    }},
 };
 
 static const std::vector<fpbus::Metadata> wifi_metadata{
@@ -90,6 +81,31 @@ static const std::vector<fpbus::Metadata> wifi_metadata{
 };
 
 zx_status_t Vim3::SdioInit() {
+  fidl::Arena<> fidl_arena;
+
+  fit::result sdmmc_metadata =
+      fidl::Persist(fuchsia_hardware_sdmmc::wire::SdmmcMetadata::Builder(fidl_arena)
+                        // TODO(fxbug.dev/134787): Use the FIDL SDMMC protocol.
+                        .use_fidl(false)
+                        .Build());
+  if (!sdmmc_metadata.is_ok()) {
+    zxlogf(ERROR, "Failed to encode SDMMC metadata: %s",
+           sdmmc_metadata.error_value().FormatDescription().c_str());
+    return sdmmc_metadata.error_value().status();
+  }
+
+  const std::vector<fpbus::Metadata> sdio_metadata{
+      {{
+          .type = DEVICE_METADATA_PRIVATE,
+          .data = std::vector<uint8_t>(reinterpret_cast<const uint8_t*>(&config),
+                                       reinterpret_cast<const uint8_t*>(&config) + sizeof(config)),
+      }},
+      {{
+          .type = DEVICE_METADATA_SDMMC,
+          .data = std::move(sdmmc_metadata.value()),
+      }},
+  };
+
   fpbus::Node sdio_dev;
   sdio_dev.name() = "vim3-sdio";
   sdio_dev.vid() = PDEV_VID_AMLOGIC;
@@ -100,28 +116,29 @@ zx_status_t Vim3::SdioInit() {
   sdio_dev.bti() = sdio_btis;
   sdio_dev.metadata() = sdio_metadata;
 
-  gpio_impl_.ConfigIn(A311D_SDIO_D0, GPIO_NO_PULL);
-  gpio_impl_.ConfigIn(A311D_SDIO_D1, GPIO_NO_PULL);
-  gpio_impl_.ConfigIn(A311D_SDIO_D2, GPIO_NO_PULL);
-  gpio_impl_.ConfigIn(A311D_SDIO_D3, GPIO_NO_PULL);
-  gpio_impl_.ConfigIn(A311D_SDIO_CLK, GPIO_NO_PULL);
-  gpio_impl_.ConfigIn(A311D_SDIO_CMD, GPIO_NO_PULL);
+  using fuchsia_hardware_gpio::GpioFlags;
 
-  gpio_impl_.SetAltFunction(A311D_SDIO_D0, A311D_GPIOX_0_SDIO_D0_FN);
-  gpio_impl_.SetAltFunction(A311D_SDIO_D1, A311D_GPIOX_1_SDIO_D1_FN);
-  gpio_impl_.SetAltFunction(A311D_SDIO_D2, A311D_GPIOX_2_SDIO_D2_FN);
-  gpio_impl_.SetAltFunction(A311D_SDIO_D3, A311D_GPIOX_3_SDIO_D3_FN);
-  gpio_impl_.SetAltFunction(A311D_SDIO_CLK, A311D_GPIOX_4_SDIO_CLK_FN);
-  gpio_impl_.SetAltFunction(A311D_SDIO_CMD, A311D_GPIOX_5_SDIO_CMD_FN);
+  gpio_init_steps_.push_back({A311D_SDIO_D0, GpioConfigIn(GpioFlags::kNoPull)});
+  gpio_init_steps_.push_back({A311D_SDIO_D1, GpioConfigIn(GpioFlags::kNoPull)});
+  gpio_init_steps_.push_back({A311D_SDIO_D2, GpioConfigIn(GpioFlags::kNoPull)});
+  gpio_init_steps_.push_back({A311D_SDIO_D3, GpioConfigIn(GpioFlags::kNoPull)});
+  gpio_init_steps_.push_back({A311D_SDIO_CLK, GpioConfigIn(GpioFlags::kNoPull)});
+  gpio_init_steps_.push_back({A311D_SDIO_CMD, GpioConfigIn(GpioFlags::kNoPull)});
 
-  gpio_impl_.SetDriveStrength(A311D_SDIO_D0, 4'000, nullptr);
-  gpio_impl_.SetDriveStrength(A311D_SDIO_D1, 4'000, nullptr);
-  gpio_impl_.SetDriveStrength(A311D_SDIO_D2, 4'000, nullptr);
-  gpio_impl_.SetDriveStrength(A311D_SDIO_D3, 4'000, nullptr);
-  gpio_impl_.SetDriveStrength(A311D_SDIO_CLK, 4'000, nullptr);
-  gpio_impl_.SetDriveStrength(A311D_SDIO_CMD, 4'000, nullptr);
+  gpio_init_steps_.push_back({A311D_SDIO_D0, GpioSetAltFunction(A311D_GPIOX_0_SDIO_D0_FN)});
+  gpio_init_steps_.push_back({A311D_SDIO_D1, GpioSetAltFunction(A311D_GPIOX_1_SDIO_D1_FN)});
+  gpio_init_steps_.push_back({A311D_SDIO_D2, GpioSetAltFunction(A311D_GPIOX_2_SDIO_D2_FN)});
+  gpio_init_steps_.push_back({A311D_SDIO_D3, GpioSetAltFunction(A311D_GPIOX_3_SDIO_D3_FN)});
+  gpio_init_steps_.push_back({A311D_SDIO_CLK, GpioSetAltFunction(A311D_GPIOX_4_SDIO_CLK_FN)});
+  gpio_init_steps_.push_back({A311D_SDIO_CMD, GpioSetAltFunction(A311D_GPIOX_5_SDIO_CMD_FN)});
 
-  fidl::Arena<> fidl_arena;
+  gpio_init_steps_.push_back({A311D_SDIO_D0, GpioSetDriveStrength(4'000)});
+  gpio_init_steps_.push_back({A311D_SDIO_D1, GpioSetDriveStrength(4'000)});
+  gpio_init_steps_.push_back({A311D_SDIO_D2, GpioSetDriveStrength(4'000)});
+  gpio_init_steps_.push_back({A311D_SDIO_D3, GpioSetDriveStrength(4'000)});
+  gpio_init_steps_.push_back({A311D_SDIO_CLK, GpioSetDriveStrength(4'000)});
+  gpio_init_steps_.push_back({A311D_SDIO_CMD, GpioSetDriveStrength(4'000)});
+
   fdf::Arena sdio_arena('SDIO');
   auto result =
       pbus_.buffer(sdio_arena)

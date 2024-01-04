@@ -6,7 +6,7 @@ use {
     crate::{
         builtin_environment::BuiltinEnvironment,
         model::{
-            actions::{ActionSet, ShutdownAction, StartAction, StopAction},
+            actions::{ActionSet, ShutdownAction, ShutdownType, StartAction, StopAction},
             component::{ComponentInstance, InstanceState, StartReason},
             error::{ModelError, StartActionError},
             events::registry::EventSubscription,
@@ -18,9 +18,10 @@ use {
             },
         },
     },
-    ::routing::{config::AllowlistEntryBuilder, policy::PolicyError},
+    ::routing::policy::PolicyError,
     assert_matches::assert_matches,
     async_trait::async_trait,
+    cm_config::AllowlistEntryBuilder,
     cm_rust::{
         Availability, ComponentDecl, RegistrationSource, RunnerDecl, RunnerRegistration,
         UseEventStreamDecl, UseSource,
@@ -33,6 +34,7 @@ use {
     fuchsia_async as fasync, fuchsia_zircon as zx,
     futures::{channel::mpsc, future::pending, join, lock::Mutex, prelude::*},
     moniker::{ChildName, Moniker, MonikerBase},
+    sandbox::Dict,
     std::sync::{Arc, Weak},
     std::{collections::HashSet, convert::TryFrom},
 };
@@ -124,7 +126,7 @@ async fn bind_concurrent() {
     .await;
 
     // Start the root component.
-    model.start().await;
+    model.start(Dict::new()).await;
 
     // Attempt to start the "system" component
     let system_component = model.find(&vec!["system"].try_into().unwrap()).await.unwrap();
@@ -195,7 +197,7 @@ async fn bind_parent_then_child() {
     assert!(actual_children.is_empty());
     assert_matches!(
         *echo_component.lock_state().await,
-        InstanceState::New | InstanceState::Unresolved
+        InstanceState::New | InstanceState::Unresolved(_)
     );
     // Start echo.
     let m: Moniker = vec!["echo"].try_into().unwrap();
@@ -422,13 +424,8 @@ async fn bind_action_sequence() {
     .await;
     let events =
         vec![EventType::Discovered.into(), EventType::Resolved.into(), EventType::Started.into()];
-    let mut event_source = builtin_environment
-        .lock()
-        .await
-        .event_source_factory
-        .create_for_above_root()
-        .await
-        .unwrap();
+    let mut event_source =
+        builtin_environment.lock().await.event_source_factory.create_for_above_root();
     let mut event_stream = event_source
         .subscribe(
             events
@@ -450,7 +447,7 @@ async fn bind_action_sequence() {
 
     // Child of root should start out discovered but not resolved yet.
     let m = Moniker::parse_str("/system").unwrap();
-    model.start().await;
+    model.start(Dict::new()).await;
     event_stream.wait_until(EventType::Resolved, vec![].try_into().unwrap()).await.unwrap();
     event_stream.wait_until(EventType::Discovered, m.clone()).await.unwrap();
     event_stream.wait_until(EventType::Started, vec![].try_into().unwrap()).await.unwrap();
@@ -518,6 +515,7 @@ async fn on_terminate_stop_triggers_reboot() {
                 .expose(cm_rust::ExposeDecl::Protocol(cm_rust::ExposeProtocolDecl {
                     source: cm_rust::ExposeSource::Self_,
                     source_name: REBOOT_PROTOCOL.parse().unwrap(),
+                    source_dictionary: None,
                     target_name: REBOOT_PROTOCOL.parse().unwrap(),
                     target: cm_rust::ExposeTarget::Parent,
                     availability: cm_rust::Availability::Required,
@@ -540,7 +538,8 @@ async fn on_terminate_stop_triggers_reboot() {
         .start_instance(&vec!["system"].try_into().unwrap(), &StartReason::Debug)
         .await
         .unwrap();
-    let component = test.model.look_up(&vec!["system"].try_into().unwrap()).await.unwrap();
+    let component =
+        test.model.find_and_maybe_resolve(&vec!["system"].try_into().unwrap()).await.unwrap();
     let stop = async move {
         ActionSet::register(component.clone(), StopAction::new(false)).await.unwrap();
     };
@@ -574,6 +573,7 @@ async fn on_terminate_exit_triggers_reboot() {
                 .expose(cm_rust::ExposeDecl::Protocol(cm_rust::ExposeProtocolDecl {
                     source: cm_rust::ExposeSource::Self_,
                     source_name: REBOOT_PROTOCOL.parse().unwrap(),
+                    source_dictionary: None,
                     target_name: REBOOT_PROTOCOL.parse().unwrap(),
                     target: cm_rust::ExposeTarget::Parent,
                     availability: cm_rust::Availability::Required,
@@ -596,7 +596,8 @@ async fn on_terminate_exit_triggers_reboot() {
         .start_instance(&vec!["system"].try_into().unwrap(), &StartReason::Debug)
         .await
         .unwrap();
-    let component = test.model.look_up(&vec!["system"].try_into().unwrap()).await.unwrap();
+    let component =
+        test.model.find_and_maybe_resolve(&vec!["system"].try_into().unwrap()).await.unwrap();
     let info = ComponentInfo::new(component.clone()).await;
     test.mock_runner.abort_controller(&info.channel_id);
     let reason = match receiver.next().await.unwrap() {
@@ -626,6 +627,7 @@ async fn reboot_shutdown_does_not_trigger_reboot() {
                 .expose(cm_rust::ExposeDecl::Protocol(cm_rust::ExposeProtocolDecl {
                     source: cm_rust::ExposeSource::Self_,
                     source_name: REBOOT_PROTOCOL.parse().unwrap(),
+                    source_dictionary: None,
                     target_name: REBOOT_PROTOCOL.parse().unwrap(),
                     target: cm_rust::ExposeTarget::Parent,
                     availability: cm_rust::Availability::Required,
@@ -648,8 +650,11 @@ async fn reboot_shutdown_does_not_trigger_reboot() {
         .start_instance(&vec!["system"].try_into().unwrap(), &StartReason::Debug)
         .await
         .unwrap();
-    let component = test.model.look_up(&vec!["system"].try_into().unwrap()).await.unwrap();
-    ActionSet::register(component.clone(), ShutdownAction::new()).await.unwrap();
+    let component =
+        test.model.find_and_maybe_resolve(&vec!["system"].try_into().unwrap()).await.unwrap();
+    ActionSet::register(component.clone(), ShutdownAction::new(ShutdownType::Instance))
+        .await
+        .unwrap();
     assert!(!test.model.top_instance().has_reboot_task().await);
 }
 
@@ -677,6 +682,7 @@ async fn on_terminate_with_missing_reboot_protocol_panics() {
                 .expose(cm_rust::ExposeDecl::Protocol(cm_rust::ExposeProtocolDecl {
                     source: cm_rust::ExposeSource::Self_,
                     source_name: REBOOT_PROTOCOL.parse().unwrap(),
+                    source_dictionary: None,
                     target_name: REBOOT_PROTOCOL.parse().unwrap(),
                     target: cm_rust::ExposeTarget::Parent,
                     availability: cm_rust::Availability::Required,
@@ -698,7 +704,8 @@ async fn on_terminate_with_missing_reboot_protocol_panics() {
         .start_instance(&vec!["system"].try_into().unwrap(), &StartReason::Debug)
         .await
         .unwrap();
-    let component = test.model.look_up(&vec!["system"].try_into().unwrap()).await.unwrap();
+    let component =
+        test.model.find_and_maybe_resolve(&vec!["system"].try_into().unwrap()).await.unwrap();
     let info = ComponentInfo::new(component.clone()).await;
     test.mock_runner.abort_controller(&info.channel_id);
     let () = pending().await;
@@ -727,6 +734,7 @@ async fn on_terminate_with_failed_reboot_panics() {
                 .expose(cm_rust::ExposeDecl::Protocol(cm_rust::ExposeProtocolDecl {
                     source: cm_rust::ExposeSource::Self_,
                     source_name: REBOOT_PROTOCOL.parse().unwrap(),
+                    source_dictionary: None,
                     target_name: REBOOT_PROTOCOL.parse().unwrap(),
                     target: cm_rust::ExposeTarget::Parent,
                     availability: cm_rust::Availability::Required,
@@ -750,7 +758,8 @@ async fn on_terminate_with_failed_reboot_panics() {
         .start_instance(&vec!["system"].try_into().unwrap(), &StartReason::Debug)
         .await
         .unwrap();
-    let component = test.model.look_up(&vec!["system"].try_into().unwrap()).await.unwrap();
+    let component =
+        test.model.find_and_maybe_resolve(&vec!["system"].try_into().unwrap()).await.unwrap();
     let info = ComponentInfo::new(component.clone()).await;
     test.mock_runner.abort_controller(&info.channel_id);
     match receiver.next().await.unwrap() {

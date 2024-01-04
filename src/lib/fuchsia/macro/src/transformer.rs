@@ -82,6 +82,7 @@ pub struct Transformer {
     sig: Signature,
     block: Box<Block>,
     logging: bool,
+    logging_blocking: bool,
     logging_tags: LoggingTags,
     interest: Interest,
     add_test_attr: bool,
@@ -91,6 +92,7 @@ struct Args {
     threads: usize,
     allow_stalls: Option<bool>,
     logging: bool,
+    logging_blocking: bool,
     logging_tags: LoggingTags,
     interest: Interest,
     add_test_attr: bool,
@@ -236,6 +238,7 @@ impl Parse for Args {
             threads: 1,
             allow_stalls: None,
             logging: true,
+            logging_blocking: false,
             logging_tags: LoggingTags::default(),
             interest: Interest::default(),
             add_test_attr: true,
@@ -251,6 +254,7 @@ impl Parse for Args {
                 "threads" => args.threads = get_base10_arg(&input)?,
                 "allow_stalls" => args.allow_stalls = Some(get_bool_arg(&input, true)?),
                 "logging" => args.logging = get_bool_arg(&input, true)?,
+                "logging_blocking" => args.logging_blocking = get_bool_arg(&input, true)?,
                 "logging_tags" => args.logging_tags = get_logging_tags(&input)?,
                 "logging_minimum_severity" => args.interest = get_interest_arg(&input)?,
                 "add_test_attr" => args.add_test_attr = get_bool_arg(&input, true)?,
@@ -319,6 +323,7 @@ impl Transformer {
             sig,
             block,
             logging: args.logging,
+            logging_blocking: args.logging_blocking,
             logging_tags: args.logging_tags,
             interest: args.interest,
             add_test_attr: args.add_test_attr,
@@ -337,7 +342,8 @@ impl Finish for Transformer {
         let asyncness = self.sig.asyncness;
         let block = self.block;
         let inputs = self.sig.inputs;
-        let logging_tags = self.logging_tags;
+        let logging_blocking = self.logging_blocking;
+        let mut logging_tags = self.logging_tags;
         let interest = self.interest;
 
         let mut func_attrs = Vec::new();
@@ -346,28 +352,42 @@ impl Finish for Transformer {
         let init_logging = if !self.logging {
             quote! { func }
         } else if self.executor.is_test() {
-            let test_name = LitStr::new(&format!("{}", ident), ident.span());
+            logging_tags.tags.insert(0, format!("{ident}"));
             if self.executor.is_some() {
                 quote! {
-                    ::fuchsia::init_logging_for_test_with_executor(
-                        func, #test_name, &[#logging_tags], #interest)
+                    ::fuchsia::init_logging_for_test_with_executor(func, ::fuchsia::LoggingOptions {
+                        blocking: #logging_blocking,
+                        interest: #interest,
+                        tags: &[#logging_tags],
+                    })
                 }
             } else {
                 quote! {
-                    ::fuchsia::init_logging_for_test_with_threads(
-                        func, #test_name, &[#logging_tags], #interest)
+                    ::fuchsia::init_logging_for_test_with_threads(func, ::fuchsia::LoggingOptions {
+                        blocking: #logging_blocking,
+                        interest: #interest,
+                        tags: &[#logging_tags],
+                    })
                 }
             }
         } else {
             if self.executor.is_some() {
                 quote! {
                     ::fuchsia::init_logging_for_component_with_executor(
-                        func, &[#logging_tags], #interest)
+                        func, ::fuchsia::LoggingOptions {
+                            blocking: #logging_blocking,
+                            interest: #interest,
+                            tags: &[#logging_tags],
+                        })
                 }
             } else {
                 quote! {
                     ::fuchsia::init_logging_for_component_with_threads(
-                        func, &[#logging_tags], #interest)
+                        func, ::fuchsia::LoggingOptions {
+                            blocking: #logging_blocking,
+                            interest: #interest,
+                            tags: &[#logging_tags],
+                        })
                 }
             }
         };
@@ -401,25 +421,30 @@ impl Finish for Transformer {
         let is_nonempty_ret_type = !matches!(ret_type, syn::ReturnType::Default);
 
         // Select executor
-        let (run_executor, modified_ret_type) = match (self.logging, is_nonempty_ret_type) {
-            (true, false) | (false, false) => (quote!(#tokenized_executor), quote!(#ret_type)),
-            (false, true) => (quote!(#tokenized_executor), quote!(#ret_type)),
-            _ => (
-                quote! {
-                    let result = #tokenized_executor;
-                    match result {
-                        std::result::Result::Ok(res) => {
-                            std::result::Result::Ok(res)
+        let (run_executor, modified_ret_type) =
+            match (self.executor.is_test(), self.logging, is_nonempty_ret_type) {
+                (_, true, false) | (_, false, false) => {
+                    (quote!(#tokenized_executor), quote!(#ret_type))
+                }
+                (_, false, true) => (quote!(#tokenized_executor), quote!(#ret_type)),
+                (true, _, _) => (quote!(#tokenized_executor), quote!(#ret_type)),
+                (false, _, _) => (
+                    quote! {
+                        let result = #tokenized_executor;
+                        match result {
+                            std::result::Result::Ok(val) => {
+                                use std::process::Termination;
+                                val.report()
+                            },
+                            std::result::Result::Err(err) => {
+                                ::fuchsia::error!("{err:?}");
+                                std::process::ExitCode::FAILURE
+                            }
                         }
-                        std::result::Result::Err(e) => {
-                            ::fuchsia::error!("{:?}", e);
-                            std::result::Result::Err(e)
-                        }
-                     }
-                },
-                quote!(#ret_type),
-            ),
-        };
+                    },
+                    quote!(-> std::process::ExitCode),
+                ),
+            };
 
         // Finally build output.
         let output = quote_spanned! {span =>

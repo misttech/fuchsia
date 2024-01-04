@@ -11,7 +11,12 @@ driver_bind_rules("aml-securemem-bind") {
   rules = "aml-securemem.bind"
   bind_output = "aml-securemem.bindbc"
   tests = "aml-securemem-bind-test.json"
-  deps = [ "//src/devices/bind/fuchsia.amlogic.platform" ]
+  deps = [
+    "//src/devices/bind/fuchsia.amlogic.platform",
+    "//src/devices/bind/fuchsia.platform",
+    "//src/devices/bind/fuchsia.sysmem",
+    "//src/devices/bind/fuchsia.tee",
+  ]
 }
 
 group("tests") {
@@ -37,10 +42,10 @@ fuchsia_driver("aml-securemem-driver") {
 
   deps = [
     ":aml-securemem-bind",
-    "//sdk/fidl/fuchsia.hardware.securemem:fuchsia.hardware.securemem_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.sysmem:fuchsia.hardware.sysmem_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.tee:fuchsia.hardware.tee_cpp_wire",
-    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.securemem:fuchsia.hardware.securemem_cpp",
+    "//sdk/fidl/fuchsia.hardware.sysmem:fuchsia.hardware.sysmem_cpp",
+    "//sdk/fidl/fuchsia.hardware.tee:fuchsia.hardware.tee_cpp",
+    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp",
     "//sdk/fidl/fuchsia.tee:fuchsia.tee_hlcpp",
     "//sdk/lib/async_patterns/cpp",
     "//sdk/lib/fit-promise",
@@ -64,6 +69,11 @@ fuchsia_driver_component("aml-securemem") {
   manifest = "meta/aml-securemem.cml"
 }
 
+fuchsia_driver_package("package") {
+  package_name = "aml-securemem"
+  driver_components = [ ":aml-securemem" ]
+}
+
 test("aml-securemem-test-bin") {
   output_name = "aml-securemem-test"
   sources = [
@@ -76,10 +86,10 @@ test("aml-securemem-test-bin") {
   include_dirs = [ "." ]
   deps = [
     ":aml-securemem-bind",
-    "//sdk/fidl/fuchsia.hardware.securemem:fuchsia.hardware.securemem_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.sysmem:fuchsia.hardware.sysmem_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.tee:fuchsia.hardware.tee_cpp_wire",
-    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.securemem:fuchsia.hardware.securemem_cpp",
+    "//sdk/fidl/fuchsia.hardware.sysmem:fuchsia.hardware.sysmem_cpp_testing",
+    "//sdk/fidl/fuchsia.hardware.tee:fuchsia.hardware.tee_cpp",
+    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp",
     "//sdk/fidl/fuchsia.tee:fuchsia.tee_hlcpp",
     "//sdk/lib/async_patterns/testing/cpp",
     "//sdk/lib/component/outgoing/cpp",
@@ -89,7 +99,6 @@ test("aml-securemem-test-bin") {
     "//src/devices/bus/lib/device-protocol-pdev",
     "//src/devices/bus/testing/fake-pdev",
     "//src/devices/lib/driver:driver_runtime",
-    "//src/devices/testing/driver-runtime-main:zxtest",
     "//src/devices/testing/mock-ddk",
     "//src/security/lib/tee/tee-client-api:tee-client-api-static",
     "//zircon/system/ulib/async:async-cpp",

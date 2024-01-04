@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 use {
-    argh::FromArgs,
+    argh::{ArgsInfo, FromArgs},
     camino::Utf8PathBuf,
     chrono::{DateTime, Utc},
     fuchsia_repo::repository::CopyMode,
     std::path::PathBuf,
 };
 
-#[derive(Eq, FromArgs, PartialEq, Debug)]
+#[derive(Eq, ArgsInfo, FromArgs, PartialEq, Debug)]
 /// create a package archive from a package_manifest.json
 #[argh(subcommand, name = "create")]
 pub struct PackageArchiveCreateCommand {
@@ -31,7 +31,7 @@ pub struct PackageArchiveCreateCommand {
     pub package_manifest: Utf8PathBuf,
 }
 
-#[derive(Eq, FromArgs, PartialEq, Debug)]
+#[derive(Eq, ArgsInfo, FromArgs, PartialEq, Debug)]
 /// extract the contents of <far_path> inside the Fuchsia package archive file to the output directory
 #[argh(subcommand, name = "extract")]
 pub struct PackageArchiveExtractCommand {
@@ -52,8 +52,51 @@ pub struct PackageArchiveExtractCommand {
     pub archive: PathBuf,
 }
 
+#[derive(Eq, ArgsInfo, FromArgs, PartialEq, Debug)]
+/// add a file (<file_to_add>) to an existing package archive (<archive>), overwriting the archive
+#[argh(subcommand, name = "add")]
+pub struct PackageArchiveAddCommand {
+    /// package archive
+    #[argh(option, short = 'a')]
+    pub archive: PathBuf,
+
+    /// file to add to the package archive
+    #[argh(option, short = 'f')]
+    pub file_to_add: PathBuf,
+
+    /// the destination path in the archive for <file_to_add>
+    #[argh(option, short = 'p')]
+    pub path_of_file_in_archive: PathBuf,
+
+    /// the name of the resulting archive. Can be the same as <archive> to overwrite <archive>
+    #[argh(option, short = 'o')]
+    pub output: PathBuf,
+
+    /// if false, refuses to overwrite files in <archive> named by <path_of_file_in_archive>
+    #[argh(option, short = 'w', default = "true")]
+    pub overwrite: bool,
+}
+
+#[derive(Eq, ArgsInfo, FromArgs, PartialEq, Debug)]
+/// remove a file (<file_to_remove>) from an existing package archive (<archive>), placing the
+/// resulting archive in <output>
+#[argh(subcommand, name = "remove")]
+pub struct PackageArchiveRemoveCommand {
+    /// package archive
+    #[argh(option, short = 'a')]
+    pub archive: PathBuf,
+
+    /// file to add to the package archive
+    #[argh(option, short = 'f')]
+    pub file_to_remove: PathBuf,
+
+    /// file to add to the package archive
+    #[argh(option, short = 'o')]
+    pub output: PathBuf,
+}
+
 /// Builds a package.
-#[derive(FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "build")]
 pub struct PackageBuildCommand {
     /// directory to save package artifacts
@@ -98,7 +141,7 @@ pub struct PackageBuildCommand {
 }
 
 /// Create a repository.
-#[derive(FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "create")]
 pub struct RepoCreateCommand {
     /// set repository version based on the current time rather than monotonically increasing version
@@ -115,7 +158,7 @@ pub struct RepoCreateCommand {
 }
 
 /// Publish packages.
-#[derive(FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "publish")]
 pub struct RepoPublishCommand {
     /// path to the keys used to sign metadata, but not trust for key rotation
@@ -192,7 +235,7 @@ pub struct RepoPublishCommand {
 }
 
 /// Create package manifest list from repository.
-#[derive(FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "create-package-manifest-list")]
 pub struct RepoPMListCommand {
     /// path to the source repository directory

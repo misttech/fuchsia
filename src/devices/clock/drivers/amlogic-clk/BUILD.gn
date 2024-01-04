@@ -37,8 +37,7 @@ fuchsia_driver("amlogic-clk-driver") {
   deps = [
     ":aml-clk-bind",
     "//sdk/banjo/fuchsia.hardware.clockimpl:fuchsia.hardware.clockimpl_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp_driver",
+    "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_cpp",
     "//sdk/lib/fidl",
     "//src/devices/bus/lib/device-protocol-pdev",
     "//src/devices/lib/amlogic",
@@ -62,6 +61,11 @@ fuchsia_driver_component("amlogic-clk") {
   manifest = "meta/amlogic-clk.cml"
 }
 
+fuchsia_driver_package("package") {
+  package_name = "amlogic-clk"
+  driver_components = [ ":amlogic-clk" ]
+}
+
 test("amlogic-clk-test-bin") {
   output_name = "amlogic-clk-test"
   sources = [
@@ -72,8 +76,7 @@ test("amlogic-clk-test-bin") {
   deps = [
     ":aml-clk-bind",
     "//sdk/banjo/fuchsia.hardware.clockimpl:fuchsia.hardware.clockimpl_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_cpp_wire",
-    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp_driver",
+    "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_cpp",
     "//sdk/lib/fdio",
     "//sdk/lib/fidl",
     "//src/devices/bus/lib/device-protocol-pdev",

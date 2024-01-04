@@ -27,8 +27,8 @@ const char* const kErrorSyncEventUnhandledTransitionalEvent = "unhandled transit
 const char* const kCallerAllocatedBufferTooSmall =
     "buffer provided to caller-allocating flavor is too small";
 const char* const kUnknownMethod = "server did not recognize this method";
-const char* const kUnsupportedTransportError =
-    "server sent a transport_err value that is not supported";
+const char* const kUnsupportedFrameworkError =
+    "server sent a framework_err value that is not supported";
 
 bool IsFatalErrorUniversal(fidl::Reason error) {
   switch (error) {
@@ -47,6 +47,7 @@ bool IsFatalErrorUniversal(fidl::Reason error) {
     case Reason::kUnexpectedMessage:
     case Reason::kEncodeError:
     case Reason::kDecodeError:
+    case Reason::kAbandonedAsyncReply:
       return false;
   }
 }
@@ -101,6 +102,8 @@ constexpr const char* DescribeReason(Reason reason) {
       return "unexpected message";
     case Reason::kUnknownMethod:
       return "unknown interaction";
+    case Reason::kAbandonedAsyncReply:
+      return "(server) async completer is discarded without a reply";
   }
 }
 

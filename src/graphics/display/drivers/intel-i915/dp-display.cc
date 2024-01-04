@@ -17,8 +17,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <iterator>
+#include <limits>
 #include <optional>
 #include <variant>
 
@@ -41,6 +43,7 @@
 #include "src/graphics/display/drivers/intel-i915/registers-transcoder.h"
 #include "src/graphics/display/drivers/intel-i915/registers-typec.h"
 #include "src/graphics/display/drivers/intel-i915/registers.h"
+#include "src/graphics/display/lib/api-types-cpp/display-timing.h"
 
 namespace i915 {
 namespace {
@@ -1641,14 +1644,16 @@ bool DpDisplay::DoLinkTraining() {
 namespace {
 
 // Convert ratio x/y into the form used by the Link/Data M/N ratio registers.
-void CalculateRatio(uint32_t x, uint32_t y, uint32_t* m_out, uint32_t* n_out) {
+void CalculateRatio(int64_t x, int64_t y, uint32_t* m_out, uint32_t* n_out) {
   // The exact values of N and M shouldn't matter too much.  N and M can be
   // up to 24 bits, and larger values will tend to represent the ratio more
   // accurately. However, large values of N (e.g. 1 << 23) cause some monitors
   // to inexplicably fail. Pick a relatively arbitrary value for N that works
   // well in practice.
+  ZX_DEBUG_ASSERT(x >= 0);
+  ZX_DEBUG_ASSERT(y > 0);
   *n_out = 1 << 20;
-  *m_out = static_cast<uint32_t>(static_cast<uint64_t>(x) * *n_out / y);
+  *m_out = static_cast<uint32_t>(x * *n_out / y);
 }
 
 bool IsEdp(Controller* controller, DdiId ddi_id) {
@@ -1814,16 +1819,17 @@ bool DpDisplay::InitDdi() {
 
     // Pick the maximum supported link rate.
     uint8_t index = static_cast<uint8_t>(capabilities_->supported_link_rates_mbps().size() - 1);
-    uint32_t link_rate = capabilities_->supported_link_rates_mbps()[index];
+    uint32_t lane_link_rate_mbps = capabilities_->supported_link_rates_mbps()[index];
 
     // When there are 4 lanes, the link training failure rate when using 5.4GHz
     // link rate is very high. So we limit the maximum link rate here.
     if (dp_lane_count_ == 4) {
-      link_rate = std::min(2700u, link_rate);
+      lane_link_rate_mbps = std::min(2700u, lane_link_rate_mbps);
     }
 
-    zxlogf(INFO, "Selected maximum supported DisplayPort link rate: %u Mbps/lane", link_rate);
-    SetLinkRate(link_rate);
+    zxlogf(INFO, "Selected maximum supported DisplayPort link rate: %u Mbps/lane",
+           lane_link_rate_mbps);
+    SetLinkRate(lane_link_rate_mbps);
     if (capabilities_->use_link_rate_table()) {
       dp_link_rate_table_idx_ = index;
     }
@@ -1901,7 +1907,7 @@ bool DpDisplay::InitWithDdiPllConfig(const DdiPllConfig& pll_config) {
   return true;
 }
 
-DdiPllConfig DpDisplay::ComputeDdiPllConfig(int32_t pixel_clock_10khz) {
+DdiPllConfig DpDisplay::ComputeDdiPllConfig(int32_t pixel_clock_khz) {
   return DdiPllConfig{
       .ddi_clock_khz = static_cast<int32_t>(static_cast<int32_t>(dp_link_rate_mhz_) * 500),
       .spread_spectrum_clocking = false,
@@ -1910,9 +1916,9 @@ DdiPllConfig DpDisplay::ComputeDdiPllConfig(int32_t pixel_clock_10khz) {
   };
 }
 
-bool DpDisplay::DdiModeset(const display_mode_t& mode) { return true; }
+bool DpDisplay::DdiModeset(const display::DisplayTiming& mode) { return true; }
 
-bool DpDisplay::PipeConfigPreamble(const display_mode_t& mode, PipeId pipe_id,
+bool DpDisplay::PipeConfigPreamble(const display::DisplayTiming& mode, PipeId pipe_id,
                                    TranscoderId transcoder_id) {
   registers::TranscoderRegs transcoder_regs(transcoder_id);
 
@@ -1955,21 +1961,24 @@ bool DpDisplay::PipeConfigPreamble(const display_mode_t& mode, PipeId pipe_id,
   }
 
   // Pixel clock rate: The rate at which pixels are sent, in pixels per
-  // second (Hz), divided by 10000.
-  uint32_t pixel_clock_rate = mode.pixel_clock_10khz;
+  // second, divided by 1000 (kHz).
+  int64_t pixel_clock_rate_khz = mode.pixel_clock_frequency_khz;
 
   // This is the rate at which bits are sent on a single DisplayPort
-  // lane, in raw bits per second, divided by 10000.
-  uint32_t link_raw_bit_rate = dp_link_rate_mhz_ * 100;
+  // lane, in raw bits per second, divided by 1000 (kbps).
+  int64_t link_raw_bit_rate_kbps = dp_link_rate_mhz_ * int64_t{1000};
+
   // Link symbol rate: The rate at which link symbols are sent on a
-  // single DisplayPort lane.  A link symbol is 10 raw bits (using 8b/10b
-  // encoding, which usually encodes an 8-bit data byte).
-  uint32_t link_symbol_rate = link_raw_bit_rate / 10;
+  // single DisplayPort lane, in symbols per second, divided by 1000 (kHz).
+  //
+  // A link symbol is 10 raw bits (using 8b/10b encoding, which usually encodes
+  // an 8-bit data byte).
+  int64_t link_symbol_rate_khz = link_raw_bit_rate_kbps / 10;
 
   // Configure ratios between pixel clock/bit rate and symbol clock/bit rate
   uint32_t link_m;
   uint32_t link_n;
-  CalculateRatio(pixel_clock_rate, link_symbol_rate, &link_m, &link_n);
+  CalculateRatio(pixel_clock_rate_khz, link_symbol_rate_khz, &link_m, &link_n);
 
   // Computing the M/N ratios is covered in the "Transcoder" > "Transcoder MN
   // Values" section in the PRMs. The current implementation covers the
@@ -1980,13 +1989,15 @@ bool DpDisplay::PipeConfigPreamble(const display_mode_t& mode, PipeId pipe_id,
   // Kaby Lake: IHD-OS-KBL-Vol 12-1.17 pages 174-176
   // Skylake: IHD-OS-SKL-Vol 12-05.16 page 171-172
 
-  uint32_t pixel_bit_rate = pixel_clock_rate * kBitsPerPixel;
-  uint32_t total_link_bit_rate = link_symbol_rate * 8 * dp_lane_count_;
-  ZX_DEBUG_ASSERT(pixel_bit_rate <= total_link_bit_rate);  // Should be caught by CheckPixelRate
+  int64_t pixel_bit_rate_kbps = pixel_clock_rate_khz * kBitsPerPixel;
+  int64_t total_link_bit_rate_kbps = link_symbol_rate_khz * 8 * dp_lane_count_;
+
+  ZX_DEBUG_ASSERT(pixel_bit_rate_kbps <=
+                  total_link_bit_rate_kbps);  // Should be caught by CheckPixelRate
 
   uint32_t data_m;
   uint32_t data_n;
-  CalculateRatio(pixel_bit_rate, total_link_bit_rate, &data_m, &data_n);
+  CalculateRatio(pixel_bit_rate_kbps, total_link_bit_rate_kbps, &data_m, &data_n);
 
   auto data_m_reg = transcoder_regs.DataM().FromValue(0);
   data_m_reg.set_payload_size(64);  // The default TU size is 64.
@@ -2000,7 +2011,7 @@ bool DpDisplay::PipeConfigPreamble(const display_mode_t& mode, PipeId pipe_id,
   return true;
 }
 
-bool DpDisplay::PipeConfigEpilogue(const display_mode_t& mode, PipeId pipe_id,
+bool DpDisplay::PipeConfigEpilogue(const display::DisplayTiming& mode, PipeId pipe_id,
                                    TranscoderId transcoder_id) {
   registers::TranscoderRegs transcoder_regs(transcoder_id);
   auto main_stream_attribute_misc = transcoder_regs.MainStreamAttributeMisc().FromValue(0);
@@ -2038,8 +2049,8 @@ bool DpDisplay::PipeConfigEpilogue(const display_mode_t& mode, PipeId pipe_id,
   //                        configuration and display capabilities.
   transcoder_ddi_control.set_ddi_mode(registers::TranscoderDdiControl::kModeDisplayPortSingleStream)
       .set_bits_per_color(registers::TranscoderDdiControl::k8bpc)
-      .set_vsync_polarity_not_inverted((mode.flags & MODE_FLAG_VSYNC_POSITIVE) != 0)
-      .set_hsync_polarity_not_inverted((mode.flags & MODE_FLAG_HSYNC_POSITIVE) != 0);
+      .set_vsync_polarity_not_inverted(mode.vsync_polarity == display::SyncPolarity::kPositive)
+      .set_hsync_polarity_not_inverted(mode.hsync_polarity == display::SyncPolarity::kPositive);
 
   if (!is_tgl(controller()->device_id())) {
     // Fields that only exist on Kaby Lake and Skylake.
@@ -2058,7 +2069,7 @@ bool DpDisplay::PipeConfigEpilogue(const display_mode_t& mode, PipeId pipe_id,
 
   auto transcoder_config = transcoder_regs.Config().FromValue(0);
   transcoder_config.set_enabled_target(true)
-      .set_interlaced_display((mode.flags & MODE_FLAG_INTERLACED) != 0)
+      .set_interlaced_display(mode.fields_per_frame == display::FieldsPerFrame::kInterlaced)
       .WriteTo(mmio_space());
 
   return true;
@@ -2260,21 +2271,22 @@ void DpDisplay::SetLinkRate(uint32_t value) {
   dp_link_rate_mhz_inspect_.Set(value);
 }
 
-bool DpDisplay::CheckPixelRate(uint64_t pixel_rate) {
-  uint64_t bit_rate = (dp_link_rate_mhz_ * 1000000lu) * dp_lane_count_;
+bool DpDisplay::CheckPixelRate(int64_t pixel_rate_hz) {
+  int64_t bit_rate_hz = (dp_link_rate_mhz_ * int64_t{1'000'000}) * dp_lane_count_;
   // Multiply by 8/10 because of 8b/10b encoding
-  uint64_t max_pixel_rate = (bit_rate * 8 / 10) / kBitsPerPixel;
-  return pixel_rate <= max_pixel_rate;
+  int64_t max_pixel_rate_hz = (bit_rate_hz * 8 / 10) / kBitsPerPixel;
+  return pixel_rate_hz >= 0 && pixel_rate_hz <= max_pixel_rate_hz;
 }
 
-uint32_t DpDisplay::LoadClockRateForTranscoder(TranscoderId transcoder_id) {
+int32_t DpDisplay::LoadPixelRateForTranscoderKhz(TranscoderId transcoder_id) {
   registers::TranscoderRegs transcoder_regs(transcoder_id);
   const uint32_t data_m = transcoder_regs.DataM().ReadFrom(mmio_space()).m();
   const uint32_t data_n = transcoder_regs.DataN().ReadFrom(mmio_space()).n();
 
-  double total_link_bit_rate_10khz = dp_link_rate_mhz_ * 100. * (8. / 10.) * dp_lane_count_;
-  double res = (data_m * total_link_bit_rate_10khz) / (data_n * kBitsPerPixel);
-  return static_cast<uint32_t>(round(res));
+  double dp_link_rate_khz = dp_link_rate_mhz_ * 1000.0;
+  double total_link_bit_rate_khz = dp_link_rate_khz * (8.0 / 10.0) * dp_lane_count_;
+  double pixel_clock_rate_khz = (data_m * total_link_bit_rate_khz) / (data_n * kBitsPerPixel);
+  return static_cast<int32_t>(round(pixel_clock_rate_khz));
 }
 
 }  // namespace i915

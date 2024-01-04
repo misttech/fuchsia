@@ -1,30 +1,9 @@
 [
     {
-        "override_condition_to": "allowed condition",
+        "override_condition_to": "allowed-condition",
         "bug": "fxb/123",
         "comment": [
-            "This is a test override rule"
-        ],
-        "match_criteria": {
-            "license_names": [
-                "Bar"
-            ],
-            "dependents": [
-                "Package A"
-            ],
-            "identifications": [
-                "License*Kind*3"
-            ],
-            "conditions": [
-                "*"
-            ]
-        }
-    },
-    {
-        "override_condition_to": "allowed condition",
-        "bug": "fxb/456",
-        "comment": [
-            "This is another test override rule"
+            "Test override rule"
         ],
         "public_source_mirrors": [
             "http://mirror1",
@@ -32,15 +11,89 @@
         ],
         "match_criteria": {
             "license_names": [
-                "Baz"
+                "License A known"
             ],
             "dependents": [
-                "Package B"
+                "*Package A*"
             ],
             "identifications": [
-                "*Kind 3"
+                "*"
             ],
             "conditions": [
+                "*"
+            ]
+        }
+    },
+    {
+        "override_condition_to": "allowed-condition",
+        "bug": "fxb/123",
+        "comment": [
+            "Test override rule"
+        ],
+        "public_source_mirrors": [
+            "http://mirror1",
+            "http://mirror2"
+        ],
+        "match_criteria": {
+            "license_names": [
+                "License B*"
+            ],
+            "dependents": [
+                "*"
+            ],
+            "identifications": [
+                "*"
+            ],
+            "conditions": [
+                "disallowed-condition",
+                "default-condition"
+            ]
+        }
+    },
+    {
+        "override_condition_to": "allowed-condition",
+        "bug": "fxb/123",
+        "comment": [
+            "Test override rule"
+        ],
+        "match_criteria": {
+            "license_names": [
+                "License E multiple conditions some overriden"
+            ],
+            "identifications": [
+                "*"
+            ],
+            "conditions": [
+                "disallowed-condition"
+            ],
+            "snippet_checksums": [
+                "*"
+            ],
+            "dependents": [
+                "*"
+            ]
+        }
+    },
+    {
+        "override_condition_to": "allowed-condition",
+        "bug": "fxb/123",
+        "comment": [
+            "Test override rule"
+        ],
+        "match_criteria": {
+            "license_names": [
+                "License F multiple conditions not enough overriden"
+            ],
+            "identifications": [
+                "*"
+            ],
+            "conditions": [
+                "disallowed-condition-1"
+            ],
+            "snippet_checksums": [
+                "*"
+            ],
+            "dependents": [
                 "*"
             ]
         }

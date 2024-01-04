@@ -4,28 +4,50 @@
 
 """fuchsia_package() rule."""
 
+load("//fuchsia/private/workflows:fuchsia_package_tasks.bzl", "fuchsia_package_tasks")
+load(":fuchsia_api_level.bzl", "FUCHSIA_API_LEVEL_ATTRS", "get_fuchsia_api_level")
+load(":fuchsia_component.bzl", "fuchsia_component_for_unit_test")
+load(":fuchsia_debug_symbols.bzl", "collect_debug_symbols", "get_build_id_dirs", "strip_resources")
+load(":fuchsia_transition.bzl", "fuchsia_transition")
 load(
     ":providers.bzl",
     "FuchsiaComponentInfo",
     "FuchsiaDriverToolInfo",
     "FuchsiaPackageInfo",
     "FuchsiaPackageResourcesInfo",
+    "FuchsiaPackagedComponentInfo",
 )
-load(":fuchsia_component.bzl", "fuchsia_component_for_unit_test")
-load(":fuchsia_debug_symbols.bzl", "collect_debug_symbols", "get_build_id_dirs", "strip_resources")
-load(":fuchsia_transition.bzl", "fuchsia_transition")
-load(":package_publishing.bzl", "package_repo_path_from_label", "publish_package")
-load(":utils.bzl", "label_name", "make_resource_struct", "rule_variants", "stub_executable")
-load("//fuchsia/private/workflows:fuchsia_package_tasks.bzl", "fuchsia_package_tasks")
+load(":utils.bzl", "fuchsia_cpu_from_ctx", "label_name", "make_resource_struct", "rule_variants", "stub_executable")
+
+_FUCHSIA_OS_PLATFORM = "@platforms//os:fuchsia"
+
+def get_driver_component_manifests(package):
+    """ Returns a list of the manifest paths for drivers in the package
+
+    Args:
+        - package: the package to parse
+    """
+    return [entry.dest for entry in package[FuchsiaPackageInfo].packaged_components if entry.component_info.is_driver]
+
+def get_component_manifests(package):
+    """ Returns a list of the manifest paths for all components in the package
+
+    Args:
+        - package: the package to parse
+    """
+    return [entry.dest for entry in package[FuchsiaPackageInfo].packaged_components]
 
 def fuchsia_package(
         *,
         name,
         package_name = None,
         archive_name = None,
+        platform = None,
+        fuchsia_api_level = None,
         components = [],
         resources = [],
         tools = [],
+        subpackages = [],
         **kwargs):
     """Builds a fuchsia package.
 
@@ -62,31 +84,43 @@ def fuchsia_package(
         resources: A list of additional resources to add to this package. These
           resources will not have debug symbols stripped.
         tools: Additional tools that should be added to this package.
+        subpackages: Additional subpackages that should be added to this package.
         package_name: An optional name to use for this package, defaults to name.
         archive_name: An option name for the far file.
+        fuchsia_api_level: The API level to build for.
+        platform: Optionally override the platform to build the package for.
         **kwargs: extra attributes to pass along to the build rule.
     """
 
-    # Temporary work around to pass in a repository name for driver URL.
-    # This will help us unblock the Intel WIFI driver hot reload issue.
-    driver_repository_name = kwargs.pop("driver_repository_name", None)
+    # This is only used when we want to disable a pre-existing driver so we can
+    # register another driver.
+    disable_repository_name = kwargs.pop("disable_repository_name", None)
+
+    # Fuchsia packages are only compatible with the fuchsia OS.
+    target_compat = kwargs.pop("target_compatible_with", [])
+    if _FUCHSIA_OS_PLATFORM not in target_compat:
+        target_compat.append(_FUCHSIA_OS_PLATFORM)
 
     _build_fuchsia_package(
         name = "%s_fuchsia_package" % name,
         components = components,
         resources = resources,
         tools = tools,
+        subpackages = subpackages,
         package_name = package_name or name,
         archive_name = archive_name,
+        fuchsia_api_level = fuchsia_api_level,
+        platform = platform,
+        target_compatible_with = target_compat,
         **kwargs
     )
 
     fuchsia_package_tasks(
         name = name,
         package = "%s_fuchsia_package" % name,
-        components = {component: component for component in components},
+        component_run_tags = [label_name(c) for c in components],
         tools = {tool: tool for tool in tools},
-        driver_repository_name = driver_repository_name,
+        disable_repository_name = disable_repository_name,
         **kwargs
     )
 
@@ -96,28 +130,42 @@ def _fuchsia_test_package(
         package_name = None,
         archive_name = None,
         resources = [],
+        fuchsia_api_level = None,
+        platform = None,
         _test_component_mapping,
         _components = [],
+        subpackages = [],
+        test_realm = None,
         **kwargs):
     """Defines test variants of fuchsia_package.
 
     See fuchsia_package for argument descriptions."""
+
+    # Fuchsia packages are only compatible with the fuchsia OS.
+    target_compat = kwargs.pop("target_compatible_with", [])
+    if _FUCHSIA_OS_PLATFORM not in target_compat:
+        target_compat.append(_FUCHSIA_OS_PLATFORM)
 
     _build_fuchsia_package_test(
         name = "%s_fuchsia_package" % name,
         test_components = _test_component_mapping.values(),
         components = _components,
         resources = resources,
+        subpackages = subpackages,
         package_name = package_name or name,
         archive_name = archive_name,
+        fuchsia_api_level = fuchsia_api_level,
+        platform = platform,
+        target_compatible_with = target_compat,
         **kwargs
     )
 
     fuchsia_package_tasks(
         name = name,
         package = "%s_fuchsia_package" % name,
-        components = _test_component_mapping,
+        component_run_tags = _test_component_mapping.keys(),
         is_test = True,
+        test_realm = test_realm,
         **kwargs
     )
 
@@ -126,14 +174,18 @@ def fuchsia_test_package(
         name,
         test_components = [],
         components = [],
+        fuchsia_api_level = None,
+        platform = None,
         **kwargs):
     """A test variant of fuchsia_package.
 
     See _fuchsia_test_package for additional arguments."""
     _fuchsia_test_package(
         name = name,
-        _test_component_mapping = {component: component for component in test_components},
+        _test_component_mapping = {label_name(component): component for component in test_components},
         _components = components,
+        fuchsia_api_level = fuchsia_api_level,
+        platform = platform,
         **kwargs
     )
 
@@ -142,20 +194,25 @@ def fuchsia_unittest_package(
         name,
         package_name = None,
         archive_name = None,
+        fuchsia_api_level = None,
+        platform = None,
         resources = [],
+        subpackages = [],
         unit_tests,
         **kwargs):
     # buildifier: disable=function-docstring-args
     """A variant of fuchsia_test_package containing unit tests.
 
     See _fuchsia_test_package for additional arguments."""
-
     test_component_mapping = {}
     for unit_test in unit_tests:
-        test_component_mapping[unit_test] = "%s_unit_test" % label_name(unit_test)
+        run_tag = label_name(unit_test)
+        test_component_mapping[run_tag] = "%s_unit_test" % run_tag
+
         fuchsia_component_for_unit_test(
-            name = test_component_mapping[unit_test],
+            name = test_component_mapping[run_tag],
             unit_test = unit_test,
+            run_tag = run_tag,
             **kwargs
         )
 
@@ -164,6 +221,9 @@ def fuchsia_unittest_package(
         package_name = package_name,
         archive_name = archive_name,
         resources = resources,
+        subpackages = subpackages,
+        fuchsia_api_level = fuchsia_api_level,
+        platform = platform,
         _test_component_mapping = test_component_mapping,
         **kwargs
     )
@@ -190,8 +250,11 @@ def _build_fuchsia_package_impl(ctx):
     ffx_isolate_archive_dir = ctx.actions.declare_directory(pkg_dir + "_package_archive.ffx")
 
     # The Fuchsia target API level of this package
-    api_level = sdk.default_api_level
-    api_level_input = ["--api-level", str(api_level)]
+    api_level = get_fuchsia_api_level(ctx)
+
+    # ffx package does not support stamping with HEAD so we fall back to the in-development
+    # api level.
+    api_level_input = ["--api-level", str(sdk.default_api_level) if api_level == "HEAD" else api_level]
 
     # All of the resources that will go into the package
     package_resources = [
@@ -204,8 +267,7 @@ def _build_fuchsia_package_impl(ctx):
 
     # Resources that we will pass through the debug symbol stripping process
     resources_to_strip = []
-    components = []
-    drivers = []
+    packaged_components = []
 
     # Verify correctness of test vs non-test components.
     for test_component in ctx.attr.test_components:
@@ -221,10 +283,11 @@ def _build_fuchsia_package_impl(ctx):
             component_info = dep[FuchsiaComponentInfo]
             component_manifest = component_info.manifest
             component_dest = "meta/%s" % (component_manifest.basename)
-            components.append(component_dest)
 
-            if component_info.is_driver:
-                drivers.append(component_dest)
+            packaged_components.append(FuchsiaPackagedComponentInfo(
+                component_info = component_info,
+                dest = component_dest,
+            ))
 
             package_resources.append(
                 # add the component manifest
@@ -253,19 +316,12 @@ def _build_fuchsia_package_impl(ctx):
     )
 
     # Create the meta/package file
-    ctx.actions.run(
-        executable = sdk.pm,
-        arguments = [
-            "-o",  # output directory
-            manifest.dirname,
-            "-n",  # name of the package
-            ctx.attr.package_name,
-            "init",
-        ],
-        outputs = [
-            meta_package,
-        ],
-        mnemonic = "FuchsiaPmInit",
+    ctx.actions.write(
+        meta_package,
+        content = json.encode_indent({
+            "name": ctx.attr.package_name,
+            "version": "0",
+        }),
     )
 
     # The only input to the build step is the manifest but we need to
@@ -277,8 +333,28 @@ def _build_fuchsia_package_impl(ctx):
     ]
 
     repo_name_args = []
-    if (ctx.attr.package_repository_name != None) and (ctx.attr.package_repository_name != ""):
+    if ctx.attr.package_repository_name:
         repo_name_args = ["--repository", ctx.attr.package_repository_name]
+
+    subpackages_args = []
+    subpackages_inputs = []
+    subpackages = ctx.attr.subpackages
+    if subpackages:
+        # Create the subpackages file
+        subpackages_json = ctx.actions.declare_file(pkg_dir + "/subpackages.json")
+        ctx.actions.write(
+            subpackages_json,
+            content = json.encode_indent([{
+                "package_manifest_file": subpackage[FuchsiaPackageInfo].package_manifest.path,
+            } for subpackage in subpackages]),
+        )
+
+        subpackages_args = ["--subpackages-build-manifest-path", subpackages_json.path]
+        subpackages_inputs = [subpackages_json] + [
+            file
+            for subpackage in subpackages
+            for file in subpackage[FuchsiaPackageInfo].files
+        ]
 
     # Build the package
     ctx.actions.run(
@@ -293,8 +369,8 @@ def _build_fuchsia_package_impl(ctx):
             output_package_manifest.dirname,
             "--published-name",  # name of package
             ctx.attr.package_name,
-        ] + api_level_input + repo_name_args,
-        inputs = build_inputs,
+        ] + subpackages_args + api_level_input + repo_name_args,
+        inputs = build_inputs + subpackages_inputs,
         outputs = [
             output_package_manifest,
             meta_far,
@@ -307,7 +383,7 @@ def _build_fuchsia_package_impl(ctx):
     artifact_inputs = [r.src for r in package_resources] + [
         output_package_manifest,
         meta_far,
-    ]
+    ] + subpackages_inputs
 
     # Create the far file.
     ctx.actions.run(
@@ -333,14 +409,7 @@ def _build_fuchsia_package_impl(ctx):
         output_package_manifest,
         manifest,
         meta_far,
-    ]
-
-    # Attempt to publish if told to do so
-    repo_path = package_repo_path_from_label(ctx.attr._package_repo_path)
-    if repo_path:
-        # TODO: collect all dependent packages
-        stamp_file = publish_package(ctx, sdk.pm, repo_path, [output_package_manifest])
-        output_files.append(stamp_file)
+    ] + build_inputs
 
     # Sanity check that we are not trying to put 2 different resources at the same mountpoint
     collected_blobs = {}
@@ -353,20 +422,20 @@ def _build_fuchsia_package_impl(ctx):
     return [
         DefaultInfo(files = depset(output_files), executable = stub_executable(ctx)),
         FuchsiaPackageInfo(
+            fuchsia_cpu = fuchsia_cpu_from_ctx(ctx),
             far_file = far_file,
             package_manifest = output_package_manifest,
             files = [output_package_manifest, meta_far] + build_inputs,
             package_name = ctx.attr.package_name,
-            components = components,
-            drivers = drivers,
             meta_far = meta_far,
             package_resources = package_resources,
-
+            packaged_components = packaged_components,
             # TODO: Remove this field, change usages to FuchsiaDebugSymbolInfo.
-            build_id_dir = get_build_id_dirs(_debug_info)[0],
+            build_id_dir = (get_build_id_dirs(_debug_info) + [None])[0],
         ),
         collect_debug_symbols(
             _debug_info,
+            ctx.attr.subpackages,
             ctx.attr.test_components,
             ctx.attr.components,
             ctx.attr.resources,
@@ -410,13 +479,27 @@ _build_fuchsia_package, _build_fuchsia_package_test = rule_variants(
             doc = "The list of tools included in this package",
             providers = [FuchsiaDriverToolInfo],
         ),
+        "subpackages": attr.label_list(
+            doc = "The list of subpackages included in this package",
+            providers = [FuchsiaPackageInfo],
+        ),
+        "fuchsia_api_level": attr.string(
+            doc = """The Fuchsia API level to use when building this package.
+
+            This value will be sent to the fidl compiler and cc_* rules when
+            compiling dependencies.
+            """,
+        ),
+        "platform": attr.string(
+            doc = """The Fuchsia platform to build for.
+
+            If this value is not set we will fall back to the cpu setting to determine
+            the correct platform.
+            """,
+        ),
         "_fuchsia_sdk_debug_symbols": attr.label(
             doc = "Include debug symbols from @fuchsia_sdk.",
             default = "@fuchsia_sdk//:debug_symbols",
-        ),
-        "_package_repo_path": attr.label(
-            doc = "The command line flag used to publish packages.",
-            default = "//fuchsia:package_repo",
         ),
         "_elf_strip_tool": attr.label(
             default = "//fuchsia/tools:elf_strip",
@@ -434,5 +517,5 @@ _build_fuchsia_package, _build_fuchsia_package_test = rule_variants(
         "_allowlist_function_transition": attr.label(
             default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
         ),
-    },
+    } | FUCHSIA_API_LEVEL_ATTRS,
 )

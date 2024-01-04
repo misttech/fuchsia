@@ -18,8 +18,8 @@ driver_bind_rules("camera_controller_bind") {
   rules = "camera_controller.bind"
   tests = "bind_tests.json"
   deps = [
-    "//src/devices/bind/fuchsia.gdc",
-    "//src/devices/bind/fuchsia.ge2d",
+    "//src/devices/bind/fuchsia.camera",
+    "//src/devices/bind/fuchsia.camera",
     "//src/devices/bind/fuchsia.isp",
     "//src/devices/bind/fuchsia.sysmem",
   ]
@@ -67,10 +67,10 @@ source_set("source") {
     "//sdk/fidl/fuchsia.camera2:fuchsia.camera2_hlcpp",
     "//sdk/fidl/fuchsia.camera2.debug:fuchsia.camera2.debug_hlcpp",
     "//sdk/fidl/fuchsia.camera2.hal:fuchsia.camera2.hal_hlcpp",
-    "//sdk/fidl/fuchsia.hardware.sysmem:fuchsia.hardware.sysmem_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.sysmem:fuchsia.hardware.sysmem_cpp",
 
     # The LLCPP bindings for fuchsia.hardware.camera is used by controller_device.h
-    "//sdk/fidl/fuchsia.hardware.camera:fuchsia.hardware.camera_cpp_wire",
+    "//sdk/fidl/fuchsia.hardware.camera:fuchsia.hardware.camera_cpp",
     "//sdk/lib/fit",
     "//sdk/lib/fit-promise",
     "//sdk/lib/syslog/cpp",

@@ -7,6 +7,7 @@
 
 #include <fuchsia/hardware/display/cpp/fidl.h>
 #include <fuchsia/hardware/display/cpp/fidl_test_base.h>
+#include <fuchsia/hardware/display/types/cpp/fidl.h>
 #include <lib/fidl/cpp/binding_set.h>
 #include <lib/syslog/cpp/macros.h>
 
@@ -30,20 +31,21 @@ DisplayCoordinatorObjects CreateMockDisplayCoordinator();
 class MockDisplayCoordinator : public fuchsia::hardware::display::testing::Coordinator_TestBase {
  public:
   using CheckConfigFn =
-      std::function<void(bool, fuchsia::hardware::display::ConfigResult*,
-                         std::vector<fuchsia::hardware::display::ClientCompositionOp>*)>;
+      std::function<void(bool, fuchsia::hardware::display::types::ConfigResult*,
+                         std::vector<fuchsia::hardware::display::types::ClientCompositionOp>*)>;
   using SetDisplayColorConversionFn =
-      std::function<void(fuchsia::hardware::display::DisplayId, std::array<float, 3>,
+      std::function<void(fuchsia::hardware::display::types::DisplayId, std::array<float, 3>,
                          std::array<float, 9>, std::array<float, 3>)>;
   using SetMinimumRgbFn = std::function<void(uint8_t)>;
   using ImportEventFn =
       std::function<void(zx::event event, fuchsia::hardware::display::EventId event_id)>;
   using AcknowledgeVsyncFn = std::function<void(uint64_t cookie)>;
-  using SetDisplayLayersFn = std::function<void(fuchsia::hardware::display::DisplayId,
-                                                std::vector<fuchsia::hardware::display::LayerId>)>;
-  using SetLayerPrimaryPositionFn =
-      std::function<void(fuchsia::hardware::display::LayerId, fuchsia::hardware::display::Transform,
-                         fuchsia::hardware::display::Frame, fuchsia::hardware::display::Frame)>;
+  using SetDisplayLayersFn =
+      std::function<void(fuchsia::hardware::display::types::DisplayId,
+                         std::vector<fuchsia::hardware::display::types::LayerId>)>;
+  using SetLayerPrimaryPositionFn = std::function<void(
+      fuchsia::hardware::display::types::LayerId, fuchsia::hardware::display::types::Transform,
+      fuchsia::hardware::display::types::Frame, fuchsia::hardware::display::types::Frame)>;
 
   MockDisplayCoordinator() : binding_(this) {}
 
@@ -78,7 +80,7 @@ class MockDisplayCoordinator : public fuchsia::hardware::display::testing::Coord
     set_layer_primary_position_fn_ = std::move(fn);
   }
 
-  void SetDisplayColorConversion(fuchsia::hardware::display::DisplayId display_id,
+  void SetDisplayColorConversion(fuchsia::hardware::display::types::DisplayId display_id,
                                  std::array<float, 3> preoffsets, std::array<float, 9> coefficients,
                                  std::array<float, 3> postoffsets) override {
     ++set_display_color_conversion_count_;
@@ -103,25 +105,26 @@ class MockDisplayCoordinator : public fuchsia::hardware::display::testing::Coord
     callback(ZX_OK, {.value = layer_id_value++});
   }
 
-  void SetDisplayLayers(fuchsia::hardware::display::DisplayId display_id,
-                        ::std::vector<fuchsia::hardware::display::LayerId> layer_ids) override {
+  void SetDisplayLayers(
+      fuchsia::hardware::display::types::DisplayId display_id,
+      ::std::vector<fuchsia::hardware::display::types::LayerId> layer_ids) override {
     ++set_display_layers_count_;
     if (set_display_layers_fn_) {
       set_display_layers_fn_(display_id, layer_ids);
     }
   }
 
-  void ImportImage(fuchsia::hardware::display::ImageConfig image_config,
+  void ImportImage(fuchsia::hardware::display::types::ImageConfig image_config,
                    fuchsia::hardware::display::BufferId buffer_id,
-                   fuchsia::hardware::display::ImageId image_id,
+                   fuchsia::hardware::display::types::ImageId image_id,
                    ImportImageCallback callback) override {
     callback(ZX_OK);
   }
 
-  void SetLayerPrimaryPosition(fuchsia::hardware::display::LayerId layer_id,
-                               fuchsia::hardware::display::Transform transform,
-                               fuchsia::hardware::display::Frame src_frame,
-                               fuchsia::hardware::display::Frame dest_frame) override {
+  void SetLayerPrimaryPosition(fuchsia::hardware::display::types::LayerId layer_id,
+                               fuchsia::hardware::display::types::Transform transform,
+                               fuchsia::hardware::display::types::Frame src_frame,
+                               fuchsia::hardware::display::types::Frame dest_frame) override {
     ++set_layer_primary_position_count_;
     if (set_layer_primary_position_fn_) {
       set_layer_primary_position_fn_(layer_id, transform, src_frame, dest_frame);
@@ -131,8 +134,9 @@ class MockDisplayCoordinator : public fuchsia::hardware::display::testing::Coord
   void set_check_config_fn(CheckConfigFn fn) { check_config_fn_ = std::move(fn); }
 
   void CheckConfig(bool discard, CheckConfigCallback callback) override {
-    fuchsia::hardware::display::ConfigResult result = fuchsia::hardware::display::ConfigResult::OK;
-    std::vector<fuchsia::hardware::display::ClientCompositionOp> ops;
+    fuchsia::hardware::display::types::ConfigResult result =
+        fuchsia::hardware::display::types::ConfigResult::OK;
+    std::vector<fuchsia::hardware::display::types::ClientCompositionOp> ops;
     ++check_config_count_;
     if (check_config_fn_) {
       check_config_fn_(discard, &result, &ops);
@@ -156,7 +160,7 @@ class MockDisplayCoordinator : public fuchsia::hardware::display::testing::Coord
 
   bool display_power_on() const { return display_power_on_; }
 
-  void SetDisplayPower(fuchsia::hardware::display::DisplayId display_id, bool power_on,
+  void SetDisplayPower(fuchsia::hardware::display::types::DisplayId display_id, bool power_on,
                        SetDisplayPowerCallback callback) override {
     using SetDisplayPowerResult = fuchsia::hardware::display::Coordinator_SetDisplayPower_Result;
     auto result = set_display_power_result_;

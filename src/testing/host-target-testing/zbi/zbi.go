@@ -9,12 +9,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"go.fuchsia.dev/fuchsia/src/sys/pkg/bin/pm/build"
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 )
 
@@ -70,35 +70,40 @@ func (z *ZBITool) MakeImageArgsZbi(ctx context.Context, destPath string, imageAr
 // * create zbi manifest to generate new bootfs and zbi
 // * generate new bootfs
 // * generate new zbi under tempDir
-func (z *ZBITool) UpdateZBIWithNewSystemImageMerkle(ctx context.Context,
-	systemImageMerkle string,
-	pkgDir string,
-	bootfsCompression string) error {
-
+func (z *ZBITool) UpdateZBIWithNewSystemImageMerkle(
+	ctx context.Context,
+	systemImageMerkle build.MerkleRoot,
+	srcZbiPath string,
+	dstZbiPath string,
+	bootfsCompression string,
+) error {
 	// Create zbitemp directory to store the overwritten zbi
-	tempDirForNewZbi, err := os.MkdirTemp("", "")
+	tempDir, err := os.MkdirTemp("", "")
 	if err != nil {
 		return fmt.Errorf("failed to create temp directory for zbi: %q", err)
 	}
-	defer os.RemoveAll(tempDirForNewZbi)
+	defer os.RemoveAll(tempDir)
 
 	// Extract zbi from the source update package
-	pathToSrcZbi := filepath.Join(pkgDir, "zbi")
-	pathToZbiDir := filepath.Join(tempDirForNewZbi, "zbi")
+	pathToZbiDir := filepath.Join(tempDir, "src")
+	if err := os.Mkdir(pathToZbiDir, 0700); err != nil {
+		return err
+	}
+
 	args := []string{
 		"--extract-items",
 		"--output-dir",
 		pathToZbiDir,
-		pathToSrcZbi,
+		srcZbiPath,
 	}
 	if err := z.RunZbiCommand(ctx, args); err != nil {
-		return fmt.Errorf("failed to extract zbi from %s pakcage: %q", pkgDir, err)
+		return fmt.Errorf("failed to extract zbi from %s package: %w", srcZbiPath, err)
 	}
 
 	// Extract bootfs from the zbi extractted from step above
-	zbiFiles, err := ioutil.ReadDir(pathToZbiDir)
+	zbiFiles, err := os.ReadDir(pathToZbiDir)
 	if err != nil {
-		return fmt.Errorf("fialed to read zbi directory from %s: %q", pathToZbiDir, err)
+		return fmt.Errorf("failed to read zbi directory from %s: %w", pathToZbiDir, err)
 	}
 
 	pathToZbiBootfs := ""
@@ -112,7 +117,7 @@ func (z *ZBITool) UpdateZBIWithNewSystemImageMerkle(ctx context.Context,
 		return fmt.Errorf("failed to find bootfs image in zbi from %s", pathToZbiBootfs)
 	}
 
-	pathToBootfs := filepath.Join(tempDirForNewZbi, "bootfs")
+	pathToBootfs := filepath.Join(tempDir, "bootfs")
 	args = []string{
 		"--extract",
 		"--output-dir",
@@ -134,7 +139,7 @@ func (z *ZBITool) UpdateZBIWithNewSystemImageMerkle(ctx context.Context,
 	lines := strings.Split(string(content), "\n")
 	for i, line := range lines {
 		if strings.Contains(line, "zircon.system.pkgfs.cmd") {
-			lines[i] = basePackagePrefix + systemImageMerkle
+			lines[i] = basePackagePrefix + systemImageMerkle.String()
 		}
 	}
 
@@ -144,7 +149,7 @@ func (z *ZBITool) UpdateZBIWithNewSystemImageMerkle(ctx context.Context,
 	}
 
 	// Create new zbi manifest file to generate new zbi
-	zbiManifest := filepath.Join(tempDirForNewZbi, "manifest")
+	zbiManifest := filepath.Join(tempDir, "manifest")
 	zbiManifestFile, err := os.OpenFile(zbiManifest, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to create zbi manifest file %q", err)
@@ -176,7 +181,7 @@ func (z *ZBITool) UpdateZBIWithNewSystemImageMerkle(ctx context.Context,
 	// Create new bootfs from the zbi manifest
 	args = []string{
 		"--output",
-		pathToSrcZbi,
+		dstZbiPath,
 		"--compressed=" + bootfsCompression,
 	}
 	for _, file := range zbiFiles {

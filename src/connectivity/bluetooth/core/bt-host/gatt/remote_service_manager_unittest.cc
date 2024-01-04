@@ -9,12 +9,12 @@
 #include <gmock/gmock.h>
 
 #include "fake_client.h"
+#include "pw_async/fake_dispatcher_fixture.h"
 #include "src/connectivity/bluetooth/core/bt-host/att/att.h"
 #include "src/connectivity/bluetooth/core/bt-host/att/error.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/macros.h"
 #include "src/connectivity/bluetooth/core/bt-host/gatt/gatt_defs.h"
 #include "src/connectivity/bluetooth/core/bt-host/testing/test_helpers.h"
-#include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 
 namespace bt::gatt::internal {
 namespace {
@@ -45,7 +45,7 @@ void NopStatusCallback(att::Result<>) {}
 void NopMtuCallback(uint16_t) {}
 void NopValueCallback(const ByteBuffer& /*value*/, bool /*maybe_truncated*/) {}
 
-class RemoteServiceManagerTest : public ::gtest::TestLoopFixture {
+class RemoteServiceManagerTest : public pw::async::test::FakeDispatcherFixture {
  public:
   RemoteServiceManagerTest() = default;
   ~RemoteServiceManagerTest() override = default;
@@ -55,7 +55,7 @@ class RemoteServiceManagerTest : public ::gtest::TestLoopFixture {
     auto client = std::make_unique<testing::FakeClient>(dispatcher());
     fake_client_ = client.get();
 
-    mgr_ = std::make_unique<RemoteServiceManager>(std::move(client), dispatcher());
+    mgr_ = std::make_unique<RemoteServiceManager>(std::move(client));
   }
 
   void TearDown() override {
@@ -79,7 +79,7 @@ class RemoteServiceManagerTest : public ::gtest::TestLoopFixture {
       services = std::move(cb_services);
     });
 
-    RunLoopUntilIdle();
+    RunUntilIdle();
 
     BT_DEBUG_ASSERT(services.size() == 1u);
     return services[0];
@@ -102,7 +102,7 @@ class RemoteServiceManagerTest : public ::gtest::TestLoopFixture {
     SetCharacteristicsAndDescriptors(std::move(fake_chrs), std::move(fake_descrs));
 
     service->DiscoverCharacteristics([](auto, const auto&) {});
-    RunLoopUntilIdle();
+    RunUntilIdle();
   }
 
   RemoteService::WeakPtr SetupServiceWithChrcs(
@@ -125,7 +125,7 @@ class RemoteServiceManagerTest : public ::gtest::TestLoopFixture {
     fake_client()->set_write_request_callback(
         [&](att::Handle, const auto&, auto status_callback) { status_callback(fit::ok()); });
 
-    RunLoopUntilIdle();
+    RunUntilIdle();
 
     return service;
   }
@@ -140,7 +140,7 @@ class RemoteServiceManagerTest : public ::gtest::TestLoopFixture {
                                    *out_status = cb_status;
                                    *out_id = cb_id;
                                  });
-    RunLoopUntilIdle();
+    RunUntilIdle();
   }
 
   void DestroyServiceManager() {
@@ -169,7 +169,7 @@ TEST_F(RemoteServiceManagerTest, InitializeNoServices) {
   att::Result<> status = ToResult(HostError::kFailed);
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, NopMtuCallback);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(fit::ok(), status);
   EXPECT_TRUE(services.empty());
@@ -200,7 +200,7 @@ TEST_F(RemoteServiceManagerTest, Initialize) {
   att::Result<> status = ToResult(HostError::kFailed);
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, std::move(mtu_cb));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kArbitraryMtu, new_mtu);
 
@@ -235,7 +235,7 @@ TEST_F(RemoteServiceManagerTest, InitializeFailure) {
   att::Result<> status = ToResult(HostError::kFailed);
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, NopMtuCallback);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(att::ErrorCode::kRequestNotSupported), status);
   EXPECT_TRUE(services.empty());
@@ -260,7 +260,7 @@ TEST_F(RemoteServiceManagerTest, InitializeMtuExchangeNotSupportedSucceeds) {
   att::Result<> status = ToResult(HostError::kFailed);
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, std::move(mtu_cb));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(fit::ok(), status);
   ASSERT_EQ(1u, services.size());
@@ -281,7 +281,7 @@ TEST_F(RemoteServiceManagerTest, InitializeMtuExchangeFailure) {
   att::Result<> status = fit::ok();
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, std::move(mtu_cb));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(att::ErrorCode::kUnlikelyError), status);
   EXPECT_FALSE(mtu_updated);
@@ -297,7 +297,7 @@ TEST_F(RemoteServiceManagerTest, InitializeByUUIDNoServices) {
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, NopMtuCallback,
                     {kTestServiceUuid1});
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(fit::ok(), status);
   EXPECT_TRUE(services.empty());
@@ -324,7 +324,7 @@ TEST_F(RemoteServiceManagerTest, InitializeWithUuids) {
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, NopMtuCallback,
                     {kTestServiceUuid1, kTestServiceUuid3});
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(fit::ok(), status);
   std::vector<ServiceData> found_services;
@@ -358,7 +358,7 @@ TEST_F(RemoteServiceManagerTest, InitializeByUUIDFailure) {
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, NopMtuCallback,
                     {kTestServiceUuid1});
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(att::ErrorCode::kRequestNotSupported), status);
   EXPECT_TRUE(services.empty());
@@ -378,7 +378,7 @@ TEST_F(RemoteServiceManagerTest, InitializeSecondaryServices) {
   att::Result<> status = ToResult(HostError::kFailed);
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, NopMtuCallback);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(fit::ok(), status);
   ASSERT_EQ(1u, services.size());
@@ -401,7 +401,7 @@ TEST_F(RemoteServiceManagerTest, InitializePrimaryAndSecondaryServices) {
   att::Result<> status = ToResult(HostError::kFailed);
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, NopMtuCallback);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(fit::ok(), status);
   EXPECT_EQ(2u, services.size());
@@ -424,7 +424,7 @@ TEST_F(RemoteServiceManagerTest, InitializePrimaryAndSecondaryServicesOutOfOrder
 
   att::Result<> status = ToResult(HostError::kFailed);
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, NopMtuCallback);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(fit::ok(), status);
   EXPECT_EQ(2u, services.size());
@@ -448,7 +448,7 @@ TEST_F(RemoteServiceManagerTest, InitializeSecondaryServicesFailure) {
 
   att::Result<> status = fit::ok();
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, NopMtuCallback);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(att::ErrorCode::kRequestNotSupported), status);
   EXPECT_TRUE(services.empty());
@@ -470,7 +470,7 @@ TEST_F(RemoteServiceManagerTest, InitializePrimaryServicesErrorUnsupportedGroupT
 
   att::Result<> status = fit::ok();
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, NopMtuCallback);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(att::ErrorCode::kUnsupportedGroupType), status);
   EXPECT_TRUE(services.empty());
@@ -494,7 +494,7 @@ TEST_F(RemoteServiceManagerTest, InitializeSecondaryServicesErrorUnsupportedGrou
 
   att::Result<> status = fit::ok();
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, NopMtuCallback);
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(fit::ok(), status);
   ASSERT_EQ(1u, services.size());
@@ -515,7 +515,7 @@ TEST_F(RemoteServiceManagerTest, ListServicesBeforeInit) {
   att::Result<> status = ToResult(HostError::kFailed);
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, NopMtuCallback);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(fit::ok(), status);
   ASSERT_EQ(1u, services.size());
@@ -531,7 +531,7 @@ TEST_F(RemoteServiceManagerTest, ListServicesAfterInit) {
   att::Result<> status = ToResult(HostError::kFailed);
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, NopMtuCallback);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   ASSERT_EQ(fit::ok(), status);
 
@@ -569,7 +569,7 @@ TEST_F(RemoteServiceManagerTest, ListServicesByUuid) {
   att::Result<> status = ToResult(HostError::kFailed);
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, NopMtuCallback);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
   EXPECT_EQ(fit::ok(), list_services_status);
   // Only svc1 has a type in |uuids|.
@@ -616,7 +616,7 @@ TEST_F(RemoteServiceManagerTest, DiscoverCharacteristicsSuccess) {
     EXPECT_EQ(expected, chrcs);
   });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   // Only one ATT request should have been made.
   EXPECT_EQ(1u, fake_client()->chrc_discovery_count());
   EXPECT_TRUE(service->IsDiscovered());
@@ -630,7 +630,7 @@ TEST_F(RemoteServiceManagerTest, DiscoverCharacteristicsSuccess) {
   service->DiscoverCharacteristics(
       [&status1](att::Result<> cb_status, const auto&) { status1 = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(fit::ok(), status1);
   EXPECT_EQ(1u, fake_client()->chrc_discovery_count());
@@ -660,7 +660,7 @@ TEST_F(RemoteServiceManagerTest, DiscoverCharacteristicsError) {
     EXPECT_TRUE(chrcs.empty());
   });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   // Only one request should have been made.
   EXPECT_EQ(1u, fake_client()->chrc_discovery_count());
   EXPECT_FALSE(service->IsDiscovered());
@@ -693,7 +693,7 @@ TEST_F(RemoteServiceManagerTest, DiscoverDescriptorsOfOneSuccess) {
     EXPECT_EQ(expected, chrcs);
   });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1u, fake_client()->chrc_discovery_count());
   EXPECT_EQ(1u, fake_client()->desc_discovery_count());
   EXPECT_TRUE(service->IsDiscovered());
@@ -721,7 +721,7 @@ TEST_F(RemoteServiceManagerTest, DiscoverDescriptorsOfOneError) {
     EXPECT_TRUE(chrcs.empty());
   });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1u, fake_client()->chrc_discovery_count());
   EXPECT_EQ(1u, fake_client()->desc_discovery_count());
   EXPECT_FALSE(service->IsDiscovered());
@@ -760,7 +760,7 @@ TEST_F(RemoteServiceManagerTest, DiscoverDescriptorsOfMultipleSuccess) {
     EXPECT_EQ(expected, chrcs);
   });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1u, fake_client()->chrc_discovery_count());
   // There should have been two descriptor discovery requests as discovery
   // should have been skipped for characteristic #2 due to its handles.
@@ -798,7 +798,7 @@ TEST_F(RemoteServiceManagerTest, DiscoverDescriptorsOfMultipleEarlyFail) {
     EXPECT_TRUE(chrcs.empty());
   });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1u, fake_client()->chrc_discovery_count());
   // There should have been two descriptor discovery requests as discovery
   // should have been skipped for characteristic #2 due to its handles.
@@ -836,7 +836,7 @@ TEST_F(RemoteServiceManagerTest, DiscoverDescriptorsOfMultipleLateFail) {
     EXPECT_TRUE(chrcs.empty());
   });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1u, fake_client()->chrc_discovery_count());
   // There should have been two descriptor discovery requests as discovery
   // should have been skipped for characteristic #2 due to its handles.
@@ -888,7 +888,7 @@ TEST_F(RemoteServiceManagerTest, DiscoverDescriptorsWithExtendedPropertiesSucces
     EXPECT_EQ(ExtendedProperty::kReliableWrite, chrc_data.extended_properties.value());
   });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1u, fake_client()->chrc_discovery_count());
   EXPECT_EQ(1u, fake_client()->desc_discovery_count());
   EXPECT_EQ(1u, read_cb_count);
@@ -934,7 +934,7 @@ TEST_F(RemoteServiceManagerTest, DiscoverDescriptorsExtendedPropertiesNotSet) {
     EXPECT_FALSE(chrc_data.extended_properties.has_value());
   });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1u, fake_client()->chrc_discovery_count());
   EXPECT_EQ(1u, fake_client()->desc_discovery_count());
   EXPECT_EQ(0u, read_cb_count);
@@ -969,7 +969,7 @@ TEST_F(RemoteServiceManagerTest, DiscoverDescriptorsMultipleExtendedPropertiesEr
     EXPECT_TRUE(chrcs.empty());
   });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1u, fake_client()->chrc_discovery_count());
   EXPECT_EQ(1u, fake_client()->desc_discovery_count());
   EXPECT_EQ(0u, read_cb_count);
@@ -1007,7 +1007,7 @@ TEST_F(RemoteServiceManagerTest, DiscoverDescriptorsExtendedPropertiesReadDescVa
     EXPECT_TRUE(chrcs.empty());
   });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(1u, read_cb_count);
   EXPECT_FALSE(service->IsDiscovered());
@@ -1044,7 +1044,7 @@ TEST_F(RemoteServiceManagerTest, DiscoverDescriptorsExtendedPropertiesReadDescIn
     EXPECT_TRUE(chrcs.empty());
   });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1u, fake_client()->chrc_discovery_count());
   EXPECT_EQ(1u, fake_client()->desc_discovery_count());
   EXPECT_EQ(1u, read_cb_count);
@@ -1079,7 +1079,7 @@ TEST_F(RemoteServiceManagerTest, ReadCharWhileNotReady) {
   service->ReadCharacteristic(kDefaultCharacteristic, [&](att::Result<> cb_status, const auto&,
                                                           auto) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(ToResult(HostError::kNotReady), status);
 }
 
@@ -1090,7 +1090,7 @@ TEST_F(RemoteServiceManagerTest, ReadCharNotFound) {
   service->ReadCharacteristic(kDefaultCharacteristic, [&](att::Result<> cb_status, const auto&,
                                                           auto) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(ToResult(HostError::kNotFound), status);
 }
 
@@ -1101,7 +1101,7 @@ TEST_F(RemoteServiceManagerTest, ReadCharNotSupported) {
   service->ReadCharacteristic(kDefaultCharacteristic, [&](att::Result<> cb_status, const auto&,
                                                           auto) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(ToResult(HostError::kNotSupported), status);
 }
 
@@ -1125,7 +1125,7 @@ TEST_F(RemoteServiceManagerTest, ReadCharSendsReadRequest) {
     EXPECT_FALSE(maybe_truncated);
   });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(fit::ok(), status);
 }
@@ -1138,7 +1138,7 @@ TEST_F(RemoteServiceManagerTest, ReadLongWhileNotReady) {
       CharacteristicHandle(0), 0, 512,
       [&](att::Result<> cb_status, const auto&, auto) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(HostError::kNotReady), status);
 }
@@ -1152,7 +1152,7 @@ TEST_F(RemoteServiceManagerTest, ReadLongNotFound) {
       CharacteristicHandle(0), 0, 512,
       [&](att::Result<> cb_status, const auto&, auto) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(HostError::kNotFound), status);
 }
@@ -1166,7 +1166,7 @@ TEST_F(RemoteServiceManagerTest, ReadLongNotSupported) {
       kDefaultCharacteristic, 0, 512,
       [&](att::Result<> cb_status, const auto&, auto) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(HostError::kNotSupported), status);
 }
@@ -1181,7 +1181,7 @@ TEST_F(RemoteServiceManagerTest, ReadLongMaxSizeZero) {
       kDefaultCharacteristic, 0, 0,
       [&](att::Result<> cb_status, const auto&, auto) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(HostError::kInvalidParameters), status);
 }
@@ -1214,7 +1214,7 @@ TEST_F(RemoteServiceManagerTest, ReadLongSingleBlob) {
         EXPECT_FALSE(maybe_truncated);
       });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
 }
 
@@ -1274,7 +1274,7 @@ TEST_F(RemoteServiceManagerTest, ReadLongMultipleBlobs) {
         EXPECT_FALSE(maybe_truncated);
       });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
   EXPECT_EQ(kExpectedBlobCount, read_count);
 }
@@ -1321,7 +1321,7 @@ TEST_F(RemoteServiceManagerTest, ReadLongCharacteristicAttributeNotLongErrorIgno
         EXPECT_FALSE(maybe_truncated);
       });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
   EXPECT_EQ(kExpectedBlobCount, read_count);
 }
@@ -1352,7 +1352,7 @@ TEST_F(RemoteServiceManagerTest, ReadLongCharacteristicAttributeNotLongErrorOnFi
         EXPECT_FALSE(maybe_truncated);
       });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(ToResult(att::ErrorCode::kAttributeNotLong), status);
   EXPECT_EQ(kExpectedBlobCount, read_count);
 }
@@ -1416,7 +1416,7 @@ TEST_F(RemoteServiceManagerTest, ReadLongValueExactMultipleOfMTU) {
         EXPECT_FALSE(maybe_truncated);
       });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
   EXPECT_EQ(kExpectedBlobCount, read_count);
 }
@@ -1468,7 +1468,7 @@ TEST_F(RemoteServiceManagerTest, ReadLongMultipleBlobsWithMaxSize) {
         EXPECT_TRUE(maybe_truncated);
       });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
   EXPECT_EQ(kExpectedBlobCount, read_count);
 }
@@ -1511,7 +1511,7 @@ TEST_F(RemoteServiceManagerTest, ReadLongAtOffset) {
         EXPECT_FALSE(maybe_truncated);
       });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
   EXPECT_EQ(kExpectedBlobCount, read_blob_count);
 }
@@ -1555,7 +1555,7 @@ TEST_F(RemoteServiceManagerTest, ReadLongAtOffsetWithMaxBytes) {
         EXPECT_TRUE(maybe_truncated);
       });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
   EXPECT_EQ(kExpectedBlobCount, read_blob_count);
 }
@@ -1599,7 +1599,7 @@ TEST_F(RemoteServiceManagerTest, ReadLongError) {
         EXPECT_FALSE(maybe_truncated);
       });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(ToResult(att::ErrorCode::kInvalidOffset), status);
   EXPECT_EQ(kExpectedBlobCount, read_count);
 }
@@ -1660,7 +1660,7 @@ TEST_F(RemoteServiceManagerTest, ReadByTypeSendsReadRequestsUntilAttributeNotFou
         EXPECT_TRUE(values[1].maybe_truncated);
       });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(status.has_value());
   // kAttributeNotFound error should be treated as success.
   EXPECT_EQ(fit::ok(), *status);
@@ -1696,7 +1696,7 @@ TEST_F(RemoteServiceManagerTest, ReadByTypeSendsReadRequestsUntilServiceEndHandl
     EXPECT_TRUE(ContainersEqual(kValue, *values[0].result.value()));
   });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(status.has_value());
   EXPECT_EQ(fit::ok(), *status);
 }
@@ -1738,7 +1738,7 @@ TEST_F(RemoteServiceManagerTest, ReadByTypeReturnsReadErrorsWithResults) {
     }
   });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(status.has_value());
   ASSERT_EQ(fit::ok(), *status);
 }
@@ -1785,7 +1785,7 @@ TEST_F(RemoteServiceManagerTest, ReadByTypeReturnsProtocolErrorAfterRead) {
       EXPECT_EQ(0u, values.size());
     });
 
-    RunLoopUntilIdle();
+    RunUntilIdle();
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(ToResult(code), status);
   }
@@ -1809,7 +1809,7 @@ TEST_F(RemoteServiceManagerTest, ReadByTypeHandlesReadErrorWithMissingHandle) {
 
   std::optional<att::Result<>> status;
   service->ReadByType(kCharUuid, [&](att::Result<> cb_status, auto values) { status = cb_status; });
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(status.has_value());
   EXPECT_EQ(ToResult(att::ErrorCode::kReadNotPermitted), *status);
 }
@@ -1832,7 +1832,7 @@ TEST_F(RemoteServiceManagerTest, ReadByTypeHandlesReadErrorWithOutOfRangeHandle)
 
   std::optional<att::Result<>> status;
   service->ReadByType(kCharUuid, [&](att::Result<> cb_status, auto values) { status = cb_status; });
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(status.has_value());
   EXPECT_EQ(ToResult(HostError::kPacketMalformed), *status);
 }
@@ -1861,7 +1861,7 @@ TEST_F(RemoteServiceManagerTest, ReadByTypeReturnsErrorIfUuidIsInternal) {
       EXPECT_EQ(0u, values.size());
     });
 
-    RunLoopUntilIdle();
+    RunUntilIdle();
     ASSERT_TRUE(status.has_value()) << "UUID: " << uuid;
     EXPECT_EQ(ToResult(HostError::kInvalidParameters), *status);
   }
@@ -1874,7 +1874,7 @@ TEST_F(RemoteServiceManagerTest, WriteCharWhileNotReady) {
   service->WriteCharacteristic(kDefaultCharacteristic, std::vector<uint8_t>(),
                                [&](att::Result<> cb_status) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(HostError::kNotReady), status);
 }
@@ -1887,7 +1887,7 @@ TEST_F(RemoteServiceManagerTest, WriteCharNotFound) {
   service->WriteCharacteristic(kDefaultCharacteristic, std::vector<uint8_t>(),
                                [&](att::Result<> cb_status) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(HostError::kNotFound), status);
 }
@@ -1901,7 +1901,7 @@ TEST_F(RemoteServiceManagerTest, WriteCharNotSupported) {
   service->WriteCharacteristic(kDefaultCharacteristic, std::vector<uint8_t>(),
                                [&](att::Result<> cb_status) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(HostError::kNotSupported), status);
 }
@@ -1925,7 +1925,7 @@ TEST_F(RemoteServiceManagerTest, WriteCharSendsWriteRequest) {
   service->WriteCharacteristic(kDefaultCharacteristic, kValue,
                                [&](att::Result<> cb_status) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(kStatus, status);
 }
@@ -1986,7 +1986,7 @@ TEST_F(RemoteServiceManagerTest, WriteCharLongOffsetSuccess) {
   service->WriteLongCharacteristic(kDefaultCharacteristic, kOffset, full_write_value, mode,
                                    [&](att::Result<> cb_status) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
   EXPECT_EQ(1u, process_long_write_count);
 }
@@ -2039,7 +2039,7 @@ TEST_F(RemoteServiceManagerTest, WriteCharLongAtExactMultipleOfMtu) {
   service->WriteLongCharacteristic(kDefaultCharacteristic, kOffset, full_write_value, mode,
                                    [&](att::Result<> cb_status) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
   EXPECT_EQ(1u, process_long_write_count);
 }
@@ -2088,7 +2088,7 @@ TEST_F(RemoteServiceManagerTest, WriteCharLongReliableWrite) {
   service->WriteLongCharacteristic(kDefaultCharacteristic, kOffset, full_write_value, mode,
                                    [&](att::Result<> cb_status) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
   EXPECT_EQ(1u, process_long_write_count);
 }
@@ -2107,7 +2107,7 @@ TEST_F(RemoteServiceManagerTest, WriteWithoutResponseNotSupported) {
   std::optional<att::Result<>> status;
   service->WriteCharacteristicWithoutResponse(kDefaultCharacteristic, std::vector<uint8_t>(),
                                               [&](att::Result<> cb_status) { status = cb_status; });
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_FALSE(called);
   ASSERT_TRUE(status.has_value());
   EXPECT_EQ(ToResult(HostError::kNotSupported), *status);
@@ -2123,7 +2123,7 @@ TEST_F(RemoteServiceManagerTest, WriteWithoutResponseBeforeCharacteristicDiscove
   std::optional<att::Result<>> status;
   service->WriteCharacteristicWithoutResponse(kDefaultCharacteristic, std::vector<uint8_t>(),
                                               [&](att::Result<> cb_status) { status = cb_status; });
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_FALSE(called);
   ASSERT_TRUE(status.has_value());
   EXPECT_EQ(ToResult(HostError::kNotReady), *status);
@@ -2149,7 +2149,7 @@ TEST_F(RemoteServiceManagerTest, WriteWithoutResponseSuccessWithWriteWithoutResp
   std::optional<att::Result<>> status;
   service->WriteCharacteristicWithoutResponse(kDefaultCharacteristic, kValue,
                                               [&](att::Result<> cb_status) { status = cb_status; });
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(called);
   ASSERT_TRUE(status.has_value());
   EXPECT_EQ(fit::ok(), *status);
@@ -2174,7 +2174,7 @@ TEST_F(RemoteServiceManagerTest, WriteWithoutResponseSuccessWithWriteProperty) {
   std::optional<att::Result<>> status;
   service->WriteCharacteristicWithoutResponse(kDefaultCharacteristic, kValue,
                                               [&](att::Result<> cb_status) { status = cb_status; });
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_TRUE(called);
   ASSERT_TRUE(status.has_value());
@@ -2188,7 +2188,7 @@ TEST_F(RemoteServiceManagerTest, ReadDescWhileNotReady) {
   service->ReadDescriptor(0,
                           [&](att::Result<> cb_status, const auto&, auto) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(HostError::kNotReady), status);
 }
@@ -2201,7 +2201,7 @@ TEST_F(RemoteServiceManagerTest, ReadDescriptorNotFound) {
   service->ReadDescriptor(0,
                           [&](att::Result<> cb_status, const auto&, auto) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(HostError::kNotFound), status);
 }
@@ -2237,7 +2237,7 @@ TEST_F(RemoteServiceManagerTest, ReadDescSendsReadRequest) {
                             EXPECT_TRUE(ContainersEqual(kValue, value));
                           });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(fit::ok(), status);
 }
@@ -2249,7 +2249,7 @@ TEST_F(RemoteServiceManagerTest, ReadLongDescWhileNotReady) {
   service->ReadLongDescriptor(
       0, 0, 512, [&](att::Result<> cb_status, const auto&, auto) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(HostError::kNotReady), status);
 }
@@ -2262,7 +2262,7 @@ TEST_F(RemoteServiceManagerTest, ReadLongDescNotFound) {
   service->ReadLongDescriptor(
       0, 0, 512, [&](att::Result<> cb_status, const auto&, auto) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(HostError::kNotFound), status);
 }
@@ -2331,7 +2331,7 @@ TEST_F(RemoteServiceManagerTest, ReadLongDescriptor) {
         EXPECT_FALSE(maybe_truncated);
       });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
   EXPECT_EQ(kExpectedBlobCount, read_count);
 }
@@ -2343,7 +2343,7 @@ TEST_F(RemoteServiceManagerTest, WriteDescWhileNotReady) {
   service->WriteDescriptor(0, std::vector<uint8_t>(),
                            [&](att::Result<> cb_status) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(HostError::kNotReady), status);
 }
@@ -2356,7 +2356,7 @@ TEST_F(RemoteServiceManagerTest, WriteDescNotFound) {
   service->WriteDescriptor(0, std::vector<uint8_t>(),
                            [&](att::Result<> cb_status) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(HostError::kNotFound), status);
 }
@@ -2373,7 +2373,7 @@ TEST_F(RemoteServiceManagerTest, WriteDescNotAllowed) {
   service->WriteDescriptor(4, std::vector<uint8_t>(),
                            [&](att::Result<> cb_status) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(HostError::kNotSupported), status);
 }
@@ -2402,7 +2402,7 @@ TEST_F(RemoteServiceManagerTest, WriteDescSendsWriteRequest) {
   service->WriteDescriptor(kDescrHandle, kValue,
                            [&](att::Result<> cb_status) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(kStatus, status);
 }
 
@@ -2468,7 +2468,7 @@ TEST_F(RemoteServiceManagerTest, WriteDescLongSuccess) {
   service->WriteLongDescriptor(DescriptorHandle(kDescrHandle), kOffset, full_write_value,
                                [&](att::Result<> cb_status) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
   EXPECT_EQ(1u, process_long_write_count);
 }
@@ -2480,7 +2480,7 @@ TEST_F(RemoteServiceManagerTest, EnableNotificationsWhileNotReady) {
   service->EnableNotifications(kDefaultCharacteristic, NopValueCallback,
                                [&](att::Result<> cb_status, IdType) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(HostError::kNotReady), status);
 }
@@ -2493,7 +2493,7 @@ TEST_F(RemoteServiceManagerTest, EnableNotificationsCharNotFound) {
   service->EnableNotifications(kDefaultCharacteristic, NopValueCallback,
                                [&](att::Result<> cb_status, IdType) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(HostError::kNotFound), status);
 }
@@ -2509,7 +2509,7 @@ TEST_F(RemoteServiceManagerTest, EnableNotificationsNoProperties) {
   att::Result<> status = fit::ok();
   service->EnableNotifications(kDefaultCharacteristic, NopValueCallback,
                                [&](att::Result<> cb_status, IdType) { status = cb_status; });
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(HostError::kNotSupported), status);
 }
@@ -2538,7 +2538,7 @@ TEST_F(RemoteServiceManagerTest, EnableNotificationsSuccess) {
                                  id = cb_id;
                                });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(fit::ok(), status);
   EXPECT_NE(kInvalidId, id);
@@ -2568,7 +2568,7 @@ TEST_F(RemoteServiceManagerTest, EnableIndications) {
                                  id = cb_id;
                                });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(fit::ok(), status);
   EXPECT_NE(kInvalidId, id);
@@ -2601,7 +2601,7 @@ TEST_F(RemoteServiceManagerTest, EnableNotificationsError) {
                                  id = cb_id;
                                });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(att::ErrorCode::kUnlikelyError), status);
   EXPECT_EQ(kInvalidId, id);
@@ -2671,7 +2671,7 @@ TEST_F(RemoteServiceManagerTest, EnableNotificationsRequestMany) {
                                  EXPECT_EQ(fit::ok(), status);
                                });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // ATT write requests should be sent but none of the notification requests
   // should be resolved.
@@ -2692,7 +2692,7 @@ TEST_F(RemoteServiceManagerTest, EnableNotificationsRequestMany) {
                                  EXPECT_EQ(fit::ok(), status);
                                });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(2, ccc_write_count);
   EXPECT_EQ(6u, cb_count);
@@ -2731,7 +2731,7 @@ TEST_F(RemoteServiceManagerTest, EnableNotificationsRequestManyError) {
   service->EnableNotifications(kDefaultCharacteristic, NopValueCallback, std::move(cb));
   service->EnableNotifications(kDefaultCharacteristic, NopValueCallback, std::move(cb));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Requests should be buffered and only one ATT request should have been sent
   // out.
@@ -2745,7 +2745,7 @@ TEST_F(RemoteServiceManagerTest, EnableNotificationsRequestManyError) {
   // A new request should write to the descriptor again.
   service->EnableNotifications(kDefaultCharacteristic, NopValueCallback, std::move(cb));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(2, ccc_write_count);
   EXPECT_EQ(3, cb_count);
@@ -2776,7 +2776,7 @@ TEST_F(RemoteServiceManagerTest, EnableNotificationsWithoutCCC) {
                                  status = _status;
                                  id = _id;
                                });
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(fit::ok(), status);
   EXPECT_FALSE(write_requested);
@@ -2788,7 +2788,7 @@ TEST_F(RemoteServiceManagerTest, EnableNotificationsWithoutCCC) {
   // Disabling notifications should not result in a write request.
   service->DisableNotifications(kDefaultCharacteristic, id,
                                 [&](auto _status) { status = _status; });
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
   EXPECT_FALSE(write_requested);
 
@@ -2806,7 +2806,7 @@ TEST_F(RemoteServiceManagerTest, NotificationWithoutServices) {
                                     StaticByteBuffer('n', 'o', 't', 'i', 'f', 'y'),
                                     /*maybe_truncated=*/false);
   }
-  RunLoopUntilIdle();
+  RunUntilIdle();
 }
 
 TEST_F(RemoteServiceManagerTest, NotificationCallback) {
@@ -2873,7 +2873,7 @@ TEST_F(RemoteServiceManagerTest, NotificationCallback) {
   service->DisableNotifications(kDefaultCharacteristic, handler_id,
                                 [&](att::Result<> cb_status) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
 
   // Notifications for characteristic 1 should get dropped.
@@ -2895,7 +2895,7 @@ TEST_F(RemoteServiceManagerTest, DisableNotificationsWhileNotReady) {
   service->DisableNotifications(kDefaultCharacteristic, 1,
                                 [&](att::Result<> cb_status) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(HostError::kNotReady), status);
 }
@@ -2911,7 +2911,7 @@ TEST_F(RemoteServiceManagerTest, DisableNotificationsCharNotFound) {
   service->DisableNotifications(kInvalidCharacteristic, id,
                                 [&](att::Result<> cb_status) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(HostError::kNotFound), status);
 }
@@ -2927,7 +2927,7 @@ TEST_F(RemoteServiceManagerTest, DisableNotificationsIdNotFound) {
   service->DisableNotifications(kDefaultCharacteristic, id + 1,
                                 [&](att::Result<> cb_status) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(ToResult(HostError::kNotFound), status);
 }
@@ -2956,7 +2956,7 @@ TEST_F(RemoteServiceManagerTest, DisableNotificationsSingleHandler) {
   service->DisableNotifications(kDefaultCharacteristic, id,
                                 [&](att::Result<> cb_status) { status = cb_status; });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   EXPECT_EQ(fit::ok(), status);
   EXPECT_EQ(1, ccc_write_count);
@@ -2986,7 +2986,7 @@ TEST_F(RemoteServiceManagerTest, DisableNotificationsOnDestruction) {
   // Destroying the service manager (which destroys the service characteristics) should clear the
   // CCC.
   DestroyServiceManager();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(1, ccc_write_count);
 }
 
@@ -3015,7 +3015,7 @@ TEST_F(RemoteServiceManagerTest, DisableNotificationsManyHandlers) {
   service->DisableNotifications(kDefaultCharacteristic, handler_ids.back(),
                                 [&](att::Result<> cb_status) { status = cb_status; });
   handler_ids.pop_back();
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
   EXPECT_EQ(0, ccc_write_count);
 
@@ -3032,7 +3032,7 @@ TEST_F(RemoteServiceManagerTest, DisableNotificationsManyHandlers) {
     service->DisableNotifications(kDefaultCharacteristic, handler_ids.back(),
                                   [&](att::Result<> cb_status) { status = cb_status; });
     handler_ids.pop_back();
-    RunLoopUntilIdle();
+    RunUntilIdle();
     EXPECT_EQ(fit::ok(), status);
   }
 
@@ -3061,7 +3061,7 @@ TEST_F(RemoteServiceManagerTest, ReadByTypeErrorOnLastHandleDoesNotOverflowHandl
     status = cb_status;
     results = std::move(cb_results);
   });
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(status.has_value());
   EXPECT_EQ(fit::ok(), *status);
   ASSERT_EQ(1u, results.size());
@@ -3099,7 +3099,7 @@ TEST_F(RemoteServiceManagerTest, ReadByTypeResultOnLastHandleDoesNotOverflowHand
     EXPECT_TRUE(ContainersEqual(kValue, *values[0].result.value()));
   });
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(status.has_value());
   EXPECT_EQ(fit::ok(), *status);
 }
@@ -3138,7 +3138,7 @@ class RemoteServiceManagerServiceChangedTest : public RemoteServiceManagerTest {
 
     att::Result<> status = ToResult(HostError::kFailed);
     mgr()->Initialize([&status](att::Result<> val) { status = val; }, NopMtuCallback);
-    RunLoopUntilIdle();
+    RunUntilIdle();
     EXPECT_EQ(fit::ok(), status);
     EXPECT_EQ(write_request_count_, 1);
     ASSERT_EQ(1u, svc_watcher_data_.size());
@@ -3189,7 +3189,7 @@ TEST_F(RemoteServiceManagerServiceChangedTest, ServiceChangedNotificationWrongSi
   auto svc_changed_range_buffer_too_small = StaticByteBuffer(0x01);
   fake_client()->SendNotification(/*indicate=*/true, service_changed_characteristic().value_handle,
                                   svc_changed_range_buffer_too_small, /*maybe_truncated=*/false);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   // The notification should have been safely ignored.
   ASSERT_EQ(0u, svc_watcher_data().size());
 
@@ -3198,7 +3198,7 @@ TEST_F(RemoteServiceManagerServiceChangedTest, ServiceChangedNotificationWrongSi
       svc_changed_range_buffer_too_large = StaticByteBuffer(0x01, 0x02, 0x03, 0x04, 0x05);
   fake_client()->SendNotification(/*indicate=*/true, service_changed_characteristic().value_handle,
                                   svc_changed_range_buffer_too_large, /*maybe_truncated=*/false);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   // The notification should have been safely ignored.
   ASSERT_EQ(0u, svc_watcher_data().size());
 }
@@ -3217,7 +3217,7 @@ TEST_F(RemoteServiceManagerServiceChangedTest,
   );
   fake_client()->SendNotification(/*indicate=*/true, service_changed_characteristic().value_handle,
                                   svc_changed_range_buffer, /*maybe_truncated=*/false);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   // The notification should have been safely ignored.
   ASSERT_EQ(0u, svc_watcher_data().size());
 }
@@ -3249,7 +3249,7 @@ TEST_F(RemoteServiceManagerServiceChangedTest, AddModifyAndRemoveService) {
   );
   fake_client()->SendNotification(/*indicate=*/true, service_changed_characteristic().value_handle,
                                   svc_changed_range_buffer, /*maybe_truncated=*/false);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_EQ(1u, svc_watcher_data().size());
   ASSERT_EQ(1u, svc_watcher_data()[0].added.size());
   EXPECT_EQ(0u, svc_watcher_data()[0].removed.size());
@@ -3265,7 +3265,7 @@ TEST_F(RemoteServiceManagerServiceChangedTest, AddModifyAndRemoveService) {
         EXPECT_EQ(fit::ok(), status);
         EXPECT_EQ(characteristics.size(), 1u);
       });
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   // Expect writes to the service's CCC descriptor when notifications are enabled.
   int svc1_ccc_write_request_count = 0;
@@ -3281,7 +3281,7 @@ TEST_F(RemoteServiceManagerServiceChangedTest, AddModifyAndRemoveService) {
   svc_watcher_data()[0].added[0]->EnableNotifications(
       bt::gatt::CharacteristicHandle(kSvc1ChrcValueHandle), NopValueCallback,
       [&](att::Result<> cb_status, IdType cb_id) { original_notification_status = cb_status; });
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(original_notification_status);
   EXPECT_EQ(fit::ok(), *original_notification_status);
   EXPECT_EQ(svc1_ccc_write_request_count, 1);
@@ -3292,7 +3292,7 @@ TEST_F(RemoteServiceManagerServiceChangedTest, AddModifyAndRemoveService) {
   // Sec 7.1)
   fake_client()->SendNotification(/*indicate=*/true, service_changed_characteristic().value_handle,
                                   svc_changed_range_buffer, /*maybe_truncated=*/false);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(original_service_removed);
   // CCC should not be written to when the service is modified.
   EXPECT_EQ(svc1_ccc_write_request_count, 1);
@@ -3309,13 +3309,13 @@ TEST_F(RemoteServiceManagerServiceChangedTest, AddModifyAndRemoveService) {
         EXPECT_EQ(fit::ok(), status);
         EXPECT_EQ(characteristics.size(), 1u);
       });
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   std::optional<att::Result<>> modified_notification_status;
   svc_watcher_data()[1].modified[0]->EnableNotifications(
       bt::gatt::CharacteristicHandle(kSvc1ChrcValueHandle), NopValueCallback,
       [&](att::Result<> cb_status, IdType cb_id) { modified_notification_status = cb_status; });
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(modified_notification_status);
   EXPECT_EQ(fit::ok(), *modified_notification_status);
   EXPECT_EQ(svc1_ccc_write_request_count, 2);
@@ -3326,7 +3326,7 @@ TEST_F(RemoteServiceManagerServiceChangedTest, AddModifyAndRemoveService) {
   // Send a notification that svc1 has been removed.
   fake_client()->SendNotification(/*indicate=*/true, service_changed_characteristic().value_handle,
                                   svc_changed_range_buffer, /*maybe_truncated=*/false);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(modified_service_removed);
   // CCC should not be written to when the service is removed.
   EXPECT_EQ(svc1_ccc_write_request_count, 2);
@@ -3405,7 +3405,7 @@ TEST_F(RemoteServiceManagerTest, ServiceChangedDuringInitialization) {
         EXPECT_EQ(1, svc_watcher_count);
       },
       NopMtuCallback);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
   EXPECT_EQ(1, write_request_count);
   EXPECT_EQ(1, svc_watcher_count);
@@ -3431,7 +3431,7 @@ TEST_F(RemoteServiceManagerServiceChangedTest, SecondServiceChangedNotificationI
   fake_client()->SendNotification(/*indicate=*/true, service_changed_characteristic().value_handle,
                                   svc_changed_range_buffer, /*maybe_truncated=*/false);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_EQ(2u, svc_watcher_data().size());
 
   ASSERT_EQ(1u, svc_watcher_data()[0].added.size());
@@ -3460,7 +3460,7 @@ TEST_F(RemoteServiceManagerServiceChangedTest, ServiceUuidChanged) {
   fake_client()->SendNotification(/*indicate=*/true, service_changed_characteristic().value_handle,
                                   svc_changed_range_buffer, /*maybe_truncated=*/false);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_EQ(1u, svc_watcher_data().size());
 
   ASSERT_EQ(1u, svc_watcher_data()[0].added.size());
@@ -3475,7 +3475,7 @@ TEST_F(RemoteServiceManagerServiceChangedTest, ServiceUuidChanged) {
   // Send a notification that svc2 has replaced svc1.
   fake_client()->SendNotification(/*indicate=*/true, service_changed_characteristic().value_handle,
                                   svc_changed_range_buffer, /*maybe_truncated=*/false);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_EQ(2u, svc_watcher_data().size());
 
   ASSERT_EQ(1u, svc_watcher_data()[1].added.size());
@@ -3507,7 +3507,7 @@ TEST_F(
   fake_client()->SendNotification(/*indicate=*/true, service_changed_characteristic().value_handle,
                                   svc_changed_range_buffer_0, /*maybe_truncated=*/false);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_EQ(1u, svc_watcher_data().size());
   ASSERT_EQ(1u, svc_watcher_data()[0].added.size());
   EXPECT_EQ(0u, svc_watcher_data()[0].removed.size());
@@ -3526,7 +3526,7 @@ TEST_F(
   fake_client()->SendNotification(/*indicate=*/true, service_changed_characteristic().value_handle,
                                   svc_changed_range_buffer_1, /*maybe_truncated=*/false);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_EQ(2u, svc_watcher_data().size());
   ASSERT_EQ(2u, svc_watcher_data()[1].added.size());
   ASSERT_EQ(1u, svc_watcher_data()[1].removed.size());
@@ -3580,7 +3580,7 @@ TEST_P(RemoteServiceManagerServiceChangedTestWithServiceKindParam,
   fake_client()->SendNotification(/*indicate=*/true, service_changed_characteristic().value_handle,
                                   svc2_changed_range_buffer, /*maybe_truncated=*/false);
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_EQ(1u, svc_watcher_data().size());
   ASSERT_EQ(1u, svc_watcher_data()[0].added.size());
   EXPECT_EQ(0u, svc_watcher_data()[0].removed.size());
@@ -3613,7 +3613,7 @@ TEST_F(RemoteServiceManagerServiceChangedTest,
   );
   fake_client()->SendNotification(/*indicate=*/true, service_changed_characteristic().value_handle,
                                   svc_changed_range_buffer, /*maybe_truncated=*/false);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_EQ(1u, svc_watcher_data().size());
   ASSERT_EQ(1u, svc_watcher_data()[0].added.size());
   EXPECT_EQ(0u, svc_watcher_data()[0].removed.size());
@@ -3632,7 +3632,7 @@ TEST_F(RemoteServiceManagerServiceChangedTest, GattProfileServiceChanged) {
   );
   fake_client()->SendNotification(/*indicate=*/true, service_changed_characteristic().value_handle,
                                   svc_changed_range_buffer, /*maybe_truncated=*/false);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_EQ(1u, svc_watcher_data().size());
   EXPECT_EQ(0u, svc_watcher_data()[0].added.size());
   EXPECT_EQ(0u, svc_watcher_data()[0].removed.size());
@@ -3643,7 +3643,7 @@ TEST_F(RemoteServiceManagerServiceChangedTest, GattProfileServiceChanged) {
   // The handler for notifications should remain configured.
   fake_client()->SendNotification(/*indicate=*/true, service_changed_characteristic().value_handle,
                                   svc_changed_range_buffer, /*maybe_truncated=*/false);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_EQ(2u, svc_watcher_data().size());
   EXPECT_EQ(0u, svc_watcher_data()[1].added.size());
   EXPECT_EQ(0u, svc_watcher_data()[1].removed.size());
@@ -3669,7 +3669,7 @@ TEST_F(RemoteServiceManagerTest, ErrorDiscoveringGattProfileService) {
 
   std::optional<att::Result<>> status;
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, NopMtuCallback);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(ToResult(att::ErrorCode::kRequestNotSupported), *status);
 }
 
@@ -3681,7 +3681,7 @@ TEST_F(RemoteServiceManagerTest, MultipleGattProfileServicesFailsInitialization)
 
   std::optional<att::Result<>> status;
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, NopMtuCallback);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(ToResult(HostError::kFailed), *status);
 }
 
@@ -3698,7 +3698,7 @@ TEST_F(RemoteServiceManagerTest, InitializeEmptyGattProfileService) {
 
   att::Result<> status = ToResult(HostError::kFailed);
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, NopMtuCallback);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(fit::ok(), status);
   ASSERT_EQ(2u, services.size());
   EXPECT_EQ(gatt_svc.range_start, services[0]->handle());
@@ -3741,7 +3741,7 @@ TEST_F(RemoteServiceManagerTest, EnableServiceChangedNotificationsReturnsError) 
 
   std::optional<att::Result<>> status;
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, NopMtuCallback);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(ToResult(att::ErrorCode::kWriteNotPermitted), *status);
   EXPECT_EQ(write_request_count, 1);
 }
@@ -3757,7 +3757,7 @@ TEST_F(RemoteServiceManagerTest, ErrorDiscoveringGattProfileServiceCharacteristi
 
   std::optional<att::Result<>> status;
   mgr()->Initialize([&status](att::Result<> val) { status = val; }, NopMtuCallback);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(ToResult(att::ErrorCode::kRequestNotSupported), *status);
 }
 
@@ -3783,14 +3783,14 @@ TEST_F(RemoteServiceManagerTest, DisableNotificationInHandlerCallback) {
   fake_client()->SendNotification(/*indicate=*/false, kChrcValueHandle.value,
                                   StaticByteBuffer('y', 'e'),
                                   /*maybe_truncated=*/false);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(value_cb_count, 1);
 
   // Second notification should not notify disabled handler.
   fake_client()->SendNotification(/*indicate=*/false, kChrcValueHandle.value,
                                   StaticByteBuffer('y', 'e'),
                                   /*maybe_truncated=*/false);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(value_cb_count, 1);
 }
 
@@ -3815,14 +3815,14 @@ TEST_F(RemoteServiceManagerServiceChangedTest, ServiceRemovedDuringReadLongChara
   );
   fake_client()->SendNotification(/*indicate=*/true, service_changed_characteristic().value_handle,
                                   svc_changed_range_buffer, /*maybe_truncated=*/false);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_EQ(1u, svc_watcher_data().size());
   ASSERT_EQ(1u, svc_watcher_data()[0].added.size());
   EXPECT_EQ(kSvc1StartHandle, svc_watcher_data()[0].added[0]->handle());
 
   RemoteService::WeakPtr service = svc_watcher_data()[0].added[0];
   service->DiscoverCharacteristics([](auto, const auto&) {});
-  RunLoopUntilIdle();
+  RunUntilIdle();
 
   int read_req_count = 0;
   RemoteService::ReadValueCallback read_callback = nullptr;
@@ -3842,7 +3842,7 @@ TEST_F(RemoteServiceManagerServiceChangedTest, ServiceRemovedDuringReadLongChara
   fake_client()->set_services({gatt_service()});
   fake_client()->SendNotification(/*indicate=*/true, service_changed_characteristic().value_handle,
                                   svc_changed_range_buffer, /*maybe_truncated=*/false);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_FALSE(service.is_alive());
   ASSERT_EQ(2u, svc_watcher_data().size());
   ASSERT_EQ(1u, svc_watcher_data()[1].removed.size());
@@ -3854,7 +3854,7 @@ TEST_F(RemoteServiceManagerServiceChangedTest, ServiceRemovedDuringReadLongChara
   StaticByteBuffer<att::kLEMinMTU - 1> expected_value;
   expected_value.Fill(0x02);
   read_callback(fit::ok(), expected_value.view(), /*maybe_truncated=*/true);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(read_long_cb_count, 0);
 }
 

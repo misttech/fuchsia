@@ -1025,7 +1025,8 @@ nearest power of 2 from the cpu timer counter.
 
 
 If set, tries to initialize the dap debug aperture at a hard coded address for the particular
-system on chip. Currently accepted values are amlogic-t931g, amlogic-s905d2, and amlogic-s905d3g.
+system on chip. Currently accepted values are amlogic-t931g, amlogic-s905d2, amlogic-s905d3g, and
+amlogic-a311d.
 
 ### kernel.smp.maxcpus=\<uint32_t>
 
@@ -1067,6 +1068,12 @@ This option caps the number of CPUs to initialize.  It cannot be greater than *S
 for a specific architecture.
 
 Note: The default value may vary for each architecture.
+
+### kernel.riscv64.enable-asid=\<bool>
+
+**Default:** `true`
+
+This enables use of ASIDs. True by default if the underlying hardware supports 16-bit ASIDs.
 
 
 ## Options available only on x86 machines

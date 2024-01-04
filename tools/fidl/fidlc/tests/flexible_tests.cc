@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 #include "tools/fidl/fidlc/include/fidl/diagnostics.h"
 #include "tools/fidl/fidlc/include/fidl/flat_ast.h"
-#include "tools/fidl/fidlc/tests/error_test.h"
 #include "tools/fidl/fidlc/tests/test_library.h"
 
 namespace {
@@ -14,14 +13,16 @@ namespace {
 TEST(FlexibleTests, BadEnumMultipleUnknown) {
   TestLibrary library;
   library.AddFile("bad/fi-0072.test.fidl");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrUnknownAttributeOnMultipleEnumMembers);
+  library.ExpectFail(fidl::ErrUnknownAttributeOnMultipleEnumMembers);
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(FlexibleTests, BadEnumMaxValueWithoutUnknownUnsigned) {
   {
     TestLibrary library;
     library.AddFile("bad/fi-0068.test.fidl");
-    ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrFlexibleEnumMemberWithMaxValue);
+    library.ExpectFail(fidl::ErrFlexibleEnumMemberWithMaxValue, "255");
+    ASSERT_COMPILER_DIAGNOSTICS(library);
   }
   {
     TestLibrary library;
@@ -45,7 +46,8 @@ type Foo = flexible enum : int8 {
   MAX = 127;
 };
 )FIDL");
-  ASSERT_ERRORED_DURING_COMPILE(library, fidl::ErrFlexibleEnumMemberWithMaxValue);
+  library.ExpectFail(fidl::ErrFlexibleEnumMemberWithMaxValue, "127");
+  ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
 TEST(FlexibleTests, GoodEnumCanUseMaxValueIfOtherIsUnknownUnsigned) {
@@ -61,10 +63,10 @@ type Foo = flexible enum : uint8 {
   ASSERT_COMPILED(library);
 
   auto foo_enum = library.LookupEnum("Foo");
-  ASSERT_NOT_NULL(foo_enum);
+  ASSERT_NE(foo_enum, nullptr);
   EXPECT_FALSE(foo_enum->unknown_value_signed.has_value());
   EXPECT_TRUE(foo_enum->unknown_value_unsigned.has_value());
-  EXPECT_EQ(foo_enum->unknown_value_unsigned.value(), 1);
+  EXPECT_EQ(foo_enum->unknown_value_unsigned.value(), 1u);
 }
 
 TEST(FlexibleTests, GoodEnumCanUseMaxValueIfOtherIsUnknownSigned) {
@@ -80,9 +82,9 @@ type Foo = flexible enum : int8 {
   ASSERT_COMPILED(library);
 
   auto foo_enum = library.LookupEnum("Foo");
-  ASSERT_NOT_NULL(foo_enum);
+  ASSERT_NE(foo_enum, nullptr);
   EXPECT_TRUE(foo_enum->unknown_value_signed.has_value());
-  EXPECT_EQ(foo_enum->unknown_value_signed.value(), 1);
+  EXPECT_EQ(foo_enum->unknown_value_signed.value(), 1u);
   EXPECT_FALSE(foo_enum->unknown_value_unsigned.has_value());
 }
 
@@ -99,9 +101,9 @@ type Foo = flexible enum : int8 {
   ASSERT_COMPILED(library);
 
   auto foo_enum = library.LookupEnum("Foo");
-  ASSERT_NOT_NULL(foo_enum);
+  ASSERT_NE(foo_enum, nullptr);
   EXPECT_TRUE(foo_enum->unknown_value_signed.has_value());
-  EXPECT_EQ(foo_enum->unknown_value_signed.value(), 0);
+  EXPECT_EQ(foo_enum->unknown_value_signed.value(), 0u);
   EXPECT_FALSE(foo_enum->unknown_value_unsigned.has_value());
 }
 

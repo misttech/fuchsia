@@ -8,6 +8,8 @@
 #include <lib/sys/cpp/component_context.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
 
+#include <optional>
+
 #include "src/lib/fxl/strings/string_printf.h"
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/media/audio/audio_core/shared/audio_admin.h"
@@ -18,6 +20,7 @@ namespace {
 using ::inspect::testing::BoolIs;
 using ::inspect::testing::ChildrenMatch;
 using ::inspect::testing::DoubleIs;
+using ::inspect::testing::IntIs;
 using ::inspect::testing::NameMatches;
 using ::inspect::testing::NodeMatches;
 using ::inspect::testing::PropertyList;
@@ -72,7 +75,7 @@ class ReporterTest : public gtest::TestLoopFixture {
   Reporter under_test_;
 };
 
-// Tests reporter initial state.
+// Test reporter initial state.
 TEST_F(ReporterTest, InitialState) {
   auto hierarchy = GetHierarchy();
 
@@ -107,12 +110,14 @@ TEST_F(ReporterTest, InitialState) {
                 ChildrenMatch(UnorderedElementsAre(NodeMatches(
                     AllOf(NameMatches("normal"),
                           Not(PropertyList(Contains(UintIs("total duration (ns)", 0))))))))),
-          AllOf(
-              NodeMatches(NameMatches("thermal state transitions")),
-              ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
-                  NameMatches("1"),
-                  PropertyList(IsSupersetOf({BoolIs("active", true), StringIs("state", "normal")})),
-                  Not(PropertyList(Contains(UintIs("duration (ns)", 0))))))))),
+          AllOf(NodeMatches(NameMatches("thermal state transitions")),
+                ChildrenMatch(UnorderedElementsAre(NodeMatches(
+                    AllOf(NameMatches("1"),
+                          PropertyList(IsSupersetOf({
+                              BoolIs("active", true),
+                              StringIs("state", "normal"),
+                          })),
+                          Not(PropertyList(Contains(UintIs("duration (ns)", 0))))))))),
           AllOf(NodeMatches(AllOf(NameMatches("volume controls"), PropertyList(IsEmpty()),
                                   PropertyList(IsEmpty()))),
                 ChildrenMatch(IsEmpty())),
@@ -124,7 +129,7 @@ TEST_F(ReporterTest, InitialState) {
                     AllOf(NameMatches("1"), PropertyList(Contains(BoolIs("active", true)))))))))));
 }
 
-// Tests methods that update metrics in the root node.
+// Test methods that update metrics in the root node.
 TEST_F(ReporterTest, RootMetrics) {
   under_test_.FailedToConnectToDevice("", false, 0);
   under_test_.FailedToObtainStreamChannel("", false, 0);
@@ -142,7 +147,7 @@ TEST_F(ReporterTest, RootMetrics) {
                                 })))));
 }
 
-// Tests methods that add and remove devices.
+// Test methods that add and remove devices.
 TEST_F(ReporterTest, AddRemoveDevices) {
   std::vector<Reporter::Container<Reporter::OutputDevice, Reporter::kObjectsToCache>::Ptr> outputs;
   std::vector<Reporter::Container<Reporter::InputDevice, Reporter::kObjectsToCache>::Ptr> inputs;
@@ -156,17 +161,18 @@ TEST_F(ReporterTest, AddRemoveDevices) {
   }
 
   EXPECT_THAT(GetHierarchyLazyValues(),
-              ChildrenMatch(IsSupersetOf(
-                  {AllOf(NodeMatches(NameMatches("output devices")),
-                         ChildrenMatch(UnorderedElementsAre(
-                             NodeAlive("output_device_0"), NodeAlive("output_device_1"),
-                             NodeAlive("output_device_2"), NodeAlive("output_device_3"),
-                             NodeAlive("output_device_4")))),
-                   AllOf(NodeMatches(NameMatches("input devices")),
-                         ChildrenMatch(UnorderedElementsAre(
-                             NodeAlive("input_device_0"), NodeAlive("input_device_1"),
-                             NodeAlive("input_device_2"), NodeAlive("input_device_3"),
-                             NodeAlive("input_device_4"))))})));
+              ChildrenMatch(IsSupersetOf({
+                  AllOf(NodeMatches(NameMatches("output devices")),
+                        ChildrenMatch(UnorderedElementsAre(
+                            NodeAlive("output_device_0"), NodeAlive("output_device_1"),
+                            NodeAlive("output_device_2"), NodeAlive("output_device_3"),
+                            NodeAlive("output_device_4")))),
+                  AllOf(NodeMatches(NameMatches("input devices")),
+                        ChildrenMatch(UnorderedElementsAre(
+                            NodeAlive("input_device_0"), NodeAlive("input_device_1"),
+                            NodeAlive("input_device_2"), NodeAlive("input_device_3"),
+                            NodeAlive("input_device_4")))),
+              })));
 
   outputs[0].Drop();
   outputs[1].Drop();
@@ -178,35 +184,37 @@ TEST_F(ReporterTest, AddRemoveDevices) {
   inputs[3].Drop();
 
   EXPECT_THAT(GetHierarchyLazyValues(),
-              ChildrenMatch(
-                  IsSupersetOf({AllOf(NodeMatches(NameMatches("output devices")),
-                                      ChildrenMatch(UnorderedElementsAre(
-                                          NodeDead("output_device_0"), NodeDead("output_device_1"),
-                                          NodeDead("output_device_2"), NodeDead("output_device_3"),
-                                          NodeAlive("output_device_4")))),
-                                AllOf(NodeMatches(NameMatches("input devices")),
-                                      ChildrenMatch(UnorderedElementsAre(
-                                          NodeDead("input_device_0"), NodeDead("input_device_1"),
-                                          NodeDead("input_device_2"), NodeDead("input_device_3"),
-                                          NodeAlive("input_device_4"))))})));
+              ChildrenMatch(IsSupersetOf({
+                  AllOf(NodeMatches(NameMatches("output devices")),
+                        ChildrenMatch(UnorderedElementsAre(
+                            NodeDead("output_device_0"), NodeDead("output_device_1"),
+                            NodeDead("output_device_2"), NodeDead("output_device_3"),
+                            NodeAlive("output_device_4")))),
+                  AllOf(NodeMatches(NameMatches("input devices")),
+                        ChildrenMatch(UnorderedElementsAre(
+                            NodeDead("input_device_0"), NodeDead("input_device_1"),
+                            NodeDead("input_device_2"), NodeDead("input_device_3"),
+                            NodeAlive("input_device_4")))),
+              })));
 
   outputs[4].Drop();
   inputs[4].Drop();
 
   // Garbage collect [0].
   EXPECT_THAT(GetHierarchyLazyValues(),
-              ChildrenMatch(IsSupersetOf(
-                  {AllOf(NodeMatches(NameMatches("output devices")),
-                         ChildrenMatch(UnorderedElementsAre(
-                             NodeDead("output_device_1"), NodeDead("output_device_2"),
-                             NodeDead("output_device_3"), NodeDead("output_device_4")))),
-                   AllOf(NodeMatches(NameMatches("input devices")),
-                         ChildrenMatch(UnorderedElementsAre(
-                             NodeDead("input_device_1"), NodeDead("input_device_2"),
-                             NodeDead("input_device_3"), NodeDead("input_device_4"))))})));
+              ChildrenMatch(IsSupersetOf({
+                  AllOf(NodeMatches(NameMatches("output devices")),
+                        ChildrenMatch(UnorderedElementsAre(
+                            NodeDead("output_device_1"), NodeDead("output_device_2"),
+                            NodeDead("output_device_3"), NodeDead("output_device_4")))),
+                  AllOf(NodeMatches(NameMatches("input devices")),
+                        ChildrenMatch(UnorderedElementsAre(
+                            NodeDead("input_device_1"), NodeDead("input_device_2"),
+                            NodeDead("input_device_3"), NodeDead("input_device_4")))),
+              })));
 }
 
-// Tests methods that change device metrics.
+// Test methods that change device metrics.
 TEST_F(ReporterTest, DeviceMetrics) {
   auto output_device = under_test_.CreateOutputDevice("output_device", "output_thread");
   auto input_device = under_test_.CreateInputDevice("input_device", "input_thread");
@@ -217,12 +225,18 @@ TEST_F(ReporterTest, DeviceMetrics) {
       ChildrenMatch(UnorderedElementsAre(
           AllOf(NodeMatches(NameMatches("output devices")),
                 ChildrenMatch(UnorderedElementsAre(AllOf(
+                    NodeMatches(AllOf(NameMatches("output_device"),
+                                      PropertyList(UnorderedElementsAre(
+                                          StringIs("mixer thread name", "output_thread"))))),
                     ChildrenMatch(UnorderedElementsAre(
                         NodeMatches(AllOf(NameMatches("driver"),
                                           PropertyList(UnorderedElementsAre(
-                                              UintIs("external delay (ns)", 0),
-                                              UintIs("external delay + internal delay (ns)", 0),
-                                              UintIs("internal delay (ns)", 0),
+                                              UintIs("initial internal delay (ns)", 0),
+                                              UintIs("current internal delay (ns)", 0),
+                                              IntIs("time of latest internal delay change", 0),
+                                              UintIs("initial external delay (ns)", 0),
+                                              UintIs("current external delay (ns)", 0),
+                                              IntIs("time of latest external delay change", 0),
                                               UintIs("driver transfer (bytes)", 0),
                                               StringIs("name", "unknown"))))),
                         NodeMatches(AllOf(
@@ -230,6 +244,11 @@ TEST_F(ReporterTest, DeviceMetrics) {
                             PropertyList(UnorderedElementsAre(StringIs("sample format", "unknown"),
                                                               UintIs("channels", 0),
                                                               UintIs("frames per second", 0))))),
+                        NodeMatches(AllOf(
+                            NameMatches("device gain"),
+                            PropertyList(UnorderedElementsAre(
+                                DoubleIs("gain db", 0.0), BoolIs("muted", false),
+                                BoolIs("agc supported", false), BoolIs("agc enabled", false))))),
                         NodeMatches(AllOf(NameMatches("device underflows"),
                                           PropertyList(UnorderedElementsAre(
                                               UintIs("count", 0), UintIs("duration (ns)", 0),
@@ -237,20 +256,33 @@ TEST_F(ReporterTest, DeviceMetrics) {
                         NodeMatches(AllOf(NameMatches("pipeline underflows"),
                                           PropertyList(UnorderedElementsAre(
                                               UintIs("count", 0), UintIs("duration (ns)", 0),
-                                              UintIs("session count", 0))))))),
-                    NodeMatches(
-                        AllOf(NameMatches("output_device"),
-                              PropertyList(UnorderedElementsAre(
-                                  DoubleIs("gain db", 0.0), BoolIs("muted", false),
-                                  BoolIs("agc supported", false), BoolIs("agc enabled", false),
-                                  StringIs("mixer thread name", "output_thread"))))))))),
+                                              UintIs("session count", 0))))))))))),
           AllOf(NodeMatches(NameMatches("input devices")),
-                ChildrenMatch(UnorderedElementsAre(NodeMatches(
-                    AllOf(NameMatches("input_device"),
-                          PropertyList(UnorderedElementsAre(
-                              DoubleIs("gain db", 0.0), BoolIs("muted", false),
-                              BoolIs("agc supported", false), BoolIs("agc enabled", false),
-                              StringIs("mixer thread name", "input_thread")))))))),
+                ChildrenMatch(UnorderedElementsAre(AllOf(
+                    NodeMatches(AllOf(NameMatches("input_device"),
+                                      PropertyList(UnorderedElementsAre(
+                                          StringIs("mixer thread name", "input_thread"))))),
+                    ChildrenMatch(UnorderedElementsAre(
+                        NodeMatches(AllOf(NameMatches("driver"),
+                                          PropertyList(UnorderedElementsAre(
+                                              UintIs("initial internal delay (ns)", 0),
+                                              UintIs("current internal delay (ns)", 0),
+                                              IntIs("time of latest internal delay change", 0),
+                                              UintIs("initial external delay (ns)", 0),
+                                              UintIs("current external delay (ns)", 0),
+                                              IntIs("time of latest external delay change", 0),
+                                              UintIs("driver transfer (bytes)", 0),
+                                              StringIs("name", "unknown"))))),
+                        NodeMatches(AllOf(
+                            NameMatches("format"),
+                            PropertyList(UnorderedElementsAre(StringIs("sample format", "unknown"),
+                                                              UintIs("channels", 0),
+                                                              UintIs("frames per second", 0))))),
+                        NodeMatches(AllOf(NameMatches("device gain"),
+                                          PropertyList(UnorderedElementsAre(
+                                              DoubleIs("gain db", 0.0), BoolIs("muted", false),
+                                              BoolIs("agc supported", false),
+                                              BoolIs("agc enabled", false))))))))))),
           AllOf(NodeMatches(NameMatches("renderers")), ChildrenMatch(IsEmpty())),
           AllOf(NodeMatches(NameMatches("capturers")), ChildrenMatch(IsEmpty())),
           AllOf(NodeMatches(
@@ -259,12 +291,14 @@ TEST_F(ReporterTest, DeviceMetrics) {
                 ChildrenMatch(UnorderedElementsAre(NodeMatches(
                     AllOf(NameMatches("normal"),
                           Not(PropertyList(Contains(UintIs("total duration (ns)", 0))))))))),
-          AllOf(
-              NodeMatches(NameMatches("thermal state transitions")),
-              ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
-                  NameMatches("1"),
-                  PropertyList(IsSupersetOf({BoolIs("active", true), StringIs("state", "normal")})),
-                  Not(PropertyList(Contains(UintIs("duration (ns)", 0))))))))),
+          AllOf(NodeMatches(NameMatches("thermal state transitions")),
+                ChildrenMatch(UnorderedElementsAre(NodeMatches(
+                    AllOf(NameMatches("1"),
+                          PropertyList(IsSupersetOf({
+                              BoolIs("active", true),
+                              StringIs("state", "normal"),
+                          })),
+                          Not(PropertyList(Contains(UintIs("duration (ns)", 0))))))))),
           AllOf(NodeMatches(NameMatches("volume controls")), ChildrenMatch(IsEmpty())),
           AllOf(NodeMatches(AllOf(NameMatches("active usage policies"),
                                   PropertyList(UnorderedElementsAre(
@@ -298,7 +332,7 @@ TEST_F(ReporterTest, DeviceMetrics) {
           }))))))));
 }
 
-// Tests method Device::SetGainInfo.
+// Test method Device::SetGainInfo.
 TEST_F(ReporterTest, DeviceSetGainInfo) {
   auto output_device = under_test_.CreateOutputDevice("output_device", "output_thread");
 
@@ -307,11 +341,15 @@ TEST_F(ReporterTest, DeviceSetGainInfo) {
       GetHierarchy(),
       ChildrenMatch(UnorderedElementsAre(
           AllOf(NodeMatches(NameMatches("output devices")),
-                ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
-                    NameMatches("output_device"),
-                    PropertyList(IsSupersetOf({DoubleIs("gain db", 0.0), BoolIs("muted", false),
-                                               BoolIs("agc supported", false),
-                                               BoolIs("agc enabled", false)}))))))),
+                ChildrenMatch(UnorderedElementsAre(AllOf(
+                    NodeMatches(AllOf(NameMatches("output_device"),
+                                      PropertyList(UnorderedElementsAre(
+                                          StringIs("mixer thread name", "output_thread"))))),
+                    ChildrenMatch(Contains(NodeMatches(AllOf(
+                        NameMatches("device gain"),
+                        PropertyList(UnorderedElementsAre(
+                            DoubleIs("gain db", 0.0), BoolIs("muted", false),
+                            BoolIs("agc supported", false), BoolIs("agc enabled", false))))))))))),
           AllOf(NodeMatches(NameMatches("input devices")), ChildrenMatch(IsEmpty())),
           AllOf(NodeMatches(NameMatches("renderers")), ChildrenMatch(IsEmpty())),
           AllOf(NodeMatches(NameMatches("capturers")), ChildrenMatch(IsEmpty())),
@@ -321,12 +359,14 @@ TEST_F(ReporterTest, DeviceSetGainInfo) {
                 ChildrenMatch(UnorderedElementsAre(NodeMatches(
                     AllOf(NameMatches("normal"),
                           Not(PropertyList(Contains(UintIs("total duration (ns)", 0))))))))),
-          AllOf(
-              NodeMatches(NameMatches("thermal state transitions")),
-              ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
-                  NameMatches("1"),
-                  PropertyList(IsSupersetOf({BoolIs("active", true), StringIs("state", "normal")})),
-                  Not(PropertyList(Contains(UintIs("duration (ns)", 0))))))))),
+          AllOf(NodeMatches(NameMatches("thermal state transitions")),
+                ChildrenMatch(UnorderedElementsAre(NodeMatches(
+                    AllOf(NameMatches("1"),
+                          PropertyList(IsSupersetOf({
+                              BoolIs("active", true),
+                              StringIs("state", "normal"),
+                          })),
+                          Not(PropertyList(Contains(UintIs("duration (ns)", 0))))))))),
           AllOf(NodeMatches(NameMatches("volume controls")), ChildrenMatch(IsEmpty())),
           AllOf(NodeMatches(AllOf(NameMatches("active usage policies"),
                                   PropertyList(UnorderedElementsAre(
@@ -343,69 +383,223 @@ TEST_F(ReporterTest, DeviceSetGainInfo) {
 
   output_device->SetGainInfo(gain_info_a, {});
 
-  // Expect initial device metric values.
-  EXPECT_THAT(GetHierarchy(),
-              ChildrenMatch(Contains(AllOf(
-                  NodeMatches(NameMatches("output devices")),
-                  ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
-                      NameMatches("output_device"),
-                      PropertyList(IsSupersetOf({DoubleIs("gain db", 0.0), BoolIs("muted", false),
-                                                 BoolIs("agc supported", false),
-                                                 BoolIs("agc enabled", false)}))))))))));
+  // Expect initial device metric values to remain, since no AudioGainValidFlags were set.
+  EXPECT_THAT(
+      GetHierarchy(),
+      ChildrenMatch(Contains(AllOf(
+          NodeMatches(NameMatches("output devices")),
+          ChildrenMatch(UnorderedElementsAre(AllOf(
+              NodeMatches(NameMatches("output_device")),
+              ChildrenMatch(Contains(NodeMatches(AllOf(
+                  NameMatches("device gain"),
+                  PropertyList(UnorderedElementsAre(
+                      DoubleIs("gain db", 0.0), BoolIs("muted", false),
+                      BoolIs("agc supported", false), BoolIs("agc enabled", false))))))))))))));
 
   output_device->SetGainInfo(gain_info_a, fuchsia::media::AudioGainValidFlags::GAIN_VALID);
 
   // Expect a gain change.
-  EXPECT_THAT(GetHierarchy(),
-              ChildrenMatch(Contains(AllOf(
-                  NodeMatches(NameMatches("output devices")),
-                  ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
-                      NameMatches("output_device"),
-                      PropertyList(IsSupersetOf({DoubleIs("gain db", -1.0), BoolIs("muted", false),
-                                                 BoolIs("agc supported", false),
-                                                 BoolIs("agc enabled", false)}))))))))));
+  EXPECT_THAT(
+      GetHierarchy(),
+      ChildrenMatch(Contains(AllOf(
+          NodeMatches(NameMatches("output devices")),
+          ChildrenMatch(UnorderedElementsAre(AllOf(
+              NodeMatches(NameMatches("output_device")),
+              ChildrenMatch(Contains(NodeMatches(AllOf(
+                  NameMatches("device gain"),
+                  PropertyList(UnorderedElementsAre(
+                      DoubleIs("gain db", -1.0), BoolIs("muted", false),
+                      BoolIs("agc supported", false), BoolIs("agc enabled", false))))))))))))));
 
   output_device->SetGainInfo(gain_info_a, fuchsia::media::AudioGainValidFlags::MUTE_VALID);
 
   // Expect a mute change.
-  EXPECT_THAT(GetHierarchy(),
-              ChildrenMatch(Contains(AllOf(
-                  NodeMatches(NameMatches("output devices")),
-                  ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
-                      NameMatches("output_device"),
-                      PropertyList(IsSupersetOf({DoubleIs("gain db", -1.0), BoolIs("muted", true),
-                                                 BoolIs("agc supported", false),
-                                                 BoolIs("agc enabled", false)}))))))))));
+  EXPECT_THAT(
+      GetHierarchy(),
+      ChildrenMatch(Contains(AllOf(
+          NodeMatches(NameMatches("output devices")),
+          ChildrenMatch(UnorderedElementsAre(AllOf(
+              NodeMatches(NameMatches("output_device")),
+              ChildrenMatch(Contains(NodeMatches(AllOf(
+                  NameMatches("device gain"),
+                  PropertyList(UnorderedElementsAre(
+                      DoubleIs("gain db", -1.0), BoolIs("muted", true),
+                      BoolIs("agc supported", false), BoolIs("agc enabled", false))))))))))))));
 
   output_device->SetGainInfo(gain_info_a, fuchsia::media::AudioGainValidFlags::AGC_VALID);
 
-  // Expect an agc change.
-  EXPECT_THAT(GetHierarchy(),
-              ChildrenMatch(Contains(AllOf(
-                  NodeMatches(NameMatches("output devices")),
-                  ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
-                      NameMatches("output_device"),
-                      PropertyList(IsSupersetOf({DoubleIs("gain db", -1.0), BoolIs("muted", true),
-                                                 BoolIs("agc supported", true),
-                                                 BoolIs("agc enabled", true)}))))))))));
+  // Expect an AGC change.
+  EXPECT_THAT(
+      GetHierarchy(),
+      ChildrenMatch(Contains(
+          AllOf(NodeMatches(NameMatches("output devices")),
+                ChildrenMatch(UnorderedElementsAre(AllOf(
+                    NodeMatches(NameMatches("output_device")),
+                    ChildrenMatch(Contains(NodeMatches(AllOf(
+                        NameMatches("device gain"),
+                        PropertyList(UnorderedElementsAre(
+                            DoubleIs("gain db", -1.0), BoolIs("muted", true),
+                            BoolIs("agc supported", true), BoolIs("agc enabled", true))))))))))))));
 
-  fuchsia::media::AudioGainInfo gain_info_b{.gain_db = -2.0f, .flags = {}};
+  fuchsia::media::AudioGainInfo gain_info_b{
+      .gain_db = -2.0f, .flags = fuchsia::media::AudioGainInfoFlags::AGC_SUPPORTED};
   output_device->SetGainInfo(gain_info_b, fuchsia::media::AudioGainValidFlags::GAIN_VALID |
                                               fuchsia::media::AudioGainValidFlags::MUTE_VALID |
                                               fuchsia::media::AudioGainValidFlags::AGC_VALID);
 
   // Expect all changes.
-  EXPECT_THAT(GetHierarchy(),
-              ChildrenMatch(Contains(AllOf(
-                  NodeMatches(NameMatches("output devices")),
-                  ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
-                      NameMatches("output_device"),
-                      PropertyList(IsSupersetOf({DoubleIs("gain db", -2.0), BoolIs("muted", false),
-                                                 BoolIs("agc supported", false),
-                                                 BoolIs("agc enabled", false)}))))))))));
+  EXPECT_THAT(
+      GetHierarchy(),
+      ChildrenMatch(Contains(AllOf(
+          NodeMatches(NameMatches("output devices")),
+          ChildrenMatch(UnorderedElementsAre(AllOf(
+              NodeMatches(NameMatches("output_device")),
+              ChildrenMatch(Contains(NodeMatches(AllOf(
+                  NameMatches("device gain"),
+                  PropertyList(UnorderedElementsAre(
+                      DoubleIs("gain db", -2.0), BoolIs("muted", false),
+                      BoolIs("agc supported", true), BoolIs("agc enabled", false))))))))))))));
 }
 
-// Tests methods that add and remove client ports.
+// Test the method that updates the delays reported by the device.
+TEST_F(ReporterTest, DeviceDelays) {
+  auto output_device = under_test_.CreateOutputDevice("output_device", "output_thread");
+  auto input_device = under_test_.CreateInputDevice("input_device", "input_thread");
+
+  EXPECT_THAT(
+      GetHierarchy(),
+      ChildrenMatch(IsSupersetOf({
+          AllOf(NodeMatches(NameMatches("output devices")),
+                ChildrenMatch(UnorderedElementsAre(AllOf(
+                    NodeMatches(NameMatches("output_device")),
+                    ChildrenMatch(IsSupersetOf({
+                        NodeMatches(AllOf(NameMatches("driver"),
+                                          PropertyList(UnorderedElementsAre(
+                                              UintIs("initial internal delay (ns)", 0),
+                                              UintIs("current internal delay (ns)", 0),
+                                              IntIs("time of latest internal delay change", 0),
+                                              UintIs("initial external delay (ns)", 0),
+                                              UintIs("current external delay (ns)", 0),
+                                              IntIs("time of latest external delay change", 0),
+                                              UintIs("driver transfer (bytes)", 0),
+                                              StringIs("name", "unknown"))))),
+                    })))))),
+          AllOf(NodeMatches(NameMatches("input devices")),
+                ChildrenMatch(UnorderedElementsAre(AllOf(
+                    NodeMatches(NameMatches("input_device")),
+                    ChildrenMatch(IsSupersetOf({
+                        NodeMatches(AllOf(NameMatches("driver"),
+                                          PropertyList(UnorderedElementsAre(
+                                              UintIs("initial internal delay (ns)", 0),
+                                              UintIs("current internal delay (ns)", 0),
+                                              IntIs("time of latest internal delay change", 0),
+                                              UintIs("initial external delay (ns)", 0),
+                                              UintIs("current external delay (ns)", 0),
+                                              IntIs("time of latest external delay change", 0),
+                                              UintIs("driver transfer (bytes)", 0),
+                                              StringIs("name", "unknown"))))),
+                    })))))),
+      })));
+
+  // For output device, update internal delay; external delay is unknown (and thus not updated).
+  const auto kChangeTime1 = 7654321ull;
+  const auto kIntDelay1 = 4321ull;
+  // For input device, update internal and external delays.
+  const auto kChangeTime2 = 1234ull;
+  const auto kIntDelay2 = 1234567ull;
+  const auto kExtDelay2 = 654321ull;
+
+  output_device->UpdateDelays(zx::time(kChangeTime1), zx::nsec(kIntDelay1), std::nullopt);
+  input_device->UpdateDelays(zx::time(kChangeTime2), zx::nsec(kIntDelay2), zx::nsec(kExtDelay2));
+
+  EXPECT_THAT(
+      GetHierarchy(),
+      ChildrenMatch(IsSupersetOf({
+          AllOf(
+              NodeMatches(NameMatches("output devices")),
+              ChildrenMatch(UnorderedElementsAre(AllOf(
+                  NodeMatches(NameMatches("output_device")),
+                  ChildrenMatch(IsSupersetOf({
+                      NodeMatches(AllOf(
+                          NameMatches("driver"),
+                          PropertyList(UnorderedElementsAre(
+                              UintIs("initial internal delay (ns)", 0),
+                              UintIs("current internal delay (ns)", kIntDelay1),
+                              IntIs("time of latest internal delay change", kChangeTime1),
+                              UintIs("initial external delay (ns)", 0),
+                              UintIs("current external delay (ns)", 0),
+                              IntIs("time of latest external delay change", 0),
+                              UintIs("driver transfer (bytes)", 0), StringIs("name", "unknown"))))),
+                  })))))),
+          AllOf(
+              NodeMatches(NameMatches("input devices")),
+              ChildrenMatch(UnorderedElementsAre(AllOf(
+                  NodeMatches(NameMatches("input_device")),
+                  ChildrenMatch(IsSupersetOf({
+                      NodeMatches(AllOf(
+                          NameMatches("driver"),
+                          PropertyList(UnorderedElementsAre(
+                              UintIs("initial internal delay (ns)", 0),
+                              UintIs("current internal delay (ns)", kIntDelay2),
+                              IntIs("time of latest internal delay change", kChangeTime2),
+                              UintIs("initial external delay (ns)", 0),
+                              UintIs("current external delay (ns)", kExtDelay2),
+                              IntIs("time of latest external delay change", kChangeTime2),
+                              UintIs("driver transfer (bytes)", 0), StringIs("name", "unknown"))))),
+                  })))))),
+      })));
+
+  // For output, update both delays at a time less than previous change. Internal delay should not
+  // change, but external delay should (its most recent value is the initial value at time 0).
+  const auto kChangeTime3 = 654321ull;  // < kChangeTime1
+  const auto kIntDelay3 = 54321ull;
+  const auto kExtDelay3 = 12345ull;
+  // For input, update internal delay only.
+  const auto kChangeTime4 = 12345678ull;
+  const auto kIntDelay4 = 123456ull;
+
+  output_device->UpdateDelays(zx::time(kChangeTime3), zx::nsec(kIntDelay3), zx::nsec(kExtDelay3));
+  input_device->UpdateDelays(zx::time(kChangeTime4), zx::nsec(kIntDelay4), std::nullopt);
+
+  EXPECT_THAT(
+      GetHierarchy(),
+      ChildrenMatch(IsSupersetOf({
+          AllOf(
+              NodeMatches(NameMatches("output devices")),
+              ChildrenMatch(UnorderedElementsAre(AllOf(
+                  NodeMatches(NameMatches("output_device")),
+                  ChildrenMatch(IsSupersetOf({
+                      NodeMatches(AllOf(
+                          NameMatches("driver"),
+                          PropertyList(UnorderedElementsAre(
+                              UintIs("initial internal delay (ns)", 0),
+                              UintIs("current internal delay (ns)", kIntDelay1),
+                              IntIs("time of latest internal delay change", kChangeTime1),
+                              UintIs("initial external delay (ns)", 0),
+                              UintIs("current external delay (ns)", kExtDelay3),
+                              IntIs("time of latest external delay change", kChangeTime3),
+                              UintIs("driver transfer (bytes)", 0), StringIs("name", "unknown"))))),
+                  })))))),
+          AllOf(
+              NodeMatches(NameMatches("input devices")),
+              ChildrenMatch(UnorderedElementsAre(AllOf(
+                  NodeMatches(NameMatches("input_device")),
+                  ChildrenMatch(IsSupersetOf({
+                      NodeMatches(AllOf(
+                          NameMatches("driver"),
+                          PropertyList(UnorderedElementsAre(
+                              UintIs("initial internal delay (ns)", 0),
+                              UintIs("current internal delay (ns)", kIntDelay4),
+                              IntIs("time of latest internal delay change", kChangeTime4),
+                              UintIs("initial external delay (ns)", 0),
+                              UintIs("current external delay (ns)", kExtDelay2),
+                              IntIs("time of latest external delay change", kChangeTime2),
+                              UintIs("driver transfer (bytes)", 0), StringIs("name", "unknown"))))),
+                  })))))),
+      })));
+}
+
+// Test methods that add and remove client ports.
 TEST_F(ReporterTest, AddRemoveClientPorts) {
   std::vector<Reporter::Container<Reporter::Renderer, Reporter::kObjectsToCache>::Ptr> renderers;
   std::vector<Reporter::Container<Reporter::Capturer, Reporter::kObjectsToCache>::Ptr> capturers;
@@ -418,13 +612,14 @@ TEST_F(ReporterTest, AddRemoveClientPorts) {
 
   EXPECT_THAT(
       GetHierarchyLazyValues(),
-      ChildrenMatch(IsSupersetOf(
-          {AllOf(NodeMatches(NameMatches("renderers")),
-                 ChildrenMatch(UnorderedElementsAre(NodeAlive("1"), NodeAlive("2"), NodeAlive("3"),
-                                                    NodeAlive("4"), NodeAlive("5")))),
-           AllOf(NodeMatches(NameMatches("capturers")),
-                 ChildrenMatch(UnorderedElementsAre(NodeAlive("1"), NodeAlive("2"), NodeAlive("3"),
-                                                    NodeAlive("4"), NodeAlive("5"))))})));
+      ChildrenMatch(IsSupersetOf({
+          AllOf(NodeMatches(NameMatches("renderers")),
+                ChildrenMatch(UnorderedElementsAre(NodeAlive("1"), NodeAlive("2"), NodeAlive("3"),
+                                                   NodeAlive("4"), NodeAlive("5")))),
+          AllOf(NodeMatches(NameMatches("capturers")),
+                ChildrenMatch(UnorderedElementsAre(NodeAlive("1"), NodeAlive("2"), NodeAlive("3"),
+                                                   NodeAlive("4"), NodeAlive("5")))),
+      })));
 
   renderers[0].Drop();
   renderers[1].Drop();
@@ -437,29 +632,31 @@ TEST_F(ReporterTest, AddRemoveClientPorts) {
 
   EXPECT_THAT(
       GetHierarchyLazyValues(),
-      ChildrenMatch(IsSupersetOf(
-          {AllOf(NodeMatches(NameMatches("renderers")),
-                 ChildrenMatch(UnorderedElementsAre(NodeDead("1"), NodeDead("2"), NodeDead("3"),
-                                                    NodeDead("4"), NodeAlive("5")))),
-           AllOf(NodeMatches(NameMatches("capturers")),
-                 ChildrenMatch(UnorderedElementsAre(NodeDead("1"), NodeDead("2"), NodeDead("3"),
-                                                    NodeDead("4"), NodeAlive("5"))))})));
+      ChildrenMatch(IsSupersetOf({
+          AllOf(NodeMatches(NameMatches("renderers")),
+                ChildrenMatch(UnorderedElementsAre(NodeDead("1"), NodeDead("2"), NodeDead("3"),
+                                                   NodeDead("4"), NodeAlive("5")))),
+          AllOf(NodeMatches(NameMatches("capturers")),
+                ChildrenMatch(UnorderedElementsAre(NodeDead("1"), NodeDead("2"), NodeDead("3"),
+                                                   NodeDead("4"), NodeAlive("5")))),
+      })));
 
   renderers[4].Drop();
   capturers[4].Drop();
 
   // Garbage collect [0].
   EXPECT_THAT(GetHierarchyLazyValues(),
-              ChildrenMatch(IsSupersetOf(
-                  {AllOf(NodeMatches(NameMatches("renderers")),
-                         ChildrenMatch(UnorderedElementsAre(NodeDead("2"), NodeDead("3"),
-                                                            NodeDead("4"), NodeDead("5")))),
-                   AllOf(NodeMatches(NameMatches("capturers")),
-                         ChildrenMatch(UnorderedElementsAre(NodeDead("2"), NodeDead("3"),
-                                                            NodeDead("4"), NodeDead("5"))))})));
+              ChildrenMatch(IsSupersetOf({
+                  AllOf(NodeMatches(NameMatches("renderers")),
+                        ChildrenMatch(UnorderedElementsAre(NodeDead("2"), NodeDead("3"),
+                                                           NodeDead("4"), NodeDead("5")))),
+                  AllOf(NodeMatches(NameMatches("capturers")),
+                        ChildrenMatch(UnorderedElementsAre(NodeDead("2"), NodeDead("3"),
+                                                           NodeDead("4"), NodeDead("5")))),
+              })));
 }
 
-// Tests methods that change renderer metrics.
+// Tests methods that change renderer metrics, that aren't tested in other cases.
 TEST_F(ReporterTest, RendererMetrics) {
   auto renderer = under_test_.CreateRenderer();
 
@@ -468,25 +665,41 @@ TEST_F(ReporterTest, RendererMetrics) {
       ChildrenMatch(Contains(AllOf(
           NodeMatches(NameMatches("renderers")),
           ChildrenMatch(UnorderedElementsAre(AllOf(
+              NodeMatches(AllOf(NameMatches("1"),
+                                PropertyList(UnorderedElementsAre(
+                                    UintIs("initial min lead time (ns)", 0),
+                                    UintIs("current min lead time (ns)", 0),
+                                    IntIs("time of latest min lead time change", 0),
+                                    StringIs("usage", "default"))))),
               ChildrenMatch(UnorderedElementsAre(
-                  NodeMatches(AllOf(NameMatches("underflows"),
-                                    PropertyList(UnorderedElementsAre(
-                                        UintIs("count", 0), UintIs("duration (ns)", 0),
-                                        UintIs("session count", 0))))),
                   NodeMatches(AllOf(NameMatches("format"),
                                     PropertyList(UnorderedElementsAre(
                                         StringIs("sample format", "unknown"), UintIs("channels", 0),
                                         UintIs("frames per second", 0))))),
-                  AllOf(NodeMatches(NameMatches("payload buffers")), ChildrenMatch(IsEmpty())))),
-              NodeMatches(AllOf(
-                  NameMatches("1"),
-                  PropertyList(UnorderedElementsAre(
-                      DoubleIs("gain db", 0.0), BoolIs("muted", false),
-                      UintIs("calls to SetGainWithRamp", 0), UintIs("min lead time (ns)", 0),
-                      DoubleIs("pts continuity threshold (s)", 0.0),
-                      UintIs("pts units denominator", 1), UintIs("pts units numerator", 1000000000),
-                      DoubleIs("final stream gain (post-volume) dbfs", 0),
-                      StringIs("usage", "default"))))))))))));
+                  NodeMatches(
+                      AllOf(NameMatches("gain"),
+                            PropertyList(UnorderedElementsAre(
+                                DoubleIs("gain db", 0.0), BoolIs("muted", false),
+                                UintIs("calls to SetGainWithRamp", 0),
+                                DoubleIs("complete stream gain (post-volume) dbfs", 0.0))))),
+                  NodeMatches(AllOf(NameMatches("presentation timestamps"),
+                                    PropertyList(UnorderedElementsAre(
+                                        DoubleIs("pts continuity threshold (s)", 0.0),
+                                        UintIs("pts units denominator", 1),
+                                        UintIs("pts units numerator", 1'000'000'000))))),
+                  AllOf(NodeMatches(NameMatches("payload buffers")), ChildrenMatch(IsEmpty())),
+                  NodeMatches(AllOf(NameMatches("packet queue underflows"),
+                                    PropertyList(UnorderedElementsAre(
+                                        UintIs("count", 0), UintIs("duration (ns)", 0),
+                                        UintIs("session count", 0))))),
+                  NodeMatches(AllOf(NameMatches("continuity underflows"),
+                                    PropertyList(UnorderedElementsAre(
+                                        UintIs("count", 0), UintIs("duration (ns)", 0),
+                                        UintIs("session count", 0))))),
+                  NodeMatches(AllOf(NameMatches("timestamp underflows"),
+                                    PropertyList(UnorderedElementsAre(
+                                        UintIs("count", 0), UintIs("duration (ns)", 0),
+                                        UintIs("session count", 0))))))))))))));
 
   renderer->SetUsage(RenderUsage::MEDIA);
   renderer->SetFormat(
@@ -496,22 +709,33 @@ TEST_F(ReporterTest, RendererMetrics) {
                          .frames_per_second = 48000,
                      })
           .take_value());
+
   renderer->AddPayloadBuffer(0, 4096);
   renderer->AddPayloadBuffer(10, 8192);
   renderer->SendPacket(fuchsia::media::StreamPacket{
       .payload_buffer_id = 10,
   });
+
   renderer->SetGain(-1.0);
-  renderer->SetGainWithRamp(-1.0, zx::sec(1), fuchsia::media::audio::RampType::SCALE_LINEAR);
-  renderer->SetGainWithRamp(-1.0, zx::sec(1), fuchsia::media::audio::RampType::SCALE_LINEAR);
   renderer->SetMute(true);
-  renderer->SetMinLeadTime(zx::nsec(1000000));
+  renderer->SetGainWithRamp(-1.0, zx::sec(1), fuchsia::media::audio::RampType::SCALE_LINEAR);
+  renderer->SetGainWithRamp(-1.0, zx::sec(1), fuchsia::media::audio::RampType::SCALE_LINEAR);
+  renderer->SetCompleteGain(-6.0);
+
   renderer->SetPtsContinuityThreshold(5.0);
   renderer->SetPtsUnits(1234567, 3);
-  renderer->SetFinalGain(-6.0);
 
   renderer->StartSession(zx::time(0));
-  renderer->Underflow(zx::time(10), zx::time(15));
+
+  renderer->PacketQueueUnderflow(zx::time(10), zx::time(15));
+
+  renderer->ContinuityUnderflow(zx::time(20), zx::time(30));
+  renderer->ContinuityUnderflow(zx::time(40), zx::time(50));
+
+  renderer->TimestampUnderflow(zx::time(0), zx::time(15));
+  renderer->TimestampUnderflow(zx::time(30), zx::time(45));
+  renderer->TimestampUnderflow(zx::time(60), zx::time(75));
+
   renderer->StopSession(zx::time(100));
 
   EXPECT_THAT(
@@ -519,36 +743,125 @@ TEST_F(ReporterTest, RendererMetrics) {
       ChildrenMatch(Contains(AllOf(
           NodeMatches(NameMatches("renderers")),
           ChildrenMatch(UnorderedElementsAre(AllOf(
+              NodeMatches(AllOf(NameMatches("1"),
+                                PropertyList(UnorderedElementsAre(
+                                    UintIs("initial min lead time (ns)", 0),
+                                    UintIs("current min lead time (ns)", 0),
+                                    IntIs("time of latest min lead time change", 0),
+                                    StringIs("usage", "RenderUsage::MEDIA"))))),
               ChildrenMatch(UnorderedElementsAre(
-                  NodeMatches(AllOf(NameMatches("underflows"),
-                                    PropertyList(UnorderedElementsAre(
-                                        UintIs("count", 1), UintIs("duration (ns)", 5),
-                                        UintIs("session count", 1))))),
                   NodeMatches(AllOf(
                       NameMatches("format"),
-                      PropertyList(UnorderedElementsAre(StringIs("sample format", "SIGNED_16"),
-                                                        UintIs("channels", 2),
-                                                        UintIs("frames per second", 48000))))),
+                      PropertyList(UnorderedElementsAre(
+                          StringIs("sample format", "SIGNED_16"), UintIs("channels", 2),
+                          UintIs("frames per second", 48000))))),
+                  NodeMatches(AllOf(
+                      NameMatches("gain"),
+                      PropertyList(UnorderedElementsAre(
+                          DoubleIs("gain db", -1.0), BoolIs("muted", true),
+                          UintIs("calls to SetGainWithRamp", 2),
+                          DoubleIs("complete stream gain (post-volume) dbfs", -6.0))))),
+                  NodeMatches(AllOf(NameMatches("presentation timestamps"),
+                                    PropertyList(UnorderedElementsAre(
+                                        DoubleIs("pts continuity threshold (s)", 5.0),
+                                        UintIs("pts units denominator", 3),
+                                        UintIs("pts units numerator", 1234567))))),
                   AllOf(NodeMatches(NameMatches("payload buffers")),
                         ChildrenMatch(UnorderedElementsAre(
                             NodeMatches(AllOf(NameMatches("0"),
                                               PropertyList(UnorderedElementsAre(
                                                   UintIs("size", 4096), UintIs("packets", 0))))),
-                            NodeMatches(AllOf(NameMatches("10"), PropertyList(UnorderedElementsAre(
-                                                                     UintIs("size", 8192),
-                                                                     UintIs("packets", 1)))))))))),
-              NodeMatches(AllOf(
-                  NameMatches("1"),
-                  PropertyList(UnorderedElementsAre(
-                      DoubleIs("gain db", -1.0), BoolIs("muted", true),
-                      UintIs("calls to SetGainWithRamp", 2), UintIs("min lead time (ns)", 1000000),
-                      DoubleIs("pts continuity threshold (s)", 5.0),
-                      UintIs("pts units denominator", 3), UintIs("pts units numerator", 1234567),
-                      DoubleIs("final stream gain (post-volume) dbfs", -6.0),
-                      StringIs("usage", "RenderUsage::MEDIA"))))))))))));
+                            NodeMatches(AllOf(NameMatches("10"),
+                                              PropertyList(UnorderedElementsAre(
+                                                  UintIs("size", 8192), UintIs("packets", 1)))))))),
+                  NodeMatches(AllOf(NameMatches("packet queue underflows"),
+                                    PropertyList(UnorderedElementsAre(
+                                        UintIs("count", 1), UintIs("duration (ns)", 5),
+                                        UintIs("session count", 1))))),
+                  NodeMatches(AllOf(NameMatches("continuity underflows"),
+                                    PropertyList(UnorderedElementsAre(
+                                        UintIs("count", 2), UintIs("duration (ns)", 20),
+                                        UintIs("session count", 1))))),
+                  NodeMatches(AllOf(NameMatches("timestamp underflows"),
+                                    PropertyList(UnorderedElementsAre(
+                                        UintIs("count", 3), UintIs("duration (ns)", 45),
+                                        UintIs("session count", 1))))))))))))));
 }
 
-// Tests methods that change capturer metrics.
+// Tests methods that change renderer minimum lead time metrics.
+TEST_F(ReporterTest, RendererMinLeadTime) {
+  auto renderer = under_test_.CreateRenderer();
+  EXPECT_THAT(GetHierarchy(),
+              ChildrenMatch(Contains(
+                  AllOf(NodeMatches(NameMatches("renderers")),
+                        ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
+                            NameMatches("1"), PropertyList(IsSupersetOf({
+                                                  UintIs("initial min lead time (ns)", 0),
+                                                  UintIs("current min lead time (ns)", 0),
+                                                  IntIs("time of latest min lead time change", 0),
+                                              }))))))))));
+
+  // SetInitialMinLeadTime is optional; UpdateMinLeadTime can be called immediately.
+  constexpr auto kCurrentMinLeadTime1 = 321ull;
+  constexpr auto kTimeOfMinLeadTimeChange1 = 123ll;
+  renderer->UpdateMinLeadTime(zx::nsec(kCurrentMinLeadTime1), zx::time(kTimeOfMinLeadTimeChange1));
+  EXPECT_THAT(GetHierarchy(),
+              ChildrenMatch(Contains(AllOf(
+                  NodeMatches(NameMatches("renderers")),
+                  ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
+                      NameMatches("1"),
+                      PropertyList(IsSupersetOf({
+                          UintIs("initial min lead time (ns)", 0),  // Retains value from ctor
+                          UintIs("current min lead time (ns)", kCurrentMinLeadTime1),
+                          IntIs("time of latest min lead time change", kTimeOfMinLeadTimeChange1),
+                      }))))))))));
+
+  // We expect the initial and current values to change, and the time-of-update to be reset.
+  constexpr auto kInitialMinLeadTime2 = 1'000'000ull;
+  renderer->SetInitialMinLeadTime(zx::nsec(kInitialMinLeadTime2));
+  EXPECT_THAT(
+      GetHierarchy(),
+      ChildrenMatch(Contains(AllOf(
+          NodeMatches(NameMatches("renderers")),
+          ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
+              NameMatches("1"), PropertyList(IsSupersetOf({
+                                    UintIs("initial min lead time (ns)", kInitialMinLeadTime2),
+                                    UintIs("current min lead time (ns)", kInitialMinLeadTime2),
+                                    IntIs("time of latest min lead time change", 0),  // Was reset
+                                }))))))))));
+
+  // We expect the current value and time-of-update value to change.
+  constexpr auto kCurrentMinLeadTime3 = 12'345'678ull;
+  constexpr auto kTimeOfMinLeadTimeChange3 = 987'654'321ll;
+  renderer->UpdateMinLeadTime(zx::nsec(kCurrentMinLeadTime3), zx::time(kTimeOfMinLeadTimeChange3));
+  EXPECT_THAT(GetHierarchy(),
+              ChildrenMatch(Contains(AllOf(
+                  NodeMatches(NameMatches("renderers")),
+                  ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
+                      NameMatches("1"),
+                      PropertyList(IsSupersetOf({
+                          UintIs("initial min lead time (ns)", kInitialMinLeadTime2),
+                          UintIs("current min lead time (ns)", kCurrentMinLeadTime3),
+                          IntIs("time of latest min lead time change", kTimeOfMinLeadTimeChange3),
+                      }))))))))));
+
+  // The time-of-update is before the previous one, so we expect no change.
+  constexpr auto kCurrentMinLeadTime4 = 1'234'567ull;
+  constexpr auto kTimeOfMinLeadTimeChange4 = 87'654'321ll;  // less than kTimeOfMinLeadTimeChange3
+  renderer->UpdateMinLeadTime(zx::nsec(kCurrentMinLeadTime4), zx::time(kTimeOfMinLeadTimeChange4));
+  EXPECT_THAT(GetHierarchy(),
+              ChildrenMatch(Contains(AllOf(
+                  NodeMatches(NameMatches("renderers")),
+                  ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
+                      NameMatches("1"),
+                      PropertyList(IsSupersetOf({
+                          UintIs("initial min lead time (ns)", kInitialMinLeadTime2),
+                          UintIs("current min lead time (ns)", kCurrentMinLeadTime3),
+                          IntIs("time of latest min lead time change", kTimeOfMinLeadTimeChange3),
+                      }))))))))));
+}
+
+// Tests methods that change capturer metrics, that aren't tested in other cases.
 TEST_F(ReporterTest, CapturerMetrics) {
   auto capturer = under_test_.CreateCapturer("thread");
 
@@ -557,23 +870,29 @@ TEST_F(ReporterTest, CapturerMetrics) {
       ChildrenMatch(Contains(AllOf(
           NodeMatches(NameMatches("capturers")),
           ChildrenMatch(UnorderedElementsAre(AllOf(
+              NodeMatches(AllOf(
+                  NameMatches("1"),
+                  PropertyList(UnorderedElementsAre(
+                      UintIs("initial presentation delay (ns)", 0),
+                      UintIs("current presentation delay (ns)", 0),
+                      IntIs("time of latest presentation delay change", 0),
+                      StringIs("usage", "default"), StringIs("mixer thread name", "thread"))))),
               ChildrenMatch(UnorderedElementsAre(
-                  NodeMatches(AllOf(NameMatches("overflows"),
-                                    PropertyList(UnorderedElementsAre(
-                                        UintIs("count", 0), UintIs("duration (ns)", 0),
-                                        UintIs("session count", 0))))),
                   NodeMatches(AllOf(NameMatches("format"),
                                     PropertyList(UnorderedElementsAre(
                                         StringIs("sample format", "unknown"), UintIs("channels", 0),
                                         UintIs("frames per second", 0))))),
-                  AllOf(NodeMatches(NameMatches("payload buffers")), ChildrenMatch(IsEmpty())))),
-              NodeMatches(AllOf(
-                  NameMatches("1"),
-                  PropertyList(UnorderedElementsAre(
-                      DoubleIs("gain db", 0.0), BoolIs("muted", false),
-                      UintIs("min fence time (ns)", 0), UintIs("calls to SetGainWithRamp", 0),
-                      StringIs("usage", "default"),
-                      StringIs("mixer thread name", "thread"))))))))))));
+                  NodeMatches(
+                      AllOf(NameMatches("gain"),
+                            PropertyList(UnorderedElementsAre(
+                                DoubleIs("gain db", 0.0), BoolIs("muted", false),
+                                UintIs("calls to SetGainWithRamp", 0),
+                                DoubleIs("complete stream gain (post-volume) dbfs", 0.0))))),
+                  AllOf(NodeMatches(NameMatches("payload buffers")), ChildrenMatch(IsEmpty())),
+                  NodeMatches(AllOf(NameMatches("overflows"),
+                                    PropertyList(UnorderedElementsAre(
+                                        UintIs("count", 0), UintIs("duration (ns)", 0),
+                                        UintIs("session count", 0))))))))))))));
 
   capturer->SetUsage(CaptureUsage::FOREGROUND);
   capturer->SetFormat(
@@ -583,47 +902,139 @@ TEST_F(ReporterTest, CapturerMetrics) {
                          .frames_per_second = 48000,
                      })
           .take_value());
+
   capturer->AddPayloadBuffer(0, 4096);
   capturer->AddPayloadBuffer(10, 8192);
   capturer->SendPacket(fuchsia::media::StreamPacket{
       .payload_buffer_id = 10,
   });
+
   capturer->SetGain(-1.0);
-  capturer->SetGainWithRamp(-1.0, zx::sec(1), fuchsia::media::audio::RampType::SCALE_LINEAR);
-  capturer->SetGainWithRamp(-1.0, zx::sec(1), fuchsia::media::audio::RampType::SCALE_LINEAR);
   capturer->SetMute(true);
-  capturer->SetMinFenceTime(zx::nsec(2'000'000));
+  capturer->SetGainWithRamp(-1.0, zx::sec(1), fuchsia::media::audio::RampType::SCALE_LINEAR);
+  capturer->SetGainWithRamp(-1.0, zx::sec(1), fuchsia::media::audio::RampType::SCALE_LINEAR);
+
+  capturer->StartSession(zx::time(0));
+
+  capturer->Overflow(zx::time(60), zx::time(65));
+
+  capturer->StopSession(zx::time(100));
 
   EXPECT_THAT(
       GetHierarchy(),
       ChildrenMatch(Contains(AllOf(
           NodeMatches(NameMatches("capturers")),
           ChildrenMatch(UnorderedElementsAre(AllOf(
+              NodeMatches(AllOf(NameMatches("1"),
+                                PropertyList(UnorderedElementsAre(
+                                    UintIs("initial presentation delay (ns)", 0),
+                                    UintIs("current presentation delay (ns)", 0),
+                                    IntIs("time of latest presentation delay change", 0),
+                                    StringIs("usage", "CaptureUsage::FOREGROUND"),
+                                    StringIs("mixer thread name", "thread"))))),
               ChildrenMatch(UnorderedElementsAre(
-                  NodeMatches(AllOf(NameMatches("overflows"),
-                                    PropertyList(UnorderedElementsAre(
-                                        UintIs("count", 0), UintIs("duration (ns)", 0),
-                                        UintIs("session count", 0))))),
                   NodeMatches(AllOf(
                       NameMatches("format"),
                       PropertyList(UnorderedElementsAre(StringIs("sample format", "SIGNED_16"),
                                                         UintIs("channels", 2),
                                                         UintIs("frames per second", 48000))))),
+                  NodeMatches(
+                      AllOf(NameMatches("gain"),
+                            PropertyList(UnorderedElementsAre(
+                                DoubleIs("gain db", -1.0), BoolIs("muted", true),
+                                UintIs("calls to SetGainWithRamp", 2),
+                                DoubleIs("complete stream gain (post-volume) dbfs", 0.0))))),
                   AllOf(NodeMatches(NameMatches("payload buffers")),
                         ChildrenMatch(UnorderedElementsAre(
                             NodeMatches(AllOf(NameMatches("0"),
                                               PropertyList(UnorderedElementsAre(
                                                   UintIs("size", 4096), UintIs("packets", 0))))),
-                            NodeMatches(AllOf(NameMatches("10"), PropertyList(UnorderedElementsAre(
-                                                                     UintIs("size", 8192),
-                                                                     UintIs("packets", 1)))))))))),
-              NodeMatches(
-                  AllOf(NameMatches("1"), PropertyList(UnorderedElementsAre(
-                                              DoubleIs("gain db", -1.0), BoolIs("muted", true),
-                                              UintIs("min fence time (ns)", 2'000'000),
-                                              UintIs("calls to SetGainWithRamp", 2),
-                                              StringIs("usage", "CaptureUsage::FOREGROUND"),
-                                              StringIs("mixer thread name", "thread"))))))))))));
+                            NodeMatches(AllOf(NameMatches("10"),
+                                              PropertyList(UnorderedElementsAre(
+                                                  UintIs("size", 8192), UintIs("packets", 1)))))))),
+                  NodeMatches(AllOf(NameMatches("overflows"),
+                                    PropertyList(UnorderedElementsAre(
+                                        UintIs("count", 1), UintIs("duration (ns)", 5),
+                                        UintIs("session count", 1))))))))))))));
+}
+
+// Tests methods that change capturer presentation delay metrics.
+TEST_F(ReporterTest, CapturerPresentationDelay) {
+  auto capturer = under_test_.CreateCapturer("capture_thread");
+  EXPECT_THAT(GetHierarchy(),
+              ChildrenMatch(Contains(AllOf(
+                  NodeMatches(NameMatches("capturers")),
+                  ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
+                      NameMatches("1"), PropertyList(IsSupersetOf({
+                                            UintIs("initial presentation delay (ns)", 0),
+                                            UintIs("current presentation delay (ns)", 0),
+                                            IntIs("time of latest presentation delay change", 0),
+                                        }))))))))));
+
+  // SetInitialPresentationDelay is optional; UpdatePresentationDelay can be called immediately.
+  constexpr auto kCurrentPresDelay1 = 432ull;
+  constexpr auto kTimeOfPresDelayChange1 = 234ll;
+  capturer->UpdatePresentationDelay(zx::nsec(kCurrentPresDelay1),
+                                    zx::time(kTimeOfPresDelayChange1));
+  EXPECT_THAT(
+      GetHierarchy(),
+      ChildrenMatch(Contains(
+          AllOf(NodeMatches(NameMatches("capturers")),
+                ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
+                    NameMatches("1"),
+                    PropertyList(IsSupersetOf({
+                        UintIs("initial presentation delay (ns)", 0),  // Retains value from ctor.
+                        UintIs("current presentation delay (ns)", kCurrentPresDelay1),
+                        IntIs("time of latest presentation delay change", kTimeOfPresDelayChange1),
+                    }))))))))));
+
+  // We expect the initial and current values to change, and the time-of-update to be reset.
+  constexpr auto kInitialPresentationDelay2 = 2'000'000ull;
+  capturer->SetInitialPresentationDelay(zx::nsec(kInitialPresentationDelay2));
+  EXPECT_THAT(GetHierarchy(),
+              ChildrenMatch(Contains(AllOf(
+                  NodeMatches(NameMatches("capturers")),
+                  ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
+                      NameMatches("1"),
+                      PropertyList(IsSupersetOf({
+                          UintIs("initial presentation delay (ns)", kInitialPresentationDelay2),
+                          UintIs("current presentation delay (ns)", kInitialPresentationDelay2),
+                          IntIs("time of latest presentation delay change", 0),  // Was reset
+                      }))))))))));
+
+  // We expect the current value and time-of-update value to change.
+  constexpr auto kCurrentPresDelay3 = 23'456'789ull;
+  constexpr auto kTimeOfPresDelayChange3 = 876'543'210ll;
+  capturer->UpdatePresentationDelay(zx::nsec(kCurrentPresDelay3),
+                                    zx::time(kTimeOfPresDelayChange3));
+  EXPECT_THAT(
+      GetHierarchy(),
+      ChildrenMatch(Contains(
+          AllOf(NodeMatches(NameMatches("capturers")),
+                ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
+                    NameMatches("1"),
+                    PropertyList(IsSupersetOf({
+                        UintIs("initial presentation delay (ns)", kInitialPresentationDelay2),
+                        UintIs("current presentation delay (ns)", kCurrentPresDelay3),
+                        IntIs("time of latest presentation delay change", kTimeOfPresDelayChange3),
+                    }))))))))));
+
+  // The time-of-update is before the previous one, so we expect no change.
+  constexpr auto kCurrentPresDelay4 = 2'345'678ull;
+  constexpr auto kTimeOfPresDelayChange4 = 76'543'210ll;  // Less than kTime...Change3
+  capturer->UpdatePresentationDelay(zx::nsec(kCurrentPresDelay4),
+                                    zx::time(kTimeOfPresDelayChange4));
+  EXPECT_THAT(
+      GetHierarchy(),
+      ChildrenMatch(Contains(
+          AllOf(NodeMatches(NameMatches("capturers")),
+                ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
+                    NameMatches("1"),
+                    PropertyList(IsSupersetOf({
+                        UintIs("initial presentation delay (ns)", kInitialPresentationDelay2),
+                        UintIs("current presentation delay (ns)", kCurrentPresDelay3),
+                        IntIs("time of latest presentation delay change", kTimeOfPresDelayChange3),
+                    }))))))))));
 }
 
 // Tests ThermalStateTracker methods.
@@ -665,7 +1076,7 @@ TEST_F(ReporterTest, SetThermalStateMetrics) {
                                                       UintIs("total duration (ns)", 0))))))))))));
 }
 
-// Tests caching of ThermalStates up to limit Reporter::kThermalStatesToCache == 8.
+// Test caching of ThermalStates up to limit Reporter::kThermalStatesToCache == 8.
 TEST_F(ReporterTest, CacheThermalStateTransitions) {
   // Reporter initializes thermal state to 0.
   under_test_.SetThermalState(1);  // ThermalState 2, first cached
@@ -685,45 +1096,63 @@ TEST_F(ReporterTest, CacheThermalStateTransitions) {
       ChildrenMatch(Contains(AllOf(
           NodeMatches(NameMatches("thermal state transitions")),
           ChildrenMatch(UnorderedElementsAre(
-              NodeMatches(AllOf(
-                  NameMatches("2"),
-                  PropertyList(IsSupersetOf({BoolIs("active", false), StringIs("state", "1")})),
-                  Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
-              NodeMatches(AllOf(
-                  NameMatches("3"),
-                  PropertyList(IsSupersetOf({BoolIs("active", false), StringIs("state", "2")})),
-                  Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
+              NodeMatches(AllOf(NameMatches("2"),
+                                PropertyList(IsSupersetOf({
+                                    BoolIs("active", false),
+                                    StringIs("state", "1"),
+                                })),
+                                Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
+              NodeMatches(AllOf(NameMatches("3"),
+                                PropertyList(IsSupersetOf({
+                                    BoolIs("active", false),
+                                    StringIs("state", "2"),
+                                })),
+                                Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
               NodeMatches(AllOf(NameMatches("4"),
-                                PropertyList(IsSupersetOf(
-                                    {BoolIs("active", false), StringIs("state", "normal")})),
+                                PropertyList(IsSupersetOf({
+                                    BoolIs("active", false),
+                                    StringIs("state", "normal"),
+                                })),
                                 Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
-              NodeMatches(AllOf(
-                  NameMatches("5"),
-                  PropertyList(IsSupersetOf({BoolIs("active", false), StringIs("state", "1")})),
-                  Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
-              NodeMatches(AllOf(
-                  NameMatches("6"),
-                  PropertyList(IsSupersetOf({BoolIs("active", false), StringIs("state", "2")})),
-                  Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
-              NodeMatches(AllOf(
-                  NameMatches("7"),
-                  PropertyList(IsSupersetOf({BoolIs("active", false), StringIs("state", "1")})),
-                  Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
-              NodeMatches(AllOf(
-                  NameMatches("8"),
-                  PropertyList(IsSupersetOf({BoolIs("active", false), StringIs("state", "2")})),
-                  Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
+              NodeMatches(AllOf(NameMatches("5"),
+                                PropertyList(IsSupersetOf({
+                                    BoolIs("active", false),
+                                    StringIs("state", "1"),
+                                })),
+                                Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
+              NodeMatches(AllOf(NameMatches("6"),
+                                PropertyList(IsSupersetOf({
+                                    BoolIs("active", false),
+                                    StringIs("state", "2"),
+                                })),
+                                Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
+              NodeMatches(AllOf(NameMatches("7"),
+                                PropertyList(IsSupersetOf({
+                                    BoolIs("active", false),
+                                    StringIs("state", "1"),
+                                })),
+                                Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
+              NodeMatches(AllOf(NameMatches("8"),
+                                PropertyList(IsSupersetOf({
+                                    BoolIs("active", false),
+                                    StringIs("state", "2"),
+                                })),
+                                Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
               NodeMatches(AllOf(NameMatches("9"),
-                                PropertyList(IsSupersetOf(
-                                    {BoolIs("active", false), StringIs("state", "normal")})),
+                                PropertyList(IsSupersetOf({
+                                    BoolIs("active", false),
+                                    StringIs("state", "normal"),
+                                })),
                                 Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
-              NodeMatches(AllOf(
-                  NameMatches("10"),
-                  PropertyList(IsSupersetOf({BoolIs("active", true), StringIs("state", "1")})),
-                  Not(PropertyList(Contains(UintIs("duration (ns)", 0))))))))))));
+              NodeMatches(AllOf(NameMatches("10"),
+                                PropertyList(IsSupersetOf({
+                                    BoolIs("active", true),
+                                    StringIs("state", "1"),
+                                })),
+                                Not(PropertyList(Contains(UintIs("duration (ns)", 0))))))))))));
 }
 
-// Tests VolumeControl methods.
+// Test VolumeControl methods.
 TEST_F(ReporterTest, VolumeControlMetrics) {
   auto volume_control = under_test_.CreateVolumeControl();
 
@@ -769,7 +1198,7 @@ TEST_F(ReporterTest, VolumeControlMetrics) {
                                                   DoubleIs("volume", 0.5)))))))))))))))));
 }
 
-// Tests methods that change audio policy metrics.
+// Test methods that change audio policy metrics.
 TEST_F(ReporterTest, AudioPolicyMetrics) {
   // Expect behavior gains to be logged, and initial active audio policy to have no active usages.
   under_test_.SetAudioPolicyBehaviorGain(

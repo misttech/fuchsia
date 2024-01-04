@@ -4,7 +4,7 @@
 
 use {
     anyhow::{Error, Result},
-    fidl_fuchsia_audio_ffxdaemon::DeviceSelector,
+    fidl_fuchsia_audio_controller::DeviceSelector,
     fidl_fuchsia_media::AudioSampleFormat,
     regex::Regex,
     std::io::{Cursor, Seek, SeekFrom, Write},
@@ -310,14 +310,26 @@ pub fn parse_duration(value: &str) -> Result<Duration, String> {
     }
 }
 
-// TODO(fxbug.dev/126775): Generalize to DAI & Codec types.
 pub fn path_for_selector(device_selector: &DeviceSelector) -> Result<String, Error> {
-    let input = device_selector
-        .is_input
-        .map(|is_input| if is_input { "input" } else { "output" })
-        .ok_or(anyhow::anyhow!("Input/output missing"))?;
+    let input = device_selector.is_input.map(|is_input| if is_input { "input" } else { "output" });
+
     let id = device_selector.id.clone().ok_or(anyhow::anyhow!("Device id missing"))?;
-    Ok(format!("/dev/class/audio-{}/{}", input, id))
+
+    match device_selector.device_type {
+        Some(device_type) => match device_type {
+            fidl_fuchsia_hardware_audio::DeviceType::StreamConfig => match input {
+                Some(input) => Ok(format!("/dev/class/audio-{}/{}", input, id)),
+                None => {
+                    Err(anyhow::anyhow!("Device direction not specified for StreamConfig device."))
+                }
+            },
+            fidl_fuchsia_hardware_audio::DeviceType::Composite => {
+                Ok(format!("/dev/class/audio-composite/{}", id))
+            }
+            _ => Err(anyhow::anyhow!("Unexpected device type.")),
+        },
+        None => Err(anyhow::anyhow!("Device type not specified.")),
+    }
 }
 
 pub fn device_id_for_path(path: &std::path::Path) -> Result<String> {
@@ -327,13 +339,13 @@ pub fn device_id_for_path(path: &std::path::Path) -> Result<String> {
     Ok(id_str.to_string())
 }
 
-pub fn str_to_clock(src: &str) -> Result<fidl_fuchsia_audio_ffxdaemon::ClockType, String> {
+pub fn str_to_clock(src: &str) -> Result<fidl_fuchsia_audio_controller::ClockType, String> {
     match src.to_lowercase().as_str() {
-        "flexible" => Ok(fidl_fuchsia_audio_ffxdaemon::ClockType::Flexible(
-            fidl_fuchsia_audio_ffxdaemon::Flexible,
+        "flexible" => Ok(fidl_fuchsia_audio_controller::ClockType::Flexible(
+            fidl_fuchsia_audio_controller::Flexible,
         )),
-        "monotonic" => Ok(fidl_fuchsia_audio_ffxdaemon::ClockType::Monotonic(
-            fidl_fuchsia_audio_ffxdaemon::Monotonic,
+        "monotonic" => Ok(fidl_fuchsia_audio_controller::ClockType::SystemMonotonic(
+            fidl_fuchsia_audio_controller::SystemMonotonic,
         )),
         _ => {
             let splits: Vec<&str> = src.split(",").collect();
@@ -348,8 +360,8 @@ pub fn str_to_clock(src: &str) -> Result<fidl_fuchsia_audio_ffxdaemon::ClockType
                     Err(_) => None,
                 };
 
-                Ok(fidl_fuchsia_audio_ffxdaemon::ClockType::Custom(
-                    fidl_fuchsia_audio_ffxdaemon::CustomClockConfig {
+                Ok(fidl_fuchsia_audio_controller::ClockType::Custom(
+                    fidl_fuchsia_audio_controller::CustomClockConfig {
                         rate_adjust,
                         offset,
                         ..Default::default()

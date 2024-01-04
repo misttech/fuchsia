@@ -37,12 +37,6 @@ class DwarfBinaryImpl final : public DwarfBinary {
 
   Err Load();
 
-  // These are invalid until Load() has completed successfully.
-  llvm::DWARFContext* context() { return context_.get(); }
-  llvm::object::ObjectFile* object_file() {
-    return static_cast<llvm::object::ObjectFile*>(binary_.get());
-  }
-
   // DwarfBinary implementation.
   std::string GetName() const override;
   std::string GetBuildID() const override;
@@ -53,10 +47,12 @@ class DwarfBinaryImpl final : public DwarfBinary {
   uint64_t GetMappedLength() const override;
   const std::map<std::string, llvm::ELF::Elf64_Sym>& GetELFSymbols() const override;
   const std::map<std::string, uint64_t> GetPLTSymbols() const override;
-  size_t GetUnitCount() const override;
-  fxl::RefPtr<DwarfUnit> GetUnitAtIndex(size_t i) override;
+  uint32_t GetNormalUnitCount() const override;
+  uint32_t GetDWOUnitCount() const override;
+  fxl::RefPtr<DwarfUnit> GetUnitAtIndex(UnitIndex i) override;
   fxl::RefPtr<DwarfUnit> UnitForRelativeAddress(uint64_t relative_address) override;
   std::optional<uint64_t> GetDebugAddrEntry(uint64_t addr_base, uint64_t index) const override;
+  llvm::DWARFDie GetLLVMDieAtOffset(uint64_t offset) const override;
 
  private:
   // Lazily creates a unit for us and returns it. This can handle null input pointers, which will

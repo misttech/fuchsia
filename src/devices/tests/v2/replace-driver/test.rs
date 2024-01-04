@@ -6,8 +6,7 @@ use {
     anyhow::{anyhow, Context, Error, Result},
     fidl::endpoints::DiscoverableProtocolMarker,
     fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_registrar as fdr,
-    fidl_fuchsia_driver_test as fdt, fidl_fuchsia_pkg as fp, fidl_fuchsia_reloaddriver_test as ft,
-    fuchsia_async as fasync,
+    fidl_fuchsia_driver_test as fdt, fidl_fuchsia_reloaddriver_test as ft, fuchsia_async as fasync,
     fuchsia_component::server::ServiceFs,
     fuchsia_component_test::{ChildOptions, LocalComponentHandles, RealmBuilder},
     fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance},
@@ -47,12 +46,12 @@ fn send_get_device_info_request(
     service: &fdd::DriverDevelopmentProxy,
     device_filter: &[String],
     exact_match: bool,
-) -> Result<fdd::DeviceInfoIteratorProxy> {
+) -> Result<fdd::NodeInfoIteratorProxy> {
     let (iterator, iterator_server) =
-        fidl::endpoints::create_proxy::<fdd::DeviceInfoIteratorMarker>()?;
+        fidl::endpoints::create_proxy::<fdd::NodeInfoIteratorMarker>()?;
 
     service
-        .get_device_info(device_filter, iterator_server, exact_match)
+        .get_node_info(device_filter, iterator_server, exact_match)
         .context("FIDL call to get device info failed")?;
 
     Ok(iterator)
@@ -62,7 +61,7 @@ async fn get_device_info(
     service: &fdd::DriverDevelopmentProxy,
     device_filter: &[String],
     exact_match: bool,
-) -> Result<Vec<fdd::DeviceInfo>> {
+) -> Result<Vec<fdd::NodeInfo>> {
     let iterator = send_get_device_info_request(service, device_filter, exact_match)?;
 
     let mut device_infos = Vec::new();
@@ -109,11 +108,16 @@ async fn test_replace_target() -> Result<()> {
     ];
 
     // Start the DriverTestRealm.
+    // The drivers listed in driver_disable are unavailable at first, but when they go through
+    // the register flow, they will be available as ephemeral drivers.
     let args = fdt::RealmArgs {
         root_driver: Some("fuchsia-boot:///#meta/root.cm".to_string()),
         use_driver_framework_v2: Some(true),
         offers: Some(offers),
-        driver_disable: Some(vec!["fuchsia-boot:///#meta/target_2_replacement.cm".to_string()]),
+        driver_disable: Some(vec![
+            "fuchsia-boot:///#meta/target_2_replacement.cm".to_string(),
+            "fuchsia-boot:///#meta/composite_replacement.cm".to_string(),
+        ]),
         ..Default::default()
     };
     instance.driver_test_realm_start(args).await?;
@@ -148,16 +152,14 @@ async fn test_replace_target() -> Result<()> {
     reloadtest_tools::validate_host_koids("init", device_infos, &mut nodes, vec![], None).await?;
 
     // Let's disable the first target driver.
-    let target_1_url =
-        fp::PackageUrl { url: "fuchsia-boot:///#meta/target_1_no_colocate.cm".to_string() };
+    let target_1_url = "fuchsia-boot:///#meta/target_1_no_colocate.cm";
     let disable_result = driver_dev.disable_match_with_driver_url(&target_1_url).await;
     if disable_result.is_err() {
         return Err(anyhow!("Failed to disable target_1_no_colocate."));
     }
     // Now we can restart the first target driver with the rematch flag.
-    let restart_result = driver_dev
-        .restart_driver_hosts(target_1_url.url.as_str(), fdd::RematchFlags::REQUESTED)
-        .await?;
+    let restart_result =
+        driver_dev.restart_driver_hosts(target_1_url, fdd::RematchFlags::REQUESTED).await?;
     if restart_result.is_err() {
         return Err(anyhow!("Failed to restart target_1."));
     }
@@ -189,15 +191,14 @@ async fn test_replace_target() -> Result<()> {
     .await?;
 
     // Now let's disable the second target driver.
-    let target_2_url = fp::PackageUrl { url: "fuchsia-boot:///#meta/target_2.cm".to_string() };
+    let target_2_url = "fuchsia-boot:///#meta/target_2.cm";
     let disable_2_result = driver_dev.disable_match_with_driver_url(&target_2_url).await;
     if disable_2_result.is_err() {
         return Err(anyhow!("Failed to disable target_2."));
     }
     // Now we can restart the second target driver with the rematch flag.
-    let restart_result = driver_dev
-        .restart_driver_hosts(target_2_url.url.as_str(), fdd::RematchFlags::REQUESTED)
-        .await?;
+    let restart_result =
+        driver_dev.restart_driver_hosts(target_2_url, fdd::RematchFlags::REQUESTED).await?;
     if restart_result.is_err() {
         return Err(anyhow!("Failed to restart target_2."));
     }
@@ -227,11 +228,9 @@ async fn test_replace_target() -> Result<()> {
     .await?;
 
     // Now we can register our target_2 replacement.
-    let target_2_replacemnt_url = fp::PackageUrl {
-        url: "fuchsia-pkg://fuchsia.com/target_2_replacement#meta/target_2_replacement.cm"
-            .to_string(),
-    };
-    let register_result = driver_registrar.register(&target_2_replacemnt_url).await;
+    let target_2_replacemnt_url =
+        "fuchsia-pkg://fuchsia.com/target_2_replacement#meta/target_2_replacement.cm";
+    let register_result = driver_registrar.register(target_2_replacemnt_url).await;
     match register_result {
         Ok(Ok(())) => {}
         Ok(Err(err)) => {
@@ -273,6 +272,120 @@ async fn test_replace_target() -> Result<()> {
         &mut nodes_after_register,
         vec![&nodes_after_restart_2, &nodes_after_restart, &nodes],
         Some(&should_not_exist_after_register),
+    )
+    .await?;
+
+    // Now let's disable the composite driver.
+    let composite_url = "fuchsia-boot:///#meta/composite.cm";
+    let disable_2_result = driver_dev.disable_match_with_driver_url(&composite_url).await;
+    if disable_2_result.is_err() {
+        return Err(anyhow!("Failed to disable composite."));
+    }
+
+    // Now we can restart the composite driver with the rematch flag.
+    let restart_result = driver_dev
+        .restart_driver_hosts(
+            composite_url,
+            fdd::RematchFlags::REQUESTED | fdd::RematchFlags::COMPOSITE_SPEC,
+        )
+        .await?;
+    if restart_result.is_err() {
+        return Err(anyhow!("Failed to restart composite."));
+    }
+
+    // There are no new nodes after restarting the composite.
+    let mut nodes_after_restart_composite: HashMap<String, Option<Option<u64>>> = HashMap::new();
+
+    // Wait until H (the composite node) goes away.
+    loop {
+        let device_infos = get_device_info(&driver_dev, &[], /* exact_match= */ true).await?;
+        if !device_infos.iter().any(|info| {
+            let moniker = info
+                .versioned_info
+                .as_ref()
+                .and_then(|info| match &info {
+                    fdd::VersionedNodeInfo::V2(v2_info) => Some(v2_info.moniker.clone()),
+                    _ => None,
+                })
+                .unwrap();
+            let name = moniker.unwrap().split(".").last().unwrap().to_string();
+            return name == "H".to_string();
+        }) {
+            break;
+        }
+    }
+
+    // At this point we should have lost the following nodes as we have disabled the composite
+    // driver for 'H' and don't have a replacement driver yet.
+    let should_not_exist_after_restart_composite =
+        HashSet::from(["H".to_string(), "J".to_string(), "K".to_string()]);
+
+    // Run validations.
+    let device_infos = get_device_info(&driver_dev, &[], /* exact_match= */ true).await?;
+    reloadtest_tools::validate_host_koids(
+        "composite restart",
+        device_infos,
+        &mut nodes_after_restart_composite,
+        vec![&nodes_after_register, &nodes_after_restart_2, &nodes_after_restart, &nodes],
+        Some(&should_not_exist_after_restart_composite),
+    )
+    .await?;
+
+    // Now we can register our composite replacement.
+    let composite_replacemnt_url =
+        "fuchsia-pkg://fuchsia.com/composite_replacement#meta/composite_replacement.cm";
+    let register_result = driver_registrar.register(composite_replacemnt_url).await;
+    match register_result {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => {
+            return Err(anyhow!("Failed to register composite replacement: {}.", err));
+        }
+        Err(err) => {
+            return Err(anyhow!("Failed to register composite replacement: {}.", err));
+        }
+    };
+    // And now that we have registered the replacement we call to bind all available nodes.
+    let bind_result = driver_dev.bind_all_unbound_nodes().await;
+    match bind_result {
+        Ok(Ok(_)) => {}
+        Ok(Err(err)) => {
+            return Err(anyhow!("Failed to bind_all_unbound_nodes: {}.", err));
+        }
+        Err(err) => {
+            return Err(anyhow!("Failed to bind_all_unbound_nodes: {}.", err));
+        }
+    };
+
+    // These are the nodes we should get started now that we have the replacement in for the composite.
+    let mut nodes_after_register_composite = HashMap::from([
+        ("H".to_string(), None),
+        ("J_replaced".to_string(), None),
+        ("Y".to_string(), None),
+    ]);
+
+    // Wait for them to come up.
+    reloadtest_tools::wait_for_nodes(&mut nodes_after_register_composite, &mut receiver).await?;
+
+    // These should not exist after our register call for the composite replacement.
+    let should_not_exist_after_register_composite =
+        HashSet::from(["K".to_string(), "J".to_string(), "H".to_string()]);
+
+    // Collect the newer driver host koids.
+    // Ensure same koid if not one of the ones expected to restart (comparing to most recent one).
+    // Make sure the host koid has changed from before the register.
+    let device_infos = get_device_info(&driver_dev, &[], /* exact_match= */ true).await?;
+    reloadtest_tools::validate_host_koids(
+        "register composite",
+        device_infos,
+        &mut nodes_after_register_composite,
+        vec![
+            &nodes_after_restart_composite,
+            &nodes_after_register,
+            &nodes_after_restart_2,
+            &nodes_after_restart,
+            &nodes,
+        ],
+        Some(&should_not_exist_after_register_composite),
     )
     .await?;
 

@@ -2,22 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
-    ],
+    include: [ "//src/graphics/drivers/msd-arm-mali/meta/msd_arm_dfv2.shard.cml" ],
     program: {
-        runner: "driver",
-        binary: "driver/libmsd_arm_dfv2.so",
+        binary: "driver/msd_arm_dfv2.so",
         bind: "meta/bind/msd_arm_bind.bindbc",
-        colocate: "true",
-        default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
-    use: [
-        { protocol: "fuchsia.kernel.InfoResource" },
-        { protocol: "fuchsia.scheduler.ProfileProvider" },
-        { service: "fuchsia.hardware.gpu.mali.Service" },
-        { service: "fuchsia.hardware.platform.device.Service" },
-    ],
 }

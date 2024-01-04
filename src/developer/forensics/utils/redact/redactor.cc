@@ -23,10 +23,6 @@ constexpr std::string_view kUuidPattern =
 // http(s) urls
 constexpr std::string_view kUrlPattern = R"(https?://[^"',!<> ]*)";
 
-// The SSID identifier contains at most 32 pairs of hexadecimal characters, but match any number so
-// SSID identifiers with the wrong number of hexadecimal characters are also redacted.
-constexpr std::string_view kSsidPattern = R"((<ssid-[0-9a-fA-F]*>))";
-
 // Long hex strings
 constexpr std::string_view kHexPattern = R"((\b[0-9a-fA-F]{32}\b))";
 
@@ -47,6 +43,9 @@ IPv6C: fec8::7d84:c1dc:ab34:656a,
 IPv6LL: fe80::7d84:c1dc:ab34:656a,
 UUID: ddd0fA34-1016-11eb-adc1-0242ac120002,
 MAC: de:ad:BE:EF:42:5a,
+MAC_dashes: de-ad-BE-EF-42-5a,
+MAC_dots: de.ad.BE.EF.42.5a,
+MAC_mixed: de.ad-BE:EF.42-5a,
 SSID: <ssid-666F6F>,
 HTTP: http://fuchsia.dev/fuchsia/testing?q=Test,
 HTTPS: https://fuchsia.dev/fuchsia/testing?q=Test,
@@ -79,6 +78,9 @@ IPv6C: <REDACTED-IPV6: 7>,
 IPv6LL: fe80:<REDACTED-IPV6-LL: 8>,
 UUID: <REDACTED-UUID>,
 MAC: de:ad:BE:<REDACTED-MAC: 13>,
+MAC_dashes: de-ad-BE-<REDACTED-MAC: 13>,
+MAC_dots: de.ad.BE.<REDACTED-MAC: 13>,
+MAC_mixed: de.ad-BE:<REDACTED-MAC: 13>,
 SSID: <REDACTED-SSID: 14>,
 HTTP: <REDACTED-URL>,
 HTTPS: <REDACTED-URL>,
@@ -108,13 +110,14 @@ Redactor::Redactor(const int starting_id, inspect::UintProperty cache_size,
   Add(ReplaceIPv4())
       .Add(ReplaceIPv6())
       .Add(ReplaceMac())
+      .Add(ReplaceSsid())
       .AddJsonReplacer(ReplaceIPv4())
       .AddJsonReplacer(ReplaceIPv6())
-      .AddJsonReplacer(ReplaceMacNoHash())
+      .AddJsonReplacer(ReplaceMac())
+      .AddJsonReplacer(ReplaceSsid())
       .AddTextReplacer(kUrlPattern, "<REDACTED-URL>")
       .AddTextReplacer(kEmailPattern, "<REDACTED-EMAIL>")
       .AddTextReplacer(kUuidPattern, "<REDACTED-UUID>")
-      .AddIdReplacer(kSsidPattern, "<REDACTED-SSID: %d>")
       .AddIdReplacer(kHexPattern, "<REDACTED-HEX: %d>")
       .AddIdReplacer(kGaiaPattern, "<REDACTED-OBFUSCATED-GAIA-ID: %d>");
 }

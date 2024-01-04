@@ -16,7 +16,7 @@ rustc_library("format-utils") {
   edition = "2021"
 
   deps = [
-    "//sdk/fidl/fuchsia.audio.ffxdaemon:fuchsia.audio.ffxdaemon_rust",
+    "//sdk/fidl/fuchsia.audio.controller:fuchsia.audio.controller_rust",
     "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_rust",
     "//sdk/fidl/fuchsia.media:fuchsia.media_rust",
     "//third_party/rust_crates:anyhow",
@@ -25,6 +25,20 @@ rustc_library("format-utils") {
   ]
 
   sources = [ "src/format.rs" ]
+}
+
+rustc_library("listener-utils") {
+  name = "listener-utils"
+  source_root = "src/lib.rs"
+  version = "0.1.0"
+  edition = "2021"
+  deps = [
+    "//sdk/fidl/fuchsia.audio.controller:fuchsia.audio.controller_rust",
+    "//src/lib/fidl/rust/fidl",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:futures",
+  ]
+  sources = [ "src/lib.rs" ]
 }
 
 rustc_binary("bin") {
@@ -37,13 +51,13 @@ rustc_binary("bin") {
 
   deps = [
     ":format-utils",
-    "//sdk/fidl/fuchsia.audio.ffxdaemon:fuchsia.audio.ffxdaemon_rust",
+    ":listener-utils",
+    "//sdk/fidl/fuchsia.audio.controller:fuchsia.audio.controller_rust",
     "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.media:fuchsia.media_rust",
     "//sdk/fidl/fuchsia.media.audio:fuchsia.media.audio_rust",
     "//sdk/fidl/fuchsia.ultrasound:fuchsia.ultrasound_rust",
-    "//sdk/fidl/fuchsia.virtualaudio:fuchsia.virtualaudio_rust",
     "//src/lib/diagnostics/inspect/runtime/rust",
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fdio/rust:fdio",
@@ -54,8 +68,10 @@ rustc_binary("bin") {
     "//src/lib/fuchsia-fs",
     "//src/lib/fuchsia-runtime",
     "//src/lib/zircon/rust:fuchsia-zircon",
+    "//src/lib/zircon/rust:fuchsia-zircon-status",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-lock",
+    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:byteorder",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:hound",
@@ -63,6 +79,7 @@ rustc_binary("bin") {
 
   sources = [
     "src/device.rs",
+    "src/error.rs",
     "src/main.rs",
     "src/ring_buffer.rs",
     "src/socket.rs",

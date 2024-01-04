@@ -6,7 +6,7 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use errors::{ffx_bail, ffx_error};
 use ffx_inspect_args::{InspectCommand, InspectSubCommand};
-use fho::{deferred, moniker, Deferred, FfxMain, FfxTool, MachineWriter, ToolIO};
+use fho::{deferred, toolbox_or, Deferred, FfxMain, FfxTool, MachineWriter, ToolIO};
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use fidl_fuchsia_diagnostics_host::ArchiveAccessorProxy;
 use iquery::commands::{
@@ -28,7 +28,7 @@ fho::embedded_plugin!(InspectTool);
 pub struct InspectTool {
     #[command]
     cmd: InspectCommand,
-    #[with(deferred(moniker("/bootstrap/archivist")))]
+    #[with(deferred(toolbox_or("bootstrap/archivist")))]
     archive_accessor: Deferred<ArchiveAccessorProxy>,
     rcs: Deferred<RemoteControlProxy>,
 }
@@ -39,10 +39,20 @@ impl FfxMain for InspectTool {
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let Self { rcs, archive_accessor, cmd } = self;
-        let (Ok(rcs), Ok(archive_accessor)) =
-            futures::future::join(rcs, archive_accessor).await else {
-                ffx_bail!("Failed to connect to necessary Remote Control protocols")
-            };
+        let (rcs, archive_accessor) = match futures::future::join(rcs, archive_accessor).await {
+            (Ok(rcs), Ok(archive_accessor)) => (rcs, archive_accessor),
+            (rcs_res, accessor_res) => {
+                let mut msg =
+                    "Failed to connect to necessary Remote Control protocols.".to_string();
+                if let Err(rcs_err) = rcs_res {
+                    msg.push_str(&format!("\nRemoteControl: {rcs_err:?}"));
+                }
+                if let Err(accessor_err) = accessor_res {
+                    msg.push_str(&format!("\nArchiveAccessor: {accessor_err:?}"));
+                }
+                ffx_bail!("{msg}");
+            }
+        };
         match cmd.sub_command {
             InspectSubCommand::ApplySelectors(cmd) => {
                 apply_selectors::execute(rcs, archive_accessor, cmd).await?;

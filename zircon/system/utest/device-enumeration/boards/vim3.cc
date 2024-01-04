@@ -13,18 +13,20 @@ TEST_F(DeviceEnumerationTest, Vim3Test) {
       "sys/platform/00:00:1e/dw-dsi",
 
       "sys/platform/05:06:1/aml-gpio",
+      "sys/platform/05:06:1/aml-gpio/gpio-init",
       "sys/platform/05:06:14/clocks",
-      "sys/platform/05:00:2/aml-i2c",
-      "sys/platform/05:00:2:2/aml-i2c",
-      "sys/platform/05:00:2/aml-i2c/i2c/i2c-0-81/rtc",
-      "sys/platform/05:00:2:2/aml-i2c/i2c/i2c-2-50",
-      "sys/platform/05:06:12:1/audio-pcm-out-composite-spec/vim3-audio-tdm1-out",
-      "sys/platform/05:06:12:2/audio-i2s-out-composite-spec/vim3-audio-tdm1-out",
-      "sys/platform/05:06:12:3/audio-pcm-in-composite-spec/vim3-audio-tdm1-in",
-      "sys/platform/05:06:12:4/audio-i2s-in-composite-spec/vim3-audio-tdm1-in",
+      "sys/platform/05:06:14/clocks/clock-init",
+      "sys/platform/05:00:2/i2c-0/aml-i2c",
+      "sys/platform/05:00:2:2/i2c-2/aml-i2c",
+      "sys/platform/05:00:2:2/i2c-2/aml-i2c/i2c/i2c-2-50",
+      "sys/platform/05:06:37/audio-composite-composite-spec/aml-g12-audio-composite",
       "sys/platform/05:06:9/ethernet_mac/aml-ethernet/dwmac/dwmac/eth_phy/phy_null_device",
 
+      // bt-transport-uart is not included in bootfs on vim3.
+      "sys/platform/05:00:3/bluetooth-composite-spec/aml-uart",
       // TODO(b/291154545): Add bluetooth paths when firmware is publicly available.
+      // "sys/platform/05:00:3/bluetooth-composite-spec/aml-uart/bt-transport-uart/bt-hci-broadcom",
+
       // TODO(https://fxbug.dev/117539): Update topopath when dwmac is off
       // netdevice migration.
       "sys/platform/05:06:9/ethernet_mac/aml-ethernet/dwmac/dwmac/Designware-MAC/netdevice-migration/network-device",
@@ -32,14 +34,10 @@ TEST_F(DeviceEnumerationTest, Vim3Test) {
       "sys/platform/05:00:7/aml_sd/aml-sd-emmc/sdmmc",
       "sys/platform/05:00:6/vim3-sdio/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-1",
       "sys/platform/05:00:6/vim3-sdio/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-2",
-      "sys/platform/05:00:6/vim3-sdio/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-1/wifi/brcmfmac-wlanphy",
-      "sys/platform/05:00:6/vim3-sdio/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-1/wifi/brcmfmac-wlanphy/wlanphy",
       "sys/platform/05:06:1c/aml_nna",
       "sys/platform/00:00:29",  // registers device
-      "sys/platform/05:06:17/aml-gpu-composite/aml-gpu",
       "sys/platform/05:00:10/aml-canvas",
       "sys/platform/00:00:1e/dw-dsi/display/amlogic-display/display-coordinator",
-      "sys/platform/05:06:2b/aml-hdmi",
       "sys/platform/05:06:1d",  // pwm
       "sys/platform/05:06:1d/aml-pwm-device/pwm-9/vreg/pwm-0-regulator",
       "sys/platform/05:06:1d/aml-pwm-device/pwm-9/vreg/pwm-9-regulator",
@@ -50,18 +48,24 @@ TEST_F(DeviceEnumerationTest, Vim3Test) {
 
       // CPU devices.
       "sys/platform/05:06:1e",
-      "sys/platform/05:06:26/aml-power-impl-composite/power-impl/pd-big-core/power-0/aml-cpu/a311d-arm-a73",
-      "sys/platform/05:06:26/aml-power-impl-composite/power-impl/pd-big-core/power-0/aml-cpu/a311d-arm-a53",
+      "sys/platform/05:06:26/aml-power-impl-composite/power-impl/pd-big-core/power-0/aml_cpu/a311d-arm-a73",
+      "sys/platform/05:06:26/aml-power-impl-composite/power-impl/pd-big-core/power-0/aml_cpu/a311d-arm-a53",
 
-      "sys/platform/05:00:2/aml-i2c/i2c/i2c-0-34/fusb302",
+      "sys/platform/05:06:1/aml-gpio/gpio-93/fusb302",
 
       // USB
       "sys/platform/05:03:2d/vim3_usb_phy",
-      "sys/platform/05:03:2d/vim3_usb_phy/vim3_usb_phy/dwc2/dwc2/dwc2/usb-peripheral/function-000/cdc-eth-function",
-      "sys/platform/05:03:2d/vim3_usb_phy/vim3_usb_phy/xhci/xhci",
+      "sys/platform/05:03:2d/vim3_usb_phy/vim3_usb_phy/dwc2/dwc2_phy/dwc2/usb-peripheral/function-000/cdc-eth-function",
+      "sys/platform/05:03:2d/vim3_usb_phy/vim3_usb_phy/xhci",
+      "sys/platform/00:00:2/xhci-phy/xhci",
 
       // USB 2.0 Hub
-      "sys/platform/05:03:2d/vim3_usb_phy/vim3_usb_phy/xhci/xhci/xhci/usb-bus/000/usb-hub",
+      // Ignored because we've had a spate of vim3 devices that seem to have
+      // broken or flaky root hubs, and we don't make use of the XHCI bus in
+      // any way so we'd rather ignore such failures than cause flakiness or
+      // have to remove more devices from the fleet.
+      // See b/296738636 for more information.
+      // "sys/platform/05:03:2d/vim3_usb_phy/vim3_usb_phy/xhci/xhci/xhci/usb-bus/000/usb-hub",
 
       // Thermal
       "sys/platform/05:06:28",
@@ -69,18 +73,39 @@ TEST_F(DeviceEnumerationTest, Vim3Test) {
       "class/thermal/000",
 
       // GPIO
-      "sys/platform/05:00:2/aml-i2c/i2c/i2c-0-32/gpio-expander/ti-tca6408a/gpio-107",
+      "sys/platform/05:00:2/i2c-0/aml-i2c/i2c/i2c-0-32/gpio-expander/ti-tca6408a/gpio-107",
 
       // Touch panel
       //
       // i2c device
-      "sys/platform/05:00:2:2/aml-i2c/i2c/i2c-2-56",
+      "sys/platform/05:00:2:2/i2c-2/aml-i2c/i2c/i2c-2-56",
       // interrupt pin
       "sys/platform/05:06:1/aml-gpio/gpio-21",
       // reset pin
-      "sys/platform/05:00:2/aml-i2c/i2c/i2c-0-32/gpio-expander/ti-tca6408a/gpio-106",
+      "sys/platform/05:00:2/i2c-0/aml-i2c/i2c/i2c-0-32/gpio-expander/ti-tca6408a/gpio-106",
 
-      "sys/platform/05:00:2/aml-i2c/i2c/i2c-0-24/vim3-mcu",
+      "sys/platform/05:00:2/i2c-0/aml-i2c/i2c/i2c-0-24/vim3-mcu",
+
+      // ADC
+      "sys/platform/05:00:38/aml-saradc",
+
+      // Button
+      "sys/platform/00:00:35/function-button/adc-buttons",
+
+#ifdef include_packaged_drivers
+
+      // RTC
+      "sys/platform/05:00:2/i2c-0/aml-i2c/i2c/i2c-0-81/rtc",
+
+      // WLAN
+      "sys/platform/05:00:6/vim3-sdio/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-1/wifi/brcmfmac-wlanphy",
+      "sys/platform/05:00:6/vim3-sdio/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-1/wifi/brcmfmac-wlanphy/wlanphy",
+
+      // GPU
+      "sys/platform/05:06:17/aml-gpu-composite/aml-gpu",
+
+#endif
+
   };
 
   ASSERT_NO_FATAL_FAILURE(TestRunner(kDevicePaths, std::size(kDevicePaths)));

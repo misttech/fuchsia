@@ -77,6 +77,8 @@ pub fn cfg_to_gn_conditional(cfg: &str) -> Result<String> {
             }
         }
         Err(anyhow!("bad not statement"))
+    } else if cfg == "any()" {
+        Ok(String::from("true"))
     } else if cfg.starts_with("any") {
         let section = &cfg[4..cfg.len()];
         let mut accum = vec![];
@@ -158,6 +160,8 @@ pub fn cfg_to_gn_conditional(cfg: &str) -> Result<String> {
         Ok(String::from("false"))
     } else if cfg.starts_with("tracing_unstable") {
         Ok(String::from("false"))
+    } else if cfg.starts_with("docsrs") {
+        Ok(String::from("false"))
     } else {
         // TODO(http://fxbug.dev/109855) better handling needed for these cases.
         Err(anyhow!("Unknown cfg option used: {}", cfg))
@@ -169,6 +173,13 @@ fn basic_fuchsia() {
     let cfg_str = r#"cfg(target_os = "fuchsia")"#;
     let output = cfg_to_gn_conditional(cfg_str).unwrap();
     assert_eq!(output, "current_os == \"fuchsia\"");
+}
+
+#[test]
+fn conditonal_empty_any() {
+    let cfg_str = r#"cfg(any())"#;
+    let output = cfg_to_gn_conditional(cfg_str).unwrap();
+    assert_eq!(output, "true");
 }
 
 #[test]

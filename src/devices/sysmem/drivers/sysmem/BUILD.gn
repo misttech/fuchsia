@@ -22,7 +22,6 @@ driver_bind_rules("sysmem_bind") {
   tests = "bind_tests.json"
   deps = [
     "//src/devices/bind/fuchsia.devicetree",
-    "//src/devices/bind/fuchsia.hardware.platform.device",
     "//src/devices/bind/fuchsia.platform",
   ]
 }
@@ -37,6 +36,7 @@ source_set("sysmem_common_srcs") {
     "device.cc",
     "driver.cc",
     "external_memory_allocator.cc",
+    "indent.cc",
     "koid_util.cc",
     "logging.cc",
     "logical_buffer_collection.cc",
@@ -58,16 +58,15 @@ source_set("sysmem_common_srcs") {
     "//sdk/fidl/fuchsia.hardware.sysmem:fuchsia.hardware.sysmem_cpp",
     "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp",
     "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
-
-    # TODO(https://fxbug.dev/113997): Fix thread unsafety and switch to
-    # "//sdk/lib/component/outgoing/cpp".
-    "//sdk/lib/component/outgoing/cpp:cpp_disable_synchronization_check",
+    "//sdk/lib/async_patterns/cpp",
+    "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fidl",
     "//sdk/lib/fit",
     "//sdk/lib/sys/cpp:cpp",
     "//src/devices/sysmem/metrics",
     "//src/lib/ddk",
     "//src/lib/ddktl",
+    "//src/lib/fsl",
     "//src/lib/memory_barriers",
     "//src/lib/metrics_buffer",
     "//zircon/system/ulib/async:async-cpp",
@@ -145,7 +144,7 @@ test("sysmem-unittest-bin") {
   deps = [
     ":sysmem_common_srcs",
     "//sdk/banjo/fuchsia.hardware.sysmem:fuchsia.hardware.sysmem_banjo_cpp",
-    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp_wire",
+    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp",
     "//sdk/lib/fidl",
     "//sdk/lib/fit",
     "//src/devices/bus/testing/fake-pdev",

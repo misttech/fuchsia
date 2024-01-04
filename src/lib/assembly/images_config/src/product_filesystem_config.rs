@@ -18,7 +18,7 @@ pub struct ProductFilesystemConfig {
     #[serde(default)]
     pub watch_for_nand: bool,
 
-    /// If format_minfs_on_corruption is true (the default), fshost formats
+    /// If format_data_on_corruption is true (the default), fshost formats
     /// minfs partition on finding it corrupted.  Set to false to keep the
     /// devices in a corrupted state which might be of help to debug issues.
     #[serde(default)]
@@ -68,6 +68,7 @@ pub enum FilesystemImageMode {
     NoImage,
 
     /// The filesystem image should be placed in a ramdisk in the ZBI.
+    /// TODO(awolter): Delete this once all clients pass this via the CLI.
     #[serde(rename = "ramdisk")]
     Ramdisk,
 
@@ -172,6 +173,6 @@ pub enum BlobfsLayout {
 #[derive(Serialize, Deserialize, Debug, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ReservedFvmVolumeConfig {
-    /// The number of bytes to reserve in the fvm.
-    pub reserved_bytes: u64,
+    /// The number of slices to reserve in the fvm.
+    pub reserved_slices: u64,
 }

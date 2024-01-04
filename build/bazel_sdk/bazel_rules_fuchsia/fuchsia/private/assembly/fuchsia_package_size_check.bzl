@@ -4,8 +4,8 @@
 
 """Rule for running size checker on blobfs package."""
 
-load(":providers.bzl", "FuchsiaProductImageInfo", "FuchsiaSizeCheckerInfo")
 load("//fuchsia/private:ffx_tool.bzl", "get_ffx_assembly_inputs")
+load(":providers.bzl", "FuchsiaProductImageInfo", "FuchsiaSizeCheckerInfo")
 
 def _fuchsia_package_size_check_impl(ctx):
     fuchsia_toolchain = ctx.toolchains["@fuchsia_sdk//fuchsia:toolchain"]
@@ -16,17 +16,14 @@ def _fuchsia_package_size_check_impl(ctx):
     verbose_output = ctx.actions.declare_file(ctx.label.name + "_verbose_output.json")
     budgets_file = ctx.actions.declare_file(ctx.label.name + "_size_budgets.json")
     size_checker_file = ctx.file.size_checker_file
-    platform_aibs = ctx.attr.product_image[FuchsiaProductImageInfo].platform_aibs
     product_assembly_out = ctx.attr.product_image[FuchsiaProductImageInfo].product_assembly_out
 
     # Convert size_checker.json to size_budgets.json
     ctx.actions.run(
         outputs = [budgets_file],
-        inputs = [size_checker_file, platform_aibs, product_assembly_out],
+        inputs = [size_checker_file, product_assembly_out],
         executable = ctx.executable._convert_size_limits,
         arguments = [
-            "--platform-aibs",
-            platform_aibs.path,
             "--size-limits",
             size_checker_file.path,
             "--image-assembly-config",
@@ -82,6 +79,7 @@ def _fuchsia_package_size_check_impl(ctx):
     return [
         DefaultInfo(files = depset(direct = outputs)),
         FuchsiaSizeCheckerInfo(
+            size_budgets = budgets_file,
             size_report = size_report,
             verbose_output = verbose_output,
         ),

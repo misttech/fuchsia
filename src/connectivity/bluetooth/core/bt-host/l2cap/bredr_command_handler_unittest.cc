@@ -4,28 +4,25 @@
 
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/bredr_command_handler.h"
 
-#include <lib/async/cpp/task.h>
-
 #include <memory>
 #include <unordered_map>
 #include <vector>
+
+#include <pw_async/fake_dispatcher_fixture.h>
 
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/channel_configuration.h"
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/fake_signaling_channel.h"
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/l2cap_defs.h"
 #include "src/connectivity/bluetooth/core/bt-host/testing/test_helpers.h"
-#include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 
 namespace bt::l2cap::internal {
 namespace {
-
-using TestBase = ::gtest::TestLoopFixture;
 
 constexpr uint16_t kPsm = 0x0001;
 constexpr ChannelId kLocalCId = 0x0040;
 constexpr ChannelId kRemoteCId = 0x60a3;
 
-class BrEdrCommandHandlerTest : public TestBase {
+class BrEdrCommandHandlerTest : public pw::async::test::FakeDispatcherFixture {
  public:
   BrEdrCommandHandlerTest() = default;
   ~BrEdrCommandHandlerTest() override = default;
@@ -34,7 +31,6 @@ class BrEdrCommandHandlerTest : public TestBase {
  protected:
   // TestLoopFixture overrides
   void SetUp() override {
-    TestBase::SetUp();
     signaling_channel_ = std::make_unique<testing::FakeSignalingChannel>(dispatcher());
     command_handler_ = std::make_unique<BrEdrCommandHandler>(
         fake_sig(), fit::bind_member<&BrEdrCommandHandlerTest::OnRequestFail>(this));
@@ -46,7 +42,6 @@ class BrEdrCommandHandlerTest : public TestBase {
     request_fail_callback_ = nullptr;
     signaling_channel_ = nullptr;
     command_handler_ = nullptr;
-    TestBase::TearDown();
   }
 
   testing::FakeSignalingChannel* fake_sig() const { return signaling_channel_.get(); }
@@ -108,7 +103,7 @@ TEST_F(BrEdrCommandHandlerTest, OutboundConnReqRej) {
   };
 
   EXPECT_TRUE(cmd_handler()->SendConnectionRequest(kPsm, kBadLocalCId, std::move(on_conn_rsp)));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(cb_called);
 }
 
@@ -139,7 +134,7 @@ TEST_F(BrEdrCommandHandlerTest, OutboundConnReqRejNotEnoughBytesInRejection) {
   };
 
   EXPECT_TRUE(cmd_handler()->SendConnectionRequest(kPsm, kBadLocalCId, std::move(on_conn_rsp)));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_FALSE(cb_called);
 }
 
@@ -180,7 +175,7 @@ TEST_F(BrEdrCommandHandlerTest, OutboundConnReqRspOk) {
   };
 
   EXPECT_TRUE(cmd_handler()->SendConnectionRequest(kPsm, kLocalCId, std::move(on_conn_rsp)));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(cb_called);
 }
 
@@ -242,7 +237,7 @@ TEST_F(BrEdrCommandHandlerTest, OutboundConnReqRspPendingAuthThenOk) {
   };
 
   EXPECT_TRUE(cmd_handler()->SendConnectionRequest(kPsm, kLocalCId, std::move(on_conn_rsp)));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_EQ(2, cb_count);
 }
 
@@ -265,7 +260,7 @@ TEST_F(BrEdrCommandHandlerTest, OutboundConnReqRspTimeOut) {
     return SignalingChannel::ResponseHandlerAction::kCompleteOutboundTransaction;
   };
   EXPECT_TRUE(cmd_handler()->SendConnectionRequest(kPsm, kLocalCId, std::move(on_conn_rsp)));
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
   EXPECT_EQ(1u, failed_requests());
 }
 
@@ -459,7 +454,7 @@ TEST_F(BrEdrCommandHandlerTest, OutboundConfigReqRspPendingEmpty) {
 
   EXPECT_TRUE(cmd_handler()->SendConfigurationRequest(kRemoteCId, 0x0001, config.Options(),
                                                       std::move(on_config_rsp)));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(cb_called);
 }
 
@@ -509,7 +504,7 @@ TEST_F(BrEdrCommandHandlerTest, OutboundConfigReqRspTimeOut) {
 
   EXPECT_TRUE(cmd_handler()->SendConfigurationRequest(kRemoteCId, 0xf001, config.Options(),
                                                       std::move(on_config_rsp)));
-  RETURN_IF_FATAL(RunLoopUntilIdle());
+  RETURN_IF_FATAL(RunUntilIdle());
   EXPECT_EQ(1u, failed_requests());
 }
 TEST_F(BrEdrCommandHandlerTest, OutboundInfoReqRspOk) {
@@ -547,7 +542,7 @@ TEST_F(BrEdrCommandHandlerTest, OutboundInfoReqRspOk) {
 
   EXPECT_TRUE(cmd_handler()->SendInformationRequest(InformationType::kExtendedFeaturesSupported,
                                                     std::move(on_info_cb)));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(cb_called);
 }
 
@@ -582,7 +577,7 @@ TEST_F(BrEdrCommandHandlerTest, OutboundInfoReqRspNotSupported) {
 
   EXPECT_TRUE(cmd_handler()->SendInformationRequest(InformationType::kConnectionlessMTU,
                                                     std::move(on_info_cb)));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(cb_called);
 }
 
@@ -607,7 +602,7 @@ TEST_F(BrEdrCommandHandlerTest, OutboundInfoReqRspHeaderNotEnoughBytes) {
 
   EXPECT_TRUE(cmd_handler()->SendInformationRequest(InformationType::kExtendedFeaturesSupported,
                                                     std::move(on_info_cb)));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_FALSE(cb_called);
 }
 
@@ -640,7 +635,7 @@ TEST_F(BrEdrCommandHandlerTest, OutboundInfoReqRspPayloadNotEnoughBytes) {
 
   EXPECT_TRUE(cmd_handler()->SendInformationRequest(InformationType::kExtendedFeaturesSupported,
                                                     std::move(on_info_cb)));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_FALSE(cb_called);
 }
 
@@ -681,7 +676,7 @@ TEST_F(BrEdrCommandHandlerTest, OutboundInfoReqRspWrongType) {
 
   EXPECT_TRUE(cmd_handler()->SendInformationRequest(InformationType::kExtendedFeaturesSupported,
                                                     std::move(on_info_cb)));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(cb_called);
 }
 
@@ -718,12 +713,12 @@ TEST_F(BrEdrCommandHandlerTest, OutboundInfoReqUnknownType) {
 
   EXPECT_TRUE(cmd_handler()->SendInformationRequest(static_cast<InformationType>(0x04),
                                                     std::move(on_info_cb)));
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(cb_called);
 }
 
 TEST_F(BrEdrCommandHandlerTest, InboundConnReqRspPending) {
-  BrEdrCommandHandler::ConnectionRequestCallback cb = [](PSM psm, ChannelId remote_cid,
+  BrEdrCommandHandler::ConnectionRequestCallback cb = [](Psm psm, ChannelId remote_cid,
                                                          auto responder) {
     EXPECT_EQ(kPsm, psm);
     EXPECT_EQ(kRemoteCId, remote_cid);
@@ -764,7 +759,7 @@ TEST_F(BrEdrCommandHandlerTest, InboundConnReqBadPsm) {
   // Request callback shouldn't even be called for an invalid PSM.
   bool req_cb_called = false;
   BrEdrCommandHandler::ConnectionRequestCallback cb =
-      [&req_cb_called](PSM psm, ChannelId remote_cid, auto responder) { req_cb_called = true; };
+      [&req_cb_called](Psm psm, ChannelId remote_cid, auto responder) { req_cb_called = true; };
   cmd_handler()->ServeConnectionRequest(std::move(cb));
 
   // Connection Request payload
@@ -784,8 +779,8 @@ TEST_F(BrEdrCommandHandlerTest, InboundConnReqBadPsm) {
       LowerBits(kRemoteCId), UpperBits(kRemoteCId),
 
       // Connection Result
-      LowerBits(static_cast<uint16_t>(ConnectionResult::kPSMNotSupported)),
-      UpperBits(static_cast<uint16_t>(ConnectionResult::kPSMNotSupported)),
+      LowerBits(static_cast<uint16_t>(ConnectionResult::kPsmNotSupported)),
+      UpperBits(static_cast<uint16_t>(ConnectionResult::kPsmNotSupported)),
 
       // Connection Status
       LowerBits(static_cast<uint16_t>(ConnectionStatus::kNoInfoAvailable)),
@@ -799,7 +794,7 @@ TEST_F(BrEdrCommandHandlerTest, InboundConnReqNonDynamicSrcCId) {
   // Request callback shouldn't even be called for an invalid Source Channel ID.
   bool req_cb_called = false;
   BrEdrCommandHandler::ConnectionRequestCallback cb =
-      [&req_cb_called](PSM psm, ChannelId remote_cid, auto responder) { req_cb_called = true; };
+      [&req_cb_called](Psm psm, ChannelId remote_cid, auto responder) { req_cb_called = true; };
   cmd_handler()->ServeConnectionRequest(std::move(cb));
 
   // Connection Request payload

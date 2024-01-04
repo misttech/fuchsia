@@ -8,6 +8,7 @@
 #ifndef ZIRCON_KERNEL_INCLUDE_KERNEL_MP_H_
 #define ZIRCON_KERNEL_INCLUDE_KERNEL_MP_H_
 
+#include <lib/ktrace.h>
 #include <limits.h>
 #include <stdint.h>
 #include <zircon/compiler.h>
@@ -16,6 +17,7 @@
 #include <fbl/intrusive_double_list.h>
 #include <kernel/cpu.h>
 #include <kernel/mutex.h>
+#include <kernel/spinlock.h>
 #include <kernel/thread.h>
 #include <ktl/atomic.h>
 
@@ -46,13 +48,11 @@ void mp_sync_exec(mp_ipi_target_t, cpu_mask_t mask, mp_sync_task_t task, void* c
 
 zx_status_t mp_hotplug_cpu_mask(cpu_mask_t mask);
 
+void mp_unplug_current_cpu(Guard<MonitoredSpinLock, NoIrqSave>&& guard) TA_REQ(thread_lock);
+
 // Unplug the cpu specified by |mask|, waiting, up to |deadline| for its "shutdown" thread to
 // complete.
-//
-// If |leaked_thread| is non-null and a "shutdown" thread was created, it will be assigned to
-// |leaked_thread| so the caller can |Forget| it.
-zx_status_t mp_unplug_cpu_mask(cpu_mask_t mask, zx_time_t deadline,
-                               Thread** leaked_thread = nullptr);
+zx_status_t mp_unplug_cpu_mask(cpu_mask_t mask, zx_time_t deadline);
 
 static inline zx_status_t mp_hotplug_cpu(cpu_num_t cpu) {
   return mp_hotplug_cpu_mask(cpu_num_to_mask(cpu));
@@ -84,13 +84,13 @@ struct mp_state {
   // cpus that are currently idle.
   ktl::atomic<cpu_mask_t> idle_cpus;
 
-  SpinLock ipi_task_lock;
+  SpinLock ipi_task_lock{"mp_state:ipi_task_lock"_intern};
   // list of outstanding tasks for CPUs to execute.  Should only be
   // accessed with the ipi_task_lock held
   fbl::DoublyLinkedList<mp_ipi_task*> ipi_task_list[SMP_MAX_CPUS] TA_GUARDED(ipi_task_lock);
 
   // lock for serializing CPU hotplug/unplug operations
-  DECLARE_LOCK(mp_state, Mutex) hotplug_lock;
+  DECLARE_MUTEX(mp_state) hotplug_lock;
 };
 
 extern struct mp_state mp;

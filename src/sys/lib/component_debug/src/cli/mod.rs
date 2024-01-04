@@ -8,6 +8,7 @@ pub mod create;
 pub mod destroy;
 pub mod doctor;
 pub mod explore;
+pub mod format;
 pub mod graph;
 pub mod list;
 pub mod reload;
@@ -18,8 +19,6 @@ pub mod show;
 pub mod start;
 pub mod stop;
 pub mod storage;
-
-mod format;
 
 pub use {
     capability::capability_cmd,
@@ -37,5 +36,8 @@ pub use {
     show::{show_cmd_print, show_cmd_serialized},
     start::start_cmd,
     stop::stop_cmd,
-    storage::{storage_copy_cmd, storage_delete_cmd, storage_list_cmd, storage_make_directory_cmd},
+    storage::{
+        storage_copy_cmd, storage_delete_all_cmd, storage_delete_cmd, storage_list_cmd,
+        storage_make_directory_cmd,
+    },
 };

@@ -33,8 +33,7 @@ class DriverDevelopmentService
                                  DisableMatchWithDriverUrlCompleter::Sync& completer) override;
   void ReEnableMatchWithDriverUrl(ReEnableMatchWithDriverUrlRequestView request,
                                   ReEnableMatchWithDriverUrlCompleter::Sync& completer) override;
-  void GetDeviceInfo(GetDeviceInfoRequestView request,
-                     GetDeviceInfoCompleter::Sync& completer) override;
+  void GetNodeInfo(GetNodeInfoRequestView request, GetNodeInfoCompleter::Sync& completer) override;
   void GetCompositeInfo(GetCompositeInfoRequestView request,
                         GetCompositeInfoCompleter::Sync& completer) override;
   void BindAllUnboundNodes(BindAllUnboundNodesCompleter::Sync& completer) override;
@@ -42,6 +41,9 @@ class DriverDevelopmentService
   void AddTestNode(AddTestNodeRequestView request, AddTestNodeCompleter::Sync& completer) override;
   void RemoveTestNode(RemoveTestNodeRequestView request,
                       RemoveTestNodeCompleter::Sync& completer) override;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_driver_development::DriverDevelopment> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
 
   dfv2::DriverRunner& driver_runner_;
   // A map of the test nodes that have been created.

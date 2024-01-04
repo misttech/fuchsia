@@ -20,8 +20,6 @@ type config struct {
 	installerConfig            *cli.InstallerConfig
 	deviceConfig               *cli.DeviceConfig
 	chainedBuildConfig         *cli.RepeatableBuildConfig
-	downgradeBuildConfig       *cli.BuildConfig
-	upgradeBuildConfig         *cli.BuildConfig
 	paveTimeout                time.Duration
 	cycleCount                 uint
 	cycleTimeout               time.Duration
@@ -32,6 +30,10 @@ type config struct {
 	downgradeOTAAttempts       uint
 	bootfsCompression          string
 	buildExpectUnknownFirmware bool
+	maxUpdatePackageSize       uint64
+	maxUpdateImagesSize        uint64
+	maxSystemImageSize         uint64
+	useNewUpdateFormat         bool
 }
 
 func newConfig(fs *flag.FlagSet) (*config, error) {
@@ -45,12 +47,10 @@ func newConfig(fs *flag.FlagSet) (*config, error) {
 	archiveConfig := cli.NewArchiveConfig(fs, testDataPath)
 	deviceConfig := cli.NewDeviceConfig(fs, testDataPath)
 	c := &config{
-		archiveConfig:        archiveConfig,
-		deviceConfig:         deviceConfig,
-		installerConfig:      installerConfig,
-		chainedBuildConfig:   cli.NewRepeatableBuildConfig(fs, archiveConfig, deviceConfig),
-		downgradeBuildConfig: cli.NewBuildConfigWithPrefix(fs, archiveConfig, deviceConfig, "", "downgrade-", true),
-		upgradeBuildConfig:   cli.NewBuildConfigWithPrefix(fs, archiveConfig, deviceConfig, os.Getenv("BUILDBUCKET_ID"), "upgrade-", false),
+		archiveConfig:      archiveConfig,
+		deviceConfig:       deviceConfig,
+		installerConfig:    installerConfig,
+		chainedBuildConfig: cli.NewRepeatableBuildConfig(fs, archiveConfig, deviceConfig, os.Getenv("BUILDBUCKET_ID"), ""),
 	}
 
 	fs.DurationVar(&c.paveTimeout, "pave-timeout", 5*time.Minute, "Err if a pave takes longer than this time (default is 5 minutes)")
@@ -61,20 +61,16 @@ func newConfig(fs *flag.FlagSet) (*config, error) {
 	fs.StringVar(&c.afterTestScript, "after-test-script", "", "Run this script after a test step")
 	fs.BoolVar(&c.useFlash, "use-flash", false, "Provision device using flashing instead of paving")
 	fs.UintVar(&c.downgradeOTAAttempts, "downgrade-ota-attempts", 1, "Number of times to try to OTA from the downgrade build to the upgrade build before failing.")
-	fs.StringVar(&c.bootfsCompression, "bootfs-compression", "zstd", "compress storage images, default is zstd")
+	fs.StringVar(&c.bootfsCompression, "bootfs-compression", "zstd.max", "compress storage images, default is zstd.max")
 	fs.BoolVar(&c.buildExpectUnknownFirmware, "build-expect-unknown-firmware", false, "Ignore 'Unknown Firmware' during OTAs")
+	fs.Uint64Var(&c.maxUpdatePackageSize, "max-update-package-size", 0, "Maximum size of all the blobs in the update package")
+	fs.Uint64Var(&c.maxUpdateImagesSize, "max-update-images-size", 0, "Maximum size of all the blobs in the update images")
+	fs.Uint64Var(&c.maxSystemImageSize, "max-system-image-size", 0, "Maximum size of all the blobs in the system image")
+	fs.BoolVar(&c.useNewUpdateFormat, "use-new-update-format", false, "Use the new update format")
 	return c, nil
 }
 
 func (c *config) validate() error {
-	if err := c.downgradeBuildConfig.Validate(); err != nil {
-		return err
-	}
-
-	if err := c.upgradeBuildConfig.Validate(); err != nil {
-		return err
-	}
-
 	if c.cycleCount < 1 {
 		return fmt.Errorf("-cycle-count must be >= 1")
 	}

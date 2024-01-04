@@ -48,53 +48,51 @@ EXPECTED_DST_FILE_CONTENT = "{ test }"
 
 
 class TestUpdatePlatformVersionMethods(unittest.TestCase):
-
     def setUp(self):
         self.test_dir = tempfile.mkdtemp()
 
         self.fake_version_history_file = os.path.join(
-            self.test_dir, 'version_history.json')
-        with open(self.fake_version_history_file, 'w') as f:
+            self.test_dir, "version_history.json"
+        )
+        with open(self.fake_version_history_file, "w") as f:
             f.write(FAKE_VERSION_HISTORY_FILE_CONTENT)
-        update_platform_version.VERSION_HISTORY_PATH = self.fake_version_history_file
+        update_platform_version.VERSION_HISTORY_PATH = (
+            self.fake_version_history_file
+        )
 
         self.fake_fidl_compability_doc_file = os.path.join(
-            self.test_dir, "fidl_api_compatibility_testing.md")
-        with open(self.fake_fidl_compability_doc_file, 'w') as f:
+            self.test_dir, "fidl_api_compatibility_testing.md"
+        )
+        with open(self.fake_fidl_compability_doc_file, "w") as f:
             f.write(FAKE_FIDL_COMPATIBILITY_DOC_FILE_CONTENT)
-        update_platform_version.FIDL_COMPATIBILITY_DOC_PATH = self.fake_fidl_compability_doc_file
-
-        self.fake_milestone_version_file = os.path.join(
-            self.test_dir, 'platform_version.json')
-        with open(self.fake_milestone_version_file, 'w') as f:
-            pv = {
-                'in_development_api_level': OLD_API_LEVEL,
-                'supported_fuchsia_api_levels': OLD_SUPPORTED_API_LEVELS,
-            }
-            json.dump(pv, f)
-        update_platform_version.PLATFORM_VERSION_PATH = self.fake_milestone_version_file
+        update_platform_version.FIDL_COMPATIBILITY_DOC_PATH = (
+            self.fake_fidl_compability_doc_file
+        )
 
         self.test_src_dir = tempfile.mkdtemp()
         self.fake_src_file = os.path.join(
-            self.test_src_dir, 'fuchsia_src.test.json')
-        with open(self.fake_src_file, 'w') as f:
+            self.test_src_dir, "fuchsia_src.test.json"
+        )
+        with open(self.fake_src_file, "w") as f:
             f.write(FAKE_SRC_FILE_CONTENT)
 
         self.test_dst_dir = tempfile.mkdtemp()
         self.fake_dst_file = os.path.join(
-            self.test_dst_dir, 'fuchsia_dst.test.json')
+            self.test_dst_dir, "fuchsia_dst.test.json"
+        )
 
         self.test_dir = tempfile.mkdtemp()
         self.fake_golden_file = os.path.join(
-            self.test_dir, 'compatibility_testing_goldens.json')
+            self.test_dir, "compatibility_testing_goldens.json"
+        )
 
         content = [
             {
-                'dst': self.fake_dst_file,
-                'src': self.fake_src_file,
+                "dst": self.fake_dst_file,
+                "src": self.fake_src_file,
             },
         ]
-        with open(self.fake_golden_file, 'w') as f:
+        with open(self.fake_golden_file, "w") as f:
             json.dump(content, f)
 
     def tearDown(self):
@@ -103,159 +101,61 @@ class TestUpdatePlatformVersionMethods(unittest.TestCase):
     def _version_history_contains_entry_for_api_level(self, api_level):
         with open(self.fake_version_history_file, "r") as f:
             version_history = json.load(f)
-            versions = version_history['data']['api_levels']
+            versions = version_history["data"]["api_levels"]
             return str(api_level) in versions
 
     def test_update_version_history(self):
         self.assertFalse(
-            self._version_history_contains_entry_for_api_level(NEW_API_LEVEL))
+            self._version_history_contains_entry_for_api_level(NEW_API_LEVEL)
+        )
         self.assertTrue(
             update_platform_version.update_version_history(
-                NEW_API_LEVEL, update_platform_version.VERSION_HISTORY_PATH))
+                NEW_API_LEVEL, update_platform_version.VERSION_HISTORY_PATH
+            )
+        )
         self.assertTrue(
-            self._version_history_contains_entry_for_api_level(NEW_API_LEVEL))
+            self._version_history_contains_entry_for_api_level(NEW_API_LEVEL)
+        )
         self.assertFalse(
             update_platform_version.update_version_history(
-                NEW_API_LEVEL, update_platform_version.VERSION_HISTORY_PATH))
-
-    def _get_platform_version(self):
-        with open(self.fake_milestone_version_file) as f:
-            return json.load(f)
-
-    def test_update_platform_version(self):
-        pv = self._get_platform_version()
-        self.assertNotEqual(NEW_API_LEVEL, pv['in_development_api_level'])
-
-        # First update version_history. The platform_version file is derived
-        # from it.
-        self.assertTrue(
-            update_platform_version.update_version_history(
-                NEW_API_LEVEL, update_platform_version.VERSION_HISTORY_PATH))
-
-        update_platform_version.update_platform_version(
-            update_platform_version.VERSION_HISTORY_PATH,
-            update_platform_version.PLATFORM_VERSION_PATH)
-
-        pv = self._get_platform_version()
-        self.assertEqual(NEW_API_LEVEL, pv['in_development_api_level'])
-        self.assertEqual(
-            NEW_SUPPORTED_API_LEVELS, pv['supported_fuchsia_api_levels'])
+                NEW_API_LEVEL, update_platform_version.VERSION_HISTORY_PATH
+            )
+        )
 
     def test_update_fidl_compatibility_doc(self):
         with open(self.fake_fidl_compability_doc_file) as f:
             lines = f.readlines()
         self.assertIn(
-            f"{{% set in_development_api_level = {OLD_API_LEVEL} %}}\n", lines)
+            f"{{% set in_development_api_level = {OLD_API_LEVEL} %}}\n", lines
+        )
         self.assertNotIn(
-            f"{{% set in_development_api_level = {NEW_API_LEVEL} %}}\n", lines)
+            f"{{% set in_development_api_level = {NEW_API_LEVEL} %}}\n", lines
+        )
 
         self.assertTrue(
             update_platform_version.update_fidl_compatibility_doc(
                 NEW_API_LEVEL,
-                update_platform_version.FIDL_COMPATIBILITY_DOC_PATH))
+                update_platform_version.FIDL_COMPATIBILITY_DOC_PATH,
+            )
+        )
 
         with open(self.fake_fidl_compability_doc_file) as f:
             lines = f.readlines()
         self.assertNotIn(
-            f"{{% set in_development_api_level = {OLD_API_LEVEL} %}}\n", lines)
+            f"{{% set in_development_api_level = {OLD_API_LEVEL} %}}\n", lines
+        )
         self.assertIn(
-            f"{{% set in_development_api_level = {NEW_API_LEVEL} %}}\n", lines)
+            f"{{% set in_development_api_level = {NEW_API_LEVEL} %}}\n", lines
+        )
 
     def test_move_compatibility_test_goldens(self):
         self.assertTrue(
             update_platform_version.copy_compatibility_test_goldens(
-                self.test_dir, NEW_API_LEVEL))
+                self.test_dir, NEW_API_LEVEL
+            )
+        )
         self.assertTrue(filecmp.cmp(self.fake_src_file, self.fake_dst_file))
 
 
-class TestVersionHistoryToPlatformVersion(unittest.TestCase):
-
-    def _wrap_api_levels(self, api_levels_dict):
-        return {
-            "data":
-                {
-                    "name": "Platform version map",
-                    "type": "version_history",
-                    "api_levels": api_levels_dict,
-                },
-            "schema_id":
-                "https://fuchsia.dev/schema/version_history-22rnd667.json"
-        }
-
-    def test_only_one(self):
-        res = update_platform_version.version_history_to_platform_version(
-            self._wrap_api_levels(
-                {"1": {
-                    "abi_revision": "0x1",
-                    "status": "supported"
-                }}))
-        self.assertEqual(
-            res,
-            dict(in_development_api_level=1, supported_fuchsia_api_levels=[1]))
-
-    def test_api_frozen(self):
-        res = update_platform_version.version_history_to_platform_version(
-            self._wrap_api_levels(
-                {
-                    "1": {
-                        "abi_revision": "0x1",
-                        "status": "supported"
-                    },
-                    "2": {
-                        "abi_revision": "0x2",
-                        "status": "supported"
-                    }
-                }))
-        self.assertEqual(
-            res,
-            dict(
-                in_development_api_level=2, supported_fuchsia_api_levels=[1,
-                                                                          2]))
-
-    def test_steady_state(self):
-        res = update_platform_version.version_history_to_platform_version(
-            self._wrap_api_levels(
-                {
-                    "1": {
-                        "abi_revision": "0x1",
-                        "status": "supported"
-                    },
-                    "2": {
-                        "abi_revision": "0x2",
-                        "status": "in-development"
-                    }
-                }))
-        self.assertEqual(
-            res,
-            dict(in_development_api_level=2, supported_fuchsia_api_levels=[1]))
-
-    def test_unsupported(self):
-        res = update_platform_version.version_history_to_platform_version(
-            self._wrap_api_levels(
-                {
-                    "1": {
-                        "abi_revision": "0x1",
-                        "status": "unsupported"
-                    },
-                    "2": {
-                        "abi_revision": "0x2",
-                        "status": "supported"
-                    },
-                    "3": {
-                        "abi_revision": "0x3",
-                        "status": "supported"
-                    },
-                    "4": {
-                        "abi_revision": "0x4",
-                        "status": "in-development"
-                    },
-                }))
-        self.assertEqual(
-            res,
-            dict(
-                in_development_api_level=4, supported_fuchsia_api_levels=[2,
-                                                                          3]))
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

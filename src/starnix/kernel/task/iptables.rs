@@ -3,11 +3,18 @@
 // found in the LICENSE file.
 
 use crate::{
-    fs::socket::*,
-    logging::{log_warn, not_implemented},
     mm::MemoryAccessorExt,
-    task::*,
-    types::*,
+    task::CurrentTask,
+    vfs::socket::{SocketDomain, SocketHandle, SocketType},
+};
+use starnix_logging::{log_warn, not_implemented};
+use starnix_uapi::{
+    c_char, errno, error, errors::Errno, ip6t_get_entries, ip6t_getinfo, ip6t_replace,
+    ipt_get_entries, ipt_getinfo, ipt_replace, nf_inet_hooks_NF_INET_NUMHOOKS,
+    user_buffer::UserBuffer, xt_counters, xt_counters_info, xt_get_revision, IP6T_SO_GET_ENTRIES,
+    IP6T_SO_GET_INFO, IP6T_SO_GET_REVISION_MATCH, IP6T_SO_GET_REVISION_TARGET, IPT_SO_GET_ENTRIES,
+    IPT_SO_GET_INFO, IPT_SO_GET_REVISION_MATCH, IPT_SO_GET_REVISION_TARGET,
+    IPT_SO_SET_ADD_COUNTERS, IPT_SO_SET_REPLACE, SOL_IP, SOL_IPV6,
 };
 use std::collections::HashMap;
 use zerocopy::{AsBytes, FromBytes};

@@ -4,7 +4,6 @@
 
 pub mod ap;
 pub mod client;
-pub mod mesh;
 
 use {
     crate::{MlmeEventStream, MlmeStream, Station},
@@ -21,21 +20,16 @@ use {
         sync::{Arc, Mutex},
     },
     tracing::{error, info, warn},
-    wlan_common::{
-        hasher::WlanHasher,
-        timer::{self, TimeEntry},
-    },
+    wlan_common::timer::{self, ScheduledEvent},
 };
 
 pub type ClientSmeServer = mpsc::UnboundedSender<client::Endpoint>;
 pub type ApSmeServer = mpsc::UnboundedSender<ap::Endpoint>;
-pub type MeshSmeServer = mpsc::UnboundedSender<mesh::Endpoint>;
 
 #[derive(Clone)]
 pub enum SmeServer {
     Client(ClientSmeServer),
     Ap(ApSmeServer),
-    Mesh(MeshSmeServer),
 }
 
 async fn serve_generic_sme(
@@ -135,7 +129,6 @@ pub fn create_sme(
     security_support: fidl_common::SecuritySupport,
     spectrum_management_support: fidl_common::SpectrumManagementSupport,
     inspect_node: fuchsia_inspect::Node,
-    hasher: WlanHasher,
     persistence_req_sender: auto_persist::PersistenceReqSender,
     generic_sme_stream: <fidl_sme::GenericSmeMarker as fidl::endpoints::ProtocolMarker>::RequestStream,
 ) -> Result<(MlmeStream, impl Future<Output = Result<(), anyhow::Error>>), anyhow::Error> {
@@ -155,7 +148,6 @@ pub fn create_sme(
                 receiver,
                 telemetry_endpoint_receiver,
                 inspect_node,
-                hasher,
                 persistence_req_sender,
             );
             (
@@ -179,16 +171,7 @@ pub fn create_sme(
             )
         }
         fidl_common::WlanMacRole::Mesh => {
-            let (sender, receiver) = mpsc::unbounded();
-            let (mlme_req_sink, mlme_req_stream, fut) =
-                mesh::serve(device_info, mlme_event_stream, receiver);
-            (
-                SmeServer::Mesh(sender),
-                mlme_req_sink,
-                mlme_req_stream,
-                None,
-                FutureObj::new(Box::new(fut)),
-            )
+            return Err(format_err!("Mesh mode is unsupported"));
         }
         fidl_common::WlanMacRoleUnknown!() => {
             return Err(format_err!("Unknown WlanMacRole type: {:?}", device_info.role));
@@ -255,7 +238,7 @@ async fn serve_mlme_sme<STA, TS>(
 ) -> Result<(), anyhow::Error>
 where
     STA: Station,
-    TS: Stream<Item = TimeEntry<<STA as crate::Station>::Event>> + Unpin,
+    TS: Stream<Item = ScheduledEvent<<STA as crate::Station>::Event>> + Unpin,
 {
     let mut timeout_stream = timer::make_async_timed_event_stream(time_stream).fuse();
 
@@ -350,8 +333,6 @@ mod tests {
         },
     };
 
-    const PLACEHOLDER_HASH_KEY: [u8; 8] = [88, 77, 66, 55, 44, 33, 22, 11];
-
     #[test]
     fn create_sme_fails_startup_role_unknown() {
         let mut _exec = fasync::TestExecutor::new();
@@ -365,7 +346,7 @@ mod tests {
                 .expect("failed to create MlmeProxy");
         let device_info = fidl_mlme::DeviceInfo {
             role: fidl_common::WlanMacRole::unknown(),
-            ..test_utils::fake_device_info([0; 6])
+            ..test_utils::fake_device_info([0; 6].into())
         };
         let result = create_sme(
             crate::Config::default(),
@@ -375,7 +356,6 @@ mod tests {
             fake_security_support(),
             fake_spectrum_management_support_empty(),
             inspect_node,
-            WlanHasher::new(PLACEHOLDER_HASH_KEY),
             persistence_req_sender,
             generic_sme_stream,
         );
@@ -397,12 +377,11 @@ mod tests {
         let (_mlme_req_stream, serve_fut) = create_sme(
             crate::Config::default(),
             mlme_event_stream,
-            &test_utils::fake_device_info([0; 6]),
+            &test_utils::fake_device_info([0; 6].into()),
             fake_mac_sublayer_support(),
             fake_security_support(),
             fake_spectrum_management_support_empty(),
             inspect_node,
-            WlanHasher::new(PLACEHOLDER_HASH_KEY),
             persistence_req_sender,
             generic_sme_stream,
         )
@@ -445,7 +424,8 @@ mod tests {
         let (generic_sme_proxy, generic_sme_stream) =
             create_proxy_and_stream::<fidl_sme::GenericSmeMarker>()
                 .expect("failed to create MlmeProxy");
-        let device_info = fidl_mlme::DeviceInfo { role, ..test_utils::fake_device_info([0; 6]) };
+        let device_info =
+            fidl_mlme::DeviceInfo { role, ..test_utils::fake_device_info([0; 6].into()) };
         let (mlme_req_stream, serve_fut) = create_sme(
             crate::Config::default(),
             mlme_event_stream,
@@ -454,7 +434,6 @@ mod tests {
             fake_security_support(),
             fake_spectrum_management_support_empty(),
             inspect_node,
-            WlanHasher::new(PLACEHOLDER_HASH_KEY),
             persistence_req_sender,
             generic_sme_stream,
         )?;

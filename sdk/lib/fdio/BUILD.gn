@@ -28,19 +28,32 @@ if (is_fuchsia) {
   }
 }
 
+fdio_constants = [
+  "include/lib/fdio/limits.h",
+  "include/lib/fdio/vfs.h",
+]
+
+# This target provides access to some shared constants and helper macros, without requiring fdio as
+# a runtime dependency. This target must never provide (or reference) any public/extern symbols.
+sdk_source_set("constants") {
+  category = "partner"
+  sdk_name = "fdio_constants"
+  include_base = "//sdk"
+  public_configs = [ ":fdio_includes" ]
+  sources = fdio_constants
+}
+
 # Headers exposed by fdio that we also want to use for the documentation target.
 fdio_public_headers = [
-  "include/lib/fdio/directory.h",
-  "include/lib/fdio/fd.h",
-  "include/lib/fdio/fdio.h",
-  "include/lib/fdio/io.h",
-  "include/lib/fdio/limits.h",
-  "include/lib/fdio/namespace.h",
-  "include/lib/fdio/spawn.h",
-  "include/lib/fdio/unsafe.h",
-  "include/lib/fdio/vfs.h",
-  "include/lib/fdio/watcher.h",
-]
+                        "include/lib/fdio/directory.h",
+                        "include/lib/fdio/fd.h",
+                        "include/lib/fdio/fdio.h",
+                        "include/lib/fdio/io.h",
+                        "include/lib/fdio/namespace.h",
+                        "include/lib/fdio/spawn.h",
+                        "include/lib/fdio/unsafe.h",
+                        "include/lib/fdio/watcher.h",
+                      ] + fdio_constants
 
 # TODO(fxbug.dev/38226): This is a kludge to make "foosan-fuzzer" builds actually just use
 # the plain "foosan" build of libfdio.  This works around the problem that
@@ -110,14 +123,14 @@ if (is_fuzzer) {
     ]
     deps = [
       ":cleanpath",
-      "//sdk/fidl/fuchsia.device:fuchsia.device_cpp_wire",
-      "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_wire",
-      "//sdk/fidl/fuchsia.net:fuchsia.net_cpp_wire",
-      "//sdk/fidl/fuchsia.net.name:fuchsia.net.name_cpp_wire",
-      "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp_wire",
-      "//sdk/fidl/fuchsia.posix.socket.packet:fuchsia.posix.socket.packet_cpp_wire",
-      "//sdk/fidl/fuchsia.posix.socket.raw:fuchsia.posix.socket.raw_cpp_wire",
-      "//sdk/fidl/fuchsia.process:fuchsia.process_cpp_wire",
+      "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+      "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+      "//sdk/fidl/fuchsia.net:fuchsia.net_cpp",
+      "//sdk/fidl/fuchsia.net.name:fuchsia.net.name_cpp",
+      "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp",
+      "//sdk/fidl/fuchsia.posix.socket.packet:fuchsia.posix.socket.packet_cpp",
+      "//sdk/fidl/fuchsia.posix.socket.raw:fuchsia.posix.socket.raw_cpp",
+      "//sdk/fidl/fuchsia.process:fuchsia.process_cpp",
       "//sdk/lib/fidl",
       "//sdk/lib/fit",
       "//sdk/lib/zxio",
@@ -134,6 +147,9 @@ if (is_fuzzer) {
     inputs = [ fdio_version_script ]
     ldflags = [ "-Wl,--version-script=" +
                 rebase_path(fdio_version_script, root_build_dir) ]
+
+    # TODO(https://fxbug.dev/135694): delete the below and fix compiler warnings
+    configs += [ "//build/config:Wno-vla-cxx-extension" ]
   }
 } else {
   source_set("fdio") {

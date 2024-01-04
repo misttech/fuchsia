@@ -1,0 +1,44 @@
+{
+  "name": "wait",
+  "description": "Wait until able to establish a remote control connection to the target.",
+  "examples": [],
+  "flags": [
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--help",
+      "short": null,
+      "description": "display usage information",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "timeout"
+        }
+      },
+      "optionality": "optional",
+      "long": "--timeout",
+      "short": "t",
+      "description": "the timeout in seconds [default = 120]. A value of 0 implies no timeout.",
+      "hidden": false
+    },
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--down",
+      "short": "d",
+      "description": "wait for target to go down",
+      "hidden": false
+    }
+  ],
+  "notes": [],
+  "commands": [],
+  "positionals": [],
+  "error_codes": [
+    {
+      "code": 1,
+      "description": "Timeout while getting ssh address"
+    }
+  ]
+}

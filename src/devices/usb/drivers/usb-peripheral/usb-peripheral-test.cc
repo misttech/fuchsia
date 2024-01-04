@@ -4,7 +4,6 @@
 
 #include "src/devices/usb/drivers/usb-peripheral/usb-peripheral.h"
 
-#include <fuchsia/hardware/platform/device/c/banjo.h>
 #include <fuchsia/hardware/usb/dci/c/banjo.h>
 #include <fuchsia/hardware/usb/dci/cpp/banjo.h>
 #include <lib/ddk/binding.h>
@@ -37,6 +36,7 @@ class FakeDevice : public ddk::UsbDciProtocol<FakeDevice, ddk::base_protocol> {
 
   zx_status_t UsbDciSetInterface(const usb_dci_interface_protocol_t* interface) {
     interface_ = *interface;
+    sync_completion_signal(&set_interface_called_);
     return ZX_OK;
   }
 
@@ -53,9 +53,14 @@ class FakeDevice : public ddk::UsbDciProtocol<FakeDevice, ddk::base_protocol> {
 
   usb_dci_protocol_t* proto() { return &proto_; }
 
-  usb_dci_interface_protocol_t* interface() { return &interface_; }
+  usb_dci_interface_protocol_t* interface() {
+    sync_completion_wait(&set_interface_called_, ZX_TIME_INFINITE);
+    return &interface_;
+  }
 
  private:
+  sync_completion_t set_interface_called_;
+
   usb_dci_interface_protocol_t interface_;
   usb_dci_protocol_t proto_;
 };

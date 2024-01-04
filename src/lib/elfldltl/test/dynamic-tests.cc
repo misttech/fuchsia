@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/elfldltl/container.h>
 #include <lib/elfldltl/diagnostics.h>
 #include <lib/elfldltl/dynamic.h>
 #include <lib/elfldltl/machine.h>
@@ -10,7 +11,6 @@
 #include <lib/elfldltl/testing/typed-test.h>
 
 #include <string>
-#include <type_traits>
 #include <vector>
 
 #include "symbol-tests.h"
@@ -65,36 +65,54 @@ TYPED_TEST(ElfldltlDynamicTests, MissingTerminator) {
 TYPED_TEST(ElfldltlDynamicTests, RejectTextrel) {
   using Elf = typename TestFixture::Elf;
 
-  std::vector<std::string> errors;
-  auto diag = elfldltl::CollectStringsDiagnostics(errors, kDiagFlags);
-
   elfldltl::DirectMemory memory({}, 0);
 
-  // PT_DYNAMIC without DT_TEXTREL.
-  constexpr typename Elf::Dyn dyn_notextrel[] = {
-      {.tag = elfldltl::ElfDynTag::kNull},
-  };
+  {
+    // PT_DYNAMIC without DT_TEXTREL.
+    constexpr typename Elf::Dyn dyn_notextrel[] = {
+        {.tag = elfldltl::ElfDynTag::kNull},
+    };
 
-  EXPECT_TRUE(elfldltl::DecodeDynamic(diag, memory, cpp20::span(dyn_notextrel),
-                                      elfldltl::DynamicTextrelRejectObserver{}));
+    auto diag = ExpectOkDiagnostics();
 
-  EXPECT_EQ(0u, diag.errors());
-  EXPECT_EQ(0u, diag.warnings());
-  EXPECT_TRUE(errors.empty());
+    EXPECT_TRUE(elfldltl::DecodeDynamic(diag, memory, cpp20::span(dyn_notextrel),
+                                        elfldltl::DynamicTextrelRejectObserver{}));
 
-  // PT_DYNAMIC with DT_TEXTREL.
-  constexpr typename Elf::Dyn dyn_textrel[] = {
-      {.tag = elfldltl::ElfDynTag::kTextRel},
-      {.tag = elfldltl::ElfDynTag::kNull},
-  };
+    EXPECT_EQ(0u, diag.errors());
+    EXPECT_EQ(0u, diag.warnings());
+  }
 
-  EXPECT_TRUE(elfldltl::DecodeDynamic(diag, memory, cpp20::span(dyn_textrel),
-                                      elfldltl::DynamicTextrelRejectObserver{}));
+  {
+    // PT_DYNAMIC with DT_TEXTREL.
+    constexpr typename Elf::Dyn dyn_textrel[] = {
+        {.tag = elfldltl::ElfDynTag::kTextRel},
+        {.tag = elfldltl::ElfDynTag::kNull},
+    };
 
-  EXPECT_EQ(1u, diag.errors());
-  EXPECT_EQ(0u, diag.warnings());
-  ASSERT_GE(errors.size(), 1u);
-  EXPECT_EQ(errors.front(), elfldltl::DynamicTextrelRejectObserver::Message());
+    auto expected = elfldltl::testing::ExpectedSingleError{
+        elfldltl::DynamicTextrelRejectObserver::kMessage,
+    };
+
+    EXPECT_TRUE(elfldltl::DecodeDynamic(expected.diag(), memory, cpp20::span(dyn_textrel),
+                                        elfldltl::DynamicTextrelRejectObserver{}));
+  }
+
+  {
+    // PT_DYNAMIC with DF_TEXTREL.
+    constexpr typename Elf::Dyn dyn_flags_textrel[] = {
+        {
+            .tag = elfldltl::ElfDynTag::kFlags,
+            .val = elfldltl::ElfDynFlags::kTextRel | elfldltl::ElfDynFlags::kBindNow,
+        },
+        {.tag = elfldltl::ElfDynTag::kNull},
+    };
+
+    auto expected = elfldltl::testing::ExpectedSingleError{
+        elfldltl::DynamicTextrelRejectObserver::kMessage,
+    };
+    EXPECT_TRUE(elfldltl::DecodeDynamic(expected.diag(), memory, cpp20::span(dyn_flags_textrel),
+                                        elfldltl::DynamicTextrelRejectObserver{}));
+  }
 }
 
 class TestDiagnostics {
@@ -1029,7 +1047,7 @@ TYPED_TEST(ElfldltlDynamicTests, SymbolInfoObserverEmpty) {
   EXPECT_EQ(0u, diag.diag().warnings());
   EXPECT_TRUE(diag.errors().empty());
 
-  EXPECT_TRUE(info.strtab().empty());
+  EXPECT_EQ(info.strtab().size(), 1u);
   EXPECT_TRUE(info.symtab().empty());
   EXPECT_TRUE(info.soname().empty());
   EXPECT_FALSE(info.compat_hash());
@@ -1044,6 +1062,10 @@ TYPED_TEST(ElfldltlDynamicTests, SymbolInfoObserverFullValid) {
 
   TestDiagnostics diag;
   SymbolInfoTestImage<Elf> test_image;
+
+  constexpr uint32_t kDynFlags =
+      elfldltl::ElfDynFlags::kBindNow | elfldltl::ElfDynFlags::kStaticTls;
+  constexpr uint32_t kDynFlags1 = 0x3;
 
   // PT_DYNAMIC with full valid symbol info.
   const Dyn dyn_goodsyms[] = {
@@ -1060,6 +1082,8 @@ TYPED_TEST(ElfldltlDynamicTests, SymbolInfoObserverFullValid) {
           .tag = elfldltl::ElfDynTag::kGnuHash,
           .val = test_image.gnu_hash_addr(),
       },
+      {.tag = elfldltl::ElfDynTag::kFlags, .val = kDynFlags},
+      {.tag = elfldltl::ElfDynTag::kFlags1, .val = kDynFlags1},
       {.tag = elfldltl::ElfDynTag::kNull},
   };
 
@@ -1078,6 +1102,8 @@ TYPED_TEST(ElfldltlDynamicTests, SymbolInfoObserverFullValid) {
   EXPECT_EQ(info.soname(), "libfoo.so");
   EXPECT_TRUE(info.compat_hash());
   EXPECT_TRUE(info.gnu_hash());
+  EXPECT_EQ(info.flags(), kDynFlags);
+  EXPECT_EQ(info.flags1(), kDynFlags1);
 }
 
 // We'll reuse that same image for the various error case tests.
@@ -1528,11 +1554,12 @@ TYPED_TEST(ElfldltlDynamicTests, ObserveNeededEmpty) {
       {.tag = elfldltl::ElfDynTag::kNull},
   };
 
-  EXPECT_TRUE(elfldltl::DecodeDynamic(diag, memory, cpp20::span(dyn),
-                                      elfldltl::DynamicNeededObserver(si, [](std::string_view) {
-                                        ADD_FAILURE();
-                                        return false;
-                                      })));
+  EXPECT_TRUE(
+      elfldltl::DecodeDynamic(diag, memory, cpp20::span(dyn),
+                              elfldltl::DynamicNeededObserver(si, [](std::string_view needed) {
+                                ADD_FAILURE() << "Unexpected needed entry:", needed.data();
+                                return false;
+                              })));
 }
 
 TYPED_TEST(ElfldltlDynamicTests, ObserveNeeded) {
@@ -1566,6 +1593,48 @@ TYPED_TEST(ElfldltlDynamicTests, ObserveNeeded) {
 
   EXPECT_TRUE(elfldltl::DecodeDynamic(diag, memory, cpp20::span(dyn),
                                       elfldltl::DynamicNeededObserver(si, expect_next)));
+}
+
+TYPED_TEST(ElfldltlDynamicTests, ObserveValueCollection) {
+  using Elf = typename TestFixture::Elf;
+  using size_type = typename Elf::size_type;
+
+  auto diag = ExpectOkDiagnostics();
+
+  elfldltl::DirectMemory memory({}, 0);
+
+  TestSymtab<Elf> symtab;
+
+  auto val0 = symtab.AddString("zero.so");
+  auto val1 = symtab.AddString("one.so");
+  auto val2 = symtab.AddString("two.so");
+  auto val3 = symtab.AddString("three.so");
+
+  const typename Elf::Dyn dyn[] = {
+      {.tag = elfldltl::ElfDynTag::kNeeded, .val = val0},
+      {.tag = elfldltl::ElfDynTag::kNeeded, .val = val1},
+      {.tag = elfldltl::ElfDynTag::kNeeded, .val = val2},
+      {.tag = elfldltl::ElfDynTag::kNeeded, .val = val3},
+      // These tags should not be matched or collected by the observer.
+      {.tag = elfldltl::ElfDynTag::kSoname, .val = 0x1},
+      {.tag = elfldltl::ElfDynTag::kSymTab, .val = 0x2},
+      {.tag = elfldltl::ElfDynTag::kSymEnt, .val = 0x3},
+      {.tag = elfldltl::ElfDynTag::kNull},
+  };
+
+  static const constexpr std::string_view kCollectionError = "Failed to push value to collection.";
+  elfldltl::StdContainer<std::vector>::Container<size_type> values;
+  EXPECT_TRUE(elfldltl::DecodeDynamic(
+      diag, memory, cpp20::span(dyn),
+      elfldltl::DynamicValueCollectionObserver<
+          Elf, elfldltl::ElfDynTag::kNeeded,
+          elfldltl::StdContainer<std::vector>::Container<size_type>, kCollectionError>(values)));
+
+  EXPECT_EQ(values.size(), 4u);
+  EXPECT_EQ(values[0], val0);
+  EXPECT_EQ(values[1], val1);
+  EXPECT_EQ(values[2], val2);
+  EXPECT_EQ(values[3], val3);
 }
 
 }  // namespace

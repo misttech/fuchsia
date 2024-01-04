@@ -17,8 +17,8 @@
 #include "helpers.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/byte_buffer.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/device_address.h"
+#include "src/connectivity/bluetooth/core/bt-host/fidl/fake_adapter_test_fixture.h"
 #include "src/connectivity/bluetooth/core/bt-host/fidl/helpers.h"
-#include "src/connectivity/bluetooth/core/bt-host/gap/fake_adapter_test_fixture.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/gap.h"
 #include "src/connectivity/bluetooth/core/bt-host/gap/low_energy_address_manager.h"
 #include "src/connectivity/bluetooth/core/bt-host/gatt/fake_layer.h"
@@ -162,7 +162,7 @@ class HostServerTest : public bthost::testing::AdapterTestFixture {
     BT_ASSERT(peer);
     BT_ASSERT(peer->temporary());
 
-    test_device()->AddPeer(std::make_unique<FakePeer>(address));
+    test_device()->AddPeer(std::make_unique<FakePeer>(address, pw_dispatcher()));
 
     return peer;
   }
@@ -246,7 +246,7 @@ class HostServerPairingTest : public HostServerTest {
   // frees. These failures mostly stem from the Host server notifying the client upon pairing
   // delegate destruction, which is not important behavior for many tests.
   void TearDown() override {
-    fake_chan_->SetSendCallback(/*callback=*/nullptr, /*dispatcher=*/nullptr);
+    fake_chan_->SetSendCallback(/*callback=*/nullptr);
     host_client_ptr().Unbind();
     HostServerTest::TearDown();
   }
@@ -626,7 +626,7 @@ TEST_F(HostServerPairingTest, InitiatePairingLeDefault) {
     ASSERT_EQ(*sent, kExpected);
     pairing_request_sent = true;
   };
-  fake_chan()->SetSendCallback(expect_default_bytebuffer, dispatcher());
+  fake_chan()->SetSendCallback(expect_default_bytebuffer, pw_dispatcher());
 
   std::optional<fpromise::result<void, fsys::Error>> pair_result;
   fsys::PairingOptions opts;
@@ -660,7 +660,7 @@ TEST_F(HostServerPairingTest, InitiatePairingLeEncrypted) {
     ASSERT_EQ(*sent, kExpected);
     pairing_request_sent = true;
   };
-  fake_chan()->SetSendCallback(expect_default_bytebuffer, dispatcher());
+  fake_chan()->SetSendCallback(expect_default_bytebuffer, pw_dispatcher());
 
   std::optional<fpromise::result<void, fsys::Error>> pair_result;
   fsys::PairingOptions opts;
@@ -697,7 +697,7 @@ TEST_F(HostServerPairingTest, InitiatePairingNonBondableLe) {
     ASSERT_EQ(*sent, kExpected);
     pairing_request_sent = true;
   };
-  fake_chan()->SetSendCallback(expect_default_bytebuffer, dispatcher());
+  fake_chan()->SetSendCallback(expect_default_bytebuffer, pw_dispatcher());
 
   std::optional<fpromise::result<void, fsys::Error>> pair_result;
   fsys::PairingOptions opts;
@@ -766,7 +766,7 @@ TEST_F(HostServerTest, WatchPeersHandlesNonEnumeratedAppearanceInPeer) {
   adv_data.SetAppearance(0xFFFFu);
   bt::DynamicByteBuffer write_buf(adv_data.CalculateBlockSize(/*include_flags=*/true));
   ASSERT_TRUE(adv_data.WriteBlock(&write_buf, bt::AdvFlag::kLEGeneralDiscoverableMode));
-  peer->MutLe().SetAdvertisingData(/*rssi=*/0, write_buf, zx::time());
+  peer->MutLe().SetAdvertisingData(/*rssi=*/0, write_buf, pw::chrono::SystemClock::time_point());
 
   ResetHostServer();
 
@@ -842,6 +842,25 @@ TEST_F(HostServerTest, WatchPeersUpdatedThenRemoved) {
     replied = true;
   });
   EXPECT_TRUE(replied);
+}
+
+TEST_F(HostServerTest, SetBrEdrSecurityMode) {
+  // Default BR/EDR security mode is Mode 4
+  ASSERT_EQ(fidl_helpers::BrEdrSecurityModeFromFidl(fsys::BrEdrSecurityMode::MODE_4),
+            adapter()->bredr()->security_mode());
+
+  // Set the HostServer to SecureConnectionsOnly mode first
+  host_client()->SetBrEdrSecurityMode(fsys::BrEdrSecurityMode::SECURE_CONNECTIONS_ONLY);
+  RunLoopUntilIdle();
+  ASSERT_EQ(
+      fidl_helpers::BrEdrSecurityModeFromFidl(fsys::BrEdrSecurityMode::SECURE_CONNECTIONS_ONLY),
+      adapter()->bredr()->security_mode());
+
+  // Set the HostServer back to Mode 4 and verify that the change takes place
+  host_client()->SetBrEdrSecurityMode(fsys::BrEdrSecurityMode::MODE_4);
+  RunLoopUntilIdle();
+  ASSERT_EQ(fidl_helpers::BrEdrSecurityModeFromFidl(fsys::BrEdrSecurityMode::MODE_4),
+            adapter()->bredr()->security_mode());
 }
 
 TEST_F(HostServerTest, SetLeSecurityMode) {
@@ -1222,14 +1241,14 @@ TEST_F(HostServerTest, EnableBackgroundScanFailsToStart) {
   EXPECT_TRUE(test_device()->le_scan_state().enabled);
 }
 
-class HostServerTestFakeAdapter : public bt::gap::testing::FakeAdapterTestFixture {
+class HostServerTestFakeAdapter : public bt::fidl::testing::FakeAdapterTestFixture {
  public:
   HostServerTestFakeAdapter() = default;
   ~HostServerTestFakeAdapter() override = default;
 
   void SetUp() override {
     FakeAdapterTestFixture::SetUp();
-    gatt_ = std::make_unique<bt::gatt::testing::FakeLayer>();
+    gatt_ = std::make_unique<bt::gatt::testing::FakeLayer>(pw_dispatcher());
     fidl::InterfaceHandle<fuchsia::bluetooth::host::Host> host_handle;
     host_server_ = std::make_unique<HostServer>(host_handle.NewRequest().TakeChannel(),
                                                 adapter()->AsWeakPtr(), gatt_->GetWeakPtr());

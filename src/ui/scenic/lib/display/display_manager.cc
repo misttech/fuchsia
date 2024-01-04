@@ -4,6 +4,7 @@
 
 #include "src/ui/scenic/lib/display/display_manager.h"
 
+#include <fidl/fuchsia.hardware.display.types/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.display/cpp/hlcpp_conversion.h>
 #include <fuchsia/hardware/display/cpp/fidl.h>
@@ -16,11 +17,17 @@
 namespace scenic_impl {
 namespace display {
 
+namespace {
+
+static constexpr uint32_t kMillihertzPerCentihertz = 10;
+
+}
+
 DisplayManager::DisplayManager(fit::closure display_available_cb)
     : DisplayManager(std::nullopt, std::nullopt, std::move(display_available_cb)) {}
 
 DisplayManager::DisplayManager(
-    std::optional<fuchsia::hardware::display::DisplayId> i_can_haz_display_id,
+    std::optional<fuchsia::hardware::display::types::DisplayId> i_can_haz_display_id,
     std::optional<uint64_t> i_can_haz_display_mode, fit::closure display_available_cb)
     : i_can_haz_display_id_(i_can_haz_display_id),
       i_can_haz_display_mode_(i_can_haz_display_mode),
@@ -47,8 +54,9 @@ void DisplayManager::BindDefaultDisplayCoordinator(
   }
 }
 
-void DisplayManager::OnDisplaysChanged(std::vector<fuchsia::hardware::display::Info> added,
-                                       std::vector<fuchsia::hardware::display::DisplayId> removed) {
+void DisplayManager::OnDisplaysChanged(
+    std::vector<fuchsia::hardware::display::Info> added,
+    std::vector<fuchsia::hardware::display::types::DisplayId> removed) {
   for (auto& display : added) {
     // Ignore display if |i_can_haz_display_id| is set and it doesn't match ID.
     if (i_can_haz_display_id_.has_value() && !fidl::Equals(display.id, *i_can_haz_display_id_)) {
@@ -64,7 +72,10 @@ void DisplayManager::OnDisplaysChanged(std::vector<fuchsia::hardware::display::I
       if (i_can_haz_display_mode_.has_value()) {
         if (*i_can_haz_display_mode_ < display.modes.size()) {
           mode_idx = *i_can_haz_display_mode_;
-          (*default_display_coordinator_)->SetDisplayMode(display.id, display.modes[mode_idx]);
+          (*default_display_coordinator_)
+              ->SetDisplayMode(
+                  fuchsia::hardware::display::types::DisplayId{.value = display.id.value},
+                  display.modes[mode_idx]);
           (*default_display_coordinator_)->ApplyConfig();
         } else {
           FX_LOGS(ERROR) << "Requested display mode=" << *i_can_haz_display_mode_
@@ -77,7 +88,8 @@ void DisplayManager::OnDisplaysChanged(std::vector<fuchsia::hardware::display::I
       auto& mode = display.modes[mode_idx];
       default_display_ = std::make_unique<Display>(
           display.id, mode.horizontal_resolution, mode.vertical_resolution,
-          display.horizontal_size_mm, display.vertical_size_mm, std::move(pixel_formats));
+          display.horizontal_size_mm, display.vertical_size_mm, std::move(pixel_formats),
+          mode.refresh_rate_e2 * kMillihertzPerCentihertz);
       OnClientOwnershipChange(owns_display_coordinator_);
 
       if (display_available_cb_) {
@@ -87,7 +99,7 @@ void DisplayManager::OnDisplaysChanged(std::vector<fuchsia::hardware::display::I
     }
   }
 
-  for (fuchsia::hardware::display::DisplayId id : removed) {
+  for (fuchsia::hardware::display::types::DisplayId id : removed) {
     if (default_display_ && fidl::Equals(default_display_->display_id(), id)) {
       // TODO(fxbug.dev/23490): handle this more robustly.
       FX_CHECK(false) << "Display disconnected";
@@ -116,8 +128,9 @@ void DisplayManager::SetVsyncCallback(VsyncCallback callback) {
   vsync_callback_ = std::move(callback);
 }
 
-void DisplayManager::OnVsync(fuchsia::hardware::display::DisplayId display_id, uint64_t timestamp,
-                             fuchsia::hardware::display::ConfigStamp applied_config_stamp,
+void DisplayManager::OnVsync(fuchsia::hardware::display::types::DisplayId display_id,
+                             uint64_t timestamp,
+                             fuchsia::hardware::display::types::ConfigStamp applied_config_stamp,
                              uint64_t cookie) {
   if (cookie) {
     (*default_display_coordinator_)->AcknowledgeVsync(cookie);

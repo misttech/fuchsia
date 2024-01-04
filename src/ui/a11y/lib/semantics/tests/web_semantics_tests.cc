@@ -26,7 +26,6 @@
 #include <lib/sys/cpp/component_context.h>
 #include <lib/sys/cpp/service_directory.h>
 #include <lib/syslog/cpp/macros.h>
-#include <lib/ui/scenic/cpp/view_token_pair.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/time.h>
 #include <zircon/errors.h>
@@ -37,21 +36,15 @@
 
 #include <gtest/gtest.h>
 
-#include "src/chromium/web_runner_tests/mock_get.h"
-#include "src/chromium/web_runner_tests/test_server.h"
-#include "src/lib/fxl/strings/string_printf.h"
 #include "src/ui/a11y/lib/semantics/tests/semantics_integration_test_fixture.h"
-#include "src/ui/testing/ui_test_manager/ui_test_manager.h"
 
 namespace accessibility_test {
 namespace {
 
 using component_testing::ChildRef;
 using component_testing::Directory;
-using component_testing::LocalComponent;
 using component_testing::ParentRef;
 using component_testing::Protocol;
-using component_testing::Route;
 
 static constexpr auto kStaticHtml = R"(
 <html>
@@ -105,11 +98,10 @@ static constexpr auto kScrollingHtml = R"(
 class WebSemanticsTest : public SemanticsIntegrationTestV2 {
  public:
   static constexpr auto kWebView = "web_view";
-  static constexpr auto kWebViewRef = ChildRef{kWebView};
   static constexpr auto kWebViewUrl = "#meta/semantics-test-web-client.cm";
 
   static constexpr auto kFontsProvider = "fonts_provider";
-  static constexpr auto kFontsProviderUrl = "#meta/fonts.cm";
+  static constexpr auto kFontsProviderUrl = "#meta/font_provider_hermetic_for_test.cm";
 
   static constexpr auto kTextManager = "text_manager";
   static constexpr auto kTextManagerUrl = "#meta/text_manager.cm";
@@ -172,7 +164,6 @@ class WebSemanticsTest : public SemanticsIntegrationTestV2 {
                        .targets = {ChildRef{kWebView}}});
     realm()->AddRoute({.capabilities = {Protocol{fuchsia::kernel::VmexResource::Name_},
                                         Protocol{fuchsia::logger::LogSink::Name_},
-                                        Protocol{fuchsia::ui::scenic::Scenic::Name_},
                                         Protocol{fuchsia::ui::composition::Allocator::Name_},
                                         Protocol{fuchsia::ui::composition::Flatland::Name_}},
                        .source = ParentRef(),
@@ -272,9 +263,7 @@ class StaticHtmlTest : public WebSemanticsTest {
   std::string HtmlForTestCase() override { return kStaticHtml; }
 };
 
-INSTANTIATE_TEST_SUITE_P(StaticHtmlTestWithParams, StaticHtmlTest,
-                         ::testing::ValuesIn(SemanticsIntegrationTestV2::UIConfigurationsToTest()));
-TEST_P(StaticHtmlTest, StaticSemantics) {
+TEST_F(StaticHtmlTest, StaticSemantics) {
   /* The semantic tree for static.html:
    *
    * ID: 0 Label:Title Role: UNKNOWN
@@ -290,7 +279,7 @@ TEST_P(StaticHtmlTest, StaticSemantics) {
   RunLoopUntilNodeExistsWithLabel("Paragraph");
 }
 
-TEST_P(StaticHtmlTest, HitTesting) {
+TEST_F(StaticHtmlTest, HitTesting) {
   FX_LOGS(INFO) << "Wait for scale factor";
   WaitForScaleFactor();
   FX_LOGS(INFO) << "Received scale factor";
@@ -324,10 +313,7 @@ class DynamicHtmlTest : public WebSemanticsTest {
   std::string HtmlForTestCase() override { return kDynamicHtml; }
 };
 
-INSTANTIATE_TEST_SUITE_P(DynamicHtmlTestWithParams, DynamicHtmlTest,
-                         ::testing::ValuesIn(SemanticsIntegrationTestV2::UIConfigurationsToTest()));
-
-TEST_P(DynamicHtmlTest, PerformAction) {
+TEST_F(DynamicHtmlTest, PerformAction) {
   // Find the node with the counter to make sure it still reads 0
   RunLoopUntilNodeExistsWithLabel("0");
   // There shouldn't be a node labeled 1 yet
@@ -353,10 +339,7 @@ class ScrollingHtmlTest : public WebSemanticsTest {
   std::string HtmlForTestCase() override { return kScrollingHtml; }
 };
 
-INSTANTIATE_TEST_SUITE_P(ScrollingHtmlTestWithParams, ScrollingHtmlTest,
-                         ::testing::ValuesIn(SemanticsIntegrationTestV2::UIConfigurationsToTest()));
-
-TEST_P(ScrollingHtmlTest, ScrollToMakeVisible) {
+TEST_F(ScrollingHtmlTest, ScrollToMakeVisible) {
   FX_LOGS(INFO) << "Wait for scale factor";
   WaitForScaleFactor();
   FX_LOGS(INFO) << "Received scale factor";

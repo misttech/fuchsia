@@ -8,7 +8,6 @@
 
 #include <gtest/gtest.h>
 
-#include "lib/async/cpp/task.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/byte_buffer.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/macros.h"
 #include "src/connectivity/bluetooth/core/bt-host/hci/connection.h"
@@ -36,6 +35,8 @@ class SecurityRequestPhaseTest : public l2cap::testing::FakeChannelTest {
   void SetUp() override { NewSecurityRequestPhase(); }
 
   void TearDown() override { security_request_phase_ = nullptr; }
+
+  pw::async::HeapDispatcher& heap_dispatcher() { return heap_dispatcher_; }
 
   void NewSecurityRequestPhase(SecurityRequestOptions opts = SecurityRequestOptions(),
                                bt::LinkType ll_type = bt::LinkType::kLE) {
@@ -65,6 +66,8 @@ class SecurityRequestPhaseTest : public l2cap::testing::FakeChannelTest {
 
   std::optional<PairingRequestParams> last_pairing_req_;
 
+  pw::async::HeapDispatcher heap_dispatcher_{dispatcher()};
+
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(SecurityRequestPhaseTest);
 };
 
@@ -74,7 +77,11 @@ TEST_F(SecurityRequestPhaseTest, MakeEncryptedBondableSecurityRequest) {
   NewSecurityRequestPhase(SecurityRequestOptions{.requested_level = SecurityLevel::kEncrypted,
                                                  .bondable = BondableMode::Bondable});
   StaticByteBuffer kExpectedReq(kSecurityRequest, AuthReq::kBondingFlag);
-  async::PostTask(dispatcher(), [this] { security_request_phase()->Start(); });
+  heap_dispatcher().Post([this](pw::async::Context /*ctx*/, pw::Status status) {
+    if (status.ok()) {
+      security_request_phase()->Start();
+    }
+  });
   ASSERT_TRUE(Expect(kExpectedReq));
   EXPECT_EQ(SecurityLevel::kEncrypted, security_request_phase()->pending_security_request());
 }
@@ -83,7 +90,11 @@ TEST_F(SecurityRequestPhaseTest, MakeAuthenticatedNonBondableSecurityRequest) {
   NewSecurityRequestPhase(SecurityRequestOptions{.requested_level = SecurityLevel::kAuthenticated,
                                                  .bondable = BondableMode::NonBondable});
   StaticByteBuffer kExpectedReq(kSecurityRequest, AuthReq::kMITM);
-  async::PostTask(dispatcher(), [this] { security_request_phase()->Start(); });
+  heap_dispatcher().Post([this](pw::async::Context /*ctx*/, pw::Status status) {
+    if (status.ok()) {
+      security_request_phase()->Start();
+    }
+  });
   ASSERT_TRUE(Expect(kExpectedReq));
   EXPECT_EQ(SecurityLevel::kAuthenticated, security_request_phase()->pending_security_request());
 }
@@ -93,9 +104,10 @@ TEST_F(SecurityRequestPhaseTest, MakeSecureAuthenticatedBondableSecurityRequest)
       SecurityRequestOptions{.requested_level = SecurityLevel::kSecureAuthenticated});
   StaticByteBuffer kExpectedReq(kSecurityRequest,
                                 AuthReq::kBondingFlag | AuthReq::kMITM | AuthReq::kSC);
-  async::PostTask(dispatcher(), [this] {
-    security_request_phase()->Start();
-    ;
+  heap_dispatcher().Post([this](pw::async::Context /*ctx*/, pw::Status status) {
+    if (status.ok()) {
+      security_request_phase()->Start();
+    }
   });
   ASSERT_TRUE(Expect(kExpectedReq));
   EXPECT_EQ(SecurityLevel::kSecureAuthenticated,
@@ -104,17 +116,22 @@ TEST_F(SecurityRequestPhaseTest, MakeSecureAuthenticatedBondableSecurityRequest)
 
 TEST_F(SecurityRequestPhaseTest, HandlesChannelClosedGracefully) {
   fake_chan()->Close();
-  RunLoopUntilIdle();
+  RunUntilIdle();
 }
 
 TEST_F(SecurityRequestPhaseTest, PairingRequestAsResponderPassedThrough) {
   StaticByteBuffer<util::PacketSize<PairingRequestParams>()> preq_packet;
   PacketWriter writer(kPairingRequest, &preq_packet);
-  PairingRequestParams generic_preq{.auth_req = AuthReq::kBondingFlag};
+  PairingRequestParams generic_preq{.io_capability = IOCapability::kDisplayOnly,
+                                    .oob_data_flag = OOBDataFlag::kNotPresent,
+                                    .auth_req = AuthReq::kBondingFlag,
+                                    .max_encryption_key_size = 0,
+                                    .initiator_key_dist_gen = 0,
+                                    .responder_key_dist_gen = 0};
   *writer.mutable_payload<PairingRequestParams>() = generic_preq;
   ASSERT_FALSE(last_pairing_req().has_value());
   fake_chan()->Receive(preq_packet);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_TRUE(last_pairing_req().has_value());
   PairingRequestParams last_preq = last_pairing_req().value();
   ASSERT_EQ(0, memcmp(&last_preq, &generic_preq, sizeof(PairingRequestParams)));
@@ -135,7 +152,7 @@ TEST_F(SecurityRequestPhaseTest, InboundSecurityRequestFails) {
       dispatcher());
 
   fake_chan()->Receive(pres_packet);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_FALSE(last_pairing_req().has_value());
   ASSERT_TRUE(message_sent);
 }
@@ -153,7 +170,7 @@ TEST_F(SecurityRequestPhaseTest, DropsInvalidPacket) {
       dispatcher());
 
   fake_chan()->Receive(bad_packet);
-  RunLoopUntilIdle();
+  RunUntilIdle();
   ASSERT_FALSE(last_pairing_req().has_value());
   ASSERT_TRUE(message_sent);
 }

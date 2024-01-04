@@ -24,6 +24,7 @@
 #include "src/media/audio/audio_core/v1/packet_queue.h"
 #include "src/media/audio/audio_core/v1/route_graph.h"
 #include "src/media/audio/audio_core/v1/utils.h"
+#include "src/media/audio/lib/analysis/dropout.h"
 #include "src/media/audio/lib/format/format.h"
 #include "src/media/audio/lib/timeline/timeline_function.h"
 #include "src/media/audio/lib/wav/wav_writer.h"
@@ -107,6 +108,9 @@ class BaseRenderer : public AudioObject,
 
   zx_status_t SetAdjustableReferenceClock();
   zx_status_t SetCustomReferenceClock(zx::clock ref_clock);
+
+  void ReportContinuityUnderflow(Fixed implied_pts, Fixed first_safe_pts, zx::time first_safe_ref);
+  void ReportTimestampUnderflow(Fixed packet_pts, Fixed prev_packet_end_pts);
   Reporter::Renderer& reporter() { return *reporter_; }
 
   // Only needed by AudioRenderer if glitch-/dropout-detection is enabled.
@@ -126,6 +130,8 @@ class BaseRenderer : public AudioObject,
 
   bool ValidateConfig();
   void ComputePtsToFracFrames(int64_t first_pts);
+  // Only called when tracing is started and enabled for the "audio" category.
+  bool CheckForSilentPacket(const void* packet_buffer, int64_t frame_count);
 
   Context& context_;
   fidl::Binding<fuchsia::media::AudioRenderer> audio_renderer_binding_;
@@ -157,6 +163,7 @@ class BaseRenderer : public AudioObject,
 
   // Minimum Clock Lead Time state
   bool min_lead_time_events_enabled_ = false;
+  bool min_lead_time_reported_ = false;
 
   fbl::RefPtr<VersionedTimelineFunction> reference_clock_to_fractional_frames_;
 
@@ -165,6 +172,8 @@ class BaseRenderer : public AudioObject,
 
   WavWriter<kEnableRendererWavWriters> wav_writer_;
   Reporter::Container<Reporter::Renderer, Reporter::kObjectsToCache>::Ptr reporter_;
+  size_t continuity_underflow_count_ = 0;
+  size_t timestamp_underflow_count_ = 0;
 
   std::shared_ptr<Clock> clock_;
 };

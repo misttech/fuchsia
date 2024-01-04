@@ -16,13 +16,14 @@ use {
     },
     fidl_fuchsia_net_routes as fnet_routes, fuchsia_async as fasync,
     fuchsia_component::server::{ServiceFs, ServiceFsDir},
-    fuchsia_inspect, fuchsia_runtime, fuchsia_zircon as zx,
+    fuchsia_inspect, fuchsia_runtime,
+    fuchsia_sync::RwLock,
+    fuchsia_zircon as zx,
     futures::{
         channel::mpsc, lock::Mutex, FutureExt as _, SinkExt as _, StreamExt as _, TryStreamExt as _,
     },
     net_declare::fidl_ip_v6,
     net_types::ip::IpAddress,
-    parking_lot::RwLock,
     std::collections::{BTreeMap, HashMap, VecDeque},
     std::convert::TryFrom as _,
     std::hash::{Hash, Hasher},
@@ -1145,7 +1146,7 @@ async fn apply_scheduling_role() -> Result<(), Error> {
 // NB: We manually set tags so logs from trust-dns crates also get the same
 // tags as opposed to only the crate path.
 #[fuchsia::main(logging_tags = ["dns"])]
-async fn main() -> Result<(), Error> {
+pub async fn main() -> Result<(), Error> {
     info!("starting");
 
     let mut resolver_opts = ResolverOpts::default();
@@ -1164,7 +1165,9 @@ async fn main() -> Result<(), Error> {
     let inspector = fuchsia_inspect::component::inspector();
     let _state_inspect_node = add_config_state_inspect(inspector.root(), config_state.clone());
     let _query_stats_inspect_node = add_query_stats_inspect(inspector.root(), stats.clone());
-    let () = inspect_runtime::serve(inspector, &mut fs)?;
+    let _inspect_server_task =
+        inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default())
+            .context("publish Inspect task")?;
 
     let routes = fuchsia_component::client::connect_to_protocol::<fnet_routes::StateMarker>()
         .context("failed to connect to fuchsia.net.routes/State")?;
@@ -1214,9 +1217,9 @@ mod tests {
     };
 
     use assert_matches::assert_matches;
+    use diagnostics_assertions::{assert_data_tree, tree_assertion, NonZeroUintProperty};
     use dns::test_util::*;
     use dns::DEFAULT_PORT;
-    use fuchsia_inspect::{assert_data_tree, testing::NonZeroUintProperty, tree_assertion};
     use futures::future::TryFutureExt as _;
     use itertools::Itertools as _;
     use net_declare::{fidl_ip, std_ip, std_ip_v4, std_ip_v6};

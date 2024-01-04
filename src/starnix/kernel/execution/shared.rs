@@ -9,24 +9,26 @@ use fidl_fuchsia_process as fprocess;
 use fuchsia_inspect::NumericProperty;
 use fuchsia_runtime::{HandleInfo, HandleType};
 use fuchsia_zircon::{self as zx};
+use starnix_sync::{Locked, Unlocked};
 use std::{convert::TryFrom, sync::Arc};
 
 use crate::{
-    fs::{
-        fuchsia::{create_file_from_handle, RemoteBundle, RemoteFs, SyslogFile},
-        *,
-    },
-    logging::log_trace,
+    arch::execution::new_syscall,
+    fs::fuchsia::{create_file_from_handle, RemoteBundle, RemoteFs, SyslogFile},
     mm::MemoryManager,
-    signals::dequeue_signal,
-    syscalls::{
-        decls::{Syscall, SyscallDecl},
-        table::dispatch_syscall,
-        SyscallResult,
+    signals::{dequeue_signal, prepare_to_restart_syscall},
+    syscalls::table::dispatch_syscall,
+    task::{
+        CurrentTask, ExitStatus, Kernel, SeccompStateValue, TaskFlags, ThreadGroup, ThreadState,
     },
-    task::*,
-    types::*,
+    vfs::{FdNumber, FdTable, FileSystemCreator, FileSystemHandle, FileSystemOptions},
 };
+use starnix_logging::log_trace;
+use starnix_syscalls::{
+    decls::{Syscall, SyscallDecl},
+    SyscallResult,
+};
+use starnix_uapi::{errno, errors::Errno, mount_flags::MountFlags};
 
 /// Contains context to track the most recently failing system call.
 ///
@@ -57,15 +59,16 @@ pub struct TaskInfo {
 /// Returns an `ErrorContext` if the system call returned an error.
 #[inline(never)] // Inlining this function breaks the CFI directives used to unwind into user code.
 pub fn execute_syscall(
+    locked: &mut Locked<'_, Unlocked>,
     current_task: &mut CurrentTask,
     syscall_decl: SyscallDecl,
 ) -> Option<ErrorContext> {
     #[cfg(feature = "syscall_stats")]
-    SyscallDecl::stats_property(syscall_decl.number).add(1);
+    crate::syscalls::syscall_stats::syscall_stats_property(syscall_decl.number).add(1);
 
-    let syscall = Syscall::new(syscall_decl, current_task);
+    let syscall = new_syscall(syscall_decl, current_task);
 
-    current_task.registers.save_registers_for_restart(&syscall);
+    current_task.thread_state.registers.save_registers_for_restart(syscall.decl.number);
 
     log_trace!("{:?}", syscall);
 
@@ -76,21 +79,23 @@ pub fn execute_syscall(
             if let Some(res) = current_task.run_seccomp_filters(&syscall) {
                 res
             } else {
-                dispatch_syscall(current_task, &syscall)
+                dispatch_syscall(locked, current_task, &syscall)
             }
         } else {
-            dispatch_syscall(current_task, &syscall)
+            dispatch_syscall(locked, current_task, &syscall)
         };
+
+    current_task.trigger_delayed_releaser();
 
     match result {
         Ok(return_value) => {
             log_trace!("-> {:#x}", return_value.value());
-            current_task.registers.set_return_register(return_value.value());
+            current_task.thread_state.registers.set_return_register(return_value.value());
             None
         }
         Err(errno) => {
             log_trace!("!-> {:?}", errno);
-            current_task.registers.set_return_register(errno.return_value());
+            current_task.thread_state.registers.set_return_register(errno.return_value());
             Some(ErrorContext { error: errno, syscall })
         }
     }
@@ -103,33 +108,68 @@ pub fn process_completed_restricted_exit(
     current_task: &mut CurrentTask,
     error_context: &Option<ErrorContext>,
 ) -> Result<Option<ExitStatus>, Errno> {
-    // Checking for a signal might cause the task to exit, so check before processing exit
-    if current_task.read().exit_status.is_none() {
-        dequeue_signal(current_task);
-    }
-
-    if let Some(exit_status) = current_task.read().exit_status.as_ref() {
-        log_trace!("exiting with status {:?}", exit_status);
-        if let Some(error_context) = error_context {
-            match exit_status {
-                ExitStatus::Exit(value) if *value == 0 => {}
-                _ => {
-                    log_trace!(
-                        "last failing syscall before exit: {:?}, failed with {:?}",
-                        error_context.syscall,
-                        error_context.error
-                    );
+    loop {
+        // Checking for a signal might cause the task to exit, so check before processing exit
+        {
+            let flags = current_task.flags();
+            {
+                let CurrentTask {
+                    task,
+                    thread_state: ThreadState { registers, extended_pstate, .. },
+                    ..
+                } = current_task;
+                let task_state = task.write();
+                if flags.contains(TaskFlags::TEMPORARY_SIGNAL_MASK)
+                    || (!flags.contains(TaskFlags::EXITED)
+                        && flags.contains(TaskFlags::SIGNALS_AVAILABLE))
+                {
+                    if !task.is_exitted() {
+                        dequeue_signal(task, task_state, registers, extended_pstate);
+                    }
                 }
-            };
+                // The syscall may need to restart for a non-signal-related
+                // reason. This call does nothing if we aren't restarting.
+                prepare_to_restart_syscall(registers, None);
+            }
         }
-        return Ok(Some(exit_status.clone()));
+
+        let exit_status = current_task.exit_status();
+        if let Some(exit_status) = exit_status {
+            log_trace!("exiting with status {:?}", exit_status);
+            if let Some(error_context) = error_context {
+                match exit_status {
+                    ExitStatus::Exit(value) if value == 0 => {}
+                    _ => {
+                        log_trace!(
+                            "last failing syscall before exit: {:?}, failed with {:?}",
+                            error_context.syscall,
+                            error_context.error
+                        );
+                    }
+                };
+            }
+
+            return Ok(Some(exit_status));
+        } else {
+            // Block a stopped process after it's had a chance to handle signals, since a signal might
+            // cause it to stop.
+            current_task.block_while_stopped();
+            let flags = current_task.flags();
+            // If ptrace_cont has sent a signal, process it immediately.  This
+            // seems to match Linux behavior.
+            if current_task
+                .read()
+                .ptrace
+                .as_ref()
+                .map_or(false, |ptrace| ptrace.stop_status == crate::task::PtraceStatus::Continuing)
+                && flags.contains(TaskFlags::SIGNALS_AVAILABLE)
+                && !current_task.is_exitted()
+            {
+                continue;
+            }
+            return Ok(None);
+        }
     }
-
-    // Block a stopped process after it's had a chance to handle signals, since a signal might
-    // cause it to stop.
-    block_while_stopped(current_task);
-
-    Ok(None)
 }
 
 /// Creates a `StartupHandles` from the provided handles.
@@ -175,21 +215,24 @@ pub fn create_remotefs_filesystem(
     root: &fio::DirectorySynchronousProxy,
     rights: fio::OpenFlags,
     options: FileSystemOptions,
-) -> Result<FileSystemHandle, Error> {
+) -> Result<FileSystemHandle, Errno> {
     let root = syncio::directory_open_directory_async(
         root,
-        std::str::from_utf8(&options.source).map_err(|_| anyhow!("source path is not utf8"))?,
+        std::str::from_utf8(&options.source)
+            .map_err(|_| errno!(EINVAL, "source path is not utf8"))?,
         rights,
     )
-    .map_err(|e| anyhow!("Failed to open root: {}", e))?;
-    RemoteFs::new_fs(kernel, root.into_channel(), options, rights).map_err(|e| e.into())
+    .map_err(|e| errno!(EIO, format!("Failed to open root: {e}")))?;
+    RemoteFs::new_fs(kernel, root.into_channel(), options, rights)
 }
 
 pub fn create_filesystem_from_spec<'a>(
-    kernel: &Arc<Kernel>,
+    creator: &impl FileSystemCreator,
     pkg: &fio::DirectorySynchronousProxy,
     spec: &'a str,
 ) -> Result<(&'a [u8], FileSystemHandle), Error> {
+    let kernel = creator.kernel();
+
     let mut iter = spec.splitn(4, ':');
     let mount_point =
         iter.next().ok_or_else(|| anyhow!("mount point is missing from {:?}", spec))?;
@@ -215,53 +258,30 @@ pub fn create_filesystem_from_spec<'a>(
     let fs = match fs_type {
         "remote_bundle" => RemoteBundle::new_fs(kernel, pkg, rights, fs_src)?,
         "remotefs" => create_remotefs_filesystem(kernel, pkg, rights, options)?,
-        _ => kernel.create_filesystem(fs_type.as_bytes(), options)?,
+        _ => creator.create_filesystem(fs_type.as_bytes(), options)?,
     };
     Ok((mount_point.as_bytes(), fs))
-}
-
-/// Block the execution of `current_task` as long as the task is stopped and not terminated.
-pub fn block_while_stopped(current_task: &CurrentTask) {
-    // Early exit test to avoid creating a port when we don't need to sleep. Testing in the loop
-    // after adding the waiter to the wait queue is still important to deal with race conditions
-    // where the condition becomes true between checking it and starting the wait.
-    // TODO(tbodt): Find a less hacky way to do this. There might be some way to create one port
-    // per task and use it every time the current task needs to sleep.
-    if current_task.read().exit_status.is_some() {
-        return;
-    }
-    if !current_task.thread_group.read().stopped {
-        return;
-    }
-
-    let waiter = Waiter::new_ignoring_signals();
-    loop {
-        current_task.thread_group.read().stopped_waiters.wait_async(&waiter);
-        if current_task.read().exit_status.is_some() {
-            return;
-        }
-        if !current_task.thread_group.read().stopped {
-            return;
-        }
-        // Result is not needed, as this is not in a syscall.
-        let _: Result<(), Errno> = waiter.wait(current_task);
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{signals::*, testing::*};
+    use crate::{signals::SignalInfo, task::StopState, testing::*};
+    use starnix_uapi::signals::{SIGCONT, SIGSTOP};
 
     #[::fuchsia::test]
     async fn test_block_while_stopped_stop_and_continue() {
-        let (_kernel, task) = create_kernel_and_task();
+        let (_kernel, mut task) = create_kernel_and_task();
 
         // block_while_stopped must immediately returned if the task is not stopped.
-        block_while_stopped(&task);
+        task.block_while_stopped();
 
         // Stop the task.
-        task.thread_group.set_stopped(true, SignalInfo::default(SIGSTOP));
+        task.thread_group.set_stopped(
+            StopState::GroupStopping,
+            Some(SignalInfo::default(SIGSTOP)),
+            false,
+        );
 
         let thread = std::thread::spawn({
             let task = task.weak_task();
@@ -273,29 +293,37 @@ mod tests {
                 }
 
                 // Continue the task.
-                task.thread_group.set_stopped(false, SignalInfo::default(SIGCONT));
+                task.thread_group.set_stopped(
+                    StopState::Waking,
+                    Some(SignalInfo::default(SIGCONT)),
+                    false,
+                );
             }
         });
 
         // Block until continued.
-        block_while_stopped(&task);
+        task.block_while_stopped();
 
         // Join the thread, which will ensure set_stopped terminated.
         thread.join().expect("joined");
 
         // The task should not be blocked anymore.
-        block_while_stopped(&task);
+        task.block_while_stopped();
     }
 
     #[::fuchsia::test]
     async fn test_block_while_stopped_stop_and_exit() {
-        let (_kernel, task) = create_kernel_and_task();
+        let (_kernel, mut task) = create_kernel_and_task();
 
         // block_while_stopped must immediately returned if the task is neither stopped nor exited.
-        block_while_stopped(&task);
+        task.block_while_stopped();
 
         // Stop the task.
-        task.thread_group.set_stopped(true, SignalInfo::default(SIGSTOP));
+        task.thread_group.set_stopped(
+            StopState::GroupStopping,
+            Some(SignalInfo::default(SIGSTOP)),
+            false,
+        );
 
         let thread = std::thread::spawn({
             let task = task.weak_task();
@@ -312,12 +340,12 @@ mod tests {
         });
 
         // Block until continued.
-        block_while_stopped(&task);
+        task.block_while_stopped();
 
         // Join the task, which will ensure thread_group.exit terminated.
         thread.join().expect("joined");
 
         // The task should not be blocked because it is stopped.
-        block_while_stopped(&task);
+        task.block_while_stopped();
     }
 }

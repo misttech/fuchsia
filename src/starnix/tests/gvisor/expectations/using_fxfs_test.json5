@@ -12,8 +12,20 @@
         {
             type: "expect_failure",
             matchers: [
-                // fallocate_test
-                "AllocateTest.Fallocate",
+                // mmap_test
+                // These test cases fail with pager-backed filesystems currently.
+                // TODO(https://fxbug.dev/133371): Re-enable once these pass on fxfs.
+                "MMapFileTest.ReadSharedTruncateSIGBUS",
+                "MMapFileTest.WriteSharedTruncateSIGBUS",
+            ],
+        },
+        {
+            type: "skip",
+            matchers: [
+                // TODO(https://fxbug.dev/130402): Re-enable once flake is resolved.
+                "AllInetTests/SimpleTcpSocketTest.NonBlockingConnectNoListenerPeek/*",
+                "AllInetTests/SimpleTcpSocketTest.NonBlockingConnectNoListenerRead/*",
+                "AllInetTests/SimpleTcpSocketTest.NonBlockingConnectNoListener/*",
             ],
         },
     ],

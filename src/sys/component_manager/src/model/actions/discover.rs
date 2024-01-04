@@ -5,21 +5,25 @@
 use {
     crate::model::{
         actions::{Action, ActionKey},
-        component::{ComponentInstance, InstanceState},
+        component::{ComponentInstance, InstanceState, UnresolvedInstanceState},
         error::DiscoverActionError,
         hooks::{Event, EventPayload},
     },
     async_trait::async_trait,
+    sandbox::Dict,
     std::sync::Arc,
 };
 
 /// Dispatches a `Discovered` event for a component instance. This action should be registered
 /// when a component instance is created.
-pub struct DiscoverAction {}
+pub struct DiscoverAction {
+    /// A Dict holding the capabilities made available to this component by its parent.
+    dict: Dict,
+}
 
 impl DiscoverAction {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(dict: Dict) -> Self {
+        Self { dict }
     }
 }
 
@@ -27,19 +31,22 @@ impl DiscoverAction {
 impl Action for DiscoverAction {
     type Output = Result<(), DiscoverActionError>;
     async fn handle(self, component: &Arc<ComponentInstance>) -> Self::Output {
-        do_discover(component).await
+        do_discover(component, self.dict).await
     }
     fn key(&self) -> ActionKey {
         ActionKey::Discover
     }
 }
 
-async fn do_discover(component: &Arc<ComponentInstance>) -> Result<(), DiscoverActionError> {
+async fn do_discover(
+    component: &Arc<ComponentInstance>,
+    dict: Dict,
+) -> Result<(), DiscoverActionError> {
     let is_discovered = {
         let state = component.lock_state().await;
         match *state {
             InstanceState::New => false,
-            InstanceState::Unresolved => true,
+            InstanceState::Unresolved(_) => true,
             InstanceState::Resolved(_) => true,
             InstanceState::Destroyed => {
                 return Err(DiscoverActionError::InstanceDestroyed {
@@ -63,14 +70,14 @@ async fn do_discover(component: &Arc<ComponentInstance>) -> Result<(), DiscoverA
             InstanceState::Destroyed => {
                 // Nothing to do.
             }
-            InstanceState::Unresolved | InstanceState::Resolved(_) => {
+            InstanceState::Unresolved(_) | InstanceState::Resolved(_) => {
                 panic!(
                     "Component was marked {:?} during Discover action, which shouldn't be possible",
                     *state
                 );
             }
             InstanceState::New => {
-                state.set(InstanceState::Unresolved);
+                state.set(InstanceState::Unresolved(UnresolvedInstanceState::new(dict)));
             }
         }
     }

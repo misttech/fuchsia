@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <functional>
 #include <iterator>
 #include <optional>
 #include <unordered_set>
@@ -661,6 +662,19 @@ bt::sm::IOCapability IoCapabilityFromFidl(fsys::InputCapability input,
   return bt::sm::IOCapability::kNoInputNoOutput;
 }
 
+std::optional<bt::gap::BrEdrSecurityMode> BrEdrSecurityModeFromFidl(
+    const fsys::BrEdrSecurityMode mode) {
+  switch (mode) {
+    case fsys::BrEdrSecurityMode::MODE_4:
+      return bt::gap::BrEdrSecurityMode::Mode4;
+    case fsys::BrEdrSecurityMode::SECURE_CONNECTIONS_ONLY:
+      return bt::gap::BrEdrSecurityMode::SecureConnectionsOnly;
+    default:
+      bt_log(WARN, "fidl", "BR/EDR security mode not recognized");
+      return std::nullopt;
+  }
+}
+
 bt::gap::LESecurityMode LeSecurityModeFromFidl(const fsys::LeSecurityMode mode) {
   switch (mode) {
     case fsys::LeSecurityMode::MODE_1:
@@ -731,18 +745,19 @@ fsys::Peer PeerToFidl(const bt::gap::Peer& peer) {
   }
 
   if (peer.le()) {
-    const std::optional<bt::AdvertisingData>& adv_data = peer.le()->parsed_advertising_data();
+    const std::optional<std::reference_wrapper<const bt::AdvertisingData>> adv_data =
+        peer.le()->parsed_advertising_data();
     if (adv_data.has_value()) {
-      if (adv_data->appearance().has_value()) {
-        if (auto appearance = AppearanceToFidl(adv_data->appearance().value())) {
+      if (adv_data->get().appearance().has_value()) {
+        if (auto appearance = AppearanceToFidl(adv_data->get().appearance().value())) {
           output.set_appearance(appearance.value());
         } else {
           bt_log(DEBUG, "fidl", "omitting unencodeable appearance %#.4x of peer %s",
-                 adv_data->appearance().value(), bt_str(peer.identifier()));
+                 adv_data->get().appearance().value(), bt_str(peer.identifier()));
         }
       }
-      if (adv_data->tx_power()) {
-        output.set_tx_power(adv_data->tx_power().value());
+      if (adv_data->get().tx_power()) {
+        output.set_tx_power(adv_data->get().tx_power().value());
       }
     }
   }
@@ -900,14 +915,14 @@ fble::RemoteDevicePtr NewLERemoteDevice(const bt::gap::Peer& peer) {
   fidl_device->connectable = peer.connectable();
 
   // Initialize advertising data only if its non-empty.
-  const std::optional<bt::AdvertisingData>& adv_data = peer.le()->parsed_advertising_data();
+  const std::optional<std::reference_wrapper<const bt::AdvertisingData>> adv_data =
+      peer.le()->parsed_advertising_data();
   if (adv_data.has_value()) {
     auto data = fidl_helpers::AdvertisingDataToFidlDeprecated(adv_data.value());
     fidl_device->advertising_data =
         std::make_unique<fble::AdvertisingDataDeprecated>(std::move(data));
-  } else if (peer.le()->advertising_data().size()) {
-    // If the peer's raw advertising_data has been set (which is the case if the size is non-0),
-    // but failed to parse, then this conversion failed.
+  } else if (peer.le()->advertising_data_error().has_value()) {
+    // If the peer advertising data has failed to parse, then this conversion failed.
     return nullptr;
   }
 
@@ -1191,8 +1206,8 @@ fble::AdvertisingDataDeprecated AdvertisingDataToFidlDeprecated(const bt::Advert
   return output;
 }
 
-fuchsia::bluetooth::le::ScanData AdvertisingDataToFidlScanData(const bt::AdvertisingData& input,
-                                                               zx::time timestamp) {
+fuchsia::bluetooth::le::ScanData AdvertisingDataToFidlScanData(
+    const bt::AdvertisingData& input, pw::chrono::SystemClock::time_point timestamp) {
   // Reuse bt::AdvertisingData -> fble::AdvertisingData utility, since most fields are the same as
   // fble::ScanData.
   fble::AdvertisingData fidl_adv_data = AdvertisingDataToFidl(input);
@@ -1215,7 +1230,8 @@ fuchsia::bluetooth::le::ScanData AdvertisingDataToFidlScanData(const bt::Adverti
   if (fidl_adv_data.has_uris()) {
     out.set_uris(std::move(*fidl_adv_data.mutable_uris()));
   }
-  out.set_timestamp(timestamp.get());
+  zx_time_t timestamp_ns = timestamp.time_since_epoch().count();
+  out.set_timestamp(timestamp_ns);
   return out;
 }
 
@@ -1230,9 +1246,11 @@ fble::Peer PeerToFidlLe(const bt::gap::Peer& peer) {
     output.set_rssi(peer.rssi());
   }
 
-  const std::optional<bt::AdvertisingData>& advertising_data = peer.le()->parsed_advertising_data();
+  const std::optional<std::reference_wrapper<const bt::AdvertisingData>> advertising_data =
+      peer.le()->parsed_advertising_data();
   if (advertising_data.has_value()) {
-    std::optional<zx::time> timestamp = peer.le()->parsed_advertising_data_timestamp();
+    std::optional<pw::chrono::SystemClock::time_point> timestamp =
+        peer.le()->parsed_advertising_data_timestamp();
     output.set_advertising_data(AdvertisingDataToFidl(advertising_data.value()));
     output.set_data(AdvertisingDataToFidlScanData(advertising_data.value(), timestamp.value()));
   }
@@ -1242,7 +1260,8 @@ fble::Peer PeerToFidlLe(const bt::gap::Peer& peer) {
   }
 
   output.set_bonded(peer.bonded());
-  output.set_last_updated(peer.last_updated().get());
+  zx_time_t last_updated_ns = peer.last_updated().time_since_epoch().count();
+  output.set_last_updated(last_updated_ns);
 
   return output;
 }

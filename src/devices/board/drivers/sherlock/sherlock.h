@@ -5,8 +5,9 @@
 #ifndef SRC_DEVICES_BOARD_DRIVERS_SHERLOCK_SHERLOCK_H_
 #define SRC_DEVICES_BOARD_DRIVERS_SHERLOCK_SHERLOCK_H_
 
+#include <fidl/fuchsia.hardware.clockimpl/cpp/wire.h>
+#include <fidl/fuchsia.hardware.gpioimpl/cpp/wire.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
-#include <fuchsia/hardware/clockimpl/cpp/banjo.h>
 #include <fuchsia/hardware/gpioimpl/cpp/banjo.h>
 #include <fuchsia/hardware/iommu/cpp/banjo.h>
 #include <lib/ddk/device.h>
@@ -95,6 +96,7 @@ class Sherlock : public SherlockType {
   uint8_t GetDdicVersion();
 
   zx_status_t Start();
+  zx::result<> AdcInit();
   zx_status_t SysmemInit();
   zx_status_t GpioInit();
   zx_status_t RegistersInit();
@@ -133,10 +135,29 @@ class Sherlock : public SherlockType {
 
   zx_status_t EnableWifi32K(void);
 
+  static fuchsia_hardware_gpioimpl::wire::InitCall GpioConfigIn(
+      fuchsia_hardware_gpio::GpioFlags flags) {
+    return fuchsia_hardware_gpioimpl::wire::InitCall::WithInputFlags(flags);
+  }
+
+  static fuchsia_hardware_gpioimpl::wire::InitCall GpioConfigOut(uint8_t initial_value) {
+    return fuchsia_hardware_gpioimpl::wire::InitCall::WithOutputValue(initial_value);
+  }
+
+  fuchsia_hardware_gpioimpl::wire::InitCall GpioSetAltFunction(uint64_t function) {
+    return fuchsia_hardware_gpioimpl::wire::InitCall::WithAltFunction(init_arena_, function);
+  }
+
+  fuchsia_hardware_gpioimpl::wire::InitCall GpioSetDriveStrength(uint64_t ds_ua) {
+    return fuchsia_hardware_gpioimpl::wire::InitCall::WithDriveStrengthUa(init_arena_, ds_ua);
+  }
+
   fdf::WireSyncClient<fuchsia_hardware_platform_bus::PlatformBus> pbus_;
   ddk::IommuProtocolClient iommu_;
   ddk::GpioImplProtocolClient gpio_impl_;
-  ddk::ClockImplProtocolClient clk_impl_;
+  fidl::Arena<> init_arena_;
+  std::vector<fuchsia_hardware_gpioimpl::wire::InitStep> gpio_init_steps_;
+  std::vector<fuchsia_hardware_clockimpl::wire::InitStep> clock_init_steps_;
   thrd_t thread_;
 
   std::optional<uint8_t> board_rev_;

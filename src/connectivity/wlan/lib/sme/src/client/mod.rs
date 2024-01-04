@@ -28,7 +28,7 @@ use {
     fuchsia_inspect_contrib::auto_persist::{self, AutoPersist},
     fuchsia_zircon as zx,
     futures::channel::{mpsc, oneshot},
-    ieee80211::{Bssid, Ssid},
+    ieee80211::{Bssid, MacAddrBytes, Ssid},
     std::{
         convert::{TryFrom, TryInto},
         sync::Arc,
@@ -39,12 +39,11 @@ use {
         bss::{BssDescription, Protection as BssProtection},
         capabilities::derive_join_capabilities,
         channel::Channel,
-        hasher::WlanHasher,
         ie::{self, rsn::rsne, wsc},
         scan::{Compatibility, ScanResult},
         security::{SecurityAuthenticator, SecurityDescriptor},
         sink::UnboundedSink,
-        timer::{self, TimedEvent},
+        timer,
     },
     wlan_rsn::auth,
 };
@@ -76,8 +75,6 @@ mod internal {
 }
 
 use self::internal::*;
-
-pub type TimeStream = timer::TimeStream<Event>;
 
 // An automatically increasing sequence number that uniquely identifies a logical
 // connection attempt. For example, a new connection attempt can be triggered
@@ -363,6 +360,18 @@ impl ConnectFailure {
                 bss_protection: BssProtection::Wep,
                 code: fidl_ieee80211::StatusCode::RefusedUnauthenticatedAccessNotSupported,
             }) => true,
+
+            // For WPA3, the AP will not respond to SAE authentication frames
+            // if it detects an invalid credential, so we expect the connection
+            // attempt to time out.
+            ConnectFailure::AssociationFailure(AssociationFailure {
+                bss_protection: BssProtection::Wpa3Personal,
+                code: fidl_ieee80211::StatusCode::RejectedSequenceTimeout,
+            })
+            | ConnectFailure::AssociationFailure(AssociationFailure {
+                bss_protection: BssProtection::Wpa2Wpa3Personal,
+                code: fidl_ieee80211::StatusCode::RejectedSequenceTimeout,
+            }) => true,
             _ => false,
         }
     }
@@ -451,7 +460,7 @@ pub struct ServingApInfo {
 impl From<ServingApInfo> for fidl_sme::ServingApInfo {
     fn from(ap: ServingApInfo) -> fidl_sme::ServingApInfo {
         fidl_sme::ServingApInfo {
-            bssid: ap.bssid.0,
+            bssid: ap.bssid.to_array(),
             ssid: ap.ssid.to_vec(),
             rssi_dbm: ap.rssi_dbm,
             snr_db: ap.snr_db,
@@ -497,16 +506,19 @@ impl ClientSme {
         cfg: ClientConfig,
         info: fidl_mlme::DeviceInfo,
         inspect_node: fuchsia_inspect::Node,
-        hasher: WlanHasher,
         persistence_req_sender: auto_persist::PersistenceReqSender,
         mac_sublayer_support: fidl_common::MacSublayerSupport,
         security_support: fidl_common::SecuritySupport,
         spectrum_management_support: fidl_common::SpectrumManagementSupport,
-    ) -> (Self, MlmeSink, MlmeStream, TimeStream) {
+    ) -> (Self, MlmeSink, MlmeStream, timer::EventStream<Event>) {
         let device_info = Arc::new(info);
         let (mlme_sink, mlme_stream) = mpsc::unbounded();
         let (mut timer, time_stream) = timer::create_timer();
-        let inspect = Arc::new(inspect::SmeTree::new(inspect_node, hasher));
+        let inspect = Arc::new(inspect::SmeTree::new(
+            inspect_node,
+            &device_info,
+            &spectrum_management_support,
+        ));
         let _ = timer.schedule(event::InspectPulseCheck);
         let _ = timer.schedule(event::InspectPulsePersist);
         let mut auto_persist_last_pulse =
@@ -562,10 +574,7 @@ impl ClientSme {
             }
         };
 
-        info!(
-            "Received ConnectRequest for {}",
-            bss_description.to_string(&self.context.inspect.hasher)
-        );
+        info!("Received ConnectRequest for {}", bss_description);
 
         if self
             .cfg
@@ -599,9 +608,7 @@ impl ClientSme {
                     "{:?}",
                     format!(
                         "Failed to configure protection for network {} ({}): {:?}",
-                        self.context.inspect.hasher.hash_ssid(&bss_description.ssid),
-                        self.context.inspect.hasher.hash_mac_addr(&bss_description.bssid.0),
-                        error
+                        bss_description.ssid, bss_description.bssid, error
                     )
                 );
                 connect_txn_sink
@@ -691,7 +698,7 @@ impl super::Station for ClientSme {
         match event {
             fidl_mlme::MlmeEvent::OnScanResult { result } => self
                 .scan_sched
-                .on_mlme_scan_result(result, &self.context.inspect)
+                .on_mlme_scan_result(result)
                 .unwrap_or_else(|e| error!("scan result error: {:?}", e)),
             fidl_mlme::MlmeEvent::OnScanEnd { end } => {
                 match self.scan_sched.on_mlme_scan_end(end, &self.context.inspect) {
@@ -752,7 +759,7 @@ impl super::Station for ClientSme {
         self.context.inspect.update_pulse(self.status());
     }
 
-    fn on_timeout(&mut self, timed_event: TimedEvent<Event>) {
+    fn on_timeout(&mut self, timed_event: timer::Event<Event>) {
         self.state = self.state.take().map(|state| match timed_event.event {
             event @ Event::RsnaCompletionTimeout(..)
             | event @ Event::RsnaResponseTimeout(..)
@@ -798,6 +805,7 @@ mod tests {
     use fuchsia_async as fasync;
     use fuchsia_inspect as finspect;
     use ieee80211::MacAddr;
+    use lazy_static::lazy_static;
     use std::convert::TryFrom;
     use test_case::test_case;
     use wlan_common::{
@@ -820,8 +828,9 @@ mod tests {
     use crate::test_utils;
     use crate::Station;
 
-    const CLIENT_ADDR: MacAddr = [0x7A, 0xE7, 0x76, 0xD9, 0xF2, 0x67];
-    const DUMMY_HASH_KEY: [u8; 8] = [88, 77, 66, 55, 44, 33, 22, 11];
+    lazy_static! {
+        static ref CLIENT_ADDR: MacAddr = [0x7A, 0xE7, 0x76, 0xD9, 0xF2, 0x67].into();
+    }
 
     fn authentication_open() -> fidl_security::Authentication {
         fidl_security::Authentication { protocol: fidl_security::Protocol::Open, credentials: None }
@@ -965,7 +974,7 @@ mod tests {
     fn verify_rates_compatibility() {
         // Compatible rates.
         let cfg = ClientConfig::default();
-        let device_info = test_utils::fake_device_info([1u8; 6]);
+        let device_info = test_utils::fake_device_info([1u8; 6].into());
         assert!(
             cfg.has_compatible_channel_and_data_rates(&fake_bss_description!(Open), &device_info)
         );
@@ -992,7 +1001,7 @@ mod tests {
                 .set(IeType::HT_CAPABILITIES, fake_ht_cap_bytes().to_vec())
                 .set(IeType::VHT_CAPABILITIES, fake_vht_cap_bytes().to_vec()),
         );
-        let device_info = test_utils::fake_device_info([1u8; 6]);
+        let device_info = test_utils::fake_device_info([1u8; 6].into());
         let timestamp = zx::Time::get_monotonic();
         let scan_result = cfg.create_scan_result(
             timestamp,
@@ -1128,7 +1137,7 @@ mod tests {
         bss: BssDescription,
         authentication: fidl_security::Authentication,
     ) -> Result<Protection, anyhow::Error> {
-        let device = test_utils::fake_device_info(CLIENT_ADDR);
+        let device = test_utils::fake_device_info(*CLIENT_ADDR);
         let security_support = fake_security_support();
         let config = Default::default();
 
@@ -1191,9 +1200,8 @@ mod tests {
             fidl_common::MacImplementationType::Fullmac;
         let (mut sme, _mlme_sink, mut mlme_stream, _time_stream) = ClientSme::new(
             ClientConfig::from_config(SmeConfig::default().with_wep(), false),
-            test_utils::fake_device_info(CLIENT_ADDR),
+            test_utils::fake_device_info(*CLIENT_ADDR),
             sme_root_node,
-            WlanHasher::new(DUMMY_HASH_KEY),
             persistence_req_sender,
             mac_sublayer_support,
             fake_security_support(),
@@ -1711,9 +1719,8 @@ mod tests {
             test_utils::create_inspect_persistence_channel();
         let (mut sme, _mlme_sink, _mlme_stream, mut time_stream) = ClientSme::new(
             ClientConfig::from_config(SmeConfig::default().with_wep(), false),
-            test_utils::fake_device_info(CLIENT_ADDR),
+            test_utils::fake_device_info(*CLIENT_ADDR),
             sme_root_node,
-            WlanHasher::new(DUMMY_HASH_KEY),
             persistence_req_sender,
             fake_mac_sublayer_support(),
             fake_security_support(),
@@ -1779,7 +1786,9 @@ mod tests {
 
     // The unused _exec parameter ensures that an executor exists for the lifetime of the SME.
     // Our internal timer implementation relies on the existence of a local executor.
-    fn create_sme(_exec: &fasync::TestExecutor) -> (ClientSme, MlmeStream, TimeStream) {
+    fn create_sme(
+        _exec: &fasync::TestExecutor,
+    ) -> (ClientSme, MlmeStream, timer::EventStream<Event>) {
         let inspector = finspect::Inspector::default();
         let sme_root_node = inspector.root().create_child("sme");
         let (persistence_req_sender, _persistence_receiver) =
@@ -1792,9 +1801,8 @@ mod tests {
             fidl_common::MacImplementationType::Fullmac;
         let (client_sme, _mlme_sink, mlme_stream, time_stream) = ClientSme::new(
             ClientConfig::default(),
-            test_utils::fake_device_info(CLIENT_ADDR),
+            test_utils::fake_device_info(*CLIENT_ADDR),
             sme_root_node,
-            WlanHasher::new(DUMMY_HASH_KEY),
             persistence_req_sender,
             mac_sublayer_support,
             fake_security_support(),

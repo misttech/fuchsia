@@ -5,8 +5,6 @@
 #ifndef SRC_DEVELOPER_DEBUG_DEBUG_AGENT_MOCK_THREAD_HANDLE_H_
 #define SRC_DEVELOPER_DEBUG_DEBUG_AGENT_MOCK_THREAD_HANDLE_H_
 
-#include <zircon/syscalls/object.h>
-
 #include <map>
 
 #include "src/developer/debug/debug_agent/thread_handle.h"
@@ -57,8 +55,8 @@ class MockThreadHandle final : public ThreadHandle {
   bool single_step() const { return single_step_; }
 
   // ThreadHandle implementation.
-  const zx::thread& GetNativeHandle() const override { return null_handle_; }
-  zx::thread& GetNativeHandle() override { return null_handle_; }
+  const NativeThreadHandle& GetNativeHandle() const override { return null_handle_; }
+  NativeThreadHandle& GetNativeHandle() override { return null_handle_; }
   zx_koid_t GetKoid() const override { return thread_koid_; }
   std::string GetName() const override { return name_; }
   State GetState() const override { return state_; }
@@ -84,7 +82,7 @@ class MockThreadHandle final : public ThreadHandle {
  private:
   // Always null, for returning only from the getters above.
   // TODO(brettw) Remove this when the ThreadHandle no longer exposes a zx::thread getter.
-  static zx::thread null_handle_;
+  static NativeThreadHandle null_handle_;
 
   zx_koid_t thread_koid_;
   std::string name_;

@@ -4,19 +4,22 @@
 
 use crate::LibContext;
 use anyhow::Result;
-use errors::ffx_error;
+use camino::Utf8PathBuf;
+use errors::{ffx_error, map_daemon_error};
 use ffx_config::environment::ExecutableKind;
 use ffx_config::EnvironmentContext;
 use ffx_core::Injector;
+use ffx_daemon::DaemonConfig;
 use ffx_daemon_proxy::{DaemonVersionCheck, Injection};
-use fidl::endpoints::Proxy;
+use ffx_target::add_manual_target;
+use fidl::endpoints::{DiscoverableProtocolMarker, Proxy};
 use fidl::AsHandleRef;
+use fidl_fuchsia_developer_ffx::{TargetCollectionMarker, TargetCollectionProxy, TargetProxy};
 use fuchsia_zircon_types as zx_types;
-use hoist::Hoist;
+use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
-use tempfile::TempDir;
 
 fn fxe<E: std::fmt::Debug>(e: E) -> anyhow::Error {
     ffx_error!("{e:?}").into()
@@ -31,9 +34,7 @@ pub struct FfxConfigEntry {
 pub struct EnvContext {
     lib_ctx: Weak<LibContext>,
     injector: Box<dyn Injector + Send + Sync>,
-    _hoist_cache_dir: TempDir,
-    #[allow(unused)]
-    context: EnvironmentContext,
+    pub(crate) context: EnvironmentContext,
 }
 
 impl EnvContext {
@@ -64,6 +65,7 @@ impl EnvContext {
             if formatted_config.is_empty() { None } else { Some(formatted_config) };
         let runtime_args = ffx_config::runtime::populate_runtime(&[], runtime_config)?;
         let env_path = None;
+        let current_dir = std::env::current_dir()?;
         let context = match isolate_dir {
             Some(d) => EnvironmentContext::isolated(
                 ExecutableKind::Test,
@@ -71,28 +73,29 @@ impl EnvContext {
                 std::collections::HashMap::from_iter(std::env::vars()),
                 runtime_args,
                 env_path,
-            ),
+                Utf8PathBuf::try_from(current_dir).ok().as_deref(),
+            )
+            .map_err(fxe)?,
             None => EnvironmentContext::detect(
                 ExecutableKind::Test,
                 runtime_args,
-                &std::env::current_dir()?,
+                &current_dir,
                 env_path,
             )
             .map_err(fxe)?,
         };
         let cache_path = context.get_cache_path()?;
         std::fs::create_dir_all(&cache_path)?;
-        let _hoist_cache_dir = tempfile::tempdir_in(&cache_path)?;
-        let hoist = Hoist::with_cache_dir_maybe_router(_hoist_cache_dir.path(), None)?;
+        let node = overnet_core::Router::new(None)?;
         let target = ffx_target::resolve_default_target(&context).await?;
         let injector = Box::new(Injection::new(
             context.clone(),
             DaemonVersionCheck::CheckApiLevel(version_history::LATEST_VERSION.api_level),
-            hoist.clone(),
+            node,
             None,
             target,
         ));
-        Ok(Self { context, injector, _hoist_cache_dir, lib_ctx })
+        Ok(Self { context, injector, lib_ctx })
     }
 
     pub async fn connect_daemon_protocol(&self, protocol: String) -> Result<zx_types::zx_handle_t> {
@@ -112,8 +115,39 @@ impl EnvContext {
         Ok(res)
     }
 
+    pub async fn target_proxy_factory(&self) -> Result<TargetProxy> {
+        self.injector.target_factory().await
+    }
+
+    pub async fn target_collection_proxy_factory(&self) -> Result<TargetCollectionProxy> {
+        let daemon = self.injector.daemon_factory().await?;
+        let (client, server) = fidl::endpoints::create_proxy::<TargetCollectionMarker>()?;
+        let protocol = <TargetCollectionMarker as DiscoverableProtocolMarker>::PROTOCOL_NAME;
+        daemon
+            .connect_to_protocol(protocol, server.into_channel())
+            .await?
+            .map_err(|err| map_daemon_error(protocol, err))?;
+        Ok(client)
+    }
+
+    pub async fn target_add(
+        &self,
+        addr: IpAddr,
+        scope_id: u32,
+        port: u16,
+        wait: bool,
+    ) -> Result<()> {
+        let tc_proxy = self.target_collection_proxy_factory().await?;
+        add_manual_target(&tc_proxy, addr, scope_id, port, wait).await
+    }
+
     pub async fn connect_remote_control_proxy(&self) -> Result<zx_types::zx_handle_t> {
-        let proxy = self.injector.remote_factory().await?;
+        let target = ffx_target::resolve_default_target(&self.context).await?;
+        let is_default_target = target.is_none();
+        let daemon = self.injector.daemon_factory().await?;
+        let timeout = self.context.get_proxy_timeout().await?;
+        let proxy =
+            ffx_target::get_remote_proxy(target, is_default_target, daemon, timeout, None).await?;
         let hdl = proxy.into_channel().map_err(fxe)?.into_zx_channel();
         let res = hdl.raw_handle();
         std::mem::forget(hdl);

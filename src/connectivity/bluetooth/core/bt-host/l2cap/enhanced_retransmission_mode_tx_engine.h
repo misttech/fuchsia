@@ -5,11 +5,11 @@
 #ifndef SRC_CONNECTIVITY_BLUETOOTH_CORE_BT_HOST_L2CAP_ENHANCED_RETRANSMISSION_MODE_TX_ENGINE_H_
 #define SRC_CONNECTIVITY_BLUETOOTH_CORE_BT_HOST_L2CAP_ENHANCED_RETRANSMISSION_MODE_TX_ENGINE_H_
 
+#include <lib/fit/function.h>
+
 #include <list>
 
-#include "lib/async/cpp/task.h"
-#include "lib/fit/function.h"
-#include "lib/zx/time.h"
+#include "src/connectivity/bluetooth/core/bt-host/common/smart_task.h"
 #include "src/connectivity/bluetooth/core/bt-host/l2cap/tx_engine.h"
 
 namespace bt::l2cap::internal {
@@ -39,7 +39,8 @@ class EnhancedRetransmissionModeTxEngine final : public TxEngine {
   EnhancedRetransmissionModeTxEngine(ChannelId channel_id, uint16_t max_tx_sdu_size,
                                      uint8_t max_transmissions, uint8_t n_frames_in_tx_window,
                                      SendFrameCallback send_frame_callback,
-                                     ConnectionFailureCallback connection_failure_callback);
+                                     ConnectionFailureCallback connection_failure_callback,
+                                     pw::async::Dispatcher& dispatcher);
   ~EnhancedRetransmissionModeTxEngine() override = default;
 
   bool QueueSdu(ByteBufferPtr sdu) override;
@@ -176,6 +177,8 @@ class EnhancedRetransmissionModeTxEngine final : public TxEngine {
   [[nodiscard]] bool RetransmitUnackedData(std::optional<uint8_t> only_with_seq,
                                            bool set_is_poll_response);
 
+  pw::async::Dispatcher& pw_dispatcher_;
+
   const uint8_t max_transmissions_;
   const uint8_t n_frames_in_tx_window_;
 
@@ -237,8 +240,8 @@ class EnhancedRetransmissionModeTxEngine final : public TxEngine {
   uint8_t n_receiver_ready_polls_sent_;
   bool remote_is_busy_;
   std::list<PendingPdu> pending_pdus_;
-  async::TaskClosure receiver_ready_poll_task_;
-  async::TaskClosure monitor_task_;
+  SmartTask receiver_ready_poll_task_{pw_dispatcher_};
+  SmartTask monitor_task_{pw_dispatcher_};
 
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(EnhancedRetransmissionModeTxEngine);
 };

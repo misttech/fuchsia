@@ -121,13 +121,15 @@ impl<'a> HandleRef<'a> {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Hash)]
 #[repr(transparent)]
+/// A Kernel Object ID
 pub struct Koid(u64);
 
 const INVALID_KOID: Koid = Koid(0);
 
 impl Koid {
+    /// Get the raw u64 value of the koid
     pub fn raw_koid(&self) -> u64 {
         self.0
     }
@@ -184,6 +186,15 @@ pub trait AsHandleRef {
             related_koid: Koid(koids.1),
             reserved: 0,
         })
+    }
+
+    /// Returns the koid (kernel object ID) for this handle.
+    fn get_koid(&self) -> Result<Koid, zx_status::Status> {
+        let koid = with_handle(self.raw_handle(), |mut h, side| {
+            let h = h.as_hdl_data();
+            h.koids(side).0
+        });
+        Ok(Koid(koid))
     }
 }
 
@@ -299,6 +310,11 @@ pub trait HandleBased: AsHandleRef + From<Handle> + Into<Handle> {
     fn into_raw(self) -> u32 {
         self.into_handle().raw_take()
     }
+
+    /// Returns whether this is an invalid handle.
+    fn is_invalid_handle(&self) -> bool {
+        self.is_invalid()
+    }
 }
 
 /// Representation of a handle-like object
@@ -377,8 +393,7 @@ impl Handle {
         }
 
         let mut table = HANDLE_TABLE.lock().unwrap();
-        let std::collections::hash_map::Entry::Occupied(entry) =
-            table.entry(self.raw_handle())
+        let std::collections::hash_map::Entry::Occupied(entry) = table.entry(self.raw_handle())
         else {
             return Err(zx_status::Status::BAD_HANDLE);
         };
@@ -475,7 +490,8 @@ impl Channel {
     /// Returns true if the channel is closed (i.e. other side was dropped).
     pub fn is_closed(&self) -> bool {
         assert!(!self.is_invalid());
-        let Some(object) = HANDLE_TABLE.lock().unwrap().get(&self.0).map(|x| Arc::clone(&x.object)) else {
+        let Some(object) = HANDLE_TABLE.lock().unwrap().get(&self.0).map(|x| Arc::clone(&x.object))
+        else {
             return true;
         };
 
@@ -486,7 +502,8 @@ impl Channel {
     /// If [`is_closed`] returns true, this may return a string explaining why the handle was closed.
     pub fn closed_reason(&self) -> Option<String> {
         assert!(!self.is_invalid());
-        let Some(object) = HANDLE_TABLE.lock().unwrap().get(&self.0).map(|x| Arc::clone(&x.object)) else {
+        let Some(object) = HANDLE_TABLE.lock().unwrap().get(&self.0).map(|x| Arc::clone(&x.object))
+        else {
             return None;
         };
 
@@ -505,7 +522,8 @@ impl Channel {
             return;
         }
 
-        let Some(object) = HANDLE_TABLE.lock().unwrap().get(&self.0).map(|x| Arc::clone(&x.object)) else {
+        let Some(object) = HANDLE_TABLE.lock().unwrap().get(&self.0).map(|x| Arc::clone(&x.object))
+        else {
             return;
         };
 
@@ -521,7 +539,8 @@ impl Channel {
     /// Overnet announcing to us what protocol is being used to proxy this channel.
     pub fn set_channel_proxy_protocol(&self, proto: ChannelProxyProtocol) {
         assert!(!self.is_invalid());
-        let Some(object) = HANDLE_TABLE.lock().unwrap().get(&self.0).map(|x| Arc::clone(&x.object)) else {
+        let Some(object) = HANDLE_TABLE.lock().unwrap().get(&self.0).map(|x| Arc::clone(&x.object))
+        else {
             return;
         };
 
@@ -550,35 +569,42 @@ impl Channel {
     /// proxy.
     pub async fn get_channel_proxy_protocol(&self) -> Option<ChannelProxyProtocol> {
         assert!(!self.is_invalid());
-        let Some(object) = HANDLE_TABLE.lock().unwrap().get(&self.0).map(|x| Arc::clone(&x.object)) else {
+        let Some(object) = HANDLE_TABLE.lock().unwrap().get(&self.0).map(|x| Arc::clone(&x.object))
+        else {
             return None;
         };
 
-        let mut object = object.lock().unwrap();
+        // this seemingly redundant block lets us avoid holding the object lock
+        // across the receiver await, potentially causing a deadlock.
+        let receiver = {
+            let mut object = object.lock().unwrap();
 
-        if !object.is_open() {
-            return None;
-        }
+            if !object.is_open() {
+                return None;
+            }
 
-        let KObjectEntry::Channel(object) = &mut *object else {
-            unreachable!("Channel handle wasn't a channel in the handle table!");
+            let KObjectEntry::Channel(object) = &mut *object else {
+                unreachable!("Channel handle wasn't a channel in the handle table!");
+            };
+
+            match &mut object.proxy_protocol_state {
+                ChannelProxyProtocolState::Set(state) => {
+                    return Some(*state);
+                }
+                ChannelProxyProtocolState::Unset => {
+                    let (sender, receiver) = oneshot::channel();
+                    object.proxy_protocol_state = ChannelProxyProtocolState::Waiting(vec![sender]);
+                    receiver
+                }
+                ChannelProxyProtocolState::Waiting(waiters) => {
+                    let (sender, receiver) = oneshot::channel();
+                    waiters.push(sender);
+                    receiver
+                }
+            }
         };
 
-        match &mut object.proxy_protocol_state {
-            ChannelProxyProtocolState::Set(state) => {
-                return Some(*state);
-            }
-            ChannelProxyProtocolState::Unset => {
-                let (sender, receiver) = oneshot::channel();
-                object.proxy_protocol_state = ChannelProxyProtocolState::Waiting(vec![sender]);
-                receiver.await.ok()
-            }
-            ChannelProxyProtocolState::Waiting(waiters) => {
-                let (sender, receiver) = oneshot::channel();
-                waiters.push(sender);
-                receiver.await.ok()
-            }
-        }
+        receiver.await.ok()
     }
 
     /// Read a message from a channel.
@@ -851,8 +877,8 @@ impl Socket {
 
         let mut obj = obj.lock().unwrap();
         let KObjectEntry::StreamSocket(obj) = &mut *obj else {
-                    unreachable!("Channel we just allocated wasn't present or wasn't a channel");
-                };
+            unreachable!("Channel we just allocated wasn't present or wasn't a channel");
+        };
         let mut hdl_ref = HdlRef::StreamSocket(obj);
         hdl_ref
             .as_hdl_data()
@@ -872,8 +898,8 @@ impl Socket {
 
         let mut obj = obj.lock().unwrap();
         let KObjectEntry::DatagramSocket(obj) = &mut *obj else {
-                    unreachable!("Channel we just allocated wasn't present or wasn't a channel");
-                };
+            unreachable!("Channel we just allocated wasn't present or wasn't a channel");
+        };
         let mut hdl_ref = HdlRef::DatagramSocket(obj);
         hdl_ref
             .as_hdl_data()
@@ -991,6 +1017,11 @@ impl Socket {
             Poll::Ready(r) => r,
             Poll::Pending => Err(zx_status::Status::SHOULD_WAIT),
         }
+    }
+
+    /// Get an OnSignals that returns when this handle's peer closes.
+    pub fn on_closed(&self) -> on_signals::OnSignals<'_> {
+        on_signals::OnSignals::new(self, Signals::OBJECT_PEER_CLOSED)
     }
 }
 
@@ -1331,211 +1362,222 @@ pub mod on_signals {
     }
 }
 
-bitflags! {
-    /// Signals that can be waited upon.
-    ///
-    /// See [signals](https://fuchsia.dev/fuchsia-src/concepts/kernel/signals) for more information.
-    #[repr(transparent)]
-    pub struct Signals : u32 {
-        /// No signals
-        const NONE = 0x00000000;
-        /// All object signals
-        const OBJECT_ALL = 0x00ffffff;
-        /// All user signals
-        const USER_ALL = 0xff000000;
+// The inner mod is required because bitflags cannot pass the attribute through to the single
+// variant, and attributes cannot be applied to macro invocations.
+mod inner_signals {
+    // Part of the code for the NONE cases that are produced by the macro triggers the lint, but as
+    // a whole, the produced code is still correct.
+    #![allow(clippy::bad_bit_mask)] // TODO(b/303500202) Remove once addressed in bitflags.
+    use super::{bitflags, Status};
 
-        /// Object signal 0
-        const OBJECT_0 = 1 << 0;
-        /// Object signal 1
-        const OBJECT_1 = 1 << 1;
-        /// Object signal 2
-        const OBJECT_2 = 1 << 2;
-        /// Object signal 3
-        const OBJECT_3 = 1 << 3;
-        /// Object signal 4
-        const OBJECT_4 = 1 << 4;
-        /// Object signal 5
-        const OBJECT_5 = 1 << 5;
-        /// Object signal 6
-        const OBJECT_6 = 1 << 6;
-        /// Object signal 7
-        const OBJECT_7 = 1 << 7;
-        /// Object signal 8
-        const OBJECT_8 = 1 << 8;
-        /// Object signal 9
-        const OBJECT_9 = 1 << 9;
-        /// Object signal 10
-        const OBJECT_10 = 1 << 10;
-        /// Object signal 11
-        const OBJECT_11 = 1 << 11;
-        /// Object signal 12
-        const OBJECT_12 = 1 << 12;
-        /// Object signal 13
-        const OBJECT_13 = 1 << 13;
-        /// Object signal 14
-        const OBJECT_14 = 1 << 14;
-        /// Object signal 15
-        const OBJECT_15 = 1 << 15;
-        /// Object signal 16
-        const OBJECT_16 = 1 << 16;
-        /// Object signal 17
-        const OBJECT_17 = 1 << 17;
-        /// Object signal 18
-        const OBJECT_18 = 1 << 18;
-        /// Object signal 19
-        const OBJECT_19 = 1 << 19;
-        /// Object signal 20
-        const OBJECT_20 = 1 << 20;
-        /// Object signal 21
-        const OBJECT_21 = 1 << 21;
-        /// Object signal 22
-        const OBJECT_22 = 1 << 22;
-        /// Handle closed
-        const HANDLE_CLOSED = 1 << 23;
-        /// User signal 0
-        const USER_0 = 1 << 24;
-        /// User signal 1
-        const USER_1 = 1 << 25;
-        /// User signal 2
-        const USER_2 = 1 << 26;
-        /// User signal 3
-        const USER_3 = 1 << 27;
-        /// User signal 4
-        const USER_4 = 1 << 28;
-        /// User signal 5
-        const USER_5 = 1 << 29;
-        /// User signal 6
-        const USER_6 = 1 << 30;
-        /// User signal 7
-        const USER_7 = 1 << 31;
+    bitflags! {
+        /// Signals that can be waited upon.
+        ///
+        /// See [signals](https://fuchsia.dev/fuchsia-src/concepts/kernel/signals) for more information.
+        #[repr(transparent)]
+        pub struct Signals : u32 {
+            /// No signals
+            const NONE = 0x00000000;
+            /// All object signals
+            const OBJECT_ALL = 0x00ffffff;
+            /// All user signals
+            const USER_ALL = 0xff000000;
 
-        /// All user signals
-        const USER_SIGNALS = Self::USER_0.bits() |
-        Self::USER_1.bits() |
-        Self::USER_2.bits() |
-        Self::USER_3.bits() |
-        Self::USER_4.bits() |
-        Self::USER_5.bits() |
-        Self::USER_6.bits() |
-        Self::USER_7.bits();
+            /// Object signal 0
+            const OBJECT_0 = 1 << 0;
+            /// Object signal 1
+            const OBJECT_1 = 1 << 1;
+            /// Object signal 2
+            const OBJECT_2 = 1 << 2;
+            /// Object signal 3
+            const OBJECT_3 = 1 << 3;
+            /// Object signal 4
+            const OBJECT_4 = 1 << 4;
+            /// Object signal 5
+            const OBJECT_5 = 1 << 5;
+            /// Object signal 6
+            const OBJECT_6 = 1 << 6;
+            /// Object signal 7
+            const OBJECT_7 = 1 << 7;
+            /// Object signal 8
+            const OBJECT_8 = 1 << 8;
+            /// Object signal 9
+            const OBJECT_9 = 1 << 9;
+            /// Object signal 10
+            const OBJECT_10 = 1 << 10;
+            /// Object signal 11
+            const OBJECT_11 = 1 << 11;
+            /// Object signal 12
+            const OBJECT_12 = 1 << 12;
+            /// Object signal 13
+            const OBJECT_13 = 1 << 13;
+            /// Object signal 14
+            const OBJECT_14 = 1 << 14;
+            /// Object signal 15
+            const OBJECT_15 = 1 << 15;
+            /// Object signal 16
+            const OBJECT_16 = 1 << 16;
+            /// Object signal 17
+            const OBJECT_17 = 1 << 17;
+            /// Object signal 18
+            const OBJECT_18 = 1 << 18;
+            /// Object signal 19
+            const OBJECT_19 = 1 << 19;
+            /// Object signal 20
+            const OBJECT_20 = 1 << 20;
+            /// Object signal 21
+            const OBJECT_21 = 1 << 21;
+            /// Object signal 22
+            const OBJECT_22 = 1 << 22;
+            /// Handle closed
+            const HANDLE_CLOSED = 1 << 23;
+            /// User signal 0
+            const USER_0 = 1 << 24;
+            /// User signal 1
+            const USER_1 = 1 << 25;
+            /// User signal 2
+            const USER_2 = 1 << 26;
+            /// User signal 3
+            const USER_3 = 1 << 27;
+            /// User signal 4
+            const USER_4 = 1 << 28;
+            /// User signal 5
+            const USER_5 = 1 << 29;
+            /// User signal 6
+            const USER_6 = 1 << 30;
+            /// User signal 7
+            const USER_7 = 1 << 31;
 
-        /// Object is readable
-        const OBJECT_READABLE = Self::OBJECT_0.bits();
-        /// Object is writable
-        const OBJECT_WRITABLE = Self::OBJECT_1.bits();
-        /// Object peer closed
-        const OBJECT_PEER_CLOSED = Self::OBJECT_2.bits();
+            /// All user signals
+            const USER_SIGNALS = Self::USER_0.bits() |
+            Self::USER_1.bits() |
+            Self::USER_2.bits() |
+            Self::USER_3.bits() |
+            Self::USER_4.bits() |
+            Self::USER_5.bits() |
+            Self::USER_6.bits() |
+            Self::USER_7.bits();
 
-        /// Channel peer closed
-        const CHANNEL_PEER_CLOSED = Self::OBJECT_PEER_CLOSED.bits();
-    }
-}
+            /// Object is readable
+            const OBJECT_READABLE = Self::OBJECT_0.bits();
+            /// Object is writable
+            const OBJECT_WRITABLE = Self::OBJECT_1.bits();
+            /// Object peer closed
+            const OBJECT_PEER_CLOSED = Self::OBJECT_2.bits();
 
-impl Signals {
-    /// Returns `Status::INVALID_ARGS` if this signal set contains non-user signals.
-    fn validate_user_signals(&self) -> Result<(), Status> {
-        if Signals::USER_SIGNALS.contains(*self) {
-            Ok(())
-        } else {
-            Err(Status::INVALID_ARGS)
+            /// Channel peer closed
+            const CHANNEL_PEER_CLOSED = Self::OBJECT_PEER_CLOSED.bits();
         }
     }
-}
 
-bitflags! {
-    /// Rights associated with a handle.
-    ///
-    /// See [rights](https://fuchsia.dev/fuchsia-src/concepts/kernel/rights) for more information.
-    #[repr(C)]
-    pub struct Rights: u32 {
-        /// No rights.
-        const NONE           = 0;
-        /// Duplicate right.
-        const DUPLICATE      = 1 << 0;
-        /// Transfer right.
-        const TRANSFER       = 1 << 1;
-        /// Read right.
-        const READ           = 1 << 2;
-        /// Write right.
-        const WRITE          = 1 << 3;
-        /// Execute right.
-        const EXECUTE = 1 << 4;
-        /// Map right.
-        const MAP = 1 << 5;
-        /// Get Property right.
-        const GET_PROPERTY = 1 << 6;
-        /// Set Property right.
-        const SET_PROPERTY = 1 << 7;
-        /// Enumerate right.
-        const ENUMERATE = 1 << 8;
-        /// Destroy right.
-        const DESTROY = 1 << 9;
-        /// Set Policy right.
-        const SET_POLICY = 1 << 10;
-        /// Get Policy right.
-        const GET_POLICY = 1 << 11;
-        /// Signal right.
-        const SIGNAL = 1 << 12;
-        /// Signal Peer right.
-        const SIGNAL_PEER = 1 << 13;
-        /// Wait right.
-        const WAIT = 1 << 14;
-        /// Inspect right.
-        const INSPECT = 1 << 15;
-        /// Manage Job right.
-        const MANAGE_JOB = 1 << 16;
-        /// Manage Process right.
-        const MANAGE_PROCESS = 1 << 17;
-        /// Manage Thread right.
-        const MANAGE_THREAD = 1 << 18;
-        /// Apply Profile right.
-        const APPLY_PROFILE = 1 << 19;
-        /// Manage Socket right.
-        const MANAGE_SOCKET = 1 << 20;
-        /// Same rights.
-        const SAME_RIGHTS = 1 << 31;
-        /// A basic set of rights for most things.
-        const BASIC_RIGHTS = Rights::TRANSFER.bits() |
-                             Rights::DUPLICATE.bits() |
-                             Rights::WAIT.bits() |
-                             Rights::INSPECT.bits();
-        /// IO related rights
-        const IO = Rights::WRITE.bits() |
-                   Rights::READ.bits();
-        /// Rights of a new socket.
-        const SOCKET_DEFAULT = Rights::BASIC_RIGHTS.bits() |
-                                Rights::IO.bits() |
-                                Rights::SIGNAL.bits() |
-                                Rights::SIGNAL_PEER.bits();
-        /// Rights of a new channel.
-        const CHANNEL_DEFAULT = (Rights::BASIC_RIGHTS.bits() & !Rights::DUPLICATE.bits()) |
-                                Rights::IO.bits() |
-                                Rights::SIGNAL.bits() |
-                                Rights::SIGNAL_PEER.bits();
-        /// Rights of a new event pair.
-        const EVENTPAIR_DEFAULT =
-                                Rights::TRANSFER.bits() |
+    impl Signals {
+        /// Returns `Status::INVALID_ARGS` if this signal set contains non-user signals.
+        pub(super) fn validate_user_signals(&self) -> Result<(), Status> {
+            if Signals::USER_SIGNALS.contains(*self) {
+                Ok(())
+            } else {
+                Err(Status::INVALID_ARGS)
+            }
+        }
+    }
+
+    bitflags! {
+        /// Rights associated with a handle.
+        ///
+        /// See [rights](https://fuchsia.dev/fuchsia-src/concepts/kernel/rights) for more information.
+        #[repr(C)]
+        pub struct Rights: u32 {
+            /// No rights.
+            const NONE           = 0;
+            /// Duplicate right.
+            const DUPLICATE      = 1 << 0;
+            /// Transfer right.
+            const TRANSFER       = 1 << 1;
+            /// Read right.
+            const READ           = 1 << 2;
+            /// Write right.
+            const WRITE          = 1 << 3;
+            /// Execute right.
+            const EXECUTE = 1 << 4;
+            /// Map right.
+            const MAP = 1 << 5;
+            /// Get Property right.
+            const GET_PROPERTY = 1 << 6;
+            /// Set Property right.
+            const SET_PROPERTY = 1 << 7;
+            /// Enumerate right.
+            const ENUMERATE = 1 << 8;
+            /// Destroy right.
+            const DESTROY = 1 << 9;
+            /// Set Policy right.
+            const SET_POLICY = 1 << 10;
+            /// Get Policy right.
+            const GET_POLICY = 1 << 11;
+            /// Signal right.
+            const SIGNAL = 1 << 12;
+            /// Signal Peer right.
+            const SIGNAL_PEER = 1 << 13;
+            /// Wait right.
+            const WAIT = 1 << 14;
+            /// Inspect right.
+            const INSPECT = 1 << 15;
+            /// Manage Job right.
+            const MANAGE_JOB = 1 << 16;
+            /// Manage Process right.
+            const MANAGE_PROCESS = 1 << 17;
+            /// Manage Thread right.
+            const MANAGE_THREAD = 1 << 18;
+            /// Apply Profile right.
+            const APPLY_PROFILE = 1 << 19;
+            /// Manage Socket right.
+            const MANAGE_SOCKET = 1 << 20;
+            /// Same rights.
+            const SAME_RIGHTS = 1 << 31;
+            /// A basic set of rights for most things.
+            const BASIC = Rights::TRANSFER.bits() |
                                 Rights::DUPLICATE.bits() |
-                                Rights::IO.bits() |
-                                Rights::SIGNAL.bits() |
-                                Rights::SIGNAL_PEER.bits();
-        /// Rights of a new event.
-        const EVENT_DEFAULT = Rights::BASIC_RIGHTS.bits() |
-                              Rights::SIGNAL.bits();
+                                Rights::WAIT.bits() |
+                                Rights::INSPECT.bits();
+            /// IO related rights
+            const IO = Rights::WRITE.bits() |
+                    Rights::READ.bits();
+            /// Rights of a new socket.
+            const SOCKET_DEFAULT = Rights::BASIC.bits() |
+                                    Rights::IO.bits() |
+                                    Rights::SIGNAL.bits() |
+                                    Rights::SIGNAL_PEER.bits();
+            /// Rights of a new channel.
+            const CHANNEL_DEFAULT = (Rights::BASIC.bits() & !Rights::DUPLICATE.bits()) |
+                                    Rights::IO.bits() |
+                                    Rights::SIGNAL.bits() |
+                                    Rights::SIGNAL_PEER.bits();
+            /// Rights of a new event pair.
+            const EVENTPAIR_DEFAULT =
+                                    Rights::TRANSFER.bits() |
+                                    Rights::DUPLICATE.bits() |
+                                    Rights::IO.bits() |
+                                    Rights::SIGNAL.bits() |
+                                    Rights::SIGNAL_PEER.bits();
+            /// Rights of a new event.
+            const EVENT_DEFAULT = Rights::BASIC.bits() |
+                                Rights::SIGNAL.bits();
+        }
     }
-}
 
-impl Rights {
-    /// Same as from_bits() but a const fn.
-    #[inline]
-    pub const fn from_bits_const(bits: u32) -> Option<Rights> {
-        if (bits & !Rights::all().bits()) == 0 {
-            return Some(Rights { bits });
-        } else {
-            None
+    impl Rights {
+        /// Same as from_bits() but a const fn.
+        #[inline]
+        pub const fn from_bits_const(bits: u32) -> Option<Rights> {
+            if (bits & !Rights::all().bits()) == 0 {
+                return Some(Rights { bits });
+            } else {
+                None
+            }
         }
     }
 }
+
+pub use inner_signals::{Rights, Signals};
 
 /// Handle operation.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]

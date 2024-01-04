@@ -5,10 +5,7 @@
 #ifndef SRC_CONNECTIVITY_BLUETOOTH_CORE_BT_HOST_COMMON_PIPELINE_MONITOR_H_
 #define SRC_CONNECTIVITY_BLUETOOTH_CORE_BT_HOST_COMMON_PIPELINE_MONITOR_H_
 
-#include <lib/async/cpp/time.h>
-#include <lib/async/default.h>
 #include <lib/fit/function.h>
-#include <lib/fit/nullable.h>
 #include <lib/stdcompat/type_traits.h>
 
 #include <functional>
@@ -18,6 +15,8 @@
 #include <unordered_map>
 #include <utility>
 #include <variant>
+
+#include <pw_async/dispatcher.h>
 
 #include "src/connectivity/bluetooth/core/bt-host/common/assert.h"
 #include "src/connectivity/bluetooth/core/bt-host/common/retire_log.h"
@@ -112,16 +111,16 @@ class PipelineMonitor final {
   // Alert for token age (duration from issue to retirement). Fires upon retiring the first token
   // that exceeds the threshold.
   struct MaxAgeRetiredAlert {
-    zx::duration value;
+    pw::chrono::SystemClock::duration value;
   };
 
-  // Create a data chunk-tracking service that uses |dispatcher| for timing (may be null to use the
-  // default dispatcher). |retire_log| is copied into the class in order to store statistics about
-  // retired tokens. Note that the "live" internal log is readable with the |retire_log()| method,
-  // not the original instance passed to the ctor (which will not be logged into).
-  explicit PipelineMonitor(fit::nullable<async_dispatcher_t*> dispatcher,
+  // Create a data chunk-tracking service that uses |pw_dispatcher| for timing. |retire_log| is
+  // copied into the class in order to store statistics about retired tokens. Note that the "live"
+  // internal log is readable with the |retire_log()| method, not the original instance passed to
+  // the ctor (which will not be logged into).
+  explicit PipelineMonitor(pw::async::Dispatcher& pw_dispatcher,
                            const internal::RetireLog& retire_log)
-      : dispatcher_(dispatcher.value_or(async_get_default_dispatcher())), retire_log_(retire_log) {}
+      : dispatcher_(pw_dispatcher), retire_log_(retire_log) {}
 
   [[nodiscard]] size_t bytes_issued() const { return bytes_issued_; }
   [[nodiscard]] int64_t tokens_issued() const { return tokens_issued_; }
@@ -143,7 +142,7 @@ class PipelineMonitor final {
   [[nodiscard]] Token Issue(size_t byte_count) {
     // For consistency, complete all token map and counter modifications before processing alerts.
     const auto id = MakeTokenId();
-    issued_tokens_.insert_or_assign(id, TokenInfo{async::Now(dispatcher_), byte_count});
+    issued_tokens_.insert_or_assign(id, TokenInfo{dispatcher_.now(), byte_count});
     bytes_issued_ += byte_count;
     tokens_issued_++;
     bytes_in_flight_ += byte_count;
@@ -205,7 +204,7 @@ class PipelineMonitor final {
  private:
   // Tracks information for each Token issued out-of-line so that Tokens can be kept small.
   struct TokenInfo {
-    zx::time issue_time = zx::time::infinite();
+    pw::chrono::SystemClock::time_point issue_time = pw::chrono::SystemClock::time_point::max();
     size_t byte_count = 0;
   };
 
@@ -278,14 +277,14 @@ class PipelineMonitor final {
     BT_ASSERT(bool{node});
     const TokenInfo& token_info = node.mapped();
     bytes_in_flight_ -= token_info.byte_count;
-    const zx::duration age = async::Now(dispatcher_) - token_info.issue_time;
+    const pw::chrono::SystemClock::duration age = dispatcher_.now() - token_info.issue_time;
     retire_log_.Retire(token_info.byte_count, age);
 
     // Process alerts.
     SignalAlertValue<MaxAgeRetiredAlert>(age);
   }
 
-  async_dispatcher_t* const dispatcher_ = nullptr;
+  pw::async::Dispatcher& dispatcher_;
 
   internal::RetireLog retire_log_;
 

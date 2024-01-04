@@ -213,11 +213,14 @@ async fn handle_log_settings(channel: fidl::Channel, mut scheduler: TaskSchedule
     scheduler.send_event(TestEvent::LogSettingsConnectionClosed);
 }
 
-async fn handle_connect_capability(
+async fn handle_open_capability(
     capability_name: &str,
     channel: fidl::Channel,
     scheduler: TaskScheduler,
 ) {
+    let Some(capability_name) = capability_name.strip_prefix("svc/") else {
+        panic!("Expected a protocol starting with svc/. Got: {capability_name}");
+    };
     match capability_name {
         ArchiveAccessorMarker::PROTOCOL_NAME => {
             handle_archive_accessor(
@@ -227,8 +230,8 @@ async fn handle_connect_capability(
             .await
         }
         LogSettingsMarker::PROTOCOL_NAME => handle_log_settings(channel, scheduler.clone()).await,
-        _ => {
-            unreachable!();
+        other => {
+            unreachable!("Attempted to connect to {other:?}");
         }
     }
 }
@@ -249,16 +252,19 @@ pub async fn handle_rcs_connection(
                     }))
                     .unwrap();
             }
-            RemoteControlRequest::ConnectCapability {
-                moniker: _,
+            RemoteControlRequest::OpenCapability {
+                moniker,
+                capability_set,
                 capability_name,
-                server_chan,
+                server_channel,
                 flags: _,
                 responder,
             } => {
+                assert_eq!(moniker, rcs::toolbox::MONIKER);
+                assert_eq!(capability_set, rcs::OpenDirType::NamespaceDir);
                 let scheduler_2 = scheduler.clone();
                 scheduler.spawn(async move {
-                    handle_connect_capability(&capability_name, server_chan, scheduler_2).await
+                    handle_open_capability(&capability_name, server_channel, scheduler_2).await
                 });
                 responder.send(Ok(())).unwrap();
             }

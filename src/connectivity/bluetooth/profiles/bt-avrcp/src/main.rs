@@ -79,10 +79,9 @@ async fn main() -> Result<(), Error> {
     // TODO(fxbug.dev/44330) handle back pressure correctly and reduce mpsc::channel buffer sizes.
     let (client_sender, mut service_request_receiver) = mpsc::channel(512);
 
-    let mut fs = ServiceFs::new();
-
     let inspect = inspect::Inspector::default();
-    inspect_runtime::serve(&inspect, &mut fs)?;
+    let _inspect_server_task =
+        inspect_runtime::publish(&inspect, inspect_runtime::PublishOptions::default());
 
     let mut peer_manager = PeerManager::new(profile_proxy);
     if let Err(e) = peer_manager.iattach(inspect.root(), "peers") {
@@ -98,6 +97,7 @@ async fn main() -> Result<(), Error> {
     }
     peer_manager.set_metrics_node(metrics_node);
 
+    let fs = ServiceFs::new();
     let mut service_fut = service::run_services(fs, client_sender)
         .expect("Unable to start AVRCP FIDL service")
         .fuse();
@@ -205,7 +205,7 @@ mod tests {
 
         // Running the background task should empty out the executor of things to do.
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
-        assert_eq!(exec.next_timer(), None);
+        assert_eq!(fuchsia_async::TestExecutor::next_timer(), None);
     }
 
     #[fuchsia::test]
@@ -236,6 +236,6 @@ mod tests {
 
         // Running the background task should empty out the executor of things to do.
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
-        assert_eq!(exec.next_timer(), None);
+        assert_eq!(fuchsia_async::TestExecutor::next_timer(), None);
     }
 }

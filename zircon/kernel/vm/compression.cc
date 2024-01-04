@@ -31,7 +31,8 @@ constexpr int bucket_for_ticks(zx_ticks_t start, zx_ticks_t end) {
   // rounding behavior of integer division here.
   const uint64_t seconds = end > start ? (end - start) / ticks_per_second() : 0;
   // Calculate the bucket and return it, clamping to the maximum number of buckets.
-  return ktl::min(seconds == 0 ? 0 : __builtin_ctzl(seconds) + 1, VmCompression::kNumLogBuckets);
+  return ktl::min(seconds == 0 ? 0 : __builtin_ctzl(seconds) + 1,
+                  VmCompression::kNumLogBuckets - 1);
 }
 
 }  // namespace
@@ -211,11 +212,6 @@ fbl::RefPtr<VmCompression> VmCompression::CreateDefault() {
     return nullptr;
   }
 
-  if constexpr (!PAGE_COMPRESSION) {
-    panic(
-        "ERROR: A kernel compression strategy was declared, but kernel compression was not enabled in the build");
-  }
-
   fbl::AllocChecker ac;
   fbl::RefPtr<VmCompressedStorage> storage;
   switch (gBootOptions->compression_storage_strategy) {
@@ -244,17 +240,12 @@ fbl::RefPtr<VmCompression> VmCompression::CreateDefault() {
   fbl::RefPtr<VmCompressionStrategy> strategy;
   switch (gBootOptions->compression_strategy) {
     case CompressionStrategy::kLz4:
-      // Although we checked earlier that the kernel is built with page compression, the
-      // VmLz4Compressor is not declared as a type when this is not enabled, and so we must guard
-      // this block separately.
-#if PAGE_COMPRESSION
       strategy = VmLz4Compressor::Create();
       if (!strategy) {
         printf("[ZRAM]: Failed to create lz4 compressor\n");
         return nullptr;
       }
       printf("[ZRAM]: Using compression strategy: lz4\n");
-#endif
       break;
     case CompressionStrategy::kNone:
       // Original check should have handled this.

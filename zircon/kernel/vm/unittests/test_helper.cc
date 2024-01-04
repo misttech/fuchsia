@@ -28,16 +28,12 @@ zx_status_t AllocUser(VmAspace* aspace, const char* name, size_t size, user_inou
 
   vmo->set_name(name, strlen(name));
   static constexpr const uint kArchFlags = kArchRwFlags | ARCH_MMU_FLAG_PERM_USER;
-  fbl::RefPtr<VmMapping> mapping;
-  status = aspace->RootVmar()->CreateVmMapping(0, size, 0, 0, vmo, 0, kArchFlags, name, &mapping);
-  if (status != ZX_OK) {
-    return status;
+  auto mapping = aspace->RootVmar()->CreateVmMapping(0, size, 0, 0, vmo, 0, kArchFlags, name);
+  if (mapping.is_error()) {
+    return mapping.status_value();
   }
 
-  {
-    Guard<CriticalMutex> guard{mapping->lock()};
-    *ptr = make_user_inout_ptr(reinterpret_cast<void*>(mapping->base_locked()));
-  }
+  *ptr = make_user_inout_ptr(reinterpret_cast<void*>(mapping->base));
   return ZX_OK;
 }
 
@@ -101,7 +97,7 @@ zx_status_t make_committed_pager_vmo(size_t num_pages, bool trap_dirty, bool res
     return status;
   }
 
-  status = vmo->SupplyPages(0, num_pages * PAGE_SIZE, &splice_list);
+  status = vmo->SupplyPages(0, num_pages * PAGE_SIZE, &splice_list, SupplyOptions::PagerSupply);
   if (status != ZX_OK) {
     return status;
   }

@@ -29,11 +29,12 @@ class BrEdrSignalingChannelTest : public testing::MockChannelTest {
     options.conn_handle = kTestHandle;
 
     fake_chan_ = CreateFakeChannel(options);
-    sig_ = std::make_unique<BrEdrSignalingChannel>(fake_chan_->GetWeakPtr(), kDeviceRole);
+    sig_ = std::make_unique<BrEdrSignalingChannel>(fake_chan_->GetWeakPtr(), kDeviceRole,
+                                                   dispatcher());
   }
 
   void TearDown() override {
-    RunLoopUntilIdle();
+    RunUntilIdle();
     sig_ = nullptr;
   }
 
@@ -172,7 +173,7 @@ TEST_F(BrEdrSignalingChannelTest, SendAndReceiveEcho) {
     rx_success = ContainersEqual(rsp_data, data);
   }));
 
-  RunLoopUntilIdle();
+  RunUntilIdle();
   EXPECT_TRUE(AllExpectedPacketsSent());
 
   // Remote sends back an echo response with a different payload than in local

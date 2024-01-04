@@ -36,6 +36,9 @@ declare_args() {
   # Enable kernel lock dependency tracking.
   enable_lock_dep = false
 
+  # Enable kernel lock dependency metadata only (ignored if enable_lock_dep is true).
+  enable_lock_dep_metadata_only = false
+
   # Enable lock contention tracing.
   lock_tracing_enabled = false
 
@@ -55,6 +58,19 @@ declare_args() {
   # Enables extra (expensive) validation of scheduler invariants to assist in
   # debugging changes to the scheduler's behavior.
   scheduler_extra_invariant_validation = false
+
+  # Enables scheduler lock-spinning trace events for trace-based scheduler
+  # performance analysis.
+  scheduler_lock_spin_tracing_enabled = false
+
+  # Enables compressed records when tracing lock-spin events.  The events will
+  # be more difficult to interpret in a trace visualizer, but will take less
+  # space and provide the same information to scripts which parse lock trace
+  # data.
+  scheduler_lock_spin_tracing_compressed = false
+
+  # TODO(johngro): document
+  futex_block_tracing_enabled = false
 
   # Enables kernel tracing of futex interactions
   futex_tracing_enabled = false
@@ -133,16 +149,6 @@ declare_args() {
 }
 
 declare_args() {
-  # TODO(fxbug.dev/60238): For use while the related RFC is in iterate and can
-  # be removed once the RFC is finalized.
-  # Controls kernel page compression and the linking and instantiation of its
-  # dependencies.
-  # Defaults to true only when the kernel_debug_level is high enough to enable
-  # in testing but disable for production.
-  page_compression_enabled = kernel_debug_level >= 2
-}
-
-declare_args() {
   # Enable kernel lock dependency tracking tests.  By default this is
   # enabled when tracking is enabled, but can also be eanbled independently
   # to assess whether the tests build and *fail correctly* when lockdep is
@@ -150,5 +156,11 @@ declare_args() {
   enable_lock_dep_tests = enable_lock_dep
 }
 
-assert(!enable_lock_dep_tests || enable_lock_dep,
-       "enable_lock_dep_tests=true requires enable_lock_dep=true")
+kernel_test_device_types = [
+  "AEMU",
+  "Astro",
+  "QEMU",
+  "Intel NUC Kit NUC7i5DNHE",
+  "Sherlock",
+  "Vim3",
+]
